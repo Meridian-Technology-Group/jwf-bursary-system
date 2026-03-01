@@ -1,0 +1,541 @@
+// JWF Bursary Assessment System — Prisma Schema
+// Source: TDD Section 6, IMPLEMENTATION_PLAN.md WP-01
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// ─── Enums ───────────────────────────────────────────────────────────────────
+
+enum Role {
+  APPLICANT
+  ASSESSOR
+  VIEWER
+  DELETED
+}
+
+enum School {
+  TRINITY
+  WHITGIFT
+}
+
+enum RoundStatus {
+  DRAFT
+  OPEN
+  CLOSED
+}
+
+enum ApplicationStatus {
+  PRE_SUBMISSION
+  SUBMITTED
+  NOT_STARTED
+  PAUSED
+  COMPLETED
+  QUALIFIES
+  DOES_NOT_QUALIFY
+}
+
+enum AssessmentStatus {
+  NOT_STARTED
+  PAUSED
+  COMPLETED
+}
+
+enum AssessmentOutcome {
+  QUALIFIES
+  DOES_NOT_QUALIFY
+}
+
+enum EarnerLabel {
+  PARENT_1
+  PARENT_2
+}
+
+enum EmploymentStatus {
+  PAYE
+  BENEFITS
+  SELF_EMPLOYED_DIRECTOR
+  SELF_EMPLOYED_SOLE
+  OLD_AGE_PENSION
+  PAST_PENSION
+  UNEMPLOYED
+}
+
+enum ChecklistTab {
+  BURSARY_DETAILS
+  LIVING_CONDITIONS
+  DEBT
+  OTHER_FEES
+  STAFF
+  FINANCIAL_PROFILE
+}
+
+enum ApplicationSectionType {
+  CHILD_DETAILS
+  FAMILY_ID
+  PARENT_DETAILS
+  DEPENDENT_CHILDREN
+  DEPENDENT_ELDERLY
+  OTHER_INFO
+  PARENTS_INCOME
+  ASSETS_LIABILITIES
+  ADDITIONAL_INFO
+  DECLARATION
+}
+
+enum InvitationStatus {
+  PENDING
+  ACCEPTED
+  EXPIRED
+}
+
+enum EmailTemplateType {
+  INVITATION
+  CONFIRMATION
+  MISSING_DOCS
+  OUTCOME_QUALIFIES
+  OUTCOME_DNQ
+  REASSESSMENT
+  REMINDER
+}
+
+enum BursaryAccountStatus {
+  ACTIVE
+  CLOSED
+}
+
+// ─── Tables ──────────────────────────────────────────────────────────────────
+
+/// Extends Supabase Auth user with application-specific profile data.
+/// id matches auth.users.id.
+model Profile {
+  id        String   @id @default(uuid()) @db.Uuid
+  role      Role     @default(APPLICANT)
+  firstName String?  @map("first_name")
+  lastName  String?  @map("last_name")
+  email     String   @unique
+  phone     String?
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz()
+
+  // Relations
+  bursaryAccounts      BursaryAccount[]
+  applicationsAsLead   Application[]      @relation("ApplicationLeadApplicant")
+  assessmentsAsOwner   Assessment[]       @relation("AssessmentAssessor")
+  documentsUploaded    Document[]
+  invitationsCreated   Invitation[]       @relation("InvitationCreator")
+  emailTemplateUpdates EmailTemplate[]
+  auditLogs            AuditLog[]
+
+  @@map("profiles")
+}
+
+/// An assessment cycle for one academic year.
+model Round {
+  id           String      @id @default(uuid()) @db.Uuid
+  academicYear String      @unique @map("academic_year")
+  openDate     DateTime    @map("open_date") @db.Date
+  closeDate    DateTime    @map("close_date") @db.Date
+  decisionDate DateTime?   @map("decision_date") @db.Date
+  status       RoundStatus @default(DRAFT)
+  createdAt    DateTime    @default(now()) @map("created_at") @db.Timestamptz()
+
+  // Relations
+  applications    Application[]
+  invitations     Invitation[]
+  recommendations Recommendation[]
+
+  @@map("rounds")
+}
+
+/// A persistent account per child, spanning multiple assessment years.
+model BursaryAccount {
+  id                   String               @id @default(uuid()) @db.Uuid
+  reference            String               @unique
+  school               School
+  childName            String               @map("child_name")
+  childDob             DateTime?            @map("child_dob") @db.Date
+  entryYear            Int                  @map("entry_year")
+  firstAssessmentYear  String               @map("first_assessment_year")
+  benchmarkPayableFees Decimal?             @map("benchmark_payable_fees") @db.Decimal(10, 2)
+  leadApplicantId      String               @map("lead_applicant_id") @db.Uuid
+  status               BursaryAccountStatus @default(ACTIVE)
+  closedAt             DateTime?            @map("closed_at") @db.Timestamptz()
+  createdAt            DateTime             @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt            DateTime             @updatedAt @map("updated_at") @db.Timestamptz()
+
+  // Relations
+  leadApplicant   Profile          @relation(fields: [leadApplicantId], references: [id])
+  applications    Application[]
+  siblingLinks    SiblingLink[]
+  invitations     Invitation[]
+  recommendations Recommendation[]
+
+  @@index([leadApplicantId])
+  @@map("bursary_accounts")
+}
+
+/// One application per child per round.
+model Application {
+  id               String            @id @default(uuid()) @db.Uuid
+  reference        String            @unique
+  roundId          String            @map("round_id") @db.Uuid
+  bursaryAccountId String?           @map("bursary_account_id") @db.Uuid
+  leadApplicantId  String            @map("lead_applicant_id") @db.Uuid
+  school           School
+  childName        String            @map("child_name")
+  childDob         DateTime?         @map("child_dob") @db.Date
+  entryYear        Int?              @map("entry_year")
+  isReassessment   Boolean           @default(false) @map("is_reassessment")
+  isInternal       Boolean           @default(false) @map("is_internal")
+  status           ApplicationStatus @default(PRE_SUBMISSION)
+  submittedAt      DateTime?         @map("submitted_at") @db.Timestamptz()
+  createdAt        DateTime          @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt        DateTime          @updatedAt @map("updated_at") @db.Timestamptz()
+
+  // Relations
+  round          Round              @relation(fields: [roundId], references: [id])
+  bursaryAccount BursaryAccount?    @relation(fields: [bursaryAccountId], references: [id])
+  leadApplicant  Profile            @relation("ApplicationLeadApplicant", fields: [leadApplicantId], references: [id])
+  sections       ApplicationSection[]
+  documents      Document[]
+  assessment     Assessment?
+
+  @@unique([roundId, leadApplicantId, childName])
+  @@index([roundId, status])
+  @@index([leadApplicantId])
+  @@index([bursaryAccountId])
+  @@map("applications")
+}
+
+/// Stores applicant-entered form data per section as JSONB.
+model ApplicationSection {
+  id            String                 @id @default(uuid()) @db.Uuid
+  applicationId String                @map("application_id") @db.Uuid
+  section       ApplicationSectionType
+  data          Json                   @default("{}")
+  isComplete    Boolean                @default(false) @map("is_complete")
+  updatedAt     DateTime               @updatedAt @map("updated_at") @db.Timestamptz()
+
+  // Relations
+  application Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+
+  @@unique([applicationId, section])
+  @@map("application_sections")
+}
+
+/// Metadata for uploaded files. Files stored in Supabase Storage.
+model Document {
+  id            String   @id @default(uuid()) @db.Uuid
+  applicationId String   @map("application_id") @db.Uuid
+  slot          String
+  filename      String
+  mimeType      String   @map("mime_type")
+  fileSize      Int      @map("file_size")
+  storagePath   String   @map("storage_path")
+  isVerified    Boolean  @default(false) @map("is_verified")
+  uploadedBy    String   @map("uploaded_by") @db.Uuid
+  uploadedAt    DateTime @default(now()) @map("uploaded_at") @db.Timestamptz()
+
+  // Relations
+  application Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  uploader    Profile     @relation(fields: [uploadedBy], references: [id])
+
+  @@index([applicationId, slot])
+  @@map("documents")
+}
+
+/// Core assessor workspace. Stores all financial data and calculation results.
+model Assessment {
+  id                       String           @id @default(uuid()) @db.Uuid
+  applicationId            String           @unique @map("application_id") @db.Uuid
+  assessorId               String           @map("assessor_id") @db.Uuid
+
+  // Reference value snapshots
+  familyTypeCategory       Int?             @map("family_type_category")
+  notionalRent             Decimal?         @map("notional_rent") @db.Decimal(10, 2)
+  utilityCosts             Decimal?         @map("utility_costs") @db.Decimal(10, 2)
+  foodCosts                Decimal?         @map("food_costs") @db.Decimal(10, 2)
+  annualFees               Decimal?         @map("annual_fees") @db.Decimal(10, 2)
+  councilTax               Decimal?         @map("council_tax") @db.Decimal(10, 2)
+  schoolingYearsRemaining  Int?             @map("schooling_years_remaining")
+
+  // Calculation results
+  totalHouseholdNetIncome  Decimal?         @map("total_household_net_income") @db.Decimal(10, 2)
+  netAssetsYearlyValuation Decimal?         @map("net_assets_yearly_valuation") @db.Decimal(10, 2)
+  hndiAfterNs              Decimal?         @map("hndi_after_ns") @db.Decimal(10, 2)
+  requiredBursary          Decimal?         @map("required_bursary") @db.Decimal(10, 2)
+
+  // Payable fees
+  grossFees                Decimal?         @map("gross_fees") @db.Decimal(10, 2)
+  scholarshipPct           Decimal?         @default(0) @map("scholarship_pct") @db.Decimal(5, 2)
+  bursaryAward             Decimal?         @map("bursary_award") @db.Decimal(10, 2)
+  netYearlyFees            Decimal?         @map("net_yearly_fees") @db.Decimal(10, 2)
+  vatRate                  Decimal?         @default(20.00) @map("vat_rate") @db.Decimal(5, 2)
+  yearlyPayableFees        Decimal?         @map("yearly_payable_fees") @db.Decimal(10, 2)
+  monthlyPayableFees       Decimal?         @map("monthly_payable_fees") @db.Decimal(10, 2)
+
+  // Manual adjustment
+  manualAdjustment         Decimal?         @default(0) @map("manual_adjustment") @db.Decimal(10, 2)
+  manualAdjustmentReason   String?          @map("manual_adjustment_reason")
+
+  // Property
+  propertyCategory         Int?             @map("property_category")
+  propertyExceedsThreshold Boolean          @default(false) @map("property_exceeds_threshold")
+
+  // Red flags
+  dishonestyFlag           Boolean          @default(false) @map("dishonesty_flag")
+  creditRiskFlag           Boolean          @default(false) @map("credit_risk_flag")
+
+  // Status
+  status                   AssessmentStatus @default(NOT_STARTED)
+  outcome                  AssessmentOutcome?
+  completedAt              DateTime?        @map("completed_at") @db.Timestamptz()
+  createdAt                DateTime         @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt                DateTime         @updatedAt @map("updated_at") @db.Timestamptz()
+
+  // Relations
+  application    Application           @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  assessor       Profile               @relation("AssessmentAssessor", fields: [assessorId], references: [id])
+  earners        AssessmentEarner[]
+  property       AssessmentProperty?
+  checklists     AssessmentChecklist[]
+  recommendation Recommendation?
+
+  @@map("assessments")
+}
+
+/// Income breakdown per earner (Parent 1 / Parent 2).
+model AssessmentEarner {
+  id                    String           @id @default(uuid()) @db.Uuid
+  assessmentId          String           @map("assessment_id") @db.Uuid
+  earnerLabel           EarnerLabel      @map("earner_label")
+  employmentStatus      EmploymentStatus @map("employment_status")
+  netPay                Decimal          @default(0) @map("net_pay") @db.Decimal(10, 2)
+  netDividends          Decimal          @default(0) @map("net_dividends") @db.Decimal(10, 2)
+  netSelfEmployedProfit Decimal          @default(0) @map("net_self_employed_profit") @db.Decimal(10, 2)
+  pensionAmount         Decimal          @default(0) @map("pension_amount") @db.Decimal(10, 2)
+  benefitsIncluded      Decimal          @default(0) @map("benefits_included") @db.Decimal(10, 2)
+  benefitsIncludedDetail Json            @default("{}") @map("benefits_included_detail")
+  benefitsExcluded      Decimal          @default(0) @map("benefits_excluded") @db.Decimal(10, 2)
+  benefitsExcludedDetail Json            @default("{}") @map("benefits_excluded_detail")
+  totalIncome           Decimal          @default(0) @map("total_income") @db.Decimal(10, 2)
+  createdAt             DateTime         @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt             DateTime         @updatedAt @map("updated_at") @db.Timestamptz()
+
+  // Relations
+  assessment Assessment @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+
+  @@unique([assessmentId, earnerLabel])
+  @@map("assessment_earners")
+}
+
+/// Property and savings data for Stage 2 calculations.
+model AssessmentProperty {
+  id                        String   @id @default(uuid()) @db.Uuid
+  assessmentId              String   @unique @map("assessment_id") @db.Uuid
+  isMortgageFree            Boolean  @default(false) @map("is_mortgage_free")
+  additionalPropertyCount   Int      @default(0) @map("additional_property_count")
+  additionalPropertyIncome  Decimal  @default(0) @map("additional_property_income") @db.Decimal(10, 2)
+  cashSavings               Decimal  @default(0) @map("cash_savings") @db.Decimal(10, 2)
+  isasPepsShares            Decimal  @default(0) @map("isas_peps_shares") @db.Decimal(10, 2)
+  schoolAgeChildrenCount    Int      @default(1) @map("school_age_children_count")
+  derivedSavingsAnnualTotal Decimal  @default(0) @map("derived_savings_annual_total") @db.Decimal(10, 2)
+  createdAt                 DateTime @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt                 DateTime @updatedAt @map("updated_at") @db.Timestamptz()
+
+  // Relations
+  assessment Assessment @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+
+  @@map("assessment_properties")
+}
+
+/// Qualitative context tabs with free-text notes.
+model AssessmentChecklist {
+  id           String       @id @default(uuid()) @db.Uuid
+  assessmentId String       @map("assessment_id") @db.Uuid
+  tab          ChecklistTab
+  notes        String       @default("")
+  updatedAt    DateTime     @updatedAt @map("updated_at") @db.Timestamptz()
+
+  // Relations
+  assessment Assessment @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+
+  @@unique([assessmentId, tab])
+  @@map("assessment_checklists")
+}
+
+/// Structured recommendation output per assessment.
+model Recommendation {
+  id                  String   @id @default(uuid()) @db.Uuid
+  assessmentId        String   @unique @map("assessment_id") @db.Uuid
+  bursaryAccountId    String?  @map("bursary_account_id") @db.Uuid
+  roundId             String   @map("round_id") @db.Uuid
+  familySynopsis      String?  @map("family_synopsis")
+  accommodationStatus String?  @map("accommodation_status")
+  incomeCategory      String?  @map("income_category")
+  propertyCategory    Int?     @map("property_category")
+  bursaryAward        Decimal? @map("bursary_award") @db.Decimal(10, 2)
+  yearlyPayableFees   Decimal? @map("yearly_payable_fees") @db.Decimal(10, 2)
+  monthlyPayableFees  Decimal? @map("monthly_payable_fees") @db.Decimal(10, 2)
+  dishonestyFlag      Boolean  @default(false) @map("dishonesty_flag")
+  creditRiskFlag      Boolean  @default(false) @map("credit_risk_flag")
+  summary             String?
+  createdAt           DateTime @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt           DateTime @updatedAt @map("updated_at") @db.Timestamptz()
+
+  // Relations
+  assessment     Assessment                @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+  bursaryAccount BursaryAccount?           @relation(fields: [bursaryAccountId], references: [id])
+  round          Round                     @relation(fields: [roundId], references: [id])
+  reasonCodes    RecommendationReasonCode[]
+
+  @@map("recommendations")
+}
+
+/// Reason codes for year-on-year changes.
+model ReasonCode {
+  id           String   @id @default(uuid()) @db.Uuid
+  code         Int      @unique
+  label        String
+  isDeprecated Boolean  @default(false) @map("is_deprecated")
+  sortOrder    Int      @map("sort_order")
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz()
+
+  // Relations
+  recommendations RecommendationReasonCode[]
+
+  @@map("reason_codes")
+}
+
+/// Junction table: Recommendation ↔ ReasonCode.
+model RecommendationReasonCode {
+  recommendationId String @map("recommendation_id") @db.Uuid
+  reasonCodeId     String @map("reason_code_id") @db.Uuid
+
+  // Relations
+  recommendation Recommendation @relation(fields: [recommendationId], references: [id], onDelete: Cascade)
+  reasonCode     ReasonCode     @relation(fields: [reasonCodeId], references: [id])
+
+  @@id([recommendationId, reasonCodeId])
+  @@map("recommendation_reason_codes")
+}
+
+/// Links bursary accounts as siblings for sequential income absorption.
+model SiblingLink {
+  id              String   @id @default(uuid()) @db.Uuid
+  familyGroupId   String   @map("family_group_id") @db.Uuid
+  bursaryAccountId String  @map("bursary_account_id") @db.Uuid
+  priorityOrder   Int      @map("priority_order")
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz()
+
+  // Relations
+  bursaryAccount BursaryAccount @relation(fields: [bursaryAccountId], references: [id])
+
+  @@unique([familyGroupId, bursaryAccountId])
+  @@unique([familyGroupId, priorityOrder])
+  @@map("sibling_links")
+}
+
+/// Reference: Family type configs with notional rent, utilities, food.
+model FamilyTypeConfig {
+  id            String   @id @default(uuid()) @db.Uuid
+  category      Int
+  description   String
+  notionalRent  Decimal  @map("notional_rent") @db.Decimal(10, 2)
+  utilityCosts  Decimal  @map("utility_costs") @db.Decimal(10, 2)
+  foodCosts     Decimal  @map("food_costs") @db.Decimal(10, 2)
+  effectiveFrom DateTime @map("effective_from") @db.Date
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz()
+
+  @@unique([category, effectiveFrom])
+  @@map("family_type_configs")
+}
+
+/// Reference: School annual fees (pre-VAT).
+model SchoolFees {
+  id            String   @id @default(uuid()) @db.Uuid
+  school        School
+  annualFees    Decimal  @map("annual_fees") @db.Decimal(10, 2)
+  effectiveFrom DateTime @map("effective_from") @db.Date
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz()
+
+  @@unique([school, effectiveFrom])
+  @@map("school_fees")
+}
+
+/// Reference: Council tax default (Band D Croydon).
+model CouncilTaxDefault {
+  id            String   @id @default(uuid()) @db.Uuid
+  amount        Decimal  @db.Decimal(10, 2)
+  description   String   @default("Band D Croydon")
+  effectiveFrom DateTime @map("effective_from") @db.Date
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz()
+
+  @@map("council_tax_defaults")
+}
+
+/// Tracks invitations sent by assessors.
+model Invitation {
+  id               String           @id @default(uuid()) @db.Uuid
+  email            String
+  applicantName    String?          @map("applicant_name")
+  childName        String?          @map("child_name")
+  school           School?
+  roundId          String?          @map("round_id") @db.Uuid
+  bursaryAccountId String?          @map("bursary_account_id") @db.Uuid
+  authUserId       String?          @map("auth_user_id") @db.Uuid
+  status           InvitationStatus @default(PENDING)
+  expiresAt        DateTime         @map("expires_at") @db.Timestamptz()
+  acceptedAt       DateTime?        @map("accepted_at") @db.Timestamptz()
+  createdBy        String           @map("created_by") @db.Uuid
+  createdAt        DateTime         @default(now()) @map("created_at") @db.Timestamptz()
+
+  // Relations
+  round          Round?          @relation(fields: [roundId], references: [id])
+  bursaryAccount BursaryAccount? @relation(fields: [bursaryAccountId], references: [id])
+  creator        Profile         @relation("InvitationCreator", fields: [createdBy], references: [id])
+
+  @@map("invitations")
+}
+
+/// Configurable email templates with merge fields.
+model EmailTemplate {
+  id          String            @id @default(uuid()) @db.Uuid
+  type        EmailTemplateType @unique
+  subject     String
+  body        String
+  mergeFields Json              @map("merge_fields")
+  updatedBy   String?           @map("updated_by") @db.Uuid
+  updatedAt   DateTime          @updatedAt @map("updated_at") @db.Timestamptz()
+
+  // Relations
+  updater Profile? @relation(fields: [updatedBy], references: [id])
+
+  @@map("email_templates")
+}
+
+/// Immutable append-only audit log.
+model AuditLog {
+  id         String   @id @default(uuid()) @db.Uuid
+  userId     String?  @map("user_id") @db.Uuid
+  action     String
+  entityType String   @map("entity_type")
+  entityId   String?  @map("entity_id") @db.Uuid
+  context    String?
+  metadata   Json     @default("{}")
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz()
+
+  // Relations
+  user Profile? @relation(fields: [userId], references: [id])
+
+  @@index([entityType, entityId])
+  @@index([userId, createdAt])
+  @@map("audit_logs")
+}

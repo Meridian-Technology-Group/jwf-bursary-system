@@ -17,3 +17,6 @@ npm-debug.log*
 .DS_Store
 docs/planning/screenshots
 .vercel
+
+/src/generated/prisma
+tsconfig.tsbuildinfo
