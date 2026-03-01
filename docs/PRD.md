@@ -12,13 +12,13 @@
 
 ## Table of Contents
 
-1. [Introduction & Purpose](#1-introduction--purpose)
-2. [Target Audience & User Personas](#2-target-audience--user-personas)
-3. [Features & Functionality](#3-features--functionality)
-4. [Use Cases & User Stories](#4-use-cases--user-stories)
-5. [Wireframes & Mockups](#5-wireframes--mockups)
-6. [Metrics & Success Criteria](#6-metrics--success-criteria)
-7. [Assumptions, Constraints & Dependencies](#7-assumptions-constraints--dependencies)
+1. [Introduction & Purpose](#introduction-purpose)
+2. [Target Audience & User Personas](#target-audience-user-personas)
+3. [Features & Functionality](#features-functionality)
+4. [Use Cases & User Stories](#use-cases-user-stories)
+5. [Wireframes & Mockups](#wireframes-mockups)
+6. [Metrics & Success Criteria](#metrics-success-criteria)
+7. [Assumptions, Constraints & Dependencies](#assumptions-constraints-dependencies)
 
 ---
 
@@ -144,8 +144,8 @@ Requirements are organised by module. Priority uses MoSCoW notation: **M** = Mus
 | AE-04 | **Benefit inclusion/exclusion** | M | Separate input fields for: (a) benefits counted as income (parent's DLA, ESA, PIP, Carer's Allowance), (b) benefits excluded from income (child's disability benefits). Only included benefits feed into the income total. |
 | AE-05 | **Stage 2: Net Assets Position** | M | Property adjustments: deduct notional rent (looked up from Family Type Category), add back if mortgage-free, add additional property income if >1 property, deduct council tax (always Band D Croydon default). Savings adjustments: (cash savings + ISAs/PEPs/shares) / school-age children / schooling years remaining = Derived Savings Annual Total, added back to income. |
 | AE-06 | **Stage 3: Family Living Costs** | M | Deduct notional utility + food costs (looked up from Family Type Category). Produces HNDI after NS (Household Net Disposable Income after Necessary Spending). |
-| AE-07 | **Stage 4: Bursary Impact** | M | Required Bursary = Annual School Fees − HNDI after NS. If positive, this is the bursary award (nominal £). If zero or negative, no bursary needed. |
-| AE-08 | **Payable fees calculation** | M | Gross Fees (pre-VAT) − Scholarship (% of gross) − Bursary Award (nominal £) = Net Yearly Fees. Net Yearly Fees + VAT (20%) = Yearly Payable Fees. Yearly / 12 = Monthly Payable Fees. Scholarship defaults to 0% if none. |
+| AE-07 | **Stage 4: Bursary Impact** | M | Required Bursary = Annual School Fees - HNDI after NS. If positive, this is the bursary award (nominal £). If zero or negative, no bursary needed. |
+| AE-08 | **Payable fees calculation** | M | Gross Fees (pre-VAT) - Scholarship (% of gross) - Bursary Award (nominal £) = Net Yearly Fees. Net Yearly Fees + VAT (20%) = Yearly Payable Fees. Yearly / 12 = Monthly Payable Fees. Scholarship defaults to 0% if none. |
 | AE-09 | **Auto-lookup of reference values** | M | Family Type Category selection automatically populates: notional rent, utility costs, food costs. School selection automatically populates annual fees. Council tax defaults to Band D Croydon. Entry year automatically populates schooling years remaining. All auto-populated values are visible and editable (override capability). |
 | AE-10 | **Manual adjustment field** | M | A field for the assessor to enter manual adjustments to the calculated payable fees (positive or negative), with a required reason text. This supports exceptional cases (pastoral grounds, honouring historical benchmarks) without hard-coding the logic. |
 | AE-11 | **Schooling years remaining** | M | Auto-calculated from entry year (Year 6 = 8, Year 7 = 7, Year 9 = 5, Year 12 = 2). For re-assessments, auto-decrements based on original entry year and current assessment year. Editable for override (internal bursary requests at non-standard years). |

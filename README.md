@@ -44,12 +44,14 @@ An internal tool used by Foundation bursary staff to manage rounds, review submi
 
 1. Applications arrive in a **Submitted** queue
 2. The assessor checks that all required documents have been uploaded (all tabs showing green ticks)
-3. The assessor works through the structured assessment form, independently deriving NET financial figures from source documents
+3. The assessor works through a **split-screen assessment form**: the left panel displays the applicant's uploaded source documents (with navigation, zoom, and page controls), while the right panel shows the data entry form — allowing the assessor to read figures directly from P60s, tax returns, and bank statements while entering verified values
 4. **Assessment statuses:** Not Started → Paused (awaiting documents from applicant) → Completed
 5. **Outcome:** Qualifies for a bursary (with nominal £ amount and payable fees) OR Does Not Qualify
 6. The assessor produces a recommendation (see [Assessment Output](#assessment-output--recommendation-to-schools)) which is sent to the school externally
 
 **If documents are missing**, the assessor pauses the assessment and emails the applicant requesting the missing items. The applicant responds by email; the assessor attaches the documents to the application and regenerates it. If the application is too incomplete, it may be rejected and the applicant asked to start over.
+
+**Data minimisation in the admin console** — the application queue hides applicant and child names by default, showing only reference numbers, school, and status. The assessor can toggle name visibility when needed (e.g., for communication), and these reveal actions are audit-logged. The assessment form uses anonymised labels ("Parent 1", "Parent 2") instead of real names, and displays the bursary reference number rather than the family name. Reports and analytics use aggregate data and reference numbers by default. Names are only shown in contexts where identification is necessary: applicant detail view, communication screens, and the recommendation export.
 
 **One assessor per application** — there is no committee review step within the system. The Foundation assesses and recommends; the school's Headmaster decides whether to award a bursary-supported place based on the recommendation, the candidate's entrance exam results, and the available funds for that year.
 
@@ -522,6 +524,7 @@ In addition to the calculation model above, the assessor's checklist includes qu
 | **Property Classification** | A 12-category classification (Renting through to Portfolio > £1.8m) used for reporting to schools. Also used for qualifying criteria: one property < £750K. |
 | **Red Flags** | Tags an assessor can apply: Dishonesty flag (misrepresentation detected), Credit risk flag. Included in the recommendation to schools. |
 | **Reason Codes** | Configurable codes (currently 35) explaining year-on-year changes in bursary award / payable fees. Selected by the assessor during re-assessment. Reported to schools. |
+| **Name Masking** | Personal identifiers are hidden by default in the application queue, assessment form, and reports. The queue shows reference numbers only; the assessment form uses "Parent 1"/"Parent 2" labels and the bursary reference instead of the family name. Name-reveal actions are audit-logged for GDPR accountability. |
 
 ---
 
@@ -535,6 +538,7 @@ In addition to the calculation model above, the assessor's checklist includes qu
 | **Right to deletion** | Applicants can request deletion of their data at any time (and often do, especially after learning they don't qualify) |
 | **Appeal window** | 4 weeks from outcome notification. Handled externally by email. Rarely results in changes — the assessment model's output is upheld unless an error is identified |
 | **School access** | None. All information sent to schools externally as spreadsheet exports. The school never accesses the bursary system directly. |
+| **Data minimisation** | Personal identifiers (names, email addresses) are masked by default in assessment and reporting contexts. Revealed only where identification is necessary (applicant detail, communication, recommendation export). Name-reveal actions are audit-logged for GDPR accountability. |
 
 ---
 
@@ -555,6 +559,8 @@ This replacement system must cover:
 - **Assessment output** — recommendation text (family synopsis, income/property categories, bursary award, payable fees, red flags), stored per account per year. Exportable for external transmission to schools
 - **Year-on-year reason codes** — configurable reason codes for payable fee changes, selectable during re-assessment
 - **Benefit fields** — separate input sections for benefits counted as income vs. benefits excluded from income
+- **Split-screen document viewer** — the assessment form displays as a split-screen: left panel shows uploaded source documents (with navigation and zoom), right panel shows the data entry form, allowing the assessor to read and enter figures simultaneously
+- **Data minimisation & name masking** — application queue hides names by default (reference numbers only); assessment form uses anonymised labels ("Parent 1", "Parent 2") and bursary reference instead of family name; reports use aggregate data; name-reveal actions are audit-logged
 - **Document management** — upload, storage, and viewing of supporting documents (passports, P60s, bank statements, council tax bills, etc.)
 - **User management** — admin-initiated applicant invitation, applicant registration via invite link, admin roles and access control. Assessor can update all reference tables
 - **Email notifications** — templated communications at key workflow stages (invitation, submission confirmation, missing documents request, outcome notification, re-assessment invitation)
@@ -568,11 +574,13 @@ This replacement system must cover:
 - **PDF generation** — ability to generate a PDF summary of any application and assessment
 - **Audit trail** — history of all changes to an application and assessment
 - **Bulk operations** — batch reminder sending, batch status updates
+- **Reporting & analytics** — canned reports (round summary, bursary awards, income distribution, property categories, reason code frequency, approaching final year, sibling summary) with filter controls and chart visualisations. Ad-hoc report builder for custom queries by data source, filters, grouping, and chart type. All reports exportable as CSV/XLSX; charts as PNG/PDF
 
 ### Phase 2 (Desirable Future Enhancements)
 
 - **Payable fees benchmark tracking** — dashboard showing the history of payable fees over time for each bursary account, with the original benchmark highlighted
 - **Automatic flagging** — detect significant year-on-year changes (income drop/rise, new property, household composition change)
+- **Report scheduling** — automated delivery of canned reports on a schedule (e.g., weekly round summary email)
 
 ### Won't Have (Out of Scope)
 
