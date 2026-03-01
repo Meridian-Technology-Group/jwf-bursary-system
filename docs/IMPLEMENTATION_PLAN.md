@@ -25,16 +25,18 @@ Before starting, gather these credentials and fill them in:
 
 | Service | Required For | Value |
 |---------|-------------|-------|
-| **Supabase Project URL** | WP-01 | `______________________________` |
-| **Supabase Anon Key** | WP-01 | `______________________________` |
-| **Supabase Service Role Key** | WP-01 | `______________________________` |
-| **Supabase Database URL** (pooled) | WP-01 | `______________________________` |
-| **Supabase Direct URL** (migrations) | WP-01 | `______________________________` |
-| **Resend API Key** | WP-05 | `______________________________` |
-| **Resend From Email** | WP-05 | `______________________________` |
-| **Vercel Project ID** | WP-23 | `______________________________` |
-| **Vercel Team** (if applicable) | WP-23 | `______________________________` |
-| **Domain** (for production URL) | WP-23 | `______________________________` |
+| **Supabase Project URL** | WP-01 | Store in `.env.local` as `NEXT_PUBLIC_SUPABASE_URL` |
+| **Supabase Anon Key** | WP-01 | Store in `.env.local` as `NEXT_PUBLIC_SUPABASE_ANON_KEY` |
+| **Supabase Service Role Key** | WP-01 | Store in `.env.local` as `SUPABASE_SERVICE_ROLE_KEY` |
+| **Supabase Transaction Pooler URL** (runtime) | WP-01 | Store in `.env.local` as `DATABASE_URL` |
+| **Supabase Direct Connection URL** (migrations) | WP-01 | Store in `.env.local` as `DIRECT_URL` |
+| **Resend API Key** | WP-05 | Store in `.env.local` as `RESEND_API_KEY` |
+| **Resend From Email** | WP-05 | Store in `.env.local` as `RESEND_FROM_EMAIL` |
+| **Vercel Project ID** | WP-23 | Store in `.env.local` as `VERCEL_PROJECT_ID` |
+| **Vercel Team** (if applicable) | WP-23 | Store in `.env.local` as `VERCEL_TEAM_ID` |
+| **Domain** (for production URL) | WP-23 | Configure in Vercel dashboard |
+
+> **All credentials belong in `.env.local` (gitignored) — never commit secrets to the repo.** See `.env.example` for the template.
 
 > **Supabase:** Project already created in London (eu-west-2). Ensure Email/Password auth provider is enabled. Create a private storage bucket named `documents`.
 > **Resend:** Create an account at resend.com. Add and verify a sending domain. Generate an API key.
