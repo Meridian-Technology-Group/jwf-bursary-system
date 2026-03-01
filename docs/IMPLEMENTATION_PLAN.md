@@ -52,7 +52,7 @@ Before starting, gather these credentials and fill them in:
 | **Phase 1: Foundation** | WP-01 through WP-05 | Complete |
 | **Phase 2: Core Application** | WP-06 through WP-16 | Complete |
 | **Phase 3: Output & Polish** | WP-17 through WP-22 | Complete |
-| **Phase 4: Demo Deployment** | WP-23 | Not Started |
+| **Phase 4: Demo Deployment** | WP-23 | Complete |
 
 ---
 
@@ -987,7 +987,7 @@ src/components/admin/internal-bursary-dialog.tsx   # Ad-hoc application creation
 
 | Field | Value |
 |-------|-------|
-| **Status** | `Not Started` |
+| **Status** | `Complete` |
 | **Complexity** | Small |
 | **Dependencies** | All previous WPs |
 | **Credentials** | `[CREDENTIALS REQUIRED]` — Vercel project ID, domain |
