@@ -91,18 +91,17 @@ export async function createInvitationAction(
       expiresAt,
     });
 
-    // 2. Invite via Supabase Auth (creates auth account + Supabase's own email)
+    // 2. Create Supabase auth user silently (no system email sent).
+    //    The branded Resend email is the only email the applicant receives.
     const supabase = createSupabaseAdminClient();
     const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
-    const { error: supabaseError } = await supabase.auth.admin.inviteUserByEmail(
+    const { error: supabaseError } = await supabase.auth.admin.createUser({
       email,
-      {
-        redirectTo: `${appUrl}/register?invitationId=${invitation.id}`,
-      }
-    );
+      email_confirm: true,
+    });
 
-    if (supabaseError) {
-      console.error("[invitations] Supabase invite error:", supabaseError);
+    if (supabaseError && !supabaseError.message?.includes("already been registered")) {
+      console.error("[invitations] Supabase createUser error:", supabaseError);
       // Non-fatal: log but continue so our branded email still sends
     }
 
@@ -117,12 +116,14 @@ export async function createInvitationAction(
     }
 
     // 4. Send branded invitation email via Resend
+    const schoolLabel = school === "TRINITY" ? "Trinity School" : school === "WHITGIFT" ? "Whitgift School" : "";
     await sendEmail(email, "INVITATION", {
       applicant_name: applicantName ?? email,
       child_name: childName ?? "",
-      academic_year: academicYear,
-      invitation_link: `${appUrl}/register?invitationId=${invitation.id}`,
-      expiry_date: expiresAt.toLocaleDateString("en-GB"),
+      school: schoolLabel,
+      round_year: academicYear,
+      registration_link: `${appUrl}/register?invitationId=${invitation.id}`,
+      deadline: expiresAt.toLocaleDateString("en-GB"),
     });
 
     await prisma.auditLog.create({
@@ -195,27 +196,29 @@ export async function batchReassessmentInviteAction(
           expiresAt,
         });
 
-        // Supabase Auth invite
+        // Create Supabase auth user silently (no system email sent)
         const { error: supabaseError } =
-          await supabase.auth.admin.inviteUserByEmail(email, {
-            redirectTo: `${appUrl}/register?invitationId=${invitation.id}`,
+          await supabase.auth.admin.createUser({
+            email,
+            email_confirm: true,
           });
 
-        if (supabaseError) {
+        if (supabaseError && !supabaseError.message?.includes("already been registered")) {
           console.warn(
-            `[batch-invite] Supabase invite warning for ${email}:`,
+            `[batch-invite] Supabase createUser warning for ${email}:`,
             supabaseError
           );
         }
 
         // Send branded reassessment email
+        const schoolLabel = holder.school === "TRINITY" ? "Trinity School" : "Whitgift School";
         const emailResult = await sendEmail(email, "REASSESSMENT", {
           applicant_name: applicantName,
           child_name: holder.childName,
-          school: holder.school,
-          academic_year: academicYear,
-          invitation_link: `${appUrl}/register?invitationId=${invitation.id}`,
-          expiry_date: expiresAt.toLocaleDateString("en-GB"),
+          school: schoolLabel,
+          round_year: academicYear,
+          registration_link: `${appUrl}/register?invitationId=${invitation.id}`,
+          deadline: expiresAt.toLocaleDateString("en-GB"),
         });
 
         if (emailResult.success) {
