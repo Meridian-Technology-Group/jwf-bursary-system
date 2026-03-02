@@ -263,7 +263,7 @@ export default async function ReportsPage({ searchParams }: PageProps) {
         <div className="rounded-xl border border-dashed border-slate-300 bg-white p-12 text-center">
           <p className="text-sm text-slate-400">
             No assessment rounds found.{" "}
-            <Link href="/admin/rounds" className="text-primary-700 hover:underline">
+            <Link href="/rounds" className="text-primary-700 hover:underline">
               Create a round
             </Link>{" "}
             to see reports.

@@ -138,7 +138,7 @@ export function ActivityFeed({ items }: ActivityFeedProps) {
 
       <div className="mt-4 border-t border-slate-100 pt-4">
         <Link
-          href="/admin/audit"
+          href="/audit"
           className="inline-flex items-center gap-1.5 text-sm font-medium text-primary-700 hover:text-primary-900 hover:underline"
         >
           View full audit trail

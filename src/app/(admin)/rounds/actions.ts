@@ -90,7 +90,7 @@ export async function createRoundAction(
       },
     });
 
-    revalidatePath("/admin/rounds");
+    revalidatePath("/rounds");
   } catch (err) {
     const message =
       err instanceof Error ? err.message : "Failed to create round";
@@ -104,7 +104,7 @@ export async function createRoundAction(
     return { success: false, error: message };
   }
 
-  redirect("/admin/rounds");
+  redirect("/rounds");
 }
 
 // ---------------------------------------------------------------------------
@@ -153,15 +153,15 @@ export async function updateRoundAction(
       },
     });
 
-    revalidatePath("/admin/rounds");
-    revalidatePath(`/admin/rounds/${id}`);
+    revalidatePath("/rounds");
+    revalidatePath(`/rounds/${id}`);
   } catch (err) {
     const message =
       err instanceof Error ? err.message : "Failed to update round";
     return { success: false, error: message };
   }
 
-  redirect(`/admin/rounds/${id}`);
+  redirect(`/rounds/${id}`);
 }
 
 // ---------------------------------------------------------------------------
@@ -187,8 +187,8 @@ export async function closeRoundAction(
       },
     });
 
-    revalidatePath("/admin/rounds");
-    revalidatePath(`/admin/rounds/${id}`);
+    revalidatePath("/rounds");
+    revalidatePath(`/rounds/${id}`);
 
     return { success: true };
   } catch (err) {

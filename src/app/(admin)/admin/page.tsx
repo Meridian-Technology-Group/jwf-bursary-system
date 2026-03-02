@@ -130,7 +130,7 @@ function RoundTile({
 
   return (
     <Link
-      href={`/admin/rounds/${roundId}`}
+      href={`/rounds/${roundId}`}
       className="block focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-600 focus-visible:ring-offset-2 rounded-xl"
     >
       <div className="group flex items-start gap-4 rounded-xl border border-primary-900 bg-primary-900 p-6 shadow-sm transition-shadow hover:shadow-md cursor-pointer">
@@ -175,7 +175,7 @@ function NoRoundState() {
         Create a round to start seeing dashboard data.
       </p>
       <Link
-        href="/admin/rounds"
+        href="/rounds"
         className="mt-4 inline-flex items-center gap-1.5 rounded-md bg-primary-900 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-primary-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-900"
       >
         Manage Rounds

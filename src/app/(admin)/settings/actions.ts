@@ -7,7 +7,7 @@
  *   1. requireRole(["ASSESSOR"]) — admin-only gate
  *   2. Validate + mutate via Prisma
  *   3. createAuditLog()
- *   4. revalidatePath("/admin/settings")
+ *   4. revalidatePath("/settings")
  *   5. Return { success: true } | { success: false; error: string }
  */
 
@@ -74,7 +74,7 @@ export async function upsertFamilyTypeConfigAction(
       metadata: { category, notionalRent, utilityCosts, foodCosts },
     });
 
-    revalidatePath("/admin/settings");
+    revalidatePath("/settings");
     return { success: true };
   } catch (err) {
     console.error("[upsertFamilyTypeConfigAction]", err);
@@ -121,7 +121,7 @@ export async function upsertSchoolFeesAction(
       metadata: { school, annualFees },
     });
 
-    revalidatePath("/admin/settings");
+    revalidatePath("/settings");
     return { success: true };
   } catch (err) {
     console.error("[upsertSchoolFeesAction]", err);
@@ -168,7 +168,7 @@ export async function updateCouncilTaxAction(
       metadata: { amount, description },
     });
 
-    revalidatePath("/admin/settings");
+    revalidatePath("/settings");
     return { success: true };
   } catch (err) {
     console.error("[updateCouncilTaxAction]", err);
@@ -237,7 +237,7 @@ export async function upsertReasonCodeAction(
       metadata: { code, label, isDeprecated },
     });
 
-    revalidatePath("/admin/settings");
+    revalidatePath("/settings");
     return { success: true };
   } catch (err) {
     console.error("[upsertReasonCodeAction]", err);
@@ -287,7 +287,7 @@ export async function upsertEmailTemplateAction(
       metadata: { type, subject },
     });
 
-    revalidatePath("/admin/settings");
+    revalidatePath("/settings");
     return { success: true };
   } catch (err) {
     console.error("[upsertEmailTemplateAction]", err);

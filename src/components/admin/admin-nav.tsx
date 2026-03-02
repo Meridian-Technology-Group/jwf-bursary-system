@@ -46,26 +46,26 @@ const NAV_GROUPS: NavGroup[] = [
     heading: "Assessment Rounds",
     items: [
       { label: "Applications", href: "/queue", icon: ClipboardList },
-      { label: "Rounds", href: "/admin/rounds", icon: CalendarRange },
+      { label: "Rounds", href: "/rounds", icon: CalendarRange },
     ],
   },
   {
     heading: "Invitations",
     items: [
-      { label: "Send Invitations", href: "/admin/invitations", icon: Mail },
+      { label: "Send Invitations", href: "/invitations", icon: Mail },
     ],
   },
   {
     heading: "Reports",
     items: [
-      { label: "Reports", href: "/admin/reports", icon: BarChart2 },
-      { label: "Exports", href: "/admin/exports", icon: Download },
-      { label: "Audit Log", href: "/admin/audit", icon: Clock },
+      { label: "Reports", href: "/reports", icon: BarChart2 },
+      { label: "Exports", href: "/exports", icon: Download },
+      { label: "Audit Log", href: "/audit", icon: Clock },
     ],
   },
   {
     heading: "Configuration",
-    items: [{ label: "Settings", href: "/admin/settings", icon: Settings }],
+    items: [{ label: "Settings", href: "/settings", icon: Settings }],
   },
 ];
 

@@ -31,7 +31,7 @@ export function RoundDetailActions({
     <div className="flex flex-wrap items-center gap-2">
       {/* Always show: navigate to invitations pre-filtered for this round */}
       <Button variant="outline" size="sm" asChild>
-        <Link href={`/admin/invitations?roundId=${roundId}`}>
+        <Link href={`/invitations?roundId=${roundId}`}>
           Send Invitations
         </Link>
       </Button>

@@ -288,7 +288,7 @@ function FilterBar({
       {/* Clear filters */}
       {(entityType || action || startDate || endDate) && (
         <a
-          href="/admin/audit"
+          href="/audit"
           className="inline-flex h-9 items-center rounded-md px-3 text-sm text-slate-500 hover:text-slate-700 underline underline-offset-2"
         >
           Clear
@@ -314,7 +314,7 @@ function Pagination({
       ...searchParams,
       page: String(targetPage),
     });
-    return `/admin/audit?${params.toString()}`;
+    return `/audit?${params.toString()}`;
   }
 
   if (totalPages <= 1) return null;

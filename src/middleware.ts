@@ -29,7 +29,7 @@ import { createSupabaseMiddlewareClient } from "@/lib/auth/supabase-middleware";
 
 const AUTH_ROUTES = /^\/(?:\(auth\)\/)?(?:login|register|reset-password|auth\/callback)/;
 const PORTAL_PREFIX = /^\/(?:\(portal\)\/)?(?:portal|my-application|documents)/;
-const ADMIN_PREFIX = /^\/(?:\(admin\)\/)?admin/;
+const ADMIN_PREFIX = /^\/(?:\(admin\)\/)?(?:admin|queue|rounds|invitations|reports|exports|audit|settings|applications)/;
 
 /** Paths that do not need any processing. */
 const BYPASS_PATHS = /^\/(api\/|_next\/|favicon\.ico|robots\.txt|sitemap\.xml)/;

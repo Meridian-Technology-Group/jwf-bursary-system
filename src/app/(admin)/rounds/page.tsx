@@ -158,7 +158,7 @@ export default async function RoundsPage() {
                   <tr key={round.id} className="hover:bg-slate-50">
                     <td className="whitespace-nowrap px-6 py-4">
                       <Link
-                        href={`/admin/rounds/${round.id}`}
+                        href={`/rounds/${round.id}`}
                         className="text-sm font-medium text-primary-700 hover:text-primary-900 hover:underline"
                       >
                         {round.academicYear}

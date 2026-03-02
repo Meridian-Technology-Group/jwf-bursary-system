@@ -136,7 +136,7 @@ export async function createInvitationAction(
       },
     });
 
-    revalidatePath("/admin/invitations");
+    revalidatePath("/invitations");
     return { success: true };
   } catch (err) {
     const message =
@@ -253,7 +253,7 @@ export async function batchReassessmentInviteAction(
       }
     }
 
-    revalidatePath("/admin/invitations");
+    revalidatePath("/invitations");
   } catch (err) {
     const message =
       err instanceof Error ? err.message : "Batch invite failed";
