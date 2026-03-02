@@ -20,6 +20,7 @@ import {
   Download,
   Clock,
   Settings,
+  Users,
   LogOut,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -65,7 +66,10 @@ const NAV_GROUPS: NavGroup[] = [
   },
   {
     heading: "Configuration",
-    items: [{ label: "Settings", href: "/settings", icon: Settings }],
+    items: [
+      { label: "Users", href: "/users", icon: Users },
+      { label: "Settings", href: "/settings", icon: Settings },
+    ],
   },
 ];
 

@@ -21,3 +21,25 @@ export async function listAssessors() {
     orderBy: { lastName: "asc" },
   });
 }
+
+// ─── listStaffUsers ──────────────────────────────────────────────────────────
+
+/**
+ * Returns all staff profiles (ADMIN, ASSESSOR, VIEWER, DELETED).
+ * Includes a count of assigned applications for workload visibility.
+ */
+export async function listStaffUsers() {
+  return prisma.profile.findMany({
+    where: { role: { in: ["ADMIN", "ASSESSOR", "VIEWER", "DELETED"] } },
+    select: {
+      id: true,
+      email: true,
+      firstName: true,
+      lastName: true,
+      role: true,
+      createdAt: true,
+      _count: { select: { assignedApplications: true } },
+    },
+    orderBy: [{ role: "asc" }, { lastName: "asc" }],
+  });
+}

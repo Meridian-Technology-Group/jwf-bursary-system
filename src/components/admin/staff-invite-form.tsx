@@ -1,10 +1,10 @@
 "use client";
 
 /**
- * Send Invitation Form
+ * Staff Invite Form
  *
- * Inline form on the Invitations page for sending individual invitations.
- * Uses react-hook-form + Zod, delegates to createInvitationAction.
+ * Inline form on the User Management page for inviting staff users.
+ * Uses react-hook-form + Zod, delegates to inviteStaffAction.
  */
 
 import { useState, useTransition } from "react";
@@ -12,7 +12,7 @@ import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { Send } from "lucide-react";
+import { UserPlus } from "lucide-react";
 import {
   Form,
   FormControl,
@@ -30,21 +30,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { createInvitationAction } from "@/app/(admin)/invitations/actions";
-
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
-
-interface RoundOption {
-  id: string;
-  academicYear: string;
-}
-
-interface SendInvitationFormProps {
-  rounds: RoundOption[];
-  defaultRoundId?: string;
-}
+import { inviteStaffAction } from "@/app/(admin)/users/actions";
 
 // ---------------------------------------------------------------------------
 // Schema
@@ -52,10 +38,11 @@ interface SendInvitationFormProps {
 
 const schema = z.object({
   email: z.string().email("A valid email address is required"),
-  applicantName: z.string().optional(),
-  childName: z.string().optional(),
-  school: z.enum(["TRINITY", "WHITGIFT", "__none__"]).optional(),
-  roundId: z.string().optional(),
+  firstName: z.string().optional(),
+  lastName: z.string().optional(),
+  role: z.enum(["ASSESSOR", "VIEWER"], {
+    message: "Please select a role",
+  }),
 });
 
 type FormValues = z.infer<typeof schema>;
@@ -64,10 +51,7 @@ type FormValues = z.infer<typeof schema>;
 // Component
 // ---------------------------------------------------------------------------
 
-export function SendInvitationForm({
-  rounds,
-  defaultRoundId,
-}: SendInvitationFormProps) {
+export function StaffInviteForm() {
   const [serverError, setServerError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
@@ -77,10 +61,9 @@ export function SendInvitationForm({
     resolver: zodResolver(schema),
     defaultValues: {
       email: "",
-      applicantName: "",
-      childName: "",
-      school: "__none__",
-      roundId: defaultRoundId ?? "__none__",
+      firstName: "",
+      lastName: "",
+      role: "ASSESSOR",
     },
   });
 
@@ -90,22 +73,15 @@ export function SendInvitationForm({
 
     const formData = new FormData();
     formData.set("email", values.email);
-    if (values.applicantName) formData.set("applicantName", values.applicantName);
-    if (values.childName) formData.set("childName", values.childName);
-    if (values.school && values.school !== "__none__") formData.set("school", values.school);
-    if (values.roundId && values.roundId !== "__none__") formData.set("roundId", values.roundId);
+    if (values.firstName) formData.set("firstName", values.firstName);
+    if (values.lastName) formData.set("lastName", values.lastName);
+    formData.set("role", values.role);
 
     startTransition(async () => {
-      const result = await createInvitationAction(formData);
+      const result = await inviteStaffAction(formData);
       if (result.success) {
         setSuccessMessage(`Invitation sent to ${values.email}`);
-        form.reset({
-          email: "",
-          applicantName: "",
-          childName: "",
-          school: "__none__",
-          roundId: defaultRoundId ?? "__none__",
-        });
+        form.reset({ email: "", firstName: "", lastName: "", role: "ASSESSOR" });
         router.refresh();
       } else {
         setServerError(result.error ?? "Failed to send invitation.");
@@ -121,7 +97,7 @@ export function SendInvitationForm({
   return (
     <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
       <h2 className="mb-4 text-base font-semibold text-slate-800">
-        Send New Invitation
+        Invite Staff Member
       </h2>
 
       <Form {...form}>
@@ -139,7 +115,7 @@ export function SendInvitationForm({
                   <FormControl>
                     <Input
                       type="email"
-                      placeholder="applicant@example.com"
+                      placeholder="staff@example.com"
                       {...field}
                       disabled={isPending}
                     />
@@ -149,21 +125,21 @@ export function SendInvitationForm({
               )}
             />
 
-            {/* Applicant Name */}
+            {/* First Name */}
             <FormField
               control={form.control}
-              name="applicantName"
+              name="firstName"
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>
-                    Applicant Name{" "}
+                    First Name{" "}
                     <span className="text-xs font-normal text-slate-400">
                       (optional)
                     </span>
                   </FormLabel>
                   <FormControl>
                     <Input
-                      placeholder="Jane Smith"
+                      placeholder="Jane"
                       {...field}
                       disabled={isPending}
                     />
@@ -173,21 +149,21 @@ export function SendInvitationForm({
               )}
             />
 
-            {/* Child Name */}
+            {/* Last Name */}
             <FormField
               control={form.control}
-              name="childName"
+              name="lastName"
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>
-                    Child Name{" "}
+                    Last Name{" "}
                     <span className="text-xs font-normal text-slate-400">
                       (optional)
                     </span>
                   </FormLabel>
                   <FormControl>
                     <Input
-                      placeholder="Alex Smith"
+                      placeholder="Smith"
                       {...field}
                       disabled={isPending}
                     />
@@ -197,58 +173,28 @@ export function SendInvitationForm({
               )}
             />
 
-            {/* School */}
+            {/* Role */}
             <FormField
               control={form.control}
-              name="school"
+              name="role"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>School</FormLabel>
+                  <FormLabel>
+                    Role <span className="text-red-500">*</span>
+                  </FormLabel>
                   <Select
                     onValueChange={field.onChange}
-                    value={field.value ?? "__none__"}
+                    value={field.value}
                     disabled={isPending}
                   >
                     <FormControl>
                       <SelectTrigger>
-                        <SelectValue placeholder="Select school" />
+                        <SelectValue placeholder="Select role" />
                       </SelectTrigger>
                     </FormControl>
                     <SelectContent>
-                      <SelectItem value="__none__">Any / Not specified</SelectItem>
-                      <SelectItem value="TRINITY">Trinity School</SelectItem>
-                      <SelectItem value="WHITGIFT">Whitgift School</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
-            {/* Round */}
-            <FormField
-              control={form.control}
-              name="roundId"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Round</FormLabel>
-                  <Select
-                    onValueChange={field.onChange}
-                    value={field.value ?? "__none__"}
-                    disabled={isPending}
-                  >
-                    <FormControl>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select round" />
-                      </SelectTrigger>
-                    </FormControl>
-                    <SelectContent>
-                      <SelectItem value="__none__">No specific round</SelectItem>
-                      {rounds.map((r) => (
-                        <SelectItem key={r.id} value={r.id}>
-                          {r.academicYear}
-                        </SelectItem>
-                      ))}
+                      <SelectItem value="ASSESSOR">Assessor</SelectItem>
+                      <SelectItem value="VIEWER">Viewer (read-only)</SelectItem>
                     </SelectContent>
                   </Select>
                   <FormMessage />
@@ -267,8 +213,8 @@ export function SendInvitationForm({
 
           <div className="flex justify-end pt-2">
             <Button type="submit" disabled={isPending} className="gap-2">
-              <Send className="h-4 w-4" aria-hidden="true" />
-              {isPending ? "Sending..." : "Send Invitation"}
+              <UserPlus className="h-4 w-4" aria-hidden="true" />
+              {isPending ? "Sending..." : "Send Invite"}
             </Button>
           </div>
         </form>
