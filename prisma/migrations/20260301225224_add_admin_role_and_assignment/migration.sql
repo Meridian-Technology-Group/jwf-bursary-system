@@ -9,6 +9,3 @@ CREATE INDEX "applications_assigned_to_id_idx" ON "applications"("assigned_to_id
 
 -- AddForeignKey
 ALTER TABLE "applications" ADD CONSTRAINT "applications_assigned_to_id_fkey" FOREIGN KEY ("assigned_to_id") REFERENCES "profiles"("id") ON DELETE SET NULL ON UPDATE CASCADE;
-
--- Convert existing ASSESSORs to ADMINs
-UPDATE "profiles" SET "role" = 'ADMIN' WHERE "role" = 'ASSESSOR';
