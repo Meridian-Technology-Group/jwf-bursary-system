@@ -40,7 +40,7 @@ interface ExportFilterFormProps {
 }
 
 const SCHOOL_OPTIONS = [
-  { value: "", label: "All Schools" },
+  { value: "__all__", label: "All Schools" },
   { value: "TRINITY", label: "Trinity" },
   { value: "WHITGIFT", label: "Whitgift" },
 ] as const;
@@ -52,7 +52,7 @@ const FORMAT_OPTIONS = [
 
 export function ExportFilterForm({ rounds }: ExportFilterFormProps) {
   const [roundId, setRoundId] = useState<string>(rounds[0]?.id ?? "");
-  const [school, setSchool] = useState<string>("");
+  const [school, setSchool] = useState<string>("__all__");
   const [format, setFormat] = useState<"xlsx" | "csv">("xlsx");
 
   return (
@@ -132,7 +132,7 @@ export function ExportFilterForm({ rounds }: ExportFilterFormProps) {
         <div className="pt-2">
           <ExportButton
             roundId={roundId}
-            school={school || undefined}
+            school={school === "__all__" ? undefined : school}
             format={format}
           />
         </div>

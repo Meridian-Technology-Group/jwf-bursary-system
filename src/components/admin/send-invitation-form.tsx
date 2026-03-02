@@ -54,7 +54,7 @@ const schema = z.object({
   email: z.string().email("A valid email address is required"),
   applicantName: z.string().optional(),
   childName: z.string().optional(),
-  school: z.enum(["TRINITY", "WHITGIFT", ""]).optional(),
+  school: z.enum(["TRINITY", "WHITGIFT", "__none__"]).optional(),
   roundId: z.string().optional(),
 });
 
@@ -79,8 +79,8 @@ export function SendInvitationForm({
       email: "",
       applicantName: "",
       childName: "",
-      school: "",
-      roundId: defaultRoundId ?? "",
+      school: "__none__",
+      roundId: defaultRoundId ?? "__none__",
     },
   });
 
@@ -92,8 +92,8 @@ export function SendInvitationForm({
     formData.set("email", values.email);
     if (values.applicantName) formData.set("applicantName", values.applicantName);
     if (values.childName) formData.set("childName", values.childName);
-    if (values.school) formData.set("school", values.school);
-    if (values.roundId) formData.set("roundId", values.roundId);
+    if (values.school && values.school !== "__none__") formData.set("school", values.school);
+    if (values.roundId && values.roundId !== "__none__") formData.set("roundId", values.roundId);
 
     startTransition(async () => {
       const result = await createInvitationAction(formData);
@@ -206,7 +206,7 @@ export function SendInvitationForm({
                   <FormLabel>School</FormLabel>
                   <Select
                     onValueChange={field.onChange}
-                    value={field.value ?? ""}
+                    value={field.value ?? "__none__"}
                     disabled={isPending}
                   >
                     <FormControl>
@@ -215,7 +215,7 @@ export function SendInvitationForm({
                       </SelectTrigger>
                     </FormControl>
                     <SelectContent>
-                      <SelectItem value="">Any / Not specified</SelectItem>
+                      <SelectItem value="__none__">Any / Not specified</SelectItem>
                       <SelectItem value="TRINITY">Trinity School</SelectItem>
                       <SelectItem value="WHITGIFT">Whitgift School</SelectItem>
                     </SelectContent>
@@ -234,7 +234,7 @@ export function SendInvitationForm({
                   <FormLabel>Round</FormLabel>
                   <Select
                     onValueChange={field.onChange}
-                    value={field.value ?? ""}
+                    value={field.value ?? "__none__"}
                     disabled={isPending}
                   >
                     <FormControl>
@@ -243,7 +243,7 @@ export function SendInvitationForm({
                       </SelectTrigger>
                     </FormControl>
                     <SelectContent>
-                      <SelectItem value="">No specific round</SelectItem>
+                      <SelectItem value="__none__">No specific round</SelectItem>
                       {rounds.map((r) => (
                         <SelectItem key={r.id} value={r.id}>
                           {r.academicYear}
