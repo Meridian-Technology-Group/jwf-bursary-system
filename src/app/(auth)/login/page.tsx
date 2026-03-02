@@ -57,7 +57,7 @@ function LoginForm() {
 
     if (nextPath) {
       destination = nextPath;
-    } else if (role === "ASSESSOR" || role === "VIEWER") {
+    } else if (role === "ADMIN" || role === "ASSESSOR" || role === "VIEWER") {
       destination = "/admin";
     } else {
       // Default (APPLICANT or unknown) → portal home.
