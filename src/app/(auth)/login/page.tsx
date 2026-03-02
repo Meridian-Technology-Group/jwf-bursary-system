@@ -53,11 +53,14 @@ function LoginForm() {
 
     // Determine redirect destination from role stored in app_metadata.
     const role = data.user?.app_metadata?.role as string | undefined;
+    const isAdminRole = role === "ADMIN" || role === "ASSESSOR" || role === "VIEWER";
     let destination: string;
 
-    if (nextPath) {
+    if (nextPath && !(isAdminRole && nextPath === "/")) {
+      // Honour the ?next= param, but not when it's "/" for admin-area users
+      // (they should land on /admin, not the applicant portal).
       destination = nextPath;
-    } else if (role === "ADMIN" || role === "ASSESSOR" || role === "VIEWER") {
+    } else if (isAdminRole) {
       destination = "/admin";
     } else {
       // Default (APPLICANT or unknown) → portal home.
