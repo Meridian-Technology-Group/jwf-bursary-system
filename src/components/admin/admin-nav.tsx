@@ -118,14 +118,19 @@ function NavLink({
 
 // ─── Admin navigation ─────────────────────────────────────────────────────────
 
+// Nav groups that are restricted to ADMIN role only
+const ADMIN_ONLY_HEADINGS = new Set(["Invitations", "Configuration"]);
+
 interface AdminNavProps {
   collapsed: boolean;
   userName: string;
   userEmail?: string;
+  userRole?: string;
 }
 
-export function AdminNav({ collapsed, userName, userEmail }: AdminNavProps) {
+export function AdminNav({ collapsed, userName, userEmail, userRole }: AdminNavProps) {
   const pathname = usePathname();
+  const isAdmin = userRole === "ADMIN";
 
   return (
     <div className="flex h-full flex-col bg-primary-800">
@@ -155,7 +160,9 @@ export function AdminNav({ collapsed, userName, userEmail }: AdminNavProps) {
         className="flex-1 overflow-y-auto px-2 py-4 space-y-6"
         aria-label="Admin navigation"
       >
-        {NAV_GROUPS.map((group) => (
+        {NAV_GROUPS.filter(
+          (group) => isAdmin || !ADMIN_ONLY_HEADINGS.has(group.heading)
+        ).map((group) => (
           <div key={group.heading}>
             {!collapsed && (
               <p className="mb-1 px-3 text-[10px] font-semibold uppercase tracking-widest text-neutral-500">

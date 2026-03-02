@@ -25,7 +25,7 @@ export async function DELETE(
   _request: NextRequest,
   { params }: RouteParams
 ): Promise<NextResponse> {
-  const user = await requireRole([Role.ASSESSOR]);
+  const user = await requireRole([Role.ADMIN, Role.ASSESSOR]);
   const { id: siblingLinkId } = await params;
 
   try {
@@ -59,7 +59,7 @@ export async function PATCH(
   request: NextRequest,
   { params }: RouteParams
 ): Promise<NextResponse> {
-  const user = await requireRole([Role.ASSESSOR]);
+  const user = await requireRole([Role.ADMIN, Role.ASSESSOR]);
 
   // The [id] segment is not used directly for reorder — the body provides
   // the familyGroupId. We still validate params to satisfy route typing.

@@ -80,7 +80,7 @@ export default async function InvitationsPage({
 }: {
   searchParams?: { roundId?: string };
 }) {
-  await requireRole([Role.ASSESSOR]);
+  await requireRole([Role.ADMIN]);
 
   const roundIdFilter = searchParams?.roundId;
 

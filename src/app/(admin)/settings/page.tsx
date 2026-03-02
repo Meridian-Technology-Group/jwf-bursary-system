@@ -60,7 +60,7 @@ function SectionHeader({
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default async function SettingsPage() {
-  await requireRole([Role.ASSESSOR]);
+  await requireRole([Role.ADMIN]);
 
   // Parallel data fetches
   const [familyTypeConfigs, schoolFees, councilTax, reasonCodes, emailTemplates] =

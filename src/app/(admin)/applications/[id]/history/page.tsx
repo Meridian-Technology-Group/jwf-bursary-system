@@ -178,7 +178,7 @@ interface Props {
 }
 
 export default async function HistoryPage({ params }: Props) {
-  await requireRole([Role.ASSESSOR, Role.VIEWER]);
+  await requireRole([Role.ADMIN, Role.ASSESSOR, Role.VIEWER]);
 
   const application = await getApplicationWithDetails(params.id);
   if (!application) {

@@ -18,7 +18,7 @@ import {
 // ─── GET /api/siblings?bursaryAccountId=xxx ────────────────────────────────
 
 export async function GET(request: NextRequest): Promise<NextResponse> {
-  const user = await requireRole([Role.ASSESSOR, Role.VIEWER]);
+  const user = await requireRole([Role.ADMIN, Role.ASSESSOR, Role.VIEWER]);
   void user; // auth checked — user not needed beyond gate
 
   const { searchParams } = new URL(request.url);
@@ -51,7 +51,7 @@ interface CreateSiblingLinkBody {
 }
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
-  const user = await requireRole([Role.ASSESSOR]);
+  const user = await requireRole([Role.ADMIN, Role.ASSESSOR]);
 
   let body: CreateSiblingLinkBody;
   try {

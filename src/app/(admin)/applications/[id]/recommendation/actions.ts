@@ -37,7 +37,7 @@ export async function saveRecommendationAction(
   data: SaveRecommendationData
 ): Promise<{ success: true } | { success: false; error: string }> {
   try {
-    const user = await requireRole([Role.ASSESSOR]);
+    const user = await requireRole([Role.ADMIN, Role.ASSESSOR]);
 
     // Resolve the application and its assessment
     const application = await prisma.application.findUnique({
@@ -102,7 +102,7 @@ export async function setApplicationOutcomeAction(
   outcome: "QUALIFIES" | "DOES_NOT_QUALIFY"
 ): Promise<{ success: true } | { success: false; error: string }> {
   try {
-    const user = await requireRole([Role.ASSESSOR]);
+    const user = await requireRole([Role.ADMIN, Role.ASSESSOR]);
 
     // Load the application with lead applicant details
     const application = await prisma.application.findUnique({

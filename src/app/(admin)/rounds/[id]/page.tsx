@@ -109,7 +109,7 @@ export default async function RoundDetailPage({
 }: {
   params: { id: string };
 }) {
-  await requireRole([Role.ASSESSOR, Role.VIEWER]);
+  await requireRole([Role.ADMIN, Role.ASSESSOR, Role.VIEWER]);
 
   const [round, activeBursaryHolders] = await Promise.all([
     getRound(params.id),

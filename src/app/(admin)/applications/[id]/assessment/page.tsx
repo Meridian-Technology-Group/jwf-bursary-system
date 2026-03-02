@@ -109,7 +109,7 @@ interface Props {
 }
 
 export default async function AssessmentPage({ params }: Props) {
-  const user = await requireRole([Role.ASSESSOR, Role.VIEWER]);
+  const user = await requireRole([Role.ADMIN, Role.ASSESSOR, Role.VIEWER]);
   const isViewer = user.role === Role.VIEWER;
 
   const application = await getApplicationWithDetails(params.id);

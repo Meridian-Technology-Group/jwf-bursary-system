@@ -23,7 +23,7 @@ export async function saveChecklistNotes(
   applicationId: string
 ): Promise<{ success: true } | { success: false; error: string }> {
   try {
-    const user = await requireRole([Role.ASSESSOR]);
+    const user = await requireRole([Role.ADMIN, Role.ASSESSOR]);
 
     await prisma.assessmentChecklist.upsert({
       where: {

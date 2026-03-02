@@ -59,7 +59,7 @@ function formatDate(date: Date): string {
 // ---------------------------------------------------------------------------
 
 export default async function RoundsPage() {
-  await requireRole([Role.ASSESSOR, Role.VIEWER]);
+  await requireRole([Role.ADMIN, Role.ASSESSOR, Role.VIEWER]);
 
   const rounds = await listRounds();
 

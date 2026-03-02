@@ -38,7 +38,7 @@ const BYPASS_PATHS = /^\/(api\/|_next\/|favicon\.ico|robots\.txt|sitemap\.xml)/;
 // Role helpers (JWT-based, no Postgres)
 // ---------------------------------------------------------------------------
 
-type AppRole = "APPLICANT" | "ASSESSOR" | "VIEWER" | "DELETED";
+type AppRole = "APPLICANT" | "ADMIN" | "ASSESSOR" | "VIEWER" | "DELETED";
 
 /**
  * Extracts the application role from the Supabase JWT app_metadata.
@@ -51,6 +51,7 @@ function getRoleFromSession(
 ): AppRole | null {
   if (!user) return null;
   const role = user.app_metadata?.role as string | undefined;
+  if (role === "ADMIN") return "ADMIN";
   if (role === "ASSESSOR") return "ASSESSOR";
   if (role === "VIEWER") return "VIEWER";
   if (role === "DELETED") return "DELETED";
@@ -105,14 +106,14 @@ export async function middleware(request: NextRequest) {
     return response;
   }
 
-  // 5. Admin routes — ASSESSOR or VIEWER only.
+  // 5. Admin routes — ADMIN, ASSESSOR, or VIEWER only.
   if (ADMIN_PREFIX.test(pathname)) {
     if (!user || !role) {
       const loginUrl = new URL("/login", request.url);
       loginUrl.searchParams.set("next", pathname);
       return NextResponse.redirect(loginUrl);
     }
-    if (role !== "ASSESSOR" && role !== "VIEWER") {
+    if (role !== "ADMIN" && role !== "ASSESSOR" && role !== "VIEWER") {
       return NextResponse.redirect(new URL("/", request.url));
     }
     return response;

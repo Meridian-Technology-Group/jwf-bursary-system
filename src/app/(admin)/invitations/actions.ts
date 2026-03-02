@@ -56,7 +56,7 @@ export interface BatchInviteResult {
 export async function createInvitationAction(
   formData: FormData
 ): Promise<InvitationActionResult> {
-  const user = await requireRole([Role.ASSESSOR]);
+  const user = await requireRole([Role.ADMIN]);
 
   const raw = {
     email: formData.get("email") as string,
@@ -157,7 +157,7 @@ export async function createInvitationAction(
 export async function batchReassessmentInviteAction(
   roundId: string
 ): Promise<BatchInviteResult> {
-  const user = await requireRole([Role.ASSESSOR]);
+  const user = await requireRole([Role.ADMIN]);
 
   const result: BatchInviteResult = { sent: 0, failed: 0, errors: [] };
 
@@ -290,7 +290,7 @@ export async function createReassessmentApplicationAction(
   bursaryAccountId: string,
   roundId: string
 ): Promise<ReassessmentApplicationResult> {
-  await requireRole([Role.ASSESSOR]);
+  await requireRole([Role.ADMIN]);
 
   const parsed = ReassessmentApplicationSchema.safeParse({
     bursaryAccountId,

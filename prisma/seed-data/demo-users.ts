@@ -2,7 +2,7 @@
 // Demo user profile data — profile rows only, not Supabase auth users.
 // Fixed UUIDs allow deterministic cross-referencing from demo applications.
 
-export type DemoRole = "ASSESSOR" | "APPLICANT";
+export type DemoRole = "ADMIN" | "ASSESSOR" | "APPLICANT";
 
 export interface DemoUser {
   id: string;
@@ -14,7 +14,8 @@ export interface DemoUser {
 }
 
 // Fixed UUIDs — version 4 format, deterministic by position
-export const ASSESSOR_ID   = "00000000-0000-4000-a000-000000000001";
+export const ADMIN_ID       = "00000000-0000-4000-a000-000000000001"; // Beverly Williams (ADMIN)
+export const ASSESSOR_ID    = "00000000-0000-4000-a000-000000000006"; // Michael Thompson (ASSESSOR)
 export const APPLICANT_1_ID = "00000000-0000-4000-a000-000000000002"; // Adaeze Okafor
 export const APPLICANT_2_ID = "00000000-0000-4000-a000-000000000003"; // Priya Patel
 export const APPLICANT_3_ID = "00000000-0000-4000-a000-000000000004"; // Sarah Williams
@@ -22,12 +23,19 @@ export const APPLICANT_4_ID = "00000000-0000-4000-a000-000000000005"; // Wei Che
 
 export const demoUsers: DemoUser[] = [
   {
-    id: ASSESSOR_ID,
-    role: "ASSESSOR",
+    id: ADMIN_ID,
+    role: "ADMIN",
     firstName: "Beverly",
     lastName: "Williams",
     email: "beverly.williams@jwf-bursary.test",
     phone: "020 7946 0001",
+  },
+  {
+    id: ASSESSOR_ID,
+    role: "ASSESSOR",
+    firstName: "Michael",
+    lastName: "Thompson",
+    email: "michael.thompson@jwf-demo.org",
   },
   {
     id: APPLICANT_1_ID,

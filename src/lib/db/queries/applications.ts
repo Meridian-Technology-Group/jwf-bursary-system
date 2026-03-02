@@ -26,6 +26,7 @@ export interface ApplicationListItem {
   entryYear: number | null;
   submittedAt: Date | null;
   isReassessment: boolean;
+  assignedToId: string | null;
   round: Pick<Round, "id" | "academicYear">;
 }
 
@@ -34,6 +35,7 @@ export interface ListApplicationsFilters {
   status?: ApplicationStatus;
   school?: School;
   search?: string;
+  assignedToId?: string;
 }
 
 /**
@@ -64,6 +66,10 @@ export async function listApplications(
     };
   }
 
+  if (filters.assignedToId) {
+    where.assignedToId = filters.assignedToId;
+  }
+
   const applications = await prisma.application.findMany({
     where,
     select: {
@@ -74,6 +80,7 @@ export async function listApplications(
       entryYear: true,
       submittedAt: true,
       isReassessment: true,
+      assignedToId: true,
       round: {
         select: { id: true, academicYear: true },
       },

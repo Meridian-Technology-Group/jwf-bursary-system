@@ -14,7 +14,7 @@ import { requireRole, Role } from "@/lib/auth/roles";
 import { searchBursaryAccounts } from "@/lib/db/queries/siblings";
 
 export async function GET(request: NextRequest): Promise<NextResponse> {
-  await requireRole([Role.ASSESSOR, Role.VIEWER]);
+  await requireRole([Role.ADMIN, Role.ASSESSOR, Role.VIEWER]);
 
   const { searchParams } = new URL(request.url);
   const query = searchParams.get("q") ?? "";

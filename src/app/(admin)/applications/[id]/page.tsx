@@ -181,8 +181,8 @@ interface Props {
 }
 
 export default async function ApplicantDataPage({ params }: Props) {
-  const user = await requireRole([Role.ASSESSOR, Role.VIEWER]);
-  const isAssessor = user.role === Role.ASSESSOR;
+  const user = await requireRole([Role.ADMIN, Role.ASSESSOR, Role.VIEWER]);
+  const isAssessor = user.role === Role.ADMIN || user.role === Role.ASSESSOR;
 
   const application = await getApplicationWithDetails(params.id);
 

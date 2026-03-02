@@ -37,7 +37,7 @@ export async function GET(
 
   let user;
   try {
-    user = await requireRole([Role.ASSESSOR, Role.VIEWER]);
+    user = await requireRole([Role.ADMIN, Role.ASSESSOR, Role.VIEWER]);
   } catch {
     // requireRole throws a Next.js redirect for unauthenticated / wrong-role users.
     // In a route handler context, re-return appropriate HTTP responses instead.

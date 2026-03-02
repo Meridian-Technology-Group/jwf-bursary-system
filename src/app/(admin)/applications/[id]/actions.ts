@@ -93,7 +93,7 @@ export async function updateApplicationStatus(
   context?: string
 ): Promise<ActionResult> {
   try {
-    const user = await requireRole([Role.ASSESSOR]);
+    const user = await requireRole([Role.ADMIN, Role.ASSESSOR]);
 
     const application = await fetchApplicationForStatus(applicationId);
     if (!application) {
@@ -152,7 +152,7 @@ export async function pauseApplication(
   customMessage?: string
 ): Promise<ActionResult> {
   try {
-    const user = await requireRole([Role.ASSESSOR]);
+    const user = await requireRole([Role.ADMIN, Role.ASSESSOR]);
 
     const application = await fetchApplicationForStatus(applicationId);
     if (!application) {
@@ -234,7 +234,7 @@ export async function resumeApplication(
   applicationId: string
 ): Promise<ActionResult> {
   try {
-    const user = await requireRole([Role.ASSESSOR]);
+    const user = await requireRole([Role.ADMIN, Role.ASSESSOR]);
 
     const application = await fetchApplicationForStatus(applicationId);
     if (!application) {
@@ -286,7 +286,7 @@ export async function setOutcome(
   outcome: "QUALIFIES" | "DOES_NOT_QUALIFY"
 ): Promise<ActionResult> {
   try {
-    const user = await requireRole([Role.ASSESSOR]);
+    const user = await requireRole([Role.ADMIN, Role.ASSESSOR]);
 
     const application = await fetchApplicationForStatus(applicationId);
     if (!application) {
@@ -352,6 +352,44 @@ export async function setOutcome(
   }
 }
 
+// ─── assignApplicationAction ──────────────────────────────────────────────────
+
+/**
+ * Assigns (or unassigns) an application to an assessor.
+ * Only ADMIN users may reassign applications.
+ */
+export async function assignApplicationAction(
+  applicationId: string,
+  assessorId: string | null
+): Promise<ActionResult> {
+  try {
+    const user = await requireRole([Role.ADMIN]);
+
+    await prisma.application.update({
+      where: { id: applicationId },
+      data: { assignedToId: assessorId },
+    });
+
+    await createAuditLog({
+      userId: user.id,
+      action: "APPLICATION_ASSESSOR_ASSIGNED",
+      entityType: "Application",
+      entityId: applicationId,
+      context: assessorId
+        ? `Application assigned to assessor ${assessorId}`
+        : "Application unassigned from assessor",
+      metadata: { assessorId },
+    });
+
+    revalidatePath(`/applications/${applicationId}`);
+
+    return { success: true };
+  } catch (err) {
+    console.error("[assignApplicationAction]", err);
+    return { success: false, error: "Failed to assign assessor." };
+  }
+}
+
 // humaniseSlot is exported from @/lib/documents/slots — imported above.
 
 // ─── gdprDeleteApplicantAction ───────────────────────────────────────────────
@@ -377,7 +415,7 @@ export async function gdprDeleteApplicantAction(
   applicationId: string
 ): Promise<ActionResult> {
   try {
-    const user = await requireRole([Role.ASSESSOR]);
+    const user = await requireRole([Role.ADMIN, Role.ASSESSOR]);
 
     // 1. Fetch the application with all relevant relations
     const application = await prisma.application.findUnique({

@@ -26,11 +26,13 @@ const STORAGE_KEY = "jwf-admin-sidebar-collapsed";
 interface AdminSidebarControllerProps {
   userName: string;
   userEmail?: string;
+  userRole?: string;
 }
 
 export function AdminSidebarController({
   userName,
   userEmail,
+  userRole,
 }: AdminSidebarControllerProps) {
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -69,6 +71,7 @@ export function AdminSidebarController({
           collapsed={collapsed}
           userName={userName}
           userEmail={userEmail}
+          userRole={userRole}
         />
 
         {/* Collapse/expand toggle */}
@@ -118,6 +121,7 @@ export function AdminSidebarController({
                 collapsed={false}
                 userName={userName}
                 userEmail={userEmail}
+                userRole={userRole}
               />
             </div>
           </SheetContent>

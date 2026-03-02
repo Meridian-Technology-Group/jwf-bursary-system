@@ -31,6 +31,7 @@ export default async function AdminLayout({
       ? `${user.firstName ?? ""} ${user.lastName ?? ""}`.trim() || user.email
       : "Admin";
   const userEmail = user?.email ?? undefined;
+  const userRole = user?.role ?? undefined;
 
   return (
     <div className="min-h-screen bg-neutral-50">
@@ -38,6 +39,7 @@ export default async function AdminLayout({
       <AdminSidebarController
         userName={displayName}
         userEmail={userEmail}
+        userRole={userRole}
       />
 
       {/* Main content — offset changes dynamically via CSS var set by controller */}

@@ -231,7 +231,7 @@ interface PageProps {
 }
 
 export default async function ReportsPage({ searchParams }: PageProps) {
-  await requireRole([Role.ASSESSOR, Role.VIEWER]);
+  await requireRole([Role.ADMIN, Role.ASSESSOR, Role.VIEWER]);
 
   // Resolve search params
   const sp = await searchParams;

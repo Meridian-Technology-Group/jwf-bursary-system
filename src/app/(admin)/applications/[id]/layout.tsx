@@ -8,11 +8,14 @@
  */
 
 import Link from "next/link";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { requireRole, Role } from "@/lib/auth/roles";
 import { getApplicationWithDetails } from "@/lib/db/queries/applications";
+import { listAssessors } from "@/lib/db/queries/profiles";
+import { prisma } from "@/lib/db/prisma";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { ApplicationActions } from "@/components/admin/application-actions";
+import { AssignAssessorSelect } from "@/components/admin/assign-assessor-select";
 import type { ApplicationStatus as PrismaStatus } from "@prisma/client";
 
 // Map Prisma status to StatusBadge status
@@ -89,12 +92,26 @@ export default async function ApplicationDetailLayout({
   children,
   params,
 }: Props) {
-  await requireRole([Role.ASSESSOR, Role.VIEWER]);
+  const user = await requireRole([Role.ADMIN, Role.ASSESSOR, Role.VIEWER]);
 
-  const application = await getApplicationWithDetails(params.id);
+  const [application, assessors] = await Promise.all([
+    getApplicationWithDetails(params.id),
+    user.role === Role.ADMIN ? listAssessors() : Promise.resolve([]),
+  ]);
 
   if (!application) {
     notFound();
+  }
+
+  // ASSESSORs may only access applications assigned to them
+  if (user.role === Role.ASSESSOR) {
+    const assigned = await prisma.application.findFirst({
+      where: { id: params.id, assignedToId: user.id },
+      select: { id: true },
+    });
+    if (!assigned) {
+      redirect("/admin");
+    }
   }
 
   const tabs = getTabItems(params.id);
@@ -139,7 +156,16 @@ export default async function ApplicationDetailLayout({
             </div>
           </div>
 
-          <StatusBadge status={mapStatus(application.status)} />
+          <div className="flex flex-wrap items-center gap-3">
+            <StatusBadge status={mapStatus(application.status)} />
+            {user.role === Role.ADMIN && (
+              <AssignAssessorSelect
+                applicationId={application.id}
+                currentAssessorId={application.assignedToId}
+                assessors={assessors}
+              />
+            )}
+          </div>
         </div>
       </div>
 

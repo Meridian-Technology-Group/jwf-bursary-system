@@ -8,7 +8,7 @@ import { PrismaClient } from "@prisma/client";
 import { councilTaxDefaults, familyTypeConfigs, schoolFees } from "./seed-data/reference";
 import { reasonCodes } from "./seed-data/reason-codes";
 import { emailTemplates } from "./seed-data/email-templates";
-import { demoUsers } from "./seed-data/demo-users";
+import { demoUsers, ASSESSOR_ID } from "./seed-data/demo-users";
 import {
   bursaryAccounts,
   applications,
@@ -24,6 +24,8 @@ import {
   ACCOUNT_PATEL_ID,
   ACCOUNT_WILLIAMS_M_ID,
   ACCOUNT_WILLIAMS_A_ID,
+  APP_OKAFOR_ID,
+  APP_PATEL_ID,
 } from "./seed-data/demo-applications";
 
 const prisma = new PrismaClient({
@@ -230,6 +232,26 @@ async function seedApplications(): Promise<void> {
   log(`Created ${applications.length} applications`);
 }
 
+// ─── Assign Applications ──────────────────────────────────────────────────────
+
+/**
+ * Assigns 2 demo applications to Michael Thompson (ASSESSOR) to demonstrate
+ * the scoped assessor role in action.
+ */
+async function assignApplications(): Promise<void> {
+  section("Assigning applications to demo assessor");
+
+  const assignedIds = [APP_OKAFOR_ID, APP_PATEL_ID];
+
+  for (const applicationId of assignedIds) {
+    await prisma.application.update({
+      where: { id: applicationId },
+      data: { assignedToId: ASSESSOR_ID },
+    });
+  }
+  log(`Assigned ${assignedIds.length} applications to Michael Thompson`);
+}
+
 // ─── Application Sections ─────────────────────────────────────────────────────
 
 async function seedApplicationSections(): Promise<void> {
@@ -379,6 +401,7 @@ async function main(): Promise<void> {
   await seedRound();
   await seedBursaryAccounts();
   await seedApplications();
+  await assignApplications();
   await seedApplicationSections();
   await seedAssessments();
   await seedAssessmentEarners();

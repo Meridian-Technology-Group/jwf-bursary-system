@@ -29,7 +29,7 @@ export async function beginAssessmentAction(
   applicationId: string
 ): Promise<{ success: true; assessmentId: string } | { success: false; error: string }> {
   try {
-    const user = await requireRole([Role.ASSESSOR]);
+    const user = await requireRole([Role.ADMIN, Role.ASSESSOR]);
 
     const assessment = await createAssessment(applicationId, user.id);
 
@@ -59,7 +59,7 @@ export async function saveAssessmentAction(
   data: AssessmentSaveInput
 ): Promise<{ success: true } | { success: false; error: string }> {
   try {
-    const user = await requireRole([Role.ASSESSOR]);
+    const user = await requireRole([Role.ADMIN, Role.ASSESSOR]);
 
     await saveAssessment(assessmentId, {
       ...data,
@@ -91,7 +91,7 @@ export async function completeAssessmentAction(
   applicationId: string
 ): Promise<{ success: true } | { success: false; error: string }> {
   try {
-    const user = await requireRole([Role.ASSESSOR]);
+    const user = await requireRole([Role.ADMIN, Role.ASSESSOR]);
 
     await completeAssessment(assessmentId);
 
@@ -120,7 +120,7 @@ export async function pauseAssessmentAction(
   applicationId: string
 ): Promise<{ success: true } | { success: false; error: string }> {
   try {
-    const user = await requireRole([Role.ASSESSOR]);
+    const user = await requireRole([Role.ADMIN, Role.ASSESSOR]);
 
     await pauseAssessment(assessmentId);
 

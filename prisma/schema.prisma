@@ -15,6 +15,7 @@ datasource db {
 
 enum Role {
   APPLICANT
+  ADMIN
   ASSESSOR
   VIEWER
   DELETED
@@ -127,6 +128,7 @@ model Profile {
   // Relations
   bursaryAccounts      BursaryAccount[]
   applicationsAsLead   Application[]      @relation("ApplicationLeadApplicant")
+  assignedApplications Application[]      @relation("ApplicationAssignee")
   assessmentsAsOwner   Assessment[]       @relation("AssessmentAssessor")
   documentsUploaded    Document[]
   invitationsCreated   Invitation[]       @relation("InvitationCreator")
@@ -194,6 +196,7 @@ model Application {
   entryYear        Int?              @map("entry_year")
   isReassessment   Boolean           @default(false) @map("is_reassessment")
   isInternal       Boolean           @default(false) @map("is_internal")
+  assignedToId     String?           @map("assigned_to_id") @db.Uuid
   status           ApplicationStatus @default(PRE_SUBMISSION)
   submittedAt      DateTime?         @map("submitted_at") @db.Timestamptz()
   createdAt        DateTime          @default(now()) @map("created_at") @db.Timestamptz()
@@ -203,6 +206,7 @@ model Application {
   round          Round              @relation(fields: [roundId], references: [id])
   bursaryAccount BursaryAccount?    @relation(fields: [bursaryAccountId], references: [id])
   leadApplicant  Profile            @relation("ApplicationLeadApplicant", fields: [leadApplicantId], references: [id])
+  assignedTo     Profile?           @relation("ApplicationAssignee", fields: [assignedToId], references: [id])
   sections       ApplicationSection[]
   documents      Document[]
   assessment     Assessment?
@@ -211,6 +215,7 @@ model Application {
   @@index([roundId, status])
   @@index([leadApplicantId])
   @@index([bursaryAccountId])
+  @@index([assignedToId])
   @@map("applications")
 }
 

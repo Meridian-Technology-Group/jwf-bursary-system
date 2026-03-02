@@ -16,10 +16,15 @@ export const metadata = {
 };
 
 export default async function QueuePage() {
-  await requireRole([Role.ASSESSOR, Role.VIEWER]);
+  const profile = await requireRole([Role.ADMIN, Role.ASSESSOR, Role.VIEWER]);
+
+  const applicationFilters =
+    profile.role === Role.ASSESSOR
+      ? { assignedToId: profile.id }
+      : {};
 
   const [applications, rounds] = await Promise.all([
-    listApplications(),
+    listApplications(applicationFilters),
     listRounds(),
   ]);
 

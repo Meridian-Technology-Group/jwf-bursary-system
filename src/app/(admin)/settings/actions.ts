@@ -33,7 +33,7 @@ export async function upsertFamilyTypeConfigAction(
   formData: FormData
 ): Promise<SettingsActionResult> {
   try {
-    const user = await requireRole([Role.ASSESSOR]);
+    const user = await requireRole([Role.ADMIN]);
 
     const category = parseInt(formData.get("category") as string, 10);
     const notionalRent = parseFloat(formData.get("notionalRent") as string);
@@ -92,7 +92,7 @@ export async function upsertSchoolFeesAction(
   formData: FormData
 ): Promise<SettingsActionResult> {
   try {
-    const user = await requireRole([Role.ASSESSOR]);
+    const user = await requireRole([Role.ADMIN]);
 
     const school = formData.get("school") as School;
     const annualFees = parseFloat(formData.get("annualFees") as string);
@@ -138,7 +138,7 @@ export async function updateCouncilTaxAction(
   formData: FormData
 ): Promise<SettingsActionResult> {
   try {
-    const user = await requireRole([Role.ASSESSOR]);
+    const user = await requireRole([Role.ADMIN]);
 
     const amount = parseFloat(formData.get("amount") as string);
     const description =
@@ -186,7 +186,7 @@ export async function upsertReasonCodeAction(
   formData: FormData
 ): Promise<SettingsActionResult> {
   try {
-    const user = await requireRole([Role.ASSESSOR]);
+    const user = await requireRole([Role.ADMIN]);
 
     const id = (formData.get("id") as string) || null;
     const codeRaw = formData.get("code") as string;
@@ -259,7 +259,7 @@ export async function upsertEmailTemplateAction(
   formData: FormData
 ): Promise<SettingsActionResult> {
   try {
-    const user = await requireRole([Role.ASSESSOR]);
+    const user = await requireRole([Role.ADMIN]);
 
     const type = formData.get("type") as EmailTemplateType;
     const subject = (formData.get("subject") as string)?.trim();

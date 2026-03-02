@@ -18,7 +18,7 @@ export const metadata = {
 };
 
 export default async function ExportsPage() {
-  await requireRole([Role.ASSESSOR, Role.VIEWER]);
+  await requireRole([Role.ADMIN, Role.ASSESSOR, Role.VIEWER]);
 
   const rounds = await listRounds();
 

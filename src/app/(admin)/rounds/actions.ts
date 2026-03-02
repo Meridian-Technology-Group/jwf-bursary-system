@@ -52,7 +52,7 @@ export interface RoundActionResult {
 export async function createRoundAction(
   formData: FormData
 ): Promise<RoundActionResult> {
-  const user = await requireRole([Role.ASSESSOR]);
+  const user = await requireRole([Role.ADMIN]);
 
   const raw = {
     academicYear: formData.get("academicYear") as string,
@@ -115,7 +115,7 @@ export async function updateRoundAction(
   id: string,
   formData: FormData
 ): Promise<RoundActionResult> {
-  const user = await requireRole([Role.ASSESSOR]);
+  const user = await requireRole([Role.ADMIN]);
 
   const raw = {
     academicYear: formData.get("academicYear") as string,
@@ -171,7 +171,7 @@ export async function updateRoundAction(
 export async function closeRoundAction(
   id: string
 ): Promise<RoundActionResult> {
-  const user = await requireRole([Role.ASSESSOR]);
+  const user = await requireRole([Role.ADMIN]);
 
   try {
     const round = await closeRound(id);

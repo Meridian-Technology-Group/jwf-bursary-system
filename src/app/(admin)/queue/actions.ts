@@ -54,7 +54,7 @@ export interface InternalRequestResult {
 export async function createInternalRequestAction(
   formData: FormData
 ): Promise<InternalRequestResult> {
-  const user = await requireRole([Role.ASSESSOR]);
+  const user = await requireRole([Role.ADMIN]);
 
   const raw = {
     parentEmail: (formData.get("parentEmail") as string | null) ?? "",
