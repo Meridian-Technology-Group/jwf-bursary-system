@@ -50,7 +50,10 @@ import {
   pauseAssessmentAction,
 } from "@/app/(admin)/applications/[id]/assessment/actions";
 import type { AssessmentInput } from "@/lib/assessment/types";
-import { calculateDerivedSavings } from "@/lib/assessment/calculator";
+import {
+  calculateAssessment,
+  calculateDerivedSavings,
+} from "@/lib/assessment/calculator";
 import type { FamilyTypeConfigRow } from "@/lib/db/queries/reference-tables";
 import { cn } from "@/lib/utils";
 import type {
@@ -560,6 +563,33 @@ export function AssessmentForm({
       schoolingYearsRemaining
     );
 
+    // Snapshot calculator outputs so the DB row stays self-consistent
+    // with the inputs. Guarded by annualFees > 0 to match CalculationDisplay's
+    // "meaningful output" gate. Payable-fee columns hold the ADJUSTED values
+    // (post manual adjustment) — these are the final numbers that flow through
+    // to the recommendation, PDF, emails, and year-on-year comparison.
+    const calcOutputs =
+      annualFees > 0
+        ? (() => {
+            try {
+              const o = calculateAssessment(assessmentInput);
+              return {
+                totalHouseholdNetIncome: o.stages.stage1_totalHouseholdNetIncome,
+                netAssetsYearlyValuation: o.stages.stage2_netAssetsYearlyValuation,
+                hndiAfterNs: o.stages.stage3_hndiAfterNS,
+                requiredBursary: o.stages.stage4_requiredBursary,
+                grossFees: o.payableFees.grossFees,
+                bursaryAward: o.payableFees.bursaryAward,
+                netYearlyFees: o.payableFees.netYearlyFees,
+                yearlyPayableFees: o.payableFees.adjustedYearlyPayableFees,
+                monthlyPayableFees: o.payableFees.adjustedMonthlyPayableFees,
+              };
+            } catch {
+              return null;
+            }
+          })()
+        : null;
+
     const result = await saveAssessmentAction(
       assessment.id,
       applicationId,
@@ -577,6 +607,7 @@ export function AssessmentForm({
         manualAdjustmentReason,
         dishonestyFlag,
         creditRiskFlag,
+        ...(calcOutputs ?? {}),
         earners: [
           {
             earnerLabel: "PARENT_1",
@@ -621,6 +652,7 @@ export function AssessmentForm({
     assessment.id,
     applicationId,
     isReadOnly,
+    assessmentInput,
     familyTypeCategory,
     notionalRent,
     utilityCosts,

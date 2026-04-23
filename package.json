@@ -9,7 +9,8 @@
     "start": "next start",
     "lint": "next lint",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "backfill:assessments": "tsx scripts/backfill-assessment-calculations.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"

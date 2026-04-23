@@ -13,7 +13,7 @@ import * as React from "react";
 import {
   ZoomIn,
   ZoomOut,
-  Maximize2,
+  ExternalLink,
   Download,
   Loader2,
   FileX,
@@ -72,7 +72,6 @@ export function DocumentViewer({
   const canZoomIn = zoomIndex < ZOOM_LEVELS.length - 1;
   const canZoomOut = zoomIndex > 0;
 
-  const handleFitToWidth = () => setZoomIndex(2); // 100%
   const handleZoomIn = () => setZoomIndex((i) => Math.min(i + 1, ZOOM_LEVELS.length - 1));
   const handleZoomOut = () => setZoomIndex((i) => Math.max(i - 1, 0));
 
@@ -126,17 +125,28 @@ export function DocumentViewer({
               >
                 <ZoomIn className="h-4 w-4" aria-hidden="true" />
               </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-7 w-7 p-0"
-                onClick={handleFitToWidth}
-                aria-label="Fit to width"
-              >
-                <Maximize2 className="h-4 w-4" aria-hidden="true" />
-              </Button>
               <div className="mx-1 h-5 w-px bg-neutral-200" aria-hidden="true" />
             </>
+          )}
+
+          {/* Open in new tab — works for both images and PDFs */}
+          {presignedUrl && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 w-7 p-0"
+              asChild
+            >
+              <a
+                href={presignedUrl}
+                target="_blank"
+                rel="noreferrer"
+                aria-label="Open in new tab"
+                title="Open in new tab"
+              >
+                <ExternalLink className="h-4 w-4" aria-hidden="true" />
+              </a>
+            </Button>
           )}
 
           {/* Download */}
