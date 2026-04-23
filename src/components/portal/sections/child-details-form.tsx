@@ -29,6 +29,7 @@ import { ConditionalField } from "@/components/portal/form-fields/conditional-fi
 import { FileUpload } from "@/components/portal/file-upload";
 import type { ChildDetailsFormValues } from "@/lib/schemas/child-details";
 import type { UploadedDocument } from "@/components/portal/file-upload";
+import type { DocumentMeta } from "@/lib/db/queries/applications";
 
 const COUNTRIES = [
   "United Kingdom",
@@ -99,13 +100,23 @@ const GENDERS = ["Male", "Female", "Prefer not to say", "Other"];
 
 interface ChildDetailsFormProps {
   applicationId: string;
+  documentMap?: Record<string, DocumentMeta>;
 }
 
-export function ChildDetailsForm({ applicationId }: ChildDetailsFormProps) {
+export function ChildDetailsForm({ applicationId, documentMap }: ChildDetailsFormProps) {
   const form = useFormContext<ChildDetailsFormValues>();
-  const { control, setValue, watch } = form;
+  const { control, setValue } = form;
 
-  const birthCertDocId = watch("birthCertificateDocumentId");
+  // Resolve the initial existing document from the documentMap (real DB metadata).
+  const initialBirthCertDocId = React.useRef(
+    form.getValues("birthCertificateDocumentId")
+  );
+  const existingBirthCert = React.useMemo(() => {
+    const docId = initialBirthCertDocId.current;
+    if (!docId || !documentMap?.[docId]) return undefined;
+    const doc = documentMap[docId];
+    return { id: doc.id, filename: doc.filename, fileSize: doc.fileSize, uploadedAt: doc.uploadedAt };
+  }, [documentMap]);
 
   const applyingToAnotherSchool = useWatch({
     control,
@@ -266,16 +277,7 @@ export function ChildDetailsForm({ applicationId }: ChildDetailsFormProps) {
           label="Birth Certificate"
           hint="PDF, JPG or PNG — must show child's name, date of birth, place of birth, and parents' names."
           applicationId={applicationId}
-          existingDocument={
-            birthCertDocId
-              ? {
-                  id: birthCertDocId,
-                  filename: "Birth Certificate",
-                  fileSize: 0,
-                  uploadedAt: new Date().toISOString(),
-                }
-              : undefined
-          }
+          existingDocument={existingBirthCert}
           onUploadComplete={(doc: UploadedDocument) => {
             setValue("birthCertificateDocumentId", doc.id, {
               shouldValidate: true,
@@ -316,14 +318,12 @@ export function ChildDetailsForm({ applicationId }: ChildDetailsFormProps) {
         <YesNoToggle
           control={control}
           name="sameAddressAsParent1"
-          label="Is the child's current address the same as Parent/Guardian 1?"
+          label="Does the child live at the same address as Parent/Guardian 1?"
+          description="You will enter the parent/guardian address in the Parent Details section. If the child lives elsewhere, enter their address below."
           required
         />
 
         <ConditionalField show={sameAddressAsParent1 === false}>
-          <p className="text-xs text-slate-500">
-            Address details can be edited in the &lsquo;Manage My Details&rsquo; section of the Portal.
-          </p>
 
           <FormField
             control={control}

@@ -203,12 +203,14 @@ export async function createInternalRequestAction(
 
     // 6. Send the invitation email
     const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
+    const schoolLabel = school === "TRINITY" ? "Trinity School" : "Whitgift School";
     const emailResult = await sendEmail(parentEmail, "INVITATION", {
       applicant_name: parentName,
       child_name: childName,
-      academic_year: round.academicYear,
-      invitation_link: `${appUrl}/register?invitationId=${invitation.id}`,
-      expiry_date: expiresAt.toLocaleDateString("en-GB"),
+      school: schoolLabel,
+      round_year: round.academicYear,
+      registration_link: `${appUrl}/register?invitationId=${invitation.id}`,
+      deadline: expiresAt.toLocaleDateString("en-GB"),
     });
 
     if (!emailResult.success) {

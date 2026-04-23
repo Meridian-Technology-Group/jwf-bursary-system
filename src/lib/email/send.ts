@@ -27,7 +27,7 @@ import type { EmailTemplateType } from "./types";
 function fromAddress(): string {
   return (
     process.env.RESEND_FROM_EMAIL ??
-    "jwf-bursary@resend.dev"
+    "bursary@updates.meridiantech.group"
   );
 }
 

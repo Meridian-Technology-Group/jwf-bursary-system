@@ -6,11 +6,10 @@
  * Displayed at 280 px on desktop; collapses into a Sheet on mobile.
  */
 
-import { useState } from "react";
+import { usePathname } from "next/navigation";
 import {
   CheckCircle2,
   Circle,
-  Loader2,
   ChevronRight,
   Clock,
 } from "lucide-react";
@@ -20,31 +19,32 @@ import { cn } from "@/lib/utils";
 
 type SectionStatus = "not_started" | "in_progress" | "complete";
 
-interface Section {
+export interface SidebarSection {
   id: number;
   label: string;
+  slug: string;
   status: SectionStatus;
 }
 
-// ─── Placeholder section data ────────────────────────────────────────────────
-// In a real implementation these would come from the application state / server.
+// ─── Default section list ────────────────────────────────────────────────────
+// Matches the 10 form sections shown in page headers.
 
-const SECTIONS: Section[] = [
-  { id: 1, label: "Personal Details", status: "complete" },
-  { id: 2, label: "Family Circumstances", status: "in_progress" },
-  { id: 3, label: "Financial Information", status: "not_started" },
-  { id: 4, label: "School Information", status: "not_started" },
-  { id: 5, label: "Siblings", status: "not_started" },
-  { id: 6, label: "Employment", status: "not_started" },
-  { id: 7, label: "Housing", status: "not_started" },
-  { id: 8, label: "Other Income", status: "not_started" },
-  { id: 9, label: "Supporting Documents", status: "not_started" },
-  { id: 10, label: "Declaration & Submit", status: "not_started" },
+const DEFAULT_SECTIONS: SidebarSection[] = [
+  { id: 1, label: "Details of Child", slug: "child-details", status: "not_started" },
+  { id: 2, label: "Family Identification", slug: "family-id", status: "not_started" },
+  { id: 3, label: "Parent / Guardian Details", slug: "parent-details", status: "not_started" },
+  { id: 4, label: "Dependent Children", slug: "dependent-children", status: "not_started" },
+  { id: 5, label: "Dependent Elderly", slug: "dependent-elderly", status: "not_started" },
+  { id: 6, label: "Other Information", slug: "other-info", status: "not_started" },
+  { id: 7, label: "Parents' Income", slug: "parents-income", status: "not_started" },
+  { id: 8, label: "Assets & Liabilities", slug: "assets-liabilities", status: "not_started" },
+  { id: 9, label: "Additional Information", slug: "additional-info", status: "not_started" },
+  { id: 10, label: "Declaration & Submit", slug: "declaration", status: "not_started" },
 ];
 
 // ─── Section icon ─────────────────────────────────────────────────────────────
 
-function SectionIcon({ status }: { status: SectionStatus }) {
+function SectionIcon({ status, stepNumber }: { status: SectionStatus; stepNumber: number }) {
   switch (status) {
     case "complete":
       return (
@@ -55,10 +55,9 @@ function SectionIcon({ status }: { status: SectionStatus }) {
       );
     case "in_progress":
       return (
-        <Loader2
-          className="h-4 w-4 shrink-0 animate-spin text-accent-600"
-          aria-hidden="true"
-        />
+        <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-accent-600 text-[10px] font-bold text-white">
+          {stepNumber}
+        </span>
       );
     default:
       return (
@@ -75,16 +74,26 @@ function SectionIcon({ status }: { status: SectionStatus }) {
 interface PortalSidebarContentProps {
   roundName?: string;
   lastSaved?: string;
-  currentSection?: number;
+  /** Section data — if not provided, uses defaults */
+  sections?: SidebarSection[];
 }
 
 export function PortalSidebarContent({
-  roundName = "2024–25 Assessment Round",
+  roundName = "2024\u201325 Assessment Round",
   lastSaved,
-  currentSection = 2,
+  sections,
 }: PortalSidebarContentProps) {
-  const completedCount = SECTIONS.filter((s) => s.status === "complete").length;
-  const progressPct = Math.round((completedCount / SECTIONS.length) * 100);
+  const pathname = usePathname();
+  const sectionList = sections ?? DEFAULT_SECTIONS;
+
+  // Derive active section from URL: /apply/parent-details → "parent-details"
+  const currentSlug = pathname?.startsWith("/apply/")
+    ? pathname.replace("/apply/", "").split("/")[0]
+    : null;
+  const currentSection =
+    sectionList.find((s) => s.slug === currentSlug)?.id ?? 0;
+  const completedCount = sectionList.filter((s) => s.status === "complete").length;
+  const progressPct = Math.round((completedCount / sectionList.length) * 100);
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
@@ -112,11 +121,15 @@ export function PortalSidebarContent({
         aria-label="Application sections"
       >
         <ol className="space-y-0.5">
-          {SECTIONS.map((section) => {
+          {sectionList.map((section) => {
             const isActive = section.id === currentSection;
+            const effectiveStatus = isActive && section.status !== "complete"
+              ? "in_progress"
+              : section.status;
             return (
               <li key={section.id}>
-                <div
+                <a
+                  href={`/apply/${section.slug}`}
                   className={cn(
                     "flex items-center gap-3 rounded-md px-3 py-2.5 text-sm transition-colors",
                     isActive
@@ -129,13 +142,7 @@ export function PortalSidebarContent({
                 >
                   {/* Step number / status icon */}
                   <span className="flex h-5 w-5 shrink-0 items-center justify-center">
-                    {section.status === "not_started" && !isActive ? (
-                      <span className="text-xs text-slate-300">
-                        {section.id}
-                      </span>
-                    ) : (
-                      <SectionIcon status={section.status} />
-                    )}
+                    <SectionIcon status={effectiveStatus} stepNumber={section.id} />
                   </span>
 
                   <span className="flex-1 truncate">{section.label}</span>
@@ -146,7 +153,7 @@ export function PortalSidebarContent({
                       aria-hidden="true"
                     />
                   )}
-                </div>
+                </a>
               </li>
             );
           })}
@@ -156,7 +163,7 @@ export function PortalSidebarContent({
       {/* Progress bar */}
       <div className="border-t border-slate-200 px-6 py-4">
         <div className="flex items-center justify-between text-xs text-slate-500 mb-1.5">
-          <span>{completedCount} of {SECTIONS.length} sections complete</span>
+          <span>{completedCount} of {sectionList.length} sections complete</span>
           <span className="font-medium text-primary-700">{progressPct}%</span>
         </div>
         <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-200">
@@ -167,7 +174,7 @@ export function PortalSidebarContent({
             aria-valuenow={progressPct}
             aria-valuemin={0}
             aria-valuemax={100}
-            aria-label={`${completedCount} of ${SECTIONS.length} sections complete`}
+            aria-label={`${completedCount} of ${sectionList.length} sections complete`}
           />
         </div>
 

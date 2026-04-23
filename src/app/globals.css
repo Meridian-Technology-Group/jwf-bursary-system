@@ -76,6 +76,48 @@
   }
 }
 
+/* react-day-picker theme — JWF brand colours */
+.rdp-theme {
+  --rdp-accent-color: #0D1B2A;
+  --rdp-accent-background-color: #F4F6FA;
+  --rdp-today-color: #B8862A;
+  --rdp-day-width: 36px;
+  --rdp-day-height: 36px;
+  --rdp-day_button-width: 34px;
+  --rdp-day_button-height: 34px;
+  --rdp-day_button-border-radius: 6px;
+}
+
+.rdp-theme .rdp-dropdown {
+  opacity: 1;
+  position: relative;
+  appearance: auto;
+  width: auto;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  padding: 2px 4px;
+  font-size: 0.875rem;
+  cursor: pointer;
+  background: white;
+}
+
+.rdp-theme .rdp-dropdown:focus {
+  outline: 2px solid #B8862A;
+  outline-offset: 2px;
+}
+
+.rdp-theme .rdp-caption_label {
+  display: none;
+}
+
+.rdp-theme .rdp-dropdown_root {
+  display: inline-flex;
+}
+
+.rdp-theme .rdp-dropdowns {
+  gap: 0.5rem;
+}
+
 @layer components {
   /* Skeleton loader animation */
   .skeleton {

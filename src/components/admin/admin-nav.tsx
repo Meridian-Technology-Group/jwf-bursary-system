@@ -209,19 +209,21 @@ export function AdminNav({ collapsed, userName, userEmail, userRole }: AdminNavP
             )}
           </div>
         )}
-        <Link
-          href="/auth/signout"
-          className={cn(
-            "flex items-center gap-2 rounded-md px-2 py-1.5 text-xs text-neutral-400",
-            "hover:bg-primary-700 hover:text-white transition-colors",
-            "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-600",
-            collapsed && "justify-center"
-          )}
-          title={collapsed ? "Sign out" : undefined}
-        >
-          <LogOut className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-          {!collapsed && "Sign out"}
-        </Link>
+        <form action="/api/auth/logout" method="POST">
+          <button
+            type="submit"
+            className={cn(
+              "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-xs text-neutral-400",
+              "hover:bg-primary-700 hover:text-white transition-colors",
+              "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-600",
+              collapsed && "justify-center"
+            )}
+            title={collapsed ? "Sign out" : undefined}
+          >
+            <LogOut className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+            {!collapsed && "Sign out"}
+          </button>
+        </form>
       </div>
     </div>
   );

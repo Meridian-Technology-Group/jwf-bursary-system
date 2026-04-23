@@ -12,6 +12,24 @@ import { createSupabaseAdminClient } from "@/lib/auth/supabase-admin";
 const BUCKET = "documents";
 const DEFAULT_EXPIRY_SECONDS = 3600; // 60 minutes
 
+// ─── Bucket Initialisation ───────────────────────────────────────────────────
+
+let bucketReady = false;
+
+async function ensureBucket(): Promise<void> {
+  if (bucketReady) return;
+  const supabase = createSupabaseAdminClient();
+  const { error } = await supabase.storage.createBucket(BUCKET, {
+    public: false,
+  });
+  // "already exists" is fine — any other error is a real problem
+  if (error && !error.message.includes("already exists")) {
+    console.error("[storage/ensureBucket] Failed:", error.message);
+    throw new Error(error.message);
+  }
+  bucketReady = true;
+}
+
 // ─── Upload ───────────────────────────────────────────────────────────────────
 
 export interface UploadDocumentResult {
@@ -31,6 +49,8 @@ export async function uploadDocument(
   applicationId: string,
   slot: string
 ): Promise<UploadDocumentResult> {
+  await ensureBucket();
+
   const supabase = createSupabaseAdminClient();
 
   // Build a unique, deterministic path so re-uploads into the same slot

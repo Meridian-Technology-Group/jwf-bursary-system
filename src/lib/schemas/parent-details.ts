@@ -30,6 +30,8 @@ export const employmentStatusSchema = z.enum(
   { message: "Please select an employment status" }
 );
 
+const UK_POSTCODE_RE = /^[A-Z]{1,2}\d[A-Z\d]?\s?\d[A-Z]{2}$/i;
+
 export const parentContactSchema = z.object({
   title: parentTitleSchema,
   firstName: z.string().min(1, "First name is required"),
@@ -41,10 +43,7 @@ export const parentContactSchema = z.object({
   addressLine1: z.string().min(1, "Address line 1 is required"),
   addressLine2: z.string().optional(),
   city: z.string().min(1, "City or town is required"),
-  postcode: z
-    .string()
-    .min(1, "Postcode is required")
-    .regex(/^[A-Z]{1,2}\d[A-Z\d]?\s?\d[A-Z]{2}$/i, "Enter a valid UK postcode"),
+  postcode: z.string().min(1, "Postcode is required"),
   country: z.string().min(1, "Country is required"),
 });
 
@@ -126,30 +125,91 @@ export const parentEmploymentSchema = z
     }
   });
 
+/** Validate UK postcode on a contact object. */
+function validateContactPostcode(
+  contact: z.infer<typeof parentContactSchema>,
+  ctx: z.RefinementCtx,
+  pathPrefix: string
+) {
+  const { country, postcode } = contact;
+  if (
+    (!country || country === "United Kingdom") &&
+    postcode &&
+    !UK_POSTCODE_RE.test(postcode)
+  ) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "Enter a valid UK postcode",
+      path: [pathPrefix, "postcode"],
+    });
+  }
+}
+
+/** Check if a value is a non-empty object (has at least one meaningful key). */
+function isPopulatedObject(val: unknown): val is Record<string, unknown> {
+  return !!val && typeof val === "object" && Object.keys(val).length > 0;
+}
+
+/**
+ * Parent details schema.
+ *
+ * parent2Contact/parent2Employment use z.any().optional() so that
+ * empty objects ({}) from react-hook-form don't cause parse failures.
+ * They are validated manually in superRefine only when isSoleParent is false.
+ */
 export const parentDetailsSchema = z
   .object({
     isSoleParent: z.boolean(),
     relationshipStatus: relationshipStatusSchema,
     parent1Contact: parentContactSchema,
     parent1Employment: parentEmploymentSchema,
-    parent2Contact: parentContactSchema.optional(),
-    parent2Employment: parentEmploymentSchema.optional(),
+    parent2Contact: z.any().optional(),
+    parent2Employment: z.any().optional(),
   })
   .superRefine((data, ctx) => {
-    if (!data.isSoleParent) {
-      if (!data.parent2Contact) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          message: "Parent/Guardian 2 contact details are required",
-          path: ["parent2Contact"],
-        });
+    // UK postcode validation for parent 1
+    validateContactPostcode(data.parent1Contact, ctx, "parent1Contact");
+
+    // Skip parent 2 validation entirely when sole parent
+    if (data.isSoleParent) return;
+
+    // ── Validate parent 2 contact ─────────────────────────────────────────
+    if (!isPopulatedObject(data.parent2Contact)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Parent/Guardian 2 contact details are required",
+        path: ["parent2Contact"],
+      });
+    } else {
+      const p2cResult = parentContactSchema.safeParse(data.parent2Contact);
+      if (!p2cResult.success) {
+        for (const issue of p2cResult.error.issues) {
+          ctx.addIssue({
+            ...issue,
+            path: ["parent2Contact", ...issue.path],
+          });
+        }
+      } else {
+        validateContactPostcode(p2cResult.data, ctx, "parent2Contact");
       }
-      if (!data.parent2Employment) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          message: "Parent/Guardian 2 employment details are required",
-          path: ["parent2Employment"],
-        });
+    }
+
+    // ── Validate parent 2 employment ──────────────────────────────────────
+    if (!isPopulatedObject(data.parent2Employment)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Parent/Guardian 2 employment details are required",
+        path: ["parent2Employment"],
+      });
+    } else {
+      const p2eResult = parentEmploymentSchema.safeParse(data.parent2Employment);
+      if (!p2eResult.success) {
+        for (const issue of p2eResult.error.issues) {
+          ctx.addIssue({
+            ...issue,
+            path: ["parent2Employment", ...issue.path],
+          });
+        }
       }
     }
   });

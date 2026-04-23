@@ -111,6 +111,8 @@ export async function setApplicationOutcomeAction(
         id: true,
         reference: true,
         status: true,
+        childName: true,
+        school: true,
         leadApplicant: {
           select: { id: true, email: true, firstName: true, lastName: true },
         },
@@ -147,9 +149,13 @@ export async function setApplicationOutcomeAction(
         ? EmailTemplateType.OUTCOME_QUALIFIES
         : EmailTemplateType.OUTCOME_DNQ;
 
+    const schoolLabel = application.school === "TRINITY" ? "Trinity School" : "Whitgift School";
     await sendEmail(application.leadApplicant.email, templateType, {
-      first_name: application.leadApplicant.firstName ?? "",
-      last_name: application.leadApplicant.lastName ?? "",
+      applicant_name:
+        `${application.leadApplicant.firstName ?? ""} ${application.leadApplicant.lastName ?? ""}`.trim() ||
+        "Applicant",
+      child_name: application.childName,
+      school: schoolLabel,
       reference: application.reference,
       academic_year: application.round.academicYear,
     });

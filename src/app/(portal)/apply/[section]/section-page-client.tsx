@@ -15,8 +15,9 @@
 
 import * as React from "react";
 import type { ApplicationSectionType } from "@prisma/client";
+import type { DocumentMeta } from "@/lib/db/queries/applications";
 import { SectionForm } from "@/components/portal/section-form";
-import { ProgressBar } from "@/components/portal/progress-bar";
+// ProgressBar removed — progress is shown in the sidebar
 import { PrepopulatedSectionBanner } from "@/components/portal/form-fields/prepopulated-field";
 import { saveSection } from "../actions";
 
@@ -49,6 +50,10 @@ interface SectionPageClientProps {
   sectionTitle: string;
   applicationId: string;
   existingData: unknown;
+  /** Map of document ID → metadata for showing previously uploaded files. */
+  documentMap?: Record<string, DocumentMeta>;
+  /** Child's full name from CHILD_DETAILS (for DEPENDENT_CHILDREN section). */
+  childFullName?: string;
   backHref: string;
   nextHref: string;
   stepNumber: number;
@@ -130,15 +135,19 @@ function getDefaultValues(sectionType: ApplicationSectionType, existingData: unk
 function SectionFormContent({
   sectionType,
   applicationId,
+  documentMap,
+  childFullName,
 }: {
   sectionType: ApplicationSectionType;
   applicationId: string;
+  documentMap?: Record<string, DocumentMeta>;
+  childFullName?: string;
 }) {
   switch (sectionType) {
-    case "CHILD_DETAILS": return <ChildDetailsForm applicationId={applicationId} />;
-    case "FAMILY_ID": return <FamilyIdForm />;
+    case "CHILD_DETAILS": return <ChildDetailsForm applicationId={applicationId} documentMap={documentMap} />;
+    case "FAMILY_ID": return <FamilyIdForm applicationId={applicationId} documentMap={documentMap} />;
     case "PARENT_DETAILS": return <ParentDetailsForm />;
-    case "DEPENDENT_CHILDREN": return <DependentChildrenForm />;
+    case "DEPENDENT_CHILDREN": return <DependentChildrenForm childFullName={childFullName} />;
     case "DEPENDENT_ELDERLY": return <DependentElderlyForm />;
     case "OTHER_INFO": return <OtherInfoForm />;
     case "PARENTS_INCOME": return <ParentsIncomeForm />;
@@ -170,6 +179,8 @@ export function SectionPageClient({
   sectionTitle,
   applicationId,
   existingData,
+  documentMap,
+  childFullName,
   backHref,
   nextHref,
   stepNumber,
@@ -198,8 +209,6 @@ export function SectionPageClient({
         <h1 className="text-2xl font-semibold text-primary-900">{sectionTitle}</h1>
       </div>
 
-      <ProgressBar completedSections={stepNumber - 1} totalSections={totalSteps} />
-
       {/* Pre-populated banner — shown for personal sections copied from last year */}
       {isPrepopulated && <PrepopulatedSectionBanner />}
 
@@ -212,7 +221,7 @@ export function SectionPageClient({
           backHref={backHref}
           nextHref={nextHref}
         >
-          <SectionFormContent sectionType={sectionType} applicationId={applicationId} />
+          <SectionFormContent sectionType={sectionType} applicationId={applicationId} documentMap={documentMap} childFullName={childFullName} />
         </SectionForm>
       </div>
     </div>

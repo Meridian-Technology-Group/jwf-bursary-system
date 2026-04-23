@@ -27,6 +27,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { YesNoToggle } from "@/components/portal/form-fields/yes-no-toggle";
@@ -580,11 +581,25 @@ function ParentEmploymentFields({
           payable thereafter.
         </p>
       </div>
-      <YesNoToggle
+      <FormField
         control={control}
         name={`${prefix}.declarationAccepted` as "parent1Employment.declarationAccepted"}
-        label="I accept the above declaration"
-        required
+        render={({ field }) => (
+          <FormItem className="flex flex-row items-start space-x-3 space-y-0">
+            <FormControl>
+              <Checkbox
+                checked={field.value === true}
+                onCheckedChange={field.onChange}
+              />
+            </FormControl>
+            <div className="space-y-1 leading-none">
+              <FormLabel className="cursor-pointer">
+                I accept the above declaration{" "}
+                <span className="text-error-600" aria-hidden="true">*</span>
+              </FormLabel>
+            </div>
+          </FormItem>
+        )}
       />
     </div>
   );

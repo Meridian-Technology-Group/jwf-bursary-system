@@ -29,6 +29,7 @@ import { SplitScreen } from "@/components/admin/split-screen";
 import { AssessmentForm, type SerialisedAssessment } from "@/components/admin/assessment-form";
 import { AssessmentChecklist } from "@/components/admin/assessment-checklist";
 import { BeginAssessmentButton } from "@/components/admin/begin-assessment-button";
+import { DocumentListClient } from "@/components/admin/document-list-client";
 import { ClipboardList } from "lucide-react";
 
 export const metadata = {
@@ -286,10 +287,9 @@ export default async function AssessmentPage({ params }: Props) {
     />
   );
 
-  // Build the document list panel (left side of split-screen)
-  const documentListPanel = (
-    <DocumentListForSplitScreen documents={documents} />
-  );
+  // Build the document panel (left side of split-screen).
+  // The client component owns its own toolbar / empty state.
+  const documentListPanel = <DocumentListClient documents={documents} />;
 
   return (
     <div className="space-y-5">
@@ -322,42 +322,3 @@ export default async function AssessmentPage({ params }: Props) {
   );
 }
 
-// ─── Document List Panel (server component — no interactivity needed here) ────
-
-import type { Document } from "@prisma/client";
-
-function DocumentListForSplitScreen({ documents }: { documents: Document[] }) {
-  if (documents.length === 0) {
-    return (
-      <div className="flex h-full flex-col items-center justify-center gap-3 px-6 py-10 text-center">
-        <ClipboardList className="h-10 w-10 text-slate-200" aria-hidden="true" />
-        <div>
-          <p className="text-sm font-medium text-slate-400">No documents uploaded</p>
-          <p className="mt-0.5 text-xs text-slate-300">
-            Documents uploaded by the applicant will appear here
-          </p>
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="flex h-full flex-col overflow-hidden">
-      {/* Panel header */}
-      <div className="border-b border-neutral-200 bg-neutral-50 px-4 py-3 shrink-0">
-        <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-          Documents ({documents.length})
-        </p>
-      </div>
-
-      {/* Scrollable list */}
-      <div className="flex-1 overflow-y-auto">
-        <DocumentListClient documents={documents} />
-      </div>
-    </div>
-  );
-}
-
-// ─── Client document list (handles click-to-view) ─────────────────────────────
-
-import { DocumentListClient } from "@/components/admin/document-list-client";

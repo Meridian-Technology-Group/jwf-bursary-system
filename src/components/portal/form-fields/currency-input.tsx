@@ -116,8 +116,8 @@ export function CurrencyInput<
                   }
                 }}
                 className={cn(
-                  "block flex-1 rounded-r-md border bg-white py-2 pr-3 text-right text-sm",
-                  "tabular-nums font-mono",
+                  "block flex-1 rounded-r-md border bg-white py-2 px-3 text-sm",
+                  "tabular-nums",
                   "transition-colors focus:outline-none focus:ring-2 focus:ring-offset-0",
                   hasError
                     ? "border-error-600 text-error-900 focus:ring-error-300"
