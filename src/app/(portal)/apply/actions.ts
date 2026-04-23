@@ -202,6 +202,8 @@ export async function submitApplication(applicationId: string): Promise<never> {
       reference: true,
       status: true,
       leadApplicantId: true,
+      childName: true,
+      school: true,
       sections: {
         select: { section: true, isComplete: true },
       },
@@ -248,10 +250,13 @@ export async function submitApplication(applicationId: string): Promise<never> {
   });
 
   // ── Send confirmation email (non-blocking on failure) ─────────────────────
+  const schoolLabel = application.school === "TRINITY" ? "Trinity School" : "Whitgift School";
   const emailResult = await sendEmail(user.email, "CONFIRMATION", {
     applicant_name: `${user.firstName ?? ""} ${user.lastName ?? ""}`.trim() || user.email,
+    child_name: application.childName,
+    school: schoolLabel,
     reference: application.reference,
-    submitted_date: new Date().toLocaleDateString("en-GB", {
+    submission_date: new Date().toLocaleDateString("en-GB", {
       day: "numeric",
       month: "long",
       year: "numeric",

@@ -1,13 +1,12 @@
 import { z } from "zod";
 
+const UK_POSTCODE_RE = /^[A-Z]{1,2}\d[A-Z\d]?\s?\d[A-Z]{2}$/i;
+
 export const childAddressSchema = z.object({
   addressLine1: z.string().min(1, "Address line 1 is required"),
   addressLine2: z.string().optional(),
   city: z.string().min(1, "City or town is required"),
-  postcode: z
-    .string()
-    .min(1, "Postcode is required")
-    .regex(/^[A-Z]{1,2}\d[A-Z\d]?\s?\d[A-Z]{2}$/i, "Enter a valid UK postcode"),
+  postcode: z.string().min(1, "Postcode is required"),
   country: z.string().min(1, "Country is required"),
 });
 
@@ -43,6 +42,21 @@ export const childDetailsSchema = z
         message: "Child address is required when different from Parent 1",
         path: ["childAddress"],
       });
+    }
+    // UK postcode validation — only when country is UK or not set
+    if (data.childAddress) {
+      const { country, postcode } = data.childAddress;
+      if (
+        (!country || country === "United Kingdom") &&
+        postcode &&
+        !UK_POSTCODE_RE.test(postcode)
+      ) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "Enter a valid UK postcode",
+          path: ["childAddress", "postcode"],
+        });
+      }
     }
   });
 

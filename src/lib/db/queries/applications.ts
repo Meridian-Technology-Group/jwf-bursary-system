@@ -260,3 +260,38 @@ export async function getSectionData(
     select: { data: true, isComplete: true, updatedAt: true },
   });
 }
+
+/**
+ * Serialisable document metadata for the client (no storagePath / uploadedBy).
+ */
+export interface DocumentMeta {
+  id: string;
+  slot: string;
+  filename: string;
+  fileSize: number;
+  uploadedAt: string;
+}
+
+/**
+ * Returns all documents for an application as a map keyed by document ID.
+ */
+export async function getDocumentsForApplication(
+  applicationId: string
+): Promise<Record<string, DocumentMeta>> {
+  const rows = await prisma.document.findMany({
+    where: { applicationId },
+    select: { id: true, slot: true, filename: true, fileSize: true, uploadedAt: true },
+  });
+
+  const map: Record<string, DocumentMeta> = {};
+  for (const row of rows) {
+    map[row.id] = {
+      id: row.id,
+      slot: row.slot,
+      filename: row.filename,
+      fileSize: row.fileSize,
+      uploadedAt: row.uploadedAt.toISOString(),
+    };
+  }
+  return map;
+}

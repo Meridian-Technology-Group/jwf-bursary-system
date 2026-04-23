@@ -3,7 +3,15 @@
 // Run via: npx prisma db seed
 // Requires tsx (already configured in package.json prisma.seed)
 
+import "dotenv/config";
+// Also load .env.local (where Supabase keys typically live in Next.js projects)
+import { config } from "dotenv";
+config({ path: ".env.local", override: true });
+
+import fs from "node:fs";
+import path from "node:path";
 import { PrismaClient } from "@prisma/client";
+import { createClient } from "@supabase/supabase-js";
 
 import { councilTaxDefaults, familyTypeConfigs, schoolFees } from "./seed-data/reference";
 import { reasonCodes } from "./seed-data/reason-codes";
@@ -27,10 +35,21 @@ import {
   APP_OKAFOR_ID,
   APP_PATEL_ID,
 } from "./seed-data/demo-applications";
+import { demoDocuments } from "./seed-data/demo-documents";
 
 const prisma = new PrismaClient({
   log: ["warn", "error"],
 });
+
+// Supabase admin client for uploading seed documents to Storage
+function getSupabaseAdmin() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!url || !key) throw new Error("Missing Supabase env vars for seed");
+  return createClient(url, key, {
+    auth: { autoRefreshToken: false, persistSession: false },
+  });
+}
 
 // ─── Round ────────────────────────────────────────────────────────────────────
 
@@ -93,9 +112,21 @@ async function clearAll(): Promise<void> {
   const ass = await prisma.assessment.deleteMany({});
   log(`Deleted ${ass.count} assessments`);
 
-  // Documents
+  // Documents (DB + Storage)
   const doc = await prisma.document.deleteMany({});
   log(`Deleted ${doc.count} documents`);
+  try {
+    const supabase = getSupabaseAdmin();
+    const { data: files } = await supabase.storage.from("documents").list("documents", { limit: 1000 });
+    if (files && files.length > 0) {
+      // Storage files are nested — just empty the entire bucket by listing top-level folders
+      await supabase.storage.emptyBucket("documents");
+      log("Emptied Supabase Storage bucket");
+    }
+  } catch {
+    // Bucket may not exist yet on first seed — that's fine
+    log("Storage bucket clean skipped (may not exist yet)");
+  }
 
   // Application sections (cascade from application, but delete explicitly)
   const aps = await prisma.applicationSection.deleteMany({});
@@ -268,6 +299,82 @@ async function seedApplicationSections(): Promise<void> {
   log(`Created ${applicationSections.length} application sections`);
 }
 
+// ─── Documents ───────────────────────────────────────────────────────────────
+
+// ─── Sample images for seed documents ────────────────────────────────────────
+
+const IMAGES_DIR = path.resolve(__dirname, "../docs/images");
+
+/** Map document slot prefix to the best-matching sample image file. */
+function sampleImageForSlot(slot: string): string {
+  if (slot.startsWith("BIRTH_CERTIFICATE")) return "birth_certificate.png";
+  if (slot.includes("PASSPORT")) return "passport_man.png";
+  if (slot.startsWith("P60")) return "payslip.png";
+  if (slot.startsWith("BANK_STATEMENT")) return "bank_account.png";
+  if (slot.startsWith("CERTIFIED_ACCOUNTS")) return "bank_account.png";
+  if (slot.startsWith("SELF_ASSESSMENT")) return "payslip.png";
+  // Family ID slots
+  if (slot.startsWith("FAMILY_ID_PASSPORT")) return "passport_man.png";
+  if (slot.startsWith("FAMILY_ID_ILR")) return "passport_man.png";
+  // Fallback
+  return "birth_certificate.png";
+}
+
+/** Cache loaded images so we only read each file once. */
+const imageCache = new Map<string, Buffer>();
+
+function loadSampleImage(filename: string): Buffer {
+  const cached = imageCache.get(filename);
+  if (cached) return cached;
+  const buf = fs.readFileSync(path.join(IMAGES_DIR, filename));
+  imageCache.set(filename, buf);
+  return buf;
+}
+
+async function seedDocuments(): Promise<void> {
+  section("Seeding documents + uploading to Supabase Storage");
+
+  const supabase = getSupabaseAdmin();
+  const bucket = "documents";
+
+  // Ensure bucket exists
+  const { error: bucketErr } = await supabase.storage.createBucket(bucket, { public: false });
+  if (bucketErr && !bucketErr.message.includes("already exists")) {
+    throw new Error(`Failed to create bucket: ${bucketErr.message}`);
+  }
+
+  for (const doc of demoDocuments) {
+    const imageFile = sampleImageForSlot(doc.slot);
+    const imageData = loadSampleImage(imageFile);
+
+    const { error: uploadErr } = await supabase.storage
+      .from(bucket)
+      .upload(doc.storagePath, imageData, {
+        contentType: doc.mimeType,
+        upsert: true,
+      });
+    if (uploadErr) {
+      console.warn(`  ⚠ Upload failed for ${doc.slot}: ${uploadErr.message}`);
+    }
+
+    await prisma.document.create({
+      data: {
+        id: doc.id,
+        applicationId: doc.applicationId,
+        slot: doc.slot,
+        filename: doc.filename,
+        mimeType: doc.mimeType,
+        fileSize: imageData.length,
+        storagePath: doc.storagePath,
+        isVerified: doc.isVerified,
+        uploadedBy: doc.uploadedBy,
+      },
+    });
+  }
+
+  log(`Created ${demoDocuments.length} documents (DB + Storage)`);
+}
+
 // ─── Assessments ──────────────────────────────────────────────────────────────
 
 async function seedAssessments(): Promise<void> {
@@ -368,6 +475,7 @@ async function printSummary(): Promise<void> {
     ["Bursary accounts",             await prisma.bursaryAccount.count()],
     ["Applications",                 await prisma.application.count()],
     ["Application sections",         await prisma.applicationSection.count()],
+    ["Documents",                    await prisma.document.count()],
     ["Assessments",                  await prisma.assessment.count()],
     ["Assessment earners",           await prisma.assessmentEarner.count()],
     ["Assessment properties",        await prisma.assessmentProperty.count()],
@@ -403,6 +511,7 @@ async function main(): Promise<void> {
   await seedApplications();
   await assignApplications();
   await seedApplicationSections();
+  await seedDocuments();
   await seedAssessments();
   await seedAssessmentEarners();
   await seedAssessmentProperties();

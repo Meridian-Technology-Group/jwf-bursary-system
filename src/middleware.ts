@@ -72,25 +72,31 @@ export async function middleware(request: NextRequest) {
   }
 
   // 2. Create middleware Supabase client (refreshes session, writes cookies).
-  const { supabase, response } = createSupabaseMiddlewareClient(request);
+  const mw = createSupabaseMiddlewareClient(request);
 
   // IMPORTANT: call getUser() (not getSession()) — getUser() validates the
   // JWT with the Supabase server and is the only safe way to trust the user
   // identity in middleware.
   const {
     data: { user },
-  } = await supabase.auth.getUser();
+  } = await mw.supabase.auth.getUser();
 
   const role = getRoleFromSession(user);
 
+  // Helper: redirect with session cookies preserved so the browser
+  // keeps the refreshed session across the redirect.
+  function redirect(url: URL | string) {
+    const target = typeof url === "string" ? new URL(url, request.url) : url;
+    return mw.applySessionCookies(NextResponse.redirect(target));
+  }
+
   // 3. Auth routes are always public — let them through (with refreshed cookies).
+  //    We intentionally do NOT redirect authenticated users away from /login.
+  //    The middleware only has JWT-level info; if a Server Component (which has
+  //    Prisma access) decided to redirect here, overriding that would cause a
+  //    redirect loop between middleware ↔ server component.
   if (AUTH_ROUTES.test(pathname)) {
-    // If the user is already logged in, redirect them to their home.
-    if (user && role && role !== "DELETED") {
-      const home = role === "APPLICANT" ? "/" : "/admin";
-      return NextResponse.redirect(new URL(home, request.url));
-    }
-    return response;
+    return mw.response;
   }
 
   // 4. Portal routes — APPLICANT only.
@@ -98,12 +104,12 @@ export async function middleware(request: NextRequest) {
     if (!user || !role) {
       const loginUrl = new URL("/login", request.url);
       loginUrl.searchParams.set("next", pathname);
-      return NextResponse.redirect(loginUrl);
+      return redirect(loginUrl);
     }
     if (role !== "APPLICANT") {
-      return NextResponse.redirect(new URL("/admin", request.url));
+      return redirect("/admin");
     }
-    return response;
+    return mw.response;
   }
 
   // 5. Admin routes — ADMIN, ASSESSOR, or VIEWER only.
@@ -111,22 +117,27 @@ export async function middleware(request: NextRequest) {
     if (!user || !role) {
       const loginUrl = new URL("/login", request.url);
       loginUrl.searchParams.set("next", pathname);
-      return NextResponse.redirect(loginUrl);
+      return redirect(loginUrl);
     }
     if (role !== "ADMIN" && role !== "ASSESSOR" && role !== "VIEWER") {
-      return NextResponse.redirect(new URL("/", request.url));
+      return redirect("/");
     }
-    return response;
+    return mw.response;
   }
 
   // 6. Root and all other paths — require authentication.
   if (!user || !role) {
     const loginUrl = new URL("/login", request.url);
     loginUrl.searchParams.set("next", pathname);
-    return NextResponse.redirect(loginUrl);
+    return redirect(loginUrl);
   }
 
-  return response;
+  // Staff users landing on the portal root (/) should be sent to /admin.
+  if (pathname === "/" && role !== "APPLICANT") {
+    return redirect("/admin");
+  }
+
+  return mw.response;
 }
 
 // ---------------------------------------------------------------------------

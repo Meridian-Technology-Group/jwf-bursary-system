@@ -65,8 +65,12 @@ async function fetchApplicationForStatus(applicationId: string) {
       reference: true,
       status: true,
       childName: true,
+      school: true,
       leadApplicant: {
         select: { id: true, email: true, firstName: true, lastName: true },
+      },
+      round: {
+        select: { academicYear: true },
       },
     },
   });
@@ -178,6 +182,8 @@ export async function pauseApplication(
       .join("\n");
 
     // Send MISSING_DOCS email — non-blocking; log failure but don't abort
+    const docDeadline = new Date();
+    docDeadline.setDate(docDeadline.getDate() + 14);
     const emailResult = await sendEmail(
       application.leadApplicant.email,
       "MISSING_DOCS",
@@ -188,7 +194,7 @@ export async function pauseApplication(
         reference: application.reference,
         child_name: application.childName,
         missing_documents: slotList,
-        custom_message: customMessage ?? "",
+        deadline: docDeadline.toLocaleDateString("en-GB"),
       }
     );
 
@@ -309,6 +315,7 @@ export async function setOutcome(
     const templateType =
       outcome === "QUALIFIES" ? "OUTCOME_QUALIFIES" : "OUTCOME_DNQ";
 
+    const outcomeSchoolLabel = application.school === "TRINITY" ? "Trinity School" : "Whitgift School";
     const emailResult = await sendEmail(
       application.leadApplicant.email,
       templateType,
@@ -318,7 +325,8 @@ export async function setOutcome(
           "Applicant",
         reference: application.reference,
         child_name: application.childName,
-        outcome: outcome === "QUALIFIES" ? "Qualifies" : "Does Not Qualify",
+        school: outcomeSchoolLabel,
+        academic_year: application.round.academicYear,
       }
     );
 

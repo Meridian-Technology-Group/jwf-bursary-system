@@ -16,7 +16,11 @@
 import { notFound, redirect } from "next/navigation";
 import { ApplicationSectionType } from "@prisma/client";
 import { getCurrentUser } from "@/lib/auth/roles";
-import { getApplicationForUser, getSectionData } from "@/lib/db/queries/applications";
+import {
+  getApplicationForUser,
+  getSectionData,
+  getDocumentsForApplication,
+} from "@/lib/db/queries/applications";
 import { SectionPageClient } from "./section-page-client";
 import { HIDDEN_REASSESSMENT_SECTIONS, PREPOPULATED_SECTIONS } from "@/lib/db/queries/reassessment";
 
@@ -124,8 +128,19 @@ export default async function SectionPage({ params }: PageProps) {
     ? REASSESSMENT_SECTION_ORDER
     : SECTION_ORDER;
 
-  // Load existing section data
-  const existingSection = await getSectionData(application.id, sectionType);
+  // Load existing section data + documents in parallel
+  const [existingSection, documentMap] = await Promise.all([
+    getSectionData(application.id, sectionType),
+    getDocumentsForApplication(application.id),
+  ]);
+
+  // For DEPENDENT_CHILDREN, also load the child's name from CHILD_DETAILS
+  let childFullName: string | undefined;
+  if (sectionType === "DEPENDENT_CHILDREN") {
+    const childSection = await getSectionData(application.id, "CHILD_DETAILS");
+    const childData = childSection?.data as { childFullName?: string } | null;
+    childFullName = childData?.childFullName ?? undefined;
+  }
 
   // Determine if this section was pre-populated from the previous year
   const isPrepopulated =
@@ -150,6 +165,8 @@ export default async function SectionPage({ params }: PageProps) {
       sectionTitle={SECTION_TITLES[sectionType]}
       applicationId={application.id}
       existingData={existingSection?.data ?? null}
+      documentMap={documentMap}
+      childFullName={childFullName}
       backHref={backHref}
       nextHref={nextHref}
       stepNumber={currentIndex + 1}

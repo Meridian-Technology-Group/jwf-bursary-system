@@ -198,6 +198,33 @@ export async function registerWithInvitationAction(data: {
       userId
     );
 
+    // 5. Create Application record if the invitation has the required data
+    if (invitation.school && invitation.childName && invitation.roundId) {
+      const round = await prisma.round.findUnique({
+        where: { id: invitation.roundId },
+        select: { academicYear: true },
+      });
+      const yearSuffix = round?.academicYear?.replace(/\//g, "") ?? "";
+      const schoolPrefix = invitation.school === "TRINITY" ? "TS" : "WS";
+      const existing = await prisma.application.count({
+        where: { reference: { startsWith: `${schoolPrefix}-` } },
+      });
+      const reference = `${schoolPrefix}-${yearSuffix}-${String(existing + 1).padStart(4, "0")}`;
+
+      await prisma.application.create({
+        data: {
+          reference,
+          roundId: invitation.roundId,
+          leadApplicantId: userId,
+          school: invitation.school,
+          childName: invitation.childName,
+          bursaryAccountId: invitation.bursaryAccountId ?? undefined,
+          isReassessment: !!invitation.bursaryAccountId,
+          status: "PRE_SUBMISSION",
+        },
+      });
+    }
+
     return { success: true, email };
   } catch (err) {
     const message =

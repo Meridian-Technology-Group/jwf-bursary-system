@@ -38,6 +38,8 @@ import { cn } from "@/lib/utils";
 interface ChildDialogProps {
   open: boolean;
   editIndex: number | null;
+  /** The child's full name from section 1 (Details of Child). */
+  childFullName?: string;
   onClose: () => void;
   onSave: (data: {
     name: string;
@@ -48,7 +50,7 @@ interface ChildDialogProps {
   }) => void;
 }
 
-function ChildDialog({ open, editIndex, onClose, onSave }: ChildDialogProps) {
+function ChildDialog({ open, editIndex, childFullName, onClose, onSave }: ChildDialogProps) {
   const [name, setName] = React.useState("");
   const [school, setSchool] = React.useState("");
   const [unearnedIncome, setUnearnedIncome] = React.useState("0");
@@ -101,7 +103,15 @@ function ChildDialog({ open, editIndex, onClose, onSave }: ChildDialogProps) {
             <Checkbox
               id="isNamedChild"
               checked={isNamedChild}
-              onCheckedChange={(v) => setIsNamedChild(!!v)}
+              onCheckedChange={(v) => {
+                const checked = !!v;
+                setIsNamedChild(checked);
+                if (checked && childFullName) {
+                  setName(childFullName);
+                } else if (!checked) {
+                  setName("");
+                }
+              }}
             />
             <label htmlFor="isNamedChild" className="text-sm cursor-pointer">
               This is the named child of this application
@@ -119,7 +129,6 @@ function ChildDialog({ open, editIndex, onClose, onSave }: ChildDialogProps) {
               value={name}
               onChange={(e) => setName(e.target.value)}
               disabled={isNamedChild}
-              placeholder={isNamedChild ? "Pre-populated from child details" : ""}
             />
             {errors.name && (
               <p className="text-xs text-error-600">{errors.name}</p>
@@ -204,7 +213,7 @@ function ChildDialog({ open, editIndex, onClose, onSave }: ChildDialogProps) {
 
 // ─── Main form component ──────────────────────────────────────────────────────
 
-export function DependentChildrenForm() {
+export function DependentChildrenForm({ childFullName }: { childFullName?: string }) {
   const { control, getValues, setValue } =
     useFormContext<DependentChildrenFormValues>();
 
@@ -379,6 +388,7 @@ export function DependentChildrenForm() {
       <ChildDialog
         open={dialogOpen}
         editIndex={editIndex}
+        childFullName={childFullName}
         onClose={() => setDialogOpen(false)}
         onSave={handleSave}
       />
