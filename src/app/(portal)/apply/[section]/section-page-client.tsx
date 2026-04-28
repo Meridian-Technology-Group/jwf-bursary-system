@@ -50,12 +50,20 @@ interface SectionPageClientProps {
   sectionTitle: string;
   applicationId: string;
   existingData: unknown;
+  /** Seed for Section 1 defaults — the school captured on the Application. */
+  applicationSchool?: "TRINITY" | "WHITGIFT";
+  /** Seed for Section 1 defaults — the child's name captured on the Application. */
+  applicationChildName?: string;
   /** Map of document ID → metadata for showing previously uploaded files. */
   documentMap?: Record<string, DocumentMeta>;
   /** Child's full name from CHILD_DETAILS (for DEPENDENT_CHILDREN section). */
   childFullName?: string;
+  /** isSoleParent flag from PARENT_DETAILS (for PARENTS_INCOME section). */
+  isSoleParent?: boolean;
   backHref: string;
   nextHref: string;
+  /** Optional override for the primary button label (e.g. "Review and Submit"). */
+  nextLabel?: string;
   stepNumber: number;
   totalSteps: number;
   /** True when this application is a re-assessment (not a first-year application). */
@@ -67,15 +75,24 @@ interface SectionPageClientProps {
   isPrepopulated?: boolean;
 }
 
-function getDefaultValues(sectionType: ApplicationSectionType, existingData: unknown) {
+interface DefaultValuesSeed {
+  applicationSchool?: "TRINITY" | "WHITGIFT";
+  applicationChildName?: string;
+}
+
+function getDefaultValues(
+  sectionType: ApplicationSectionType,
+  existingData: unknown,
+  seed: DefaultValuesSeed = {}
+) {
   if (existingData && typeof existingData === "object") return existingData;
 
   switch (sectionType) {
     case "CHILD_DETAILS":
       return {
-        school: undefined,
+        school: seed.applicationSchool,
         applyingToAnotherSchool: false,
-        childFullName: "",
+        childFullName: seed.applicationChildName ?? "",
         gender: "",
         dateOfBirth: "",
         placeOfBirth: "",
@@ -137,11 +154,13 @@ function SectionFormContent({
   applicationId,
   documentMap,
   childFullName,
+  isSoleParent,
 }: {
   sectionType: ApplicationSectionType;
   applicationId: string;
   documentMap?: Record<string, DocumentMeta>;
   childFullName?: string;
+  isSoleParent?: boolean;
 }) {
   switch (sectionType) {
     case "CHILD_DETAILS": return <ChildDetailsForm applicationId={applicationId} documentMap={documentMap} />;
@@ -150,7 +169,7 @@ function SectionFormContent({
     case "DEPENDENT_CHILDREN": return <DependentChildrenForm childFullName={childFullName} />;
     case "DEPENDENT_ELDERLY": return <DependentElderlyForm />;
     case "OTHER_INFO": return <OtherInfoForm />;
-    case "PARENTS_INCOME": return <ParentsIncomeForm />;
+    case "PARENTS_INCOME": return <ParentsIncomeForm isSoleParent={isSoleParent} />;
     case "ASSETS_LIABILITIES": return <AssetsLiabilitiesForm />;
     case "ADDITIONAL_INFO": return <AdditionalInfoForm />;
     case "DECLARATION": return <DeclarationForm />;
@@ -179,17 +198,24 @@ export function SectionPageClient({
   sectionTitle,
   applicationId,
   existingData,
+  applicationSchool,
+  applicationChildName,
   documentMap,
   childFullName,
+  isSoleParent,
   backHref,
   nextHref,
+  nextLabel,
   stepNumber,
   totalSteps,
   isReassessment = false,
   isPrepopulated = false,
 }: SectionPageClientProps) {
   const schema = getSectionSchema(sectionType);
-  const defaultValues = getDefaultValues(sectionType, existingData);
+  const defaultValues = getDefaultValues(sectionType, existingData, {
+    applicationSchool,
+    applicationChildName,
+  });
 
   async function handleSave(data: unknown) {
     return saveSection(applicationId, sectionType, data);
@@ -220,8 +246,15 @@ export function SectionPageClient({
           onSave={handleSave as never}
           backHref={backHref}
           nextHref={nextHref}
+          nextLabel={nextLabel}
         >
-          <SectionFormContent sectionType={sectionType} applicationId={applicationId} documentMap={documentMap} childFullName={childFullName} />
+          <SectionFormContent
+            sectionType={sectionType}
+            applicationId={applicationId}
+            documentMap={documentMap}
+            childFullName={childFullName}
+            isSoleParent={isSoleParent}
+          />
         </SectionForm>
       </div>
     </div>

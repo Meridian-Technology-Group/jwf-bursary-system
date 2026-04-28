@@ -137,6 +137,30 @@ export async function updateInvitationStatus(
 }
 
 // ---------------------------------------------------------------------------
+// getLatestAcceptedInvitationForUser
+// ---------------------------------------------------------------------------
+
+/**
+ * Returns the most-recently-accepted invitation for the given Supabase auth
+ * user ID, or null if none exists.
+ *
+ * Used by the portal dashboard to decide whether to render the onboarding
+ * card (invitation present but Application not yet created) versus the
+ * no-invitation fallback state.
+ */
+export async function getLatestAcceptedInvitationForUser(
+  userId: string
+): Promise<Invitation | null> {
+  return prisma.invitation.findFirst({
+    where: {
+      authUserId: userId,
+      status: InvitationStatus.ACCEPTED,
+    },
+    orderBy: { acceptedAt: "desc" },
+  });
+}
+
+// ---------------------------------------------------------------------------
 // getActiveBursaryHolders
 // ---------------------------------------------------------------------------
 

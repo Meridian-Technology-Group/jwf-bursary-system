@@ -8,10 +8,15 @@
  * be tied to router navigation and form submission logic.
  */
 
+import { usePathname } from "next/navigation";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export function PortalBottomNav() {
+  const pathname = usePathname();
+  const isDeclaration = pathname === "/apply/declaration";
+  const nextLabel = isDeclaration ? "Review and Submit" : "Save and Continue";
+
   return (
     <div className="flex items-center justify-between px-4 py-3 md:px-8">
       {/* Back button */}
@@ -28,7 +33,7 @@ export function PortalBottomNav() {
         Back
       </button>
 
-      {/* Save and continue button */}
+      {/* Save and continue (or Review and Submit on Declaration) */}
       <button
         type="submit"
         form="section-form"
@@ -39,7 +44,7 @@ export function PortalBottomNav() {
           "disabled:pointer-events-none disabled:opacity-60"
         )}
       >
-        Save and Continue
+        {nextLabel}
         <ChevronRight className="h-4 w-4" aria-hidden="true" />
       </button>
     </div>

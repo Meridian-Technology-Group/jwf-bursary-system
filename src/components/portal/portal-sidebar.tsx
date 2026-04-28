@@ -14,33 +14,16 @@ import {
   Clock,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import {
+  DEFAULT_SIDEBAR_SECTIONS,
+  type SectionStatus,
+  type SidebarSection,
+} from "./portal-sidebar-sections";
 
-// ─── Types ────────────────────────────────────────────────────────────────────
-
-type SectionStatus = "not_started" | "in_progress" | "complete";
-
-export interface SidebarSection {
-  id: number;
-  label: string;
-  slug: string;
-  status: SectionStatus;
-}
-
-// ─── Default section list ────────────────────────────────────────────────────
-// Matches the 10 form sections shown in page headers.
-
-const DEFAULT_SECTIONS: SidebarSection[] = [
-  { id: 1, label: "Details of Child", slug: "child-details", status: "not_started" },
-  { id: 2, label: "Family Identification", slug: "family-id", status: "not_started" },
-  { id: 3, label: "Parent / Guardian Details", slug: "parent-details", status: "not_started" },
-  { id: 4, label: "Dependent Children", slug: "dependent-children", status: "not_started" },
-  { id: 5, label: "Dependent Elderly", slug: "dependent-elderly", status: "not_started" },
-  { id: 6, label: "Other Information", slug: "other-info", status: "not_started" },
-  { id: 7, label: "Parents' Income", slug: "parents-income", status: "not_started" },
-  { id: 8, label: "Assets & Liabilities", slug: "assets-liabilities", status: "not_started" },
-  { id: 9, label: "Additional Information", slug: "additional-info", status: "not_started" },
-  { id: 10, label: "Declaration & Submit", slug: "declaration", status: "not_started" },
-];
+// Re-export the shared types so existing `@/components/portal/portal-sidebar`
+// importers keep working.
+export type { SidebarSection };
+export { buildSidebarSections } from "./portal-sidebar-sections";
 
 // ─── Section icon ─────────────────────────────────────────────────────────────
 
@@ -84,7 +67,7 @@ export function PortalSidebarContent({
   sections,
 }: PortalSidebarContentProps) {
   const pathname = usePathname();
-  const sectionList = sections ?? DEFAULT_SECTIONS;
+  const sectionList = sections ?? DEFAULT_SIDEBAR_SECTIONS;
 
   // Derive active section from URL: /apply/parent-details → "parent-details"
   const currentSlug = pathname?.startsWith("/apply/")

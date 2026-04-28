@@ -35,9 +35,19 @@ import { cn } from "@/lib/utils";
 
 // ─── Child dialog form ────────────────────────────────────────────────────────
 
+interface ChildDialogInitialValues {
+  name?: string;
+  school?: string;
+  unearnedIncome?: number;
+  bursaryAmount?: number;
+  isNamedChild?: boolean;
+}
+
 interface ChildDialogProps {
   open: boolean;
   editIndex: number | null;
+  /** Existing row to pre-populate when editing. */
+  initialValues?: ChildDialogInitialValues;
   /** The child's full name from section 1 (Details of Child). */
   childFullName?: string;
   onClose: () => void;
@@ -50,7 +60,14 @@ interface ChildDialogProps {
   }) => void;
 }
 
-function ChildDialog({ open, editIndex, childFullName, onClose, onSave }: ChildDialogProps) {
+function ChildDialog({
+  open,
+  editIndex,
+  initialValues,
+  childFullName,
+  onClose,
+  onSave,
+}: ChildDialogProps) {
   const [name, setName] = React.useState("");
   const [school, setSchool] = React.useState("");
   const [unearnedIncome, setUnearnedIncome] = React.useState("0");
@@ -58,8 +75,26 @@ function ChildDialog({ open, editIndex, childFullName, onClose, onSave }: ChildD
   const [isNamedChild, setIsNamedChild] = React.useState(false);
   const [errors, setErrors] = React.useState<Record<string, string>>({});
 
+  // Sync local state with the dialog's open/edit context. On open, either
+  // hydrate from initialValues (edit) or reset to blanks (add). On close,
+  // reset so the next open starts fresh.
   React.useEffect(() => {
-    if (!open) {
+    if (open) {
+      setName(initialValues?.name ?? "");
+      setSchool(initialValues?.school ?? "");
+      setUnearnedIncome(
+        initialValues?.unearnedIncome != null
+          ? String(initialValues.unearnedIncome)
+          : "0"
+      );
+      setBursaryAmount(
+        initialValues?.bursaryAmount != null
+          ? String(initialValues.bursaryAmount)
+          : "0"
+      );
+      setIsNamedChild(!!initialValues?.isNamedChild);
+      setErrors({});
+    } else {
       setName("");
       setSchool("");
       setUnearnedIncome("0");
@@ -67,7 +102,7 @@ function ChildDialog({ open, editIndex, childFullName, onClose, onSave }: ChildD
       setIsNamedChild(false);
       setErrors({});
     }
-  }, [open]);
+  }, [open, initialValues]);
 
   function handleSave() {
     const newErrors: Record<string, string> = {};
@@ -388,6 +423,17 @@ export function DependentChildrenForm({ childFullName }: { childFullName?: strin
       <ChildDialog
         open={dialogOpen}
         editIndex={editIndex}
+        initialValues={
+          editIndex !== null && fields[editIndex]
+            ? {
+                name: fields[editIndex].name,
+                school: fields[editIndex].school,
+                unearnedIncome: fields[editIndex].unearnedIncome,
+                bursaryAmount: fields[editIndex].bursaryAmount,
+                isNamedChild: fields[editIndex].isNamedChild,
+              }
+            : undefined
+        }
         childFullName={childFullName}
         onClose={() => setDialogOpen(false)}
         onSave={handleSave}
