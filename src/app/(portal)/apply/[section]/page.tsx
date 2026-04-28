@@ -142,6 +142,15 @@ export default async function SectionPage({ params }: PageProps) {
     childFullName = childData?.childFullName ?? undefined;
   }
 
+  // For PARENTS_INCOME, read isSoleParent from PARENT_DETAILS so the form
+  // can hide the Parent/Guardian 2 income fields when there is no P2.
+  let isSoleParent: boolean | undefined;
+  if (sectionType === "PARENTS_INCOME") {
+    const parentSection = await getSectionData(application.id, "PARENT_DETAILS");
+    const parentData = parentSection?.data as { isSoleParent?: boolean } | null;
+    isSoleParent = parentData?.isSoleParent;
+  }
+
   // Determine if this section was pre-populated from the previous year
   const isPrepopulated =
     isReassessment &&
@@ -157,7 +166,15 @@ export default async function SectionPage({ params }: PageProps) {
       : null;
 
   const backHref = prevSection ? `/apply/${SECTION_TO_SLUG[prevSection]}` : "/";
-  const nextHref = nextSection ? `/apply/${SECTION_TO_SLUG[nextSection]}` : "/";
+  // After Declaration, send the applicant to the review page (where the
+  // actual Submit button lives) rather than the portal dashboard.
+  const nextHref = nextSection
+    ? `/apply/${SECTION_TO_SLUG[nextSection]}`
+    : sectionType === "DECLARATION"
+      ? "/apply/review"
+      : "/";
+  const nextLabel =
+    sectionType === "DECLARATION" ? "Review and Submit" : undefined;
 
   return (
     <SectionPageClient
@@ -165,8 +182,12 @@ export default async function SectionPage({ params }: PageProps) {
       sectionTitle={SECTION_TITLES[sectionType]}
       applicationId={application.id}
       existingData={existingSection?.data ?? null}
+      applicationSchool={application.school}
+      applicationChildName={application.childName}
       documentMap={documentMap}
       childFullName={childFullName}
+      isSoleParent={isSoleParent}
+      nextLabel={nextLabel}
       backHref={backHref}
       nextHref={nextHref}
       stepNumber={currentIndex + 1}

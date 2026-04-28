@@ -4,11 +4,18 @@
  * Shown after login. Displays a welcome message, application status card,
  * and quick action buttons. Content is dynamic based on whether the user
  * has an application and how many sections are complete.
+ *
+ * When the user has no Application but does have an accepted Invitation, they
+ * see an onboarding card to confirm school + child name before entering the
+ * form. When there is no invitation at all, a neutral fallback message is
+ * shown directing them to contact the Foundation.
  */
 
 import { getCurrentUser } from "@/lib/auth/roles";
 import { getApplicationForUser, getSectionStatusList } from "@/lib/db/queries/applications";
+import { getLatestAcceptedInvitationForUser } from "@/lib/db/queries/invitations";
 import { StatusBadge, type ApplicationStatus } from "@/components/shared/status-badge";
+import { OnboardingCard } from "@/app/(portal)/onboarding-card";
 import { FileText, ArrowRight, ClipboardList } from "lucide-react";
 
 /** Map Prisma ApplicationStatus to StatusBadge's display type. */
@@ -42,6 +49,13 @@ export default async function PortalDashboardPage() {
   const roundLabel = application?.round?.academicYear
     ? `${application.round.academicYear} Assessment Round`
     : "Bursary Application";
+
+  // When there is no application, check whether an accepted invitation exists
+  // so we know which empty state to render.
+  const invitation =
+    !application && user
+      ? await getLatestAcceptedInvitationForUser(user.id)
+      : null;
 
   return (
     <div className="space-y-8">
@@ -155,18 +169,21 @@ export default async function PortalDashboardPage() {
             </div>
           </div>
         </>
+      ) : invitation ? (
+        /* Invitation found but no Application yet — show onboarding card */
+        <OnboardingCard defaultChildName={invitation.childName} />
       ) : (
-        /* No application yet */
+        /* No invitation found — neutral fallback */
         <div className="rounded-xl border border-slate-200 bg-white p-8 text-center shadow-sm">
           <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-slate-100">
             <FileText className="h-6 w-6 text-slate-400" aria-hidden="true" />
           </div>
           <h2 className="mt-4 text-lg font-semibold text-slate-800">
-            No application yet
+            No invitation found
           </h2>
           <p className="mt-2 text-sm text-slate-500">
-            Your account is set up, but no bursary application has been created
-            yet. Please contact the Foundation if you believe this is an error.
+            We can&rsquo;t find an invitation linked to your account. Please
+            contact the Foundation if you believe this is an error.
           </p>
         </div>
       )}

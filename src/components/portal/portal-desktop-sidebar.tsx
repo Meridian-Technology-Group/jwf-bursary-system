@@ -5,19 +5,22 @@
  * Renders the section progress stepper.
  */
 
-import { PortalSidebarContent } from "./portal-sidebar";
+import { PortalSidebarContent, type SidebarSection } from "./portal-sidebar";
 
 interface PortalDesktopSidebarProps {
   userName: string;
+  sections?: SidebarSection[];
+  roundName?: string;
 }
 
-export function PortalDesktopSidebar({ userName }: PortalDesktopSidebarProps) {
-  // lastSaved would come from application state in a real implementation
-  const lastSaved = "2 minutes ago";
-
+export function PortalDesktopSidebar({
+  userName,
+  sections,
+  roundName,
+}: PortalDesktopSidebarProps) {
   return (
     <div className="flex h-full flex-col">
-      <PortalSidebarContent lastSaved={lastSaved} />
+      <PortalSidebarContent sections={sections} roundName={roundName} />
 
       {/* User name at bottom */}
       <div className="border-t border-slate-200 bg-slate-50 px-6 py-3">

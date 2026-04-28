@@ -23,7 +23,9 @@ export const assetsLiabilitiesSchema = z
     stocksAndSharesValue: currencyField,
     investmentsValue: currencyField,
     otherAssetsValue: currencyField,
-    hasOtherProperties: z.boolean(),
+    hasOtherProperties: z.boolean({
+      error: "Please indicate whether you own any other properties",
+    }),
     otherPropertiesTotalValue: currencyField.optional(),
     hasRentalProperty: z.boolean().optional(),
     rentalPropertyValue: currencyField.optional(),
@@ -35,11 +37,14 @@ export const assetsLiabilitiesSchema = z
     outstandingMainMortgage: currencyField,
     totalOtherMortgages: currencyField,
     currentOverdraft: currencyField,
-    hasHirePurchase: z.boolean(),
+    hasHirePurchase: z.boolean({
+      error: "Please indicate whether you have any hire purchase agreements",
+    }),
     hirePurchaseBalance: currencyField.optional(),
     liabilitiesAgreementsDocumentId: z.string().optional(),
     liabilitiesStatementDocumentId: z.string().optional(),
-    hasLiabilityChanges: z.boolean(),
+    // No UI surface today — remain optional so it doesn't block submission.
+    hasLiabilityChanges: z.boolean().optional(),
     documentsConfirmed: z.boolean().refine((v) => v === true, {
       message: "You must confirm documents are current and legible",
     }),

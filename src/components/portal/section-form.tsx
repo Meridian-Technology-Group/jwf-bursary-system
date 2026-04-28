@@ -35,6 +35,8 @@ interface SectionFormProps<T extends FieldValues> {
   backHref?: string;
   /** URL to navigate to after successful save */
   nextHref?: string;
+  /** Optional override for the primary button label. Defaults to "Save and Continue". */
+  nextLabel?: string;
   children: React.ReactNode;
   /** Form element id — must match the portal-bottom-nav submit button */
   formId?: string;
@@ -47,6 +49,7 @@ export function SectionForm<T extends FieldValues>({
   onSave,
   backHref,
   nextHref,
+  nextLabel = "Save and Continue",
   children,
   formId = "section-form",
   className,
@@ -249,7 +252,7 @@ export function SectionForm<T extends FieldValues>({
             </>
           ) : (
             <>
-              Save and Continue
+              {nextLabel}
               <ChevronRight className="h-4 w-4" aria-hidden="true" />
             </>
           )}

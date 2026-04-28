@@ -107,7 +107,12 @@ function ParentIncomeSection({ prefix, parentLabel }: ParentIncomeSectionProps) 
   );
 }
 
-export function ParentsIncomeForm() {
+interface ParentsIncomeFormProps {
+  /** From PARENT_DETAILS — when true, the P2 income block is hidden. */
+  isSoleParent?: boolean;
+}
+
+export function ParentsIncomeForm({ isSoleParent }: ParentsIncomeFormProps = {}) {
   return (
     <div className="space-y-10">
       <div className="rounded-md bg-primary-50 border border-primary-200 p-4">
@@ -120,9 +125,12 @@ export function ParentsIncomeForm() {
 
       <ParentIncomeSection prefix="parent1Income" parentLabel="Parent / Guardian 1" />
 
-      <hr className="border-slate-200" />
-
-      <ParentIncomeSection prefix="parent2Income" parentLabel="Parent / Guardian 2" />
+      {!isSoleParent && (
+        <>
+          <hr className="border-slate-200" />
+          <ParentIncomeSection prefix="parent2Income" parentLabel="Parent / Guardian 2" />
+        </>
+      )}
     </div>
   );
 }

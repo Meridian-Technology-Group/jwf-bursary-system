@@ -10,9 +10,17 @@
 
 import { Suspense } from "react";
 import { getCurrentUser } from "@/lib/auth/roles";
+import {
+  getApplicationForUser,
+  getSectionStatusList,
+} from "@/lib/db/queries/applications";
 import { PortalMobileHeader } from "@/components/portal/portal-mobile-header";
 import { PortalDesktopSidebar } from "@/components/portal/portal-desktop-sidebar";
 import { PortalBottomNav } from "@/components/portal/portal-bottom-nav";
+import {
+  buildSidebarSections,
+  type SidebarSection,
+} from "@/components/portal/portal-sidebar-sections";
 import { PageLoader } from "@/components/shared/loading";
 
 export const metadata = {
@@ -32,16 +40,39 @@ export default async function PortalLayout({
     ? `${user.firstName ?? ""} ${user.lastName ?? ""}`.trim() || user.email
     : "Applicant";
 
+  // Load real section-completion state so the sidebar progress bar reflects
+  // the user's actual progress (not a hardcoded placeholder).
+  let sidebarSections: SidebarSection[] | undefined;
+  let roundName: string | undefined;
+  if (user) {
+    const application = await getApplicationForUser(user.id);
+    if (application) {
+      const statuses = await getSectionStatusList(application.id);
+      sidebarSections = buildSidebarSections(statuses);
+      roundName = application.round?.academicYear
+        ? `${application.round.academicYear} Assessment Round`
+        : undefined;
+    }
+  }
+
   return (
     <div className="flex min-h-screen bg-slate-50">
       {/* ── Desktop sidebar (hidden on mobile) ─────────────────────────── */}
       <aside className="hidden md:flex md:flex-col md:w-[280px] md:shrink-0 md:fixed md:inset-y-0 md:left-0 md:z-30 bg-white border-r border-slate-200 shadow-xs">
-        <PortalDesktopSidebar userName={displayName} />
+        <PortalDesktopSidebar
+          userName={displayName}
+          sections={sidebarSections}
+          roundName={roundName}
+        />
       </aside>
 
       {/* ── Mobile sticky header (visible only on mobile) ───────────────── */}
       <div className="md:hidden sticky top-0 z-30 w-full bg-white border-b border-slate-200 shadow-xs">
-        <PortalMobileHeader userName={displayName} />
+        <PortalMobileHeader
+          userName={displayName}
+          sections={sidebarSections}
+          roundName={roundName}
+        />
       </div>
 
       {/* ── Main content column ─────────────────────────────────────────── */}

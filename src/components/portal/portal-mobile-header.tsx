@@ -17,20 +17,25 @@ import {
   SheetTitle,
   SheetTrigger,
 } from "@/components/ui/sheet";
-import { PortalSidebarContent } from "./portal-sidebar";
+import { PortalSidebarContent, type SidebarSection } from "./portal-sidebar";
 import { cn } from "@/lib/utils";
 
 interface PortalMobileHeaderProps {
   userName: string;
+  sections?: SidebarSection[];
+  roundName?: string;
 }
 
-// Placeholder progress — in real app comes from application state
-const COMPLETED = 1;
-const TOTAL = 10;
-
-export function PortalMobileHeader({ userName }: PortalMobileHeaderProps) {
+export function PortalMobileHeader({
+  userName,
+  sections,
+  roundName,
+}: PortalMobileHeaderProps) {
   const [open, setOpen] = useState(false);
-  const progressPct = Math.round((COMPLETED / TOTAL) * 100);
+  const total = sections?.length ?? 10;
+  const completed =
+    sections?.filter((s) => s.status === "complete").length ?? 0;
+  const progressPct = total > 0 ? Math.round((completed / total) * 100) : 0;
 
   return (
     <div className="px-4 py-3">
@@ -51,11 +56,11 @@ export function PortalMobileHeader({ userName }: PortalMobileHeaderProps) {
                 aria-valuenow={progressPct}
                 aria-valuemin={0}
                 aria-valuemax={100}
-                aria-label={`${COMPLETED} of ${TOTAL} sections complete`}
+                aria-label={`${completed} of ${total} sections complete`}
               />
             </div>
             <span className="shrink-0 text-xs text-slate-500">
-              {COMPLETED}/{TOTAL}
+              {completed}/{total}
             </span>
           </div>
         </div>
@@ -81,7 +86,7 @@ export function PortalMobileHeader({ userName }: PortalMobileHeaderProps) {
               <SheetTitle>Application sections</SheetTitle>
             </SheetHeader>
             <div className="h-full">
-              <PortalSidebarContent lastSaved="2 minutes ago" />
+              <PortalSidebarContent sections={sections} roundName={roundName} />
               {/* User at bottom */}
               <div className="border-t border-slate-200 bg-slate-50 px-6 py-3">
                 <p className="truncate text-xs text-slate-500">

@@ -86,7 +86,9 @@ export async function saveSection(
 
   try {
     await upsertSection(appId, section, result.data, true);
-    revalidatePath(`/apply`);
+    // Revalidate the portal layout so the sidebar progress stepper + bar
+    // pick up the new completion state immediately.
+    revalidatePath("/", "layout");
     return { success: true };
   } catch (err) {
     console.error("[saveSection] DB error:", err);
