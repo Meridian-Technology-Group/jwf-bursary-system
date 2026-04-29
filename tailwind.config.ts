@@ -32,14 +32,18 @@ const config: Config = {
         border: "hsl(var(--border))",
         input: "hsl(var(--input))",
         ring: "hsl(var(--ring))",
-        // JWF brand colors
+        // JWF brand colors — indigo navy from johnwhitgiftfoundation.org (#282e68)
         primary: {
-          50: "#F4F6FA",
-          100: "#E8EDF4",
-          600: "#2E4463",
-          700: "#243752",
-          800: "#1B2D42",
-          900: "#0D1B2A",
+          50: "#F0F1F8",
+          100: "#DEE0EE",
+          200: "#B5BAD9",
+          300: "#7E85B8",
+          400: "#5860A3",
+          500: "#3D4582",
+          600: "#3c3c7b",
+          700: "#2f3470",
+          800: "#282e68",
+          900: "#1F2454",
           DEFAULT: "hsl(var(--primary))",
           foreground: "hsl(var(--primary-foreground))",
         },
@@ -53,8 +57,15 @@ const config: Config = {
           400: "#D4A83A",
           500: "#C9981E",
           600: "#B8862A",
+          700: "#9A7022",
           DEFAULT: "hsl(var(--accent))",
           foreground: "hsl(var(--accent-foreground))",
+        },
+        // Warm canvas tone for applicant-facing surfaces — JWF "less blank white"
+        canvas: {
+          50: "#FBFAF6",
+          100: "#F6F4ED",
+          200: "#EBE7DA",
         },
         success: { 50: "#F0FDF4", 600: "#16A34A" },
         warning: {
