@@ -54,7 +54,7 @@ export default async function PortalLayout({
   }
 
   return (
-    <div className="flex min-h-screen bg-slate-50">
+    <div className="flex min-h-screen bg-canvas-50">
       {/* ── Desktop sidebar (hidden on mobile) ─────────────────────────── */}
       <aside className="hidden md:flex md:flex-col md:w-[280px] md:shrink-0 md:fixed md:inset-y-0 md:left-0 md:z-30 bg-white border-r border-slate-200 shadow-xs">
         <PortalDesktopSidebar

@@ -24,6 +24,7 @@ import {
   LogOut,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { JwfLogo } from "@/components/brand/jwf-logo";
 
 // ─── Nav structure ────────────────────────────────────────────────────────────
 
@@ -141,21 +142,19 @@ export function AdminNav({ collapsed, userName, userEmail, userRole }: AdminNavP
       {/* Logo / wordmark */}
       <div
         className={cn(
-          "flex items-center border-b border-primary-700 py-5",
-          collapsed ? "justify-center px-2" : "px-5"
+          "flex flex-col items-center justify-center border-b border-primary-700",
+          collapsed ? "gap-2 px-2 py-4" : "gap-3 px-5 py-7"
         )}
       >
         {collapsed ? (
-          <span className="text-lg font-bold text-white">J</span>
+          <JwfLogo tone="light" compact className="h-10" alt="JWF" />
         ) : (
-          <div>
-            <span className="block text-sm font-semibold leading-tight text-white">
-              John Whitgift
+          <>
+            <JwfLogo tone="light" className="h-20" />
+            <span className="text-[11px] font-medium uppercase tracking-[0.22em] text-neutral-300">
+              Admin
             </span>
-            <span className="block text-xs text-neutral-400">
-              Foundation — Admin
-            </span>
-          </div>
+          </>
         )}
       </div>
 

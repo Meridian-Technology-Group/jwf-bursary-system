@@ -15,6 +15,7 @@ import {
   AlertTriangle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { JwfLogo } from "@/components/brand/jwf-logo";
 import {
   DEFAULT_SIDEBAR_SECTIONS,
   type SectionStatus,
@@ -120,11 +121,11 @@ export function PortalSidebarContent({
   return (
     <div className="flex h-full flex-col overflow-hidden">
       {/* Foundation logo / wordmark */}
-      <div className="border-b border-slate-200 px-6 py-5">
-        <span className="block text-sm font-semibold leading-tight text-primary-900">
-          John Whitgift Foundation
+      <div className="flex flex-col items-center gap-2 border-b border-slate-200 px-6 py-7">
+        <JwfLogo className="h-20" />
+        <span className="text-[11px] font-medium uppercase tracking-[0.22em] text-slate-500">
+          Bursary Assessment
         </span>
-        <span className="block text-xs text-slate-500">Bursary Assessment</span>
       </div>
 
       {/* Round name */}
