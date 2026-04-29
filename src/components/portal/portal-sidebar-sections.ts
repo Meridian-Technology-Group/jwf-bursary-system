@@ -29,9 +29,18 @@ export interface SidebarSection {
   progressSatisfied: number;
   /** Denominator for the partial-fill progress bar. */
   progressTotal: number;
+  /**
+   * When true this entry is a synthetic (non-section) step and does not
+   * correspond to an ApplicationSectionType.  Used for the Review step.
+   */
+  isSynthetic?: boolean;
 }
 
 // ─── Ordered list of sections, matching the 10 form steps ─────────────────────
+// The Review entry sits between Additional Information (9) and Declaration (10).
+// It is synthetic — it has no ApplicationSectionType — so its status is derived
+// from the overall gap roll-up in buildSidebarSections() rather than from any
+// individual SectionGapStatus row.
 
 export const DEFAULT_SIDEBAR_SECTIONS: SidebarSection[] = [
   { id: 1, label: "Details of Child", slug: "child-details", status: "not_started", gapCount: 0, progressSatisfied: 0, progressTotal: 1 },
@@ -43,7 +52,9 @@ export const DEFAULT_SIDEBAR_SECTIONS: SidebarSection[] = [
   { id: 7, label: "Parents' Income", slug: "parents-income", status: "not_started", gapCount: 0, progressSatisfied: 0, progressTotal: 1 },
   { id: 8, label: "Assets & Liabilities", slug: "assets-liabilities", status: "not_started", gapCount: 0, progressSatisfied: 0, progressTotal: 1 },
   { id: 9, label: "Additional Information", slug: "additional-info", status: "not_started", gapCount: 0, progressSatisfied: 0, progressTotal: 1 },
-  { id: 10, label: "Declaration & Submit", slug: "declaration", status: "not_started", gapCount: 0, progressSatisfied: 0, progressTotal: 1 },
+  // Synthetic Review step — always navigable; status derived from global gap roll-up.
+  { id: 10, label: "Review", slug: "review", status: "not_started", gapCount: 0, progressSatisfied: 0, progressTotal: 1, isSynthetic: true },
+  { id: 11, label: "Declaration & Submit", slug: "declaration", status: "not_started", gapCount: 0, progressSatisfied: 0, progressTotal: 1 },
 ];
 
 const SECTION_TYPE_TO_SLUG: Record<string, string> = {
@@ -64,10 +75,15 @@ const SECTION_TYPE_TO_SLUG: Record<string, string> = {
  * `getSectionGapStatuses`. Surfaces tri-state status and partial progress
  * numerator/denominator per section.
  *
- * Status rules:
+ * Status rules (per real section):
  *   "complete"        → isFullyValid (isDbComplete && no error gaps)
  *   "needs_attention" → (isStarted || isDbComplete) && ≥1 error-severity gap
  *   "not_started"     → everything else
+ *
+ * Status rule (synthetic Review entry):
+ *   "complete"        → zero error-severity gaps across ALL sections
+ *   "needs_attention" → ≥1 error-severity gap exists anywhere
+ *   "not_started"     → no sections have been started yet (progress = 0)
  */
 export function buildSidebarSections(
   gapStatuses: SectionGapStatus[]
@@ -101,7 +117,28 @@ export function buildSidebarSections(
     });
   }
 
+  // Derive synthetic Review status from global error-gap roll-up.
+  const totalErrorGaps = gapStatuses.reduce(
+    (acc, gs) => acc + gs.gaps.filter((g) => g.severity === "error").length,
+    0
+  );
+  const anyStarted = gapStatuses.some((gs) => gs.isStarted);
+  const reviewStatus: SectionStatus = !anyStarted
+    ? "not_started"
+    : totalErrorGaps === 0
+      ? "complete"
+      : "needs_attention";
+
   return DEFAULT_SIDEBAR_SECTIONS.map((section) => {
+    // Synthetic Review entry: derive status from global gap roll-up.
+    if (section.isSynthetic && section.slug === "review") {
+      return {
+        ...section,
+        status: reviewStatus,
+        gapCount: totalErrorGaps,
+      };
+    }
+
     const enriched = bySlug.get(section.slug);
     if (!enriched) return section;
     return {

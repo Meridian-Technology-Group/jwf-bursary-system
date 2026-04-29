@@ -165,16 +165,32 @@ export default async function SectionPage({ params }: PageProps) {
       ? activeSectionOrder[currentIndex + 1]
       : null;
 
-  const backHref = prevSection ? `/apply/${SECTION_TO_SLUG[prevSection]}` : "/";
-  // After Declaration, send the applicant to the review page (where the
-  // actual Submit button lives) rather than the portal dashboard.
-  const nextHref = nextSection
-    ? `/apply/${SECTION_TO_SLUG[nextSection]}`
-    : sectionType === "DECLARATION"
+  // Declaration's back button returns to the Review page (not additional-info),
+  // since the wizard flow is: additional-info → review → declaration.
+  const backHref =
+    sectionType === "DECLARATION"
       ? "/apply/review"
-      : "/";
+      : prevSection
+        ? `/apply/${SECTION_TO_SLUG[prevSection]}`
+        : "/";
+
+  // Wizard wiring:
+  //   ADDITIONAL_INFO (step 9) → /apply/review
+  //   DECLARATION (step 10)   → /apply/review  (back button returns to review)
+  //   All other sections      → next section slug as usual
+  const nextHref =
+    sectionType === "ADDITIONAL_INFO"
+      ? "/apply/review"
+      : nextSection
+        ? `/apply/${SECTION_TO_SLUG[nextSection]}`
+        : "/";
+
   const nextLabel =
-    sectionType === "DECLARATION" ? "Review and Submit" : undefined;
+    sectionType === "ADDITIONAL_INFO"
+      ? "Review Application"
+      : sectionType === "DECLARATION"
+        ? "Submit Application"
+        : undefined;
 
   return (
     <SectionPageClient
