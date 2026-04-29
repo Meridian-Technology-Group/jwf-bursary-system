@@ -118,11 +118,6 @@ export function ChildDetailsForm({ applicationId, documentMap }: ChildDetailsFor
     return { id: doc.id, filename: doc.filename, fileSize: doc.fileSize, uploadedAt: doc.uploadedAt };
   }, [documentMap]);
 
-  const applyingToAnotherSchool = useWatch({
-    control,
-    name: "applyingToAnotherSchool",
-  });
-
   const sameAddressAsParent1 = useWatch({
     control,
     name: "sameAddressAsParent1",
@@ -164,12 +159,6 @@ export function ChildDetailsForm({ applicationId, documentMap }: ChildDetailsFor
           )}
         />
 
-        <YesNoToggle
-          control={control}
-          name="applyingToAnotherSchool"
-          label="Are you applying to another school?"
-          required
-        />
       </fieldset>
 
       <hr className="border-slate-200" />

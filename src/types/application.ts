@@ -20,8 +20,6 @@ export interface ChildAddress {
 export interface ChildDetailsData {
   /** School applying for */
   school: School;
-  /** Applying to another school as well? */
-  applyingToAnotherSchool: boolean;
   /** Child's full legal name */
   childFullName: string;
   /** Gender */
