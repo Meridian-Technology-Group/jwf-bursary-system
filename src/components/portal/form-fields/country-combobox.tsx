@@ -15,10 +15,10 @@ import {
   type Control,
   type FieldPath,
   type FieldValues,
-  Controller,
 } from "react-hook-form";
 import { ChevronsUpDown, Check } from "lucide-react";
 import {
+  FormField,
   FormItem,
   FormLabel,
   FormMessage,
@@ -64,7 +64,7 @@ export function CountryCombobox<
   const [open, setOpen] = React.useState(false);
 
   return (
-    <Controller
+    <FormField
       control={control}
       name={name}
       render={({ field, fieldState }) => {
