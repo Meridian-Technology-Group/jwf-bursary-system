@@ -34,6 +34,7 @@ import { YesNoToggle } from "@/components/portal/form-fields/yes-no-toggle";
 import { CurrencyInput } from "@/components/portal/form-fields/currency-input";
 import { DateInput } from "@/components/portal/form-fields/date-input";
 import { ConditionalField } from "@/components/portal/form-fields/conditional-field";
+import { CountryCombobox } from "@/components/portal/form-fields/country-combobox";
 import type { ParentDetailsFormValues } from "@/lib/schemas/parent-details";
 
 const TITLES = [
@@ -63,30 +64,6 @@ const EMPLOYMENT_STATUSES = [
   { value: "SELF_EMPLOYED_CIS", label: "Self-employed (CIS registered)" },
   { value: "SELF_EMPLOYED_AND_EMPLOYED", label: "Self-employed and employed" },
   { value: "RETIRED", label: "Retired" },
-];
-
-const COUNTRIES = [
-  "United Kingdom",
-  "Australia",
-  "Belgium",
-  "Canada",
-  "China",
-  "France",
-  "Germany",
-  "India",
-  "Ireland",
-  "Italy",
-  "Netherlands",
-  "New Zealand",
-  "Nigeria",
-  "Pakistan",
-  "Poland",
-  "Portugal",
-  "South Africa",
-  "Spain",
-  "Sweden",
-  "United States",
-  "Other",
 ];
 
 // ─── Parent Contact fields sub-component ─────────────────────────────────────
@@ -303,31 +280,12 @@ function ParentContactFields({
         />
       </div>
 
-      <FormField
+      <CountryCombobox
         control={control}
         name={`${prefix}.country` as "parent1Contact.country"}
-        render={({ field }) => (
-          <FormItem>
-            <FormLabel>
-              Country <span className="text-error-600">*</span>
-            </FormLabel>
-            <Select onValueChange={field.onChange} value={field.value ?? ""}>
-              <FormControl>
-                <SelectTrigger>
-                  <SelectValue placeholder="Select country..." />
-                </SelectTrigger>
-              </FormControl>
-              <SelectContent>
-                {COUNTRIES.map((c) => (
-                  <SelectItem key={c} value={c}>
-                    {c}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <FormMessage />
-          </FormItem>
-        )}
+        label="Country"
+        placeholder="Select country..."
+        required
       />
     </div>
   );
