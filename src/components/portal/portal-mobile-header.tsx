@@ -19,6 +19,7 @@ import {
 } from "@/components/ui/sheet";
 import { PortalSidebarContent, type SidebarSection } from "./portal-sidebar";
 import { cn } from "@/lib/utils";
+import { JwfLogo } from "@/components/brand/jwf-logo";
 
 interface PortalMobileHeaderProps {
   userName: string;
@@ -42,9 +43,7 @@ export function PortalMobileHeader({
       <div className="flex items-center justify-between gap-4">
         {/* Brand + progress summary */}
         <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-semibold text-primary-900">
-            John Whitgift Foundation
-          </p>
+          <JwfLogo compact className="h-9" />
 
           {/* Compact progress bar */}
           <div className="mt-1.5 flex items-center gap-2">

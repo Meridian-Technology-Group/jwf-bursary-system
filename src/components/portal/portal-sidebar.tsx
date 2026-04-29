@@ -121,10 +121,10 @@ export function PortalSidebarContent({
   return (
     <div className="flex h-full flex-col overflow-hidden">
       {/* Foundation logo / wordmark */}
-      <div className="flex items-center gap-3 border-b border-slate-200 px-6 py-5">
-        <JwfLogo className="h-12 shrink-0" />
-        <span className="text-[11px] font-medium uppercase tracking-widest text-slate-500">
-          Bursary
+      <div className="flex flex-col items-center gap-2 border-b border-slate-200 px-6 py-7">
+        <JwfLogo className="h-20" />
+        <span className="text-[11px] font-medium uppercase tracking-[0.22em] text-slate-500">
+          Bursary Assessment
         </span>
       </div>
 

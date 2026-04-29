@@ -39,9 +39,9 @@ export default function AuthLayout({
 
       <div className="relative w-full max-w-md">
         {/* Logo + wordmark */}
-        <div className="mb-8 flex flex-col items-center gap-3 text-center">
-          <JwfLogo className="h-16" />
-          <p className="text-sm font-medium tracking-wide text-primary-800">
+        <div className="mb-8 flex flex-col items-center gap-4 text-center">
+          <JwfLogo className="h-28" />
+          <p className="text-sm font-medium uppercase tracking-[0.18em] text-primary-800">
             Bursary Assessment System
           </p>
         </div>

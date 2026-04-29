@@ -142,16 +142,16 @@ export function AdminNav({ collapsed, userName, userEmail, userRole }: AdminNavP
       {/* Logo / wordmark */}
       <div
         className={cn(
-          "flex items-center border-b border-primary-700 py-5",
-          collapsed ? "justify-center px-2" : "gap-3 px-5"
+          "flex flex-col items-center justify-center border-b border-primary-700",
+          collapsed ? "gap-2 px-2 py-4" : "gap-3 px-5 py-7"
         )}
       >
         {collapsed ? (
-          <JwfLogo tone="light" compact className="h-8" alt="JWF" />
+          <JwfLogo tone="light" compact className="h-10" alt="JWF" />
         ) : (
           <>
-            <JwfLogo tone="light" className="h-10 shrink-0" />
-            <span className="text-[11px] font-medium uppercase tracking-widest text-neutral-300">
+            <JwfLogo tone="light" className="h-20" />
+            <span className="text-[11px] font-medium uppercase tracking-[0.22em] text-neutral-300">
               Admin
             </span>
           </>
