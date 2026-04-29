@@ -23,12 +23,27 @@ import {
 import { prisma } from "@/lib/db/prisma";
 import { sendEmail } from "@/lib/email/send";
 import { createAuditLog } from "@/lib/audit/log";
+import { getSectionGapStatuses, type SectionGap } from "@/lib/portal/section-gaps";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 export interface SaveSectionResult {
   success: boolean;
   errors?: string[];
+}
+
+/**
+ * Structured payload returned when submission is blocked by gap errors.
+ * The client uses this to render the "issues to resolve" panel.
+ */
+export interface SubmitBlockedByGapsError {
+  code: "GAPS_BLOCKING_SUBMISSION";
+  gaps: Array<{
+    id: string;
+    sectionType: string;
+    label: string;
+    fieldRef?: string;
+  }>;
 }
 
 export interface SectionDataResult {
@@ -240,6 +255,29 @@ export async function submitApplication(applicationId: string): Promise<never> {
     throw new Error(
       `The following sections are not yet complete: ${labels}. Please complete them before submitting.`
     );
+  }
+
+  // ── Validate no error-severity gaps remain (defence-in-depth) ────────────
+  // This check catches missing required documents and structural rule failures
+  // that isComplete alone does not capture.
+  const gapStatuses = await getSectionGapStatuses(applicationId);
+  const errorGaps: SectionGap[] = gapStatuses.flatMap((gs) =>
+    gs.gaps.filter((g) => g.severity === "error")
+  );
+
+  if (errorGaps.length > 0) {
+    const payload: SubmitBlockedByGapsError = {
+      code: "GAPS_BLOCKING_SUBMISSION",
+      gaps: errorGaps.map((g) => ({
+        id: g.id,
+        sectionType: g.sectionType,
+        label: g.label,
+        fieldRef: g.fieldRef,
+      })),
+    };
+    // Encode the structured payload as a JSON string inside the Error message
+    // so the client-side catch block can parse and display it.
+    throw new Error(JSON.stringify(payload));
   }
 
   // ── Mark as SUBMITTED ──────────────────────────────────────────────────────

@@ -27,7 +27,6 @@ export const childDetailsSchema = z
     school: z.enum(["TRINITY", "WHITGIFT"] as const, {
       message: "Please select a school",
     }),
-    applyingToAnotherSchool: z.boolean(),
     childFullName: z.preprocess(
       (v) => (v == null ? "" : v),
       z.string().min(2, "Child's full name is required").max(120, "Name is too long")

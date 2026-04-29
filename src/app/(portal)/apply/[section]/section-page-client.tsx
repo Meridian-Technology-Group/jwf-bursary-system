@@ -91,7 +91,6 @@ function getDefaultValues(
     case "CHILD_DETAILS":
       return {
         school: seed.applicationSchool,
-        applyingToAnotherSchool: false,
         childFullName: seed.applicationChildName ?? "",
         gender: "",
         dateOfBirth: "",
@@ -169,8 +168,8 @@ function SectionFormContent({
     case "DEPENDENT_CHILDREN": return <DependentChildrenForm childFullName={childFullName} />;
     case "DEPENDENT_ELDERLY": return <DependentElderlyForm />;
     case "OTHER_INFO": return <OtherInfoForm />;
-    case "PARENTS_INCOME": return <ParentsIncomeForm isSoleParent={isSoleParent} />;
-    case "ASSETS_LIABILITIES": return <AssetsLiabilitiesForm />;
+    case "PARENTS_INCOME": return <ParentsIncomeForm isSoleParent={isSoleParent} applicationId={applicationId} documentMap={documentMap} />;
+    case "ASSETS_LIABILITIES": return <AssetsLiabilitiesForm isSoleParent={isSoleParent} applicationId={applicationId} documentMap={documentMap} />;
     case "ADDITIONAL_INFO": return <AdditionalInfoForm />;
     case "DECLARATION": return <DeclarationForm />;
     default: return null;
@@ -220,6 +219,49 @@ export function SectionPageClient({
   async function handleSave(data: unknown) {
     return saveSection(applicationId, sectionType, data);
   }
+
+  // Deep-link target: when the URL has a hash (e.g. #parent1Income.p60DocumentId
+  // from the Review page's "Issues to resolve" panel), focus the matching field
+  // by its `name` attribute. Form fields use react-hook-form `name` rather than
+  // DOM `id`, so the browser's native hash-scroll never fires — this fills the gap.
+  React.useEffect(() => {
+    const hash = decodeURIComponent(window.location.hash.replace(/^#/, ""));
+    if (!hash) return;
+
+    const tryFocus = () => {
+      const escaped =
+        typeof CSS !== "undefined" && typeof CSS.escape === "function"
+          ? CSS.escape(hash)
+          : hash.replace(/(["\\\]\[#.:>+~*^$|()=])/g, "\\$1");
+      const target =
+        document.querySelector<HTMLElement>(`[name="${escaped}"]`) ??
+        document.querySelector<HTMLElement>(`[name^="${escaped}"]`) ??
+        document.getElementById(hash);
+      if (!target) return false;
+      target.scrollIntoView({ behavior: "smooth", block: "center" });
+      const focusable =
+        target.tagName === "INPUT" ||
+        target.tagName === "TEXTAREA" ||
+        target.tagName === "SELECT" ||
+        target.tabIndex >= 0;
+      if (focusable) {
+        (target as HTMLElement).focus({ preventScroll: true });
+      }
+      return true;
+    };
+
+    // Fields may not be rendered on the first paint (FormField wraps render
+    // them lazily); retry briefly so the deep-link still lands.
+    if (tryFocus()) return;
+    const interval = window.setInterval(() => {
+      if (tryFocus()) window.clearInterval(interval);
+    }, 100);
+    const timeout = window.setTimeout(() => window.clearInterval(interval), 2000);
+    return () => {
+      window.clearInterval(interval);
+      window.clearTimeout(timeout);
+    };
+  }, [sectionType]);
 
   return (
     <div className="space-y-6">

@@ -26,75 +26,11 @@ import {
 import { YesNoToggle } from "@/components/portal/form-fields/yes-no-toggle";
 import { DateInput } from "@/components/portal/form-fields/date-input";
 import { ConditionalField } from "@/components/portal/form-fields/conditional-field";
+import { CountryCombobox } from "@/components/portal/form-fields/country-combobox";
 import { FileUpload } from "@/components/portal/file-upload";
 import type { ChildDetailsFormValues } from "@/lib/schemas/child-details";
 import type { UploadedDocument } from "@/components/portal/file-upload";
 import type { DocumentMeta } from "@/lib/db/queries/applications";
-
-const COUNTRIES = [
-  "United Kingdom",
-  "Afghanistan",
-  "Albania",
-  "Algeria",
-  "Argentina",
-  "Australia",
-  "Austria",
-  "Bangladesh",
-  "Belgium",
-  "Brazil",
-  "Canada",
-  "China",
-  "Cyprus",
-  "Czech Republic",
-  "Denmark",
-  "Egypt",
-  "Ethiopia",
-  "Finland",
-  "France",
-  "Germany",
-  "Ghana",
-  "Greece",
-  "Hungary",
-  "India",
-  "Indonesia",
-  "Iran",
-  "Iraq",
-  "Ireland",
-  "Israel",
-  "Italy",
-  "Japan",
-  "Jordan",
-  "Kenya",
-  "Malaysia",
-  "Mexico",
-  "Morocco",
-  "Netherlands",
-  "New Zealand",
-  "Nigeria",
-  "Norway",
-  "Pakistan",
-  "Philippines",
-  "Poland",
-  "Portugal",
-  "Romania",
-  "Russia",
-  "Saudi Arabia",
-  "Singapore",
-  "South Africa",
-  "South Korea",
-  "Spain",
-  "Sri Lanka",
-  "Sweden",
-  "Switzerland",
-  "Taiwan",
-  "Tanzania",
-  "Thailand",
-  "Turkey",
-  "Ukraine",
-  "United Arab Emirates",
-  "United States",
-  "Zimbabwe",
-];
 
 const GENDERS = ["Male", "Female", "Prefer not to say", "Other"];
 
@@ -117,11 +53,6 @@ export function ChildDetailsForm({ applicationId, documentMap }: ChildDetailsFor
     const doc = documentMap[docId];
     return { id: doc.id, filename: doc.filename, fileSize: doc.fileSize, uploadedAt: doc.uploadedAt };
   }, [documentMap]);
-
-  const applyingToAnotherSchool = useWatch({
-    control,
-    name: "applyingToAnotherSchool",
-  });
 
   const sameAddressAsParent1 = useWatch({
     control,
@@ -164,12 +95,6 @@ export function ChildDetailsForm({ applicationId, documentMap }: ChildDetailsFor
           )}
         />
 
-        <YesNoToggle
-          control={control}
-          name="applyingToAnotherSchool"
-          label="Are you applying to another school?"
-          required
-        />
       </fieldset>
 
       <hr className="border-slate-200" />
@@ -232,32 +157,12 @@ export function ChildDetailsForm({ applicationId, documentMap }: ChildDetailsFor
           required
         />
 
-        <FormField
+        <CountryCombobox
           control={control}
           name="placeOfBirth"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>
-                Place of birth{" "}
-                <span className="text-error-600" aria-hidden="true">*</span>
-              </FormLabel>
-              <Select onValueChange={field.onChange} value={field.value}>
-                <FormControl>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select country of birth..." />
-                  </SelectTrigger>
-                </FormControl>
-                <SelectContent>
-                  {COUNTRIES.map((c) => (
-                    <SelectItem key={c} value={c}>
-                      {c}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <FormMessage />
-            </FormItem>
-          )}
+          label="Place of birth"
+          placeholder="Select country of birth..."
+          required
         />
       </fieldset>
 
@@ -396,35 +301,12 @@ export function ChildDetailsForm({ applicationId, documentMap }: ChildDetailsFor
             />
           </div>
 
-          <FormField
+          <CountryCombobox
             control={control}
             name="childAddress.country"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>
-                  Country{" "}
-                  <span className="text-error-600" aria-hidden="true">*</span>
-                </FormLabel>
-                <Select
-                  onValueChange={field.onChange}
-                  value={field.value ?? ""}
-                >
-                  <FormControl>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select country..." />
-                    </SelectTrigger>
-                  </FormControl>
-                  <SelectContent>
-                    {COUNTRIES.map((c) => (
-                      <SelectItem key={c} value={c}>
-                        {c}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <FormMessage />
-              </FormItem>
-            )}
+            label="Country"
+            placeholder="Select country..."
+            required
           />
         </ConditionalField>
       </fieldset>
