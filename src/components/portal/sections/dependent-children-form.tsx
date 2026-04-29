@@ -29,7 +29,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { CurrencyInput } from "@/components/portal/form-fields/currency-input";
 import { ConditionalField } from "@/components/portal/form-fields/conditional-field";
-import { Plus, Pencil, Trash2 } from "lucide-react";
+import { AlertCircle, Plus, Pencil, Trash2 } from "lucide-react";
 import type { DependentChildrenFormValues } from "@/lib/schemas/dependent-children";
 import { cn } from "@/lib/utils";
 
@@ -249,7 +249,7 @@ function ChildDialog({
 // ─── Main form component ──────────────────────────────────────────────────────
 
 export function DependentChildrenForm({ childFullName }: { childFullName?: string }) {
-  const { control, getValues, setValue } =
+  const { control, getValues, setValue, formState: { errors, isSubmitted } } =
     useFormContext<DependentChildrenFormValues>();
 
   const { fields, append, remove, update } = useFieldArray({
@@ -259,6 +259,10 @@ export function DependentChildrenForm({ childFullName }: { childFullName?: strin
 
   const [dialogOpen, setDialogOpen] = React.useState(false);
   const [editIndex, setEditIndex] = React.useState<number | null>(null);
+
+  // Array-level error message from superRefine (R1: no children, R2: wrong named-child count).
+  // react-hook-form surfaces path:["children"] issues at errors.children.message.
+  const childrenArrayError = (errors.children as { message?: string } | undefined)?.message;
 
   function openAdd() {
     setEditIndex(null);
@@ -333,8 +337,29 @@ export function DependentChildrenForm({ childFullName }: { childFullName?: strin
           </p>
         </div>
 
+        {/* Array-level validation banner — shown after a failed save attempt */}
+        {isSubmitted && childrenArrayError && (
+          <div
+            role="alert"
+            className="flex items-start gap-2.5 rounded-md border border-error-200 bg-error-50 px-4 py-3"
+          >
+            <AlertCircle
+              className="mt-0.5 h-4 w-4 shrink-0 text-error-600"
+              aria-hidden="true"
+            />
+            <p className="text-sm text-error-700">{childrenArrayError}</p>
+          </div>
+        )}
+
         {fields.length === 0 ? (
-          <div className="rounded-md border border-dashed border-slate-300 bg-slate-50 px-4 py-8 text-center">
+          <div
+            className={cn(
+              "rounded-md border border-dashed px-4 py-8 text-center",
+              isSubmitted && childrenArrayError
+                ? "border-error-300 bg-error-50"
+                : "border-slate-300 bg-slate-50"
+            )}
+          >
             <p className="text-sm text-slate-500">No children added yet.</p>
           </div>
         ) : (
@@ -360,49 +385,76 @@ export function DependentChildrenForm({ childFullName }: { childFullName?: strin
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 bg-white">
-                {fields.map((field, index) => (
-                  <tr key={field.id} className="hover:bg-slate-50">
-                    <td className="px-4 py-3 text-slate-700">
-                      {field.name}
-                      {field.isNamedChild && (
-                        <span className="ml-2 text-xs text-accent-600 font-medium">
-                          (named child)
-                        </span>
+                {fields.map((field, index) => {
+                  // Per-row named-child conflict error (only fires when namedCount > 1)
+                  const rowNamedError = (
+                    errors.children as
+                      | Array<{ isNamedChild?: { message?: string } } | undefined>
+                      | undefined
+                  )?.[index]?.isNamedChild?.message;
+
+                  return (
+                    <tr
+                      key={field.id}
+                      className={cn(
+                        "hover:bg-slate-50",
+                        isSubmitted && rowNamedError && "bg-error-50"
                       )}
-                    </td>
-                    <td className="px-4 py-3 text-slate-500">
-                      {field.school || "—"}
-                    </td>
-                    <td className="px-4 py-3 text-right tabular-nums text-slate-700">
-                      {field.bursaryAmount !== undefined
-                        ? `£${field.bursaryAmount.toLocaleString()}`
-                        : "—"}
-                    </td>
-                    <td className="px-4 py-3 text-right tabular-nums text-slate-700">
-                      £{(field.unearnedIncome ?? 0).toLocaleString()}
-                    </td>
-                    <td className="px-4 py-3 text-right">
-                      <div className="flex items-center justify-end gap-2">
-                        <button
-                          type="button"
-                          onClick={() => openEdit(index)}
-                          className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
-                          aria-label={`Edit ${field.name}`}
-                        >
-                          <Pencil className="h-3.5 w-3.5" />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => remove(index)}
-                          className="rounded p-1 text-slate-400 hover:bg-error-50 hover:text-error-600"
-                          aria-label={`Remove ${field.name}`}
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
+                    >
+                      <td className="px-4 py-3 text-slate-700">
+                        {field.name}
+                        {field.isNamedChild && (
+                          <span
+                            className={cn(
+                              "ml-2 text-xs font-medium",
+                              isSubmitted && rowNamedError
+                                ? "text-error-600"
+                                : "text-accent-600"
+                            )}
+                          >
+                            (named child)
+                          </span>
+                        )}
+                        {isSubmitted && rowNamedError && (
+                          <p className="mt-0.5 text-xs text-error-600">
+                            {rowNamedError}
+                          </p>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 text-slate-500">
+                        {field.school || "—"}
+                      </td>
+                      <td className="px-4 py-3 text-right tabular-nums text-slate-700">
+                        {field.bursaryAmount !== undefined
+                          ? `£${field.bursaryAmount.toLocaleString()}`
+                          : "—"}
+                      </td>
+                      <td className="px-4 py-3 text-right tabular-nums text-slate-700">
+                        £{(field.unearnedIncome ?? 0).toLocaleString()}
+                      </td>
+                      <td className="px-4 py-3 text-right">
+                        <div className="flex items-center justify-end gap-2">
+                          <button
+                            type="button"
+                            onClick={() => openEdit(index)}
+                            className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+                            aria-label={`Edit ${field.name}`}
+                          >
+                            <Pencil className="h-3.5 w-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => remove(index)}
+                            className="rounded p-1 text-slate-400 hover:bg-error-50 hover:text-error-600"
+                            aria-label={`Remove ${field.name}`}
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
