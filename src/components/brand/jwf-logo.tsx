@@ -5,11 +5,10 @@
  * On dark backgrounds (e.g. admin sidebar, portal sidebar header strip), pass
  * `tone="light"` to invert it to white via CSS — no second asset to maintain.
  *
- * Sizes are relative to the natural aspect ratio (144 × 150 for the full mark,
- * 105 × 80 for the compact mark). Pick the variant via `compact`.
+ * Uses a plain <img> rather than next/image: the assets are tiny (~14 KB)
+ * and the optimisation pipeline can choke on interlaced PNGs.
  */
 
-import Image from "next/image";
 import { cn } from "@/lib/utils";
 
 interface JwfLogoProps {
@@ -30,18 +29,14 @@ export function JwfLogo({
   alt = "John Whitgift Foundation",
 }: JwfLogoProps) {
   const src = compact ? "/jwf-logo-compact.png" : "/jwf-logo.png";
-  const width = compact ? 105 : 144;
-  const height = compact ? 80 : 150;
 
   return (
-    <Image
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
       src={src}
       alt={alt}
-      width={width}
-      height={height}
-      priority
       className={cn(
-        "h-auto w-auto select-none",
+        "select-none",
         tone === "light" && "brightness-0 invert",
         className,
       )}
