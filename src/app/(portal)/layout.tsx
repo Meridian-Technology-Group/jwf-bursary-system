@@ -10,10 +10,8 @@
 
 import { Suspense } from "react";
 import { getCurrentUser } from "@/lib/auth/roles";
-import {
-  getApplicationForUser,
-  getSectionStatusList,
-} from "@/lib/db/queries/applications";
+import { getApplicationForUser } from "@/lib/db/queries/applications";
+import { getSectionGapStatuses } from "@/lib/portal/section-gaps";
 import { PortalMobileHeader } from "@/components/portal/portal-mobile-header";
 import { PortalDesktopSidebar } from "@/components/portal/portal-desktop-sidebar";
 import { PortalBottomNav } from "@/components/portal/portal-bottom-nav";
@@ -47,8 +45,8 @@ export default async function PortalLayout({
   if (user) {
     const application = await getApplicationForUser(user.id);
     if (application) {
-      const statuses = await getSectionStatusList(application.id);
-      sidebarSections = buildSidebarSections(statuses);
+      const gapStatuses = await getSectionGapStatuses(application.id);
+      sidebarSections = buildSidebarSections(gapStatuses);
       roundName = application.round?.academicYear
         ? `${application.round.academicYear} Assessment Round`
         : undefined;

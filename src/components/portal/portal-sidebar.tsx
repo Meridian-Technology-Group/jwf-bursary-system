@@ -12,6 +12,7 @@ import {
   Circle,
   ChevronRight,
   Clock,
+  AlertTriangle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
@@ -27,7 +28,15 @@ export { buildSidebarSections } from "./portal-sidebar-sections";
 
 // ─── Section icon ─────────────────────────────────────────────────────────────
 
-function SectionIcon({ status, stepNumber }: { status: SectionStatus; stepNumber: number }) {
+function SectionIcon({
+  status,
+  stepNumber,
+  gapCount,
+}: {
+  status: SectionStatus;
+  stepNumber: number;
+  gapCount: number;
+}) {
   switch (status) {
     case "complete":
       return (
@@ -36,13 +45,23 @@ function SectionIcon({ status, stepNumber }: { status: SectionStatus; stepNumber
           aria-hidden="true"
         />
       );
-    case "in_progress":
+    case "needs_attention":
       return (
-        <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-accent-600 text-[10px] font-bold text-white">
-          {stepNumber}
-        </span>
+        <AlertTriangle
+          className="h-4 w-4 shrink-0 text-amber-500"
+          aria-label={`Needs attention — ${gapCount} issue${gapCount === 1 ? "" : "s"} outstanding`}
+        />
       );
     default:
+      // In-progress (currently active, not yet complete) — show step number bubble.
+      if (stepNumber < 0) {
+        // Sentinel: active-but-not-started renders as numbered bubble; handled below.
+        return (
+          <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-accent-600 text-[10px] font-bold text-white">
+            {Math.abs(stepNumber)}
+          </span>
+        );
+      }
       return (
         <Circle
           className="h-4 w-4 shrink-0 text-slate-300"
@@ -62,7 +81,7 @@ interface PortalSidebarContentProps {
 }
 
 export function PortalSidebarContent({
-  roundName = "2024\u201325 Assessment Round",
+  roundName = "2024–25 Assessment Round",
   lastSaved,
   sections,
 }: PortalSidebarContentProps) {
@@ -75,8 +94,28 @@ export function PortalSidebarContent({
     : null;
   const currentSection =
     sectionList.find((s) => s.slug === currentSlug)?.id ?? 0;
-  const completedCount = sectionList.filter((s) => s.status === "complete").length;
-  const progressPct = Math.round((completedCount / sectionList.length) * 100);
+
+  // ── Partial-fill progress bar ──────────────────────────────────────────────
+  // Sum satisfied and total across all sections, then compute percentage.
+  // A section that is 3/4 satisfied (e.g. form saved + 2 of 3 docs) contributes
+  // 3 to the numerator and 4 to the denominator.
+  const totalSatisfied = sectionList.reduce(
+    (acc, s) => acc + s.progressSatisfied,
+    0
+  );
+  const totalItems = sectionList.reduce(
+    (acc, s) => acc + s.progressTotal,
+    0
+  );
+  const progressPct =
+    totalItems > 0
+      ? Math.min(100, parseFloat(((totalSatisfied / totalItems) * 100).toFixed(1)))
+      : 0;
+
+  // Human-readable label: show satisfied / total at the item level.
+  const completedSections = sectionList.filter(
+    (s) => s.status === "complete"
+  ).length;
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
@@ -106,9 +145,14 @@ export function PortalSidebarContent({
         <ol className="space-y-0.5">
           {sectionList.map((section) => {
             const isActive = section.id === currentSection;
-            const effectiveStatus = isActive && section.status !== "complete"
-              ? "in_progress"
-              : section.status;
+            // Determine the effective display status for the icon.
+            // Active + not yet complete → show numbered bubble (in_progress).
+            // We pass a negative sentinel value to SectionIcon to signal this.
+            const iconStatus: SectionStatus =
+              isActive && section.status !== "complete" && section.status !== "needs_attention"
+                ? "not_started" // renders Circle normally, but we override below
+                : section.status;
+
             return (
               <li key={section.id}>
                 <a
@@ -119,13 +163,32 @@ export function PortalSidebarContent({
                       ? "bg-primary-50 text-primary-900 font-medium"
                       : section.status === "complete"
                         ? "text-slate-600 hover:bg-slate-50"
-                        : "text-slate-400 hover:bg-slate-50"
+                        : section.status === "needs_attention"
+                          ? "text-amber-700 hover:bg-amber-50"
+                          : "text-slate-400 hover:bg-slate-50"
                   )}
                   aria-current={isActive ? "step" : undefined}
                 >
                   {/* Step number / status icon */}
-                  <span className="flex h-5 w-5 shrink-0 items-center justify-center">
-                    <SectionIcon status={effectiveStatus} stepNumber={section.id} />
+                  <span
+                    className="flex h-5 w-5 shrink-0 items-center justify-center"
+                    title={
+                      section.status === "needs_attention"
+                        ? `Needs attention — ${section.gapCount} issue${section.gapCount === 1 ? "" : "s"} outstanding`
+                        : undefined
+                    }
+                  >
+                    {isActive && section.status !== "complete" && section.status !== "needs_attention" ? (
+                      <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-accent-600 text-[10px] font-bold text-white">
+                        {section.id}
+                      </span>
+                    ) : (
+                      <SectionIcon
+                        status={iconStatus}
+                        stepNumber={section.id}
+                        gapCount={section.gapCount}
+                      />
+                    )}
                   </span>
 
                   <span className="flex-1 truncate">{section.label}</span>
@@ -143,10 +206,10 @@ export function PortalSidebarContent({
         </ol>
       </nav>
 
-      {/* Progress bar */}
+      {/* Progress bar — partial fill based on item-level satisfied/total */}
       <div className="border-t border-slate-200 px-6 py-4">
         <div className="flex items-center justify-between text-xs text-slate-500 mb-1.5">
-          <span>{completedCount} of {sectionList.length} sections complete</span>
+          <span>{completedSections} of {sectionList.length} sections complete</span>
           <span className="font-medium text-primary-700">{progressPct}%</span>
         </div>
         <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-200">
@@ -157,7 +220,7 @@ export function PortalSidebarContent({
             aria-valuenow={progressPct}
             aria-valuemin={0}
             aria-valuemax={100}
-            aria-label={`${completedCount} of ${sectionList.length} sections complete`}
+            aria-label={`${progressPct}% of required items complete`}
           />
         </div>
 
