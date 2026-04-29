@@ -168,8 +168,8 @@ function SectionFormContent({
     case "DEPENDENT_CHILDREN": return <DependentChildrenForm childFullName={childFullName} />;
     case "DEPENDENT_ELDERLY": return <DependentElderlyForm />;
     case "OTHER_INFO": return <OtherInfoForm />;
-    case "PARENTS_INCOME": return <ParentsIncomeForm isSoleParent={isSoleParent} />;
-    case "ASSETS_LIABILITIES": return <AssetsLiabilitiesForm />;
+    case "PARENTS_INCOME": return <ParentsIncomeForm isSoleParent={isSoleParent} applicationId={applicationId} documentMap={documentMap} />;
+    case "ASSETS_LIABILITIES": return <AssetsLiabilitiesForm isSoleParent={isSoleParent} applicationId={applicationId} documentMap={documentMap} />;
     case "ADDITIONAL_INFO": return <AdditionalInfoForm />;
     case "DECLARATION": return <DeclarationForm />;
     default: return null;
