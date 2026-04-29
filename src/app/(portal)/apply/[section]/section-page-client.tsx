@@ -220,6 +220,49 @@ export function SectionPageClient({
     return saveSection(applicationId, sectionType, data);
   }
 
+  // Deep-link target: when the URL has a hash (e.g. #parent1Income.p60DocumentId
+  // from the Review page's "Issues to resolve" panel), focus the matching field
+  // by its `name` attribute. Form fields use react-hook-form `name` rather than
+  // DOM `id`, so the browser's native hash-scroll never fires — this fills the gap.
+  React.useEffect(() => {
+    const hash = decodeURIComponent(window.location.hash.replace(/^#/, ""));
+    if (!hash) return;
+
+    const tryFocus = () => {
+      const escaped =
+        typeof CSS !== "undefined" && typeof CSS.escape === "function"
+          ? CSS.escape(hash)
+          : hash.replace(/(["\\\]\[#.:>+~*^$|()=])/g, "\\$1");
+      const target =
+        document.querySelector<HTMLElement>(`[name="${escaped}"]`) ??
+        document.querySelector<HTMLElement>(`[name^="${escaped}"]`) ??
+        document.getElementById(hash);
+      if (!target) return false;
+      target.scrollIntoView({ behavior: "smooth", block: "center" });
+      const focusable =
+        target.tagName === "INPUT" ||
+        target.tagName === "TEXTAREA" ||
+        target.tagName === "SELECT" ||
+        target.tabIndex >= 0;
+      if (focusable) {
+        (target as HTMLElement).focus({ preventScroll: true });
+      }
+      return true;
+    };
+
+    // Fields may not be rendered on the first paint (FormField wraps render
+    // them lazily); retry briefly so the deep-link still lands.
+    if (tryFocus()) return;
+    const interval = window.setInterval(() => {
+      if (tryFocus()) window.clearInterval(interval);
+    }, 100);
+    const timeout = window.setTimeout(() => window.clearInterval(interval), 2000);
+    return () => {
+      window.clearInterval(interval);
+      window.clearTimeout(timeout);
+    };
+  }, [sectionType]);
+
   return (
     <div className="space-y-6">
       <div>
