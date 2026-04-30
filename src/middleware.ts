@@ -34,6 +34,14 @@ const ADMIN_PREFIX = /^\/(?:\(admin\)\/)?(?:admin|queue|rounds|invitations|repor
 /** Paths that do not need any processing. */
 const BYPASS_PATHS = /^\/(api\/|_next\/|favicon\.ico|robots\.txt|sitemap\.xml)/;
 
+/**
+ * Static asset file extensions served from /public. These must bypass auth
+ * because the unauthenticated /login page references them — otherwise the
+ * middleware redirects the image request to /login itself and the browser
+ * receives HTML in place of the PNG.
+ */
+const PUBLIC_ASSET_EXT = /\.(?:png|jpg|jpeg|gif|svg|webp|ico|woff2?|ttf|otf|css|js|map|txt|webmanifest)$/i;
+
 // ---------------------------------------------------------------------------
 // Role helpers (JWT-based, no Postgres)
 // ---------------------------------------------------------------------------
@@ -67,7 +75,7 @@ export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   // 1. Skip static assets, API routes and Next internals.
-  if (BYPASS_PATHS.test(pathname)) {
+  if (BYPASS_PATHS.test(pathname) || PUBLIC_ASSET_EXT.test(pathname)) {
     return NextResponse.next();
   }
 
