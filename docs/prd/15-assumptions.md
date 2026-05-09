@@ -1,0 +1,38 @@
+## 7. Assumptions, Constraints & Dependencies
+
+### 7.1 Assumptions
+
+| # | Assumption | Risk if Wrong | Mitigation |
+|---|-----------|---------------|-----------|
+| A-1 | **Single assessor workflow.** The system is primarily operated by 1-2 assessors. There is no need for multi-level approval workflows, committee voting, or per-school access partitioning. | If the Foundation hires more staff or changes process, role-based access would need expansion. | Build a role-based access system (even if only "Assessor" and "Viewer" roles are used initially) so new roles can be added later. |
+| A-2 | **Low concurrency.** Peak usage is ~50 concurrent applicant sessions and ~5 admin sessions. The system does not need to scale for thousands of users. | Unlikely to be wrong given 2 schools and ~200 applications per year. | Standard cloud hosting with auto-scaling capability provides headroom. |
+| A-3 | **Qualitative checklist tabs are notes/context panels.** The six non-calculation checklist tabs (Living Conditions, Debt Situation, Other Fees, Staff Situation, Financial Profile Impact, Bursary Assessment Details) contain unstructured or lightly-structured fields that do not feed into the calculation engine. | If any tab contains structured data that feeds into the calculation, the data model would need revision. | Design a flexible schema for checklist tabs (JSON fields or configurable form builder) that allows adding structured fields later without migration. |
+| A-4 | **Years remaining auto-decrements.** The "schooling years remaining" field auto-calculates from entry year and current assessment year, with the assessor able to override for non-standard cases. | If the assessor expects fully manual control, the auto-calculation would be a nuisance. | Auto-calculated value displayed as the default in an editable field. The assessor can override without friction. |
+| A-5 | **Email + password authentication is sufficient for applicants.** No SSO or social login is required. | Some applicants may expect social login. | The invitation-link model means applicants don't need to remember the portal URL or create an account proactively. Password reset via email covers recovery. SSO can be added later. |
+| A-6 | **The school fees in the reference tables are pre-VAT amounts.** VAT is applied at the payable fees stage, not in the school fees table. | If the stored fees are VAT-inclusive, the payable fees formula would double-count VAT. | Confirm with the assessor. Label the field clearly as "Annual Fees (ex-VAT)" in the reference table UI. |
+| A-7 | **Existing email infrastructure.** A transactional email service (SendGrid, AWS SES, Postmark, or equivalent) will be available for sending invitation, confirmation, and notification emails. | If no email service is available, email delivery would be unreliable. | Email service setup is a standard infrastructure task. Budget and configure during environment setup. |
+
+### 7.2 Constraints
+
+| # | Constraint | Impact |
+|---|-----------|--------|
+| C-1 | **Hard deadline: 31 December 2026.** Grant Tracker is sunset on this date. The replacement system must be live and processing applications before this deadline. Realistically, it should be ready before the 2026/27 assessment round opens (typically March 2026). | Limits scope — only "Must Have" features are guaranteed for launch. "Should Have" and "Phase 2" features are delivered post-launch. Requires aggressive but realistic project planning. |
+| C-2 | **GDPR and UK data protection law.** All personal data must be stored in the UK, encrypted at rest and in transit, and subject to retention/deletion policies. The school must never have system access. | Constrains hosting provider (UK data centre), shapes the data model (retention flags, deletion capability), and prohibits a school-facing portal. |
+| C-3 | **The assessment model must be preserved.** The four-stage calculation, payable fees formula, and reference tables are well-established and trusted by the Foundation. The new system must produce the same results as the existing spreadsheet model. | Limits innovation in the calculation engine — it must replicate, not reinvent. Configurable reference tables allow values to change, but the formula logic is fixed. |
+| C-4 | **Assessor judgment is paramount.** Many rules (benefit inclusion/exclusion, benchmark enforcement, exceptional adjustments) are assessor-driven, not system-enforced. The system should inform and calculate, not restrict or automate decisions. | The system must avoid hard-coded business rules that prevent the assessor from overriding results. Manual adjustment fields and editable auto-populated values are essential. |
+| C-5 | **External school communication only.** Recommendations are sent to schools as spreadsheet exports outside the system. No API integration with school systems is required or permitted. | Simplifies the system (no external integrations) but means the export format must be comprehensive and clearly structured. |
+| C-6 | **Budget and team size.** The Foundation is a charity. The development budget is finite and the team is small. The system must be maintainable by a small team and cost-effective to host. | Favours proven, well-supported technology over cutting-edge stacks. Favours managed services over self-hosted infrastructure. Avoids over-engineering. |
+
+### 7.3 Dependencies
+
+| # | Dependency | Owner | Status | Risk |
+|---|-----------|-------|--------|------|
+| D-1 | **Data migration from Symplectic Grant Tracker.** Active bursary accounts, historical assessment data, uploaded documents, benchmark payable fees, and sibling linkages must be extracted from Grant Tracker and imported into the new system. | Foundation + Development Team | **Not yet started — needs investigation** | **High.** Grant Tracker's export capabilities are unknown (limited REST API v7.0, no public documentation). If data cannot be exported programmatically, manual migration may be required. This is the single highest-risk dependency. |
+| D-2 | **Grant Tracker access for migration.** The existing system must remain accessible during the migration window to extract data. | Digital Science (Grant Tracker vendor) | Active (system available until 31 Dec 2026) | Medium. The sunset date is fixed. Migration must complete before this date with margin for verification. |
+| D-3 | **Cloud hosting environment.** A UK-based cloud hosting environment (AWS, Azure, or GCP) must be provisioned for the application, database, and document storage. | Development Team / Foundation IT | Not yet started | Low. Standard procurement. |
+| D-4 | **Transactional email service.** An email delivery service must be configured for sending invitation, notification, and reminder emails. | Development Team | Not yet started | Low. Standard service (SendGrid, AWS SES, or equivalent). |
+| D-5 | **Domain and SSL certificate.** A domain name for the applicant portal and admin console, with a valid SSL certificate. | Foundation IT | Not yet started | Low. |
+| D-6 | **Assessment model test cases.** A set of real (anonymised) historical assessment cases with known correct outcomes, to validate that the new calculation engine produces identical results to the existing spreadsheet model. | Foundation Assessor | Not yet started | Medium. The assessor needs to prepare these. Without them, calculation accuracy cannot be verified. |
+| D-7 | **Stakeholder availability for UAT.** The Foundation assessor must be available for user acceptance testing before launch. | Foundation Assessor | Assumed available | Low. The assessor is the primary stakeholder and is engaged in the project. |
+
+---
