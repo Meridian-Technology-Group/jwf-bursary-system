@@ -27,6 +27,7 @@ import { createAuditLog } from "@/lib/audit/log";
 import { sendEmail } from "@/lib/email/send";
 import { humaniseSlot } from "@/lib/documents/slots";
 import { deleteDocument } from "@/lib/storage/documents";
+import { createSupabaseAdminClient } from "@/lib/auth/supabase-admin";
 import type { ApplicationStatus } from "@prisma/client";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -537,6 +538,14 @@ export async function gdprDeleteApplicantAction(
       }
 
       // h. Anonymise AuditLog rows (set userId → null)
+      //
+      // NOTE: This UPDATE intentionally breaks the "AuditLog is INSERT-only"
+      // invariant claimed in TDD §3.4 — it is the minimum mutation required
+      // to honour a UK GDPR Article 17 erasure request without losing audit
+      // history entirely. It will FAIL once RLS is enabled with an
+      // INSERT-only policy on audit_logs. TODO: a follow-up PR must move
+      // this update into an admin-context wrapper (service-role bypass)
+      // so the RLS contract holds for every other code path.
       await tx.auditLog.updateMany({
         where: { userId: leadApplicantId },
         data: { userId: null },
@@ -556,6 +565,30 @@ export async function gdprDeleteApplicantAction(
       });
     });
 
+    // 4b. Delete the Supabase Auth user (GDPR Art. 17). The DB Profile is
+    //     already anonymised inside the transaction; this final step ensures
+    //     the auth-provider record (email, password hash, identity links) is
+    //     also removed. Non-fatal: log & continue so DB state is not
+    //     inconsistent with the audit log if Supabase returns an error.
+    let authDeleteError: string | null = null;
+    try {
+      const admin = createSupabaseAdminClient();
+      const { error } = await admin.auth.admin.deleteUser(leadApplicantId);
+      if (error) {
+        authDeleteError = error.message;
+        console.error(
+          "[gdprDeleteApplicantAction] Supabase auth.admin.deleteUser failed:",
+          error
+        );
+      }
+    } catch (err) {
+      authDeleteError = err instanceof Error ? err.message : String(err);
+      console.error(
+        "[gdprDeleteApplicantAction] Supabase auth.admin.deleteUser threw:",
+        err
+      );
+    }
+
     // 5. Write the GDPR audit log entry (using a system/null user as the
     //    lead applicant's userId was just nulled — we record the assessor)
     await createAuditLog({
@@ -568,6 +601,7 @@ export async function gdprDeleteApplicantAction(
         reference: application.reference,
         leadApplicantId,
         storageErrors: storageErrors.length > 0 ? storageErrors : undefined,
+        authDeleteError: authDeleteError ?? undefined,
       },
     });
 

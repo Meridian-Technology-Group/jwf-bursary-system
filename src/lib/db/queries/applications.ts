@@ -3,6 +3,7 @@
  */
 
 import { prisma } from "@/lib/db/prisma";
+import { createAuditLog } from "@/lib/audit/log";
 import type {
   ApplicationStatus,
   School,
@@ -122,23 +123,47 @@ export async function getApplicationNames(
 
 // ─── Application Detail ───────────────────────────────────────────────────────
 
-export type ApplicationWithDetails = Application & {
+/**
+ * Default application detail shape — DOES NOT include `childName` or any
+ * applicant name fields. Per finding 2.18 / NM-01..05, the SSR payload for
+ * the application-detail pages must not carry names unless they have been
+ * explicitly revealed via the audit-logged path (`getApplicationNamesForReveal`).
+ */
+export type ApplicationWithDetails = Omit<Application, "childName"> & {
   round: Round;
   sections: ApplicationSection[];
   documents: Document[];
   assessment: Assessment | null;
-  leadApplicant: Pick<Profile, "id" | "firstName" | "lastName" | "email">;
+  leadApplicant: Pick<Profile, "id">;
 };
 
 /**
- * Returns the full application with all related data for the detail view.
+ * Returns the full application with all related data for the detail view —
+ * EXCLUDING applicant names (childName, firstName, lastName, email). Use
+ * `getApplicationNamesForReveal()` to fetch names on the explicit reveal path.
  */
 export async function getApplicationWithDetails(
   applicationId: string
 ): Promise<ApplicationWithDetails | null> {
   const application = await prisma.application.findUnique({
     where: { id: applicationId },
-    include: {
+    select: {
+      id: true,
+      reference: true,
+      roundId: true,
+      bursaryAccountId: true,
+      leadApplicantId: true,
+      school: true,
+      // childName: intentionally omitted — see getApplicationNamesForReveal.
+      childDob: true,
+      entryYear: true,
+      isReassessment: true,
+      isInternal: true,
+      assignedToId: true,
+      status: true,
+      submittedAt: true,
+      createdAt: true,
+      updatedAt: true,
       round: true,
       sections: {
         orderBy: { section: "asc" },
@@ -148,9 +173,52 @@ export async function getApplicationWithDetails(
       },
       assessment: true,
       leadApplicant: {
+        select: { id: true },
+      },
+    },
+  });
+
+  return application as ApplicationWithDetails | null;
+}
+
+// ─── Application Names (audit-logged reveal) ──────────────────────────────────
+
+export interface ApplicationNamesForReveal {
+  childName: string;
+  leadApplicant: Pick<Profile, "id" | "firstName" | "lastName" | "email">;
+}
+
+/**
+ * Fetches the applicant + child names for a single application and writes a
+ * NAME_REVEAL audit log entry. Call this only from server pages/actions that
+ * legitimately need to render names (e.g. the recommendation reveal step or
+ * the Applicant Data review tab). The Assessment tab MUST NOT call this.
+ *
+ * Mirrors the pattern in /api/applications/names/route.ts.
+ */
+export async function getApplicationNamesForReveal(
+  applicationId: string,
+  userId: string
+): Promise<ApplicationNamesForReveal | null> {
+  const application = await prisma.application.findUnique({
+    where: { id: applicationId },
+    select: {
+      childName: true,
+      leadApplicant: {
         select: { id: true, firstName: true, lastName: true, email: true },
       },
     },
+  });
+
+  if (!application) return null;
+
+  await createAuditLog({
+    userId,
+    action: "NAME_REVEAL",
+    entityType: "Application",
+    entityId: applicationId,
+    context: "Application detail name reveal",
+    metadata: { applicationId },
   });
 
   return application;

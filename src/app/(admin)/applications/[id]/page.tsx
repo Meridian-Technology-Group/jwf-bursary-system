@@ -8,7 +8,10 @@
 
 import { notFound } from "next/navigation";
 import { requireRole, Role } from "@/lib/auth/roles";
-import { getApplicationWithDetails } from "@/lib/db/queries/applications";
+import {
+  getApplicationWithDetails,
+  getApplicationNamesForReveal,
+} from "@/lib/db/queries/applications";
 import { getSiblingLinks } from "@/lib/db/queries/siblings";
 import {
   Card,
@@ -197,8 +200,10 @@ export default async function ApplicantDataPage({ params }: Props) {
     ? await getSiblingLinks(bursaryAccountId)
     : [];
 
-  // Derive current child name from bursary account (available on application)
-  const currentChildName = application.childName ?? "";
+  // Fetch child name via the audit-logged reveal path — the Applicant Data
+  // tab legitimately needs the name for the sibling-linker display.
+  const names = await getApplicationNamesForReveal(application.id, user.id);
+  const currentChildName = names?.childName ?? "";
 
   if (sections.length === 0) {
     return (
