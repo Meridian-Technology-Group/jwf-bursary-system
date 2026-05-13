@@ -13,6 +13,7 @@
 import { useState, type FormEvent } from "react";
 import Link from "next/link";
 import { createSupabaseBrowserClient } from "@/lib/auth/supabase-browser";
+import { checkResetPasswordRateLimit } from "./actions";
 
 type PageState = "idle" | "loading" | "sent" | "error";
 
@@ -25,6 +26,14 @@ export default function ResetPasswordPage() {
     e.preventDefault();
     setState("loading");
     setErrorMessage(null);
+
+    // Rate limit by IP before triggering a reset email.
+    const rl = await checkResetPasswordRateLimit();
+    if (!rl.ok) {
+      setErrorMessage(rl.error);
+      setState("error");
+      return;
+    }
 
     const supabase = createSupabaseBrowserClient();
 

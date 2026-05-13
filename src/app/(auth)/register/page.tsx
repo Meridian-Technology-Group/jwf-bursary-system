@@ -19,6 +19,7 @@ import { Suspense, useEffect, useState, type FormEvent } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { createSupabaseBrowserClient } from "@/lib/auth/supabase-browser";
 import { createProfile } from "@/lib/auth/create-profile";
+import { validatePasswordStrength } from "@/lib/auth/password-policy";
 import {
   validateInvitationAction,
   registerWithInvitationAction,
@@ -46,12 +47,14 @@ function TokenRegistration({ token }: { token: string }) {
       return;
     }
 
-    if (password.length < 8) {
-      setError("Password must be at least 8 characters long.");
+    setLoading(true);
+
+    const strength = await validatePasswordStrength(password);
+    if (!strength.ok) {
+      setError(strength.reason);
+      setLoading(false);
       return;
     }
-
-    setLoading(true);
 
     const supabase = createSupabaseBrowserClient();
 
@@ -211,12 +214,14 @@ function InvitationRegistration({
       return;
     }
 
-    if (password.length < 8) {
-      setError("Password must be at least 8 characters long.");
+    setLoading(true);
+
+    const strength = await validatePasswordStrength(password);
+    if (!strength.ok) {
+      setError(strength.reason);
+      setLoading(false);
       return;
     }
-
-    setLoading(true);
 
     // Register via server action
     const result = await registerWithInvitationAction({
@@ -378,11 +383,11 @@ function PasswordFields({
           type="password"
           autoComplete="new-password"
           required
-          minLength={8}
+          minLength={12}
           value={password}
           onChange={(e) => onPasswordChange(e.target.value)}
           className="block w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 placeholder-slate-400 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/30"
-          placeholder="At least 8 characters"
+          placeholder="At least 12 characters"
         />
       </div>
 
@@ -398,7 +403,7 @@ function PasswordFields({
           type="password"
           autoComplete="new-password"
           required
-          minLength={8}
+          minLength={12}
           value={confirmPassword}
           onChange={(e) => onConfirmPasswordChange(e.target.value)}
           className="block w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 placeholder-slate-400 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/30"

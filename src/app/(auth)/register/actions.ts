@@ -13,6 +13,7 @@ import { createSupabaseAdminClient } from "@/lib/auth/supabase-admin";
 import { createProfile } from "@/lib/auth/create-profile";
 import { updateInvitationStatus } from "@/lib/db/queries/invitations";
 import { generateApplicationReference } from "@/lib/applications/reference";
+import { validatePasswordStrength } from "@/lib/auth/password-policy";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -100,11 +101,9 @@ export async function registerWithInvitationAction(data: {
 }): Promise<RegisterWithInvitationResult> {
   const { invitationId, firstName, lastName, password } = data;
 
-  if (password.length < 8) {
-    return {
-      success: false,
-      error: "Password must be at least 8 characters long.",
-    };
+  const strength = await validatePasswordStrength(password);
+  if (!strength.ok) {
+    return { success: false, error: strength.reason };
   }
 
   try {

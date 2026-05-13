@@ -18,6 +18,7 @@ import { Suspense, useState, type FormEvent } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { createSupabaseBrowserClient } from "@/lib/auth/supabase-browser";
+import { checkLoginRateLimit } from "./actions";
 
 // ---------------------------------------------------------------------------
 // Inner form — isolated so useSearchParams() is inside a Suspense boundary.
@@ -50,6 +51,14 @@ function LoginForm() {
     e.preventDefault();
     setError(null);
     setLoading(true);
+
+    // Rate limit by IP before touching Supabase auth.
+    const rl = await checkLoginRateLimit();
+    if (!rl.ok) {
+      setError(rl.error);
+      setLoading(false);
+      return;
+    }
 
     const supabase = createSupabaseBrowserClient();
 
