@@ -13,7 +13,7 @@
  */
 
 import { revalidatePath } from "next/cache";
-import { requireRole, Role } from "@/lib/auth/roles";
+import { requireRole, requireApplicationAccess, Role } from "@/lib/auth/roles";
 import {
   createAssessment,
   saveAssessment,
@@ -30,6 +30,7 @@ export async function beginAssessmentAction(
 ): Promise<{ success: true; assessmentId: string } | { success: false; error: string }> {
   try {
     const user = await requireRole([Role.ADMIN, Role.ASSESSOR]);
+    await requireApplicationAccess(user, applicationId);
 
     const assessment = await createAssessment(applicationId, user.id);
 
@@ -60,6 +61,7 @@ export async function saveAssessmentAction(
 ): Promise<{ success: true } | { success: false; error: string }> {
   try {
     const user = await requireRole([Role.ADMIN, Role.ASSESSOR]);
+    await requireApplicationAccess(user, applicationId);
 
     await saveAssessment(assessmentId, {
       ...data,
@@ -92,6 +94,7 @@ export async function completeAssessmentAction(
 ): Promise<{ success: true } | { success: false; error: string }> {
   try {
     const user = await requireRole([Role.ADMIN, Role.ASSESSOR]);
+    await requireApplicationAccess(user, applicationId);
 
     await completeAssessment(assessmentId);
 
@@ -121,6 +124,7 @@ export async function pauseAssessmentAction(
 ): Promise<{ success: true } | { success: false; error: string }> {
   try {
     const user = await requireRole([Role.ADMIN, Role.ASSESSOR]);
+    await requireApplicationAccess(user, applicationId);
 
     await pauseAssessment(assessmentId);
 

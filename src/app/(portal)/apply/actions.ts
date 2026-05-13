@@ -69,6 +69,24 @@ async function resolveApplicationId(): Promise<string | null> {
   return application?.id ?? null;
 }
 
+/**
+ * Resolves the current applicant's owned application ID from the session.
+ *
+ * Intentionally ignores any client-supplied applicationId — every section
+ * action must operate exclusively on the caller's own application to
+ * prevent IDOR (audit finding 2.3).
+ */
+async function getOwnedApplicationId(): Promise<string | null> {
+  const user = await getCurrentUser();
+  if (!user) return null;
+
+  const application = await prisma.application.findFirst({
+    where: { leadApplicantId: user.id, status: "PRE_SUBMISSION" },
+    select: { id: true },
+  });
+  return application?.id ?? null;
+}
+
 // ─── Actions ─────────────────────────────────────────────────────────────────
 
 /**
@@ -76,12 +94,13 @@ async function resolveApplicationId(): Promise<string | null> {
  * If an applicationId is not provided it will be resolved from the current user.
  */
 export async function saveSection(
-  applicationId: string | null,
+  _applicationId: string | null,
   section: ApplicationSectionType,
   data: unknown
 ): Promise<SaveSectionResult> {
-  // Resolve application
-  const appId = applicationId ?? (await resolveApplicationId());
+  // Always resolve server-side from the session. The client-supplied
+  // applicationId is ignored to prevent IDOR (finding 2.3).
+  const appId = await getOwnedApplicationId();
   if (!appId) {
     return { success: false, errors: ["No active application found."] };
   }
@@ -119,11 +138,11 @@ export async function saveSection(
  * Saves a section as a partial draft (not validated as complete).
  */
 export async function saveSectionDraft(
-  applicationId: string | null,
+  _applicationId: string | null,
   section: ApplicationSectionType,
   data: unknown
 ): Promise<SaveSectionResult> {
-  const appId = applicationId ?? (await resolveApplicationId());
+  const appId = await getOwnedApplicationId();
   if (!appId) {
     return { success: false, errors: ["No active application found."] };
   }
@@ -144,10 +163,10 @@ export async function saveSectionDraft(
  * Loads existing section data.
  */
 export async function getSection(
-  applicationId: string | null,
+  _applicationId: string | null,
   section: ApplicationSectionType
 ): Promise<SectionDataResult> {
-  const appId = applicationId ?? (await resolveApplicationId());
+  const appId = await getOwnedApplicationId();
   if (!appId) {
     return { data: null, isComplete: false, updatedAt: null };
   }
@@ -164,9 +183,9 @@ export async function getSection(
  * Returns completion status for all 10 sections of the current user's application.
  */
 export async function getSectionStatus(
-  applicationId: string | null
+  _applicationId: string | null
 ): Promise<SectionStatusEntry[]> {
-  const appId = applicationId ?? (await resolveApplicationId());
+  const appId = await getOwnedApplicationId();
   if (!appId) return [];
 
   const rows = await getSectionStatusList(appId);

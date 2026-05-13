@@ -18,7 +18,7 @@ export const runtime = "nodejs";
 
 import { NextRequest, NextResponse } from "next/server";
 import { renderToBuffer } from "@react-pdf/renderer";
-import { requireRole, Role } from "@/lib/auth/roles";
+import { requireRole, requireApplicationAccess, Role } from "@/lib/auth/roles";
 import { prisma } from "@/lib/db/prisma";
 import {
   RecommendationPDF,
@@ -45,6 +45,9 @@ export async function GET(
   }
 
   const { applicationId } = await params;
+
+  // ── ASSESSOR scoping: must be assigned to this application ────────────────
+  await requireApplicationAccess(user, applicationId);
 
   // ── Fetch application with all relations needed for the PDF ────────────────
 

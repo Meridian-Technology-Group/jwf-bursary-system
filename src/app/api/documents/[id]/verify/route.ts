@@ -25,20 +25,35 @@ export async function POST(
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  if (user.role !== Role.ASSESSOR) {
+  if (user.role !== Role.ASSESSOR && user.role !== Role.ADMIN) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
   const documentId = params.id;
 
-  // Fetch current document
+  // Fetch current document with application assignment context
   const document = await prisma.document.findUnique({
     where: { id: documentId },
-    select: { id: true, isVerified: true, applicationId: true, slot: true },
+    select: {
+      id: true,
+      isVerified: true,
+      applicationId: true,
+      slot: true,
+      application: { select: { assignedToId: true } },
+    },
   });
 
   if (!document) {
     return NextResponse.json({ error: "Document not found" }, { status: 404 });
+  }
+
+  // ASSESSOR may only verify documents on applications assigned to them.
+  // ADMIN is unrestricted (finding 2.13).
+  if (
+    user.role === Role.ASSESSOR &&
+    document.application.assignedToId !== user.id
+  ) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
   // Toggle verification

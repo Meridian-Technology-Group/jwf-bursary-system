@@ -14,7 +14,7 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { getCurrentUser } from "@/lib/auth/roles";
+import { getCurrentUser, requireApplicationAccess } from "@/lib/auth/roles";
 import { Role } from "@prisma/client";
 import { prisma } from "@/lib/db/prisma";
 import { uploadDocument } from "@/lib/storage/documents";
@@ -108,6 +108,9 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       { status: 404 }
     );
   }
+
+  // ── Assessor-on-application ownership check (finding 2.12) ────────────────
+  await requireApplicationAccess(user, applicationId);
 
   // ── Upload to Supabase Storage ─────────────────────────────────────────────
   const { storagePath, error: storageError } = await uploadDocument(
