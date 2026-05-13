@@ -37,8 +37,15 @@ import {
 } from "./seed-data/demo-applications";
 import { demoDocuments } from "./seed-data/demo-documents";
 
+// The runtime DATABASE_URL points at the non-superuser `app_user` role
+// (subject to RLS). Seeding requires the superuser session pooler so it can
+// bypass RLS and write reference data. Use DIRECT_URL when present.
+const seedDatabaseUrl = process.env.DIRECT_URL ?? process.env.DATABASE_URL;
 const prisma = new PrismaClient({
   log: ["warn", "error"],
+  datasources: seedDatabaseUrl
+    ? { db: { url: seedDatabaseUrl } }
+    : undefined,
 });
 
 // Supabase admin client for uploading seed documents to Storage
