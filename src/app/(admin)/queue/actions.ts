@@ -22,6 +22,7 @@ import { createAuditLog } from "@/lib/audit/log";
 import { sendEmail } from "@/lib/email/send";
 import { createSupabaseAdminClient } from "@/lib/auth/supabase-admin";
 import { getAppUrl } from "@/lib/app-url";
+import { generateInvitationToken } from "@/lib/db/queries/staff-invitations";
 
 // ─── Validation schema ────────────────────────────────────────────────────────
 
@@ -191,6 +192,11 @@ export async function createInternalRequestAction(
           status: "PENDING",
           expiresAt,
           createdBy: user.id,
+          // Token is required after the add_applicant_invitation_token
+          // migration; PR2 will replace this whole path with the hardened
+          // createInvitation() helper. For now we just satisfy the schema
+          // so the existing legacy URL (?invitationId=…) keeps working.
+          token: generateInvitationToken(),
         },
         select: { id: true },
       });
