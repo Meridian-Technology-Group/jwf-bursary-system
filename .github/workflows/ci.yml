@@ -1,0 +1,45 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main, staging]
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.12.0'
+          cache: 'npm'
+
+      - run: npm ci
+
+      - name: Prisma schema validation
+        run: npx prisma validate
+
+      - name: Prisma schema formatting
+        run: npx prisma format --check
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Typecheck
+        run: npx tsc --noEmit
+
+      - name: Unit tests
+        run: npm test
+
+      - name: Build
+        env:
+          DATABASE_URL: postgresql://x:x@localhost:5432/x
+          DIRECT_URL: postgresql://x:x@localhost:5432/x
+          NEXT_PUBLIC_SUPABASE_URL: https://example.supabase.co
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: dummy
+          SUPABASE_SERVICE_ROLE_KEY: dummy
+          RESEND_API_KEY: dummy
+          RESEND_FROM_EMAIL: ci@example.invalid
+        run: npm run build
