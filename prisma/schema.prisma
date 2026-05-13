@@ -127,11 +127,11 @@ model Profile {
 
   // Relations
   bursaryAccounts      BursaryAccount[]
-  applicationsAsLead   Application[]      @relation("ApplicationLeadApplicant")
-  assignedApplications Application[]      @relation("ApplicationAssignee")
-  assessmentsAsOwner   Assessment[]       @relation("AssessmentAssessor")
+  applicationsAsLead   Application[]    @relation("ApplicationLeadApplicant")
+  assignedApplications Application[]    @relation("ApplicationAssignee")
+  assessmentsAsOwner   Assessment[]     @relation("AssessmentAssessor")
   documentsUploaded    Document[]
-  invitationsCreated   Invitation[]       @relation("InvitationCreator")
+  invitationsCreated   Invitation[]     @relation("InvitationCreator")
   emailTemplateUpdates EmailTemplate[]
   auditLogs            AuditLog[]
 
@@ -203,10 +203,10 @@ model Application {
   updatedAt        DateTime          @updatedAt @map("updated_at") @db.Timestamptz()
 
   // Relations
-  round          Round              @relation(fields: [roundId], references: [id])
-  bursaryAccount BursaryAccount?    @relation(fields: [bursaryAccountId], references: [id])
-  leadApplicant  Profile            @relation("ApplicationLeadApplicant", fields: [leadApplicantId], references: [id])
-  assignedTo     Profile?           @relation("ApplicationAssignee", fields: [assignedToId], references: [id])
+  round          Round                @relation(fields: [roundId], references: [id])
+  bursaryAccount BursaryAccount?      @relation(fields: [bursaryAccountId], references: [id])
+  leadApplicant  Profile              @relation("ApplicationLeadApplicant", fields: [leadApplicantId], references: [id])
+  assignedTo     Profile?             @relation("ApplicationAssignee", fields: [assignedToId], references: [id])
   sections       ApplicationSection[]
   documents      Document[]
   assessment     Assessment?
@@ -222,7 +222,7 @@ model Application {
 /// Stores applicant-entered form data per section as JSONB.
 model ApplicationSection {
   id            String                 @id @default(uuid()) @db.Uuid
-  applicationId String                @map("application_id") @db.Uuid
+  applicationId String                 @map("application_id") @db.Uuid
   section       ApplicationSectionType
   data          Json                   @default("{}")
   isComplete    Boolean                @default(false) @map("is_complete")
@@ -258,52 +258,52 @@ model Document {
 
 /// Core assessor workspace. Stores all financial data and calculation results.
 model Assessment {
-  id                       String           @id @default(uuid()) @db.Uuid
-  applicationId            String           @unique @map("application_id") @db.Uuid
-  assessorId               String           @map("assessor_id") @db.Uuid
+  id            String @id @default(uuid()) @db.Uuid
+  applicationId String @unique @map("application_id") @db.Uuid
+  assessorId    String @map("assessor_id") @db.Uuid
 
   // Reference value snapshots
-  familyTypeCategory       Int?             @map("family_type_category")
-  notionalRent             Decimal?         @map("notional_rent") @db.Decimal(10, 2)
-  utilityCosts             Decimal?         @map("utility_costs") @db.Decimal(10, 2)
-  foodCosts                Decimal?         @map("food_costs") @db.Decimal(10, 2)
-  annualFees               Decimal?         @map("annual_fees") @db.Decimal(10, 2)
-  councilTax               Decimal?         @map("council_tax") @db.Decimal(10, 2)
-  schoolingYearsRemaining  Int?             @map("schooling_years_remaining")
+  familyTypeCategory      Int?     @map("family_type_category")
+  notionalRent            Decimal? @map("notional_rent") @db.Decimal(10, 2)
+  utilityCosts            Decimal? @map("utility_costs") @db.Decimal(10, 2)
+  foodCosts               Decimal? @map("food_costs") @db.Decimal(10, 2)
+  annualFees              Decimal? @map("annual_fees") @db.Decimal(10, 2)
+  councilTax              Decimal? @map("council_tax") @db.Decimal(10, 2)
+  schoolingYearsRemaining Int?     @map("schooling_years_remaining")
 
   // Calculation results
-  totalHouseholdNetIncome  Decimal?         @map("total_household_net_income") @db.Decimal(10, 2)
-  netAssetsYearlyValuation Decimal?         @map("net_assets_yearly_valuation") @db.Decimal(10, 2)
-  hndiAfterNs              Decimal?         @map("hndi_after_ns") @db.Decimal(10, 2)
-  requiredBursary          Decimal?         @map("required_bursary") @db.Decimal(10, 2)
+  totalHouseholdNetIncome  Decimal? @map("total_household_net_income") @db.Decimal(10, 2)
+  netAssetsYearlyValuation Decimal? @map("net_assets_yearly_valuation") @db.Decimal(10, 2)
+  hndiAfterNs              Decimal? @map("hndi_after_ns") @db.Decimal(10, 2)
+  requiredBursary          Decimal? @map("required_bursary") @db.Decimal(10, 2)
 
   // Payable fees
-  grossFees                Decimal?         @map("gross_fees") @db.Decimal(10, 2)
-  scholarshipPct           Decimal?         @default(0) @map("scholarship_pct") @db.Decimal(5, 2)
-  bursaryAward             Decimal?         @map("bursary_award") @db.Decimal(10, 2)
-  netYearlyFees            Decimal?         @map("net_yearly_fees") @db.Decimal(10, 2)
-  vatRate                  Decimal?         @default(20.00) @map("vat_rate") @db.Decimal(5, 2)
-  yearlyPayableFees        Decimal?         @map("yearly_payable_fees") @db.Decimal(10, 2)
-  monthlyPayableFees       Decimal?         @map("monthly_payable_fees") @db.Decimal(10, 2)
+  grossFees          Decimal? @map("gross_fees") @db.Decimal(10, 2)
+  scholarshipPct     Decimal? @default(0) @map("scholarship_pct") @db.Decimal(5, 2)
+  bursaryAward       Decimal? @map("bursary_award") @db.Decimal(10, 2)
+  netYearlyFees      Decimal? @map("net_yearly_fees") @db.Decimal(10, 2)
+  vatRate            Decimal? @default(20.00) @map("vat_rate") @db.Decimal(5, 2)
+  yearlyPayableFees  Decimal? @map("yearly_payable_fees") @db.Decimal(10, 2)
+  monthlyPayableFees Decimal? @map("monthly_payable_fees") @db.Decimal(10, 2)
 
   // Manual adjustment
-  manualAdjustment         Decimal?         @default(0) @map("manual_adjustment") @db.Decimal(10, 2)
-  manualAdjustmentReason   String?          @map("manual_adjustment_reason")
+  manualAdjustment       Decimal? @default(0) @map("manual_adjustment") @db.Decimal(10, 2)
+  manualAdjustmentReason String?  @map("manual_adjustment_reason")
 
   // Property
-  propertyCategory         Int?             @map("property_category")
-  propertyExceedsThreshold Boolean          @default(false) @map("property_exceeds_threshold")
+  propertyCategory         Int?    @map("property_category")
+  propertyExceedsThreshold Boolean @default(false) @map("property_exceeds_threshold")
 
   // Red flags
-  dishonestyFlag           Boolean          @default(false) @map("dishonesty_flag")
-  creditRiskFlag           Boolean          @default(false) @map("credit_risk_flag")
+  dishonestyFlag Boolean @default(false) @map("dishonesty_flag")
+  creditRiskFlag Boolean @default(false) @map("credit_risk_flag")
 
   // Status
-  status                   AssessmentStatus @default(NOT_STARTED)
-  outcome                  AssessmentOutcome?
-  completedAt              DateTime?        @map("completed_at") @db.Timestamptz()
-  createdAt                DateTime         @default(now()) @map("created_at") @db.Timestamptz()
-  updatedAt                DateTime         @updatedAt @map("updated_at") @db.Timestamptz()
+  status      AssessmentStatus   @default(NOT_STARTED)
+  outcome     AssessmentOutcome?
+  completedAt DateTime?          @map("completed_at") @db.Timestamptz()
+  createdAt   DateTime           @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt   DateTime           @updatedAt @map("updated_at") @db.Timestamptz()
 
   // Relations
   application    Application           @relation(fields: [applicationId], references: [id], onDelete: Cascade)
@@ -318,21 +318,21 @@ model Assessment {
 
 /// Income breakdown per earner (Parent 1 / Parent 2).
 model AssessmentEarner {
-  id                    String           @id @default(uuid()) @db.Uuid
-  assessmentId          String           @map("assessment_id") @db.Uuid
-  earnerLabel           EarnerLabel      @map("earner_label")
-  employmentStatus      EmploymentStatus @map("employment_status")
-  netPay                Decimal          @default(0) @map("net_pay") @db.Decimal(10, 2)
-  netDividends          Decimal          @default(0) @map("net_dividends") @db.Decimal(10, 2)
-  netSelfEmployedProfit Decimal          @default(0) @map("net_self_employed_profit") @db.Decimal(10, 2)
-  pensionAmount         Decimal          @default(0) @map("pension_amount") @db.Decimal(10, 2)
-  benefitsIncluded      Decimal          @default(0) @map("benefits_included") @db.Decimal(10, 2)
-  benefitsIncludedDetail Json            @default("{}") @map("benefits_included_detail")
-  benefitsExcluded      Decimal          @default(0) @map("benefits_excluded") @db.Decimal(10, 2)
-  benefitsExcludedDetail Json            @default("{}") @map("benefits_excluded_detail")
-  totalIncome           Decimal          @default(0) @map("total_income") @db.Decimal(10, 2)
-  createdAt             DateTime         @default(now()) @map("created_at") @db.Timestamptz()
-  updatedAt             DateTime         @updatedAt @map("updated_at") @db.Timestamptz()
+  id                     String           @id @default(uuid()) @db.Uuid
+  assessmentId           String           @map("assessment_id") @db.Uuid
+  earnerLabel            EarnerLabel      @map("earner_label")
+  employmentStatus       EmploymentStatus @map("employment_status")
+  netPay                 Decimal          @default(0) @map("net_pay") @db.Decimal(10, 2)
+  netDividends           Decimal          @default(0) @map("net_dividends") @db.Decimal(10, 2)
+  netSelfEmployedProfit  Decimal          @default(0) @map("net_self_employed_profit") @db.Decimal(10, 2)
+  pensionAmount          Decimal          @default(0) @map("pension_amount") @db.Decimal(10, 2)
+  benefitsIncluded       Decimal          @default(0) @map("benefits_included") @db.Decimal(10, 2)
+  benefitsIncludedDetail Json             @default("{}") @map("benefits_included_detail")
+  benefitsExcluded       Decimal          @default(0) @map("benefits_excluded") @db.Decimal(10, 2)
+  benefitsExcludedDetail Json             @default("{}") @map("benefits_excluded_detail")
+  totalIncome            Decimal          @default(0) @map("total_income") @db.Decimal(10, 2)
+  createdAt              DateTime         @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt              DateTime         @updatedAt @map("updated_at") @db.Timestamptz()
 
   // Relations
   assessment Assessment @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
@@ -396,9 +396,9 @@ model Recommendation {
   updatedAt           DateTime @updatedAt @map("updated_at") @db.Timestamptz()
 
   // Relations
-  assessment     Assessment                @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
-  bursaryAccount BursaryAccount?           @relation(fields: [bursaryAccountId], references: [id])
-  round          Round                     @relation(fields: [roundId], references: [id])
+  assessment     Assessment                 @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+  bursaryAccount BursaryAccount?            @relation(fields: [bursaryAccountId], references: [id])
+  round          Round                      @relation(fields: [roundId], references: [id])
   reasonCodes    RecommendationReasonCode[]
 
   @@map("recommendations")
@@ -434,11 +434,11 @@ model RecommendationReasonCode {
 
 /// Links bursary accounts as siblings for sequential income absorption.
 model SiblingLink {
-  id              String   @id @default(uuid()) @db.Uuid
-  familyGroupId   String   @map("family_group_id") @db.Uuid
-  bursaryAccountId String  @map("bursary_account_id") @db.Uuid
-  priorityOrder   Int      @map("priority_order")
-  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz()
+  id               String   @id @default(uuid()) @db.Uuid
+  familyGroupId    String   @map("family_group_id") @db.Uuid
+  bursaryAccountId String   @map("bursary_account_id") @db.Uuid
+  priorityOrder    Int      @map("priority_order")
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz()
 
   // Relations
   bursaryAccount BursaryAccount @relation(fields: [bursaryAccountId], references: [id])
