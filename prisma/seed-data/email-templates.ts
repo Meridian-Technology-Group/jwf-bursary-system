@@ -8,7 +8,8 @@ export type EmailTemplateType =
   | "OUTCOME_QUALIFIES"
   | "OUTCOME_DNQ"
   | "REASSESSMENT"
-  | "REMINDER";
+  | "REMINDER"
+  | "INVITE_STAFF";
 
 interface EmailTemplateData {
   type: EmailTemplateType;
@@ -194,6 +195,29 @@ Please ensure that your re-assessment form and all supporting documentation are 
 If there have been any significant changes to your financial circumstances since your last assessment — whether positive or negative — please make sure these are clearly reflected in your application.
 
 Should you have any questions about the re-assessment process, please do not hesitate to contact the Bursary Office.
+
+Yours sincerely,
+
+The Bursary Office
+John Whitgift Foundation`,
+  },
+  {
+    type: "INVITE_STAFF",
+    subject: "You've been invited to the JWF Bursary Assessment System",
+    mergeFields: ["first_name", "role", "registration_link"],
+    body: `Dear {{first_name}},
+
+You have been invited to join the John Whitgift Foundation Bursary Assessment System as a {{role}}.
+
+The Bursary Assessment System is the internal platform we use to review and decide on family bursary applications for Trinity School and Whitgift School. As a {{role}}, you will have access to the data and tools that the role requires — please treat all information you encounter in the system with the strictest confidence.
+
+To activate your account, please follow the link below and set a password of your choosing. The link is single-use and will expire in 72 hours.
+
+Registration link: {{registration_link}}
+
+If you were not expecting this invitation, you can safely ignore this email — no account will be created until you complete the registration step.
+
+If you have any questions about the system or your access, please reply to this email and a member of the Bursary Office will be in touch.
 
 Yours sincerely,
 
