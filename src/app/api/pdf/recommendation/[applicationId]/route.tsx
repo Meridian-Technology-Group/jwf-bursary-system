@@ -19,7 +19,7 @@ export const runtime = "nodejs";
 import { NextRequest, NextResponse } from "next/server";
 import { renderToBuffer } from "@react-pdf/renderer";
 import { requireRole, requireApplicationAccess, Role } from "@/lib/auth/roles";
-import { prisma } from "@/lib/db/prisma";
+import { withUserContext, type RlsRole } from "@/lib/db/prisma";
 import {
   RecommendationPDF,
   type ReasonCodeEntry,
@@ -51,7 +51,11 @@ export async function GET(
 
   // ── Fetch application with all relations needed for the PDF ────────────────
 
-  const application = await prisma.application.findUnique({
+  const application = await withUserContext(
+    user.id,
+    user.role as RlsRole,
+    (tx) =>
+      tx.application.findUnique({
     where: { id: applicationId },
     select: {
       id: true,
@@ -100,7 +104,8 @@ export async function GET(
         },
       },
     },
-  });
+  })
+  );
 
   if (!application) {
     return NextResponse.json(

@@ -4,7 +4,7 @@
  * and by the admin settings page for full reference data management.
  */
 
-import { prisma } from "@/lib/db/prisma";
+import type { Tx } from "@/lib/db/prisma";
 import type { School, EmailTemplateType } from "@prisma/client";
 
 // ─── Family Type Configs ──────────────────────────────────────────────────────
@@ -23,9 +23,9 @@ export interface FamilyTypeConfigRow {
  * Returns the most recent FamilyTypeConfig per category (all 6 categories).
  * Ordered by category ascending.
  */
-export async function getFamilyTypeConfigs(): Promise<FamilyTypeConfigRow[]> {
+export async function getFamilyTypeConfigs(tx: Tx): Promise<FamilyTypeConfigRow[]> {
   // Fetch all configs ordered by category + effectiveFrom desc, then deduplicate
-  const rows = await prisma.familyTypeConfig.findMany({
+  const rows = await tx.familyTypeConfig.findMany({
     orderBy: [{ category: "asc" }, { effectiveFrom: "desc" }],
   });
 
@@ -62,8 +62,8 @@ export interface SchoolFeesRow {
 /**
  * Returns the most recent SchoolFees per school.
  */
-export async function getSchoolFees(): Promise<SchoolFeesRow[]> {
-  const rows = await prisma.schoolFees.findMany({
+export async function getSchoolFees(tx: Tx): Promise<SchoolFeesRow[]> {
+  const rows = await tx.schoolFees.findMany({
     orderBy: [{ school: "asc" }, { effectiveFrom: "desc" }],
   });
 
@@ -96,8 +96,8 @@ export interface CouncilTaxDefaultRow {
 /**
  * Returns the most recent CouncilTaxDefault record.
  */
-export async function getCouncilTaxDefault(): Promise<CouncilTaxDefaultRow | null> {
-  const row = await prisma.councilTaxDefault.findFirst({
+export async function getCouncilTaxDefault(tx: Tx): Promise<CouncilTaxDefaultRow | null> {
+  const row = await tx.councilTaxDefault.findFirst({
     orderBy: { effectiveFrom: "desc" },
   });
 
@@ -129,13 +129,14 @@ export interface AssessmentReferenceConfigs {
  * for the given family type category (or the first category if not specified).
  */
 export async function getConfigsForAssessment(
+  tx: Tx,
   school: School,
   familyTypeCategory?: number
 ): Promise<AssessmentReferenceConfigs> {
   const [familyTypeConfigs, schoolFees, councilTaxDefault] = await Promise.all([
-    getFamilyTypeConfigs(),
-    getSchoolFees(),
-    getCouncilTaxDefault(),
+    getFamilyTypeConfigs(tx),
+    getSchoolFees(tx),
+    getCouncilTaxDefault(tx),
   ]);
 
   // Build school fees map
@@ -169,8 +170,8 @@ export async function getConfigsForAssessment(
  * Returns ALL FamilyTypeConfig rows (all versions, all categories).
  * Ordered by category asc, effectiveFrom desc so newest per category comes first.
  */
-export async function getAllFamilyTypeConfigs(): Promise<FamilyTypeConfigRow[]> {
-  const rows = await prisma.familyTypeConfig.findMany({
+export async function getAllFamilyTypeConfigs(tx: Tx): Promise<FamilyTypeConfigRow[]> {
+  const rows = await tx.familyTypeConfig.findMany({
     orderBy: [{ category: "asc" }, { effectiveFrom: "desc" }],
   });
 
@@ -189,8 +190,8 @@ export async function getAllFamilyTypeConfigs(): Promise<FamilyTypeConfigRow[]> 
  * Returns ALL SchoolFees rows (all versions, all schools).
  * Ordered by school asc, effectiveFrom desc.
  */
-export async function getAllSchoolFees(): Promise<SchoolFeesRow[]> {
-  const rows = await prisma.schoolFees.findMany({
+export async function getAllSchoolFees(tx: Tx): Promise<SchoolFeesRow[]> {
+  const rows = await tx.schoolFees.findMany({
     orderBy: [{ school: "asc" }, { effectiveFrom: "desc" }],
   });
 
@@ -217,8 +218,8 @@ export interface ReasonCodeRow {
  * Returns ALL reason codes including deprecated ones.
  * Ordered by sortOrder ascending.
  */
-export async function getAllReasonCodes(): Promise<ReasonCodeRow[]> {
-  const rows = await prisma.reasonCode.findMany({
+export async function getAllReasonCodes(tx: Tx): Promise<ReasonCodeRow[]> {
+  const rows = await tx.reasonCode.findMany({
     orderBy: { sortOrder: "asc" },
   });
 
@@ -246,8 +247,8 @@ export interface EmailTemplateRow {
 /**
  * Returns all email templates ordered by type.
  */
-export async function getAllEmailTemplates(): Promise<EmailTemplateRow[]> {
-  const rows = await prisma.emailTemplate.findMany({
+export async function getAllEmailTemplates(tx: Tx): Promise<EmailTemplateRow[]> {
+  const rows = await tx.emailTemplate.findMany({
     orderBy: { type: "asc" },
   });
 
@@ -264,6 +265,6 @@ export async function getAllEmailTemplates(): Promise<EmailTemplateRow[]> {
 /**
  * Returns the current council tax default (most recent effectiveFrom).
  */
-export async function getCouncilTaxRate(): Promise<CouncilTaxDefaultRow | null> {
-  return getCouncilTaxDefault();
+export async function getCouncilTaxRate(tx: Tx): Promise<CouncilTaxDefaultRow | null> {
+  return getCouncilTaxDefault(tx);
 }

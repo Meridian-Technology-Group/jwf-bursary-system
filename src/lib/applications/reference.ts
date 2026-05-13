@@ -8,23 +8,25 @@
  * school prefix, then zero-pads to four digits.
  */
 
-import { prisma } from "@/lib/db/prisma";
+import type { Tx } from "@/lib/db/prisma";
 
 /**
  * Generates the next available Application reference for the given school and
  * academic year.
  *
+ * @param tx           - RLS-aware transaction (from withUserContext/withAdminContext)
  * @param school       - Prisma School enum value ("TRINITY" | "WHITGIFT")
  * @param academicYear - Round.academicYear value, e.g. "2025/2026"
  */
 export async function generateApplicationReference(
+  tx: Tx,
   school: string,
   academicYear: string
 ): Promise<string> {
   const schoolPrefix = school === "TRINITY" ? "TS" : "WS";
   const yearSuffix = academicYear.replace(/\//g, "");
 
-  const existing = await prisma.application.count({
+  const existing = await tx.application.count({
     where: { reference: { startsWith: `${schoolPrefix}-` } },
   });
 

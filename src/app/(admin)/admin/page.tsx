@@ -24,6 +24,7 @@ import {
   ChevronRight,
 } from "lucide-react";
 import { requireRole, Role } from "@/lib/auth/roles";
+import { withUserContext, type RlsRole } from "@/lib/db/prisma";
 import {
   getActiveRound,
   getDashboardCounts,
@@ -188,9 +189,11 @@ function NoRoundState() {
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default async function AdminDashboardPage() {
-  await requireRole([Role.ADMIN, Role.ASSESSOR, Role.VIEWER]);
+  const user = await requireRole([Role.ADMIN, Role.ASSESSOR, Role.VIEWER]);
 
-  const activeRound = await getActiveRound();
+  const activeRound = await withUserContext(user.id, user.role as RlsRole, (tx) =>
+    getActiveRound(tx)
+  );
 
   // If no rounds exist, show empty state
   if (!activeRound) {
@@ -207,10 +210,15 @@ export default async function AdminDashboardPage() {
     );
   }
 
-  const [counts, feed] = await Promise.all([
-    getDashboardCounts(activeRound.id),
-    getDashboardFeed(activeRound.id, 8),
-  ]);
+  const [counts, feed] = await withUserContext(
+    user.id,
+    user.role as RlsRole,
+    (tx) =>
+      Promise.all([
+        getDashboardCounts(tx, activeRound.id),
+        getDashboardFeed(tx, activeRound.id, 8),
+      ])
+  );
 
   // Build queue filter URLs
   const queueBase = "/queue";

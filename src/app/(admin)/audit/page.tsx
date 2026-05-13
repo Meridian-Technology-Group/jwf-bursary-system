@@ -15,6 +15,7 @@
 
 import type { Metadata } from "next";
 import { requireRole, Role } from "@/lib/auth/roles";
+import { withUserContext, type RlsRole } from "@/lib/db/prisma";
 import {
   getFilteredAuditLogs,
   countFilteredAuditLogs,
@@ -364,7 +365,7 @@ interface PageProps {
 }
 
 export default async function AuditLogPage({ searchParams }: PageProps) {
-  await requireRole([Role.ADMIN, Role.ASSESSOR, Role.VIEWER]);
+  const user = await requireRole([Role.ADMIN, Role.ASSESSOR, Role.VIEWER]);
 
   // Resolve search params
   const sp = await searchParams;
@@ -383,15 +384,20 @@ export default async function AuditLogPage({ searchParams }: PageProps) {
     pageSize: PAGE_SIZE,
   };
 
-  const [logs, totalCount] = await Promise.all([
-    getFilteredAuditLogs(filters),
-    countFilteredAuditLogs({
-      entityType: filters.entityType,
-      action: filters.action,
-      startDate: filters.startDate,
-      endDate: filters.endDate,
-    }),
-  ]);
+  const [logs, totalCount] = await withUserContext(
+    user.id,
+    user.role as RlsRole,
+    (tx) =>
+      Promise.all([
+        getFilteredAuditLogs(tx, filters),
+        countFilteredAuditLogs(tx, {
+          entityType: filters.entityType,
+          action: filters.action,
+          startDate: filters.startDate,
+          endDate: filters.endDate,
+        }),
+      ])
+  );
 
   const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
 

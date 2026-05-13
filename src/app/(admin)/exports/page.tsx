@@ -10,6 +10,7 @@ export const dynamic = "force-dynamic";
 
 import { Download } from "lucide-react";
 import { requireRole, Role } from "@/lib/auth/roles";
+import { withUserContext, type RlsRole } from "@/lib/db/prisma";
 import { listRounds } from "@/lib/db/queries/rounds";
 import { ExportFilterForm } from "@/components/admin/export-filter-form";
 
@@ -18,9 +19,11 @@ export const metadata = {
 };
 
 export default async function ExportsPage() {
-  await requireRole([Role.ADMIN, Role.ASSESSOR, Role.VIEWER]);
+  const user = await requireRole([Role.ADMIN, Role.ASSESSOR, Role.VIEWER]);
 
-  const rounds = await listRounds();
+  const rounds = await withUserContext(user.id, user.role as RlsRole, (tx) =>
+    listRounds(tx)
+  );
 
   return (
     <div className="space-y-6">

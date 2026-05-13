@@ -8,7 +8,7 @@
  * before returning so the data is safe to cross server/client boundaries.
  */
 
-import { prisma } from "@/lib/db/prisma";
+import type { Tx } from "@/lib/db/prisma";
 import type { AssessmentOutcome } from "@prisma/client";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -39,10 +39,11 @@ export interface ExportRow {
  * Only applications that have a completed Recommendation are included.
  */
 export async function getExportRows(
+  tx: Tx,
   roundId: string,
   school?: string
 ): Promise<ExportRow[]> {
-  const rows = await prisma.application.findMany({
+  const rows = await tx.application.findMany({
     where: {
       roundId,
       ...(school ? { school: school as "TRINITY" | "WHITGIFT" } : {}),

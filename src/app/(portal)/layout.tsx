@@ -10,6 +10,7 @@
 
 import { Suspense } from "react";
 import { getCurrentUser } from "@/lib/auth/roles";
+import { withUserContext, type RlsRole } from "@/lib/db/prisma";
 import { getApplicationForUser } from "@/lib/db/queries/applications";
 import { getSectionGapStatuses } from "@/lib/portal/section-gaps";
 import { PortalMobileHeader } from "@/components/portal/portal-mobile-header";
@@ -43,7 +44,11 @@ export default async function PortalLayout({
   let sidebarSections: SidebarSection[] | undefined;
   let roundName: string | undefined;
   if (user) {
-    const application = await getApplicationForUser(user.id);
+    const application = await withUserContext(
+      user.id,
+      user.role as RlsRole,
+      (tx) => getApplicationForUser(tx, user.id)
+    );
     if (application) {
       const gapStatuses = await getSectionGapStatuses(application.id);
       sidebarSections = buildSidebarSections(gapStatuses);

@@ -9,7 +9,8 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 import { requireRole, Role } from "@/lib/auth/roles";
 import { createRound, updateRound, closeRound } from "@/lib/db/queries/rounds";
-import { prisma } from "@/lib/db/prisma";
+import { withUserContext, type RlsRole } from "@/lib/db/prisma";
+import { createAuditLog } from "@/lib/audit/log";
 
 // ---------------------------------------------------------------------------
 // Validation schemas
@@ -72,22 +73,22 @@ export async function createRoundAction(
   const { academicYear, openDate, closeDate, decisionDate } = parsed.data;
 
   try {
-    const round = await createRound({
-      academicYear,
-      openDate: new Date(openDate),
-      closeDate: new Date(closeDate),
-      decisionDate: decisionDate ? new Date(decisionDate) : undefined,
-    });
+    await withUserContext(user.id, user.role as RlsRole, async (tx) => {
+      const round = await createRound(tx, {
+        academicYear,
+        openDate: new Date(openDate),
+        closeDate: new Date(closeDate),
+        decisionDate: decisionDate ? new Date(decisionDate) : undefined,
+      });
 
-    await prisma.auditLog.create({
-      data: {
+      await createAuditLog(tx, {
         userId: user.id,
         action: "CREATE_ROUND",
         entityType: "Round",
         entityId: round.id,
         context: `Created round ${academicYear}`,
         metadata: { academicYear, openDate, closeDate },
-      },
+      });
     });
 
     revalidatePath("/rounds");
@@ -135,22 +136,22 @@ export async function updateRoundAction(
   const { academicYear, openDate, closeDate, decisionDate } = parsed.data;
 
   try {
-    await updateRound(id, {
-      academicYear,
-      openDate: new Date(openDate),
-      closeDate: new Date(closeDate),
-      decisionDate: decisionDate ? new Date(decisionDate) : null,
-    });
+    await withUserContext(user.id, user.role as RlsRole, async (tx) => {
+      await updateRound(tx, id, {
+        academicYear,
+        openDate: new Date(openDate),
+        closeDate: new Date(closeDate),
+        decisionDate: decisionDate ? new Date(decisionDate) : null,
+      });
 
-    await prisma.auditLog.create({
-      data: {
+      await createAuditLog(tx, {
         userId: user.id,
         action: "UPDATE_ROUND",
         entityType: "Round",
         entityId: id,
         context: `Updated round ${academicYear}`,
         metadata: { academicYear, openDate, closeDate },
-      },
+      });
     });
 
     revalidatePath("/rounds");
@@ -174,17 +175,17 @@ export async function closeRoundAction(
   const user = await requireRole([Role.ADMIN]);
 
   try {
-    const round = await closeRound(id);
+    await withUserContext(user.id, user.role as RlsRole, async (tx) => {
+      const round = await closeRound(tx, id);
 
-    await prisma.auditLog.create({
-      data: {
+      await createAuditLog(tx, {
         userId: user.id,
         action: "CLOSE_ROUND",
         entityType: "Round",
         entityId: id,
         context: `Closed round ${round.academicYear}`,
         metadata: { academicYear: round.academicYear },
-      },
+      });
     });
 
     revalidatePath("/rounds");

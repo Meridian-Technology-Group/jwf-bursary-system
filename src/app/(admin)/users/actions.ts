@@ -12,7 +12,8 @@ import { Role } from "@prisma/client";
 import { requireRole } from "@/lib/auth/roles";
 import { createProfile } from "@/lib/auth/create-profile";
 import { createSupabaseAdminClient } from "@/lib/auth/supabase-admin";
-import { prisma } from "@/lib/db/prisma";
+import { withAdminContext, withUserContext, type RlsRole } from "@/lib/db/prisma";
+import { createAuditLog } from "@/lib/audit/log";
 
 // ---------------------------------------------------------------------------
 // Shared result type
@@ -85,30 +86,34 @@ export async function inviteStaffAction(
       app_metadata: { role },
     });
 
-    // 3. Create Profile row
-    const profileResult = await createProfile({
-      id: authUserId,
-      email,
-      role: role as Role,
-      firstName,
-      lastName,
-    });
+    // 3+4. Create Profile row + audit log under admin context.
+    //      The invitee has no JWT yet so RLS would block this otherwise.
+    const profileResult = await withAdminContext(async (tx) => {
+      const created = await createProfile(tx, {
+        id: authUserId,
+        email,
+        role: role as Role,
+        firstName,
+        lastName,
+      });
 
-    if (!profileResult.success) {
-      return { success: false, error: profileResult.error };
-    }
+      if (!created.success) return created;
 
-    // 4. Audit log
-    await prisma.auditLog.create({
-      data: {
+      await createAuditLog(tx, {
         userId: admin.id,
         action: "INVITE_STAFF",
         entityType: "Profile",
         entityId: authUserId,
         context: `Invited ${email} as ${role}`,
         metadata: { email, role },
-      },
+      });
+
+      return created;
     });
+
+    if (!profileResult.success) {
+      return { success: false, error: profileResult.error };
+    }
 
     revalidatePath("/users");
     return { success: true };
@@ -160,30 +165,38 @@ export async function updateStaffRoleAction(
   }
 
   try {
-    const previous = await prisma.profile.findUnique({
-      where: { id: userId },
-      select: { role: true, email: true },
-    });
+    const result = await withUserContext(
+      admin.id,
+      admin.role as RlsRole,
+      async (tx) => {
+        const previous = await tx.profile.findUnique({
+          where: { id: userId },
+          select: { role: true, email: true },
+        });
 
-    if (!previous) {
-      return { success: false, error: "User not found." };
-    }
+        if (!previous) {
+          return { success: false as const, error: "User not found." };
+        }
 
-    await prisma.profile.update({
-      where: { id: userId },
-      data: { role: newRole as Role },
-    });
+        await tx.profile.update({
+          where: { id: userId },
+          data: { role: newRole as Role },
+        });
 
-    await prisma.auditLog.create({
-      data: {
-        userId: admin.id,
-        action: "UPDATE_STAFF_ROLE",
-        entityType: "Profile",
-        entityId: userId,
-        context: `Changed ${previous.email} role from ${previous.role} to ${newRole}`,
-        metadata: { previousRole: previous.role, newRole },
-      },
-    });
+        await createAuditLog(tx, {
+          userId: admin.id,
+          action: "UPDATE_STAFF_ROLE",
+          entityType: "Profile",
+          entityId: userId,
+          context: `Changed ${previous.email} role from ${previous.role} to ${newRole}`,
+          metadata: { previousRole: previous.role, newRole },
+        });
+
+        return { success: true as const };
+      }
+    );
+
+    if (!result.success) return result;
 
     revalidatePath("/users");
     return { success: true };
@@ -230,37 +243,43 @@ export async function deactivateStaffAction(
   }
 
   try {
-    const target = await prisma.profile.findUnique({
-      where: { id: userId },
-      select: { email: true, role: true },
-    });
+    const result = await withUserContext(
+      admin.id,
+      admin.role as RlsRole,
+      async (tx) => {
+        const target = await tx.profile.findUnique({
+          where: { id: userId },
+          select: { email: true, role: true },
+        });
 
-    if (!target) {
-      return { success: false, error: "User not found." };
-    }
+        if (!target) {
+          return { success: false as const, error: "User not found." };
+        }
 
-    // Set role to DELETED and unassign applications in a transaction
-    await prisma.$transaction([
-      prisma.profile.update({
-        where: { id: userId },
-        data: { role: Role.DELETED },
-      }),
-      prisma.application.updateMany({
-        where: { assignedToId: userId },
-        data: { assignedToId: null },
-      }),
-    ]);
+        // Set role to DELETED and unassign applications
+        await tx.profile.update({
+          where: { id: userId },
+          data: { role: Role.DELETED },
+        });
+        await tx.application.updateMany({
+          where: { assignedToId: userId },
+          data: { assignedToId: null },
+        });
 
-    await prisma.auditLog.create({
-      data: {
-        userId: admin.id,
-        action: "DEACTIVATE_STAFF",
-        entityType: "Profile",
-        entityId: userId,
-        context: `Deactivated ${target.email} (was ${target.role})`,
-        metadata: { email: target.email, previousRole: target.role },
-      },
-    });
+        await createAuditLog(tx, {
+          userId: admin.id,
+          action: "DEACTIVATE_STAFF",
+          entityType: "Profile",
+          entityId: userId,
+          context: `Deactivated ${target.email} (was ${target.role})`,
+          metadata: { email: target.email, previousRole: target.role },
+        });
+
+        return { success: true as const };
+      }
+    );
+
+    if (!result.success) return result;
 
     revalidatePath("/users");
     return { success: true };

@@ -14,7 +14,7 @@ import Link from "next/link";
 import { CheckCircle2, AlertTriangle, Edit2, XCircle, ChevronRight } from "lucide-react";
 import { ApplicationSectionType } from "@prisma/client";
 import { getCurrentUser } from "@/lib/auth/roles";
-import { prisma } from "@/lib/db/prisma";
+import { withUserContext, type RlsRole } from "@/lib/db/prisma";
 import { getSectionGapStatuses } from "@/lib/portal/section-gaps";
 import { cn } from "@/lib/utils";
 import type {
@@ -397,18 +397,23 @@ export default async function ReviewPage() {
   if (!user) redirect("/login");
 
   // Load application with full section data (needed for summary cards)
-  const application = await prisma.application.findFirst({
-    where: { leadApplicantId: user.id },
-    orderBy: { updatedAt: "desc" },
-    include: {
-      sections: {
-        select: { section: true, isComplete: true, data: true },
-      },
-      documents: {
-        select: { slot: true, filename: true },
-      },
-    },
-  });
+  const application = await withUserContext(
+    user.id,
+    user.role as RlsRole,
+    (tx) =>
+      tx.application.findFirst({
+        where: { leadApplicantId: user.id },
+        orderBy: { updatedAt: "desc" },
+        include: {
+          sections: {
+            select: { section: true, isComplete: true, data: true },
+          },
+          documents: {
+            select: { slot: true, filename: true },
+          },
+        },
+      })
+  );
 
   if (!application) redirect("/");
 

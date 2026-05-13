@@ -4,7 +4,7 @@
  * All functions return plain objects safe for Server → Client prop passing.
  */
 
-import { prisma } from "@/lib/db/prisma";
+import type { Tx } from "@/lib/db/prisma";
 import {
   InvitationStatus,
   BursaryAccountStatus,
@@ -49,11 +49,14 @@ export interface ActiveBursaryHolder {
  * Returns invitations ordered by creation date descending.
  * Optionally filtered by roundId and/or status.
  */
-export async function listInvitations(filters?: {
-  roundId?: string;
-  status?: InvitationStatus;
-}): Promise<InvitationWithCreator[]> {
-  return prisma.invitation.findMany({
+export async function listInvitations(
+  tx: Tx,
+  filters?: {
+    roundId?: string;
+    status?: InvitationStatus;
+  }
+): Promise<InvitationWithCreator[]> {
+  return tx.invitation.findMany({
     where: {
       ...(filters?.roundId ? { roundId: filters.roundId } : {}),
       ...(filters?.status ? { status: filters.status } : {}),
@@ -84,17 +87,20 @@ export async function listInvitations(filters?: {
 /**
  * Creates an invitation record with status PENDING.
  */
-export async function createInvitation(data: {
-  email: string;
-  applicantName?: string;
-  childName?: string;
-  school?: School;
-  roundId?: string;
-  bursaryAccountId?: string;
-  createdBy: string;
-  expiresAt: Date;
-}): Promise<Invitation> {
-  return prisma.invitation.create({
+export async function createInvitation(
+  tx: Tx,
+  data: {
+    email: string;
+    applicantName?: string;
+    childName?: string;
+    school?: School;
+    roundId?: string;
+    bursaryAccountId?: string;
+    createdBy: string;
+    expiresAt: Date;
+  }
+): Promise<Invitation> {
+  return tx.invitation.create({
     data: {
       email: data.email,
       applicantName: data.applicantName ?? null,
@@ -118,11 +124,12 @@ export async function createInvitation(data: {
  * When status is ACCEPTED, also records acceptedAt timestamp and authUserId.
  */
 export async function updateInvitationStatus(
+  tx: Tx,
   id: string,
   status: InvitationStatus,
   authUserId?: string
 ): Promise<Invitation> {
-  return prisma.invitation.update({
+  return tx.invitation.update({
     where: { id },
     data: {
       status,
@@ -149,9 +156,10 @@ export async function updateInvitationStatus(
  * no-invitation fallback state.
  */
 export async function getLatestAcceptedInvitationForUser(
+  tx: Tx,
   userId: string
 ): Promise<Invitation | null> {
-  return prisma.invitation.findFirst({
+  return tx.invitation.findFirst({
     where: {
       authUserId: userId,
       status: InvitationStatus.ACCEPTED,
@@ -169,10 +177,11 @@ export async function getLatestAcceptedInvitationForUser(
  * the specified round. Used to populate batch re-assessment invitations.
  */
 export async function getActiveBursaryHolders(
+  tx: Tx,
   roundId: string
 ): Promise<ActiveBursaryHolder[]> {
   // Find bursary account IDs that already have an invitation for this round
-  const existingInvitations = await prisma.invitation.findMany({
+  const existingInvitations = await tx.invitation.findMany({
     where: { roundId },
     select: { bursaryAccountId: true },
   });
@@ -182,7 +191,7 @@ export async function getActiveBursaryHolders(
       .filter((id): id is string => id !== null)
   );
 
-  const accounts = await prisma.bursaryAccount.findMany({
+  const accounts = await tx.bursaryAccount.findMany({
     where: {
       status: BursaryAccountStatus.ACTIVE,
       id: alreadyInvitedIds.size > 0

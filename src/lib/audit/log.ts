@@ -3,9 +3,14 @@
  *
  * Inserts an AuditLog record via Prisma. Non-blocking: wraps in try/catch
  * so failures never bubble up to callers.
+ *
+ * Requires the caller to supply an RLS-aware transaction (`tx`) — either
+ * from `withUserContext` or `withAdminContext`. This makes the function
+ * usable both inside an existing GDPR-cascade transaction and from regular
+ * request paths that wrap a single audit write.
  */
 
-import { prisma } from "@/lib/db/prisma";
+import type { Tx } from "@/lib/db/prisma";
 
 export interface CreateAuditLogParams {
   userId?: string;
@@ -17,17 +22,18 @@ export interface CreateAuditLogParams {
 }
 
 export async function createAuditLog(
+  tx: Tx,
   params: CreateAuditLogParams
 ): Promise<void> {
   try {
-    await prisma.auditLog.create({
+    await tx.auditLog.create({
       data: {
         userId: params.userId ?? null,
         action: params.action,
         entityType: params.entityType,
         entityId: params.entityId ?? null,
         context: params.context ?? null,
-        metadata: (params.metadata ?? {}) as Parameters<typeof prisma.auditLog.create>[0]["data"]["metadata"],
+        metadata: (params.metadata ?? {}) as Parameters<typeof tx.auditLog.create>[0]["data"]["metadata"],
       },
     });
   } catch (err) {

@@ -17,6 +17,7 @@ import {
   ThumbsDown,
 } from "lucide-react";
 import { requireRole, Role } from "@/lib/auth/roles";
+import { withUserContext, type RlsRole } from "@/lib/db/prisma";
 import { getRound } from "@/lib/db/queries/rounds";
 import { getActiveBursaryHolders } from "@/lib/db/queries/invitations";
 import { RoundDetailActions } from "@/components/admin/round-detail-actions";
@@ -109,12 +110,17 @@ export default async function RoundDetailPage({
 }: {
   params: { id: string };
 }) {
-  await requireRole([Role.ADMIN, Role.ASSESSOR, Role.VIEWER]);
+  const user = await requireRole([Role.ADMIN, Role.ASSESSOR, Role.VIEWER]);
 
-  const [round, activeBursaryHolders] = await Promise.all([
-    getRound(params.id),
-    getActiveBursaryHolders(params.id),
-  ]);
+  const [round, activeBursaryHolders] = await withUserContext(
+    user.id,
+    user.role as RlsRole,
+    (tx) =>
+      Promise.all([
+        getRound(tx, params.id),
+        getActiveBursaryHolders(tx, params.id),
+      ])
+  );
 
   if (!round) notFound();
 

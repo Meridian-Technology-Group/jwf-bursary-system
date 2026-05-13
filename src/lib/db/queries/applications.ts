@@ -2,7 +2,7 @@
  * Application database queries for the admin queue and detail views.
  */
 
-import { prisma } from "@/lib/db/prisma";
+import type { Tx } from "@/lib/db/prisma";
 import { createAuditLog } from "@/lib/audit/log";
 import type {
   ApplicationStatus,
@@ -44,6 +44,7 @@ export interface ListApplicationsFilters {
  * Names are excluded by default — use getApplicationNames() separately.
  */
 export async function listApplications(
+  tx: Tx,
   filters: ListApplicationsFilters = {}
 ): Promise<ApplicationListItem[]> {
   const where: Prisma.ApplicationWhereInput = {};
@@ -71,7 +72,7 @@ export async function listApplications(
     where.assignedToId = filters.assignedToId;
   }
 
-  const applications = await prisma.application.findMany({
+  const applications = await tx.application.findMany({
     where,
     select: {
       id: true,
@@ -105,9 +106,10 @@ export interface ApplicationNameResult {
  * Keep this in a separate query — call only when names have been explicitly revealed.
  */
 export async function getApplicationNames(
+  tx: Tx,
   applicationIds: string[]
 ): Promise<ApplicationNameResult[]> {
-  const applications = await prisma.application.findMany({
+  const applications = await tx.application.findMany({
     where: { id: { in: applicationIds } },
     select: {
       id: true,
@@ -143,9 +145,10 @@ export type ApplicationWithDetails = Omit<Application, "childName"> & {
  * `getApplicationNamesForReveal()` to fetch names on the explicit reveal path.
  */
 export async function getApplicationWithDetails(
+  tx: Tx,
   applicationId: string
 ): Promise<ApplicationWithDetails | null> {
-  const application = await prisma.application.findUnique({
+  const application = await tx.application.findUnique({
     where: { id: applicationId },
     select: {
       id: true,
@@ -197,10 +200,11 @@ export interface ApplicationNamesForReveal {
  * Mirrors the pattern in /api/applications/names/route.ts.
  */
 export async function getApplicationNamesForReveal(
+  tx: Tx,
   applicationId: string,
   userId: string
 ): Promise<ApplicationNamesForReveal | null> {
-  const application = await prisma.application.findUnique({
+  const application = await tx.application.findUnique({
     where: { id: applicationId },
     select: {
       childName: true,
@@ -212,7 +216,7 @@ export async function getApplicationNamesForReveal(
 
   if (!application) return null;
 
-  await createAuditLog({
+  await createAuditLog(tx, {
     userId,
     action: "NAME_REVEAL",
     entityType: "Application",
@@ -226,10 +230,10 @@ export async function getApplicationNamesForReveal(
 
 // ─── Round list (for filter dropdown) ────────────────────────────────────────
 
-export async function listRounds(): Promise<
-  Pick<Round, "id" | "academicYear" | "status">[]
-> {
-  return prisma.round.findMany({
+export async function listRounds(
+  tx: Tx
+): Promise<Pick<Round, "id" | "academicYear" | "status">[]> {
+  return tx.round.findMany({
     select: { id: true, academicYear: true, status: true },
     orderBy: { openDate: "desc" },
   });
@@ -247,8 +251,8 @@ export interface SectionStatusResult {
  * Returns the applicant's current active application (most recently updated
  * with PRE_SUBMISSION status), or null if none exists.
  */
-export async function getApplicationForUser(userId: string) {
-  return prisma.application.findFirst({
+export async function getApplicationForUser(tx: Tx, userId: string) {
+  return tx.application.findFirst({
     where: {
       leadApplicantId: userId,
       status: "PRE_SUBMISSION",
@@ -266,9 +270,10 @@ export async function getApplicationForUser(userId: string) {
  * Returns completion status for all sections of an application.
  */
 export async function getSectionStatusList(
+  tx: Tx,
   applicationId: string
 ): Promise<SectionStatusResult[]> {
-  const rows = await prisma.applicationSection.findMany({
+  const rows = await tx.applicationSection.findMany({
     where: { applicationId },
     select: { section: true, isComplete: true, updatedAt: true },
   });
@@ -284,13 +289,14 @@ export async function getSectionStatusList(
  * Upserts a single ApplicationSection row.
  */
 export async function upsertSection(
+  tx: Tx,
   applicationId: string,
   section: ApplicationSectionType,
   data: unknown,
   isComplete: boolean
 ) {
   const jsonData = data as Prisma.InputJsonValue;
-  return prisma.applicationSection.upsert({
+  return tx.applicationSection.upsert({
     where: {
       applicationId_section: {
         applicationId,
@@ -315,10 +321,11 @@ export async function upsertSection(
  * Returns null if the section has not been saved yet.
  */
 export async function getSectionData(
+  tx: Tx,
   applicationId: string,
   section: ApplicationSectionType
 ) {
-  return prisma.applicationSection.findUnique({
+  return tx.applicationSection.findUnique({
     where: {
       applicationId_section: {
         applicationId,
@@ -344,9 +351,10 @@ export interface DocumentMeta {
  * Returns all documents for an application as a map keyed by document ID.
  */
 export async function getDocumentsForApplication(
+  tx: Tx,
   applicationId: string
 ): Promise<Record<string, DocumentMeta>> {
-  const rows = await prisma.document.findMany({
+  const rows = await tx.document.findMany({
     where: { applicationId },
     select: { id: true, slot: true, filename: true, fileSize: true, uploadedAt: true },
   });

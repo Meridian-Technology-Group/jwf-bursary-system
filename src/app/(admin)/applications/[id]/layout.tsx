@@ -12,7 +12,7 @@ import { notFound, redirect } from "next/navigation";
 import { requireRole, Role } from "@/lib/auth/roles";
 import { getApplicationWithDetails } from "@/lib/db/queries/applications";
 import { listAssessors } from "@/lib/db/queries/profiles";
-import { prisma } from "@/lib/db/prisma";
+import { withUserContext, type RlsRole } from "@/lib/db/prisma";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { ApplicationActions } from "@/components/admin/application-actions";
 import { AssignAssessorSelect } from "@/components/admin/assign-assessor-select";
@@ -94,24 +94,34 @@ export default async function ApplicationDetailLayout({
 }: Props) {
   const user = await requireRole([Role.ADMIN, Role.ASSESSOR, Role.VIEWER]);
 
-  const [application, assessors] = await Promise.all([
-    getApplicationWithDetails(params.id),
-    user.role === Role.ADMIN ? listAssessors() : Promise.resolve([]),
-  ]);
+  const { application, assessors, assignedOk } = await withUserContext(
+    user.id,
+    user.role as RlsRole,
+    async (tx) => {
+      const app = await getApplicationWithDetails(tx, params.id);
+      const asrs =
+        user.role === Role.ADMIN ? await listAssessors(tx) : [];
+
+      // ASSESSORs may only access applications assigned to them
+      let ok = true;
+      if (user.role === Role.ASSESSOR) {
+        const assigned = await tx.application.findFirst({
+          where: { id: params.id, assignedToId: user.id },
+          select: { id: true },
+        });
+        ok = !!assigned;
+      }
+
+      return { application: app, assessors: asrs, assignedOk: ok };
+    }
+  );
 
   if (!application) {
     notFound();
   }
 
-  // ASSESSORs may only access applications assigned to them
-  if (user.role === Role.ASSESSOR) {
-    const assigned = await prisma.application.findFirst({
-      where: { id: params.id, assignedToId: user.id },
-      select: { id: true },
-    });
-    if (!assigned) {
-      redirect("/admin");
-    }
+  if (!assignedOk) {
+    redirect("/admin");
   }
 
   const tabs = getTabItems(params.id);

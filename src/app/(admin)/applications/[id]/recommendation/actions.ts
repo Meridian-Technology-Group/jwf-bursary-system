@@ -12,7 +12,7 @@
 
 import { revalidatePath } from "next/cache";
 import { requireRole, Role } from "@/lib/auth/roles";
-import { prisma } from "@/lib/db/prisma";
+import { withUserContext, type RlsRole } from "@/lib/db/prisma";
 import { upsertRecommendation } from "@/lib/db/queries/recommendations";
 import type { UpsertRecommendationInput } from "@/lib/db/queries/recommendations";
 import { createAuditLog } from "@/lib/audit/log";
@@ -39,48 +39,58 @@ export async function saveRecommendationAction(
   try {
     const user = await requireRole([Role.ADMIN, Role.ASSESSOR]);
 
-    // Resolve the application and its assessment
-    const application = await prisma.application.findUnique({
-      where: { id: applicationId },
-      select: {
-        id: true,
-        roundId: true,
-        bursaryAccountId: true,
-        assessment: { select: { id: true } },
-      },
-    });
+    const result = await withUserContext(
+      user.id,
+      user.role as RlsRole,
+      async (tx) => {
+        // Resolve the application and its assessment
+        const application = await tx.application.findUnique({
+          where: { id: applicationId },
+          select: {
+            id: true,
+            roundId: true,
+            bursaryAccountId: true,
+            assessment: { select: { id: true } },
+          },
+        });
 
-    if (!application) {
-      return { success: false, error: "Application not found." };
-    }
+        if (!application) {
+          return { success: false as const, error: "Application not found." };
+        }
 
-    if (!application.assessment) {
-      return {
-        success: false,
-        error: "No assessment found. Complete the assessment first.",
-      };
-    }
+        if (!application.assessment) {
+          return {
+            success: false as const,
+            error: "No assessment found. Complete the assessment first.",
+          };
+        }
 
-    const assessmentId = application.assessment.id;
+        const assessmentId = application.assessment.id;
 
-    await upsertRecommendation(assessmentId, {
-      ...data,
-      roundId: application.roundId,
-      bursaryAccountId: application.bursaryAccountId,
-    });
+        await upsertRecommendation(tx, assessmentId, {
+          ...data,
+          roundId: application.roundId,
+          bursaryAccountId: application.bursaryAccountId,
+        });
 
-    await createAuditLog({
-      userId: user.id,
-      action: "recommendation.save",
-      entityType: "Recommendation",
-      entityId: assessmentId,
-      context: `Recommendation saved for application ${applicationId}`,
-      metadata: {
-        applicationId,
-        assessmentId,
-        fieldsUpdated: Object.keys(data),
-      },
-    });
+        await createAuditLog(tx, {
+          userId: user.id,
+          action: "recommendation.save",
+          entityType: "Recommendation",
+          entityId: assessmentId,
+          context: `Recommendation saved for application ${applicationId}`,
+          metadata: {
+            applicationId,
+            assessmentId,
+            fieldsUpdated: Object.keys(data),
+          },
+        });
+
+        return { success: true as const };
+      }
+    );
+
+    if (!result.success) return result;
 
     revalidatePath(`/applications/${applicationId}/recommendation`);
 
@@ -104,44 +114,54 @@ export async function setApplicationOutcomeAction(
   try {
     const user = await requireRole([Role.ADMIN, Role.ASSESSOR]);
 
-    // Load the application with lead applicant details
-    const application = await prisma.application.findUnique({
-      where: { id: applicationId },
-      select: {
-        id: true,
-        reference: true,
-        status: true,
-        childName: true,
-        school: true,
-        leadApplicant: {
-          select: { id: true, email: true, firstName: true, lastName: true },
-        },
-        round: {
-          select: { academicYear: true },
-        },
-      },
-    });
+    // Phase 1: load app, validate, update status (single RLS tx)
+    const pre = await withUserContext(
+      user.id,
+      user.role as RlsRole,
+      async (tx) => {
+        const application = await tx.application.findUnique({
+          where: { id: applicationId },
+          select: {
+            id: true,
+            reference: true,
+            status: true,
+            childName: true,
+            school: true,
+            leadApplicant: {
+              select: { id: true, email: true, firstName: true, lastName: true },
+            },
+            round: {
+              select: { academicYear: true },
+            },
+          },
+        });
 
-    if (!application) {
-      return { success: false, error: "Application not found." };
-    }
+        if (!application) {
+          return { success: false as const, error: "Application not found." };
+        }
 
-    // Guard: do not re-set an already-terminal status
-    if (
-      application.status === "QUALIFIES" ||
-      application.status === "DOES_NOT_QUALIFY"
-    ) {
-      return {
-        success: false,
-        error: "Application outcome has already been set.",
-      };
-    }
+        // Guard: do not re-set an already-terminal status
+        if (
+          application.status === "QUALIFIES" ||
+          application.status === "DOES_NOT_QUALIFY"
+        ) {
+          return {
+            success: false as const,
+            error: "Application outcome has already been set.",
+          };
+        }
 
-    // Update the application status
-    await prisma.application.update({
-      where: { id: applicationId },
-      data: { status: outcome },
-    });
+        await tx.application.update({
+          where: { id: applicationId },
+          data: { status: outcome },
+        });
+
+        return { success: true as const, application };
+      }
+    );
+
+    if (!pre.success) return pre;
+    const { application } = pre;
 
     // Send outcome email to the lead applicant
     const templateType =
@@ -160,19 +180,21 @@ export async function setApplicationOutcomeAction(
       academic_year: application.round.academicYear,
     });
 
-    await createAuditLog({
-      userId: user.id,
-      action: "application.outcome.set",
-      entityType: "Application",
-      entityId: applicationId,
-      context: `Application outcome set to ${outcome}`,
-      metadata: {
-        applicationId,
-        outcome,
-        previousStatus: application.status,
-        emailSentTo: application.leadApplicant.email,
-      },
-    });
+    await withUserContext(user.id, user.role as RlsRole, (tx) =>
+      createAuditLog(tx, {
+        userId: user.id,
+        action: "application.outcome.set",
+        entityType: "Application",
+        entityId: applicationId,
+        context: `Application outcome set to ${outcome}`,
+        metadata: {
+          applicationId,
+          outcome,
+          previousStatus: application.status,
+          emailSentTo: application.leadApplicant.email,
+        },
+      })
+    );
 
     revalidatePath(`/applications/${applicationId}/recommendation`);
     revalidatePath(`/applications/${applicationId}`);

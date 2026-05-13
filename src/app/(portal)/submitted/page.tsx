@@ -9,7 +9,7 @@ import { redirect } from "next/navigation";
 import Link from "next/link";
 import { CheckCircle2, ArrowRight, Clock, FileText, Mail } from "lucide-react";
 import { getCurrentUser } from "@/lib/auth/roles";
-import { prisma } from "@/lib/db/prisma";
+import { withUserContext, type RlsRole } from "@/lib/db/prisma";
 
 export const metadata = {
   title: "Application Submitted",
@@ -20,22 +20,27 @@ export default async function SubmittedPage() {
   if (!user) redirect("/login");
 
   // Load the most recently submitted application for this user
-  const application = await prisma.application.findFirst({
-    where: {
-      leadApplicantId: user.id,
-      status: "SUBMITTED",
-    },
-    orderBy: { submittedAt: "desc" },
-    select: {
-      id: true,
-      reference: true,
-      submittedAt: true,
-      childName: true,
-      round: {
-        select: { academicYear: true, decisionDate: true },
-      },
-    },
-  });
+  const application = await withUserContext(
+    user.id,
+    user.role as RlsRole,
+    (tx) =>
+      tx.application.findFirst({
+        where: {
+          leadApplicantId: user.id,
+          status: "SUBMITTED",
+        },
+        orderBy: { submittedAt: "desc" },
+        select: {
+          id: true,
+          reference: true,
+          submittedAt: true,
+          childName: true,
+          round: {
+            select: { academicYear: true, decisionDate: true },
+          },
+        },
+      })
+  );
 
   if (!application) {
     // No submitted application — send back to dashboard

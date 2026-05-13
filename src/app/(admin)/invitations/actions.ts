@@ -14,7 +14,8 @@ import {
 } from "@/lib/db/queries/invitations";
 import { createSupabaseAdminClient } from "@/lib/auth/supabase-admin";
 import { sendEmail } from "@/lib/email/send";
-import { prisma } from "@/lib/db/prisma";
+import { withAdminContext } from "@/lib/db/prisma";
+import { createAuditLog } from "@/lib/audit/log";
 import { prepopulateReassessment, getPreviousYearApplication } from "@/lib/db/queries/reassessment";
 
 // ---------------------------------------------------------------------------
@@ -80,15 +81,28 @@ export async function createInvitationAction(
   expiresAt.setDate(expiresAt.getDate() + 30);
 
   try {
-    // 1. Create the invitation record
-    const invitation = await createInvitation({
-      email,
-      applicantName,
-      childName,
-      school,
-      roundId,
-      createdBy: user.id,
-      expiresAt,
+    // 1+3. Create the invitation record and look up round details
+    //      under admin context (the invitee does not yet have a JWT).
+    const { invitation, academicYear } = await withAdminContext(async (tx) => {
+      const inv = await createInvitation(tx, {
+        email,
+        applicantName,
+        childName,
+        school,
+        roundId,
+        createdBy: user.id,
+        expiresAt,
+      });
+
+      let year = "";
+      if (roundId) {
+        const round = await tx.round.findUnique({
+          where: { id: roundId },
+          select: { academicYear: true },
+        });
+        year = round?.academicYear ?? "";
+      }
+      return { invitation: inv, academicYear: year };
     });
 
     // 2. Create Supabase auth user silently (no system email sent).
@@ -105,16 +119,6 @@ export async function createInvitationAction(
       // Non-fatal: log but continue so our branded email still sends
     }
 
-    // 3. Retrieve round academic year for merge data (if roundId provided)
-    let academicYear = "";
-    if (roundId) {
-      const round = await prisma.round.findUnique({
-        where: { id: roundId },
-        select: { academicYear: true },
-      });
-      academicYear = round?.academicYear ?? "";
-    }
-
     // 4. Send branded invitation email via Resend
     const schoolLabel = school === "TRINITY" ? "Trinity School" : school === "WHITGIFT" ? "Whitgift School" : "";
     await sendEmail(email, "INVITATION", {
@@ -126,16 +130,16 @@ export async function createInvitationAction(
       deadline: expiresAt.toLocaleDateString("en-GB"),
     });
 
-    await prisma.auditLog.create({
-      data: {
+    await withAdminContext((tx) =>
+      createAuditLog(tx, {
         userId: user.id,
         action: "CREATE_INVITATION",
         entityType: "Invitation",
         entityId: invitation.id,
         context: `Sent invitation to ${email}`,
         metadata: { email, roundId: roundId ?? null },
-      },
-    });
+      })
+    );
 
     revalidatePath("/invitations");
     return { success: true };
@@ -163,13 +167,14 @@ export async function batchReassessmentInviteAction(
   const result: BatchInviteResult = { sent: 0, failed: 0, errors: [] };
 
   try {
-    const holders = await getActiveBursaryHolders(roundId);
-
-    const round = await prisma.round.findUnique({
-      where: { id: roundId },
-      select: { academicYear: true },
+    const { holders, academicYear } = await withAdminContext(async (tx) => {
+      const h = await getActiveBursaryHolders(tx, roundId);
+      const round = await tx.round.findUnique({
+        where: { id: roundId },
+        select: { academicYear: true },
+      });
+      return { holders: h, academicYear: round?.academicYear ?? "" };
     });
-    const academicYear = round?.academicYear ?? "";
 
     const supabase = createSupabaseAdminClient();
     const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
@@ -184,17 +189,19 @@ export async function batchReassessmentInviteAction(
         const expiresAt = new Date();
         expiresAt.setDate(expiresAt.getDate() + 30);
 
-        // Create invitation record
-        const invitation = await createInvitation({
-          email,
-          applicantName,
-          childName: holder.childName,
-          school: holder.school,
-          roundId,
-          bursaryAccountId: holder.id,
-          createdBy: user.id,
-          expiresAt,
-        });
+        // Create invitation record (admin context — invitee may not have JWT)
+        const invitation = await withAdminContext((tx) =>
+          createInvitation(tx, {
+            email,
+            applicantName,
+            childName: holder.childName,
+            school: holder.school,
+            roundId,
+            bursaryAccountId: holder.id,
+            createdBy: user.id,
+            expiresAt,
+          })
+        );
 
         // Create Supabase auth user silently (no system email sent)
         const { error: supabaseError } =
@@ -228,8 +235,8 @@ export async function batchReassessmentInviteAction(
           result.errors.push(`${email}: ${emailResult.error}`);
         }
 
-        await prisma.auditLog.create({
-          data: {
+        await withAdminContext((tx) =>
+          createAuditLog(tx, {
             userId: user.id,
             action: "BATCH_REASSESSMENT_INVITE",
             entityType: "Invitation",
@@ -240,8 +247,8 @@ export async function batchReassessmentInviteAction(
               roundId,
               bursaryAccountId: holder.id,
             },
-          },
-        });
+          })
+        );
       } catch (err) {
         const message =
           err instanceof Error ? err.message : "Unknown error";
@@ -307,43 +314,43 @@ export async function createReassessmentApplicationAction(
   }
 
   try {
-    // Load bursary account details
-    const account = await prisma.bursaryAccount.findUnique({
-      where: { id: bursaryAccountId },
-      include: { leadApplicant: true },
-    });
+    const result = await withAdminContext(async (tx) => {
+      // Load bursary account details
+      const account = await tx.bursaryAccount.findUnique({
+        where: { id: bursaryAccountId },
+        include: { leadApplicant: true },
+      });
 
-    if (!account) {
-      return { success: false, error: "Bursary account not found." };
-    }
+      if (!account) {
+        return { success: false as const, error: "Bursary account not found." };
+      }
 
-    // Generate reference
-    const reference = `REA-${account.reference}-${roundId.slice(0, 8).toUpperCase()}`;
+      // Generate reference
+      const reference = `REA-${account.reference}-${roundId.slice(0, 8).toUpperCase()}`;
 
-    // Create the re-assessment application
-    const application = await prisma.application.create({
-      data: {
-        reference,
-        roundId,
-        bursaryAccountId,
-        leadApplicantId: account.leadApplicantId,
-        school: account.school,
-        childName: account.childName,
-        childDob: account.childDob,
-        entryYear: account.entryYear,
-        isReassessment: true,
-        status: "PRE_SUBMISSION",
-      },
-    });
+      // Create the re-assessment application
+      const application = await tx.application.create({
+        data: {
+          reference,
+          roundId,
+          bursaryAccountId,
+          leadApplicantId: account.leadApplicantId,
+          school: account.school,
+          childName: account.childName,
+          childDob: account.childDob,
+          entryYear: account.entryYear,
+          isReassessment: true,
+          status: "PRE_SUBMISSION",
+        },
+      });
 
-    // Pre-populate from the most recent previous year application
-    const previous = await getPreviousYearApplication(bursaryAccountId, roundId);
-    if (previous) {
-      await prepopulateReassessment(application.id, previous.id);
-    }
+      // Pre-populate from the most recent previous year application
+      const previous = await getPreviousYearApplication(tx, bursaryAccountId, roundId);
+      if (previous) {
+        await prepopulateReassessment(tx, application.id, previous.id);
+      }
 
-    await prisma.auditLog.create({
-      data: {
+      await createAuditLog(tx, {
         action: "CREATE_REASSESSMENT_APPLICATION",
         entityType: "Application",
         entityId: application.id,
@@ -353,11 +360,14 @@ export async function createReassessmentApplicationAction(
           roundId,
           previousApplicationId: previous?.id ?? null,
         },
-      },
+      });
+
+      return { success: true as const, applicationId: application.id };
     });
 
+    if (!result.success) return result;
     revalidatePath("/admin/applications");
-    return { success: true, applicationId: application.id };
+    return result;
   } catch (err) {
     const message =
       err instanceof Error ? err.message : "Failed to create re-assessment application";

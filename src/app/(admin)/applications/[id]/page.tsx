@@ -8,6 +8,7 @@
 
 import { notFound } from "next/navigation";
 import { requireRole, Role } from "@/lib/auth/roles";
+import { withUserContext, type RlsRole } from "@/lib/db/prisma";
 import {
   getApplicationWithDetails,
   getApplicationNamesForReveal,
@@ -187,22 +188,25 @@ export default async function ApplicantDataPage({ params }: Props) {
   const user = await requireRole([Role.ADMIN, Role.ASSESSOR, Role.VIEWER]);
   const isAssessor = user.role === Role.ADMIN || user.role === Role.ASSESSOR;
 
-  const application = await getApplicationWithDetails(params.id);
+  const { application, siblingLinks, names } = await withUserContext(
+    user.id,
+    user.role as RlsRole,
+    async (tx) => {
+      const app = await getApplicationWithDetails(tx, params.id);
+      if (!app) return { application: null, siblingLinks: [], names: null };
+      const siblings = app.bursaryAccountId
+        ? await getSiblingLinks(tx, app.bursaryAccountId)
+        : [];
+      const revealed = await getApplicationNamesForReveal(tx, app.id, user.id);
+      return { application: app, siblingLinks: siblings, names: revealed };
+    }
+  );
 
   if (!application) {
     notFound();
   }
 
   const { sections, documents, bursaryAccountId } = application;
-
-  // Fetch sibling links when the application is linked to a bursary account
-  const siblingLinks = bursaryAccountId
-    ? await getSiblingLinks(bursaryAccountId)
-    : [];
-
-  // Fetch child name via the audit-logged reveal path — the Applicant Data
-  // tab legitimately needs the name for the sibling-linker display.
-  const names = await getApplicationNamesForReveal(application.id, user.id);
   const currentChildName = names?.childName ?? "";
 
   if (sections.length === 0) {

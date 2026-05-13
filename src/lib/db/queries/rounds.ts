@@ -5,7 +5,7 @@
  * safe to pass from Server Components to Client Components via props.
  */
 
-import { prisma } from "@/lib/db/prisma";
+import type { Tx } from "@/lib/db/prisma";
 import { RoundStatus, ApplicationStatus, type Round } from "@prisma/client";
 
 // ---------------------------------------------------------------------------
@@ -48,8 +48,8 @@ export interface RoundDetail extends RoundWithCounts {
  * Returns all rounds ordered by academic year descending, with application
  * counts broken down by status bucket.
  */
-export async function listRounds(): Promise<RoundWithCounts[]> {
-  const rounds = await prisma.round.findMany({
+export async function listRounds(tx: Tx): Promise<RoundWithCounts[]> {
+  const rounds = await tx.round.findMany({
     orderBy: { academicYear: "desc" },
     include: {
       applications: {
@@ -73,8 +73,8 @@ export async function listRounds(): Promise<RoundWithCounts[]> {
  * Returns a single round with full details and application counts.
  * Returns null when the round is not found.
  */
-export async function getRound(id: string): Promise<RoundDetail | null> {
-  const round = await prisma.round.findUnique({
+export async function getRound(tx: Tx, id: string): Promise<RoundDetail | null> {
+  const round = await tx.round.findUnique({
     where: { id },
     include: {
       applications: {
@@ -115,13 +115,16 @@ export async function getRound(id: string): Promise<RoundDetail | null> {
 /**
  * Creates a new assessment round with status DRAFT.
  */
-export async function createRound(data: {
-  academicYear: string;
-  openDate: Date;
-  closeDate: Date;
-  decisionDate?: Date;
-}): Promise<Round> {
-  return prisma.round.create({
+export async function createRound(
+  tx: Tx,
+  data: {
+    academicYear: string;
+    openDate: Date;
+    closeDate: Date;
+    decisionDate?: Date;
+  }
+): Promise<Round> {
+  return tx.round.create({
     data: {
       academicYear: data.academicYear,
       openDate: data.openDate,
@@ -140,12 +143,13 @@ export async function createRound(data: {
  * Updates mutable fields on a round record.
  */
 export async function updateRound(
+  tx: Tx,
   id: string,
   data: Partial<
     Pick<Round, "academicYear" | "openDate" | "closeDate" | "decisionDate" | "status">
   >
 ): Promise<Round> {
-  return prisma.round.update({
+  return tx.round.update({
     where: { id },
     data,
   });
@@ -158,8 +162,8 @@ export async function updateRound(
 /**
  * Sets a round's status to CLOSED.
  */
-export async function closeRound(id: string): Promise<Round> {
-  return prisma.round.update({
+export async function closeRound(tx: Tx, id: string): Promise<Round> {
+  return tx.round.update({
     where: { id },
     data: { status: RoundStatus.CLOSED },
   });

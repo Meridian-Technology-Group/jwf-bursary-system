@@ -20,7 +20,7 @@ import {
   ArrowLeft,
 } from "lucide-react";
 import { getCurrentUser } from "@/lib/auth/roles";
-import { prisma } from "@/lib/db/prisma";
+import { withUserContext, type RlsRole } from "@/lib/db/prisma";
 import { cn } from "@/lib/utils";
 
 export const metadata = {
@@ -170,7 +170,11 @@ export default async function StatusPage() {
   if (!user) redirect("/login");
 
   // Load the user's most recent application (any status)
-  const application = await prisma.application.findFirst({
+  const application = await withUserContext(
+    user.id,
+    user.role as RlsRole,
+    (tx) =>
+      tx.application.findFirst({
     where: { leadApplicantId: user.id },
     orderBy: { updatedAt: "desc" },
     select: {
@@ -192,7 +196,8 @@ export default async function StatusPage() {
         },
       },
     },
-  });
+  })
+  );
 
   if (!application) redirect("/");
 

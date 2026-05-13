@@ -7,8 +7,8 @@
  * The invitationId in the URL serves as the authorization token.
  */
 
-import { InvitationStatus } from "@prisma/client";
-import { prisma } from "@/lib/db/prisma";
+import { InvitationStatus, type Role } from "@prisma/client";
+import { withAdminContext } from "@/lib/db/prisma";
 import { createSupabaseAdminClient } from "@/lib/auth/supabase-admin";
 import { createProfile } from "@/lib/auth/create-profile";
 import { updateInvitationStatus } from "@/lib/db/queries/invitations";
@@ -34,6 +34,37 @@ export type RegisterWithInvitationResult =
   | { success: false; error: string };
 
 // ---------------------------------------------------------------------------
+// createProfileAction — server-action wrapper for the token-based flow
+// ---------------------------------------------------------------------------
+
+export interface CreateProfileActionInput {
+  id: string;
+  email: string;
+  role?: Role;
+  firstName?: string;
+  lastName?: string;
+  phone?: string;
+}
+
+export type CreateProfileActionResult =
+  | { success: true }
+  | { success: false; error: string };
+
+/**
+ * Server-action wrapper around createProfile() for invocation from
+ * Client Components (token-based registration). The user has just signed up
+ * via Supabase Auth but does not yet have a JWT context for RLS — so we use
+ * withAdminContext to bypass RLS for this single insert.
+ */
+export async function createProfileAction(
+  input: CreateProfileActionInput
+): Promise<CreateProfileActionResult> {
+  const result = await withAdminContext((tx) => createProfile(tx, input));
+  if (!result.success) return { success: false, error: result.error };
+  return { success: true };
+}
+
+// ---------------------------------------------------------------------------
 // validateInvitationAction
 // ---------------------------------------------------------------------------
 
@@ -44,9 +75,11 @@ export async function validateInvitationAction(
   invitationId: string
 ): Promise<ValidateInvitationResult> {
   try {
-    const invitation = await prisma.invitation.findUnique({
-      where: { id: invitationId },
-    });
+    const invitation = await withAdminContext((tx) =>
+      tx.invitation.findUnique({
+        where: { id: invitationId },
+      })
+    );
 
     if (!invitation) {
       return { success: false, error: "Invitation not found." };
@@ -108,9 +141,11 @@ export async function registerWithInvitationAction(data: {
 
   try {
     // 1. Re-validate the invitation
-    const invitation = await prisma.invitation.findUnique({
-      where: { id: invitationId },
-    });
+    const invitation = await withAdminContext((tx) =>
+      tx.invitation.findUnique({
+        where: { id: invitationId },
+      })
+    );
 
     if (!invitation) {
       return { success: false, error: "Invitation not found." };
@@ -179,50 +214,59 @@ export async function registerWithInvitationAction(data: {
       userId = createData.user.id;
     }
 
-    // 3. Create Profile row
-    const profileResult = await createProfile({
-      id: userId,
-      email,
-      firstName: firstName.trim() || undefined,
-      lastName: lastName.trim() || undefined,
+    // 3-5. Create Profile row, mark invitation accepted, create application
+    //      All under admin context (the new user does not yet have a JWT).
+    const profileResult = await withAdminContext(async (tx) => {
+      const result = await createProfile(tx, {
+        id: userId,
+        email,
+        firstName: firstName.trim() || undefined,
+        lastName: lastName.trim() || undefined,
+      });
+
+      if (!result.success) return result;
+
+      // Mark invitation as ACCEPTED
+      await updateInvitationStatus(
+        tx,
+        invitationId,
+        InvitationStatus.ACCEPTED,
+        userId
+      );
+
+      // Create Application record if the invitation has the required data.
+      // When any of school / childName / roundId are absent the applicant
+      // completes onboarding via the portal dashboard card instead.
+      if (invitation.school && invitation.childName && invitation.roundId) {
+        const round = await tx.round.findUnique({
+          where: { id: invitation.roundId },
+          select: { academicYear: true },
+        });
+        const reference = await generateApplicationReference(
+          tx,
+          invitation.school,
+          round?.academicYear ?? ""
+        );
+
+        await tx.application.create({
+          data: {
+            reference,
+            roundId: invitation.roundId,
+            leadApplicantId: userId,
+            school: invitation.school,
+            childName: invitation.childName,
+            bursaryAccountId: invitation.bursaryAccountId ?? undefined,
+            isReassessment: !!invitation.bursaryAccountId,
+            status: "PRE_SUBMISSION",
+          },
+        });
+      }
+
+      return result;
     });
 
     if (!profileResult.success) {
       return { success: false, error: profileResult.error };
-    }
-
-    // 4. Mark invitation as ACCEPTED
-    await updateInvitationStatus(
-      invitationId,
-      InvitationStatus.ACCEPTED,
-      userId
-    );
-
-    // 5. Create Application record if the invitation has the required data.
-    // When any of school / childName / roundId are absent the applicant
-    // completes onboarding via the portal dashboard card instead.
-    if (invitation.school && invitation.childName && invitation.roundId) {
-      const round = await prisma.round.findUnique({
-        where: { id: invitation.roundId },
-        select: { academicYear: true },
-      });
-      const reference = await generateApplicationReference(
-        invitation.school,
-        round?.academicYear ?? ""
-      );
-
-      await prisma.application.create({
-        data: {
-          reference,
-          roundId: invitation.roundId,
-          leadApplicantId: userId,
-          school: invitation.school,
-          childName: invitation.childName,
-          bursaryAccountId: invitation.bursaryAccountId ?? undefined,
-          isReassessment: !!invitation.bursaryAccountId,
-          status: "PRE_SUBMISSION",
-        },
-      });
     }
 
     return { success: true, email };

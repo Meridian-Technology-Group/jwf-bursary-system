@@ -3,7 +3,7 @@
  * Handles CRUD for Assessment, AssessmentEarner, and AssessmentProperty.
  */
 
-import { prisma } from "@/lib/db/prisma";
+import type { Tx } from "@/lib/db/prisma";
 import type {
   Assessment,
   AssessmentEarner,
@@ -91,9 +91,10 @@ export interface AssessmentSaveInput {
  * and checklists. Returns null if no assessment exists yet.
  */
 export async function getAssessment(
+  tx: Tx,
   applicationId: string
 ): Promise<AssessmentWithRelations | null> {
-  return prisma.assessment.findUnique({
+  return tx.assessment.findUnique({
     where: { applicationId },
     include: {
       earners: { orderBy: { earnerLabel: "asc" } },
@@ -108,10 +109,11 @@ export async function getAssessment(
  * Initialises empty earner records for PARENT_1 and PARENT_2.
  */
 export async function createAssessment(
+  tx: Tx,
   applicationId: string,
   assessorId: string
 ): Promise<AssessmentWithRelations> {
-  const assessment = await prisma.assessment.create({
+  const assessment = await tx.assessment.create({
     data: {
       applicationId,
       assessorId,
@@ -135,6 +137,7 @@ export async function createAssessment(
  * Only updates fields that are explicitly provided (partial update).
  */
 export async function saveAssessment(
+  tx: Tx,
   assessmentId: string,
   data: AssessmentSaveInput
 ): Promise<AssessmentWithRelations> {
@@ -190,86 +193,84 @@ export async function saveAssessment(
   if (assessmentFields.status !== undefined)
     updateData.status = assessmentFields.status;
 
-  // Run all mutations in a transaction
-  await prisma.$transaction(async (tx) => {
-    // Update assessment fields
-    await tx.assessment.update({
-      where: { id: assessmentId },
-      data: updateData,
-    });
+  // All mutations execute within the caller's RLS-aware transaction.
+  // Update assessment fields
+  await tx.assessment.update({
+    where: { id: assessmentId },
+    data: updateData,
+  });
 
-    // Upsert earners
-    if (earners && earners.length > 0) {
-      for (const earner of earners) {
-        const totalIncome =
-          earner.netPay +
-          earner.netDividends +
-          earner.netSelfEmployedProfit +
-          earner.pensionAmount +
-          earner.benefitsIncluded;
+  // Upsert earners
+  if (earners && earners.length > 0) {
+    for (const earner of earners) {
+      const totalIncome =
+        earner.netPay +
+        earner.netDividends +
+        earner.netSelfEmployedProfit +
+        earner.pensionAmount +
+        earner.benefitsIncluded;
 
-        await tx.assessmentEarner.upsert({
-          where: {
-            assessmentId_earnerLabel: {
-              assessmentId,
-              earnerLabel: earner.earnerLabel,
-            },
-          },
-          update: {
-            employmentStatus: earner.employmentStatus,
-            netPay: earner.netPay,
-            netDividends: earner.netDividends,
-            netSelfEmployedProfit: earner.netSelfEmployedProfit,
-            pensionAmount: earner.pensionAmount,
-            benefitsIncluded: earner.benefitsIncluded,
-            benefitsExcluded: earner.benefitsExcluded,
-            totalIncome,
-          },
-          create: {
+      await tx.assessmentEarner.upsert({
+        where: {
+          assessmentId_earnerLabel: {
             assessmentId,
             earnerLabel: earner.earnerLabel,
-            employmentStatus: earner.employmentStatus,
-            netPay: earner.netPay,
-            netDividends: earner.netDividends,
-            netSelfEmployedProfit: earner.netSelfEmployedProfit,
-            pensionAmount: earner.pensionAmount,
-            benefitsIncluded: earner.benefitsIncluded,
-            benefitsExcluded: earner.benefitsExcluded,
-            totalIncome,
           },
-        });
-      }
-    }
-
-    // Upsert property
-    if (property) {
-      await tx.assessmentProperty.upsert({
-        where: { assessmentId },
+        },
         update: {
-          isMortgageFree: property.isMortgageFree,
-          additionalPropertyCount: property.additionalPropertyCount,
-          additionalPropertyIncome: property.additionalPropertyIncome,
-          cashSavings: property.cashSavings,
-          isasPepsShares: property.isasPepsShares,
-          schoolAgeChildrenCount: property.schoolAgeChildrenCount,
-          derivedSavingsAnnualTotal: property.derivedSavingsAnnualTotal,
+          employmentStatus: earner.employmentStatus,
+          netPay: earner.netPay,
+          netDividends: earner.netDividends,
+          netSelfEmployedProfit: earner.netSelfEmployedProfit,
+          pensionAmount: earner.pensionAmount,
+          benefitsIncluded: earner.benefitsIncluded,
+          benefitsExcluded: earner.benefitsExcluded,
+          totalIncome,
         },
         create: {
           assessmentId,
-          isMortgageFree: property.isMortgageFree,
-          additionalPropertyCount: property.additionalPropertyCount,
-          additionalPropertyIncome: property.additionalPropertyIncome,
-          cashSavings: property.cashSavings,
-          isasPepsShares: property.isasPepsShares,
-          schoolAgeChildrenCount: property.schoolAgeChildrenCount,
-          derivedSavingsAnnualTotal: property.derivedSavingsAnnualTotal,
+          earnerLabel: earner.earnerLabel,
+          employmentStatus: earner.employmentStatus,
+          netPay: earner.netPay,
+          netDividends: earner.netDividends,
+          netSelfEmployedProfit: earner.netSelfEmployedProfit,
+          pensionAmount: earner.pensionAmount,
+          benefitsIncluded: earner.benefitsIncluded,
+          benefitsExcluded: earner.benefitsExcluded,
+          totalIncome,
         },
       });
     }
-  });
+  }
+
+  // Upsert property
+  if (property) {
+    await tx.assessmentProperty.upsert({
+      where: { assessmentId },
+      update: {
+        isMortgageFree: property.isMortgageFree,
+        additionalPropertyCount: property.additionalPropertyCount,
+        additionalPropertyIncome: property.additionalPropertyIncome,
+        cashSavings: property.cashSavings,
+        isasPepsShares: property.isasPepsShares,
+        schoolAgeChildrenCount: property.schoolAgeChildrenCount,
+        derivedSavingsAnnualTotal: property.derivedSavingsAnnualTotal,
+      },
+      create: {
+        assessmentId,
+        isMortgageFree: property.isMortgageFree,
+        additionalPropertyCount: property.additionalPropertyCount,
+        additionalPropertyIncome: property.additionalPropertyIncome,
+        cashSavings: property.cashSavings,
+        isasPepsShares: property.isasPepsShares,
+        schoolAgeChildrenCount: property.schoolAgeChildrenCount,
+        derivedSavingsAnnualTotal: property.derivedSavingsAnnualTotal,
+      },
+    });
+  }
 
   // Return the updated assessment with relations
-  const updated = await prisma.assessment.findUniqueOrThrow({
+  const updated = await tx.assessment.findUniqueOrThrow({
     where: { id: assessmentId },
     include: {
       earners: { orderBy: { earnerLabel: "asc" } },
@@ -285,9 +286,10 @@ export async function saveAssessment(
  * Marks an assessment as COMPLETED and records the completion timestamp.
  */
 export async function completeAssessment(
+  tx: Tx,
   assessmentId: string
 ): Promise<Assessment> {
-  return prisma.assessment.update({
+  return tx.assessment.update({
     where: { id: assessmentId },
     data: {
       status: "COMPLETED",
@@ -300,9 +302,10 @@ export async function completeAssessment(
  * Marks an assessment as PAUSED.
  */
 export async function pauseAssessment(
+  tx: Tx,
   assessmentId: string
 ): Promise<Assessment> {
-  return prisma.assessment.update({
+  return tx.assessment.update({
     where: { id: assessmentId },
     data: { status: "PAUSED" },
   });

@@ -10,6 +10,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth/roles";
 import { Role } from "@prisma/client";
+import { withUserContext, type RlsRole } from "@/lib/db/prisma";
 import { getApplicationNames } from "@/lib/db/queries/applications";
 import { createAuditLog } from "@/lib/audit/log";
 
@@ -33,20 +34,25 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "No application IDs provided" }, { status: 400 });
   }
 
-  // Fetch names
-  const names = await getApplicationNames(applicationIds);
-
-  // Write audit log (non-blocking)
-  await createAuditLog({
-    userId: user.id,
-    action: "NAME_REVEAL",
-    entityType: "Application",
-    context: "Admin queue name reveal",
-    metadata: {
-      applicationIds,
-      count: applicationIds.length,
-    },
-  });
+  // Fetch names + write audit log within RLS context
+  const names = await withUserContext(
+    user.id,
+    user.role as RlsRole,
+    async (tx) => {
+      const fetched = await getApplicationNames(tx, applicationIds);
+      await createAuditLog(tx, {
+        userId: user.id,
+        action: "NAME_REVEAL",
+        entityType: "Application",
+        context: "Admin queue name reveal",
+        metadata: {
+          applicationIds,
+          count: applicationIds.length,
+        },
+      });
+      return fetched;
+    }
+  );
 
   // Return names — omit sensitive details, just what the table needs
   const result = names.map((app) => ({

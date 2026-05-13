@@ -2,7 +2,7 @@
  * Profile database queries for admin use.
  */
 
-import { prisma } from "@/lib/db/prisma";
+import type { Tx } from "@/lib/db/prisma";
 
 // ─── listAssessors ────────────────────────────────────────────────────────────
 
@@ -10,8 +10,8 @@ import { prisma } from "@/lib/db/prisma";
  * Returns all profiles with the ASSESSOR role, ordered by last name.
  * Used to populate the assignee select in the application detail header.
  */
-export async function listAssessors() {
-  return prisma.profile.findMany({
+export async function listAssessors(tx: Tx) {
+  return tx.profile.findMany({
     where: { role: "ASSESSOR" },
     select: {
       id: true,
@@ -28,8 +28,8 @@ export async function listAssessors() {
  * Returns all staff profiles (ADMIN, ASSESSOR, VIEWER, DELETED).
  * Includes a count of assigned applications for workload visibility.
  */
-export async function listStaffUsers() {
-  return prisma.profile.findMany({
+export async function listStaffUsers(tx: Tx) {
+  return tx.profile.findMany({
     where: { role: { in: ["ADMIN", "ASSESSOR", "VIEWER", "DELETED"] } },
     select: {
       id: true,

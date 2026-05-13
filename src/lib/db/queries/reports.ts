@@ -5,7 +5,7 @@
  * results are safe to pass from Server Components to Client Components.
  */
 
-import { prisma } from "@/lib/db/prisma";
+import type { Tx } from "@/lib/db/prisma";
 import { ApplicationStatus, AssessmentStatus, RoundStatus } from "@prisma/client";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -72,8 +72,8 @@ export interface ReasonCodeFrequencyRow {
  * Returns the active round (most recent OPEN), falling back to the most
  * recent round of any status. Returns null when no rounds exist.
  */
-export async function getActiveRound() {
-  const openRound = await prisma.round.findFirst({
+export async function getActiveRound(tx: Tx) {
+  const openRound = await tx.round.findFirst({
     where: { status: RoundStatus.OPEN },
     orderBy: { openDate: "desc" },
     select: { id: true, academicYear: true, closeDate: true, status: true },
@@ -81,7 +81,7 @@ export async function getActiveRound() {
 
   if (openRound) return openRound;
 
-  return prisma.round.findFirst({
+  return tx.round.findFirst({
     orderBy: { openDate: "desc" },
     select: { id: true, academicYear: true, closeDate: true, status: true },
   });
@@ -94,15 +94,16 @@ export async function getActiveRound() {
  * Also includes the round's basic metadata for the Active Round tile.
  */
 export async function getDashboardCounts(
+  tx: Tx,
   roundId: string
 ): Promise<DashboardCounts> {
-  const round = await prisma.round.findUnique({
+  const round = await tx.round.findUnique({
     where: { id: roundId },
     select: { id: true, academicYear: true, closeDate: true, status: true },
   });
 
   // Fetch all application statuses for the round in one query
-  const applications = await prisma.application.findMany({
+  const applications = await tx.application.findMany({
     where: { roundId },
     select: {
       id: true,
@@ -172,11 +173,12 @@ export async function getDashboardCounts(
  * Workflow-relevant actions are those relating to application lifecycle events.
  */
 export async function getDashboardFeed(
+  tx: Tx,
   roundId: string,
   limit = 8
 ): Promise<DashboardFeedItem[]> {
   // Fetch recent audit logs that relate to Application entities
-  const logs = await prisma.auditLog.findMany({
+  const logs = await tx.auditLog.findMany({
     where: {
       entityType: { in: ["Application", "Assessment", "Recommendation"] },
       action: {
@@ -206,7 +208,7 @@ export async function getDashboardFeed(
     .filter((id): id is string => id !== null);
 
   // Fetch application references for these entity IDs
-  const apps = await prisma.application.findMany({
+  const apps = await tx.application.findMany({
     where: {
       roundId,
       id: { in: entityIds },
@@ -217,7 +219,7 @@ export async function getDashboardFeed(
   const appMap = new Map(apps.map((a) => [a.id, a]));
 
   // Also look up assessments — their entityId is assessmentId, parent is application
-  const assessments = await prisma.assessment.findMany({
+  const assessments = await tx.assessment.findMany({
     where: { id: { in: entityIds } },
     select: {
       id: true,
@@ -275,9 +277,10 @@ export async function getDashboardFeed(
  * Bands: 0%, 1-25%, 26-50%, 51-75%, 76-90%, 91-100%
  */
 export async function getAwardDistribution(
+  tx: Tx,
   roundId: string
 ): Promise<AwardBand[]> {
-  const recommendations = await prisma.recommendation.findMany({
+  const recommendations = await tx.recommendation.findMany({
     where: { roundId },
     select: { bursaryAward: true },
   });
@@ -319,9 +322,10 @@ export async function getAwardDistribution(
  * Includes count, average bursary award %, and average monthly payable fees.
  */
 export async function getSchoolComparison(
+  tx: Tx,
   roundId: string
 ): Promise<SchoolComparisonRow[]> {
-  const applications = await prisma.application.findMany({
+  const applications = await tx.application.findMany({
     where: { roundId },
     select: {
       school: true,
@@ -384,9 +388,10 @@ export async function getSchoolComparison(
  * Bands: Under £25k, £25–40k, £40–60k, £60–80k, £80–100k, Over £100k
  */
 export async function getIncomeBandDistribution(
+  tx: Tx,
   roundId: string
 ): Promise<IncomeBandRow[]> {
-  const assessments = await prisma.assessment.findMany({
+  const assessments = await tx.assessment.findMany({
     where: {
       application: { roundId },
       totalHouseholdNetIncome: { not: null },
@@ -430,9 +435,10 @@ export async function getIncomeBandDistribution(
  * Groups assessments by property category for the given round.
  */
 export async function getPropertyCategoryDistribution(
+  tx: Tx,
   roundId: string
 ): Promise<PropertyCategoryRow[]> {
-  const assessments = await prisma.assessment.findMany({
+  const assessments = await tx.assessment.findMany({
     where: {
       application: { roundId },
       propertyCategory: { not: null },
@@ -463,9 +469,10 @@ export async function getPropertyCategoryDistribution(
  * Returns a ranked list of reason codes by usage frequency for the given round.
  */
 export async function getReasonCodeFrequency(
+  tx: Tx,
   roundId: string
 ): Promise<ReasonCodeFrequencyRow[]> {
-  const links = await prisma.recommendationReasonCode.findMany({
+  const links = await tx.recommendationReasonCode.findMany({
     where: {
       recommendation: { roundId },
     },

@@ -18,9 +18,9 @@
 import { Suspense, useEffect, useState, type FormEvent } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { createSupabaseBrowserClient } from "@/lib/auth/supabase-browser";
-import { createProfile } from "@/lib/auth/create-profile";
 import { validatePasswordStrength } from "@/lib/auth/password-policy";
 import {
+  createProfileAction,
   validateInvitationAction,
   registerWithInvitationAction,
 } from "./actions";
@@ -80,7 +80,7 @@ function TokenRegistration({ token }: { token: string }) {
       return;
     }
 
-    const result = await createProfile({
+    const result = await createProfileAction({
       id: data.user.id,
       email: data.user.email!,
       firstName: firstName.trim() || undefined,

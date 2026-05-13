@@ -12,6 +12,7 @@
  */
 
 import { getCurrentUser } from "@/lib/auth/roles";
+import { withUserContext, type RlsRole } from "@/lib/db/prisma";
 import { getApplicationForUser, getSectionStatusList } from "@/lib/db/queries/applications";
 import { getLatestAcceptedInvitationForUser } from "@/lib/db/queries/invitations";
 import { StatusBadge, type ApplicationStatus } from "@/components/shared/status-badge";
@@ -34,13 +35,20 @@ export default async function PortalDashboardPage() {
   const user = await getCurrentUser();
   const firstName = user?.firstName ?? "there";
 
-  const application = user ? await getApplicationForUser(user.id) : null;
-
-  let completedSections = 0;
-  if (application) {
-    const statuses = await getSectionStatusList(application.id);
-    completedSections = statuses.filter((s) => s.isComplete).length;
-  }
+  const { application, completedSections, invitation } = user
+    ? await withUserContext(user.id, user.role as RlsRole, async (tx) => {
+        const app = await getApplicationForUser(tx, user.id);
+        let completed = 0;
+        if (app) {
+          const statuses = await getSectionStatusList(tx, app.id);
+          completed = statuses.filter((s) => s.isComplete).length;
+        }
+        const inv = !app
+          ? await getLatestAcceptedInvitationForUser(tx, user.id)
+          : null;
+        return { application: app, completedSections: completed, invitation: inv };
+      })
+    : { application: null, completedSections: 0, invitation: null };
 
   const progressPercent = application
     ? Math.round((completedSections / TOTAL_SECTIONS) * 100)
@@ -49,13 +57,6 @@ export default async function PortalDashboardPage() {
   const roundLabel = application?.round?.academicYear
     ? `${application.round.academicYear} Assessment Round`
     : "Bursary Application";
-
-  // When there is no application, check whether an accepted invitation exists
-  // so we know which empty state to render.
-  const invitation =
-    !application && user
-      ? await getLatestAcceptedInvitationForUser(user.id)
-      : null;
 
   return (
     <div className="space-y-8">

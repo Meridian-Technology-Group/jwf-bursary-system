@@ -9,6 +9,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { requireRole, Role } from "@/lib/auth/roles";
+import { withUserContext, type RlsRole } from "@/lib/db/prisma";
 import { createAuditLog } from "@/lib/audit/log";
 import {
   removeSiblingLink,
@@ -29,13 +30,14 @@ export async function DELETE(
   const { id: siblingLinkId } = await params;
 
   try {
-    await removeSiblingLink(siblingLinkId);
-
-    await createAuditLog({
-      userId: user.id,
-      action: "SIBLING_LINK_REMOVED",
-      entityType: "SIBLING_LINK",
-      entityId: siblingLinkId,
+    await withUserContext(user.id, user.role as RlsRole, async (tx) => {
+      await removeSiblingLink(tx, siblingLinkId);
+      await createAuditLog(tx, {
+        userId: user.id,
+        action: "SIBLING_LINK_REMOVED",
+        entityType: "SIBLING_LINK",
+        entityId: siblingLinkId,
+      });
     });
 
     return NextResponse.json({ success: true });
@@ -88,14 +90,15 @@ export async function PATCH(
   }
 
   try {
-    await reorderSiblingPriority(familyGroupId, orderedIds);
-
-    await createAuditLog({
-      userId: user.id,
-      action: "SIBLING_PRIORITY_REORDERED",
-      entityType: "SIBLING_LINK",
-      context: `Family group: ${familyGroupId}`,
-      metadata: { orderedIds },
+    await withUserContext(user.id, user.role as RlsRole, async (tx) => {
+      await reorderSiblingPriority(tx, familyGroupId, orderedIds);
+      await createAuditLog(tx, {
+        userId: user.id,
+        action: "SIBLING_PRIORITY_REORDERED",
+        entityType: "SIBLING_LINK",
+        context: `Family group: ${familyGroupId}`,
+        metadata: { orderedIds },
+      });
     });
 
     return NextResponse.json({ success: true });

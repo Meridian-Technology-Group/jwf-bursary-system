@@ -8,10 +8,8 @@
  * Never import in Client Components.
  */
 
-"use server";
-
 import { Role, type Profile } from "@prisma/client";
-import { prisma } from "@/lib/db/prisma";
+import type { Tx } from "@/lib/db/prisma";
 
 export interface CreateProfileInput {
   /** Must match the Supabase auth.users UUID for this user. */
@@ -34,13 +32,14 @@ export type CreateProfileResult =
  * it returns the existing row rather than throwing.
  */
 export async function createProfile(
+  tx: Tx,
   input: CreateProfileInput
 ): Promise<CreateProfileResult> {
   const { id, email, role = Role.APPLICANT, firstName, lastName, phone } = input;
 
   try {
     // Use upsert so concurrent registration attempts are safe.
-    const profile = await prisma.profile.upsert({
+    const profile = await tx.profile.upsert({
       where: { id },
       create: {
         id,

@@ -5,7 +5,7 @@
  * hold an active bursary and are invited to submit updated financials.
  */
 
-import { prisma } from "@/lib/db/prisma";
+import type { Tx } from "@/lib/db/prisma";
 import type { ApplicationSectionType } from "@prisma/client";
 
 // ─── Section types that are pre-populated from the previous year ─────────────
@@ -65,10 +65,11 @@ export interface PreviousYearApplication {
  * year-on-year comparison.
  */
 export async function getPreviousYearApplication(
+  tx: Tx,
   bursaryAccountId: string,
   currentRoundId: string
 ): Promise<PreviousYearApplication | null> {
-  const application = await prisma.application.findFirst({
+  const application = await tx.application.findFirst({
     where: {
       bursaryAccountId,
       roundId: { not: currentRoundId },
@@ -146,11 +147,12 @@ export async function getPreviousYearApplication(
  * This is idempotent — safe to call multiple times (uses upsert).
  */
 export async function prepopulateReassessment(
+  tx: Tx,
   applicationId: string,
   previousApplicationId: string
 ): Promise<void> {
   // Load previous year's personal sections
-  const previousSections = await prisma.applicationSection.findMany({
+  const previousSections = await tx.applicationSection.findMany({
     where: {
       applicationId: previousApplicationId,
       section: { in: PREPOPULATED_SECTIONS },
@@ -163,7 +165,7 @@ export async function prepopulateReassessment(
   // Upsert each section into the current application
   await Promise.all(
     previousSections.map((prev) =>
-      prisma.applicationSection.upsert({
+      tx.applicationSection.upsert({
         where: {
           applicationId_section: {
             applicationId,
@@ -189,7 +191,7 @@ export async function prepopulateReassessment(
   // Ensure financial sections exist but are marked incomplete
   await Promise.all(
     FINANCIAL_SECTIONS.map((section) =>
-      prisma.applicationSection.upsert({
+      tx.applicationSection.upsert({
         where: {
           applicationId_section: { applicationId, section },
         },
@@ -228,10 +230,11 @@ export interface PreviousAssessmentSnapshot {
  * Used in the admin year-on-year comparison component.
  */
 export async function getPreviousAssessment(
+  tx: Tx,
   bursaryAccountId: string,
   currentRoundId: string
 ): Promise<PreviousAssessmentSnapshot | null> {
-  const previous = await prisma.application.findFirst({
+  const previous = await tx.application.findFirst({
     where: {
       bursaryAccountId,
       roundId: { not: currentRoundId },

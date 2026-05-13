@@ -10,6 +10,7 @@
  */
 
 import { requireRole, Role } from "@/lib/auth/roles";
+import { withUserContext, type RlsRole } from "@/lib/db/prisma";
 import {
   getFamilyTypeConfigs,
   getSchoolFees,
@@ -60,17 +61,19 @@ function SectionHeader({
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default async function SettingsPage() {
-  await requireRole([Role.ADMIN]);
+  const user = await requireRole([Role.ADMIN]);
 
   // Parallel data fetches
   const [familyTypeConfigs, schoolFees, councilTax, reasonCodes, emailTemplates] =
-    await Promise.all([
-      getFamilyTypeConfigs(),
-      getSchoolFees(),
-      getCouncilTaxDefault(),
-      getAllReasonCodes(),
-      getAllEmailTemplates(),
-    ]);
+    await withUserContext(user.id, user.role as RlsRole, (tx) =>
+      Promise.all([
+        getFamilyTypeConfigs(tx),
+        getSchoolFees(tx),
+        getCouncilTaxDefault(tx),
+        getAllReasonCodes(tx),
+        getAllEmailTemplates(tx),
+      ])
+    );
 
   return (
     <div className="space-y-6">

@@ -12,7 +12,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth/roles";
-import { prisma } from "@/lib/db/prisma";
+import { withUserContext, type RlsRole } from "@/lib/db/prisma";
 import { uploadDocument } from "@/lib/storage/documents";
 import { sniffContentType } from "@/lib/storage/sniff";
 import { logError } from "@/lib/log";
@@ -87,10 +87,15 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   }
 
   // ── Ownership check: application must belong to the current user ───────────
-  const application = await prisma.application.findUnique({
-    where: { id: applicationId },
-    select: { id: true, leadApplicantId: true, status: true },
-  });
+  const application = await withUserContext(
+    user.id,
+    user.role as RlsRole,
+    (tx) =>
+      tx.application.findUnique({
+        where: { id: applicationId },
+        select: { id: true, leadApplicantId: true, status: true },
+      })
+  );
 
   if (!application) {
     return NextResponse.json(
@@ -125,29 +130,34 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
   // ── Create Prisma Document record ──────────────────────────────────────────
   try {
-    const document = await prisma.document.create({
-      data: {
-        applicationId,
-        slot,
-        filename: file.name,
-        mimeType: verifiedContentType,
-        fileSize: file.size,
-        storagePath,
-        uploadedBy: user.id,
-      },
-      select: {
-        id: true,
-        applicationId: true,
-        slot: true,
-        filename: true,
-        mimeType: true,
-        fileSize: true,
-        storagePath: true,
-        isVerified: true,
-        uploadedBy: true,
-        uploadedAt: true,
-      },
-    });
+    const document = await withUserContext(
+      user.id,
+      user.role as RlsRole,
+      (tx) =>
+        tx.document.create({
+          data: {
+            applicationId,
+            slot,
+            filename: file.name,
+            mimeType: verifiedContentType,
+            fileSize: file.size,
+            storagePath,
+            uploadedBy: user.id,
+          },
+          select: {
+            id: true,
+            applicationId: true,
+            slot: true,
+            filename: true,
+            mimeType: true,
+            fileSize: true,
+            storagePath: true,
+            isVerified: true,
+            uploadedBy: true,
+            uploadedAt: true,
+          },
+        })
+    );
 
     return NextResponse.json(document, { status: 201 });
   } catch (err) {

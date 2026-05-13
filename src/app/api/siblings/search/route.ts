@@ -11,10 +11,11 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { requireRole, Role } from "@/lib/auth/roles";
+import { withUserContext, type RlsRole } from "@/lib/db/prisma";
 import { searchBursaryAccounts } from "@/lib/db/queries/siblings";
 
 export async function GET(request: NextRequest): Promise<NextResponse> {
-  await requireRole([Role.ADMIN, Role.ASSESSOR, Role.VIEWER]);
+  const user = await requireRole([Role.ADMIN, Role.ASSESSOR, Role.VIEWER]);
 
   const { searchParams } = new URL(request.url);
   const query = searchParams.get("q") ?? "";
@@ -24,7 +25,9 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   }
 
   try {
-    const results = await searchBursaryAccounts(query);
+    const results = await withUserContext(user.id, user.role as RlsRole, (tx) =>
+      searchBursaryAccounts(tx, query)
+    );
     return NextResponse.json(results);
   } catch (err) {
     console.error("[GET /api/siblings/search] Error:", err);
