@@ -1,0 +1,103 @@
+name: DB push
+
+on:
+  push:
+    branches:
+      - staging
+      - main
+  workflow_dispatch:
+    inputs:
+      target:
+        description: "Which Supabase project to push migrations to."
+        required: true
+        type: choice
+        options:
+          - staging
+          - production
+
+jobs:
+  db-push-staging:
+    name: Push migrations to staging
+    runs-on: ubuntu-latest
+    if: |
+      (github.event_name == 'push' && github.ref == 'refs/heads/staging') ||
+      (github.event_name == 'workflow_dispatch' && inputs.target == 'staging')
+
+    steps:
+      - name: Gate on staging secrets
+        id: gate
+        run: |
+          missing=()
+          [ -z "${{ secrets.STAGING_DATABASE_URL }}" ] && missing+=("STAGING_DATABASE_URL")
+          [ -z "${{ secrets.STAGING_DIRECT_URL }}" ] && missing+=("STAGING_DIRECT_URL")
+          if [ ${#missing[@]} -gt 0 ]; then
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "Skipping staging db push. Missing: ${missing[*]}"
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Checkout
+        if: steps.gate.outputs.ready == 'true'
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        if: steps.gate.outputs.ready == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22.12.0'
+          cache: 'npm'
+
+      - name: Install dependencies
+        if: steps.gate.outputs.ready == 'true'
+        run: npm ci
+
+      - name: Prisma migrate deploy
+        if: steps.gate.outputs.ready == 'true'
+        env:
+          DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
+          DIRECT_URL: ${{ secrets.STAGING_DIRECT_URL }}
+        run: npx prisma migrate deploy
+
+  db-push-prod:
+    name: Push migrations to production
+    runs-on: ubuntu-latest
+    if: |
+      (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
+      (github.event_name == 'workflow_dispatch' && inputs.target == 'production')
+
+    steps:
+      - name: Gate on production secrets
+        id: gate
+        run: |
+          missing=()
+          [ -z "${{ secrets.PROD_DATABASE_URL }}" ] && missing+=("PROD_DATABASE_URL")
+          [ -z "${{ secrets.PROD_DIRECT_URL }}" ] && missing+=("PROD_DIRECT_URL")
+          if [ ${#missing[@]} -gt 0 ]; then
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "Skipping production db push. Missing: ${missing[*]}"
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Checkout
+        if: steps.gate.outputs.ready == 'true'
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        if: steps.gate.outputs.ready == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22.12.0'
+          cache: 'npm'
+
+      - name: Install dependencies
+        if: steps.gate.outputs.ready == 'true'
+        run: npm ci
+
+      - name: Prisma migrate deploy
+        if: steps.gate.outputs.ready == 'true'
+        env:
+          DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+          DIRECT_URL: ${{ secrets.PROD_DIRECT_URL }}
+        run: npx prisma migrate deploy
