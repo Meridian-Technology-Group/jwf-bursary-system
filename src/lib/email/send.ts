@@ -4,7 +4,7 @@
 // All three exported functions wrap the Resend API and return a typed result
 // object; they never throw unhandled exceptions.
 
-import { prisma } from "@/lib/db/prisma";
+import { prisma, withAdminContext } from "@/lib/db/prisma";
 import { resend } from "./resend";
 import { replaceMergeFields } from "./merge";
 import { wrapInEmailTemplate, plainTextToHtml, htmlToPlainText } from "./template";
@@ -64,9 +64,11 @@ export async function sendEmail(
 ): Promise<SendEmailResult> {
   try {
     // 1. Load template from the database.
-    const template = await prisma.emailTemplate.findUnique({
-      where: { type: templateType },
-    });
+    // email_templates has RLS enabled with no public-read policy; use
+    // withAdminContext so the lookup runs as service_role.
+    const template = await withAdminContext((tx) =>
+      tx.emailTemplate.findUnique({ where: { type: templateType } }),
+    );
 
     if (!template) {
       return {
@@ -160,9 +162,9 @@ export async function sendBatchEmails(
   let rawBody: string;
 
   try {
-    const template = await prisma.emailTemplate.findUnique({
-      where: { type: templateType },
-    });
+    const template = await withAdminContext((tx) =>
+      tx.emailTemplate.findUnique({ where: { type: templateType } }),
+    );
 
     if (!template) {
       const error = `Email template not found for type: ${templateType}`;
