@@ -42,9 +42,15 @@ export async function GET(
   // Generate pre-signed URL via Supabase admin client
   const supabaseAdmin = createSupabaseAdminClient();
 
+  // `download: <filename>` forces a Content-Disposition: attachment response
+  // header on the signed URL, preventing in-browser rendering of any uploaded
+  // content (defence against HTML/SVG masquerading as PDF/PNG/JPEG).
+  // See docs/security-audit.md §2.10.
   const { data, error } = await supabaseAdmin.storage
     .from(BUCKET_NAME)
-    .createSignedUrl(document.storagePath, EXPIRY_SECONDS);
+    .createSignedUrl(document.storagePath, EXPIRY_SECONDS, {
+      download: document.filename,
+    });
 
   if (error || !data?.signedUrl) {
     console.error("[documents/url] Failed to create signed URL:", error);

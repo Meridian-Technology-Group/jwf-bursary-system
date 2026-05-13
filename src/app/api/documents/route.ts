@@ -14,6 +14,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth/roles";
 import { prisma } from "@/lib/db/prisma";
 import { uploadDocument } from "@/lib/storage/documents";
+import { sniffContentType } from "@/lib/storage/sniff";
 
 const ACCEPTED_MIME = ["application/pdf", "image/jpeg", "image/png"];
 const MAX_SIZE_BYTES = 20 * 1024 * 1024; // 20 MB
@@ -67,6 +68,23 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     );
   }
 
+  // ── Magic-byte sniff: reject files whose contents don't match the claimed
+  //    MIME type. Defends against client-spoofed Content-Type headers. ───────
+  const headerBuf = Buffer.from(await file.slice(0, 8).arrayBuffer());
+  const { contentType: verifiedContentType } = sniffContentType(headerBuf);
+  if (!verifiedContentType) {
+    return NextResponse.json(
+      { error: "File contents do not match an allowed type (PDF, JPG, or PNG)" },
+      { status: 422 }
+    );
+  }
+  if (verifiedContentType !== file.type) {
+    return NextResponse.json(
+      { error: "File contents do not match the declared type" },
+      { status: 422 }
+    );
+  }
+
   // ── Ownership check: application must belong to the current user ───────────
   const application = await prisma.application.findUnique({
     where: { id: applicationId },
@@ -93,7 +111,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   const { storagePath, error: storageError } = await uploadDocument(
     file,
     applicationId,
-    slot
+    slot,
+    verifiedContentType
   );
 
   if (storageError || !storagePath) {
@@ -110,7 +129,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         applicationId,
         slot,
         filename: file.name,
-        mimeType: file.type,
+        mimeType: verifiedContentType,
         fileSize: file.size,
         storagePath,
         uploadedBy: user.id,

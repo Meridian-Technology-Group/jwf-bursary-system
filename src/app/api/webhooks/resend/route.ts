@@ -19,6 +19,7 @@
 //   3. Uncomment the verification block below.
 
 import { NextRequest, NextResponse } from "next/server";
+import { Webhook } from "svix";
 
 // ---------------------------------------------------------------------------
 // Resend webhook payload types
@@ -174,41 +175,45 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     );
   }
 
-  // ── Optional Svix signature verification ──────────────────────────────────
-  //
-  // Uncomment the block below once you have:
-  //   1. Installed svix:  npm install svix
-  //   2. Added RESEND_WEBHOOK_SECRET=whsec_... to .env.local
-  //
-  // import { Webhook } from "svix";
-  //
-  // const webhookSecret = process.env.RESEND_WEBHOOK_SECRET;
-  // if (webhookSecret) {
-  //   const svixId        = request.headers.get("svix-id");
-  //   const svixTimestamp = request.headers.get("svix-timestamp");
-  //   const svixSignature = request.headers.get("svix-signature");
-  //
-  //   if (!svixId || !svixTimestamp || !svixSignature) {
-  //     return NextResponse.json(
-  //       { error: "Missing Svix signature headers" },
-  //       { status: 401 }
-  //     );
-  //   }
-  //
-  //   const wh = new Webhook(webhookSecret);
-  //   try {
-  //     wh.verify(rawBody, {
-  //       "svix-id":        svixId,
-  //       "svix-timestamp": svixTimestamp,
-  //       "svix-signature": svixSignature,
-  //     });
-  //   } catch {
-  //     return NextResponse.json(
-  //       { error: "Invalid webhook signature" },
-  //       { status: 401 }
-  //     );
-  //   }
-  // }
+  // ── Svix signature verification ───────────────────────────────────────────
+  // Resend signs webhook payloads using Svix. RESEND_WEBHOOK_SECRET must be
+  // set in production; unsigned/invalid events are rejected with 401.
+  // See docs/security-audit.md §2.15.
+  const webhookSecret = process.env.RESEND_WEBHOOK_SECRET;
+  if (!webhookSecret) {
+    console.error(
+      "[resend/webhook] RESEND_WEBHOOK_SECRET is not configured — rejecting event"
+    );
+    return NextResponse.json(
+      { error: "Webhook verification not configured" },
+      { status: 401 }
+    );
+  }
+
+  const svixId = request.headers.get("svix-id");
+  const svixTimestamp = request.headers.get("svix-timestamp");
+  const svixSignature = request.headers.get("svix-signature");
+
+  if (!svixId || !svixTimestamp || !svixSignature) {
+    return NextResponse.json(
+      { error: "Missing Svix signature headers" },
+      { status: 401 }
+    );
+  }
+
+  try {
+    const wh = new Webhook(webhookSecret);
+    wh.verify(rawBody, {
+      "svix-id": svixId,
+      "svix-timestamp": svixTimestamp,
+      "svix-signature": svixSignature,
+    });
+  } catch {
+    return NextResponse.json(
+      { error: "Invalid webhook signature" },
+      { status: 401 }
+    );
+  }
   // ── End signature verification block ─────────────────────────────────────
 
   // Validate payload structure.
