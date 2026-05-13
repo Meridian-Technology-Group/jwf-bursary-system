@@ -185,9 +185,11 @@
   },
   "active": "7b226d201db4cc50",
   "lastOpenFiles": [
+    "handoffs/staff-invite-resend-flow.md",
+    "handoffs",
+    "contract/feature-verification-checklist.md",
     "contract/proposal-narrative.md",
     "proposal/meeting-talking-points.md",
-    "contract/feature-verification-checklist.md",
     "IMPLEMENTATION_PLAN.md",
     "security-audit.md",
     "prd/_index.md",
@@ -209,9 +211,7 @@
     "prd/08-data-operations.md",
     "prd/07-assessment-output.md",
     "prd/05-assessment-engine.md",
-    "prd/04-admin-round-management.md",
     "prd",
-    "tdd/07-system-components.md",
     "tdd"
   ]
 }

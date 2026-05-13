@@ -21,3 +21,4 @@ docs/planning/screenshots
 
 /src/generated/prisma
 tsconfig.tsbuildinfo
+.env*.local
