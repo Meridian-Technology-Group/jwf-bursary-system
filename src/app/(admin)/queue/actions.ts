@@ -21,6 +21,7 @@ import { withAdminContext, type Tx } from "@/lib/db/prisma";
 import { createAuditLog } from "@/lib/audit/log";
 import { sendEmail } from "@/lib/email/send";
 import { createSupabaseAdminClient } from "@/lib/auth/supabase-admin";
+import { getAppUrl } from "@/lib/app-url";
 
 // ─── Validation schema ────────────────────────────────────────────────────────
 
@@ -81,7 +82,7 @@ export async function createInternalRequestAction(
     // 1+2. Load round + find/create profile + create application + invitation
     //      under admin context (the parent may not have a JWT yet).
     const supabase = createSupabaseAdminClient();
-    const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
+    const appUrl = getAppUrl();
 
     // First, look up existing profile (or create the Supabase user) outside
     // the transaction so we don't hold the DB connection while waiting for

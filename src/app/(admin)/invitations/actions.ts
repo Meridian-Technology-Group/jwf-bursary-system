@@ -13,6 +13,7 @@ import {
   getActiveBursaryHolders,
 } from "@/lib/db/queries/invitations";
 import { createSupabaseAdminClient } from "@/lib/auth/supabase-admin";
+import { getAppUrl } from "@/lib/app-url";
 import { sendEmail } from "@/lib/email/send";
 import { withAdminContext } from "@/lib/db/prisma";
 import { createAuditLog } from "@/lib/audit/log";
@@ -108,7 +109,7 @@ export async function createInvitationAction(
     // 2. Create Supabase auth user silently (no system email sent).
     //    The branded Resend email is the only email the applicant receives.
     const supabase = createSupabaseAdminClient();
-    const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
+    const appUrl = getAppUrl();
     const { error: supabaseError } = await supabase.auth.admin.createUser({
       email,
       email_confirm: true,
@@ -177,7 +178,7 @@ export async function batchReassessmentInviteAction(
     });
 
     const supabase = createSupabaseAdminClient();
-    const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
+    const appUrl = getAppUrl();
 
     for (let i = 0; i < holders.length; i++) {
       const holder = holders[i];

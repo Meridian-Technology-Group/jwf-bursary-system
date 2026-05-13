@@ -12,6 +12,7 @@ import { Role } from "@prisma/client";
 import { requireRole } from "@/lib/auth/roles";
 import { createProfile } from "@/lib/auth/create-profile";
 import { createSupabaseAdminClient } from "@/lib/auth/supabase-admin";
+import { getAppUrl } from "@/lib/app-url";
 import { withAdminContext, withUserContext, type RlsRole } from "@/lib/db/prisma";
 import { createAuditLog } from "@/lib/audit/log";
 
@@ -67,7 +68,7 @@ export async function inviteStaffAction(
   try {
     // 1. Create Supabase auth user via invite
     const supabase = createSupabaseAdminClient();
-    const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
+    const appUrl = getAppUrl();
 
     const { data: inviteData, error: inviteError } =
       await supabase.auth.admin.inviteUserByEmail(email, {
