@@ -4,6 +4,7 @@
  * All functions return plain objects safe for Server → Client prop passing.
  */
 
+import { randomBytes } from "node:crypto";
 import type { Tx } from "@/lib/db/prisma";
 import {
   InvitationStatus,
@@ -11,6 +12,22 @@ import {
   type Invitation,
   type School,
 } from "@prisma/client";
+
+// ---------------------------------------------------------------------------
+// Token helper
+// ---------------------------------------------------------------------------
+
+/**
+ * Generates a URL-safe single-use applicant invitation token.
+ * 32 random bytes encoded as base64url ≈ 43 chars of entropy.
+ *
+ * Mirrors `generateInvitationToken` in `staff-invitations.ts` so both flows
+ * have the same token shape. Kept local for now to avoid a cross-module
+ * refactor; a future PR may consolidate both into a shared helper.
+ */
+export function generateInvitationToken(): string {
+  return randomBytes(32).toString("base64url");
+}
 
 // ---------------------------------------------------------------------------
 // Types
@@ -86,16 +103,27 @@ export async function listInvitations(
 
 /**
  * Creates an invitation record with status PENDING.
+ *
+ * `token` is auto-generated via `generateInvitationToken()` when the caller
+ * does not supply one. `firstName`, `lastName`, and `authUserId` are
+ * optional: the legacy admin invite path (which only knows the email and a
+ * single `applicantName` string) can omit them, while the hardened path
+ * planned in PR2 will pass all three so the acceptance flow can skip the
+ * `auth.users` paged scan.
  */
 export async function createInvitation(
   tx: Tx,
   data: {
     email: string;
     applicantName?: string;
+    firstName?: string;
+    lastName?: string;
     childName?: string;
     school?: School;
     roundId?: string;
     bursaryAccountId?: string;
+    authUserId?: string;
+    token?: string;
     createdBy: string;
     expiresAt: Date;
   }
@@ -104,13 +132,57 @@ export async function createInvitation(
     data: {
       email: data.email,
       applicantName: data.applicantName ?? null,
+      firstName: data.firstName ?? null,
+      lastName: data.lastName ?? null,
       childName: data.childName ?? null,
       school: data.school ?? null,
       roundId: data.roundId ?? null,
       bursaryAccountId: data.bursaryAccountId ?? null,
+      authUserId: data.authUserId ?? null,
+      token: data.token ?? generateInvitationToken(),
       createdBy: data.createdBy,
       expiresAt: data.expiresAt,
       status: InvitationStatus.PENDING,
+    },
+  });
+}
+
+// ---------------------------------------------------------------------------
+// getInvitationByToken
+// ---------------------------------------------------------------------------
+
+/**
+ * Looks up an Invitation by its single-use token. Returns null if not
+ * found. Status / expiry validation is the caller's responsibility, mirroring
+ * `getStaffInvitationByToken`.
+ */
+export async function getInvitationByToken(
+  tx: Tx,
+  token: string
+): Promise<Invitation | null> {
+  return tx.invitation.findUnique({ where: { token } });
+}
+
+// ---------------------------------------------------------------------------
+// markInvitationAccepted
+// ---------------------------------------------------------------------------
+
+/**
+ * Marks an Invitation as ACCEPTED and stamps `acceptedAt`. Optionally writes
+ * `authUserId` when the caller has just provisioned (or confirmed) the
+ * Supabase auth user. Mirrors `markStaffInvitationAccepted`.
+ */
+export async function markInvitationAccepted(
+  tx: Tx,
+  id: string,
+  authUserId?: string
+): Promise<Invitation> {
+  return tx.invitation.update({
+    where: { id },
+    data: {
+      status: InvitationStatus.ACCEPTED,
+      acceptedAt: new Date(),
+      ...(authUserId ? { authUserId } : {}),
     },
   });
 }

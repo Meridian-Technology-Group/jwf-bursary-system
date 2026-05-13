@@ -345,11 +345,14 @@ model Invitation {
   id               String           @id @default(uuid()) @db.Uuid
   email            String
   applicantName    String?          @map("applicant_name")
+  firstName        String?          @map("first_name")
+  lastName         String?          @map("last_name")
   childName        String?          @map("child_name")
   school           School?
   roundId          String?          @map("round_id") @db.Uuid
   bursaryAccountId String?          @map("bursary_account_id") @db.Uuid
   authUserId       String?          @map("auth_user_id") @db.Uuid
+  token            String           @unique
   status           InvitationStatus @default(PENDING)
   expiresAt        DateTime         @map("expires_at") @db.Timestamptz(6)
   acceptedAt       DateTime?        @map("accepted_at") @db.Timestamptz(6)
@@ -359,6 +362,8 @@ model Invitation {
   creator          Profile          @relation("InvitationCreator", fields: [createdBy], references: [id])
   round            Round?           @relation(fields: [roundId], references: [id])
 
+  @@index([token])
+  @@index([email])
   @@map("invitations")
 }
 
