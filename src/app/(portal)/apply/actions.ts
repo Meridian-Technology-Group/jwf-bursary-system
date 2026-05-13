@@ -24,6 +24,7 @@ import { prisma } from "@/lib/db/prisma";
 import { sendEmail } from "@/lib/email/send";
 import { createAuditLog } from "@/lib/audit/log";
 import { getSectionGapStatuses, type SectionGap } from "@/lib/portal/section-gaps";
+import { logError } from "@/lib/log";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -106,7 +107,7 @@ export async function saveSection(
     revalidatePath("/", "layout");
     return { success: true };
   } catch (err) {
-    console.error("[saveSection] DB error:", err);
+    logError("saveSection", err);
     return {
       success: false,
       errors: ["Failed to save your data. Please try again."],
@@ -131,7 +132,7 @@ export async function saveSectionDraft(
     await upsertSection(appId, section, data, false);
     return { success: true };
   } catch (err) {
-    console.error("[saveSectionDraft] DB error:", err);
+    logError("saveSectionDraft", err);
     return {
       success: false,
       errors: ["Failed to save draft. Please try again."],

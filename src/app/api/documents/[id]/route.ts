@@ -13,6 +13,7 @@ import { getCurrentUser } from "@/lib/auth/roles";
 import { prisma } from "@/lib/db/prisma";
 import { deleteDocument } from "@/lib/storage/documents";
 import { createAuditLog } from "@/lib/audit/log";
+import { logError } from "@/lib/log";
 
 interface RouteParams {
   params: Promise<{ id: string }>;
@@ -69,7 +70,7 @@ export async function DELETE(
   try {
     await deleteDocument(document.storagePath);
   } catch (err) {
-    console.error("[documents/DELETE] Storage deletion failed:", err);
+    logError("documents/DELETE.storage", err);
     // Continue to delete the DB record even if storage deletion fails —
     // orphaned storage objects are less harmful than orphaned DB records.
   }
@@ -78,7 +79,7 @@ export async function DELETE(
   try {
     await prisma.document.delete({ where: { id: documentId } });
   } catch (err) {
-    console.error("[documents/DELETE] DB deletion failed:", err);
+    logError("documents/DELETE.db", err);
     return NextResponse.json(
       { error: "Failed to delete document record" },
       { status: 500 }

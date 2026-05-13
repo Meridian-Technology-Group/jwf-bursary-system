@@ -15,6 +15,7 @@ import { getCurrentUser } from "@/lib/auth/roles";
 import { prisma } from "@/lib/db/prisma";
 import { uploadDocument } from "@/lib/storage/documents";
 import { sniffContentType } from "@/lib/storage/sniff";
+import { logError } from "@/lib/log";
 
 const ACCEPTED_MIME = ["application/pdf", "image/jpeg", "image/png"];
 const MAX_SIZE_BYTES = 20 * 1024 * 1024; // 20 MB
@@ -151,7 +152,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     return NextResponse.json(document, { status: 201 });
   } catch (err) {
     // Roll back storage upload on DB failure
-    console.error("[documents/POST] DB error after storage upload:", err);
+    logError("documents/POST", err);
     return NextResponse.json(
       { error: "Failed to record document. Please try again." },
       { status: 500 }

@@ -20,6 +20,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { Webhook } from "svix";
+import { hashEmail, logInfo } from "@/lib/log";
 
 // ---------------------------------------------------------------------------
 // Resend webhook payload types
@@ -93,58 +94,14 @@ function parsePayload(raw: string): ResendWebhookPayload | null {
  */
 function logEvent(payload: ResendWebhookPayload): void {
   const { type, data } = payload;
-  const timestamp = payload.created_at ?? new Date().toISOString();
+  const firstTo =
+    Array.isArray(data.to) && data.to.length > 0 ? data.to[0] : undefined;
 
-  switch (type) {
-    case "email.delivered":
-      console.log(
-        `[resend/webhook] DELIVERED | id: ${data.email_id} | to: ${data.to?.join(", ")} | subject: ${data.subject} | at: ${timestamp}`
-      );
-      break;
-
-    case "email.bounced":
-      console.warn(
-        `[resend/webhook] BOUNCED | id: ${data.email_id} | to: ${data.to?.join(", ")} | subject: ${data.subject} | at: ${timestamp}`
-      );
-      break;
-
-    case "email.complained":
-      console.warn(
-        `[resend/webhook] COMPLAINT | id: ${data.email_id} | to: ${data.to?.join(", ")} | subject: ${data.subject} | at: ${timestamp}`
-      );
-      break;
-
-    case "email.delivery_delayed":
-      console.warn(
-        `[resend/webhook] DELAYED | id: ${data.email_id} | to: ${data.to?.join(", ")} | at: ${timestamp}`
-      );
-      break;
-
-    case "email.sent":
-      console.log(
-        `[resend/webhook] SENT | id: ${data.email_id} | to: ${data.to?.join(", ")} | at: ${timestamp}`
-      );
-      break;
-
-    case "email.opened":
-      console.log(
-        `[resend/webhook] OPENED | id: ${data.email_id} | at: ${timestamp}`
-      );
-      break;
-
-    case "email.clicked":
-      console.log(
-        `[resend/webhook] CLICKED | id: ${data.email_id} | at: ${timestamp}`
-      );
-      break;
-
-    default:
-      // Exhaustive guard — if Resend adds a new event type, log it verbatim.
-      console.log(
-        `[resend/webhook] UNKNOWN EVENT: ${String(type)} | data:`,
-        data
-      );
-  }
+  logInfo("resend.webhook", {
+    type,
+    messageId: data.email_id,
+    recipientHash: firstTo ? hashEmail(firstTo) : undefined,
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -220,7 +177,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   const payload = parsePayload(rawBody);
 
   if (!payload) {
-    console.warn("[resend/webhook] Received invalid payload:", rawBody.slice(0, 200));
+    logInfo("resend.webhook.invalid", { bodyLength: rawBody.length });
     return NextResponse.json(
       { error: "Invalid webhook payload" },
       { status: 400 }
