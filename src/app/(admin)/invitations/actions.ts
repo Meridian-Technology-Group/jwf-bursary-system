@@ -48,7 +48,7 @@ const InvitationSchema = z.object({
   lastName: z.string().optional(),
   childName: z.string().optional(),
   school: z.nativeEnum(School).optional(),
-  roundId: z.string().optional(),
+  roundId: z.string().uuid("An application round is required"),
 });
 
 // ---------------------------------------------------------------------------

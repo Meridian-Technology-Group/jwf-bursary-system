@@ -57,7 +57,10 @@ const schema = z.object({
   applicantName: z.string().optional(),
   childName: z.string().optional(),
   school: z.enum(["TRINITY", "WHITGIFT", "__none__"]).optional(),
-  roundId: z.string().optional(),
+  roundId: z
+    .string()
+    .uuid("An application round is required")
+    .refine((v) => v !== "__none__", "An application round is required"),
 });
 
 type FormValues = z.infer<typeof schema>;
@@ -99,7 +102,7 @@ export function SendInvitationForm({
     if (values.applicantName) formData.set("applicantName", values.applicantName);
     if (values.childName) formData.set("childName", values.childName);
     if (values.school && values.school !== "__none__") formData.set("school", values.school);
-    if (values.roundId && values.roundId !== "__none__") formData.set("roundId", values.roundId);
+    formData.set("roundId", values.roundId);
 
     startTransition(async () => {
       const result = await createInvitationAction(formData);
@@ -289,7 +292,9 @@ export function SendInvitationForm({
               name="roundId"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Round</FormLabel>
+                  <FormLabel>
+                    Round <span className="text-red-500">*</span>
+                  </FormLabel>
                   <Select
                     onValueChange={field.onChange}
                     value={field.value ?? "__none__"}
@@ -301,7 +306,6 @@ export function SendInvitationForm({
                       </SelectTrigger>
                     </FormControl>
                     <SelectContent>
-                      <SelectItem value="__none__">No specific round</SelectItem>
                       {rounds.map((r) => (
                         <SelectItem key={r.id} value={r.id}>
                           {r.academicYear}
