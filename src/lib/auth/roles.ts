@@ -8,7 +8,7 @@
 
 import { redirect } from "next/navigation";
 import { Role, type Profile, type Application } from "@prisma/client";
-import { prisma } from "@/lib/db/prisma";
+import { withAdminContext } from "@/lib/db/prisma";
 import { createSupabaseServerClient } from "@/lib/auth/supabase-server";
 
 // Re-export Role so consumers only need one import path.
@@ -45,17 +45,26 @@ export async function getCurrentUser(): Promise<CurrentUser | null> {
 
   if (error || !user) return null;
 
-  const profile = await prisma.profile.findUnique({
-    where: { id: user.id },
-    select: {
-      id: true,
-      email: true,
-      role: true,
-      firstName: true,
-      lastName: true,
-      phone: true,
-    },
-  });
+  // The profile lookup that resolves the caller's role must bypass RLS:
+  // the policies on `profiles` are evaluated using the JWT claim that this
+  // function itself is responsible for producing context for. Without an
+  // admin context here, RLS hides every row from us and we cannot resolve
+  // the user's role — which then breaks the wrappers used by every other
+  // server action. Reading the row of the authenticated user is a system
+  // operation, not a user operation.
+  const profile = await withAdminContext((tx) =>
+    tx.profile.findUnique({
+      where: { id: user.id },
+      select: {
+        id: true,
+        email: true,
+        role: true,
+        firstName: true,
+        lastName: true,
+        phone: true,
+      },
+    }),
+  );
 
   return profile;
 }
@@ -160,10 +169,15 @@ export async function requireApplicationAccess(
   if (isAdmin(profile) || isViewer(profile)) return;
 
   if (isAssessor(profile)) {
-    const application = await prisma.application.findUnique({
-      where: { id: applicationId },
-      select: { assignedToId: true },
-    });
+    // Authorisation lookup — needs to bypass RLS for the same reason as
+    // getCurrentUser. The result is the predicate that gates the caller's
+    // subsequent withUserContext-wrapped work.
+    const application = await withAdminContext((tx) =>
+      tx.application.findUnique({
+        where: { id: applicationId },
+        select: { assignedToId: true },
+      }),
+    );
 
     if (application?.assignedToId === profile.id) return;
 
