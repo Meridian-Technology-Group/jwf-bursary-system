@@ -52,6 +52,8 @@ interface SendInvitationFormProps {
 
 const schema = z.object({
   email: z.string().email("A valid email address is required"),
+  firstName: z.string().optional(),
+  lastName: z.string().optional(),
   applicantName: z.string().optional(),
   childName: z.string().optional(),
   school: z.enum(["TRINITY", "WHITGIFT", "__none__"]).optional(),
@@ -77,6 +79,8 @@ export function SendInvitationForm({
     resolver: zodResolver(schema),
     defaultValues: {
       email: "",
+      firstName: "",
+      lastName: "",
       applicantName: "",
       childName: "",
       school: "__none__",
@@ -90,6 +94,8 @@ export function SendInvitationForm({
 
     const formData = new FormData();
     formData.set("email", values.email);
+    if (values.firstName) formData.set("firstName", values.firstName);
+    if (values.lastName) formData.set("lastName", values.lastName);
     if (values.applicantName) formData.set("applicantName", values.applicantName);
     if (values.childName) formData.set("childName", values.childName);
     if (values.school && values.school !== "__none__") formData.set("school", values.school);
@@ -101,6 +107,8 @@ export function SendInvitationForm({
         setSuccessMessage(`Invitation sent to ${values.email}`);
         form.reset({
           email: "",
+          firstName: "",
+          lastName: "",
           applicantName: "",
           childName: "",
           school: "__none__",
@@ -149,16 +157,66 @@ export function SendInvitationForm({
               )}
             />
 
-            {/* Applicant Name */}
+            {/* First Name */}
+            <FormField
+              control={form.control}
+              name="firstName"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>
+                    First Name{" "}
+                    <span className="text-xs font-normal text-slate-400">
+                      (optional)
+                    </span>
+                  </FormLabel>
+                  <FormControl>
+                    <Input
+                      placeholder="Jane"
+                      autoComplete="given-name"
+                      {...field}
+                      disabled={isPending}
+                    />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            {/* Last Name */}
+            <FormField
+              control={form.control}
+              name="lastName"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>
+                    Last Name{" "}
+                    <span className="text-xs font-normal text-slate-400">
+                      (optional)
+                    </span>
+                  </FormLabel>
+                  <FormControl>
+                    <Input
+                      placeholder="Smith"
+                      autoComplete="family-name"
+                      {...field}
+                      disabled={isPending}
+                    />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            {/* Applicant Name (display fallback) */}
             <FormField
               control={form.control}
               name="applicantName"
               render={({ field }) => (
-                <FormItem>
+                <FormItem className="sm:col-span-2">
                   <FormLabel>
-                    Applicant Name{" "}
+                    Display Name{" "}
                     <span className="text-xs font-normal text-slate-400">
-                      (optional)
+                      (optional — defaults to first + last)
                     </span>
                   </FormLabel>
                   <FormControl>
