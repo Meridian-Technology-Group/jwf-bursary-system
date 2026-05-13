@@ -13,6 +13,7 @@ import { withUserContext, type RlsRole } from "@/lib/db/prisma";
 import { listInvitations } from "@/lib/db/queries/invitations";
 import { listRounds } from "@/lib/db/queries/rounds";
 import { SendInvitationForm } from "@/components/admin/send-invitation-form";
+import { InvitationRowActions } from "@/components/admin/invitation-row-actions";
 import { cn } from "@/lib/utils";
 
 export const metadata = {
@@ -156,6 +157,7 @@ export default async function InvitationsPage({
                       "Status",
                       "Sent",
                       "Sent By",
+                      "Actions",
                     ].map((heading) => (
                       <th
                         key={heading}
@@ -196,6 +198,16 @@ export default async function InvitationsPage({
                           inv.creator.firstName,
                           inv.creator.lastName,
                           inv.creator.email
+                        )}
+                      </td>
+                      <td className="whitespace-nowrap px-4 py-3 text-sm text-slate-500">
+                        {inv.status === "PENDING" ? (
+                          <InvitationRowActions
+                            invitationId={inv.id}
+                            email={inv.email}
+                          />
+                        ) : (
+                          <span className="text-slate-300">—</span>
                         )}
                       </td>
                     </tr>
