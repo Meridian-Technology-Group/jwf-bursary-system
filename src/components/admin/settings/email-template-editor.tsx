@@ -33,6 +33,7 @@ const TEMPLATE_LABELS: Record<EmailTemplateType, string> = {
   OUTCOME_DNQ: "Outcome — Does Not Qualify",
   REASSESSMENT: "Reassessment",
   REMINDER: "Reminder",
+  INVITE_STAFF: "Staff Invitation",
 };
 
 // ─── Merge field hints ────────────────────────────────────────────────────────

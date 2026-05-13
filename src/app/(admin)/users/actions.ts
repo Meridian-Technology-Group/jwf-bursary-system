@@ -6,6 +6,7 @@
  * All actions are restricted to ADMIN role.
  */
 
+import { randomBytes } from "node:crypto";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { Role } from "@prisma/client";
@@ -15,6 +16,8 @@ import { createSupabaseAdminClient } from "@/lib/auth/supabase-admin";
 import { getAppUrl } from "@/lib/app-url";
 import { withAdminContext, withUserContext, type RlsRole } from "@/lib/db/prisma";
 import { createAuditLog } from "@/lib/audit/log";
+import { createStaffInvitation } from "@/lib/db/queries/staff-invitations";
+import { sendEmail } from "@/lib/email/send";
 
 // ---------------------------------------------------------------------------
 // Shared result type
@@ -65,65 +68,107 @@ export async function inviteStaffAction(
 
   const { email, firstName, lastName, role } = parsed.data;
 
-  try {
-    // 1. Create Supabase auth user via invite
-    const supabase = createSupabaseAdminClient();
-    const appUrl = getAppUrl();
+  const supabase = createSupabaseAdminClient();
+  const appUrl = getAppUrl();
 
-    const { data: inviteData, error: inviteError } =
-      await supabase.auth.admin.inviteUserByEmail(email, {
-        data: { role },
-        redirectTo: `${appUrl}/login`,
-      });
-
-    if (inviteError) {
-      return { success: false, error: inviteError.message };
-    }
-
-    const authUserId = inviteData.user.id;
-
-    // 2. Set app_metadata.role (belt-and-suspenders — DB trigger also fires)
-    await supabase.auth.admin.updateUserById(authUserId, {
+  // 1. Create the Supabase auth user silently. We use email_confirm: true so
+  //    Supabase does NOT fire its built-in invite OTP email (which gets eaten
+  //    by Gmail/Outlook link scanners). The throwaway password is overwritten
+  //    when the invitee completes registration via /register/staff.
+  const tempPassword = randomBytes(24).toString("base64url");
+  const { data: created, error: supabaseError } =
+    await supabase.auth.admin.createUser({
+      email,
+      password: tempPassword,
+      email_confirm: true,
       app_metadata: { role },
     });
 
-    // 3+4. Create Profile row + audit log under admin context.
-    //      The invitee has no JWT yet so RLS would block this otherwise.
-    const profileResult = await withAdminContext(async (tx) => {
-      const created = await createProfile(tx, {
+  if (supabaseError || !created?.user) {
+    const message = supabaseError?.message ?? "Failed to create auth user";
+    console.error("[users] inviteStaffAction createUser error:", supabaseError);
+    return { success: false, error: message };
+  }
+  const authUserId = created.user.id;
+
+  // 2. Profile + StaffInvitation + audit log, all inside one withAdminContext.
+  //    Any failure here triggers an auth-user rollback below (so we never
+  //    leave an orphan auth.users row).
+  let token: string;
+  try {
+    const result = await withAdminContext(async (tx) => {
+      const profile = await createProfile(tx, {
         id: authUserId,
         email,
         role: role as Role,
         firstName,
         lastName,
       });
+      if (!profile.success) {
+        return { success: false as const, error: profile.error };
+      }
 
-      if (!created.success) return created;
+      const inv = await createStaffInvitation(tx, {
+        email,
+        role: role as Role,
+        firstName,
+        lastName,
+        authUserId,
+        createdBy: admin.id,
+      });
 
       await createAuditLog(tx, {
         userId: admin.id,
         action: "INVITE_STAFF",
-        entityType: "Profile",
-        entityId: authUserId,
+        entityType: "StaffInvitation",
+        entityId: inv.id,
         context: `Invited ${email} as ${role}`,
         metadata: { email, role },
       });
 
-      return created;
+      return { success: true as const, token: inv.token };
     });
 
-    if (!profileResult.success) {
-      return { success: false, error: profileResult.error };
+    if (!result.success) {
+      // Roll back the auth user so we don't leave an orphan.
+      await supabase.auth.admin.deleteUser(authUserId).catch((err) => {
+        console.error("[users] auth user rollback failed:", err);
+      });
+      return {
+        success: false,
+        error: result.error ?? "Failed to create invitation",
+      };
     }
-
-    revalidatePath("/users");
-    return { success: true };
+    token = result.token;
   } catch (err) {
+    // DB work threw — roll back the auth user.
+    await supabase.auth.admin.deleteUser(authUserId).catch((rollbackErr) => {
+      console.error("[users] auth user rollback failed:", rollbackErr);
+    });
     const message =
       err instanceof Error ? err.message : "Failed to invite staff user";
     console.error("[users] inviteStaffAction error:", err);
     return { success: false, error: message };
   }
+
+  // 3. Send the branded Resend email. If this fails, we keep the StaffInvitation
+  //    row so the admin can re-send later — but surface the error to the caller.
+  const emailResult = await sendEmail(email, "INVITE_STAFF", {
+    first_name: firstName ?? email.split("@")[0],
+    role,
+    registration_link: `${appUrl}/register/staff?token=${token}`,
+  });
+
+  if (!emailResult.success) {
+    console.error("[users] inviteStaffAction email error:", emailResult.error);
+    return {
+      success: false,
+      error: `Invitation created but email failed to send: ${emailResult.error}`,
+    };
+  }
+
+  revalidatePath("/users");
+  return { success: true };
 }
 
 // ---------------------------------------------------------------------------
