@@ -231,10 +231,10 @@ Legend: `[ ]` not yet run · `PASS` · `FAIL → <link>` · `BLOCKED → <link>`
 
 ### Assessor (37)
 
-- [ ] assessors/01-triage-the-queue
-- [ ] assessors/02-open-an-application
-- [ ] assessors/03-invite-applicant-new-bursary
-- [ ] assessors/04-invite-internal-ad-hoc-bursary
+- PASS assessors/01-triage-the-queue — page, strapline, filters (Round/School/Status), Show Names toggle, table columns all match; empty state correct
+- BLOCKED assessors/02-open-an-application — depends on at least one application existing; no successful intake yet (see assessor/04)
+- PASS-WITH-CAVEAT assessors/03-invite-applicant-new-bursary — guide's own note that `/invitations` is admin-only is accurate (assessor is redirected to `/admin`); guide funnels assessor to assessor/04 which is currently broken
+- FAIL assessors/04-invite-internal-ad-hoc-bursary → `docs/backlog/walkthrough-assessor-04-internal-request-admin-only.md` — button is shown to assessors but the server action requires ADMIN; submission silently redirects to `/admin` with no row created
 - [ ] assessors/05-read-submitted-application
 - [ ] assessors/06-verify-uploaded-documents
 - [ ] assessors/07-upload-document-on-behalf-of-applicant
