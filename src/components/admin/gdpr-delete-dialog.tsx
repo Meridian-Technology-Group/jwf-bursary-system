@@ -49,6 +49,8 @@ interface GdprDeleteDialogProps {
   open: boolean;
   /** Called when the dialog should close */
   onOpenChange: (open: boolean) => void;
+  /** Optional: invoked once after a successful deletion, before close. */
+  onSuccess?: () => void;
 }
 
 // ─── Confirmation word ────────────────────────────────────────────────────────
@@ -102,6 +104,7 @@ export function GdprDeleteDialog({
   documentCount,
   open,
   onOpenChange,
+  onSuccess,
 }: GdprDeleteDialogProps) {
   const [step, setStep] = useState<1 | 2>(1);
   const [confirmInput, setConfirmInput] = useState("");
@@ -129,6 +132,7 @@ export function GdprDeleteDialog({
           result.error ?? "An unexpected error occurred. Please try again."
         );
       } else {
+        onSuccess?.();
         handleClose();
       }
     });
