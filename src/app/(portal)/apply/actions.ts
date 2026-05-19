@@ -12,7 +12,7 @@
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { ApplicationSectionType } from "@prisma/client";
-import { getCurrentUser } from "@/lib/auth/roles";
+import { getCurrentUser, type CurrentUser } from "@/lib/auth/roles";
 import { sectionSchemaMap } from "@/lib/schemas";
 import {
   getApplicationForUser,
@@ -20,10 +20,11 @@ import {
   getSectionData,
   upsertSection,
 } from "@/lib/db/queries/applications";
-import { prisma } from "@/lib/db/prisma";
+import { withUserContext, type RlsRole } from "@/lib/db/prisma";
 import { sendEmail } from "@/lib/email/send";
 import { createAuditLog } from "@/lib/audit/log";
 import { getSectionGapStatuses, type SectionGap } from "@/lib/portal/section-gaps";
+import { logError } from "@/lib/log";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -64,8 +65,59 @@ async function resolveApplicationId(): Promise<string | null> {
   const user = await getCurrentUser();
   if (!user) return null;
 
-  const application = await getApplicationForUser(user.id);
+  const application = await withUserContext(
+    user.id,
+    user.role as RlsRole,
+    (tx) => getApplicationForUser(tx, user.id)
+  );
   return application?.id ?? null;
+}
+
+/**
+ * Resolves the current applicant's owned application ID from the session.
+ *
+ * Intentionally ignores any client-supplied applicationId — every section
+ * action must operate exclusively on the caller's own application to
+ * prevent IDOR (audit finding 2.3).
+ */
+async function getOwnedApplicationId(): Promise<string | null> {
+  const user = await getCurrentUser();
+  if (!user) return null;
+
+  const application = await withUserContext(
+    user.id,
+    user.role as RlsRole,
+    (tx) =>
+      tx.application.findFirst({
+        where: { leadApplicantId: user.id, status: "PRE_SUBMISSION" },
+        select: { id: true },
+      })
+  );
+  return application?.id ?? null;
+}
+
+/**
+ * Resolves both the current user and their owned application ID in one step.
+ * Returns nulls if not authenticated or no application exists.
+ */
+async function getOwnedApplicationContext(): Promise<{
+  user: CurrentUser;
+  appId: string;
+} | null> {
+  const user = await getCurrentUser();
+  if (!user) return null;
+
+  const application = await withUserContext(
+    user.id,
+    user.role as RlsRole,
+    (tx) =>
+      tx.application.findFirst({
+        where: { leadApplicantId: user.id, status: "PRE_SUBMISSION" },
+        select: { id: true },
+      })
+  );
+  if (!application) return null;
+  return { user, appId: application.id };
 }
 
 // ─── Actions ─────────────────────────────────────────────────────────────────
@@ -75,13 +127,14 @@ async function resolveApplicationId(): Promise<string | null> {
  * If an applicationId is not provided it will be resolved from the current user.
  */
 export async function saveSection(
-  applicationId: string | null,
+  _applicationId: string | null,
   section: ApplicationSectionType,
   data: unknown
 ): Promise<SaveSectionResult> {
-  // Resolve application
-  const appId = applicationId ?? (await resolveApplicationId());
-  if (!appId) {
+  // Always resolve server-side from the session. The client-supplied
+  // applicationId is ignored to prevent IDOR (finding 2.3).
+  const ctx = await getOwnedApplicationContext();
+  if (!ctx) {
     return { success: false, errors: ["No active application found."] };
   }
 
@@ -100,13 +153,15 @@ export async function saveSection(
   }
 
   try {
-    await upsertSection(appId, section, result.data, true);
+    await withUserContext(ctx.user.id, ctx.user.role as RlsRole, (tx) =>
+      upsertSection(tx, ctx.appId, section, result.data, true)
+    );
     // Revalidate the portal layout so the sidebar progress stepper + bar
     // pick up the new completion state immediately.
     revalidatePath("/", "layout");
     return { success: true };
   } catch (err) {
-    console.error("[saveSection] DB error:", err);
+    logError("saveSection", err);
     return {
       success: false,
       errors: ["Failed to save your data. Please try again."],
@@ -118,20 +173,22 @@ export async function saveSection(
  * Saves a section as a partial draft (not validated as complete).
  */
 export async function saveSectionDraft(
-  applicationId: string | null,
+  _applicationId: string | null,
   section: ApplicationSectionType,
   data: unknown
 ): Promise<SaveSectionResult> {
-  const appId = applicationId ?? (await resolveApplicationId());
-  if (!appId) {
+  const ctx = await getOwnedApplicationContext();
+  if (!ctx) {
     return { success: false, errors: ["No active application found."] };
   }
 
   try {
-    await upsertSection(appId, section, data, false);
+    await withUserContext(ctx.user.id, ctx.user.role as RlsRole, (tx) =>
+      upsertSection(tx, ctx.appId, section, data, false)
+    );
     return { success: true };
   } catch (err) {
-    console.error("[saveSectionDraft] DB error:", err);
+    logError("saveSectionDraft", err);
     return {
       success: false,
       errors: ["Failed to save draft. Please try again."],
@@ -143,15 +200,19 @@ export async function saveSectionDraft(
  * Loads existing section data.
  */
 export async function getSection(
-  applicationId: string | null,
+  _applicationId: string | null,
   section: ApplicationSectionType
 ): Promise<SectionDataResult> {
-  const appId = applicationId ?? (await resolveApplicationId());
-  if (!appId) {
+  const ctx = await getOwnedApplicationContext();
+  if (!ctx) {
     return { data: null, isComplete: false, updatedAt: null };
   }
 
-  const row = await getSectionData(appId, section);
+  const row = await withUserContext(
+    ctx.user.id,
+    ctx.user.role as RlsRole,
+    (tx) => getSectionData(tx, ctx.appId, section)
+  );
   return {
     data: row?.data ?? null,
     isComplete: row?.isComplete ?? false,
@@ -163,12 +224,16 @@ export async function getSection(
  * Returns completion status for all 10 sections of the current user's application.
  */
 export async function getSectionStatus(
-  applicationId: string | null
+  _applicationId: string | null
 ): Promise<SectionStatusEntry[]> {
-  const appId = applicationId ?? (await resolveApplicationId());
-  if (!appId) return [];
+  const ctx = await getOwnedApplicationContext();
+  if (!ctx) return [];
 
-  const rows = await getSectionStatusList(appId);
+  const rows = await withUserContext(
+    ctx.user.id,
+    ctx.user.role as RlsRole,
+    (tx) => getSectionStatusList(tx, ctx.appId)
+  );
 
   return rows.map((r) => ({
     section: r.section,
@@ -212,20 +277,25 @@ export async function submitApplication(applicationId: string): Promise<never> {
   }
 
   // ── Load application ───────────────────────────────────────────────────────
-  const application = await prisma.application.findUnique({
-    where: { id: applicationId },
-    select: {
-      id: true,
-      reference: true,
-      status: true,
-      leadApplicantId: true,
-      childName: true,
-      school: true,
-      sections: {
-        select: { section: true, isComplete: true },
-      },
-    },
-  });
+  const application = await withUserContext(
+    user.id,
+    user.role as RlsRole,
+    (tx) =>
+      tx.application.findUnique({
+        where: { id: applicationId },
+        select: {
+          id: true,
+          reference: true,
+          status: true,
+          leadApplicantId: true,
+          childName: true,
+          school: true,
+          sections: {
+            select: { section: true, isComplete: true },
+          },
+        },
+      })
+  );
 
   if (!application) {
     throw new Error("Application not found.");
@@ -280,13 +350,26 @@ export async function submitApplication(applicationId: string): Promise<never> {
     throw new Error(JSON.stringify(payload));
   }
 
-  // ── Mark as SUBMITTED ──────────────────────────────────────────────────────
-  await prisma.application.update({
-    where: { id: applicationId },
-    data: {
-      status: "SUBMITTED",
-      submittedAt: new Date(),
-    },
+  // ── Mark as SUBMITTED + audit log ─────────────────────────────────────────
+  await withUserContext(user.id, user.role as RlsRole, async (tx) => {
+    await tx.application.update({
+      where: { id: applicationId },
+      data: {
+        status: "SUBMITTED",
+        submittedAt: new Date(),
+      },
+    });
+    await createAuditLog(tx, {
+      userId: user.id,
+      action: "APPLICATION_SUBMITTED",
+      entityType: "Application",
+      entityId: applicationId,
+      context: `Reference: ${application.reference}`,
+      metadata: {
+        reference: application.reference,
+        submittedAt: new Date().toISOString(),
+      },
+    });
   });
 
   // ── Send confirmation email (non-blocking on failure) ─────────────────────
@@ -310,19 +393,6 @@ export async function submitApplication(applicationId: string): Promise<never> {
     );
     // Non-fatal — the submission itself succeeded.
   }
-
-  // ── Audit log ──────────────────────────────────────────────────────────────
-  await createAuditLog({
-    userId: user.id,
-    action: "APPLICATION_SUBMITTED",
-    entityType: "Application",
-    entityId: applicationId,
-    context: `Reference: ${application.reference}`,
-    metadata: {
-      reference: application.reference,
-      submittedAt: new Date().toISOString(),
-    },
-  });
 
   revalidatePath("/apply/review");
   revalidatePath("/submitted");

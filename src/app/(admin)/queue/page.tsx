@@ -7,6 +7,7 @@
  */
 
 import { requireRole, Role } from "@/lib/auth/roles";
+import { withUserContext, type RlsRole } from "@/lib/db/prisma";
 import { listApplications, listRounds } from "@/lib/db/queries/applications";
 import { ApplicationTable } from "@/components/admin/application-table";
 import { InternalRequestDialog } from "@/components/admin/internal-request-dialog";
@@ -23,10 +24,15 @@ export default async function QueuePage() {
       ? { assignedToId: profile.id }
       : {};
 
-  const [applications, rounds] = await Promise.all([
-    listApplications(applicationFilters),
-    listRounds(),
-  ]);
+  const [applications, rounds] = await withUserContext(
+    profile.id,
+    profile.role as RlsRole,
+    (tx) =>
+      Promise.all([
+        listApplications(tx, applicationFilters),
+        listRounds(tx),
+      ])
+  );
 
   return (
     <div className="space-y-6">

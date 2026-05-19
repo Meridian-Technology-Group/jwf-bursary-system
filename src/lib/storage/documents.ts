@@ -47,7 +47,13 @@ export interface UploadDocumentResult {
 export async function uploadDocument(
   file: File,
   applicationId: string,
-  slot: string
+  slot: string,
+  /**
+   * Server-verified MIME type (from magic-byte sniffing). When provided, this
+   * is used as the Storage object's contentType instead of the client-supplied
+   * `file.type`. See docs/security-audit.md §2.10.
+   */
+  verifiedContentType?: string
 ): Promise<UploadDocumentResult> {
   await ensureBucket();
 
@@ -71,7 +77,7 @@ export async function uploadDocument(
   const { error } = await supabase.storage
     .from(BUCKET)
     .upload(storagePath, uint8Array, {
-      contentType: file.type,
+      contentType: verifiedContentType ?? file.type,
       upsert: false,
     });
 

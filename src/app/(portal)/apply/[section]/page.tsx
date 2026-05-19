@@ -16,6 +16,7 @@
 import { notFound, redirect } from "next/navigation";
 import { ApplicationSectionType } from "@prisma/client";
 import { getCurrentUser } from "@/lib/auth/roles";
+import { withUserContext, type RlsRole } from "@/lib/db/prisma";
 import {
   getApplicationForUser,
   getSectionData,
@@ -107,7 +108,11 @@ export default async function SectionPage({ params }: PageProps) {
   if (!user) redirect("/login");
 
   // Load application
-  const application = await getApplicationForUser(user.id);
+  const application = await withUserContext(
+    user.id,
+    user.role as RlsRole,
+    (tx) => getApplicationForUser(tx, user.id)
+  );
   if (!application) {
     // No application yet — redirect to portal home
     redirect("/");
@@ -128,28 +133,35 @@ export default async function SectionPage({ params }: PageProps) {
     ? REASSESSMENT_SECTION_ORDER
     : SECTION_ORDER;
 
-  // Load existing section data + documents in parallel
-  const [existingSection, documentMap] = await Promise.all([
-    getSectionData(application.id, sectionType),
-    getDocumentsForApplication(application.id),
-  ]);
+  // Load existing section data, documents, and any cross-section reads needed
+  const { existingSection, documentMap, childFullName, isSoleParent } =
+    await withUserContext(user.id, user.role as RlsRole, async (tx) => {
+      const [section, docs] = await Promise.all([
+        getSectionData(tx, application.id, sectionType),
+        getDocumentsForApplication(tx, application.id),
+      ]);
 
-  // For DEPENDENT_CHILDREN, also load the child's name from CHILD_DETAILS
-  let childFullName: string | undefined;
-  if (sectionType === "DEPENDENT_CHILDREN") {
-    const childSection = await getSectionData(application.id, "CHILD_DETAILS");
-    const childData = childSection?.data as { childFullName?: string } | null;
-    childFullName = childData?.childFullName ?? undefined;
-  }
+      let childName: string | undefined;
+      if (sectionType === "DEPENDENT_CHILDREN") {
+        const childSection = await getSectionData(tx, application.id, "CHILD_DETAILS");
+        const childData = childSection?.data as { childFullName?: string } | null;
+        childName = childData?.childFullName ?? undefined;
+      }
 
-  // For PARENTS_INCOME, read isSoleParent from PARENT_DETAILS so the form
-  // can hide the Parent/Guardian 2 income fields when there is no P2.
-  let isSoleParent: boolean | undefined;
-  if (sectionType === "PARENTS_INCOME") {
-    const parentSection = await getSectionData(application.id, "PARENT_DETAILS");
-    const parentData = parentSection?.data as { isSoleParent?: boolean } | null;
-    isSoleParent = parentData?.isSoleParent;
-  }
+      let soleParent: boolean | undefined;
+      if (sectionType === "PARENTS_INCOME") {
+        const parentSection = await getSectionData(tx, application.id, "PARENT_DETAILS");
+        const parentData = parentSection?.data as { isSoleParent?: boolean } | null;
+        soleParent = parentData?.isSoleParent;
+      }
+
+      return {
+        existingSection: section,
+        documentMap: docs,
+        childFullName: childName,
+        isSoleParent: soleParent,
+      };
+    });
 
   // Determine if this section was pre-populated from the previous year
   const isPrepopulated =

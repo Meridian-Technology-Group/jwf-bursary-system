@@ -21,6 +21,7 @@ import { notFound } from "next/navigation";
 import { ClipboardCheck, FileDown } from "lucide-react";
 import type { Decimal } from "@prisma/client/runtime/library";
 import { requireRole, Role } from "@/lib/auth/roles";
+import { withUserContext, type RlsRole } from "@/lib/db/prisma";
 import { getApplicationWithDetails } from "@/lib/db/queries/applications";
 import { getAssessment } from "@/lib/db/queries/assessments";
 import {
@@ -54,12 +55,19 @@ interface Props {
 }
 
 export default async function RecommendationPage({ params }: Props) {
-  await requireRole([Role.ADMIN, Role.ASSESSOR, Role.VIEWER]);
+  const user = await requireRole([Role.ADMIN, Role.ASSESSOR, Role.VIEWER]);
 
-  const application = await getApplicationWithDetails(params.id);
+  const { application, assessment } = await withUserContext(
+    user.id,
+    user.role as RlsRole,
+    async (tx) => {
+      const app = await getApplicationWithDetails(tx, params.id);
+      if (!app) return { application: null, assessment: null };
+      const a = await getAssessment(tx, params.id);
+      return { application: app, assessment: a };
+    }
+  );
   if (!application) notFound();
-
-  const assessment = await getAssessment(params.id);
 
   // ── Gate: no assessment or assessment not completed ────────────────────────
 
@@ -86,10 +94,15 @@ export default async function RecommendationPage({ params }: Props) {
 
   // ── Assessment COMPLETED — load recommendation and reason codes ────────────
 
-  const [recommendation, reasonCodes] = await Promise.all([
-    getRecommendation(assessment.id),
-    getReasonCodes(),
-  ]);
+  const [recommendation, reasonCodes] = await withUserContext(
+    user.id,
+    user.role as RlsRole,
+    (tx) =>
+      Promise.all([
+        getRecommendation(tx, assessment.id),
+        getReasonCodes(tx),
+      ])
+  );
 
   // Serialise recommendation for the client boundary
   const serialisedRecommendation: SerialisedRecommendation | null =

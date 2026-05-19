@@ -1,51 +1,96 @@
 "use server";
 
 /**
- * Server actions for invitation-based registration (branded email flow).
+ * Server actions for the applicant invitation registration flow.
  *
  * These are public, pre-auth actions — they do NOT use requireRole().
- * The invitationId in the URL serves as the authorization token.
+ * The single-use token in the URL is the only authorization credential.
+ *
+ * Mirrors `src/app/(auth)/register/staff/actions.ts` exactly. Operates on
+ * the `invitations` (applicant) table rather than `staff_invitations`.
+ *
+ * `createProfileAction` is retained for the parallel Supabase magic-link
+ * branch driven by `?token_hash=…` on the registration page.
  */
 
-import { InvitationStatus } from "@prisma/client";
-import { prisma } from "@/lib/db/prisma";
+import { InvitationStatus, type Role, type School } from "@prisma/client";
+import { withAdminContext } from "@/lib/db/prisma";
 import { createSupabaseAdminClient } from "@/lib/auth/supabase-admin";
 import { createProfile } from "@/lib/auth/create-profile";
-import { updateInvitationStatus } from "@/lib/db/queries/invitations";
+import {
+  getInvitationByToken,
+  markInvitationAccepted,
+} from "@/lib/db/queries/invitations";
 import { generateApplicationReference } from "@/lib/applications/reference";
+import { validatePasswordStrength } from "@/lib/auth/password-policy";
+import { createAuditLog } from "@/lib/audit/log";
 
 // ---------------------------------------------------------------------------
-// Types
+// createProfileAction — server-action wrapper for the magic-link flow
 // ---------------------------------------------------------------------------
 
-export type ValidateInvitationResult =
+export interface CreateProfileActionInput {
+  id: string;
+  email: string;
+  role?: Role;
+  firstName?: string;
+  lastName?: string;
+  phone?: string;
+}
+
+export type CreateProfileActionResult =
+  | { success: true }
+  | { success: false; error: string };
+
+/**
+ * Server-action wrapper around createProfile() for invocation from
+ * Client Components (`?token_hash=…` magic-link registration). The user has
+ * just signed up via Supabase Auth but does not yet have a JWT context for
+ * RLS — so we use withAdminContext to bypass RLS for this single insert.
+ */
+export async function createProfileAction(
+  input: CreateProfileActionInput
+): Promise<CreateProfileActionResult> {
+  const result = await withAdminContext((tx) => createProfile(tx, input));
+  if (!result.success) return { success: false, error: result.error };
+  return { success: true };
+}
+
+// ---------------------------------------------------------------------------
+// validateApplicantInvitationAction
+// ---------------------------------------------------------------------------
+
+export type ValidateApplicantInvitationResult =
   | {
       success: true;
       email: string;
+      firstName: string | null;
+      lastName: string | null;
       applicantName: string | null;
       childName: string | null;
-      school: string | null;
+      school: School | null;
+      roundId: string | null;
     }
   | { success: false; error: string };
 
-export type RegisterWithInvitationResult =
-  | { success: true; email: string }
-  | { success: false; error: string };
-
-// ---------------------------------------------------------------------------
-// validateInvitationAction
-// ---------------------------------------------------------------------------
-
 /**
- * Looks up an invitation by ID and returns safe public fields if it's valid.
+ * Validates an applicant invitation token and returns the safe public fields
+ * needed to render the registration form. Returns an error if the token is
+ * unknown, already used, or expired.
+ *
+ * Mirrors `validateStaffInvitationAction`.
  */
-export async function validateInvitationAction(
-  invitationId: string
-): Promise<ValidateInvitationResult> {
+export async function validateApplicantInvitationAction(
+  token: string
+): Promise<ValidateApplicantInvitationResult> {
+  if (!token || typeof token !== "string") {
+    return { success: false, error: "Invalid invitation token." };
+  }
+
   try {
-    const invitation = await prisma.invitation.findUnique({
-      where: { id: invitationId },
-    });
+    const invitation = await withAdminContext((tx) =>
+      getInvitationByToken(tx, token)
+    );
 
     if (!invitation) {
       return { success: false, error: "Invitation not found." };
@@ -69,168 +114,190 @@ export async function validateInvitationAction(
     return {
       success: true,
       email: invitation.email,
+      firstName: invitation.firstName,
+      lastName: invitation.lastName,
       applicantName: invitation.applicantName,
       childName: invitation.childName,
       school: invitation.school,
+      roundId: invitation.roundId,
     };
   } catch (err) {
-    console.error("[register] validateInvitationAction error:", err);
+    console.error(
+      "[register] validateApplicantInvitationAction error:",
+      err
+    );
     return { success: false, error: "Failed to validate invitation." };
   }
 }
 
 // ---------------------------------------------------------------------------
-// registerWithInvitationAction
+// acceptApplicantInvitationAction
 // ---------------------------------------------------------------------------
 
-/**
- * Registers a user via a branded invitation link.
- *
- * 1. Re-validates the invitation (PENDING + not expired)
- * 2. Finds or creates the Supabase auth user
- * 3. Sets password and confirms email
- * 4. Creates Profile row
- * 5. Marks invitation as ACCEPTED
- */
-export async function registerWithInvitationAction(data: {
-  invitationId: string;
+export interface AcceptApplicantInvitationInput {
+  token: string;
   firstName: string;
   lastName: string;
   password: string;
-}): Promise<RegisterWithInvitationResult> {
-  const { invitationId, firstName, lastName, password } = data;
+}
 
-  if (password.length < 8) {
+export type AcceptApplicantInvitationResult =
+  | { success: true; email: string }
+  | { success: false; error: string };
+
+/**
+ * Completes the applicant registration:
+ *
+ *   1. Re-validates the token (PENDING + unexpired).
+ *   2. Validates password strength (12-char min + HIBP; fails open on
+ *      network errors).
+ *   3. Sets the password on the existing Supabase auth user via
+ *      `updateUserById(invitation.authUserId, …)` — no `listUsers()` paged
+ *      scan.
+ *   4. In one withAdminContext tx:
+ *        - Updates the Profile firstName / lastName.
+ *        - If the invitation carries school + childName + roundId, creates
+ *          the matching Application row.
+ *        - Marks the Invitation ACCEPTED.
+ *        - Writes the ACCEPT_INVITATION audit log.
+ *
+ * The caller is responsible for calling `signInWithPassword` client-side
+ * after this action returns success.
+ */
+export async function acceptApplicantInvitationAction(
+  input: AcceptApplicantInvitationInput
+): Promise<AcceptApplicantInvitationResult> {
+  const { token, firstName, lastName, password } = input;
+
+  if (!token || typeof token !== "string") {
+    return { success: false, error: "Invalid invitation token." };
+  }
+
+  // 1. Re-validate the token under admin context.
+  const invitation = await withAdminContext((tx) =>
+    getInvitationByToken(tx, token)
+  );
+
+  if (!invitation) {
+    return { success: false, error: "Invitation not found." };
+  }
+
+  if (invitation.status !== InvitationStatus.PENDING) {
     return {
       success: false,
-      error: "Password must be at least 8 characters long.",
+      error: "This invitation has already been used.",
     };
   }
 
+  if (invitation.expiresAt < new Date()) {
+    return { success: false, error: "This invitation has expired." };
+  }
+
+  if (!invitation.authUserId) {
+    // Legacy invitation created before PR2 — without a captured authUserId
+    // we cannot deterministically attach a password. Bursary office must
+    // resend from /invitations to provision a fresh auth user.
+    console.error(
+      "[register] acceptApplicantInvitationAction: invitation missing authUserId",
+      invitation.id
+    );
+    return {
+      success: false,
+      error:
+        "This invitation is from before the new invitation flow was deployed. Please ask the bursary office to resend it.",
+    };
+  }
+
+  // 2. Password policy. validatePasswordStrength fails open on HIBP network errors.
+  const strength = await validatePasswordStrength(password);
+  if (!strength.ok) {
+    return { success: false, error: strength.reason };
+  }
+
   try {
-    // 1. Re-validate the invitation
-    const invitation = await prisma.invitation.findUnique({
-      where: { id: invitationId },
-    });
-
-    if (!invitation) {
-      return { success: false, error: "Invitation not found." };
-    }
-
-    if (invitation.status !== InvitationStatus.PENDING) {
-      return {
-        success: false,
-        error: "This invitation has already been used.",
-      };
-    }
-
-    if (invitation.expiresAt < new Date()) {
-      return {
-        success: false,
-        error:
-          "This invitation has expired. Please contact your assessor for a new one.",
-      };
-    }
-
-    const email = invitation.email;
+    // 3. Set the chosen password on the existing Supabase auth user.
     const supabase = createSupabaseAdminClient();
-
-    // 2. Find existing Supabase user (created by admin.createUser during invitation)
-    const { data: listData, error: listError } =
-      await supabase.auth.admin.listUsers();
-
-    if (listError) {
-      console.error("[register] listUsers error:", listError);
-      return { success: false, error: "Failed to look up user account." };
-    }
-
-    const existingUser = listData.users.find((u) => u.email === email);
-    let userId: string;
-
-    if (existingUser) {
-      // User exists (created during invitation) — update password + confirm email
-      const { error: updateError } = await supabase.auth.admin.updateUserById(
-        existingUser.id,
-        {
-          password,
-          email_confirm: true,
-        }
-      );
-
-      if (updateError) {
-        console.error("[register] updateUserById error:", updateError);
-        return { success: false, error: "Failed to set up account." };
+    const { error: updateError } = await supabase.auth.admin.updateUserById(
+      invitation.authUserId,
+      {
+        password,
+        email_confirm: true,
       }
-
-      userId = existingUser.id;
-    } else {
-      // User doesn't exist — create with confirmed email
-      const { data: createData, error: createError } =
-        await supabase.auth.admin.createUser({
-          email,
-          password,
-          email_confirm: true,
-        });
-
-      if (createError || !createData.user) {
-        console.error("[register] createUser error:", createError);
-        return { success: false, error: "Failed to create account." };
-      }
-
-      userId = createData.user.id;
-    }
-
-    // 3. Create Profile row
-    const profileResult = await createProfile({
-      id: userId,
-      email,
-      firstName: firstName.trim() || undefined,
-      lastName: lastName.trim() || undefined,
-    });
-
-    if (!profileResult.success) {
-      return { success: false, error: profileResult.error };
-    }
-
-    // 4. Mark invitation as ACCEPTED
-    await updateInvitationStatus(
-      invitationId,
-      InvitationStatus.ACCEPTED,
-      userId
     );
 
-    // 5. Create Application record if the invitation has the required data.
-    // When any of school / childName / roundId are absent the applicant
-    // completes onboarding via the portal dashboard card instead.
-    if (invitation.school && invitation.childName && invitation.roundId) {
-      const round = await prisma.round.findUnique({
-        where: { id: invitation.roundId },
-        select: { academicYear: true },
-      });
-      const reference = await generateApplicationReference(
-        invitation.school,
-        round?.academicYear ?? ""
+    if (updateError) {
+      console.error(
+        "[register] acceptApplicantInvitationAction updateUserById error:",
+        updateError
       );
-
-      await prisma.application.create({
-        data: {
-          reference,
-          roundId: invitation.roundId,
-          leadApplicantId: userId,
-          school: invitation.school,
-          childName: invitation.childName,
-          bursaryAccountId: invitation.bursaryAccountId ?? undefined,
-          isReassessment: !!invitation.bursaryAccountId,
-          status: "PRE_SUBMISSION",
-        },
-      });
+      return {
+        success: false,
+        error: "Failed to set password. Please try again.",
+      };
     }
 
-    return { success: true, email };
+    // 4. Profile update + optional Application + markInvitationAccepted + audit log.
+    await withAdminContext(async (tx) => {
+      await tx.profile.update({
+        where: { id: invitation.authUserId! },
+        data: {
+          firstName: firstName.trim() || null,
+          lastName: lastName.trim() || null,
+        },
+      });
+
+      // Application row — only when the invitation carries the required
+      // applicant context. Otherwise the applicant completes onboarding via
+      // the portal dashboard card.
+      if (invitation.school && invitation.childName && invitation.roundId) {
+        const round = await tx.round.findUnique({
+          where: { id: invitation.roundId },
+          select: { academicYear: true },
+        });
+        const reference = await generateApplicationReference(
+          tx,
+          invitation.school,
+          round?.academicYear ?? ""
+        );
+
+        await tx.application.create({
+          data: {
+            reference,
+            roundId: invitation.roundId,
+            leadApplicantId: invitation.authUserId!,
+            school: invitation.school,
+            childName: invitation.childName,
+            bursaryAccountId: invitation.bursaryAccountId ?? undefined,
+            isReassessment: !!invitation.bursaryAccountId,
+            status: "PRE_SUBMISSION",
+          },
+        });
+      }
+
+      await markInvitationAccepted(tx, invitation.id, invitation.authUserId!);
+
+      await createAuditLog(tx, {
+        userId: invitation.authUserId!,
+        action: "ACCEPT_INVITATION",
+        entityType: "Invitation",
+        entityId: invitation.id,
+        context: `Applicant invitation accepted by ${invitation.email}`,
+        metadata: {
+          email: invitation.email,
+          roundId: invitation.roundId,
+          bursaryAccountId: invitation.bursaryAccountId,
+        },
+      });
+    });
+
+    return { success: true, email: invitation.email };
   } catch (err) {
     const message =
       err instanceof Error ? err.message : "Registration failed.";
-    console.error("[register] registerWithInvitationAction error:", err);
+    console.error(
+      "[register] acceptApplicantInvitationAction error:",
+      err
+    );
     return { success: false, error: message };
   }
 }

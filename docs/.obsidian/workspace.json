@@ -13,12 +13,12 @@
             "state": {
               "type": "markdown",
               "state": {
-                "file": "prd/_index.md",
+                "file": "contract/feature-verification-checklist.md",
                 "mode": "source",
                 "source": false
               },
               "icon": "lucide-file",
-              "title": "_index"
+              "title": "feature-verification-checklist"
             }
           }
         ]
@@ -94,7 +94,7 @@
             "state": {
               "type": "backlink",
               "state": {
-                "file": "prd/_index.md",
+                "file": "contract/feature-verification-checklist.md",
                 "collapseAll": false,
                 "extraContext": false,
                 "sortOrder": "alphabetical",
@@ -104,7 +104,7 @@
                 "unlinkedCollapsed": true
               },
               "icon": "links-coming-in",
-              "title": "Backlinks for _index"
+              "title": "Backlinks for feature-verification-checklist"
             }
           },
           {
@@ -113,12 +113,12 @@
             "state": {
               "type": "outgoing-link",
               "state": {
-                "file": "prd/_index.md",
+                "file": "contract/feature-verification-checklist.md",
                 "linksCollapsed": false,
                 "unlinkedCollapsed": true
               },
               "icon": "links-going-out",
-              "title": "Outgoing links from _index"
+              "title": "Outgoing links from feature-verification-checklist"
             }
           },
           {
@@ -156,13 +156,13 @@
             "state": {
               "type": "outline",
               "state": {
-                "file": "prd/_index.md",
+                "file": "contract/feature-verification-checklist.md",
                 "followCursor": false,
                 "showSearch": false,
                 "searchQuery": ""
               },
               "icon": "lucide-list",
-              "title": "Outline of _index"
+              "title": "Outline of feature-verification-checklist"
             }
           }
         ]
@@ -185,11 +185,17 @@
   },
   "active": "7b226d201db4cc50",
   "lastOpenFiles": [
+    "handoffs/staff-invite-resend-flow.md",
+    "handoffs",
+    "contract/feature-verification-checklist.md",
+    "contract/proposal-narrative.md",
+    "proposal/meeting-talking-points.md",
+    "IMPLEMENTATION_PLAN.md",
+    "security-audit.md",
+    "prd/_index.md",
     "tdd/_index.md",
-    "proposal-narrative.md",
     "PRD.md",
     "TDD.md",
-    "IMPLEMENTATION_PLAN.md",
     "prd/15-assumptions.md",
     "prd/99-appendix.md",
     "prd/01-introduction.md",
@@ -197,7 +203,6 @@
     "prd/03-applicant-portal.md",
     "prd/06-sibling-linking.md",
     "prd/10-gdpr-and-data.md",
-    "prd/_index.md",
     "prd/14-metrics.md",
     "prd/13-wireframes.md",
     "prd/12-use-cases.md",
@@ -206,12 +211,7 @@
     "prd/08-data-operations.md",
     "prd/07-assessment-output.md",
     "prd/05-assessment-engine.md",
-    "prd/04-admin-round-management.md",
     "prd",
-    "tdd/07-system-components.md",
-    "tdd/06-data-design.md",
-    "tdd/05-non-functional-requirements.md",
-    "tdd/04-functional-requirements.md",
     "tdd"
   ]
 }

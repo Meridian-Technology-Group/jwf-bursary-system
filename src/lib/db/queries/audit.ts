@@ -2,7 +2,7 @@
  * Audit log database queries.
  */
 
-import { prisma } from "@/lib/db/prisma";
+import type { Tx } from "@/lib/db/prisma";
 import type { AuditLog, Profile, Prisma } from "@prisma/client";
 
 export type AuditLogWithUser = AuditLog & {
@@ -22,10 +22,11 @@ export interface AuditLogFilters {
  * Returns all audit log entries for a specific entity in chronological order.
  */
 export async function getAuditLogsForEntity(
+  tx: Tx,
   entityType: string,
   entityId: string
 ): Promise<AuditLogWithUser[]> {
-  return prisma.auditLog.findMany({
+  return tx.auditLog.findMany({
     where: { entityType, entityId },
     include: {
       user: {
@@ -40,9 +41,10 @@ export async function getAuditLogsForEntity(
  * Returns the most recent audit log entries across all entities.
  */
 export async function getRecentAuditLogs(
+  tx: Tx,
   limit: number
 ): Promise<AuditLogWithUser[]> {
-  return prisma.auditLog.findMany({
+  return tx.auditLog.findMany({
     include: {
       user: {
         select: { id: true, firstName: true, lastName: true, email: true },
@@ -87,13 +89,14 @@ function buildAuditWhereClause(
  * sorted newest-first. Includes user profile info for display.
  */
 export async function getFilteredAuditLogs(
+  tx: Tx,
   filters: AuditLogFilters
 ): Promise<AuditLogWithUser[]> {
   const { page, pageSize, ...rest } = filters;
   const where = buildAuditWhereClause(rest);
   const skip = (page - 1) * pageSize;
 
-  return prisma.auditLog.findMany({
+  return tx.auditLog.findMany({
     where,
     include: {
       user: {
@@ -111,8 +114,9 @@ export async function getFilteredAuditLogs(
  * Used to compute pagination metadata.
  */
 export async function countFilteredAuditLogs(
+  tx: Tx,
   filters: Omit<AuditLogFilters, "page" | "pageSize">
 ): Promise<number> {
   const where = buildAuditWhereClause(filters);
-  return prisma.auditLog.count({ where });
+  return tx.auditLog.count({ where });
 }

@@ -16,13 +16,13 @@
 
 import { notFound } from "next/navigation";
 import type { Decimal } from "@prisma/client/runtime/library";
-import { requireRole, Role } from "@/lib/auth/roles";
+import { requireRole, Role, type CurrentUser } from "@/lib/auth/roles";
 import { getApplicationWithDetails } from "@/lib/db/queries/applications";
 import { getAssessment } from "@/lib/db/queries/assessments";
 import { getConfigsForAssessment } from "@/lib/db/queries/reference-tables";
 import { getPreviousAssessment } from "@/lib/db/queries/reassessment";
 import { getSiblingLinks } from "@/lib/db/queries/siblings";
-import { prisma } from "@/lib/db/prisma";
+import { withUserContext, type RlsRole } from "@/lib/db/prisma";
 import { YearComparison } from "@/components/admin/year-comparison";
 import { BenchmarkDisplay } from "@/components/admin/benchmark-display";
 import { SplitScreen } from "@/components/admin/split-screen";
@@ -53,6 +53,7 @@ interface ReassessmentContextProps {
   bursaryAccountId: string;
   roundId: string;
   academicYear: string;
+  user: CurrentUser;
 }
 
 async function ReassessmentContext({
@@ -60,17 +61,23 @@ async function ReassessmentContext({
   bursaryAccountId,
   roundId,
   academicYear,
+  user,
 }: ReassessmentContextProps) {
-  const [previousAssessment, bursaryAccount] = await Promise.all([
-    getPreviousAssessment(bursaryAccountId, roundId),
-    prisma.bursaryAccount.findUnique({
-      where: { id: bursaryAccountId },
-      select: {
-        benchmarkPayableFees: true,
-        firstAssessmentYear: true,
-      },
-    }),
-  ]);
+  const [previousAssessment, bursaryAccount] = await withUserContext(
+    user.id,
+    user.role as RlsRole,
+    (tx) =>
+      Promise.all([
+        getPreviousAssessment(tx, bursaryAccountId, roundId),
+        tx.bursaryAccount.findUnique({
+          where: { id: bursaryAccountId },
+          select: {
+            benchmarkPayableFees: true,
+            firstAssessmentYear: true,
+          },
+        }),
+      ])
+  );
 
   const benchmarkPayableFees = toNumber(bursaryAccount?.benchmarkPayableFees);
 
@@ -113,13 +120,19 @@ export default async function AssessmentPage({ params }: Props) {
   const user = await requireRole([Role.ADMIN, Role.ASSESSOR, Role.VIEWER]);
   const isViewer = user.role === Role.VIEWER;
 
-  const application = await getApplicationWithDetails(params.id);
+  const { application, assessment } = await withUserContext(
+    user.id,
+    user.role as RlsRole,
+    async (tx) => {
+      const app = await getApplicationWithDetails(tx, params.id);
+      if (!app) return { application: null, assessment: null };
+      const a = await getAssessment(tx, params.id);
+      return { application: app, assessment: a };
+    }
+  );
   if (!application) notFound();
 
   const { documents, isReassessment, bursaryAccountId, round } = application;
-
-  // Fetch assessment with full relations (earners, property, checklists)
-  const assessment = await getAssessment(params.id);
 
   // ── No assessment record yet ───────────────────────────────────────────────
 
@@ -133,6 +146,7 @@ export default async function AssessmentPage({ params }: Props) {
             bursaryAccountId={bursaryAccountId}
             roundId={application.roundId}
             academicYear={round.academicYear}
+            user={user}
           />
         )}
 
@@ -168,32 +182,40 @@ export default async function AssessmentPage({ params }: Props) {
 
   // ── Assessment exists — build full workspace ───────────────────────────────
 
-  // Load reference configs for the form
-  const configs = await getConfigsForAssessment(
-    application.school,
-    assessment.familyTypeCategory ?? undefined
-  );
-
-  // Load sibling payable fees for sequential income absorption.
-  // Only siblings with a lower priority order than this child are used —
-  // i.e., siblings that come before this child in the family group.
-  const siblingPayableFees: number[] = [];
-  if (bursaryAccountId) {
-    const siblingLinks = await getSiblingLinks(bursaryAccountId);
-    const ownLink = siblingLinks.find((s) => s.bursaryAccountId === bursaryAccountId);
-    if (ownLink) {
-      const olderSiblings = siblingLinks.filter(
-        (s) =>
-          s.bursaryAccountId !== bursaryAccountId &&
-          s.priorityOrder < ownLink.priorityOrder
+  // Load reference configs + sibling links under RLS context
+  const { configs, siblingPayableFees } = await withUserContext(
+    user.id,
+    user.role as RlsRole,
+    async (tx) => {
+      const cfgs = await getConfigsForAssessment(
+        tx,
+        application.school,
+        assessment.familyTypeCategory ?? undefined
       );
-      for (const sibling of olderSiblings) {
-        if (sibling.bursaryAccount.latestPayableFees !== null) {
-          siblingPayableFees.push(sibling.bursaryAccount.latestPayableFees);
+
+      // Load sibling payable fees for sequential income absorption.
+      // Only siblings with a lower priority order than this child are used —
+      // i.e., siblings that come before this child in the family group.
+      const siblingFees: number[] = [];
+      if (bursaryAccountId) {
+        const siblingLinks = await getSiblingLinks(tx, bursaryAccountId);
+        const ownLink = siblingLinks.find((s) => s.bursaryAccountId === bursaryAccountId);
+        if (ownLink) {
+          const olderSiblings = siblingLinks.filter(
+            (s) =>
+              s.bursaryAccountId !== bursaryAccountId &&
+              s.priorityOrder < ownLink.priorityOrder
+          );
+          for (const sibling of olderSiblings) {
+            if (sibling.bursaryAccount.latestPayableFees !== null) {
+              siblingFees.push(sibling.bursaryAccount.latestPayableFees);
+            }
+          }
         }
       }
+      return { configs: cfgs, siblingPayableFees: siblingFees };
     }
-  }
+  );
 
   // Normalise assessment data: convert all Decimal → number for client.
   // This avoids Prisma Decimal objects crossing the server/client boundary.
@@ -300,6 +322,7 @@ export default async function AssessmentPage({ params }: Props) {
           bursaryAccountId={bursaryAccountId}
           roundId={application.roundId}
           academicYear={round.academicYear}
+          user={user}
         />
       )}
 

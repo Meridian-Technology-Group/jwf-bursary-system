@@ -14,7 +14,7 @@
 import { revalidatePath } from "next/cache";
 import { requireRole, Role } from "@/lib/auth/roles";
 import { createAuditLog } from "@/lib/audit/log";
-import { prisma } from "@/lib/db/prisma";
+import { withUserContext, type RlsRole } from "@/lib/db/prisma";
 import type { School, EmailTemplateType } from "@prisma/client";
 
 // ─── Result type ──────────────────────────────────────────────────────────────
@@ -54,24 +54,26 @@ export async function upsertFamilyTypeConfigAction(
     const effectiveFrom = new Date();
     effectiveFrom.setHours(0, 0, 0, 0);
 
-    const config = await prisma.familyTypeConfig.create({
-      data: {
-        category,
-        description,
-        notionalRent,
-        utilityCosts,
-        foodCosts,
-        effectiveFrom,
-      },
-    });
+    await withUserContext(user.id, user.role as RlsRole, async (tx) => {
+      const config = await tx.familyTypeConfig.create({
+        data: {
+          category,
+          description,
+          notionalRent,
+          utilityCosts,
+          foodCosts,
+          effectiveFrom,
+        },
+      });
 
-    await createAuditLog({
-      userId: user.id,
-      action: "settings.family_type_config.upsert",
-      entityType: "FamilyTypeConfig",
-      entityId: config.id,
-      context: `Updated family type config for category ${category}`,
-      metadata: { category, notionalRent, utilityCosts, foodCosts },
+      await createAuditLog(tx, {
+        userId: user.id,
+        action: "settings.family_type_config.upsert",
+        entityType: "FamilyTypeConfig",
+        entityId: config.id,
+        context: `Updated family type config for category ${category}`,
+        metadata: { category, notionalRent, utilityCosts, foodCosts },
+      });
     });
 
     revalidatePath("/settings");
@@ -104,21 +106,23 @@ export async function upsertSchoolFeesAction(
     const effectiveFrom = new Date();
     effectiveFrom.setHours(0, 0, 0, 0);
 
-    const fees = await prisma.schoolFees.create({
-      data: {
-        school,
-        annualFees,
-        effectiveFrom,
-      },
-    });
+    await withUserContext(user.id, user.role as RlsRole, async (tx) => {
+      const fees = await tx.schoolFees.create({
+        data: {
+          school,
+          annualFees,
+          effectiveFrom,
+        },
+      });
 
-    await createAuditLog({
-      userId: user.id,
-      action: "settings.school_fees.upsert",
-      entityType: "SchoolFees",
-      entityId: fees.id,
-      context: `Updated annual fees for ${school}`,
-      metadata: { school, annualFees },
+      await createAuditLog(tx, {
+        userId: user.id,
+        action: "settings.school_fees.upsert",
+        entityType: "SchoolFees",
+        entityId: fees.id,
+        context: `Updated annual fees for ${school}`,
+        metadata: { school, annualFees },
+      });
     });
 
     revalidatePath("/settings");
@@ -151,21 +155,23 @@ export async function updateCouncilTaxAction(
     const effectiveFrom = new Date();
     effectiveFrom.setHours(0, 0, 0, 0);
 
-    const record = await prisma.councilTaxDefault.create({
-      data: {
-        amount,
-        description,
-        effectiveFrom,
-      },
-    });
+    await withUserContext(user.id, user.role as RlsRole, async (tx) => {
+      const record = await tx.councilTaxDefault.create({
+        data: {
+          amount,
+          description,
+          effectiveFrom,
+        },
+      });
 
-    await createAuditLog({
-      userId: user.id,
-      action: "settings.council_tax.update",
-      entityType: "CouncilTaxDefault",
-      entityId: record.id,
-      context: `Updated council tax default to £${amount}`,
-      metadata: { amount, description },
+      await createAuditLog(tx, {
+        userId: user.id,
+        action: "settings.council_tax.update",
+        entityType: "CouncilTaxDefault",
+        entityId: record.id,
+        context: `Updated council tax default to £${amount}`,
+        metadata: { amount, description },
+      });
     });
 
     revalidatePath("/settings");
@@ -201,40 +207,39 @@ export async function upsertReasonCodeAction(
       return { success: false, error: "Code and label are required." };
     }
 
-    let reasonCode;
+    await withUserContext(user.id, user.role as RlsRole, async (tx) => {
+      let reasonCode;
+      if (id) {
+        reasonCode = await tx.reasonCode.update({
+          where: { id },
+          data: {
+            code,
+            label,
+            isDeprecated,
+            sortOrder: isNaN(sortOrder) ? code : sortOrder,
+          },
+        });
+      } else {
+        reasonCode = await tx.reasonCode.create({
+          data: {
+            code,
+            label,
+            isDeprecated: false,
+            sortOrder: isNaN(sortOrder) ? code : sortOrder,
+          },
+        });
+      }
 
-    if (id) {
-      // Update existing
-      reasonCode = await prisma.reasonCode.update({
-        where: { id },
-        data: {
-          code,
-          label,
-          isDeprecated,
-          sortOrder: isNaN(sortOrder) ? code : sortOrder,
-        },
+      await createAuditLog(tx, {
+        userId: user.id,
+        action: id ? "settings.reason_code.update" : "settings.reason_code.create",
+        entityType: "ReasonCode",
+        entityId: reasonCode.id,
+        context: id
+          ? `Updated reason code ${code}: ${label}`
+          : `Created reason code ${code}: ${label}`,
+        metadata: { code, label, isDeprecated },
       });
-    } else {
-      // Create new
-      reasonCode = await prisma.reasonCode.create({
-        data: {
-          code,
-          label,
-          isDeprecated: false,
-          sortOrder: isNaN(sortOrder) ? code : sortOrder,
-        },
-      });
-    }
-
-    await createAuditLog({
-      userId: user.id,
-      action: id ? "settings.reason_code.update" : "settings.reason_code.create",
-      entityType: "ReasonCode",
-      entityId: reasonCode.id,
-      context: id
-        ? `Updated reason code ${code}: ${label}`
-        : `Created reason code ${code}: ${label}`,
-      metadata: { code, label, isDeprecated },
     });
 
     revalidatePath("/settings");
@@ -269,22 +274,24 @@ export async function upsertEmailTemplateAction(
       return { success: false, error: "Template type, subject, and body are required." };
     }
 
-    const template = await prisma.emailTemplate.update({
-      where: { type },
-      data: {
-        subject,
-        body,
-        updatedBy: user.id,
-      },
-    });
+    await withUserContext(user.id, user.role as RlsRole, async (tx) => {
+      const template = await tx.emailTemplate.update({
+        where: { type },
+        data: {
+          subject,
+          body,
+          updatedBy: user.id,
+        },
+      });
 
-    await createAuditLog({
-      userId: user.id,
-      action: "settings.email_template.update",
-      entityType: "EmailTemplate",
-      entityId: template.id,
-      context: `Updated email template: ${type}`,
-      metadata: { type, subject },
+      await createAuditLog(tx, {
+        userId: user.id,
+        action: "settings.email_template.update",
+        entityType: "EmailTemplate",
+        entityId: template.id,
+        context: `Updated email template: ${type}`,
+        metadata: { type, subject },
+      });
     });
 
     revalidatePath("/settings");

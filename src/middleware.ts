@@ -98,6 +98,17 @@ export async function middleware(request: NextRequest) {
     return mw.applySessionCookies(NextResponse.redirect(target));
   }
 
+  // 2a. DELETED role — sign out and redirect to /login. Placed BEFORE the
+  //     auth-route allowance so a deleted user cannot land on /login while
+  //     still holding a valid session, and BEFORE the portal/admin routing
+  //     so a DELETED role can never reach either area. (Audit finding 2.8)
+  if (user && role === "DELETED" && !AUTH_ROUTES.test(pathname)) {
+    await mw.supabase.auth.signOut();
+    const loginUrl = new URL("/login", request.url);
+    loginUrl.searchParams.set("error", "account_deleted");
+    return redirect(loginUrl);
+  }
+
   // 3. Auth routes are always public — let them through (with refreshed cookies).
   //    We intentionally do NOT redirect authenticated users away from /login.
   //    The middleware only has JWT-level info; if a Server Component (which has

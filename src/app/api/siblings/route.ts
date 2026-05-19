@@ -9,6 +9,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { requireRole, Role } from "@/lib/auth/roles";
+import { withUserContext, type RlsRole } from "@/lib/db/prisma";
 import { createAuditLog } from "@/lib/audit/log";
 import {
   getSiblingLinks,
@@ -19,7 +20,6 @@ import {
 
 export async function GET(request: NextRequest): Promise<NextResponse> {
   const user = await requireRole([Role.ADMIN, Role.ASSESSOR, Role.VIEWER]);
-  void user; // auth checked — user not needed beyond gate
 
   const { searchParams } = new URL(request.url);
   const bursaryAccountId = searchParams.get("bursaryAccountId");
@@ -32,7 +32,9 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   }
 
   try {
-    const links = await getSiblingLinks(bursaryAccountId);
+    const links = await withUserContext(user.id, user.role as RlsRole, (tx) =>
+      getSiblingLinks(tx, bursaryAccountId)
+    );
     return NextResponse.json(links);
   } catch (err) {
     console.error("[GET /api/siblings] Error:", err);
@@ -82,15 +84,25 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   }
 
   try {
-    const result = await createSiblingLink(bursaryAccountId, targetBursaryAccountId);
-
-    await createAuditLog({
-      userId: user.id,
-      action: "SIBLING_LINK_CREATED",
-      entityType: "SIBLING_LINK",
-      context: `Family group: ${result.familyGroupId}`,
-      metadata: { bursaryAccountId, targetBursaryAccountId },
-    });
+    const result = await withUserContext(
+      user.id,
+      user.role as RlsRole,
+      async (tx) => {
+        const created = await createSiblingLink(
+          tx,
+          bursaryAccountId,
+          targetBursaryAccountId
+        );
+        await createAuditLog(tx, {
+          userId: user.id,
+          action: "SIBLING_LINK_CREATED",
+          entityType: "SIBLING_LINK",
+          context: `Family group: ${created.familyGroupId}`,
+          metadata: { bursaryAccountId, targetBursaryAccountId },
+        });
+        return created;
+      }
+    );
 
     return NextResponse.json(result, { status: 201 });
   } catch (err) {

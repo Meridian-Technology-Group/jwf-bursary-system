@@ -10,10 +10,12 @@
     "lint": "next lint",
     "test": "vitest run",
     "test:watch": "vitest",
-    "backfill:assessments": "tsx scripts/backfill-assessment-calculations.ts"
+    "backfill:assessments": "tsx scripts/backfill-assessment-calculations.ts",
+    "seed:reference": "tsx prisma/seed-reference.ts",
+    "seed:demo": "ALLOW_DESTRUCTIVE_SEED=1 tsx prisma/seed-demo.ts"
   },
   "prisma": {
-    "seed": "tsx prisma/seed.ts"
+    "seed": "tsx prisma/seed-demo.ts"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.2",
@@ -38,6 +40,8 @@
     "@supabase/supabase-js": "^2.98.0",
     "@tailwindcss/forms": "^0.5.11",
     "@tanstack/react-table": "^8.21.3",
+    "@upstash/ratelimit": "^2.0.8",
+    "@vercel/kv": "^3.0.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "cmdk": "^1.1.1",
@@ -53,6 +57,7 @@
     "recharts": "^3.7.0",
     "resend": "^6.9.3",
     "sonner": "^2.0.7",
+    "svix": "^1.93.0",
     "tailwind-merge": "^3.5.0",
     "tailwindcss-animate": "^1.0.7",
     "zod": "^4.3.6"

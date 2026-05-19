@@ -19,6 +19,8 @@
 //   3. Uncomment the verification block below.
 
 import { NextRequest, NextResponse } from "next/server";
+import { Webhook } from "svix";
+import { hashEmail, logInfo } from "@/lib/log";
 
 // ---------------------------------------------------------------------------
 // Resend webhook payload types
@@ -92,58 +94,14 @@ function parsePayload(raw: string): ResendWebhookPayload | null {
  */
 function logEvent(payload: ResendWebhookPayload): void {
   const { type, data } = payload;
-  const timestamp = payload.created_at ?? new Date().toISOString();
+  const firstTo =
+    Array.isArray(data.to) && data.to.length > 0 ? data.to[0] : undefined;
 
-  switch (type) {
-    case "email.delivered":
-      console.log(
-        `[resend/webhook] DELIVERED | id: ${data.email_id} | to: ${data.to?.join(", ")} | subject: ${data.subject} | at: ${timestamp}`
-      );
-      break;
-
-    case "email.bounced":
-      console.warn(
-        `[resend/webhook] BOUNCED | id: ${data.email_id} | to: ${data.to?.join(", ")} | subject: ${data.subject} | at: ${timestamp}`
-      );
-      break;
-
-    case "email.complained":
-      console.warn(
-        `[resend/webhook] COMPLAINT | id: ${data.email_id} | to: ${data.to?.join(", ")} | subject: ${data.subject} | at: ${timestamp}`
-      );
-      break;
-
-    case "email.delivery_delayed":
-      console.warn(
-        `[resend/webhook] DELAYED | id: ${data.email_id} | to: ${data.to?.join(", ")} | at: ${timestamp}`
-      );
-      break;
-
-    case "email.sent":
-      console.log(
-        `[resend/webhook] SENT | id: ${data.email_id} | to: ${data.to?.join(", ")} | at: ${timestamp}`
-      );
-      break;
-
-    case "email.opened":
-      console.log(
-        `[resend/webhook] OPENED | id: ${data.email_id} | at: ${timestamp}`
-      );
-      break;
-
-    case "email.clicked":
-      console.log(
-        `[resend/webhook] CLICKED | id: ${data.email_id} | at: ${timestamp}`
-      );
-      break;
-
-    default:
-      // Exhaustive guard — if Resend adds a new event type, log it verbatim.
-      console.log(
-        `[resend/webhook] UNKNOWN EVENT: ${String(type)} | data:`,
-        data
-      );
-  }
+  logInfo("resend.webhook", {
+    type,
+    messageId: data.email_id,
+    recipientHash: firstTo ? hashEmail(firstTo) : undefined,
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -174,48 +132,52 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     );
   }
 
-  // ── Optional Svix signature verification ──────────────────────────────────
-  //
-  // Uncomment the block below once you have:
-  //   1. Installed svix:  npm install svix
-  //   2. Added RESEND_WEBHOOK_SECRET=whsec_... to .env.local
-  //
-  // import { Webhook } from "svix";
-  //
-  // const webhookSecret = process.env.RESEND_WEBHOOK_SECRET;
-  // if (webhookSecret) {
-  //   const svixId        = request.headers.get("svix-id");
-  //   const svixTimestamp = request.headers.get("svix-timestamp");
-  //   const svixSignature = request.headers.get("svix-signature");
-  //
-  //   if (!svixId || !svixTimestamp || !svixSignature) {
-  //     return NextResponse.json(
-  //       { error: "Missing Svix signature headers" },
-  //       { status: 401 }
-  //     );
-  //   }
-  //
-  //   const wh = new Webhook(webhookSecret);
-  //   try {
-  //     wh.verify(rawBody, {
-  //       "svix-id":        svixId,
-  //       "svix-timestamp": svixTimestamp,
-  //       "svix-signature": svixSignature,
-  //     });
-  //   } catch {
-  //     return NextResponse.json(
-  //       { error: "Invalid webhook signature" },
-  //       { status: 401 }
-  //     );
-  //   }
-  // }
+  // ── Svix signature verification ───────────────────────────────────────────
+  // Resend signs webhook payloads using Svix. RESEND_WEBHOOK_SECRET must be
+  // set in production; unsigned/invalid events are rejected with 401.
+  // See docs/security-audit.md §2.15.
+  const webhookSecret = process.env.RESEND_WEBHOOK_SECRET;
+  if (!webhookSecret) {
+    console.error(
+      "[resend/webhook] RESEND_WEBHOOK_SECRET is not configured — rejecting event"
+    );
+    return NextResponse.json(
+      { error: "Webhook verification not configured" },
+      { status: 401 }
+    );
+  }
+
+  const svixId = request.headers.get("svix-id");
+  const svixTimestamp = request.headers.get("svix-timestamp");
+  const svixSignature = request.headers.get("svix-signature");
+
+  if (!svixId || !svixTimestamp || !svixSignature) {
+    return NextResponse.json(
+      { error: "Missing Svix signature headers" },
+      { status: 401 }
+    );
+  }
+
+  try {
+    const wh = new Webhook(webhookSecret);
+    wh.verify(rawBody, {
+      "svix-id": svixId,
+      "svix-timestamp": svixTimestamp,
+      "svix-signature": svixSignature,
+    });
+  } catch {
+    return NextResponse.json(
+      { error: "Invalid webhook signature" },
+      { status: 401 }
+    );
+  }
   // ── End signature verification block ─────────────────────────────────────
 
   // Validate payload structure.
   const payload = parsePayload(rawBody);
 
   if (!payload) {
-    console.warn("[resend/webhook] Received invalid payload:", rawBody.slice(0, 200));
+    logInfo("resend.webhook.invalid", { bodyLength: rawBody.length });
     return NextResponse.json(
       { error: "Invalid webhook payload" },
       { status: 400 }

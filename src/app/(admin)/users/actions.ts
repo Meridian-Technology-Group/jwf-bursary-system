@@ -6,13 +6,18 @@
  * All actions are restricted to ADMIN role.
  */
 
+import { randomBytes } from "node:crypto";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { Role } from "@prisma/client";
 import { requireRole } from "@/lib/auth/roles";
 import { createProfile } from "@/lib/auth/create-profile";
 import { createSupabaseAdminClient } from "@/lib/auth/supabase-admin";
-import { prisma } from "@/lib/db/prisma";
+import { getAppUrl } from "@/lib/app-url";
+import { withAdminContext, withUserContext, type RlsRole } from "@/lib/db/prisma";
+import { createAuditLog } from "@/lib/audit/log";
+import { createStaffInvitation } from "@/lib/db/queries/staff-invitations";
+import { sendEmail } from "@/lib/email/send";
 
 // ---------------------------------------------------------------------------
 // Shared result type
@@ -63,61 +68,107 @@ export async function inviteStaffAction(
 
   const { email, firstName, lastName, role } = parsed.data;
 
-  try {
-    // 1. Create Supabase auth user via invite
-    const supabase = createSupabaseAdminClient();
-    const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
+  const supabase = createSupabaseAdminClient();
+  const appUrl = getAppUrl();
 
-    const { data: inviteData, error: inviteError } =
-      await supabase.auth.admin.inviteUserByEmail(email, {
-        data: { role },
-        redirectTo: `${appUrl}/login`,
-      });
-
-    if (inviteError) {
-      return { success: false, error: inviteError.message };
-    }
-
-    const authUserId = inviteData.user.id;
-
-    // 2. Set app_metadata.role (belt-and-suspenders — DB trigger also fires)
-    await supabase.auth.admin.updateUserById(authUserId, {
+  // 1. Create the Supabase auth user silently. We use email_confirm: true so
+  //    Supabase does NOT fire its built-in invite OTP email (which gets eaten
+  //    by Gmail/Outlook link scanners). The throwaway password is overwritten
+  //    when the invitee completes registration via /register/staff.
+  const tempPassword = randomBytes(24).toString("base64url");
+  const { data: created, error: supabaseError } =
+    await supabase.auth.admin.createUser({
+      email,
+      password: tempPassword,
+      email_confirm: true,
       app_metadata: { role },
     });
 
-    // 3. Create Profile row
-    const profileResult = await createProfile({
-      id: authUserId,
-      email,
-      role: role as Role,
-      firstName,
-      lastName,
-    });
+  if (supabaseError || !created?.user) {
+    const message = supabaseError?.message ?? "Failed to create auth user";
+    console.error("[users] inviteStaffAction createUser error:", supabaseError);
+    return { success: false, error: message };
+  }
+  const authUserId = created.user.id;
 
-    if (!profileResult.success) {
-      return { success: false, error: profileResult.error };
-    }
+  // 2. Profile + StaffInvitation + audit log, all inside one withAdminContext.
+  //    Any failure here triggers an auth-user rollback below (so we never
+  //    leave an orphan auth.users row).
+  let token: string;
+  try {
+    const result = await withAdminContext(async (tx) => {
+      const profile = await createProfile(tx, {
+        id: authUserId,
+        email,
+        role: role as Role,
+        firstName,
+        lastName,
+      });
+      if (!profile.success) {
+        return { success: false as const, error: profile.error };
+      }
 
-    // 4. Audit log
-    await prisma.auditLog.create({
-      data: {
+      const inv = await createStaffInvitation(tx, {
+        email,
+        role: role as Role,
+        firstName,
+        lastName,
+        authUserId,
+        createdBy: admin.id,
+      });
+
+      await createAuditLog(tx, {
         userId: admin.id,
         action: "INVITE_STAFF",
-        entityType: "Profile",
-        entityId: authUserId,
+        entityType: "StaffInvitation",
+        entityId: inv.id,
         context: `Invited ${email} as ${role}`,
         metadata: { email, role },
-      },
+      });
+
+      return { success: true as const, token: inv.token };
     });
 
-    revalidatePath("/users");
-    return { success: true };
+    if (!result.success) {
+      // Roll back the auth user so we don't leave an orphan.
+      await supabase.auth.admin.deleteUser(authUserId).catch((err) => {
+        console.error("[users] auth user rollback failed:", err);
+      });
+      return {
+        success: false,
+        error: result.error ?? "Failed to create invitation",
+      };
+    }
+    token = result.token;
   } catch (err) {
+    // DB work threw — roll back the auth user.
+    await supabase.auth.admin.deleteUser(authUserId).catch((rollbackErr) => {
+      console.error("[users] auth user rollback failed:", rollbackErr);
+    });
     const message =
       err instanceof Error ? err.message : "Failed to invite staff user";
     console.error("[users] inviteStaffAction error:", err);
     return { success: false, error: message };
   }
+
+  // 3. Send the branded Resend email. If this fails, we keep the StaffInvitation
+  //    row so the admin can re-send later — but surface the error to the caller.
+  const emailResult = await sendEmail(email, "INVITE_STAFF", {
+    first_name: firstName ?? email.split("@")[0],
+    role,
+    registration_link: `${appUrl}/register/staff?token=${token}`,
+  });
+
+  if (!emailResult.success) {
+    console.error("[users] inviteStaffAction email error:", emailResult.error);
+    return {
+      success: false,
+      error: `Invitation created but email failed to send: ${emailResult.error}`,
+    };
+  }
+
+  revalidatePath("/users");
+  return { success: true };
 }
 
 // ---------------------------------------------------------------------------
@@ -160,30 +211,38 @@ export async function updateStaffRoleAction(
   }
 
   try {
-    const previous = await prisma.profile.findUnique({
-      where: { id: userId },
-      select: { role: true, email: true },
-    });
+    const result = await withUserContext(
+      admin.id,
+      admin.role as RlsRole,
+      async (tx) => {
+        const previous = await tx.profile.findUnique({
+          where: { id: userId },
+          select: { role: true, email: true },
+        });
 
-    if (!previous) {
-      return { success: false, error: "User not found." };
-    }
+        if (!previous) {
+          return { success: false as const, error: "User not found." };
+        }
 
-    await prisma.profile.update({
-      where: { id: userId },
-      data: { role: newRole as Role },
-    });
+        await tx.profile.update({
+          where: { id: userId },
+          data: { role: newRole as Role },
+        });
 
-    await prisma.auditLog.create({
-      data: {
-        userId: admin.id,
-        action: "UPDATE_STAFF_ROLE",
-        entityType: "Profile",
-        entityId: userId,
-        context: `Changed ${previous.email} role from ${previous.role} to ${newRole}`,
-        metadata: { previousRole: previous.role, newRole },
-      },
-    });
+        await createAuditLog(tx, {
+          userId: admin.id,
+          action: "UPDATE_STAFF_ROLE",
+          entityType: "Profile",
+          entityId: userId,
+          context: `Changed ${previous.email} role from ${previous.role} to ${newRole}`,
+          metadata: { previousRole: previous.role, newRole },
+        });
+
+        return { success: true as const };
+      }
+    );
+
+    if (!result.success) return result;
 
     revalidatePath("/users");
     return { success: true };
@@ -230,37 +289,43 @@ export async function deactivateStaffAction(
   }
 
   try {
-    const target = await prisma.profile.findUnique({
-      where: { id: userId },
-      select: { email: true, role: true },
-    });
+    const result = await withUserContext(
+      admin.id,
+      admin.role as RlsRole,
+      async (tx) => {
+        const target = await tx.profile.findUnique({
+          where: { id: userId },
+          select: { email: true, role: true },
+        });
 
-    if (!target) {
-      return { success: false, error: "User not found." };
-    }
+        if (!target) {
+          return { success: false as const, error: "User not found." };
+        }
 
-    // Set role to DELETED and unassign applications in a transaction
-    await prisma.$transaction([
-      prisma.profile.update({
-        where: { id: userId },
-        data: { role: Role.DELETED },
-      }),
-      prisma.application.updateMany({
-        where: { assignedToId: userId },
-        data: { assignedToId: null },
-      }),
-    ]);
+        // Set role to DELETED and unassign applications
+        await tx.profile.update({
+          where: { id: userId },
+          data: { role: Role.DELETED },
+        });
+        await tx.application.updateMany({
+          where: { assignedToId: userId },
+          data: { assignedToId: null },
+        });
 
-    await prisma.auditLog.create({
-      data: {
-        userId: admin.id,
-        action: "DEACTIVATE_STAFF",
-        entityType: "Profile",
-        entityId: userId,
-        context: `Deactivated ${target.email} (was ${target.role})`,
-        metadata: { email: target.email, previousRole: target.role },
-      },
-    });
+        await createAuditLog(tx, {
+          userId: admin.id,
+          action: "DEACTIVATE_STAFF",
+          entityType: "Profile",
+          entityId: userId,
+          context: `Deactivated ${target.email} (was ${target.role})`,
+          metadata: { email: target.email, previousRole: target.role },
+        });
+
+        return { success: true as const };
+      }
+    );
+
+    if (!result.success) return result;
 
     revalidatePath("/users");
     return { success: true };

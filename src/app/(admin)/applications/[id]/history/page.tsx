@@ -14,6 +14,7 @@
 
 import { notFound } from "next/navigation";
 import { requireRole, Role } from "@/lib/auth/roles";
+import { withUserContext, type RlsRole } from "@/lib/db/prisma";
 import { getApplicationWithDetails } from "@/lib/db/queries/applications";
 import { getAuditLogsForEntity } from "@/lib/db/queries/audit";
 import type { AuditLogWithUser } from "@/lib/db/queries/audit";
@@ -178,15 +179,24 @@ interface Props {
 }
 
 export default async function HistoryPage({ params }: Props) {
-  await requireRole([Role.ADMIN, Role.ASSESSOR, Role.VIEWER]);
+  const user = await requireRole([Role.ADMIN, Role.ASSESSOR, Role.VIEWER]);
 
-  const application = await getApplicationWithDetails(params.id);
+  const { application, logs } = await withUserContext(
+    user.id,
+    user.role as RlsRole,
+    async (tx) => {
+      const app = await getApplicationWithDetails(tx, params.id);
+      if (!app) return { application: null, logs: [] };
+      const auditLogs = await getAuditLogsForEntity(tx, "Application", params.id);
+      return { application: app, logs: auditLogs };
+    }
+  );
+
   if (!application) {
     notFound();
   }
 
   // Fetch audit logs for this application entity — reverse to newest-first
-  const logs = await getAuditLogsForEntity("Application", params.id);
   const reversedLogs = [...logs].reverse();
 
   return (

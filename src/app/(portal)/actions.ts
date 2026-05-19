@@ -11,7 +11,7 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { Role } from "@prisma/client";
-import { prisma } from "@/lib/db/prisma";
+import { withUserContext, type RlsRole } from "@/lib/db/prisma";
 import { requireRole } from "@/lib/auth/roles";
 import { getLatestAcceptedInvitationForUser } from "@/lib/db/queries/invitations";
 import { generateApplicationReference } from "@/lib/applications/reference";
@@ -74,63 +74,72 @@ export async function startApplicationAction(
   // Validation + DB work runs inside try; redirect happens after so the
   // NEXT_REDIRECT thrown by redirect() doesn't get swallowed by the catch.
   try {
-    const invitation = await getLatestAcceptedInvitationForUser(user.id);
+    const validation = await withUserContext(
+      user.id,
+      user.role as RlsRole,
+      async (tx) => {
+        const invitation = await getLatestAcceptedInvitationForUser(tx, user.id);
 
-    if (!invitation) {
-      return {
-        success: false,
-        error:
-          "We could not find an accepted invitation for your account. Please contact the Foundation.",
-      };
-    }
+        if (!invitation) {
+          return {
+            error:
+              "We could not find an accepted invitation for your account. Please contact the Foundation.",
+          };
+        }
 
-    if (invitation.bursaryAccountId) {
-      return {
-        success: false,
-        error:
-          "This invitation is for a re-assessment. Please follow the re-assessment link sent to you by the Foundation.",
-      };
-    }
+        if (invitation.bursaryAccountId) {
+          return {
+            error:
+              "This invitation is for a re-assessment. Please follow the re-assessment link sent to you by the Foundation.",
+          };
+        }
 
-    if (!invitation.roundId) {
-      return {
-        success: false,
-        error:
-          "Your invitation does not have an assessment round assigned. Please contact the Foundation.",
-      };
-    }
+        if (!invitation.roundId) {
+          return {
+            error:
+              "Your invitation does not have an assessment round assigned. Please contact the Foundation.",
+          };
+        }
 
-    const existing = await prisma.application.findFirst({
-      where: { leadApplicantId: user.id },
-      select: { id: true },
-    });
+        const existing = await tx.application.findFirst({
+          where: { leadApplicantId: user.id },
+          select: { id: true },
+        });
 
-    if (!existing) {
-      const round = await prisma.round.findUnique({
-        where: { id: invitation.roundId },
-        select: { academicYear: true },
-      });
+        if (!existing) {
+          const round = await tx.round.findUnique({
+            where: { id: invitation.roundId },
+            select: { academicYear: true },
+          });
 
-      if (!round) {
-        return {
-          success: false,
-          error: "The assessment round could not be found. Please contact the Foundation.",
-        };
+          if (!round) {
+            return {
+              error:
+                "The assessment round could not be found. Please contact the Foundation.",
+            };
+          }
+
+          const reference = await generateApplicationReference(tx, school, round.academicYear);
+
+          await tx.application.create({
+            data: {
+              reference,
+              roundId: invitation.roundId,
+              leadApplicantId: user.id,
+              school,
+              childName: childName.trim(),
+              isReassessment: false,
+              status: "PRE_SUBMISSION",
+            },
+          });
+        }
+
+        return { error: null };
       }
+    );
 
-      const reference = await generateApplicationReference(school, round.academicYear);
-
-      await prisma.application.create({
-        data: {
-          reference,
-          roundId: invitation.roundId,
-          leadApplicantId: user.id,
-          school,
-          childName: childName.trim(),
-          isReassessment: false,
-          status: "PRE_SUBMISSION",
-        },
-      });
+    if (validation.error) {
+      return { success: false, error: validation.error };
     }
 
     revalidatePath("/");

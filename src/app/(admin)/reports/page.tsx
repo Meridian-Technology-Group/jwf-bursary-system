@@ -23,7 +23,7 @@ import {
   getPropertyCategoryDistribution,
   getReasonCodeFrequency,
 } from "@/lib/db/queries/reports";
-import { prisma } from "@/lib/db/prisma";
+import { withUserContext, type RlsRole } from "@/lib/db/prisma";
 import { HorizontalBarChart } from "@/components/admin/charts/horizontal-bar-chart";
 import { RoundSelector } from "@/components/admin/charts/round-selector";
 
@@ -231,21 +231,26 @@ interface PageProps {
 }
 
 export default async function ReportsPage({ searchParams }: PageProps) {
-  await requireRole([Role.ADMIN, Role.ASSESSOR, Role.VIEWER]);
+  const user = await requireRole([Role.ADMIN, Role.ASSESSOR, Role.VIEWER]);
 
   // Resolve search params
   const sp = await searchParams;
   const roundIdParam =
     typeof sp.roundId === "string" ? sp.roundId : undefined;
 
-  // Load all rounds for the selector dropdown
-  const allRounds = await prisma.round.findMany({
-    select: { id: true, academicYear: true, status: true },
-    orderBy: { openDate: "desc" },
-  });
-
-  // Determine selected round
-  const activeRound = await getActiveRound();
+  // Load all rounds for the selector dropdown + active round
+  const { allRounds, activeRound } = await withUserContext(
+    user.id,
+    user.role as RlsRole,
+    async (tx) => {
+      const rounds = await tx.round.findMany({
+        select: { id: true, academicYear: true, status: true },
+        orderBy: { openDate: "desc" },
+      });
+      const active = await getActiveRound(tx);
+      return { allRounds: rounds, activeRound: active };
+    }
+  );
   const selectedRoundId =
     roundIdParam && allRounds.some((r) => r.id === roundIdParam)
       ? roundIdParam
@@ -280,13 +285,18 @@ export default async function ReportsPage({ searchParams }: PageProps) {
     incomeBands,
     propertyCategories,
     reasonCodes,
-  ] = await Promise.all([
-    getAwardDistribution(selectedRoundId),
-    getSchoolComparison(selectedRoundId),
-    getIncomeBandDistribution(selectedRoundId),
-    getPropertyCategoryDistribution(selectedRoundId),
-    getReasonCodeFrequency(selectedRoundId),
-  ]);
+  ] = await withUserContext(
+    user.id,
+    user.role as RlsRole,
+    (tx) =>
+      Promise.all([
+        getAwardDistribution(tx, selectedRoundId),
+        getSchoolComparison(tx, selectedRoundId),
+        getIncomeBandDistribution(tx, selectedRoundId),
+        getPropertyCategoryDistribution(tx, selectedRoundId),
+        getReasonCodeFrequency(tx, selectedRoundId),
+      ])
+  );
 
   const hasAwardData = awardDistribution.some((b) => b.count > 0);
   const hasIncomeData = incomeBands.some((b) => b.count > 0);

@@ -8,7 +8,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth/roles";
 import { Role } from "@prisma/client";
-import { prisma } from "@/lib/db/prisma";
+import { withUserContext, type RlsRole } from "@/lib/db/prisma";
 import { createAuditLog } from "@/lib/audit/log";
 
 interface RouteParams {
@@ -25,41 +25,68 @@ export async function POST(
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  if (user.role !== Role.ASSESSOR) {
+  if (user.role !== Role.ASSESSOR && user.role !== Role.ADMIN) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
   const documentId = params.id;
 
-  // Fetch current document
-  const document = await prisma.document.findUnique({
-    where: { id: documentId },
-    select: { id: true, isVerified: true, applicationId: true, slot: true },
-  });
+  const result = await withUserContext(
+    user.id,
+    user.role as RlsRole,
+    async (tx) => {
+      // Fetch current document with application assignment context
+      const document = await tx.document.findUnique({
+        where: { id: documentId },
+        select: {
+          id: true,
+          isVerified: true,
+          applicationId: true,
+          slot: true,
+          application: { select: { assignedToId: true } },
+        },
+      });
 
-  if (!document) {
-    return NextResponse.json({ error: "Document not found" }, { status: 404 });
+      if (!document) {
+        return { error: "Document not found", status: 404 as const };
+      }
+
+      // ASSESSOR may only verify documents on applications assigned to them.
+      // ADMIN is unrestricted (finding 2.13).
+      if (
+        user.role === Role.ASSESSOR &&
+        document.application.assignedToId !== user.id
+      ) {
+        return { error: "Forbidden", status: 403 as const };
+      }
+
+      // Toggle verification
+      const updated = await tx.document.update({
+        where: { id: documentId },
+        data: { isVerified: !document.isVerified },
+        select: { id: true, isVerified: true },
+      });
+
+      // Audit log (non-blocking)
+      await createAuditLog(tx, {
+        userId: user.id,
+        action: updated.isVerified ? "DOCUMENT_VERIFIED" : "DOCUMENT_UNVERIFIED",
+        entityType: "Document",
+        entityId: documentId,
+        context: `Slot: ${document.slot}`,
+        metadata: {
+          applicationId: document.applicationId,
+          isVerified: updated.isVerified,
+        },
+      });
+
+      return { isVerified: updated.isVerified };
+    }
+  );
+
+  if ("error" in result) {
+    return NextResponse.json({ error: result.error }, { status: result.status });
   }
 
-  // Toggle verification
-  const updated = await prisma.document.update({
-    where: { id: documentId },
-    data: { isVerified: !document.isVerified },
-    select: { id: true, isVerified: true },
-  });
-
-  // Audit log (non-blocking)
-  await createAuditLog({
-    userId: user.id,
-    action: updated.isVerified ? "DOCUMENT_VERIFIED" : "DOCUMENT_UNVERIFIED",
-    entityType: "Document",
-    entityId: documentId,
-    context: `Slot: ${document.slot}`,
-    metadata: {
-      applicationId: document.applicationId,
-      isVerified: updated.isVerified,
-    },
-  });
-
-  return NextResponse.json({ isVerified: updated.isVerified });
+  return NextResponse.json({ isVerified: result.isVerified });
 }

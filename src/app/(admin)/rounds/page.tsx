@@ -10,6 +10,7 @@ export const dynamic = "force-dynamic";
 import Link from "next/link";
 import { CalendarRange } from "lucide-react";
 import { requireRole, Role } from "@/lib/auth/roles";
+import { withUserContext, type RlsRole } from "@/lib/db/prisma";
 import { listRounds } from "@/lib/db/queries/rounds";
 import { CreateRoundDialog } from "@/components/admin/create-round-dialog";
 import { RoundActionsCell } from "@/components/admin/round-actions-cell";
@@ -59,9 +60,11 @@ function formatDate(date: Date): string {
 // ---------------------------------------------------------------------------
 
 export default async function RoundsPage() {
-  await requireRole([Role.ADMIN, Role.ASSESSOR, Role.VIEWER]);
+  const user = await requireRole([Role.ADMIN, Role.ASSESSOR, Role.VIEWER]);
 
-  const rounds = await listRounds();
+  const rounds = await withUserContext(user.id, user.role as RlsRole, (tx) =>
+    listRounds(tx)
+  );
 
   return (
     <div className="space-y-6">

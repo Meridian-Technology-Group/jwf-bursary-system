@@ -10,9 +10,10 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth/roles";
-import { prisma } from "@/lib/db/prisma";
+import { withUserContext, type RlsRole } from "@/lib/db/prisma";
 import { deleteDocument } from "@/lib/storage/documents";
 import { createAuditLog } from "@/lib/audit/log";
+import { logError } from "@/lib/log";
 
 interface RouteParams {
   params: Promise<{ id: string }>;
@@ -31,22 +32,27 @@ export async function DELETE(
   const { id: documentId } = await params;
 
   // ── Fetch document with application ownership data ─────────────────────────
-  const document = await prisma.document.findUnique({
-    where: { id: documentId },
-    select: {
-      id: true,
-      storagePath: true,
-      slot: true,
-      filename: true,
-      application: {
+  const document = await withUserContext(
+    user.id,
+    user.role as RlsRole,
+    (tx) =>
+      tx.document.findUnique({
+        where: { id: documentId },
         select: {
           id: true,
-          leadApplicantId: true,
-          status: true,
+          storagePath: true,
+          slot: true,
+          filename: true,
+          application: {
+            select: {
+              id: true,
+              leadApplicantId: true,
+              status: true,
+            },
+          },
         },
-      },
-    },
-  });
+      })
+  );
 
   if (!document) {
     return NextResponse.json({ error: "Document not found" }, { status: 404 });
@@ -69,34 +75,34 @@ export async function DELETE(
   try {
     await deleteDocument(document.storagePath);
   } catch (err) {
-    console.error("[documents/DELETE] Storage deletion failed:", err);
+    logError("documents/DELETE.storage", err);
     // Continue to delete the DB record even if storage deletion fails —
     // orphaned storage objects are less harmful than orphaned DB records.
   }
 
-  // ── Delete Prisma record ───────────────────────────────────────────────────
+  // ── Delete Prisma record + audit log ──────────────────────────────────────
   try {
-    await prisma.document.delete({ where: { id: documentId } });
+    await withUserContext(user.id, user.role as RlsRole, async (tx) => {
+      await tx.document.delete({ where: { id: documentId } });
+      await createAuditLog(tx, {
+        userId: user.id,
+        action: "DOCUMENT_DELETED",
+        entityType: "Document",
+        entityId: documentId,
+        context: `Slot: ${document.slot}`,
+        metadata: {
+          applicationId: document.application.id,
+          filename: document.filename,
+        },
+      });
+    });
   } catch (err) {
-    console.error("[documents/DELETE] DB deletion failed:", err);
+    logError("documents/DELETE.db", err);
     return NextResponse.json(
       { error: "Failed to delete document record" },
       { status: 500 }
     );
   }
-
-  // ── Audit log (non-blocking) ───────────────────────────────────────────────
-  await createAuditLog({
-    userId: user.id,
-    action: "DOCUMENT_DELETED",
-    entityType: "Document",
-    entityId: documentId,
-    context: `Slot: ${document.slot}`,
-    metadata: {
-      applicationId: document.application.id,
-      filename: document.filename,
-    },
-  });
 
   return NextResponse.json({ success: true }, { status: 200 });
 }

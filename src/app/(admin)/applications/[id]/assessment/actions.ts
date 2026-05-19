@@ -13,7 +13,8 @@
  */
 
 import { revalidatePath } from "next/cache";
-import { requireRole, Role } from "@/lib/auth/roles";
+import { requireRole, requireApplicationAccess, Role } from "@/lib/auth/roles";
+import { withUserContext, type RlsRole } from "@/lib/db/prisma";
 import {
   createAssessment,
   saveAssessment,
@@ -30,17 +31,24 @@ export async function beginAssessmentAction(
 ): Promise<{ success: true; assessmentId: string } | { success: false; error: string }> {
   try {
     const user = await requireRole([Role.ADMIN, Role.ASSESSOR]);
+    await requireApplicationAccess(user, applicationId);
 
-    const assessment = await createAssessment(applicationId, user.id);
-
-    await createAuditLog({
-      userId: user.id,
-      action: "assessment.begin",
-      entityType: "Assessment",
-      entityId: assessment.id,
-      context: `Created assessment for application ${applicationId}`,
-      metadata: { applicationId, assessmentId: assessment.id },
-    });
+    const assessment = await withUserContext(
+      user.id,
+      user.role as RlsRole,
+      async (tx) => {
+        const created = await createAssessment(tx, applicationId, user.id);
+        await createAuditLog(tx, {
+          userId: user.id,
+          action: "assessment.begin",
+          entityType: "Assessment",
+          entityId: created.id,
+          context: `Created assessment for application ${applicationId}`,
+          metadata: { applicationId, assessmentId: created.id },
+        });
+        return created;
+      }
+    );
 
     revalidatePath(`/applications/${applicationId}/assessment`);
 
@@ -60,19 +68,21 @@ export async function saveAssessmentAction(
 ): Promise<{ success: true } | { success: false; error: string }> {
   try {
     const user = await requireRole([Role.ADMIN, Role.ASSESSOR]);
+    await requireApplicationAccess(user, applicationId);
 
-    await saveAssessment(assessmentId, {
-      ...data,
-      status: data.status ?? "NOT_STARTED",
-    });
-
-    await createAuditLog({
-      userId: user.id,
-      action: "assessment.save",
-      entityType: "Assessment",
-      entityId: assessmentId,
-      context: "Assessment data saved",
-      metadata: { assessmentId, applicationId, fieldsUpdated: Object.keys(data) },
+    await withUserContext(user.id, user.role as RlsRole, async (tx) => {
+      await saveAssessment(tx, assessmentId, {
+        ...data,
+        status: data.status ?? "NOT_STARTED",
+      });
+      await createAuditLog(tx, {
+        userId: user.id,
+        action: "assessment.save",
+        entityType: "Assessment",
+        entityId: assessmentId,
+        context: "Assessment data saved",
+        metadata: { assessmentId, applicationId, fieldsUpdated: Object.keys(data) },
+      });
     });
 
     revalidatePath(`/applications/${applicationId}/assessment`);
@@ -92,16 +102,18 @@ export async function completeAssessmentAction(
 ): Promise<{ success: true } | { success: false; error: string }> {
   try {
     const user = await requireRole([Role.ADMIN, Role.ASSESSOR]);
+    await requireApplicationAccess(user, applicationId);
 
-    await completeAssessment(assessmentId);
-
-    await createAuditLog({
-      userId: user.id,
-      action: "assessment.complete",
-      entityType: "Assessment",
-      entityId: assessmentId,
-      context: "Assessment marked as COMPLETED",
-      metadata: { assessmentId, applicationId },
+    await withUserContext(user.id, user.role as RlsRole, async (tx) => {
+      await completeAssessment(tx, assessmentId);
+      await createAuditLog(tx, {
+        userId: user.id,
+        action: "assessment.complete",
+        entityType: "Assessment",
+        entityId: assessmentId,
+        context: "Assessment marked as COMPLETED",
+        metadata: { assessmentId, applicationId },
+      });
     });
 
     revalidatePath(`/applications/${applicationId}/assessment`);
@@ -121,16 +133,18 @@ export async function pauseAssessmentAction(
 ): Promise<{ success: true } | { success: false; error: string }> {
   try {
     const user = await requireRole([Role.ADMIN, Role.ASSESSOR]);
+    await requireApplicationAccess(user, applicationId);
 
-    await pauseAssessment(assessmentId);
-
-    await createAuditLog({
-      userId: user.id,
-      action: "assessment.pause",
-      entityType: "Assessment",
-      entityId: assessmentId,
-      context: "Assessment paused",
-      metadata: { assessmentId, applicationId },
+    await withUserContext(user.id, user.role as RlsRole, async (tx) => {
+      await pauseAssessment(tx, assessmentId);
+      await createAuditLog(tx, {
+        userId: user.id,
+        action: "assessment.pause",
+        entityType: "Assessment",
+        entityId: assessmentId,
+        context: "Assessment paused",
+        metadata: { assessmentId, applicationId },
+      });
     });
 
     revalidatePath(`/applications/${applicationId}/assessment`);

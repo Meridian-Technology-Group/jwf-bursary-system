@@ -4,10 +4,11 @@
 // All three exported functions wrap the Resend API and return a typed result
 // object; they never throw unhandled exceptions.
 
-import { prisma } from "@/lib/db/prisma";
+import { prisma, withAdminContext } from "@/lib/db/prisma";
 import { resend } from "./resend";
 import { replaceMergeFields } from "./merge";
 import { wrapInEmailTemplate, plainTextToHtml, htmlToPlainText } from "./template";
+import { hashEmail, logError, logInfo } from "@/lib/log";
 import type {
   SendEmailResult,
   SendBatchResult,
@@ -63,9 +64,11 @@ export async function sendEmail(
 ): Promise<SendEmailResult> {
   try {
     // 1. Load template from the database.
-    const template = await prisma.emailTemplate.findUnique({
-      where: { type: templateType },
-    });
+    // email_templates has RLS enabled with no public-read policy; use
+    // withAdminContext so the lookup runs as service_role.
+    const template = await withAdminContext((tx) =>
+      tx.emailTemplate.findUnique({ where: { type: templateType } }),
+    );
 
     if (!template) {
       return {
@@ -93,15 +96,21 @@ export async function sendEmail(
     });
 
     if (error) {
-      console.error(
-        `[email] Failed to send ${templateType} to ${to}:`,
-        error
-      );
+      logError("email.failed", error, {
+        templateType,
+        recipientHash: hashEmail(to),
+      });
       return {
         success: false,
         error: `${error.name}: ${error.message}`,
       };
     }
+
+    logInfo("email.sent", {
+      templateType,
+      recipientHash: hashEmail(to),
+      messageId: data?.id,
+    });
 
     return {
       success: true,
@@ -110,10 +119,10 @@ export async function sendEmail(
   } catch (err) {
     const message =
       err instanceof Error ? err.message : "Unknown error sending email";
-    console.error(
-      `[email] Unexpected error sending ${templateType} to ${to}:`,
-      err
-    );
+    logError("email.failed", err, {
+      templateType,
+      recipientHash: hashEmail(to),
+    });
     return { success: false, error: message };
   }
 }
@@ -153,9 +162,9 @@ export async function sendBatchEmails(
   let rawBody: string;
 
   try {
-    const template = await prisma.emailTemplate.findUnique({
-      where: { type: templateType },
-    });
+    const template = await withAdminContext((tx) =>
+      tx.emailTemplate.findUnique({ where: { type: templateType } }),
+    );
 
     if (!template) {
       const error = `Email template not found for type: ${templateType}`;
@@ -197,19 +206,27 @@ export async function sendBatchEmails(
         result.errors.push(
           `${email}: ${error.name}: ${error.message}`
         );
-        console.error(`[email/batch] Failed to send to ${email}:`, error);
+        logError("email.failed", error, {
+          templateType,
+          recipientHash: hashEmail(email),
+        });
       } else {
         result.sent++;
-        console.log(
-          `[email/batch] Sent ${templateType} to ${email} (id: ${data?.id ?? "unknown"})`
-        );
+        logInfo("email.sent", {
+          templateType,
+          recipientHash: hashEmail(email),
+          messageId: data?.id,
+        });
       }
     } catch (err) {
       const message =
         err instanceof Error ? err.message : "Unknown error";
       result.failed++;
       result.errors.push(`${email}: ${message}`);
-      console.error(`[email/batch] Unexpected error for ${email}:`, err);
+      logError("email.failed", err, {
+        templateType,
+        recipientHash: hashEmail(email),
+      });
     }
 
     // Pause between sends, except after the last one.
@@ -257,12 +274,21 @@ export async function sendRawEmail(
     });
 
     if (error) {
-      console.error(`[email] Failed to send raw email to ${to}:`, error);
+      logError("email.failed", error, {
+        templateType: "RAW",
+        recipientHash: hashEmail(to),
+      });
       return {
         success: false,
         error: `${error.name}: ${error.message}`,
       };
     }
+
+    logInfo("email.sent", {
+      templateType: "RAW",
+      recipientHash: hashEmail(to),
+      messageId: data?.id,
+    });
 
     return {
       success: true,
@@ -271,7 +297,10 @@ export async function sendRawEmail(
   } catch (err) {
     const message =
       err instanceof Error ? err.message : "Unknown error sending email";
-    console.error(`[email] Unexpected error sending raw email to ${to}:`, err);
+    logError("email.failed", err, {
+      templateType: "RAW",
+      recipientHash: hashEmail(to),
+    });
     return { success: false, error: message };
   }
 }

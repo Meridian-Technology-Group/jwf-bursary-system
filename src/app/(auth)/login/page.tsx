@@ -18,15 +18,29 @@ import { Suspense, useState, type FormEvent } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { createSupabaseBrowserClient } from "@/lib/auth/supabase-browser";
+import { checkLoginRateLimit } from "./actions";
 
 // ---------------------------------------------------------------------------
 // Inner form — isolated so useSearchParams() is inside a Suspense boundary.
 // ---------------------------------------------------------------------------
 
+/**
+ * Validate a `next` query parameter for use as an internal redirect target.
+ * Rejects absolute URLs and protocol-relative paths (`//evil.com`, `/\evil.com`).
+ * See docs/security-audit.md §2.9.
+ */
+function safeNext(raw: string | null): string {
+  if (!raw) return "/";
+  if (!raw.startsWith("/") || raw.startsWith("//") || raw.startsWith("/\\")) {
+    return "/";
+  }
+  return raw;
+}
+
 function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const nextPath = searchParams.get("next") ?? null;
+  const nextPath = safeNext(searchParams.get("next"));
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -37,6 +51,14 @@ function LoginForm() {
     e.preventDefault();
     setError(null);
     setLoading(true);
+
+    // Rate limit by IP before touching Supabase auth.
+    const rl = await checkLoginRateLimit();
+    if (!rl.ok) {
+      setError(rl.error);
+      setLoading(false);
+      return;
+    }
 
     const supabase = createSupabaseBrowserClient();
 

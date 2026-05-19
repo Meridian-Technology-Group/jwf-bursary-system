@@ -14,7 +14,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { getCurrentUser, Role } from "@/lib/auth/roles";
-import { prisma } from "@/lib/db/prisma";
+import { withUserContext, type RlsRole } from "@/lib/db/prisma";
 import { getExportRows } from "@/lib/db/queries/exports";
 import { buildXlsxBuffer, buildCsvString } from "@/lib/export/xlsx";
 
@@ -59,11 +59,20 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     );
   }
 
-  // ── Resolve round name for the filename ─────────────────────────────────────
-  const round = await prisma.round.findUnique({
-    where: { id: roundId },
-    select: { academicYear: true },
-  });
+  // ── Resolve round name + fetch export rows (single RLS context) ─────────────
+  const { round, rows } = await withUserContext(
+    user.id,
+    user.role as RlsRole,
+    async (tx) => {
+      const roundRow = await tx.round.findUnique({
+        where: { id: roundId },
+        select: { academicYear: true },
+      });
+      if (!roundRow) return { round: null, rows: [] };
+      const exportRows = await getExportRows(tx, roundId, school);
+      return { round: roundRow, rows: exportRows };
+    }
+  );
 
   if (!round) {
     return NextResponse.json({ error: "Round not found" }, { status: 404 });
@@ -71,9 +80,6 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
 
   const dateStr = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
   const safeName = round.academicYear.replace(/[^a-zA-Z0-9-_]/g, "-");
-
-  // ── Fetch data ───────────────────────────────────────────────────────────────
-  const rows = await getExportRows(roundId, school);
 
   // ── Build response ───────────────────────────────────────────────────────────
   if (format === "csv") {

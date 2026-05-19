@@ -12,8 +12,10 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth/roles";
-import { prisma } from "@/lib/db/prisma";
+import { withUserContext, type RlsRole } from "@/lib/db/prisma";
 import { uploadDocument } from "@/lib/storage/documents";
+import { sniffContentType } from "@/lib/storage/sniff";
+import { logError } from "@/lib/log";
 
 const ACCEPTED_MIME = ["application/pdf", "image/jpeg", "image/png"];
 const MAX_SIZE_BYTES = 20 * 1024 * 1024; // 20 MB
@@ -67,11 +69,33 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     );
   }
 
+  // ── Magic-byte sniff: reject files whose contents don't match the claimed
+  //    MIME type. Defends against client-spoofed Content-Type headers. ───────
+  const headerBuf = Buffer.from(await file.slice(0, 8).arrayBuffer());
+  const { contentType: verifiedContentType } = sniffContentType(headerBuf);
+  if (!verifiedContentType) {
+    return NextResponse.json(
+      { error: "File contents do not match an allowed type (PDF, JPG, or PNG)" },
+      { status: 422 }
+    );
+  }
+  if (verifiedContentType !== file.type) {
+    return NextResponse.json(
+      { error: "File contents do not match the declared type" },
+      { status: 422 }
+    );
+  }
+
   // ── Ownership check: application must belong to the current user ───────────
-  const application = await prisma.application.findUnique({
-    where: { id: applicationId },
-    select: { id: true, leadApplicantId: true, status: true },
-  });
+  const application = await withUserContext(
+    user.id,
+    user.role as RlsRole,
+    (tx) =>
+      tx.application.findUnique({
+        where: { id: applicationId },
+        select: { id: true, leadApplicantId: true, status: true },
+      })
+  );
 
   if (!application) {
     return NextResponse.json(
@@ -93,7 +117,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   const { storagePath, error: storageError } = await uploadDocument(
     file,
     applicationId,
-    slot
+    slot,
+    verifiedContentType
   );
 
   if (storageError || !storagePath) {
@@ -105,34 +130,39 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
   // ── Create Prisma Document record ──────────────────────────────────────────
   try {
-    const document = await prisma.document.create({
-      data: {
-        applicationId,
-        slot,
-        filename: file.name,
-        mimeType: file.type,
-        fileSize: file.size,
-        storagePath,
-        uploadedBy: user.id,
-      },
-      select: {
-        id: true,
-        applicationId: true,
-        slot: true,
-        filename: true,
-        mimeType: true,
-        fileSize: true,
-        storagePath: true,
-        isVerified: true,
-        uploadedBy: true,
-        uploadedAt: true,
-      },
-    });
+    const document = await withUserContext(
+      user.id,
+      user.role as RlsRole,
+      (tx) =>
+        tx.document.create({
+          data: {
+            applicationId,
+            slot,
+            filename: file.name,
+            mimeType: verifiedContentType,
+            fileSize: file.size,
+            storagePath,
+            uploadedBy: user.id,
+          },
+          select: {
+            id: true,
+            applicationId: true,
+            slot: true,
+            filename: true,
+            mimeType: true,
+            fileSize: true,
+            storagePath: true,
+            isVerified: true,
+            uploadedBy: true,
+            uploadedAt: true,
+          },
+        })
+    );
 
     return NextResponse.json(document, { status: 201 });
   } catch (err) {
     // Roll back storage upload on DB failure
-    console.error("[documents/POST] DB error after storage upload:", err);
+    logError("documents/POST", err);
     return NextResponse.json(
       { error: "Failed to record document. Please try again." },
       { status: 500 }

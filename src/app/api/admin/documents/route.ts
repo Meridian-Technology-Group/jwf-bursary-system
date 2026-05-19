@@ -14,10 +14,11 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { getCurrentUser } from "@/lib/auth/roles";
+import { getCurrentUser, requireApplicationAccess } from "@/lib/auth/roles";
 import { Role } from "@prisma/client";
-import { prisma } from "@/lib/db/prisma";
+import { withUserContext, type RlsRole } from "@/lib/db/prisma";
 import { uploadDocument } from "@/lib/storage/documents";
+import { sniffContentType } from "@/lib/storage/sniff";
 import { createAuditLog } from "@/lib/audit/log";
 
 const ACCEPTED_MIME = ["application/pdf", "image/jpeg", "image/png"];
@@ -78,11 +79,33 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     );
   }
 
+  // ── Magic-byte sniff: reject files whose contents don't match the claimed
+  //    MIME type. Defends against client-spoofed Content-Type headers. ───────
+  const headerBuf = Buffer.from(await file.slice(0, 8).arrayBuffer());
+  const { contentType: verifiedContentType } = sniffContentType(headerBuf);
+  if (!verifiedContentType) {
+    return NextResponse.json(
+      { error: "File contents do not match an allowed type (PDF, JPG, or PNG)" },
+      { status: 422 }
+    );
+  }
+  if (verifiedContentType !== file.type) {
+    return NextResponse.json(
+      { error: "File contents do not match the declared type" },
+      { status: 422 }
+    );
+  }
+
   // ── Verify application exists ─────────────────────────────────────────────
-  const application = await prisma.application.findUnique({
-    where: { id: applicationId },
-    select: { id: true, reference: true },
-  });
+  const application = await withUserContext(
+    user.id,
+    user.role as RlsRole,
+    (tx) =>
+      tx.application.findUnique({
+        where: { id: applicationId },
+        select: { id: true, reference: true },
+      })
+  );
 
   if (!application) {
     return NextResponse.json(
@@ -91,11 +114,15 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     );
   }
 
+  // ── Assessor-on-application ownership check (finding 2.12) ────────────────
+  await requireApplicationAccess(user, applicationId);
+
   // ── Upload to Supabase Storage ─────────────────────────────────────────────
   const { storagePath, error: storageError } = await uploadDocument(
     file,
     applicationId,
-    slot
+    slot,
+    verifiedContentType
   );
 
   if (storageError || !storagePath) {
@@ -105,48 +132,55 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     );
   }
 
-  // ── Create Prisma Document record ──────────────────────────────────────────
+  // ── Create Prisma Document record + audit log ─────────────────────────────
   try {
-    const document = await prisma.document.create({
-      data: {
-        applicationId,
-        slot,
-        filename: file.name,
-        mimeType: file.type,
-        fileSize: file.size,
-        storagePath,
-        uploadedBy: user.id,
-      },
-      select: {
-        id: true,
-        applicationId: true,
-        slot: true,
-        filename: true,
-        mimeType: true,
-        fileSize: true,
-        storagePath: true,
-        isVerified: true,
-        uploadedBy: true,
-        uploadedAt: true,
-      },
-    });
+    const document = await withUserContext(
+      user.id,
+      user.role as RlsRole,
+      async (tx) => {
+        const doc = await tx.document.create({
+          data: {
+            applicationId,
+            slot,
+            filename: file.name,
+            mimeType: verifiedContentType,
+            fileSize: file.size,
+            storagePath,
+            uploadedBy: user.id,
+          },
+          select: {
+            id: true,
+            applicationId: true,
+            slot: true,
+            filename: true,
+            mimeType: true,
+            fileSize: true,
+            storagePath: true,
+            isVerified: true,
+            uploadedBy: true,
+            uploadedAt: true,
+          },
+        });
 
-    // Audit log the assessor upload
-    await createAuditLog({
-      userId: user.id,
-      action: "DOCUMENT_UPLOADED_BY_ASSESSOR",
-      entityType: "Document",
-      entityId: document.id,
-      context: `Assessor uploaded document for slot: ${slot}`,
-      metadata: {
-        applicationId,
-        reference: application.reference,
-        slot,
-        filename: file.name,
-        fileSize: file.size,
-        mimeType: file.type,
-      },
-    });
+        await createAuditLog(tx, {
+          userId: user.id,
+          action: "DOCUMENT_UPLOADED_BY_ASSESSOR",
+          entityType: "Document",
+          entityId: doc.id,
+          context: `Assessor uploaded document for slot: ${slot}`,
+          metadata: {
+            applicationId,
+            reference: application.reference,
+            slot,
+            filename: file.name,
+            fileSize: file.size,
+            mimeType: verifiedContentType,
+          },
+        });
+
+        return doc;
+      }
+    );
 
     return NextResponse.json(document, { status: 201 });
   } catch (err) {

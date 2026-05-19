@@ -4,13 +4,30 @@
  * All functions return plain objects safe for Server → Client prop passing.
  */
 
-import { prisma } from "@/lib/db/prisma";
+import { randomBytes } from "node:crypto";
+import type { Tx } from "@/lib/db/prisma";
 import {
   InvitationStatus,
   BursaryAccountStatus,
   type Invitation,
   type School,
 } from "@prisma/client";
+
+// ---------------------------------------------------------------------------
+// Token helper
+// ---------------------------------------------------------------------------
+
+/**
+ * Generates a URL-safe single-use applicant invitation token.
+ * 32 random bytes encoded as base64url ≈ 43 chars of entropy.
+ *
+ * Mirrors `generateInvitationToken` in `staff-invitations.ts` so both flows
+ * have the same token shape. Kept local for now to avoid a cross-module
+ * refactor; a future PR may consolidate both into a shared helper.
+ */
+export function generateInvitationToken(): string {
+  return randomBytes(32).toString("base64url");
+}
 
 // ---------------------------------------------------------------------------
 // Types
@@ -49,11 +66,14 @@ export interface ActiveBursaryHolder {
  * Returns invitations ordered by creation date descending.
  * Optionally filtered by roundId and/or status.
  */
-export async function listInvitations(filters?: {
-  roundId?: string;
-  status?: InvitationStatus;
-}): Promise<InvitationWithCreator[]> {
-  return prisma.invitation.findMany({
+export async function listInvitations(
+  tx: Tx,
+  filters?: {
+    roundId?: string;
+    status?: InvitationStatus;
+  }
+): Promise<InvitationWithCreator[]> {
+  return tx.invitation.findMany({
     where: {
       ...(filters?.roundId ? { roundId: filters.roundId } : {}),
       ...(filters?.status ? { status: filters.status } : {}),
@@ -83,28 +103,86 @@ export async function listInvitations(filters?: {
 
 /**
  * Creates an invitation record with status PENDING.
+ *
+ * `token` is auto-generated via `generateInvitationToken()` when the caller
+ * does not supply one. `firstName`, `lastName`, and `authUserId` are
+ * optional: the legacy admin invite path (which only knows the email and a
+ * single `applicantName` string) can omit them, while the hardened path
+ * planned in PR2 will pass all three so the acceptance flow can skip the
+ * `auth.users` paged scan.
  */
-export async function createInvitation(data: {
-  email: string;
-  applicantName?: string;
-  childName?: string;
-  school?: School;
-  roundId?: string;
-  bursaryAccountId?: string;
-  createdBy: string;
-  expiresAt: Date;
-}): Promise<Invitation> {
-  return prisma.invitation.create({
+export async function createInvitation(
+  tx: Tx,
+  data: {
+    email: string;
+    applicantName?: string;
+    firstName?: string;
+    lastName?: string;
+    childName?: string;
+    school?: School;
+    roundId?: string;
+    bursaryAccountId?: string;
+    authUserId?: string;
+    token?: string;
+    createdBy: string;
+    expiresAt: Date;
+  }
+): Promise<Invitation> {
+  return tx.invitation.create({
     data: {
       email: data.email,
       applicantName: data.applicantName ?? null,
+      firstName: data.firstName ?? null,
+      lastName: data.lastName ?? null,
       childName: data.childName ?? null,
       school: data.school ?? null,
       roundId: data.roundId ?? null,
       bursaryAccountId: data.bursaryAccountId ?? null,
+      authUserId: data.authUserId ?? null,
+      token: data.token ?? generateInvitationToken(),
       createdBy: data.createdBy,
       expiresAt: data.expiresAt,
       status: InvitationStatus.PENDING,
+    },
+  });
+}
+
+// ---------------------------------------------------------------------------
+// getInvitationByToken
+// ---------------------------------------------------------------------------
+
+/**
+ * Looks up an Invitation by its single-use token. Returns null if not
+ * found. Status / expiry validation is the caller's responsibility, mirroring
+ * `getStaffInvitationByToken`.
+ */
+export async function getInvitationByToken(
+  tx: Tx,
+  token: string
+): Promise<Invitation | null> {
+  return tx.invitation.findUnique({ where: { token } });
+}
+
+// ---------------------------------------------------------------------------
+// markInvitationAccepted
+// ---------------------------------------------------------------------------
+
+/**
+ * Marks an Invitation as ACCEPTED and stamps `acceptedAt`. Optionally writes
+ * `authUserId` when the caller has just provisioned (or confirmed) the
+ * Supabase auth user. Mirrors `markStaffInvitationAccepted`.
+ */
+export async function markInvitationAccepted(
+  tx: Tx,
+  id: string,
+  authUserId?: string
+): Promise<Invitation> {
+  return tx.invitation.update({
+    where: { id },
+    data: {
+      status: InvitationStatus.ACCEPTED,
+      acceptedAt: new Date(),
+      ...(authUserId ? { authUserId } : {}),
     },
   });
 }
@@ -118,11 +196,12 @@ export async function createInvitation(data: {
  * When status is ACCEPTED, also records acceptedAt timestamp and authUserId.
  */
 export async function updateInvitationStatus(
+  tx: Tx,
   id: string,
   status: InvitationStatus,
   authUserId?: string
 ): Promise<Invitation> {
-  return prisma.invitation.update({
+  return tx.invitation.update({
     where: { id },
     data: {
       status,
@@ -149,9 +228,10 @@ export async function updateInvitationStatus(
  * no-invitation fallback state.
  */
 export async function getLatestAcceptedInvitationForUser(
+  tx: Tx,
   userId: string
 ): Promise<Invitation | null> {
-  return prisma.invitation.findFirst({
+  return tx.invitation.findFirst({
     where: {
       authUserId: userId,
       status: InvitationStatus.ACCEPTED,
@@ -169,10 +249,11 @@ export async function getLatestAcceptedInvitationForUser(
  * the specified round. Used to populate batch re-assessment invitations.
  */
 export async function getActiveBursaryHolders(
+  tx: Tx,
   roundId: string
 ): Promise<ActiveBursaryHolder[]> {
   // Find bursary account IDs that already have an invitation for this round
-  const existingInvitations = await prisma.invitation.findMany({
+  const existingInvitations = await tx.invitation.findMany({
     where: { roundId },
     select: { bursaryAccountId: true },
   });
@@ -182,7 +263,7 @@ export async function getActiveBursaryHolders(
       .filter((id): id is string => id !== null)
   );
 
-  const accounts = await prisma.bursaryAccount.findMany({
+  const accounts = await tx.bursaryAccount.findMany({
     where: {
       status: BursaryAccountStatus.ACTIVE,
       id: alreadyInvitedIds.size > 0

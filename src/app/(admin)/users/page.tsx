@@ -8,6 +8,7 @@
 export const dynamic = "force-dynamic";
 
 import { requireRole, Role } from "@/lib/auth/roles";
+import { withUserContext, type RlsRole } from "@/lib/db/prisma";
 import { listStaffUsers } from "@/lib/db/queries/profiles";
 import { StaffInviteForm } from "@/components/admin/staff-invite-form";
 import { StaffTable } from "@/components/admin/staff-table";
@@ -18,7 +19,11 @@ export const metadata = {
 
 export default async function UsersPage() {
   const currentUser = await requireRole([Role.ADMIN]);
-  const staffUsers = await listStaffUsers();
+  const staffUsers = await withUserContext(
+    currentUser.id,
+    currentUser.role as RlsRole,
+    (tx) => listStaffUsers(tx)
+  );
 
   return (
     <div className="space-y-8">

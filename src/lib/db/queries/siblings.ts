@@ -5,7 +5,7 @@
  * for bursary accounts to link, reordering priority, and removing links.
  */
 
-import { prisma } from "@/lib/db/prisma";
+import type { Tx } from "@/lib/db/prisma";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -45,17 +45,18 @@ export interface BursaryAccountSearchResult {
  * Returns an empty array when the account has no sibling links.
  */
 export async function getSiblingLinks(
+  tx: Tx,
   bursaryAccountId: string
 ): Promise<SiblingLinkRow[]> {
   // First, find the family group this account belongs to (if any)
-  const ownLink = await prisma.siblingLink.findFirst({
+  const ownLink = await tx.siblingLink.findFirst({
     where: { bursaryAccountId },
     select: { familyGroupId: true },
   });
 
   if (!ownLink) return [];
 
-  const links = await prisma.siblingLink.findMany({
+  const links = await tx.siblingLink.findMany({
     where: { familyGroupId: ownLink.familyGroupId },
     orderBy: { priorityOrder: "asc" },
     select: {
@@ -121,12 +122,13 @@ export async function getSiblingLinks(
  * Used by the sibling linker search input.
  */
 export async function searchBursaryAccounts(
+  tx: Tx,
   query: string
 ): Promise<BursaryAccountSearchResult[]> {
   const trimmed = query.trim();
   if (trimmed.length < 2) return [];
 
-  const accounts = await prisma.bursaryAccount.findMany({
+  const accounts = await tx.bursaryAccount.findMany({
     where: {
       OR: [
         { childName: { contains: trimmed, mode: "insensitive" } },
@@ -174,8 +176,11 @@ export async function searchBursaryAccounts(
  *
  * Priority order is assigned as max(existing) + 1 for newly added accounts.
  * Returns the family group ID on success.
+ *
+ * Caller is responsible for opening the RLS-aware transaction.
  */
 export async function createSiblingLink(
+  tx: Tx,
   bursaryAccountId: string,
   targetBursaryAccountId: string
 ): Promise<{ familyGroupId: string }> {
@@ -183,96 +188,94 @@ export async function createSiblingLink(
     throw new Error("Cannot link a bursary account to itself");
   }
 
-  return prisma.$transaction(async (tx) => {
-    const [sourceLink, targetLink] = await Promise.all([
-      tx.siblingLink.findFirst({
-        where: { bursaryAccountId },
-        select: { familyGroupId: true },
-      }),
-      tx.siblingLink.findFirst({
-        where: { bursaryAccountId: targetBursaryAccountId },
-        select: { familyGroupId: true },
-      }),
-    ]);
+  const [sourceLink, targetLink] = await Promise.all([
+    tx.siblingLink.findFirst({
+      where: { bursaryAccountId },
+      select: { familyGroupId: true },
+    }),
+    tx.siblingLink.findFirst({
+      where: { bursaryAccountId: targetBursaryAccountId },
+      select: { familyGroupId: true },
+    }),
+  ]);
 
-    // Determine the family group ID to use
-    let familyGroupId: string;
+  // Determine the family group ID to use
+  let familyGroupId: string;
 
-    if (sourceLink && targetLink) {
-      if (sourceLink.familyGroupId === targetLink.familyGroupId) {
-        // Already in the same group — nothing to do
-        return { familyGroupId: sourceLink.familyGroupId };
-      }
-      // Merge: migrate all members of target's group into source's group
-      familyGroupId = sourceLink.familyGroupId;
-      const targetGroupMembers = await tx.siblingLink.findMany({
-        where: { familyGroupId: targetLink.familyGroupId },
-        orderBy: { priorityOrder: "asc" },
-        select: { id: true, bursaryAccountId: true },
-      });
-
-      // Get current max priority in source group
-      const maxPriority = await tx.siblingLink
-        .findFirst({
-          where: { familyGroupId },
-          orderBy: { priorityOrder: "desc" },
-          select: { priorityOrder: true },
-        })
-        .then((r) => r?.priorityOrder ?? 0);
-
-      // Re-assign merged members to source group with new priority orders
-      for (let i = 0; i < targetGroupMembers.length; i++) {
-        await tx.siblingLink.update({
-          where: { id: targetGroupMembers[i].id },
-          data: {
-            familyGroupId,
-            priorityOrder: maxPriority + i + 1,
-          },
-        });
-      }
-    } else if (sourceLink) {
-      familyGroupId = sourceLink.familyGroupId;
-    } else if (targetLink) {
-      familyGroupId = targetLink.familyGroupId;
-    } else {
-      // Generate a new family group UUID via Postgres
-      const result = await tx.$queryRaw<[{ uuid: string }]>`SELECT gen_random_uuid()::text AS uuid`;
-      familyGroupId = result[0].uuid;
-
-      // Add the source account as priority 1
-      await tx.siblingLink.create({
-        data: { familyGroupId, bursaryAccountId, priorityOrder: 1 },
-      });
+  if (sourceLink && targetLink) {
+    if (sourceLink.familyGroupId === targetLink.familyGroupId) {
+      // Already in the same group — nothing to do
+      return { familyGroupId: sourceLink.familyGroupId };
     }
+    // Merge: migrate all members of target's group into source's group
+    familyGroupId = sourceLink.familyGroupId;
+    const targetGroupMembers = await tx.siblingLink.findMany({
+      where: { familyGroupId: targetLink.familyGroupId },
+      orderBy: { priorityOrder: "asc" },
+      select: { id: true, bursaryAccountId: true },
+    });
 
-    // Add the account that isn't yet in the group
-    const needsAdding: string[] = [];
-    if (!sourceLink) needsAdding.push(bursaryAccountId);
-    if (!targetLink) needsAdding.push(targetBursaryAccountId);
-
-    for (const accountId of needsAdding) {
-      // Check it's not already in the group (handles the merge path)
-      const existing = await tx.siblingLink.findUnique({
-        where: {
-          familyGroupId_bursaryAccountId: { familyGroupId, bursaryAccountId: accountId },
-        },
-      });
-      if (existing) continue;
-
-      const maxPriorityRow = await tx.siblingLink.findFirst({
+    // Get current max priority in source group
+    const maxPriority = await tx.siblingLink
+      .findFirst({
         where: { familyGroupId },
         orderBy: { priorityOrder: "desc" },
         select: { priorityOrder: true },
-      });
-      const nextOrder = (maxPriorityRow?.priorityOrder ?? 0) + 1;
+      })
+      .then((r) => r?.priorityOrder ?? 0);
 
-      await tx.siblingLink.create({
-        data: { familyGroupId, bursaryAccountId: accountId, priorityOrder: nextOrder },
+    // Re-assign merged members to source group with new priority orders
+    for (let i = 0; i < targetGroupMembers.length; i++) {
+      await tx.siblingLink.update({
+        where: { id: targetGroupMembers[i].id },
+        data: {
+          familyGroupId,
+          priorityOrder: maxPriority + i + 1,
+        },
       });
     }
+  } else if (sourceLink) {
+    familyGroupId = sourceLink.familyGroupId;
+  } else if (targetLink) {
+    familyGroupId = targetLink.familyGroupId;
+  } else {
+    // Generate a new family group UUID via Postgres
+    const result = await tx.$queryRaw<[{ uuid: string }]>`SELECT gen_random_uuid()::text AS uuid`;
+    familyGroupId = result[0].uuid;
 
-    return { familyGroupId };
-  });
+    // Add the source account as priority 1
+    await tx.siblingLink.create({
+      data: { familyGroupId, bursaryAccountId, priorityOrder: 1 },
+    });
+  }
+
+  // Add the account that isn't yet in the group
+  const needsAdding: string[] = [];
+  if (!sourceLink) needsAdding.push(bursaryAccountId);
+  if (!targetLink) needsAdding.push(targetBursaryAccountId);
+
+  for (const accountId of needsAdding) {
+    // Check it's not already in the group (handles the merge path)
+    const existing = await tx.siblingLink.findUnique({
+      where: {
+        familyGroupId_bursaryAccountId: { familyGroupId, bursaryAccountId: accountId },
+      },
+    });
+    if (existing) continue;
+
+    const maxPriorityRow = await tx.siblingLink.findFirst({
+      where: { familyGroupId },
+      orderBy: { priorityOrder: "desc" },
+      select: { priorityOrder: true },
+    });
+    const nextOrder = (maxPriorityRow?.priorityOrder ?? 0) + 1;
+
+    await tx.siblingLink.create({
+      data: { familyGroupId, bursaryAccountId: accountId, priorityOrder: nextOrder },
+    });
+  }
+
+  return { familyGroupId };
 }
 
 // ─── removeSiblingLink ────────────────────────────────────────────────────────
@@ -284,38 +287,39 @@ export async function createSiblingLink(
  * so priority is contiguous (1, 2, 3, …). If only one member remains,
  * their link is also removed (a singleton group has no meaning).
  */
-export async function removeSiblingLink(siblingLinkId: string): Promise<void> {
-  await prisma.$transaction(async (tx) => {
-    const link = await tx.siblingLink.findUnique({
-      where: { id: siblingLinkId },
-      select: { familyGroupId: true },
-    });
-
-    if (!link) return;
-
-    await tx.siblingLink.delete({ where: { id: siblingLinkId } });
-
-    // Re-order remaining members
-    const remaining = await tx.siblingLink.findMany({
-      where: { familyGroupId: link.familyGroupId },
-      orderBy: { priorityOrder: "asc" },
-      select: { id: true },
-    });
-
-    // If only one member remains, remove it too (singleton groups are meaningless)
-    if (remaining.length === 1) {
-      await tx.siblingLink.delete({ where: { id: remaining[0].id } });
-      return;
-    }
-
-    // Re-number: 1, 2, 3 …
-    for (let i = 0; i < remaining.length; i++) {
-      await tx.siblingLink.update({
-        where: { id: remaining[i].id },
-        data: { priorityOrder: i + 1 },
-      });
-    }
+export async function removeSiblingLink(
+  tx: Tx,
+  siblingLinkId: string
+): Promise<void> {
+  const link = await tx.siblingLink.findUnique({
+    where: { id: siblingLinkId },
+    select: { familyGroupId: true },
   });
+
+  if (!link) return;
+
+  await tx.siblingLink.delete({ where: { id: siblingLinkId } });
+
+  // Re-order remaining members
+  const remaining = await tx.siblingLink.findMany({
+    where: { familyGroupId: link.familyGroupId },
+    orderBy: { priorityOrder: "asc" },
+    select: { id: true },
+  });
+
+  // If only one member remains, remove it too (singleton groups are meaningless)
+  if (remaining.length === 1) {
+    await tx.siblingLink.delete({ where: { id: remaining[0].id } });
+    return;
+  }
+
+  // Re-number: 1, 2, 3 …
+  for (let i = 0; i < remaining.length; i++) {
+    await tx.siblingLink.update({
+      where: { id: remaining[i].id },
+      data: { priorityOrder: i + 1 },
+    });
+  }
 }
 
 // ─── reorderSiblingPriority ───────────────────────────────────────────────────
@@ -323,23 +327,23 @@ export async function removeSiblingLink(siblingLinkId: string): Promise<void> {
 /**
  * Reorders siblings within a family group.
  *
- * @param familyGroupId          The family group to reorder
- * @param orderedBursaryAccountIds  Full ordered array of bursary account IDs
+ * @param tx                       RLS-aware transaction
+ * @param familyGroupId            The family group to reorder
+ * @param orderedBursaryAccountIds Full ordered array of bursary account IDs
  *                                 (all members must be included)
  */
 export async function reorderSiblingPriority(
+  tx: Tx,
   familyGroupId: string,
   orderedBursaryAccountIds: string[]
 ): Promise<void> {
-  await prisma.$transaction(async (tx) => {
-    for (let i = 0; i < orderedBursaryAccountIds.length; i++) {
-      await tx.siblingLink.updateMany({
-        where: {
-          familyGroupId,
-          bursaryAccountId: orderedBursaryAccountIds[i],
-        },
-        data: { priorityOrder: i + 1 },
-      });
-    }
-  });
+  for (let i = 0; i < orderedBursaryAccountIds.length; i++) {
+    await tx.siblingLink.updateMany({
+      where: {
+        familyGroupId,
+        bursaryAccountId: orderedBursaryAccountIds[i],
+      },
+      data: { priorityOrder: i + 1 },
+    });
+  }
 }

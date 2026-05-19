@@ -1,0 +1,16 @@
+{
+  "mcpServers": {
+    "supabase-nonprod": {
+      "type": "http",
+      "url": "https://mcp.supabase.com/mcp?project_ref=lmkmgoqezgeeyjodbvzn"
+    },
+    "supabase-prod": {
+      "type": "http",
+      "url": "https://mcp.supabase.com/mcp?project_ref=tdnojrqkbccikfipthmk&read_only=true"
+    },
+    "vercel": {
+      "type": "http",
+      "url": "https://mcp.vercel.com/meridian-tech-group/jwf-bursary-system"
+    }
+  }
+}

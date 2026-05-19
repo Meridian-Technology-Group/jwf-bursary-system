@@ -22,11 +22,12 @@
 
 import { revalidatePath } from "next/cache";
 import { requireRole, Role } from "@/lib/auth/roles";
-import { prisma } from "@/lib/db/prisma";
+import { withUserContext, withAdminContext, type RlsRole, type Tx } from "@/lib/db/prisma";
 import { createAuditLog } from "@/lib/audit/log";
 import { sendEmail } from "@/lib/email/send";
 import { humaniseSlot } from "@/lib/documents/slots";
 import { deleteDocument } from "@/lib/storage/documents";
+import { createSupabaseAdminClient } from "@/lib/auth/supabase-admin";
 import type { ApplicationStatus } from "@prisma/client";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -57,8 +58,8 @@ function isValidTransition(
 
 // ─── Helper: fetch application with lead applicant email ──────────────────────
 
-async function fetchApplicationForStatus(applicationId: string) {
-  return prisma.application.findUnique({
+async function fetchApplicationForStatus(tx: Tx, applicationId: string) {
+  return tx.application.findUnique({
     where: { id: applicationId },
     select: {
       id: true,
@@ -99,37 +100,47 @@ export async function updateApplicationStatus(
   try {
     const user = await requireRole([Role.ADMIN, Role.ASSESSOR]);
 
-    const application = await fetchApplicationForStatus(applicationId);
-    if (!application) {
-      return { success: false, error: "Application not found." };
-    }
+    const result = await withUserContext(
+      user.id,
+      user.role as RlsRole,
+      async (tx) => {
+        const application = await fetchApplicationForStatus(tx, applicationId);
+        if (!application) {
+          return { success: false as const, error: "Application not found." };
+        }
 
-    const oldStatus = application.status;
+        const oldStatus = application.status;
 
-    if (!isValidTransition(oldStatus, newStatus)) {
-      return {
-        success: false,
-        error: `Cannot transition from ${oldStatus} to ${newStatus}.`,
-      };
-    }
+        if (!isValidTransition(oldStatus, newStatus)) {
+          return {
+            success: false as const,
+            error: `Cannot transition from ${oldStatus} to ${newStatus}.`,
+          };
+        }
 
-    await prisma.application.update({
-      where: { id: applicationId },
-      data: { status: newStatus },
-    });
+        await tx.application.update({
+          where: { id: applicationId },
+          data: { status: newStatus },
+        });
 
-    await createAuditLog({
-      userId: user.id,
-      action: "APPLICATION_STATUS_CHANGED",
-      entityType: "Application",
-      entityId: applicationId,
-      context: context ?? `Status changed from ${oldStatus} to ${newStatus}`,
-      metadata: {
-        fromStatus: oldStatus,
-        toStatus: newStatus,
-        reference: application.reference,
-      },
-    });
+        await createAuditLog(tx, {
+          userId: user.id,
+          action: "APPLICATION_STATUS_CHANGED",
+          entityType: "Application",
+          entityId: applicationId,
+          context: context ?? `Status changed from ${oldStatus} to ${newStatus}`,
+          metadata: {
+            fromStatus: oldStatus,
+            toStatus: newStatus,
+            reference: application.reference,
+          },
+        });
+
+        return { success: true as const };
+      }
+    );
+
+    if (!result.success) return result;
 
     revalidateApplicationPaths(applicationId);
 
@@ -158,23 +169,34 @@ export async function pauseApplication(
   try {
     const user = await requireRole([Role.ADMIN, Role.ASSESSOR]);
 
-    const application = await fetchApplicationForStatus(applicationId);
-    if (!application) {
-      return { success: false, error: "Application not found." };
-    }
+    // First validate + persist + fetch application data (under RLS)
+    const preEmail = await withUserContext(
+      user.id,
+      user.role as RlsRole,
+      async (tx) => {
+        const application = await fetchApplicationForStatus(tx, applicationId);
+        if (!application) {
+          return { success: false as const, error: "Application not found." };
+        }
 
-    if (!isValidTransition(application.status, "PAUSED")) {
-      return {
-        success: false,
-        error: `Cannot pause application from status ${application.status}.`,
-      };
-    }
+        if (!isValidTransition(application.status, "PAUSED")) {
+          return {
+            success: false as const,
+            error: `Cannot pause application from status ${application.status}.`,
+          };
+        }
 
-    // Persist the status change
-    await prisma.application.update({
-      where: { id: applicationId },
-      data: { status: "PAUSED" },
-    });
+        await tx.application.update({
+          where: { id: applicationId },
+          data: { status: "PAUSED" },
+        });
+
+        return { success: true as const, application };
+      }
+    );
+
+    if (!preEmail.success) return preEmail;
+    const { application } = preEmail;
 
     // Build a human-readable list of missing slots
     const slotList = missingDocumentSlots
@@ -204,22 +226,24 @@ export async function pauseApplication(
       );
     }
 
-    await createAuditLog({
-      userId: user.id,
-      action: "APPLICATION_PAUSED",
-      entityType: "Application",
-      entityId: applicationId,
-      context: "Application paused — missing documents requested",
-      metadata: {
-        fromStatus: application.status,
-        toStatus: "PAUSED",
-        reference: application.reference,
-        missingDocumentSlots,
-        customMessage: customMessage ?? null,
-        emailSent: emailResult.success,
-        emailMessageId: emailResult.messageId ?? null,
-      },
-    });
+    await withUserContext(user.id, user.role as RlsRole, (tx) =>
+      createAuditLog(tx, {
+        userId: user.id,
+        action: "APPLICATION_PAUSED",
+        entityType: "Application",
+        entityId: applicationId,
+        context: "Application paused — missing documents requested",
+        metadata: {
+          fromStatus: application.status,
+          toStatus: "PAUSED",
+          reference: application.reference,
+          missingDocumentSlots,
+          customMessage: customMessage ?? null,
+          emailSent: emailResult.success,
+          emailMessageId: emailResult.messageId ?? null,
+        },
+      })
+    );
 
     revalidateApplicationPaths(applicationId);
 
@@ -242,35 +266,45 @@ export async function resumeApplication(
   try {
     const user = await requireRole([Role.ADMIN, Role.ASSESSOR]);
 
-    const application = await fetchApplicationForStatus(applicationId);
-    if (!application) {
-      return { success: false, error: "Application not found." };
-    }
+    const result = await withUserContext(
+      user.id,
+      user.role as RlsRole,
+      async (tx) => {
+        const application = await fetchApplicationForStatus(tx, applicationId);
+        if (!application) {
+          return { success: false as const, error: "Application not found." };
+        }
 
-    if (!isValidTransition(application.status, "NOT_STARTED")) {
-      return {
-        success: false,
-        error: `Cannot resume application from status ${application.status}.`,
-      };
-    }
+        if (!isValidTransition(application.status, "NOT_STARTED")) {
+          return {
+            success: false as const,
+            error: `Cannot resume application from status ${application.status}.`,
+          };
+        }
 
-    await prisma.application.update({
-      where: { id: applicationId },
-      data: { status: "NOT_STARTED" },
-    });
+        await tx.application.update({
+          where: { id: applicationId },
+          data: { status: "NOT_STARTED" },
+        });
 
-    await createAuditLog({
-      userId: user.id,
-      action: "APPLICATION_RESUMED",
-      entityType: "Application",
-      entityId: applicationId,
-      context: "Application resumed from PAUSED to NOT_STARTED",
-      metadata: {
-        fromStatus: application.status,
-        toStatus: "NOT_STARTED",
-        reference: application.reference,
-      },
-    });
+        await createAuditLog(tx, {
+          userId: user.id,
+          action: "APPLICATION_RESUMED",
+          entityType: "Application",
+          entityId: applicationId,
+          context: "Application resumed from PAUSED to NOT_STARTED",
+          metadata: {
+            fromStatus: application.status,
+            toStatus: "NOT_STARTED",
+            reference: application.reference,
+          },
+        });
+
+        return { success: true as const };
+      }
+    );
+
+    if (!result.success) return result;
 
     revalidateApplicationPaths(applicationId);
 
@@ -294,22 +328,33 @@ export async function setOutcome(
   try {
     const user = await requireRole([Role.ADMIN, Role.ASSESSOR]);
 
-    const application = await fetchApplicationForStatus(applicationId);
-    if (!application) {
-      return { success: false, error: "Application not found." };
-    }
+    const pre = await withUserContext(
+      user.id,
+      user.role as RlsRole,
+      async (tx) => {
+        const application = await fetchApplicationForStatus(tx, applicationId);
+        if (!application) {
+          return { success: false as const, error: "Application not found." };
+        }
 
-    if (!isValidTransition(application.status, outcome)) {
-      return {
-        success: false,
-        error: `Cannot set outcome ${outcome} from status ${application.status}.`,
-      };
-    }
+        if (!isValidTransition(application.status, outcome)) {
+          return {
+            success: false as const,
+            error: `Cannot set outcome ${outcome} from status ${application.status}.`,
+          };
+        }
 
-    await prisma.application.update({
-      where: { id: applicationId },
-      data: { status: outcome },
-    });
+        await tx.application.update({
+          where: { id: applicationId },
+          data: { status: outcome },
+        });
+
+        return { success: true as const, application };
+      }
+    );
+
+    if (!pre.success) return pre;
+    const { application } = pre;
 
     // Send appropriate outcome email
     const templateType =
@@ -336,20 +381,22 @@ export async function setOutcome(
       );
     }
 
-    await createAuditLog({
-      userId: user.id,
-      action: "APPLICATION_OUTCOME_SET",
-      entityType: "Application",
-      entityId: applicationId,
-      context: `Outcome set to ${outcome}`,
-      metadata: {
-        fromStatus: application.status,
-        toStatus: outcome,
-        reference: application.reference,
-        emailSent: emailResult.success,
-        emailMessageId: emailResult.messageId ?? null,
-      },
-    });
+    await withUserContext(user.id, user.role as RlsRole, (tx) =>
+      createAuditLog(tx, {
+        userId: user.id,
+        action: "APPLICATION_OUTCOME_SET",
+        entityType: "Application",
+        entityId: applicationId,
+        context: `Outcome set to ${outcome}`,
+        metadata: {
+          fromStatus: application.status,
+          toStatus: outcome,
+          reference: application.reference,
+          emailSent: emailResult.success,
+          emailMessageId: emailResult.messageId ?? null,
+        },
+      })
+    );
 
     revalidateApplicationPaths(applicationId);
 
@@ -373,20 +420,22 @@ export async function assignApplicationAction(
   try {
     const user = await requireRole([Role.ADMIN]);
 
-    await prisma.application.update({
-      where: { id: applicationId },
-      data: { assignedToId: assessorId },
-    });
+    await withUserContext(user.id, user.role as RlsRole, async (tx) => {
+      await tx.application.update({
+        where: { id: applicationId },
+        data: { assignedToId: assessorId },
+      });
 
-    await createAuditLog({
-      userId: user.id,
-      action: "APPLICATION_ASSESSOR_ASSIGNED",
-      entityType: "Application",
-      entityId: applicationId,
-      context: assessorId
-        ? `Application assigned to assessor ${assessorId}`
-        : "Application unassigned from assessor",
-      metadata: { assessorId },
+      await createAuditLog(tx, {
+        userId: user.id,
+        action: "APPLICATION_ASSESSOR_ASSIGNED",
+        entityType: "Application",
+        entityId: applicationId,
+        context: assessorId
+          ? `Application assigned to assessor ${assessorId}`
+          : "Application unassigned from assessor",
+        metadata: { assessorId },
+      });
     });
 
     revalidatePath(`/applications/${applicationId}`);
@@ -425,32 +474,35 @@ export async function gdprDeleteApplicantAction(
   try {
     const user = await requireRole([Role.ADMIN, Role.ASSESSOR]);
 
-    // 1. Fetch the application with all relevant relations
-    const application = await prisma.application.findUnique({
-      where: { id: applicationId },
-      select: {
-        id: true,
-        reference: true,
-        status: true,
-        submittedAt: true,
-        leadApplicantId: true,
-        documents: { select: { id: true, storagePath: true } },
-        assessment: {
-          select: {
-            id: true,
-            earners: { select: { id: true } },
-            property: { select: { id: true } },
-            checklists: { select: { id: true } },
-            recommendation: {
-              select: {
-                id: true,
-                reasonCodes: { select: { reasonCodeId: true } },
+    // 1. Fetch the application with all relevant relations (admin context —
+    //    GDPR cascade must bypass RLS for full visibility and mutation).
+    const application = await withAdminContext((tx) =>
+      tx.application.findUnique({
+        where: { id: applicationId },
+        select: {
+          id: true,
+          reference: true,
+          status: true,
+          submittedAt: true,
+          leadApplicantId: true,
+          documents: { select: { id: true, storagePath: true } },
+          assessment: {
+            select: {
+              id: true,
+              earners: { select: { id: true } },
+              property: { select: { id: true } },
+              checklists: { select: { id: true } },
+              recommendation: {
+                select: {
+                  id: true,
+                  reasonCodes: { select: { reasonCodeId: true } },
+                },
               },
             },
           },
         },
-      },
-    });
+      })
+    );
 
     if (!application) {
       return { success: false, error: "Application not found." };
@@ -483,8 +535,11 @@ export async function gdprDeleteApplicantAction(
       }
     }
 
-    // 4. Run the DB mutations in a single transaction
-    await prisma.$transaction(async (tx) => {
+    // 4. Run the DB mutations in a single admin-context transaction. The
+    //    cascade must bypass RLS because policies normally forbid these
+    //    updates (e.g. AuditLog is INSERT-only for everyone except
+    //    service_role; Profile email changes; etc.).
+    await withAdminContext(async (tx) => {
       // a. Delete assessment children
       if (application.assessment) {
         const assessmentId = application.assessment.id;
@@ -536,7 +591,9 @@ export async function gdprDeleteApplicantAction(
         await tx.invitation.deleteMany({ where: { email: profile.email } });
       }
 
-      // h. Anonymise AuditLog rows (set userId → null)
+      // h. Anonymise AuditLog rows (set userId → null). Runs under
+      //    withAdminContext (service_role) so the INSERT-only RLS policy
+      //    on audit_logs does not block this Article 17 erasure step.
       await tx.auditLog.updateMany({
         where: { userId: leadApplicantId },
         data: { userId: null },
@@ -556,20 +613,49 @@ export async function gdprDeleteApplicantAction(
       });
     });
 
+    // 4b. Delete the Supabase Auth user (GDPR Art. 17). The DB Profile is
+    //     already anonymised inside the transaction; this final step ensures
+    //     the auth-provider record (email, password hash, identity links) is
+    //     also removed. Non-fatal: log & continue so DB state is not
+    //     inconsistent with the audit log if Supabase returns an error.
+    let authDeleteError: string | null = null;
+    try {
+      const admin = createSupabaseAdminClient();
+      const { error } = await admin.auth.admin.deleteUser(leadApplicantId);
+      if (error) {
+        authDeleteError = error.message;
+        console.error(
+          "[gdprDeleteApplicantAction] Supabase auth.admin.deleteUser failed:",
+          error
+        );
+      }
+    } catch (err) {
+      authDeleteError = err instanceof Error ? err.message : String(err);
+      console.error(
+        "[gdprDeleteApplicantAction] Supabase auth.admin.deleteUser threw:",
+        err
+      );
+    }
+
     // 5. Write the GDPR audit log entry (using a system/null user as the
-    //    lead applicant's userId was just nulled — we record the assessor)
-    await createAuditLog({
-      userId: user.id,
-      action: "GDPR_DELETION",
-      entityType: "Application",
-      entityId: applicationId,
-      context: `GDPR deletion performed on application ${application.reference}`,
-      metadata: {
-        reference: application.reference,
-        leadApplicantId,
-        storageErrors: storageErrors.length > 0 ? storageErrors : undefined,
-      },
-    });
+    //    lead applicant's userId was just nulled — we record the assessor).
+    //    Admin context so the audit insert succeeds independently of the
+    //    actor's current_user_id() / role.
+    await withAdminContext((tx) =>
+      createAuditLog(tx, {
+        userId: user.id,
+        action: "GDPR_DELETION",
+        entityType: "Application",
+        entityId: applicationId,
+        context: `GDPR deletion performed on application ${application.reference}`,
+        metadata: {
+          reference: application.reference,
+          leadApplicantId,
+          storageErrors: storageErrors.length > 0 ? storageErrors : undefined,
+          authDeleteError: authDeleteError ?? undefined,
+        },
+      })
+    );
 
     revalidatePath(`/applications/${applicationId}`);
     revalidatePath("/queue");
