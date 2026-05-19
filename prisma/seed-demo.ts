@@ -1,7 +1,24 @@
-// prisma/seed.ts
-// JWF Bursary Assessment System — database seed
-// Run via: npx prisma db seed
-// Requires tsx (already configured in package.json prisma.seed)
+// prisma/seed-demo.ts
+// JWF Bursary Assessment System — destructive demo seed
+//
+// DELETES all profiles/applications/assessments/documents and recreates demo
+// fixtures. Intended for local fresh starts only. Gated behind
+// ALLOW_DESTRUCTIVE_SEED=1 to prevent accidental data loss on shared envs.
+//
+// Run via:
+//   npm run seed:demo
+//   (or ALLOW_DESTRUCTIVE_SEED=1 tsx prisma/seed-demo.ts)
+//
+// For reference data only (idempotent, safe everywhere), use seed-reference.ts.
+
+if (process.env.ALLOW_DESTRUCTIVE_SEED !== "1") {
+  console.error(
+    "\n  refusing to run destructive demo seed: ALLOW_DESTRUCTIVE_SEED=1 is required.\n" +
+      "  Use `npm run seed:demo` for local resets, or `npm run seed:reference`\n" +
+      "  for idempotent reference-data updates against any environment.\n",
+  );
+  process.exit(1);
+}
 
 import "dotenv/config";
 // Also load .env.local (where Supabase keys typically live in Next.js projects)

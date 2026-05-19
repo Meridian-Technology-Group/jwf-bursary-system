@@ -53,6 +53,25 @@ Only when the user explicitly says "promote staging to main" or equivalent:
 - Never run `prisma migrate deploy` against prod from a local machine without user approval.
 - Never run `prisma migrate reset` against staging or prod.
 
+## Seeds
+
+Two distinct seed scripts:
+
+- **`npm run seed:reference`** — idempotent. Upserts reference data only
+  (`family_type_configs`, `school_fees`, `council_tax_defaults`,
+  `reason_codes`) and ensures the `documents` storage bucket exists. Safe
+  to run against any environment, including production. **Does not seed
+  `email_templates`** — those are seeded via the
+  `*_seed_email_templates` migration (single source of truth).
+- **`npm run seed:demo`** — destructive. Deletes profiles, applications,
+  assessments, documents, etc. and recreates the local demo fixtures. Gated
+  behind `ALLOW_DESTRUCTIVE_SEED=1` (set automatically by the npm script)
+  so `npx prisma db seed` and `prisma migrate reset` cannot accidentally
+  wipe a shared environment.
+
+When adding a new reference table, extend `seed-reference.ts` with an
+idempotent upsert. Never wire reference data into the demo seed alone.
+
 ## Environment variables
 
 - Vercel Production env → `supabase-prod` URL/keys.
