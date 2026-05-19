@@ -9,6 +9,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { CloseRoundDialog } from "./close-round-dialog";
+import { OpenRoundDialog } from "./open-round-dialog";
 import { BatchInviteDialog } from "./batch-invite-dialog";
 
 interface RoundDetailActionsProps {
@@ -25,6 +26,7 @@ export function RoundDetailActions({
   activeBursaryHolderCount,
 }: RoundDetailActionsProps) {
   const [closeDialogOpen, setCloseDialogOpen] = useState(false);
+  const [openDialogOpen, setOpenDialogOpen] = useState(false);
   const [batchDialogOpen, setBatchDialogOpen] = useState(false);
 
   return (
@@ -35,6 +37,18 @@ export function RoundDetailActions({
           Send Invitations
         </Link>
       </Button>
+
+      {/* Open round (DRAFT only) */}
+      {status === "DRAFT" && (
+        <Button
+          variant="outline"
+          size="sm"
+          className="text-green-700 border-green-200 hover:bg-green-50 hover:text-green-800"
+          onClick={() => setOpenDialogOpen(true)}
+        >
+          Open Round
+        </Button>
+      )}
 
       {/* Batch re-assessment only when round is OPEN and there are holders */}
       {status === "OPEN" && (
@@ -64,6 +78,13 @@ export function RoundDetailActions({
         academicYear={academicYear}
         open={closeDialogOpen}
         onOpenChange={setCloseDialogOpen}
+      />
+
+      <OpenRoundDialog
+        roundId={roundId}
+        academicYear={academicYear}
+        open={openDialogOpen}
+        onOpenChange={setOpenDialogOpen}
       />
 
       <BatchInviteDialog

@@ -9,6 +9,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { CloseRoundDialog } from "./close-round-dialog";
+import { OpenRoundDialog } from "./open-round-dialog";
 
 interface RoundActionsCellProps {
   roundId: string;
@@ -22,12 +23,32 @@ export function RoundActionsCell({
   status,
 }: RoundActionsCellProps) {
   const [closeDialogOpen, setCloseDialogOpen] = useState(false);
+  const [openDialogOpen, setOpenDialogOpen] = useState(false);
 
   return (
     <div className="flex items-center gap-2">
       <Button variant="outline" size="sm" asChild>
         <Link href={`/rounds/${roundId}`}>View</Link>
       </Button>
+
+      {status === "DRAFT" && (
+        <>
+          <Button
+            variant="outline"
+            size="sm"
+            className="text-green-700 border-green-200 hover:bg-green-50 hover:text-green-800"
+            onClick={() => setOpenDialogOpen(true)}
+          >
+            Open
+          </Button>
+          <OpenRoundDialog
+            roundId={roundId}
+            academicYear={academicYear}
+            open={openDialogOpen}
+            onOpenChange={setOpenDialogOpen}
+          />
+        </>
+      )}
 
       {status === "OPEN" && (
         <>
