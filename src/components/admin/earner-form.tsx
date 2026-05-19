@@ -80,6 +80,38 @@ function showBenefits(status: EmploymentStatus): boolean {
   return status !== "UNEMPLOYED";
 }
 
+/**
+ * When employmentStatus changes, fields that are no longer visible must be
+ * zeroed out so they don't continue feeding Stage 1 income silently. Without
+ * this reset, entering £30,000 net pay under PAYE and switching to Unemployed
+ * leaves the netPay value in form state — Stage 1 still sums it.
+ *
+ * Exported so it can be unit-tested independently of the component.
+ */
+export function resetEarnerFieldsForStatus(
+  values: EarnerFormValues,
+  nextStatus: EmploymentStatus,
+): EarnerFormValues {
+  return {
+    ...values,
+    employmentStatus: nextStatus,
+    netPay: showNetPay(nextStatus) ? values.netPay : 0,
+    netDividends: showNetDividends(nextStatus) ? values.netDividends : 0,
+    netSelfEmployedProfit: showNetSelfEmployedProfit(nextStatus)
+      ? values.netSelfEmployedProfit
+      : 0,
+    pensionAmount: showPension(nextStatus) ? values.pensionAmount : 0,
+    benefitsIncluded: showBenefits(nextStatus) ? values.benefitsIncluded : 0,
+    benefitsIncludedDetail: showBenefits(nextStatus)
+      ? values.benefitsIncludedDetail
+      : "",
+    benefitsExcluded: showBenefits(nextStatus) ? values.benefitsExcluded : 0,
+    benefitsExcludedDetail: showBenefits(nextStatus)
+      ? values.benefitsExcludedDetail
+      : "",
+  };
+}
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 /** Formats a number as currency display (£1,234.00) */
@@ -234,7 +266,7 @@ export function EarnerForm({
         <Select
           value={values.employmentStatus}
           onValueChange={(val) =>
-            update({ employmentStatus: val as EmploymentStatus })
+            onChange(resetEarnerFieldsForStatus(values, val as EmploymentStatus))
           }
           disabled={readOnly}
         >
