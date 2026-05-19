@@ -34,6 +34,16 @@ import type { DocumentMeta } from "@/lib/db/queries/applications";
 
 const GENDERS = ["Male", "Female", "Prefer not to say", "Other"];
 
+// Year group at school entry — per §4 spec. Stored as a string code in
+// ChildDetailsData; the assessor reconciles "OTHER" by hand.
+const ENTRY_YEAR_GROUPS = [
+  { value: "Y6", label: "Year 6" },
+  { value: "Y7", label: "Year 7" },
+  { value: "Y9", label: "Year 9" },
+  { value: "Y12", label: "Year 12" },
+  { value: "OTHER", label: "Other (please contact the bursary team)" },
+];
+
 interface ChildDetailsFormProps {
   applicationId: string;
   documentMap?: Record<string, DocumentMeta>;
@@ -88,6 +98,37 @@ export function ChildDetailsForm({ applicationId, documentMap }: ChildDetailsFor
                 <SelectContent>
                   <SelectItem value="TRINITY">Trinity School</SelectItem>
                   <SelectItem value="WHITGIFT">Whitgift School</SelectItem>
+                </SelectContent>
+              </Select>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+
+        <FormField
+          control={control}
+          name="entryYearGroup"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>
+                School year your child is applying to enter{" "}
+                <span className="text-error-600" aria-hidden="true">*</span>
+              </FormLabel>
+              <Select
+                onValueChange={field.onChange}
+                value={field.value}
+              >
+                <FormControl>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select a year group..." />
+                  </SelectTrigger>
+                </FormControl>
+                <SelectContent>
+                  {ENTRY_YEAR_GROUPS.map((g) => (
+                    <SelectItem key={g.value} value={g.value}>
+                      {g.label}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
               <FormMessage />
