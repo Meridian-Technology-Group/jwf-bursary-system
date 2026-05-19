@@ -27,3 +27,4 @@ tsconfig.tsbuildinfo
 .claude/
 docs/.obsidian/workspace.json
 docs/.obsidian/workspace-mobile.json
+.playwright-mcp/
