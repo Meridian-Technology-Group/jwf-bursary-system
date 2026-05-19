@@ -118,6 +118,13 @@ export default async function SectionPage({ params }: PageProps) {
     redirect("/");
   }
 
+  // Once submitted, the form is read-only. Server-side enforcement —
+  // the action layer also blocks writes via withUserContext + status checks,
+  // but redirecting here prevents the form from rendering at all.
+  if (application.status === "SUBMITTED") {
+    redirect("/submitted");
+  }
+
   const isReassessment = application.isReassessment;
 
   // For re-assessments, FAMILY_ID is completely hidden — skip to next section

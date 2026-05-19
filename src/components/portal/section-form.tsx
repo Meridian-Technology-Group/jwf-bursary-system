@@ -105,6 +105,12 @@ export function SectionForm<T extends FieldValues>({
         setServerErrors(result.errors ?? ["An unexpected error occurred."]);
       }
     } catch (err) {
+      // Next's redirect() throws a NEXT_REDIRECT sentinel that must bubble
+      // so the router can navigate. Don't swallow it as a generic error.
+      const digest = (err as { digest?: string } | null)?.digest;
+      if (typeof digest === "string" && digest.startsWith("NEXT_REDIRECT")) {
+        throw err;
+      }
       setSaveState("error");
       setServerErrors(["An unexpected error occurred. Please try again."]);
     } finally {

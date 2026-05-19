@@ -82,11 +82,13 @@ Each Blocker is presented as: **what + evidence + fix + effort**. Effort: S = un
 **Evidence:** `SELECT count(*) FROM reason_codes, family_type_configs, school_fees, council_tax_defaults, rounds` returns 0 across the board in nonprod. Both nonprod and prod `storage.buckets` are empty. UAT (Gate G2, 18 May – 12 June) cannot proceed in the current state.
 **Fix:** Split `prisma/seed.ts` into `seed-reference.ts` (idempotent, reference tables only) and `seed-demo.ts` (gated behind `ALLOW_DESTRUCTIVE_SEED=1`). Already documented in `docs/backlog/prisma-db-seed-is-destructive.md`. Run reference seed against both environments. Create `documents` bucket in both projects via Supabase dashboard or seed-script (currently the `ensureBucket()` lazy path is the only mechanism and is fragile).
 **Effort:** S–M.
+**Status**: RESOLVED
 
 ### B3 — Applicant submission flow is not wired
 **Evidence:** `submitApplication` action exists at `src/app/(portal)/apply/actions.ts:273-402`. `SubmitApplicationButton` component exists at `src/app/(portal)/apply/review/submit-button.tsx`. Neither is imported by any rendered component. The Declaration page's "Save and Continue" button (`section-page-client.tsx:218`) calls `saveSection` and navigates to `nextHref` (which is `/` for DECLARATION). Result: no applicant can transition an application to SUBMITTED.
 **Fix:** Wire `SubmitApplicationButton` into the review page and/or the Declaration section's terminal action. Confirm `status → SUBMITTED`, `submittedAt` set, confirmation email sent, post-submission read-only enforced server-side at the section page (not just at the action).
 **Effort:** S.
+**Status**: RESOLVED on `feature/b3-wire-applicant-submission` (pending staging smoke test). DECLARATION's terminal action now chains `saveSection` → `submitApplication`; section pages redirect SUBMITTED → `/submitted` server-side; unused `submit-button.tsx` removed.
 
 ### B4 — Assessment status-switch contamination
 **Evidence:** `src/components/admin/earner-form.tsx` hides/shows `netPay`, `netDividends`, `netSelfEmployedProfit`, `pensionAmount`, `benefitsIncluded` based on employment status, but the underlying form state is never reset on status change. `src/components/admin/assessment-form.tsx:494-512` reads those fields unconditionally and feeds them into Stage 1. Concrete failure: enter £30,000 net pay under PAYE, switch to Unemployed — the form looks empty, but Stage 1 still sums £30,000 silently. Directly fails the §15 "Unemployed earner" edge-case test.
