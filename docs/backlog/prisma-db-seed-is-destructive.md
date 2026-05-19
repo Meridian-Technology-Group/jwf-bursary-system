@@ -1,8 +1,10 @@
 ---
 title: prisma db seed is destructive — unsafe for shared environments
-status: open
+status: resolved
 severity: high
 area: build, seed
+resolved: 2026-05-19
+resolved_by: feature/b2-seed-split (B2 in PRODUCTION_READINESS.md)
 opened: 2026-05-13
 opened_by: Claude (via Brian Wagner)
 related:
@@ -57,3 +59,25 @@ template seed from PR #13 stays — it's the one path into prod.
 Replacing the destructive seed with something fancier (e.g., factory
 libraries). Goal here is just to make the unsafe path harder to hit
 by accident.
+
+## Resolution (2026-05-19)
+
+Shipped in `feature/b2-seed-split`:
+
+- `prisma/seed-reference.ts` — idempotent upserts for
+  `family_type_configs`, `school_fees`, `council_tax_defaults`,
+  `reason_codes`. Also ensures the `documents` storage bucket exists.
+- `prisma/seed-demo.ts` — renamed from `seed.ts`. Hard-gated behind
+  `ALLOW_DESTRUCTIVE_SEED=1`; refuses to run otherwise (also protects
+  `prisma migrate reset` and `npx prisma db seed`).
+- `package.json` scripts: `seed:reference`, `seed:demo`. The
+  `prisma.seed` entry now points at `seed-demo.ts` so the env-var
+  guard is enforced everywhere.
+
+**Email templates: deliberate exclusion.** The reference seed does
+NOT include `email_templates`. They are seeded via the
+`*_seed_email_templates` migration (PR #13), which is the single
+source of truth into every environment. Adding them to the reference
+seed too would re-introduce the two-places-to-update rot this
+backlog entry called out. The proposed approach in this doc listed
+them; that part is superseded.
