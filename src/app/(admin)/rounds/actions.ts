@@ -7,6 +7,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
+import { RoundStatus } from "@prisma/client";
 import { requireRole, Role } from "@/lib/auth/roles";
 import { createRound, updateRound, closeRound } from "@/lib/db/queries/rounds";
 import { withUserContext, type RlsRole } from "@/lib/db/prisma";
@@ -166,9 +167,93 @@ export async function updateRoundAction(
 }
 
 // ---------------------------------------------------------------------------
+// openRoundAction
+// ---------------------------------------------------------------------------
+
+/**
+ * Transitions a round from DRAFT to OPEN.
+ *
+ * Guards:
+ * - Admin-gated (matches createRoundAction).
+ * - Refuses if the target round is not currently DRAFT.
+ * - Refuses if another round is already OPEN. This invariant ("only one OPEN
+ *   at a time") is enforced at the action layer via an explicit findFirst,
+ *   not via a DB unique partial index. The action-layer guard is a smaller,
+ *   reversible change appropriate for MVP; revisit if concurrent admin
+ *   activity becomes a real concern (then promote to a DB constraint).
+ *
+ * Stamps an audit log entry (action: "ROUND_OPENED") and revalidates the
+ * rounds list + detail routes.
+ */
+export async function openRoundAction(
+  id: string
+): Promise<RoundActionResult> {
+  const user = await requireRole([Role.ADMIN]);
+
+  try {
+    await withUserContext(user.id, user.role as RlsRole, async (tx) => {
+      const target = await tx.round.findUnique({
+        where: { id },
+        select: { id: true, status: true, academicYear: true },
+      });
+
+      if (!target) {
+        throw new Error("Round not found.");
+      }
+
+      if (target.status !== RoundStatus.DRAFT) {
+        throw new Error(
+          `Round ${target.academicYear} is ${target.status}; only DRAFT rounds can be opened.`
+        );
+      }
+
+      const existingOpen = await tx.round.findFirst({
+        where: { status: RoundStatus.OPEN, NOT: { id } },
+        select: { academicYear: true },
+      });
+
+      if (existingOpen) {
+        throw new Error(
+          `Cannot open: round ${existingOpen.academicYear} is already OPEN. Close it first.`
+        );
+      }
+
+      const updated = await updateRound(tx, id, {
+        status: RoundStatus.OPEN,
+      });
+
+      await createAuditLog(tx, {
+        userId: user.id,
+        action: "ROUND_OPENED",
+        entityType: "Round",
+        entityId: id,
+        context: `Opened round ${updated.academicYear}`,
+        metadata: { academicYear: updated.academicYear },
+      });
+    });
+
+    revalidatePath("/rounds");
+    revalidatePath(`/rounds/${id}`);
+
+    return { success: true };
+  } catch (err) {
+    const message =
+      err instanceof Error ? err.message : "Failed to open round";
+    return { success: false, error: message };
+  }
+}
+
+// ---------------------------------------------------------------------------
 // closeRoundAction
 // ---------------------------------------------------------------------------
 
+/**
+ * Transitions a round from OPEN to CLOSED.
+ *
+ * Admin-gated; refuses if the target round is not currently OPEN. Stamps an
+ * audit log entry (action: "ROUND_CLOSED") and revalidates the rounds list +
+ * detail routes.
+ */
 export async function closeRoundAction(
   id: string
 ): Promise<RoundActionResult> {
@@ -176,11 +261,26 @@ export async function closeRoundAction(
 
   try {
     await withUserContext(user.id, user.role as RlsRole, async (tx) => {
+      const target = await tx.round.findUnique({
+        where: { id },
+        select: { id: true, status: true, academicYear: true },
+      });
+
+      if (!target) {
+        throw new Error("Round not found.");
+      }
+
+      if (target.status !== RoundStatus.OPEN) {
+        throw new Error(
+          `Round ${target.academicYear} is ${target.status}; only OPEN rounds can be closed.`
+        );
+      }
+
       const round = await closeRound(tx, id);
 
       await createAuditLog(tx, {
         userId: user.id,
-        action: "CLOSE_ROUND",
+        action: "ROUND_CLOSED",
         entityType: "Round",
         entityId: id,
         context: `Closed round ${round.academicYear}`,
