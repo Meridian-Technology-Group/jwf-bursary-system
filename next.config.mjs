@@ -4,6 +4,13 @@
 // NOTE: script-src/style-src currently include 'unsafe-inline' for compatibility
 // with Next.js inline bootstrap scripts and Tailwind-generated styles.
 // TODO(post-launch): tighten to a nonce-based policy once the React tree allows it.
+// Next.js dev mode (React Refresh runtime) uses eval; in `next dev` only we add
+// 'unsafe-eval' so the dev server actually hydrates. Production CSP unchanged.
+const isDev = process.env.NODE_ENV !== "production";
+const scriptSrc = isDev
+  ? "script-src 'self' 'unsafe-inline' 'unsafe-eval'"
+  : "script-src 'self' 'unsafe-inline'";
+
 const securityHeaders = [
   {
     key: "Strict-Transport-Security",
@@ -20,7 +27,7 @@ const securityHeaders = [
     key: "Content-Security-Policy",
     value: [
       "default-src 'self'",
-      "script-src 'self' 'unsafe-inline'",
+      scriptSrc,
       "style-src 'self' 'unsafe-inline'",
       "img-src 'self' data: blob: https://*.supabase.co",
       "font-src 'self' data:",

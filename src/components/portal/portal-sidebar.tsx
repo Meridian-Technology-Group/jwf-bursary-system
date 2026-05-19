@@ -82,7 +82,7 @@ interface PortalSidebarContentProps {
 }
 
 export function PortalSidebarContent({
-  roundName = "2024–25 Assessment Round",
+  roundName,
   lastSaved,
   sections,
 }: PortalSidebarContentProps) {
@@ -128,15 +128,17 @@ export function PortalSidebarContent({
         </span>
       </div>
 
-      {/* Round name */}
-      <div className="border-b border-slate-200 px-6 py-3">
-        <p className="text-xs font-medium uppercase tracking-wider text-slate-400">
-          Round
-        </p>
-        <p className="mt-0.5 text-sm font-medium text-primary-800">
-          {roundName}
-        </p>
-      </div>
+      {/* Round name — hidden when the user has no invitation/application yet */}
+      {roundName ? (
+        <div className="border-b border-slate-200 px-6 py-3">
+          <p className="text-xs font-medium uppercase tracking-wider text-slate-400">
+            Round
+          </p>
+          <p className="mt-0.5 text-sm font-medium text-primary-800">
+            {roundName}
+          </p>
+        </div>
+      ) : null}
 
       {/* Section stepper */}
       <nav

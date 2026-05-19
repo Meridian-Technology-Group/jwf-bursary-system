@@ -8,10 +8,15 @@
 export const dynamic = "force-dynamic";
 
 import { requireRole, Role } from "@/lib/auth/roles";
-import { withUserContext, type RlsRole } from "@/lib/db/prisma";
+import { withAdminContext, withUserContext, type RlsRole } from "@/lib/db/prisma";
 import { listStaffUsers } from "@/lib/db/queries/profiles";
+import { listPendingStaffInvitations } from "@/lib/db/queries/staff-invitations";
 import { StaffInviteForm } from "@/components/admin/staff-invite-form";
 import { StaffTable } from "@/components/admin/staff-table";
+import {
+  PendingStaffInvitationsTable,
+  type PendingStaffInvitationRow,
+} from "@/components/admin/pending-staff-invitations-table";
 
 export const metadata = {
   title: "User Management",
@@ -23,6 +28,27 @@ export default async function UsersPage() {
     currentUser.id,
     currentUser.role as RlsRole,
     (tx) => listStaffUsers(tx)
+  );
+
+  // staff_invitations is gated via withAdminContext (the existing pattern in
+  // src/app/(admin)/users/actions.ts).
+  const pendingInvitations = await withAdminContext((tx) =>
+    listPendingStaffInvitations(tx)
+  );
+  const pendingRows: PendingStaffInvitationRow[] = pendingInvitations.map(
+    (inv) => ({
+      id: inv.id,
+      email: inv.email,
+      role: inv.role,
+      firstName: inv.firstName,
+      lastName: inv.lastName,
+      createdAt: inv.createdAt.toISOString(),
+      inviterName:
+        [inv.inviter.firstName, inv.inviter.lastName]
+          .filter(Boolean)
+          .join(" ") || null,
+      inviterEmail: inv.inviter.email,
+    })
   );
 
   return (
@@ -39,6 +65,14 @@ export default async function UsersPage() {
 
       {/* Invite form */}
       <StaffInviteForm />
+
+      {/* Pending staff invitations */}
+      <section aria-label="Pending staff invitations">
+        <h2 className="mb-3 text-base font-medium text-slate-700">
+          Pending Staff Invitations
+        </h2>
+        <PendingStaffInvitationsTable rows={pendingRows} />
+      </section>
 
       {/* Staff table */}
       <section aria-label="Staff users">

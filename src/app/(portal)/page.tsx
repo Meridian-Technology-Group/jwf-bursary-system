@@ -12,9 +12,9 @@
  */
 
 import { getCurrentUser } from "@/lib/auth/roles";
-import { withUserContext, type RlsRole } from "@/lib/db/prisma";
+import { withAdminContext, withUserContext, type RlsRole } from "@/lib/db/prisma";
 import { getApplicationForUser, getSectionStatusList } from "@/lib/db/queries/applications";
-import { getLatestAcceptedInvitationForUser } from "@/lib/db/queries/invitations";
+import { getOrAcceptLatestInvitationForUser } from "@/lib/db/queries/invitations";
 import { StatusBadge, type ApplicationStatus } from "@/components/shared/status-badge";
 import { OnboardingCard } from "@/app/(portal)/onboarding-card";
 import { FileText, ArrowRight, ClipboardList } from "lucide-react";
@@ -36,18 +36,36 @@ export default async function PortalDashboardPage() {
   const firstName = user?.firstName ?? "there";
 
   const { application, completedSections, invitation } = user
-    ? await withUserContext(user.id, user.role as RlsRole, async (tx) => {
-        const app = await getApplicationForUser(tx, user.id);
-        let completed = 0;
-        if (app) {
-          const statuses = await getSectionStatusList(tx, app.id);
-          completed = statuses.filter((s) => s.isComplete).length;
-        }
-        const inv = !app
-          ? await getLatestAcceptedInvitationForUser(tx, user.id)
+    ? await (async () => {
+        const userScope = await withUserContext(
+          user.id,
+          user.role as RlsRole,
+          async (tx) => {
+            const app = await getApplicationForUser(tx, user.id);
+            let completed = 0;
+            if (app) {
+              const statuses = await getSectionStatusList(tx, app.id);
+              completed = statuses.filter((s) => s.isComplete).length;
+            }
+            return { app, completed };
+          }
+        );
+
+        // Invitation lookup needs admin context — the helper auto-accepts
+        // a PENDING invitation on first sight, which the app_user role is
+        // not granted under RLS.
+        const inv = !userScope.app
+          ? await withAdminContext((tx) =>
+              getOrAcceptLatestInvitationForUser(tx, user.id)
+            )
           : null;
-        return { application: app, completedSections: completed, invitation: inv };
-      })
+
+        return {
+          application: userScope.app,
+          completedSections: userScope.completed,
+          invitation: inv,
+        };
+      })()
     : { application: null, completedSections: 0, invitation: null };
 
   const progressPercent = application
