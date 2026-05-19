@@ -156,6 +156,14 @@ function parseSafe<T>(raw: unknown): T | null {
 
 type SummaryRow = { label: string; value: string };
 
+const ENTRY_YEAR_GROUP_LABELS: Record<string, string> = {
+  Y6: "Year 6",
+  Y7: "Year 7",
+  Y9: "Year 9",
+  Y12: "Year 12",
+  OTHER: "Other",
+};
+
 function renderChildDetails(raw: unknown): SummaryRow[] {
   const d = parseSafe<ChildDetailsData>(raw);
   if (!d) return [];
@@ -163,6 +171,10 @@ function renderChildDetails(raw: unknown): SummaryRow[] {
     { label: "Name", value: d.childFullName || "—" },
     { label: "Date of birth", value: fmtDate(d.dateOfBirth) },
     { label: "School applying for", value: fmtSchool(d.school) },
+    {
+      label: "Year of entry",
+      value: d.entryYearGroup ? ENTRY_YEAR_GROUP_LABELS[d.entryYearGroup] ?? d.entryYearGroup : "—",
+    },
     { label: "Current school", value: d.currentSchool || "—" },
     { label: "Place of birth", value: d.placeOfBirth || "—" },
   ];

@@ -20,6 +20,8 @@ export interface ChildAddress {
 export interface ChildDetailsData {
   /** School applying for */
   school: School;
+  /** Year group the child enters at (Y6/Y7/Y9/Y12/Other). Per §4 spec. */
+  entryYearGroup: EntryYearGroup;
   /** Child's full legal name */
   childFullName: string;
   /** Gender */
@@ -69,13 +71,28 @@ export type RelationshipStatus =
   | "CIVIL_PARTNERSHIP"
   | "COHABITING";
 
+/**
+ * Portal-side employment status — reconciled with the assessor-side
+ * Prisma EmploymentStatus enum (assessment_earners.employment_status)
+ * so that the value an applicant picks can be carried through into
+ * Stage 1 income without a manual translation step on the assessor's
+ * side. See B11 in docs/PRODUCTION_READINESS.md.
+ */
 export type EmploymentStatus =
-  | "EMPLOYED"
-  | "UNEMPLOYED"
-  | "SELF_EMPLOYED"
-  | "SELF_EMPLOYED_CIS"
-  | "SELF_EMPLOYED_AND_EMPLOYED"
-  | "RETIRED";
+  | "PAYE"
+  | "BENEFITS"
+  | "SELF_EMPLOYED_DIRECTOR"
+  | "SELF_EMPLOYED_SOLE"
+  | "OLD_AGE_PENSION"
+  | "PAST_PENSION"
+  | "UNEMPLOYED";
+
+/**
+ * The school year-group the child enters at. Mandated by §4 of the
+ * spec; admin-side `Application.entryYear` (calendar Int) is set by the
+ * invitation flow and is independent of this field.
+ */
+export type EntryYearGroup = "Y6" | "Y7" | "Y9" | "Y12" | "OTHER";
 
 export type ParentTitle = "MR" | "MRS" | "MS" | "MISS" | "DR" | "PROF" | "OTHER";
 

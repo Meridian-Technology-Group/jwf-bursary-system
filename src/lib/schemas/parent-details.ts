@@ -18,17 +18,30 @@ export const relationshipStatusSchema = z.enum(
   { message: "Please select a relationship status" }
 );
 
+/**
+ * Portal-side employment status. Reconciled with the assessor-side
+ * Prisma EmploymentStatus enum so values can flow straight into Stage 1
+ * without a translation step. See B11 in docs/PRODUCTION_READINESS.md.
+ */
 export const employmentStatusSchema = z.enum(
   [
-    "EMPLOYED",
+    "PAYE",
+    "BENEFITS",
+    "SELF_EMPLOYED_DIRECTOR",
+    "SELF_EMPLOYED_SOLE",
+    "OLD_AGE_PENSION",
+    "PAST_PENSION",
     "UNEMPLOYED",
-    "SELF_EMPLOYED",
-    "SELF_EMPLOYED_CIS",
-    "SELF_EMPLOYED_AND_EMPLOYED",
-    "RETIRED",
   ] as const,
   { message: "Please select an employment status" }
 );
+
+/** Statuses that should reveal the profession/employer/director fields. */
+const WORKING_STATUSES = [
+  "PAYE",
+  "SELF_EMPLOYED_DIRECTOR",
+  "SELF_EMPLOYED_SOLE",
+] as const;
 
 const UK_POSTCODE_RE = /^[A-Z]{1,2}\d[A-Z\d]?\s?\d[A-Z]{2}$/i;
 
@@ -66,12 +79,7 @@ export const parentEmploymentSchema = z
     declarationAccepted: z.boolean().optional(),
   })
   .superRefine((data, ctx) => {
-    const isWorking = [
-      "EMPLOYED",
-      "SELF_EMPLOYED",
-      "SELF_EMPLOYED_CIS",
-      "SELF_EMPLOYED_AND_EMPLOYED",
-    ].includes(data.status);
+    const isWorking = (WORKING_STATUSES as readonly string[]).includes(data.status);
 
     if (isWorking) {
       if (!data.profession) {

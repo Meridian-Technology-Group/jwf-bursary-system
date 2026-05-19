@@ -91,6 +91,7 @@ function getDefaultValues(
     case "CHILD_DETAILS":
       return {
         school: seed.applicationSchool,
+        entryYearGroup: undefined,
         childFullName: seed.applicationChildName ?? "",
         gender: "",
         dateOfBirth: "",
