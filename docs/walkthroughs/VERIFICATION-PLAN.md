@@ -271,12 +271,12 @@ Legend: `[ ]` not yet run · `PASS` · `FAIL → <link>` · `BLOCKED → <link>`
 
 ### Applicant (29)
 
-- [ ] applicants/01-accept-invitation-and-set-up-account
+- PASS-WITH-CAVEAT applicants/01-accept-invitation-and-set-up-account — `/register?token=…` page matches the guide (Email / First / Last / Password / Confirm / Create account). Did not submit because the test auth user already exists; this exposed `docs/backlog/portal-rejects-pending-invitation-no-round.md` (dashboard says "No invitation found" until status flipped to ACCEPTED, and seed invitations had null round_id).
 - [ ] applicants/02-invitation-link-expired
 - [ ] applicants/03-reset-forgotten-password
 - [ ] applicants/04-log-in-on-your-phone
-- [ ] applicants/05-tour-of-the-dashboard
-- [ ] applicants/06-section-1-details-of-child
+- PASS-WITH-CAVEAT applicants/05-tour-of-the-dashboard — onboarding card ("Let's set up your application") appears with the right copy and school radios. Sidebar shows hardcoded "2024–25 Assessment Round" instead of the actual round → `docs/backlog/applicant-portal-sidebar-hardcoded-academic-year.md`.
+- PASS applicants/06-section-1-details-of-child — section 1 of 10 form renders all expected fields: school (Whitgift/Trinity), year group (Y6/Y7/Y9/Y12/Other), child name/gender/DOB/place of birth, birth-certificate upload, address fields, current school
 - [ ] applicants/07-section-2-family-identification
 - [ ] applicants/08-section-3-parent-guardian-details
 - [ ] applicants/09-section-4-dependent-children
