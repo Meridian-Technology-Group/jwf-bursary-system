@@ -22,3 +22,8 @@ docs/planning/screenshots
 /src/generated/prisma
 tsconfig.tsbuildinfo
 .env*.local
+
+# local agent / editor state (per-user, not shared)
+.claude/
+docs/.obsidian/workspace.json
+docs/.obsidian/workspace-mobile.json

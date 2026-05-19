@@ -69,18 +69,19 @@ export function AssetsLiabilitiesForm({
     [documentMap]
   );
 
-  // Bank statement P1 — the field is an array; resolve the first entry for display
-  // (FileUpload is single-file; the array is kept for multi-upload in a future WP)
+  // Bank statements — multi-file slots. Resolve every saved ID for display.
   const initialP1Ids = React.useRef(getValues("parent1BankStatementDocumentIds") ?? []);
-  const existingP1BankStatement = React.useMemo(() => {
-    const firstId = initialP1Ids.current[0];
-    return resolveDoc(firstId, documentMap);
+  const existingP1BankStatements = React.useMemo(() => {
+    return initialP1Ids.current
+      .map((id) => resolveDoc(id, documentMap))
+      .filter((d): d is NonNullable<typeof d> => Boolean(d));
   }, [documentMap]);
 
   const initialP2Ids = React.useRef(getValues("parent2BankStatementDocumentIds") ?? []);
-  const existingP2BankStatement = React.useMemo(() => {
-    const firstId = initialP2Ids.current[0];
-    return resolveDoc(firstId, documentMap);
+  const existingP2BankStatements = React.useMemo(() => {
+    return initialP2Ids.current
+      .map((id) => resolveDoc(id, documentMap))
+      .filter((d): d is NonNullable<typeof d> => Boolean(d));
   }, [documentMap]);
 
   return (
@@ -272,13 +273,14 @@ export function AssetsLiabilitiesForm({
           )}
         />
 
-        {/* Bank statements — Parent 1 (always required) */}
+        {/* Bank statements — Parent 1 (always required, multi-file) */}
         <FileUpload
+          multiple
           slot="BANK_STATEMENT_PARENT_1"
-          label="Bank statement — Parent / Guardian 1 (required)"
-          hint="Upload at least one recent bank statement for Parent/Guardian 1 (last 3 months preferred)."
+          label="Bank statements — Parent / Guardian 1 (required)"
+          hint="Upload your three most recent monthly bank statements for Parent/Guardian 1."
           applicationId={applicationId}
-          existingDocument={existingP1BankStatement}
+          existingDocuments={existingP1BankStatements}
           onUploadComplete={(doc: UploadedDocument) => {
             // Append the new doc ID to the array field
             const current = getValues("parent1BankStatementDocumentIds") ?? [];
@@ -312,11 +314,12 @@ export function AssetsLiabilitiesForm({
         {!isSoleParent && (
           <>
             <FileUpload
+              multiple
               slot="BANK_STATEMENT_PARENT_2"
-              label="Bank statement — Parent / Guardian 2 (required)"
-              hint="Upload at least one recent bank statement for Parent/Guardian 2 (last 3 months preferred)."
+              label="Bank statements — Parent / Guardian 2 (required)"
+              hint="Upload your three most recent monthly bank statements for Parent/Guardian 2."
               applicationId={applicationId}
-              existingDocument={existingP2BankStatement}
+              existingDocuments={existingP2BankStatements}
               onUploadComplete={(doc: UploadedDocument) => {
                 const current = getValues("parent2BankStatementDocumentIds") ?? [];
                 setValue(

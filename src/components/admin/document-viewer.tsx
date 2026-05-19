@@ -75,6 +75,31 @@ export function DocumentViewer({
   const handleZoomIn = () => setZoomIndex((i) => Math.min(i + 1, ZOOM_LEVELS.length - 1));
   const handleZoomOut = () => setZoomIndex((i) => Math.max(i - 1, 0));
 
+  // Inline preview and download require different Content-Disposition headers,
+  // so the parent component receives the inline-preview URL and the Download
+  // button fetches a fresh `?download=true` URL on click (B6).
+  const [downloading, setDownloading] = React.useState(false);
+  const handleDownload = React.useCallback(
+    async (e: React.MouseEvent<HTMLAnchorElement>) => {
+      e.preventDefault();
+      if (downloading) return;
+      setDownloading(true);
+      try {
+        const res = await fetch(
+          `/api/documents/${document.id}/url?download=true`
+        );
+        if (!res.ok) return;
+        const data = (await res.json()) as { url?: string };
+        if (data.url) {
+          window.location.assign(data.url);
+        }
+      } finally {
+        setDownloading(false);
+      }
+    },
+    [document.id, downloading]
+  );
+
   return (
     <div
       className={cn(
@@ -149,7 +174,7 @@ export function DocumentViewer({
             </Button>
           )}
 
-          {/* Download */}
+          {/* Download — fetches a fresh attachment-disposition URL on click */}
           {presignedUrl && (
             <Button
               variant="outline"
@@ -158,10 +183,9 @@ export function DocumentViewer({
               asChild
             >
               <a
-                href={presignedUrl}
-                download={document.filename}
-                target="_blank"
-                rel="noreferrer"
+                href="#"
+                onClick={handleDownload}
+                aria-busy={downloading || undefined}
               >
                 <Download className="mr-1 h-3.5 w-3.5" aria-hidden="true" />
                 Download
@@ -222,10 +246,9 @@ export function DocumentViewer({
               <p className="text-sm">Preview not available for this file type</p>
               <Button variant="outline" size="sm" asChild>
                 <a
-                  href={presignedUrl}
-                  download={document.filename}
-                  target="_blank"
-                  rel="noreferrer"
+                  href="#"
+                  onClick={handleDownload}
+                  aria-busy={downloading || undefined}
                 >
                   <Download className="mr-2 h-4 w-4" />
                   Download file

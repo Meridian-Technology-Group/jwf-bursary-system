@@ -57,13 +57,17 @@ const RELATIONSHIP_STATUSES = [
   { value: "COHABITING", label: "Cohabiting" },
 ];
 
+// Values mirror the assessor-side EmploymentStatus enum (assessment_earners
+// table). Labels are applicant-facing — slightly more verbose than the
+// internal enum names. See B11.
 const EMPLOYMENT_STATUSES = [
-  { value: "EMPLOYED", label: "Employed" },
+  { value: "PAYE", label: "Employed (PAYE)" },
+  { value: "BENEFITS", label: "Receiving benefits only (not working)" },
+  { value: "SELF_EMPLOYED_DIRECTOR", label: "Self-employed — company director" },
+  { value: "SELF_EMPLOYED_SOLE", label: "Self-employed — sole trader" },
+  { value: "OLD_AGE_PENSION", label: "Receiving state / old-age pension" },
+  { value: "PAST_PENSION", label: "Receiving private or occupational pension" },
   { value: "UNEMPLOYED", label: "Unemployed" },
-  { value: "SELF_EMPLOYED", label: "Self-employed" },
-  { value: "SELF_EMPLOYED_CIS", label: "Self-employed (CIS registered)" },
-  { value: "SELF_EMPLOYED_AND_EMPLOYED", label: "Self-employed and employed" },
-  { value: "RETIRED", label: "Retired" },
 ];
 
 // ─── Parent Contact fields sub-component ─────────────────────────────────────
@@ -324,10 +328,10 @@ function ParentEmploymentFields({
     name: `${prefix}.receivesScholarship` as "parent1Employment.receivesScholarship",
   });
 
+  // Statuses that reveal profession/employer/director fields. Mirrors
+  // WORKING_STATUSES in src/lib/schemas/parent-details.ts.
   const isWorking = status
-    ? ["EMPLOYED", "SELF_EMPLOYED", "SELF_EMPLOYED_CIS", "SELF_EMPLOYED_AND_EMPLOYED"].includes(
-        status
-      )
+    ? ["PAYE", "SELF_EMPLOYED_DIRECTOR", "SELF_EMPLOYED_SOLE"].includes(status)
     : false;
 
   const isUnemployed = status === "UNEMPLOYED";

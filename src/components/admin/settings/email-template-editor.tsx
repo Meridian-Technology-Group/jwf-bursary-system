@@ -38,14 +38,20 @@ const TEMPLATE_LABELS: Record<EmailTemplateType, string> = {
 
 // ─── Merge field hints ────────────────────────────────────────────────────────
 
+// NOTE: Merge field names use snake_case to match the keys passed by every
+// `sendEmail` call site (see `src/app/(admin)/invitations/actions.ts`,
+// `src/app/(portal)/apply/actions.ts`, etc.). `replaceMergeFields()` in
+// `src/lib/email/merge.ts` does literal {{name}} substitution — a token in
+// the template body must match the call-site key exactly or it will ship
+// to the recipient verbatim.
 const COMMON_MERGE_FIELDS = [
-  "{{applicantName}}",
-  "{{childName}}",
+  "{{applicant_name}}",
+  "{{child_name}}",
   "{{reference}}",
   "{{school}}",
-  "{{academicYear}}",
+  "{{academic_year}}",
   "{{deadline}}",
-  "{{loginUrl}}",
+  "{{registration_link}}",
 ];
 
 // ─── Props ────────────────────────────────────────────────────────────────────

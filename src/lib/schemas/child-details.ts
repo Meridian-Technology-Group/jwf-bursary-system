@@ -22,11 +22,22 @@ export const childAddressSchema = z.object({
   country: reqString(1, "Country is required"),
 });
 
+/**
+ * The school year-group the child enters at. Mandated by §4 of the spec.
+ * `OTHER` is the escape hatch for unusual cohorts; the assessor follows
+ * up for clarification in those cases.
+ */
+export const entryYearGroupSchema = z.enum(
+  ["Y6", "Y7", "Y9", "Y12", "OTHER"] as const,
+  { message: "Please select an entry year group" },
+);
+
 export const childDetailsSchema = z
   .object({
     school: z.enum(["TRINITY", "WHITGIFT"] as const, {
       message: "Please select a school",
     }),
+    entryYearGroup: entryYearGroupSchema,
     childFullName: z.preprocess(
       (v) => (v == null ? "" : v),
       z.string().min(2, "Child's full name is required").max(120, "Name is too long")

@@ -19,7 +19,7 @@ import type { DocumentMeta } from "@/lib/db/queries/applications";
 import { SectionForm } from "@/components/portal/section-form";
 // ProgressBar removed — progress is shown in the sidebar
 import { PrepopulatedSectionBanner } from "@/components/portal/form-fields/prepopulated-field";
-import { saveSection } from "../actions";
+import { saveSection, submitApplication } from "../actions";
 
 // Section form components
 import { ChildDetailsForm } from "@/components/portal/sections/child-details-form";
@@ -91,6 +91,7 @@ function getDefaultValues(
     case "CHILD_DETAILS":
       return {
         school: seed.applicationSchool,
+        entryYearGroup: undefined,
         childFullName: seed.applicationChildName ?? "",
         gender: "",
         dateOfBirth: "",
@@ -217,7 +218,29 @@ export function SectionPageClient({
   });
 
   async function handleSave(data: unknown) {
-    return saveSection(applicationId, sectionType, data);
+    const result = await saveSection(applicationId, sectionType, data);
+    if (!result.success || sectionType !== "DECLARATION") return result;
+
+    // Declaration is the terminal step: after a successful save, submit the
+    // application. submitApplication throws Next's NEXT_REDIRECT on success
+    // (it calls redirect("/submitted")) — that must propagate so the router
+    // can navigate. Any other thrown error is surfaced as a section-form
+    // error so the user sees what went wrong.
+    try {
+      await submitApplication(applicationId);
+    } catch (err) {
+      const digest = (err as { digest?: string } | null)?.digest;
+      if (
+        typeof digest === "string" &&
+        digest.startsWith("NEXT_REDIRECT")
+      ) {
+        throw err;
+      }
+      const message =
+        err instanceof Error ? err.message : "Submission failed. Please try again.";
+      return { success: false, errors: [message] };
+    }
+    return result;
   }
 
   // Deep-link target: when the URL has a hash (e.g. #parent1Income.p60DocumentId
