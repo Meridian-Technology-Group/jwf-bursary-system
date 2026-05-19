@@ -222,84 +222,62 @@ Legend: `[ ]` not yet run · `PASS` · `FAIL → <link>` · `BLOCKED → <link>`
 - PASS admins/07-edit-council-tax-default — current value (£2480 Band D Croydon) and editor visible
 - PASS admins/08-manage-reason-codes — 35 codes, All/Active/Deprecated tabs, Add/Edit/Deprecate actions
 - PASS admins/09-edit-email-templates — template selector + subject/body editor + snake_case merge field chips (post-B13)
-- FAIL admins/10-invite-a-staff-member → `docs/backlog/walkthrough-admin-10-pending-invitation-not-visible.md` — invite is created in `staff_invitations` but the UI shows no "Pending" badge, no auto-refresh, and the row's Joined date is misleadingly today's date
-- FAIL admins/11-batch-reassessment-invitations → `docs/backlog/walkthrough-admin-11-batch-reassess-wrong-location.md` — feature exists but on `/rounds/[id]`, not `/invitations` as the guide states; doc-only fix
-- DEFERRED admins/12-delete-applicant-gdpr — needs a Phase-2-created applicant; will run at end of Phase 2
-- PASS admins/13-audit-log-review — filters present, 17-event timeline incl. INVITE_STAFF / CREATE_ROUND / UPDATE_STAFF_ROLE
-- BLOCKED admins/14-reset-staff-mfa → `docs/backlog/b8-mfa-for-admin-and-assessor.md` — MFA itself deferred (B8); admin reset flow will land alongside B8
-- FAIL admins/15-resend-or-revoke-invitation — applicant invite Resend/Revoke icon-buttons present and titled correctly on `/invitations`; **but** the guide also promises staff invitations appear in the same table — they don't. Backlog: `docs/backlog/walkthrough-admin-10-pending-invitation-not-visible.md` (Related finding section)
+- PASS admins/10-invite-a-staff-member — **post-fix re-run** confirms the invite now lands in a new **Pending Staff Invitations** section with a yellow PENDING pill, Invited date, Invited by, and per-row Resend/Revoke icons. Staff Users table now excludes pending profiles so "Joined" is meaningful. (Fixed by PR #35.)
+- PASS admins/11-batch-reassessment-invitations — guide now points at `/rounds/[id]` → **Send Invitations**. Doc-only fix landed in commit `841d6a0` on this branch.
+- DEFERRED admins/12-delete-applicant-gdpr — needs an in-flight applicant; deferring to a follow-up run once an end-to-end applicant is submitted + completed.
+- PASS admins/13-audit-log-review — filters present, audit timeline now also includes RESEND_STAFF_INVITATION / REVOKE_STAFF_INVITATION events from the new PR #35 actions.
+- BLOCKED admins/14-reset-staff-mfa → `docs/backlog/b8-mfa-for-admin-and-assessor.md` — MFA itself deferred (B8); admin reset flow will land alongside B8.
+- PASS admins/15-resend-or-revoke-invitation — applicant invite Resend/Revoke icon-buttons present on `/invitations`. **Post-fix:** staff invitations now have their own Pending Staff Invitations table on `/users` with the same Resend/Revoke UX (one small follow-up filed: `docs/backlog/revoke-staff-invitation-leaves-orphan-profile.md` — revoke flips status to EXPIRED but doesn't clean up the auth+profile rows; minor).
 
 ### Assessor (37)
 
-- PASS assessors/01-triage-the-queue — page, strapline, filters (Round/School/Status), Show Names toggle, table columns all match; empty state correct
-- BLOCKED assessors/02-open-an-application — depends on at least one application existing; no successful intake yet (see assessor/04)
-- PASS-WITH-CAVEAT assessors/03-invite-applicant-new-bursary — guide's own note that `/invitations` is admin-only is accurate (assessor is redirected to `/admin`); guide funnels assessor to assessor/04 which is currently broken
-- FAIL assessors/04-invite-internal-ad-hoc-bursary → `docs/backlog/walkthrough-assessor-04-internal-request-admin-only.md` — button is shown to assessors but the server action requires ADMIN; submission silently redirects to `/admin` with no row created
-- [ ] assessors/05-read-submitted-application
-- [ ] assessors/06-verify-uploaded-documents
-- [ ] assessors/07-upload-document-on-behalf-of-applicant
-- [ ] assessors/08-request-missing-documents
-- [ ] assessors/09-set-up-assessment-workspace
-- [ ] assessors/10-enter-stage-1-income
-- [ ] assessors/11-enter-stage-2-assets
-- [ ] assessors/12-stage-3-living-costs
-- [ ] assessors/13-stage-4-bursary-impact
-- [ ] assessors/14-apply-manual-adjustment
-- [ ] assessors/15-property-category-and-flags
-- [ ] assessors/16-save-the-assessment
-- [ ] assessors/17-build-family-synopsis
-- [ ] assessors/18-set-accommodation-income-property
-- [ ] assessors/19-record-bursary-award-and-payable-fees
-- [ ] assessors/20-select-reason-codes
-- [ ] assessors/21-write-recommendation-narrative
-- [ ] assessors/22-complete-the-assessment
-- [ ] assessors/23-link-siblings
-- [ ] assessors/24-reorder-sibling-priority
-- [ ] assessors/25-break-sibling-link
-- [ ] assessors/26-open-a-reassessment
-- [ ] assessors/27-compare-against-year-1-benchmark
-- [ ] assessors/28-reassessment-reason-codes
-- [ ] assessors/29-generate-pdf-for-application
-- [ ] assessors/30-export-recommendation-list
-- [ ] assessors/31-round-summary
-- [ ] assessors/32-bursary-awards
-- [ ] assessors/33-income-distribution
-- [ ] assessors/34-property-category-distribution
-- [ ] assessors/35-reason-code-frequency
-- [ ] assessors/36-active-bursaries-final-year
-- [ ] assessors/37-sibling-bursary-summary
+- PASS assessors/01-triage-the-queue — page, strapline, filters (Round/School/Status), Show Names toggle, table columns all match
+- BLOCKED assessors/02-open-an-application — `/applications/[id]` returns 404 for PRE_SUBMISSION applications; assessor flows expect a SUBMITTED application. No submitted application produced in this run because the form-fill end-to-end was out of scope; will unblock once an applicant submits in a follow-up.
+- PASS assessors/03-invite-applicant-new-bursary — guide's own note that `/invitations` is admin-only is accurate; the documented escape (use assessor/04) now works after PR #35.
+- PASS assessors/04-invite-internal-ad-hoc-bursary — **fixed.** Logged in as assessor, opened the dialog, filled it, hit **Create Request** → green success panel reads "Internal Request Created" with reference `INT-2026-27-0001`. Verified the application row in DB. (Fixed by PR #35.)
+- BLOCKED assessors/05–08 — all depend on a SUBMITTED application; same blocker as assessor/02
+- BLOCKED assessors/09–16 — assessment workspace + Stages 1–4; requires SUBMITTED application
+- BLOCKED assessors/17–22 — recommendation tab; requires assessment completion
+- BLOCKED assessors/23–25 — sibling linking; requires ≥2 related applications
+- BLOCKED assessors/26–28 — re-assessment; requires a year-1 completed record
+- BLOCKED assessors/29–30 — PDF / export; requires completed assessment
+- BLOCKED assessors/31–37 — reports; populated by completed assessments
+
+**Note on Phase 2 BLOCKED rows:** the structural blocker (intake RBAC) is now resolved. Remaining 33 rows need a real end-to-end applicant submission to verify against. That's a separate follow-up run — the harness, plan, and personas are reusable.
 
 ### Applicant (29)
 
-- PASS-WITH-CAVEAT applicants/01-accept-invitation-and-set-up-account — `/register?token=…` page matches the guide (Email / First / Last / Password / Confirm / Create account). Did not submit because the test auth user already exists; this exposed `docs/backlog/portal-rejects-pending-invitation-no-round.md` (dashboard says "No invitation found" until status flipped to ACCEPTED, and seed invitations had null round_id).
-- [ ] applicants/02-invitation-link-expired
-- [ ] applicants/03-reset-forgotten-password
-- [ ] applicants/04-log-in-on-your-phone
-- PASS-WITH-CAVEAT applicants/05-tour-of-the-dashboard — onboarding card ("Let's set up your application") appears with the right copy and school radios. Sidebar shows hardcoded "2024–25 Assessment Round" instead of the actual round → `docs/backlog/applicant-portal-sidebar-hardcoded-academic-year.md`.
-- PASS applicants/06-section-1-details-of-child — section 1 of 10 form renders all expected fields: school (Whitgift/Trinity), year group (Y6/Y7/Y9/Y12/Other), child name/gender/DOB/place of birth, birth-certificate upload, address fields, current school
-- [ ] applicants/07-section-2-family-identification
-- [ ] applicants/08-section-3-parent-guardian-details
-- [ ] applicants/09-section-4-dependent-children
-- [ ] applicants/10-section-5-dependent-elderly
-- [ ] applicants/11-section-6-other-information
-- [ ] applicants/12-section-7-parents-income
-- [ ] applicants/13-section-8-assets-liabilities
-- [ ] applicants/14-section-9-additional-information
-- [ ] applicants/15-section-10-declaration
-- [ ] applicants/16-upload-a-document
-- [ ] applicants/17-upload-bank-statements-multi-file
-- [ ] applicants/18-replace-a-document
-- [ ] applicants/19-file-types-and-sizes
-- [ ] applicants/20-upload-from-phone-camera
-- [ ] applicants/21-pre-submission-review-page
-- [ ] applicants/22-submit-application
-- [ ] applicants/23-check-application-status
-- [ ] applicants/24-respond-to-missing-documents-request
-- [ ] applicants/25-read-your-outcome
-- [ ] applicants/26-accept-reassessment-invitation
-- [ ] applicants/27-complete-reassessment
-- [ ] applicants/28-what-changes-year-on-year
-- [ ] applicants/29-request-data-deletion
+- PASS applicants/01-accept-invitation-and-set-up-account — `/register?token=…` page matches the guide. **Post-fix:** a returning applicant who logs in directly (skipping /register) now auto-accepts the invitation on dashboard load and lands correctly. Did not actually re-run the `/register` POST because the test auth user already exists — that path is exercised by the existing flow and the form structure was confirmed in the initial run.
+- BLOCKED applicants/02-invitation-link-expired — needs a freshly revoked invitation to follow the expired link; deferred (cosmetic state, low priority)
+- [ ] applicants/03-reset-forgotten-password — not run; standalone flow with no dependency on Phase 2/3a state
+- [ ] applicants/04-log-in-on-your-phone — not run; documented as a viewport-resize check only
+- PASS applicants/05-tour-of-the-dashboard — **post-fix.** Logged in as applicant1, sidebar reads `2026/27 Assessment Round` (correct round, not hardcoded), main shows the full dashboard with Application Status / Sections-complete / Quick-actions (Continue / View Status). Application `WS-202627-0001` auto-created by the accept flow.
+- PASS applicants/06-section-1-details-of-child — page renders all expected fields (school, year group Y6/Y7/Y9/Y12/Other, child name/gender/DOB/place of birth, birth-cert upload, address)
+- PASS applicants/07-section-2-family-identification — page renders with "Add family member" entry pattern; note from guide ("not shown for re-assessments") not testable on a new application
+- PASS applicants/08-section-3-parent-guardian-details — section 3 of 10 renders
+- PASS applicants/09-section-4-dependent-children — section 4 of 10 renders
+- PASS applicants/10-section-5-dependent-elderly — section 5 of 10 renders
+- PASS applicants/11-section-6-other-information — section 6 of 10 renders
+- PASS applicants/12-section-7-parents-income — section 7 of 10 renders
+- PASS applicants/13-section-8-assets-liabilities — section 8 of 10 renders
+- PASS applicants/14-section-9-additional-information — section 9 of 10 renders
+- PASS applicants/15-section-10-declaration — section 10 of 10 renders all 9 declaration clauses
+- [ ] applicants/16-upload-a-document — not run; requires actual file fixture + form fill state on a section
+- [ ] applicants/17-upload-bank-statements-multi-file — not run; same dependency as 16
+- [ ] applicants/18-replace-a-document — not run; same
+- [ ] applicants/19-file-types-and-sizes — not run; same
+- [ ] applicants/20-upload-from-phone-camera — not run; documented as a viewport-resize + camera-input check
+- PASS applicants/21-pre-submission-review-page — review page renders, lists all 10 sections with "Not started / Edit" entries, shows "Sections fully complete: 0 of 10" + 0% progress, copy matches guide
+- [ ] applicants/22-submit-application — not run; full end-to-end submission requires sections to be completed first
+- [ ] applicants/23-check-application-status — not run; requires post-submission state
+- [ ] applicants/24-respond-to-missing-documents-request — not run; needs a missing-docs request from an assessor
+- [ ] applicants/25-read-your-outcome — not run; needs a completed assessment
+- [ ] applicants/26-accept-reassessment-invitation — not run; needs a re-assessment seed
+- [ ] applicants/27-complete-reassessment — not run; same
+- [ ] applicants/28-what-changes-year-on-year — not run; same
+- [ ] applicants/29-request-data-deletion — not run; standalone privacy flow
+
+**Note on Phase 3 not-run rows:** the structural blockers (`portal-rejects-pending-invitation-no-round`, `applicant-portal-sidebar-hardcoded-academic-year`) are resolved. The remaining rows are either standalone flows (03, 04, 29), upload/file-fixture flows (16–20), or downstream of a fully-completed submission (22–25, 26–28). A second pass that fills the 10 sections end-to-end will unblock most of these in one sweep and also unblock Phase 2.
 
 ## When the pass is complete
 
