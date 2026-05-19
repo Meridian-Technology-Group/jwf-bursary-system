@@ -16,6 +16,7 @@ import { withUserContext, type RlsRole } from "@/lib/db/prisma";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { ApplicationActions } from "@/components/admin/application-actions";
 import { AssignAssessorSelect } from "@/components/admin/assign-assessor-select";
+import { GdprDeleteAction } from "@/components/admin/gdpr-delete-action";
 import type { ApplicationStatus as PrismaStatus } from "@prisma/client";
 
 // Map Prisma status to StatusBadge status
@@ -185,6 +186,18 @@ export default async function ApplicationDetailLayout({
         status={application.status}
         documents={application.documents}
       />
+
+      {/* B7: GDPR right-to-erasure affordance — ADMIN only. The server
+          action enforces ADMIN/ASSESSOR + 7-year retention guard; we
+          additionally hide the UI from ASSESSOR/VIEWER to keep this in
+          the ADMIN remit. */}
+      {user.role === Role.ADMIN && (
+        <GdprDeleteAction
+          applicationId={application.id}
+          reference={application.reference}
+          documentCount={application.documents.length}
+        />
+      )}
 
       {/* Tab navigation */}
       <div className="border-b border-slate-200 mb-6">

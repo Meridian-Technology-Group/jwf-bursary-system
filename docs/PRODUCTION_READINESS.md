@@ -108,6 +108,7 @@ Each Blocker is presented as: **what + evidence + fix + effort**. Effort: S = un
 ### B7 — GDPR delete dialog not mounted
 **Evidence:** `gdprDeleteApplicantAction` exists at `src/app/(admin)/applications/[id]/actions.ts:471-671` and is well-engineered (Storage purge + DB anonymise + Auth user delete + audit-row anonymisation + retention guard). `GdprDeleteDialog` component exists at `src/components/admin/gdpr-delete-dialog.tsx` with two-step confirmation. Neither is imported by any rendered page. §27 cannot be ticked off — no UI affordance exists.
 **Fix:** Mount `GdprDeleteDialog` on the application detail page (admin tab or layout-level action menu). Smoke-test the full path including the auth-user delete.
+**Status**: RESOLVED on `feature/b7-mount-gdpr-delete-dialog` (pending staging smoke test). New `GdprDeleteAction` client wrapper (`src/components/admin/gdpr-delete-action.tsx`) renders a destructive-zone affordance in the application detail layout, ADMIN-only (`user.role === Role.ADMIN`). On confirm it invokes the existing `gdprDeleteApplicantAction`; on success the wrapper redirects to `/queue` via a minimal additive `onSuccess` prop added to `GdprDeleteDialog`.
 **Effort:** S.
 
 ### B8 — MFA not implemented for ADMIN/ASSESSOR
