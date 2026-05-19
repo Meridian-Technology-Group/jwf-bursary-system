@@ -104,6 +104,7 @@ Each Blocker is presented as: **what + evidence + fix + effort**. Effort: S = un
 **Evidence:** `src/app/api/documents/[id]/url/route.ts:74-76` sets `download: document.filename` on the signed URL, which produces `Content-Disposition: attachment`. Browsers download instead of preview. The Tab 1 "view inline" requirement (§14) cannot be satisfied.
 **Fix:** Provide two endpoints (or one with a `?download=true` query param): one with attachment disposition for explicit download, one without for inline preview. Apply the same role/ownership/audit checks to both.
 **Effort:** S.
+**Status**: RESOLVED on `fix/b6-document-inline-viewer`. `GET /api/documents/[id]/url` now defaults to an inline-disposition signed URL and only attaches `Content-Disposition: attachment` when `?download=true` is passed. Auth/ownership/audit checks are unchanged; audit metadata records the disposition. `DocumentViewer` Download button fetches a fresh download URL on click; all other callsites use the default inline URL.
 
 ### B7 — GDPR delete dialog not mounted
 **Evidence:** `gdprDeleteApplicantAction` exists at `src/app/(admin)/applications/[id]/actions.ts:471-671` and is well-engineered (Storage purge + DB anonymise + Auth user delete + audit-row anonymisation + retention guard). `GdprDeleteDialog` component exists at `src/components/admin/gdpr-delete-dialog.tsx` with two-step confirmation. Neither is imported by any rendered page. §27 cannot be ticked off — no UI affordance exists.
