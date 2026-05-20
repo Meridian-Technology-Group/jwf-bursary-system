@@ -20,7 +20,7 @@ import {
   getSectionData,
   upsertSection,
 } from "@/lib/db/queries/applications";
-import { withUserContext, type RlsRole } from "@/lib/db/prisma";
+import { withUserContext, withAdminContext, type RlsRole } from "@/lib/db/prisma";
 import { sendEmail } from "@/lib/email/send";
 import { createAuditLog } from "@/lib/audit/log";
 import { getSectionGapStatuses, type SectionGap } from "@/lib/portal/section-gaps";
@@ -350,15 +350,30 @@ export async function submitApplication(applicationId: string): Promise<never> {
     throw new Error(JSON.stringify(payload));
   }
 
-  // ── Mark as SUBMITTED + audit log ─────────────────────────────────────────
+  // ── Mark as SUBMITTED ─────────────────────────────────────────────────────
+  // The status update is committed in its own transaction so that a subsequent
+  // audit-log failure can never roll it back. (The audit INSERT runs inside a
+  // Prisma create() which issues INSERT ... RETURNING *; if the SELECT policy
+  // on audit_logs filtered the RETURNING row, Prisma would throw, abort the
+  // Postgres transaction, and undo the status change — the original bug.)
+  const submittedAt = new Date();
   await withUserContext(user.id, user.role as RlsRole, async (tx) => {
     await tx.application.update({
       where: { id: applicationId },
       data: {
         status: "SUBMITTED",
-        submittedAt: new Date(),
+        submittedAt,
       },
     });
+  });
+
+  // ── Audit log (decoupled, non-blocking) ───────────────────────────────────
+  // Written in a separate withAdminContext transaction AFTER the status update
+  // commits. service_role satisfies is_admin() so the INSERT policy always
+  // passes regardless of claim shape, and RETURNING is not filtered by the
+  // SELECT policy. A failure here is caught by createAuditLog's own try/catch
+  // and logged to stderr; it cannot affect the committed submission.
+  await withAdminContext(async (tx) => {
     await createAuditLog(tx, {
       userId: user.id,
       action: "APPLICATION_SUBMITTED",
@@ -367,7 +382,7 @@ export async function submitApplication(applicationId: string): Promise<never> {
       context: `Reference: ${application.reference}`,
       metadata: {
         reference: application.reference,
-        submittedAt: new Date().toISOString(),
+        submittedAt: submittedAt.toISOString(),
       },
     });
   });
