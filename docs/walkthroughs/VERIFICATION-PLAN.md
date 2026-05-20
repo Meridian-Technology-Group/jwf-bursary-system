@@ -232,18 +232,51 @@ Legend: `[ ]` not yet run · `PASS` · `FAIL → <link>` · `BLOCKED → <link>`
 ### Assessor (37)
 
 - PASS assessors/01-triage-the-queue — page, strapline, filters (Round/School/Status), Show Names toggle, table columns all match
-- BLOCKED assessors/02-open-an-application — `/applications/[id]` returns 404 for PRE_SUBMISSION applications; assessor flows expect a SUBMITTED application. No submitted application produced in this run because the form-fill end-to-end was out of scope; will unblock once an applicant submits in a follow-up.
-- PASS assessors/03-invite-applicant-new-bursary — guide's own note that `/invitations` is admin-only is accurate; the documented escape (use assessor/04) now works after PR #35.
-- PASS assessors/04-invite-internal-ad-hoc-bursary — **fixed.** Logged in as assessor, opened the dialog, filled it, hit **Create Request** → green success panel reads "Internal Request Created" with reference `INT-2026-27-0001`. Verified the application row in DB. (Fixed by PR #35.)
-- BLOCKED assessors/05–08 — all depend on a SUBMITTED application; same blocker as assessor/02
-- BLOCKED assessors/09–16 — assessment workspace + Stages 1–4; requires SUBMITTED application
-- BLOCKED assessors/17–22 — recommendation tab; requires assessment completion
-- BLOCKED assessors/23–25 — sibling linking; requires ≥2 related applications
-- BLOCKED assessors/26–28 — re-assessment; requires a year-1 completed record
-- BLOCKED assessors/29–30 — PDF / export; requires completed assessment
-- BLOCKED assessors/31–37 — reports; populated by completed assessments
+- PASS assessors/02-open-an-application — header (mono reference, Whitgift badge, Round 2026/27, Submitted badge), Actions bar "Awaiting review → Begin Review", and all four tabs render exactly as documented (app had to be assigned to the assessor first; an unassigned SUBMITTED app 404s under assessor RLS rather than redirecting to /admin — minor doc nuance, not filed).
+- PASS assessors/03-invite-applicant-new-bursary — guide's own note that `/invitations` is admin-only is accurate; the documented escape (use assessor/04) works.
+- PASS assessors/04-invite-internal-ad-hoc-bursary — verified in a prior run; left intact.
+- PASS assessors/05-read-submitted-application — Applicant Data tab renders all 10 sections read-only, each with a green Complete chip, dt/dd rows, £-formatted currency, Yes/No booleans, nested DataBlocks; matches guide (one cosmetic de-camelcase glitch "Has C Ourt Order", not filed).
+- PASS assessors/06-verify-uploaded-documents — verify checkbox flips the doc to is_verified=true and writes a DOCUMENT_VERIFIED audit row. FAIL on the inline preview only → docs/backlog/walkthrough-assessor-06-csp-blocks-inline-document-preview.md (prod CSP default-src 'self' has no frame-src, so the embedded PDF iframe is blocked; Download/Open-in-new-tab still work).
+- PASS assessors/07-upload-document-on-behalf-of-applicant — slot dropdown (humanised ALL_DOCUMENT_SLOTS), file picker, preview, Upload → "uploaded successfully", Documents count 4→5; audit action is DOCUMENT_UPLOADED_BY_ASSESSOR not the guide's DOCUMENT_UPLOADED → docs/backlog/walkthrough-assessor-07-audit-action-name-mismatch.md (doc fix).
+- PASS assessors/08-request-missing-documents — after Begin Review, the dialog lists slots with Verified/Uploaded pills + "17 slots selected" counter + additional message; Send Request transitions status to PAUSED ("Paused — awaiting documents", Resume Review) and writes APPLICATION_PAUSED.
+- FAIL assessors/09-set-up-assessment-workspace — Begin Assessment opens the full split-screen workspace (sections A–E, live calc sidebar, six-tab checklist) as documented, BUT the Family Type Category select is empty → docs/backlog/walkthrough-assessor-09-reference-data-rls-excludes-assessor.md (reference-table SELECT RLS is is_admin_or_viewer(), excludes ASSESSOR; assessor cannot pick a family-type category, which drives notional rent/utilities/food).
+- PASS assessors/10-enter-stage-1-income — Section B Parent 1/Parent 2 tabs, Employment Status dropdown, per-component income fields; live Stage 1 "Total Household Net Income" updates (entered £34,000 net pay → £34,000).
+- PASS assessors/11-enter-stage-2-assets — Section C property/savings inputs; live Stage 2 "Net Assets Valuation" line updates (£31,520).
+- PASS assessors/12-stage-3-living-costs — live Stage 3 "HNDI After Necessary Spend" line renders (£31,520; equals Stage 2 here because family-type costs are absent — see the assessor-09 RLS bug).
+- PASS assessors/13-stage-4-bursary-impact — live Stage 4 "Required Bursary" + Payable Fees block (gross, net, VAT, yearly, monthly) render and recompute.
+- PASS assessors/14-apply-manual-adjustment — entering a non-zero £ value reveals the Manual Adjustment Reason field and shifts Yearly Payable (+£300 test); persisted to manual_adjustment / manual_adjustment_reason. (fill() doesn't fire the CurrencyInput onBlur; real keystrokes required — harness note, not a bug.)
+- PASS assessors/15-property-category-and-flags — Section E flags tick and persist (credit_risk_flag=true; "Credit Risk Flag Active" banner shows on the recommendation tab); Property Category select (1–12) on the recommendation tab triggers the verbatim amber "High Property Category" banner for category 9.
+- PASS assessors/16-save-the-assessment — Save shows "Saved hh:mm:ss"; Complete (disabled while annualFees=0) flips status to Completed, makes the form read-only, and unlocks the Recommendation tab. DB confirms persisted figures + assessment.status=COMPLETED.
+- PASS assessors/17-build-family-synopsis — Family Synopsis textarea saves and persists (verified in recommendations.family_synopsis).
+- PASS assessors/18-set-accommodation-income-property — Accommodation Status / Income Category free-text + Property Category select all save (accommodation_status="Owned outright", income_category="Medium", property_category=9).
+- PASS assessors/19-record-bursary-award-and-payable-fees — Assessment Fee Summary card shows read-only Bursary Award £0, Yearly £29,100, Monthly £2,425 (=29100/12) carried from the completed assessment, with the "cannot be edited here" help text.
+- FAIL assessors/20-select-reason-codes — the Reason Codes picker shows "No reason codes available." for the ASSESSOR even though 35 active codes exist; same RLS root cause → docs/backlog/walkthrough-assessor-09-reference-data-rls-excludes-assessor.md (reason_codes_select is is_admin_or_viewer()).
+- PASS assessors/21-write-recommendation-narrative — Recommendation Summary textarea saves; "Recommendation saved" confirmation appears; persists in recommendations.summary.
+- PASS assessors/22-complete-the-assessment — verified up to (not through) the irreversible confirm: Qualifies opens the OutcomeDialog with the exact "Confirm: Qualifies / … cannot be undone" copy and Confirm/Cancel buttons; cancelled to avoid sending the outcome email + terminal lock.
+- BLOCKED assessors/23-link-siblings — needs ≥2 applications linked in one FamilyGroup; the round has no sibling-linked family.
+- BLOCKED assessors/24-reorder-sibling-priority — depends on an existing sibling link (guide 23).
+- BLOCKED assessors/25-break-sibling-link — depends on an existing sibling link (guide 23).
+- BLOCKED assessors/26-open-a-reassessment — needs a year-1 completed bursary record; no reassessment applications exist in the round.
+- BLOCKED assessors/27-compare-against-year-1-benchmark — needs a year-1 benchmark (guide 26).
+- BLOCKED assessors/28-reassessment-reason-codes — needs a reassessment (guide 26) and is also gated by the reason-code RLS bug above.
+- PASS assessors/29-generate-pdf-for-application — Download PDF button links to /api/pdf/recommendation/[id]; the endpoint returns 200 application/pdf, filename "recommendation-WS-202627-0001.pdf", valid %PDF- payload.
+- PASS assessors/30-export-recommendation-list — /exports page + Download Options match; CSV export returns our completed-recommendation row with all documented columns. FAIL note → docs/backlog/walkthrough-assessor-30-export-includes-applicant-name.md (export DOES include First/Last Name, contradicting the guide's GDPR "no names" claim; filename also carries a date).
+- PASS assessors/31-round-summary — guide acknowledges no dedicated section; School Comparison card + round selector render (WHITGIFT: 1 app, avg award 0%, avg monthly £2,425) as the guide describes.
+- PASS assessors/32-bursary-awards — Award Distribution card, strapline, and bands all render; our app appears in the 0% band (1 / 100%).
+- PASS assessors/33-income-distribution — Income Bands card renders; our app falls in the £25k–£40k band (£34k net), strapline matches.
+- FAIL assessors/34-property-category-distribution — Property Categories card shows "No data for this round yet" despite a saved property_category=9 → docs/backlog/walkthrough-assessor-34-property-report-reads-wrong-table.md (report reads Assessment.propertyCategory which is always null; the value lives on Recommendation).
+- PASS assessors/35-reason-code-frequency — Reason Code Frequency card + strapline render; empty state "No reason codes recorded for this round." is accurate (none selected — see the reason-code RLS bug).
+- BLOCKED assessors/36-active-bursaries-final-year — guide states the report is not yet implemented; confirmed absent from /reports (only the five documented sections render).
+- BLOCKED assessors/37-sibling-bursary-summary — guide states the report is not yet implemented; confirmed absent from /reports.
 
-**Note on Phase 2 BLOCKED rows:** the structural blocker (intake RBAC) is now resolved. Remaining 33 rows need a real end-to-end applicant submission to verify against. That's a separate follow-up run — the harness, plan, and personas are reusable.
+**Phase 2 result:** 26 PASS, 4 FAIL, 7 BLOCKED. The headline bug is the
+reference-data SELECT RLS excluding the ASSESSOR role
+(`walkthrough-assessor-09-reference-data-rls-excludes-assessor.md`),
+which breaks family-type selection (09) and the reason-code picker (20)
+— the two assessor-only surfaces that read admin reference tables. The
+calculation engine, save/complete, recommendation save, PDF, and export
+all work end to end. The test application had to be assigned to the
+assessor (assigned_to_id was null) before any of Phase 2 could run.
 
 ### Applicant (29)
 
