@@ -18,6 +18,7 @@ import {
   XCircle,
   Circle,
   ArrowLeft,
+  Upload,
 } from "lucide-react";
 import { getCurrentUser } from "@/lib/auth/roles";
 import { withUserContext, type RlsRole } from "@/lib/db/prisma";
@@ -264,6 +265,33 @@ export default async function StatusPage() {
           </span>
         </div>
       </div>
+
+      {/* Paused — missing documents call to action */}
+      {appStatus === "PAUSED" && (
+        <div className="rounded-xl border border-yellow-300 bg-yellow-50 p-6 shadow-sm">
+          <div className="flex items-start gap-4">
+            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-yellow-100">
+              <Upload className="h-6 w-6 text-yellow-700" aria-hidden="true" />
+            </div>
+            <div className="flex-1">
+              <h2 className="text-base font-semibold text-yellow-900">
+                The bursary team needs more from you
+              </h2>
+              <p className="mt-1 text-sm text-yellow-800">
+                Your application is paused while an assessor waits for some
+                additional documents. Upload what they&rsquo;ve asked for to
+                get your assessment moving again.
+              </p>
+              <Link
+                href="/respond"
+                className="mt-4 inline-flex items-center gap-1.5 rounded-md bg-primary-900 px-4 py-2 text-sm font-medium text-white hover:bg-primary-800 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-600"
+              >
+                Respond to the request
+              </Link>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Status timeline */}
       <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">

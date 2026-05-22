@@ -253,3 +253,93 @@ export async function beginReassessmentAction(): Promise<BeginReassessmentResult
 
   redirect("/apply/child-details");
 }
+
+// ---------------------------------------------------------------------------
+// submitMissingDocsResponse
+// ---------------------------------------------------------------------------
+
+export type ActionResult =
+  | { success: true }
+  | { success: false; error: string };
+
+/**
+ * Applicant-side counterpart to the assessor's `pauseApplication` action.
+ *
+ * Called from the "Respond to a missing-documents request" page when the
+ * applicant has re-uploaded the requested files and clicks "Send to
+ * assessor". Transitions the application PAUSED → NOT_STARTED (the status
+ * the portal surfaces as "Under Review") and records a
+ * `MISSING_DOCS_RESPONDED` audit row that mirrors the assessor's
+ * `APPLICATION_PAUSED` entry.
+ *
+ * Ownership and the PAUSED precondition are both enforced server-side so the
+ * action is safe even if the page state is stale.
+ */
+export async function submitMissingDocsResponse(
+  applicationId: string
+): Promise<ActionResult> {
+  const user = await requireRole([Role.APPLICANT]);
+
+  try {
+    const result = await withUserContext(
+      user.id,
+      user.role as RlsRole,
+      async (tx) => {
+        const application = await tx.application.findUnique({
+          where: { id: applicationId },
+          select: {
+            id: true,
+            reference: true,
+            status: true,
+            leadApplicantId: true,
+          },
+        });
+
+        if (!application || application.leadApplicantId !== user.id) {
+          return { success: false as const, error: "Application not found." };
+        }
+
+        if (application.status !== "PAUSED") {
+          return {
+            success: false as const,
+            error:
+              "This application is not currently awaiting documents, so there is nothing to send.",
+          };
+        }
+
+        await tx.application.update({
+          where: { id: applicationId },
+          data: { status: "NOT_STARTED" },
+        });
+
+        await createAuditLog(tx, {
+          userId: user.id,
+          action: "MISSING_DOCS_RESPONDED",
+          entityType: "Application",
+          entityId: applicationId,
+          context: "Applicant responded to a missing-documents request",
+          metadata: {
+            fromStatus: "PAUSED",
+            toStatus: "NOT_STARTED",
+            reference: application.reference,
+          },
+        });
+
+        return { success: true as const };
+      }
+    );
+
+    if (!result.success) return result;
+
+    revalidatePath("/respond");
+    revalidatePath("/status");
+    revalidatePath("/");
+    return { success: true };
+  } catch (err) {
+    console.error("[portal/actions] submitMissingDocsResponse error:", err);
+    return {
+      success: false,
+      error: "Failed to send your response. Please try again.",
+    };
+  }
+}
