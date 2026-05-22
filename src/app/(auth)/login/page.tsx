@@ -78,12 +78,17 @@ function LoginForm() {
     const isAdminRole = role === "ADMIN" || role === "ASSESSOR" || role === "VIEWER";
     let destination: string;
 
-    if (nextPath && !(isAdminRole && nextPath === "/")) {
-      // Honour the ?next= param, but not when it's "/" for admin-area users
-      // (they should land on /admin, not the applicant portal).
+    if (isAdminRole) {
+      // Staff (ADMIN / ASSESSOR / VIEWER) must clear MFA (B8 / MSA Sched 4 §8)
+      // before reaching any admin route. Send them to /login/mfa, preserving
+      // their intended destination so the MFA step lands them there once they
+      // reach aal2. The middleware enforces this regardless, but redirecting
+      // here avoids a flash of /admin → /login/mfa. APPLICANTs are unaffected.
+      const intended = nextPath && nextPath !== "/" ? nextPath : "/admin";
+      destination = `/login/mfa?next=${encodeURIComponent(intended)}`;
+    } else if (nextPath) {
+      // Honour the ?next= param for non-staff.
       destination = nextPath;
-    } else if (isAdminRole) {
-      destination = "/admin";
     } else {
       // Default (APPLICANT or unknown) → portal home.
       destination = "/";
