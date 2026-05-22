@@ -19,7 +19,7 @@ The system serves three distinct user groups, only two of which interact with th
 | **Technical comfort** | Varies widely — from digitally confident professionals to parents with limited English or low digital literacy. |
 | **Goals** | Submit a complete, accurate application with all supporting documents within the deadline. Understand what is required at each step. Receive a clear outcome. |
 | **Pain points with current system** | <ul><li>Confusing form layout — unclear what is required vs. optional</li><li>Difficulty understanding financial terminology (net vs. gross, monthly vs. yearly)</li><li>No clear progress indicator — unsure if the application is complete</li><li>Cannot easily see which documents are missing</li><li>Must re-enter all information from scratch for annual re-assessments with minimal pre-population</li><li>Receives no in-system status updates — relies on email from the assessor</li></ul> |
-| **Single-user model** | Only the lead applicant has portal access. They answer on behalf of both parents. There is no second-parent login. |
+| **Single-user model (with one exception)** | By default only the lead applicant has portal access and answers on behalf of both parents. The sole documented exception is the dual-parent path for separated/divorced households, where staff may invite a second parent to a restricted login to supply **only their own** financials (Phase 2 — proposed, pending Foundation confirmation; see AP-15). |
 
 ### 2.3 Persona: Foundation Assessor
 

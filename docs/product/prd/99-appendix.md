@@ -24,7 +24,7 @@ Key terms are defined in the [Key Domain Concepts](../../../README.md#key-domain
 | **Two-Layer Data Model** | The separation between applicant-entered data (document collection) and assessor-entered data (calculation input) |
 | **Benchmark** | The payable fees from the first year's assessment, acting as a floor for subsequent years |
 | **Reason Codes** | Configurable codes explaining year-on-year changes in payable fees |
-| **Lead Applicant** | The single parent/guardian with portal access, answering on behalf of the household |
+| **Lead Applicant** | The parent/guardian with portal access, answering on behalf of the household. In the dual-parent exception for separated/divorced households, a secondary parent may also receive a restricted login to supply only their own financials (see AP-15) |
 
 ### Appendix C: Revision History
 
@@ -33,3 +33,4 @@ Key terms are defined in the [Key Domain Concepts](../../../README.md#key-domain
 | 1.0 | 2026-02-22 | — | Initial draft |
 | 1.1 | 2026-02-22 | — | Added data minimisation & name masking requirements (3.1.14 NM-01–NM-05), user stories US-B13/US-B14, non-functional requirement NF-16, updated wireframe descriptions for Application Queue and Assessment Form |
 | 1.2 | 2026-02-22 | — | Added split-screen document viewer requirement (AE-17), user story US-B15, updated Assessment Form wireframe description |
+| 1.3 | 2026-05-22 | Brian Wagner | Added dual-parent (separated/divorced) application requirement (AP-15, Phase 2 — proposed); amended AP-02 single-user model to document the second-parent exception; updated the Lead Applicant persona (§2.2) and glossary entry; recorded the superseding decision against OPEN_QUESTIONS Q3. Canonical design: `docs/backlog/dual-parent-separated-bursary-application.md`. **Status: proposed — pending Foundation confirmation of the policy change.** |

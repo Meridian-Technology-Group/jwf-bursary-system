@@ -14,6 +14,8 @@ related:
   - src/components/admin/assessment-form.tsx (PARENT_1 / PARENT_2 earners)
   - src/lib/assessment/stage1-income.ts, stage2-assets.ts
   - the applicant invitation flow spec (docs/product/specs/invitation-flow.md)
+  - PRD AP-15 / amended AP-02 (docs/product/prd/03-applicant-portal.md) — this file is the canonical spec for that requirement
+  - PRD OPEN_QUESTIONS Q3 (docs/product/open-questions.md) — supersedes the original single-user answer
 ---
 
 ## Context

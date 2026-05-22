@@ -42,6 +42,19 @@ The current system shows a "Registered on:" field for Parent/Guardian 2, implyin
 - Can both parents be logged in and editing simultaneously? A: No, only the lead applicant has access via their email address
 - Does Parent 2 get full visibility of the entire application, or only their own sections? A: Most of the time, the lead applicant answers on behalf of both parents, they tick the box ‘ married couple’ or the divorced parent or separated parent or single parent applies as a sole parent and we check that this is really the case.
 
+**Update (2026-05-22) — decision under revision.** The answers above (single-user
+model; "only the lead applicant has access"; separated parents handled by creating
+a *separate* application) drove PRD **AP-02** as originally written. A new requirement —
+a staff-invited **secondary-parent login** on the *same* application, for separated/
+divorced households assessed on both parents' finances — has since been raised. It
+both contradicts AP-02 as first stated and goes beyond the "separate application"
+workaround recorded here. The PRD now carries this as **AP-15 (Phase 2 — proposed)**
+and AP-02 has been amended to describe the exception. Canonical design and open policy
+questions (joint-asset double-counting, identity matching, inter-parent maintenance,
+sole-parent-toggle reconciliation): [dual-parent feature spec](../backlog/dual-parent-separated-bursary-application.md).
+**This change is not yet confirmed by the Foundation — the original answers above stand
+until the Foundation signs off on the revised model.**
+
 ---
 
 ## High Priority (affects data model and calculation engine)

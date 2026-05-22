@@ -4,8 +4,8 @@
 | Field | Value |
 |-------|-------|
 | **Author** | Meridian Technology Group (Brian Wagner) |
-| **Version** | 1.2 |
-| **Date** | 2026-02-22 |
+| **Version** | 1.3 |
+| **Date** | 2026-05-22 |
 | **Status** | Draft |
 
 ---
