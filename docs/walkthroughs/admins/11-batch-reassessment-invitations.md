@@ -16,20 +16,23 @@ child and round.
 
 ## Steps
 
-1. Sidebar → **Invitations**. You arrive at `/invitations` under the
-   heading **Invitations**.
-2. In the **Send New Invitation** section, locate the **Send Batch
-   Reassessment Invitations** button.
-3. Click it. A dialog opens listing the active bursary holders that
-   will be invited for the current `OPEN` round.
+1. Sidebar → **Rounds**. The list at `/rounds` shows every round.
+2. Click the academic year of the `OPEN` round you want to batch-invite
+   for. You land on `/rounds/[id]` (the round-detail page).
+3. In the round's actions group, click **Send Invitations**. A dialog
+   opens listing the active bursary holders that will be invited for
+   this round.
 4. Review the list. Each row shows applicant email, child name, and
-   school.
+   school. Bursary accounts that already have a PENDING or ACCEPTED
+   invitation for this round are excluded automatically (the batch
+   is idempotent).
 5. Confirm by clicking the send button in the dialog.
 
 ## Verification
 
-- The **Invitation History** table now contains one PENDING row per
-  recipient, each tagged with the current round.
+- The dialog confirms the count of invitations sent.
+- The **Invitation History** table on `/invitations` now contains one
+  PENDING row per recipient, each tagged with this round.
 - Recipients receive the *Re-assessment Invitation* email (template
   editable via [[09-edit-email-templates]]).
 - Each link routes the applicant to the registration / re-assessment
