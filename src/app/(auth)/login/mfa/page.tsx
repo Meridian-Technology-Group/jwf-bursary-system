@@ -113,9 +113,17 @@ export default async function MfaPage({
     await supabase.auth.mfa.unenroll({ factorId: stale.id });
   }
 
-  const { data: enrolled, error: enrollError } = await supabase.auth.mfa.enroll(
-    { factorType: "totp" }
-  );
+  // Use a unique friendly name per enrol attempt. The staff login redirect can
+  // trigger two near-simultaneous server renders of this page (router.push +
+  // router.refresh), each calling enroll(). With Supabase's default empty
+  // friendly name, the second collides on the name-uniqueness constraint ("A
+  // factor with the friendly name … already exists") and the very first hit
+  // shows an error until a reload. A unique name lets concurrent enrolments
+  // both succeed; the dedup above clears the stale one on the next visit.
+  const { data: enrolled, error: enrollError } = await supabase.auth.mfa.enroll({
+    factorType: "totp",
+    friendlyName: `staff-totp-${crypto.randomUUID()}`,
+  });
 
   if (enrollError || !enrolled) {
     return (
