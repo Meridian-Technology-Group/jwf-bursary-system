@@ -52,7 +52,9 @@ export default async function PortalLayout({
     );
     if (application) {
       const gapStatuses = await getSectionGapStatuses(application.id);
-      sidebarSections = buildSidebarSections(gapStatuses);
+      sidebarSections = buildSidebarSections(gapStatuses, {
+        isReassessment: application.isReassessment,
+      });
       roundName = application.round?.academicYear
         ? `${application.round.academicYear} Assessment Round`
         : undefined;

@@ -20,8 +20,11 @@
  */
 
 import type { Metadata } from "next";
+import { redirect } from "next/navigation";
+import { getCurrentUser } from "@/lib/auth/roles";
 import { validateApplicantInvitationAction } from "./actions";
 import { ApplicantRegisterForm } from "./applicant-register-form";
+import { ReassessmentSignIn } from "./reassessment-signin";
 import { TokenRegistration } from "./token-registration";
 
 export const metadata: Metadata = {
@@ -60,6 +63,30 @@ export default async function RegisterPage({
 
   if (!validation.success) {
     return <InvalidInvitation message={validation.error} />;
+  }
+
+  // Re-assessment invite → the holder already has an account from year one.
+  // Never show the first-year "create account / choose a password" form.
+  if (validation.isReassessment) {
+    const currentUser = await getCurrentUser();
+
+    // Already signed in as the invited holder → straight into the portal,
+    // where the Begin re-assessment card consumes the invite.
+    if (
+      currentUser &&
+      currentUser.email.toLowerCase() === validation.email.toLowerCase()
+    ) {
+      redirect("/");
+    }
+
+    // Otherwise ask them to sign in with last year's credentials.
+    return (
+      <ReassessmentSignIn
+        email={validation.email}
+        childName={validation.childName}
+        academicYear={validation.academicYear}
+      />
+    );
   }
 
   return (

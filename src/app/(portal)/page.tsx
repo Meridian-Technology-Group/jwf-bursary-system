@@ -17,6 +17,7 @@ import { getCurrentApplicationForUser, getSectionStatusList } from "@/lib/db/que
 import { getOrAcceptLatestInvitationForUser } from "@/lib/db/queries/invitations";
 import { StatusBadge, type ApplicationStatus } from "@/components/shared/status-badge";
 import { OnboardingCard } from "@/app/(portal)/onboarding-card";
+import { ReassessmentCard } from "@/app/(portal)/reassessment-card";
 import { FileText, ArrowRight, ClipboardList } from "lucide-react";
 
 /** Map Prisma ApplicationStatus to StatusBadge's display type. */
@@ -35,7 +36,7 @@ export default async function PortalDashboardPage() {
   const user = await getCurrentUser();
   const firstName = user?.firstName ?? "there";
 
-  const { application, completedSections, invitation } = user
+  const { application, completedSections, invitation, inviteRoundYear } = user
     ? await (async () => {
         const userScope = await withUserContext(
           user.id,
@@ -51,22 +52,42 @@ export default async function PortalDashboardPage() {
           }
         );
 
-        // Invitation lookup needs admin context — the helper auto-accepts
-        // a PENDING invitation on first sight, which the app_user role is
-        // not granted under RLS.
-        const inv = !userScope.app
-          ? await withAdminContext((tx) =>
-              getOrAcceptLatestInvitationForUser(tx, user.id)
-            )
-          : null;
+        // Invitation lookup needs admin context — the helper auto-accepts a
+        // PENDING first-year invitation on first sight (a write the app_user
+        // role is not granted under RLS), but deliberately leaves a PENDING
+        // re-assessment invite untouched so the Begin card can consume it.
+        let inv = null;
+        let roundYear: string | null = null;
+        if (!userScope.app) {
+          inv = await withAdminContext((tx) =>
+            getOrAcceptLatestInvitationForUser(tx, user.id)
+          );
+          // Re-assessment cards need the new round's academic year for the
+          // "welcome back" copy.
+          if (inv?.bursaryAccountId && inv.roundId) {
+            const round = await withAdminContext((tx) =>
+              tx.round.findUnique({
+                where: { id: inv!.roundId! },
+                select: { academicYear: true },
+              })
+            );
+            roundYear = round?.academicYear ?? null;
+          }
+        }
 
         return {
           application: userScope.app,
           completedSections: userScope.completed,
           invitation: inv,
+          inviteRoundYear: roundYear,
         };
       })()
-    : { application: null, completedSections: 0, invitation: null };
+    : {
+        application: null,
+        completedSections: 0,
+        invitation: null,
+        inviteRoundYear: null,
+      };
 
   const isDraft = application?.status === "PRE_SUBMISSION";
 
@@ -197,8 +218,17 @@ export default async function PortalDashboardPage() {
           </div>
         </>
       ) : invitation ? (
-        /* Invitation found but no Application yet — show onboarding card */
-        <OnboardingCard defaultChildName={invitation.childName} />
+        invitation.bursaryAccountId ? (
+          /* Returning bursary holder — re-assessment "welcome back" card. */
+          <ReassessmentCard
+            defaultChildName={invitation.childName}
+            school={invitation.school}
+            academicYear={inviteRoundYear}
+          />
+        ) : (
+          /* First-year invitation, no Application yet — onboarding card. */
+          <OnboardingCard defaultChildName={invitation.childName} />
+        )
       ) : (
         /* No invitation found — neutral fallback */
         <div className="rounded-xl border border-slate-200 bg-white p-8 text-center shadow-sm">

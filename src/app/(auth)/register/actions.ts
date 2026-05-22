@@ -22,6 +22,7 @@ import {
   markInvitationAccepted,
 } from "@/lib/db/queries/invitations";
 import { generateApplicationReference } from "@/lib/applications/reference";
+import { createReassessmentApplicationFromInvitation } from "@/lib/db/queries/reassessment";
 import { validatePasswordStrength } from "@/lib/auth/password-policy";
 import { createAuditLog } from "@/lib/audit/log";
 
@@ -70,6 +71,14 @@ export type ValidateApplicantInvitationResult =
       childName: string | null;
       school: School | null;
       roundId: string | null;
+      /**
+       * True when this is a re-assessment invite (links to an existing
+       * BursaryAccount). The holder already has an account, so the page
+       * routes them to sign in rather than rendering the create-account form.
+       */
+      isReassessment: boolean;
+      /** New round's academic year, for the re-assessment "welcome back" copy. */
+      academicYear: string | null;
     }
   | { success: false; error: string };
 
@@ -111,6 +120,18 @@ export async function validateApplicantInvitationAction(
       };
     }
 
+    const isReassessment = !!invitation.bursaryAccountId;
+    let academicYear: string | null = null;
+    if (invitation.roundId) {
+      const round = await withAdminContext((tx) =>
+        tx.round.findUnique({
+          where: { id: invitation.roundId! },
+          select: { academicYear: true },
+        })
+      );
+      academicYear = round?.academicYear ?? null;
+    }
+
     return {
       success: true,
       email: invitation.email,
@@ -120,6 +141,8 @@ export async function validateApplicantInvitationAction(
       childName: invitation.childName,
       school: invitation.school,
       roundId: invitation.roundId,
+      isReassessment,
+      academicYear,
     };
   } catch (err) {
     console.error(
@@ -246,10 +269,22 @@ export async function acceptApplicantInvitationAction(
         },
       });
 
-      // Application row — only when the invitation carries the required
-      // applicant context. Otherwise the applicant completes onboarding via
-      // the portal dashboard card.
-      if (invitation.school && invitation.childName && invitation.roundId) {
+      // Application row.
+      //
+      // Re-assessment invite (bursaryAccountId set): create a fully
+      // prepopulated re-assessment application via the shared helper so it
+      // carries the previous year's personal sections and blank financials.
+      //
+      // First-year invite: create a plain PRE_SUBMISSION application — but
+      // only when the invitation carries school + childName + roundId.
+      // Otherwise the applicant completes onboarding via the portal card.
+      if (invitation.bursaryAccountId && invitation.roundId) {
+        await createReassessmentApplicationFromInvitation(tx, invitation);
+      } else if (
+        invitation.school &&
+        invitation.childName &&
+        invitation.roundId
+      ) {
         const round = await tx.round.findUnique({
           where: { id: invitation.roundId },
           select: { academicYear: true },
@@ -267,8 +302,7 @@ export async function acceptApplicantInvitationAction(
             leadApplicantId: invitation.authUserId!,
             school: invitation.school,
             childName: invitation.childName,
-            bursaryAccountId: invitation.bursaryAccountId ?? undefined,
-            isReassessment: !!invitation.bursaryAccountId,
+            isReassessment: false,
             status: "PRE_SUBMISSION",
           },
         });

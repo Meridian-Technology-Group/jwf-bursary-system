@@ -6,7 +6,8 @@
  */
 
 import type { Tx } from "@/lib/db/prisma";
-import type { ApplicationSectionType } from "@prisma/client";
+import type { ApplicationSectionType, Invitation } from "@prisma/client";
+import { generateApplicationReference } from "@/lib/applications/reference";
 
 // ─── Section types that are pre-populated from the previous year ─────────────
 
@@ -207,6 +208,108 @@ export async function prepopulateReassessment(
       })
     )
   );
+}
+
+// ─── createReassessmentApplicationFromInvitation ──────────────────────────────
+
+/**
+ * Creates a re-assessment application from a re-assessment invitation and
+ * pre-populates the personal sections from the previous year.
+ *
+ * Shared by both applicant-side entry points (the `/register?token=…` accept
+ * path and the portal "Begin re-assessment" card) so they produce an
+ * identical, fully prepopulated PRE_SUBMISSION application linked to the
+ * holder's existing bursary account.
+ *
+ * Idempotent: if the lead applicant already has a PRE_SUBMISSION application
+ * for this round it is returned unchanged rather than duplicated.
+ *
+ * The caller must have already validated that `invitation.bursaryAccountId`
+ * and `invitation.roundId` are set (this is a re-assessment invite). Must run
+ * inside an admin context — `prepopulateReassessment` reads the previous
+ * application's sections across applications.
+ */
+export async function createReassessmentApplicationFromInvitation(
+  tx: Tx,
+  invitation: Pick<
+    Invitation,
+    "authUserId" | "bursaryAccountId" | "roundId" | "school" | "childName"
+  >
+): Promise<{ id: string; created: boolean }> {
+  const { authUserId, bursaryAccountId, roundId } = invitation;
+  if (!authUserId || !bursaryAccountId || !roundId) {
+    throw new Error(
+      "createReassessmentApplicationFromInvitation requires authUserId, bursaryAccountId and roundId"
+    );
+  }
+
+  // Idempotency: reuse an existing in-progress application for this round.
+  const existing = await tx.application.findFirst({
+    where: {
+      leadApplicantId: authUserId,
+      roundId,
+      status: "PRE_SUBMISSION",
+    },
+    select: { id: true },
+  });
+  if (existing) return { id: existing.id, created: false };
+
+  // Resolve school + childName, preferring the invitation, falling back to
+  // the bursary account so the application always has them.
+  const account = await tx.bursaryAccount.findUnique({
+    where: { id: bursaryAccountId },
+    select: {
+      school: true,
+      childName: true,
+      childDob: true,
+      entryYear: true,
+    },
+  });
+
+  const school = invitation.school ?? account?.school;
+  const childName = invitation.childName ?? account?.childName;
+  if (!school || !childName) {
+    throw new Error(
+      "Could not resolve school / child name for the re-assessment application"
+    );
+  }
+
+  const round = await tx.round.findUnique({
+    where: { id: roundId },
+    select: { academicYear: true },
+  });
+  const reference = await generateApplicationReference(
+    tx,
+    school,
+    round?.academicYear ?? ""
+  );
+
+  const application = await tx.application.create({
+    data: {
+      reference,
+      roundId,
+      leadApplicantId: authUserId,
+      bursaryAccountId,
+      school,
+      childName,
+      childDob: account?.childDob ?? null,
+      entryYear: account?.entryYear ?? null,
+      isReassessment: true,
+      status: "PRE_SUBMISSION",
+    },
+  });
+
+  // Pre-populate personal sections from the most recent previous-year app.
+  const previous = await getPreviousYearApplication(
+    tx,
+    bursaryAccountId,
+    roundId
+  );
+  if (previous) {
+    await prepopulateReassessment(tx, application.id, previous.id);
+  }
+
+  return { id: application.id, created: true };
 }
 
 // ─── getPreviousAssessment ────────────────────────────────────────────────────

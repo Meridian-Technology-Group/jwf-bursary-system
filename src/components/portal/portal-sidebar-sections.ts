@@ -86,7 +86,8 @@ const SECTION_TYPE_TO_SLUG: Record<string, string> = {
  *   "not_started"     → no sections have been started yet (progress = 0)
  */
 export function buildSidebarSections(
-  gapStatuses: SectionGapStatus[]
+  gapStatuses: SectionGapStatus[],
+  options?: { isReassessment?: boolean }
 ): SidebarSection[] {
   // Build a lookup by slug so we can enrich the ordered DEFAULT list.
   const bySlug = new Map<
@@ -129,7 +130,13 @@ export function buildSidebarSections(
       ? "complete"
       : "needs_attention";
 
-  return DEFAULT_SIDEBAR_SECTIONS.map((section) => {
+  // Re-assessments skip Family Identification entirely — drop it from the
+  // stepper so the "N of M sections complete" count is correct.
+  const baseSections = options?.isReassessment
+    ? DEFAULT_SIDEBAR_SECTIONS.filter((s) => s.slug !== "family-id")
+    : DEFAULT_SIDEBAR_SECTIONS;
+
+  return baseSections.map((section) => {
     // Synthetic Review entry: derive status from global gap roll-up.
     if (section.isSynthetic && section.slug === "review") {
       return {
