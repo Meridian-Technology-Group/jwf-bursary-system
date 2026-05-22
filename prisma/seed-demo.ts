@@ -21,9 +21,18 @@ if (process.env.ALLOW_DESTRUCTIVE_SEED !== "1") {
 }
 
 import "dotenv/config";
-// Also load .env.local (where Supabase keys typically live in Next.js projects)
+// Also load .env.local (where Supabase keys typically live in Next.js projects).
+// override: false so explicit process.env vars (command line / CI secrets) win
+// over .env.local — a nonprod .env.local must never silently misroute an
+// explicit run at another environment.
 import { config } from "dotenv";
-config({ path: ".env.local", override: true });
+config({ path: ".env.local", override: false });
+
+// Eyeball-confirm the target before this destructive seed touches anything.
+// Print the project ref only (the URL subdomain), never the full URL or secret.
+const demoTargetProjectRef =
+  process.env.NEXT_PUBLIC_SUPABASE_URL?.match(/https?:\/\/([^.]+)\./)?.[1] ?? "unknown";
+console.log(`[seed:demo] target Supabase project: ${demoTargetProjectRef}`);
 
 import fs from "node:fs";
 import path from "node:path";
