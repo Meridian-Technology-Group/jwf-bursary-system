@@ -17,6 +17,13 @@
  * the role from the JWT so it does NOT perform a Postgres query (Edge
  * Runtime has no Prisma access). The Prisma-backed getCurrentUser() in
  * roles.ts is used only in Server Components for authoritative checks.
+ *
+ * MFA (B8 / MSA Schedule 4 §8): staff roles {ADMIN, ASSESSOR, VIEWER}
+ * must reach Assurance Level 2 (aal2) before accessing /admin/* routes.
+ * The aal claim is read directly from the validated access-token JWT
+ * (no extra network round-trip). Staff still at aal1 are funnelled to
+ * /login/mfa to enrol or challenge a TOTP factor. APPLICANTs are never
+ * gated on aal2 — their portal/apply paths remain single-factor.
  */
 
 import { NextResponse } from "next/server";
@@ -65,6 +72,32 @@ function getRoleFromSession(
   if (role === "DELETED") return "DELETED";
   // Default: treat as APPLICANT (covers newly registered users)
   return "APPLICANT";
+}
+
+/**
+ * Decodes the `aal` (Authenticator Assurance Level) claim from a Supabase
+ * access-token JWT without verifying the signature. This is safe for
+ * routing decisions because:
+ *  - identity is already validated upstream by getUser() (which checks the
+ *    signature against the Supabase server), and
+ *  - the gate is fail-closed: any decode failure yields "aal1", which only
+ *    ever forces a staff user toward /login/mfa, never the reverse.
+ *
+ * Returns "aal2" or "aal1" (treating null/absent as aal1).
+ */
+function getAalFromJwt(accessToken: string | undefined): "aal1" | "aal2" {
+  if (!accessToken) return "aal1";
+  const parts = accessToken.split(".");
+  if (parts.length < 2) return "aal1";
+  try {
+    // Base64url → JSON. atob is available in the Edge runtime.
+    const padded = parts[1].replace(/-/g, "+").replace(/_/g, "/");
+    const json = atob(padded);
+    const payload = JSON.parse(json) as { aal?: unknown };
+    return payload.aal === "aal2" ? "aal2" : "aal1";
+  } catch {
+    return "aal1";
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -131,7 +164,7 @@ export async function middleware(request: NextRequest) {
     return mw.response;
   }
 
-  // 5. Admin routes — ADMIN, ASSESSOR, or VIEWER only.
+  // 5. Admin routes — ADMIN, ASSESSOR, or VIEWER only, AND at aal2 (MFA).
   if (ADMIN_PREFIX.test(pathname)) {
     if (!user || !role) {
       const loginUrl = new URL("/login", request.url);
@@ -141,6 +174,21 @@ export async function middleware(request: NextRequest) {
     if (role !== "ADMIN" && role !== "ASSESSOR" && role !== "VIEWER") {
       return redirect("/");
     }
+
+    // MFA gate (B8 / MSA Schedule 4 §8): staff must be at aal2. Read the
+    // aal claim from the validated access-token JWT. getSession() is used
+    // only to obtain the token string for the claim — the user identity is
+    // already validated above via getUser().
+    const {
+      data: { session },
+    } = await mw.supabase.auth.getSession();
+    const aal = getAalFromJwt(session?.access_token);
+    if (aal !== "aal2") {
+      const mfaUrl = new URL("/login/mfa", request.url);
+      mfaUrl.searchParams.set("next", pathname);
+      return redirect(mfaUrl);
+    }
+
     return mw.response;
   }
 
