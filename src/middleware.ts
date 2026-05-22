@@ -24,11 +24,15 @@
  * (no extra network round-trip). Staff still at aal1 are funnelled to
  * /login/mfa to enrol or challenge a TOTP factor. APPLICANTs are never
  * gated on aal2 — their portal/apply paths remain single-factor.
+ *
+ * The aal2 enforcement is feature-flagged (see lib/auth/mfa-flag.ts): on in
+ * production by default, off in staging/local unless STAFF_MFA_ENFORCED=true.
  */
 
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { createSupabaseMiddlewareClient } from "@/lib/auth/supabase-middleware";
+import { isStaffMfaEnforced } from "@/lib/auth/mfa-flag";
 
 // ---------------------------------------------------------------------------
 // Route classification
@@ -175,18 +179,23 @@ export async function middleware(request: NextRequest) {
       return redirect("/");
     }
 
-    // MFA gate (B8 / MSA Schedule 4 §8): staff must be at aal2. Read the
-    // aal claim from the validated access-token JWT. getSession() is used
-    // only to obtain the token string for the claim — the user identity is
-    // already validated above via getUser().
-    const {
-      data: { session },
-    } = await mw.supabase.auth.getSession();
-    const aal = getAalFromJwt(session?.access_token);
-    if (aal !== "aal2") {
-      const mfaUrl = new URL("/login/mfa", request.url);
-      mfaUrl.searchParams.set("next", pathname);
-      return redirect(mfaUrl);
+    // MFA gate (B8 / MSA Schedule 4 §8): staff must be at aal2. Gated behind
+    // the STAFF_MFA_ENFORCED / VERCEL_ENV feature flag (see mfa-flag.ts) so
+    // enforcement is on in production but off in staging/local by default —
+    // the /login/mfa route stays reachable, only the forced redirect is gated.
+    // When enforced, read the aal claim from the validated access-token JWT.
+    // getSession() is used only to obtain the token string for the claim — the
+    // user identity is already validated above via getUser().
+    if (isStaffMfaEnforced()) {
+      const {
+        data: { session },
+      } = await mw.supabase.auth.getSession();
+      const aal = getAalFromJwt(session?.access_token);
+      if (aal !== "aal2") {
+        const mfaUrl = new URL("/login/mfa", request.url);
+        mfaUrl.searchParams.set("next", pathname);
+        return redirect(mfaUrl);
+      }
     }
 
     return mw.response;

@@ -95,12 +95,22 @@ export default async function MfaPage({
   }
 
   // --- SETUP path: no verified factor. ---
-  // Clear any stale UNVERIFIED factors first so a reload doesn't accumulate
-  // dangling enrolments, then enroll a fresh one to render the QR.
-  for (const stale of totpFactors) {
-    if (stale.status !== "verified") {
-      await supabase.auth.mfa.unenroll({ factorId: stale.id });
-    }
+  // Make enrolment idempotent (B8 rough edge): the first /login/mfa hit can
+  // leave a dangling UNVERIFIED factor, and a second enroll() then fails with
+  // "A factor with the friendly name … already exists". Clear stale unverified
+  // TOTP factors before enrolling a fresh one.
+  //
+  // IMPORTANT: iterate `factorsData.all`, not `factorsData.totp`. The Supabase
+  // JS client only populates `.totp` with *verified* factors (see auth-js
+  // _listFactors: it pushes into data[factor_type] only when status ===
+  // 'verified'); unverified factors appear solely in `.all`. Iterating `.totp`
+  // here would never match an unverified factor, so the cleanup would no-op and
+  // the duplicate-factor error would persist.
+  const staleUnverified = (factorsData?.all ?? []).filter(
+    (f) => f.factor_type === "totp" && f.status !== "verified"
+  );
+  for (const stale of staleUnverified) {
+    await supabase.auth.mfa.unenroll({ factorId: stale.id });
   }
 
   const { data: enrolled, error: enrollError } = await supabase.auth.mfa.enroll(

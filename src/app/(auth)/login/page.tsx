@@ -18,7 +18,7 @@ import { Suspense, useState, type FormEvent } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { createSupabaseBrowserClient } from "@/lib/auth/supabase-browser";
-import { checkLoginRateLimit } from "./actions";
+import { checkLoginRateLimit, isStaffMfaEnforcedAction } from "./actions";
 
 // ---------------------------------------------------------------------------
 // Inner form — isolated so useSearchParams() is inside a Suspense boundary.
@@ -80,12 +80,18 @@ function LoginForm() {
 
     if (isAdminRole) {
       // Staff (ADMIN / ASSESSOR / VIEWER) must clear MFA (B8 / MSA Sched 4 §8)
-      // before reaching any admin route. Send them to /login/mfa, preserving
+      // before reaching any admin route — but only when enforcement is enabled
+      // for this environment (prod by default; staging/local opt-in via
+      // STAFF_MFA_ENFORCED). When enforced, send them to /login/mfa, preserving
       // their intended destination so the MFA step lands them there once they
-      // reach aal2. The middleware enforces this regardless, but redirecting
-      // here avoids a flash of /admin → /login/mfa. APPLICANTs are unaffected.
+      // reach aal2. The middleware enforces the same flag regardless, but
+      // redirecting here avoids a flash of /admin → /login/mfa. When the flag
+      // is off, staff go straight to /admin. APPLICANTs are unaffected.
       const intended = nextPath && nextPath !== "/" ? nextPath : "/admin";
-      destination = `/login/mfa?next=${encodeURIComponent(intended)}`;
+      const mfaEnforced = await isStaffMfaEnforcedAction();
+      destination = mfaEnforced
+        ? `/login/mfa?next=${encodeURIComponent(intended)}`
+        : intended;
     } else if (nextPath) {
       // Honour the ?next= param for non-staff.
       destination = nextPath;
