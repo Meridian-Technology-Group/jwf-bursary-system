@@ -7,7 +7,7 @@ opened: 2026-05-13
 opened_by: Claude (via Brian Wagner)
 related:
   - src/app/(admin)/invitations/actions.ts (createInvitationAction)
-  - docs/planning/APPLICANT_INVITATION_FLOW.md §4.3
+  - docs/product/specs/invitation-flow.md §4.3
   - PR #12
 ---
 

@@ -13,22 +13,22 @@
 
 ## How this document is organised
 
-The document is split into one section per file under `docs/tdd/`. This file (`_index.md`) is the index. To read top to bottom, follow the section list in order.
+The document is split into one section per file under `docs/engineering/tdd/`. This file (`_index.md`) is the index. To read top to bottom, follow the section list in order.
 
 If this TDD and the PRD disagree, the PRD wins until the TDD is updated.
 
 ## Sections
 
-- [ ] [01 Introduction](tdd/01-introduction.md)
-- [ ] [02 Design Goals & Constraints](tdd/02-design-goals-constraints.md)
-- [ ] [03 Architectural Overview](tdd/03-architectural-overview.md)
-- [ ] [04 Functional Requirements Mapping](tdd/04-functional-requirements.md)
-- [ ] [05 Non-Functional Requirements Mapping](tdd/05-non-functional-requirements.md)
-- [ ] [06 Data Design](tdd/06-data-design.md)
-- [ ] [07 System Components & Modules](tdd/07-system-components.md)
-- [ ] [08 Implementation Strategy](tdd/08-implementation-strategy.md)
-- [ ] [09 Deployment & Release Strategy](tdd/09-deployment-release.md)
-- [ ] [10 Revision History](tdd/10-revision-history.md)
+- [ ] [01 Introduction](01-introduction.md)
+- [ ] [02 Design Goals & Constraints](02-design-goals-constraints.md)
+- [ ] [03 Architectural Overview](03-architectural-overview.md)
+- [ ] [04 Functional Requirements Mapping](04-functional-requirements.md)
+- [ ] [05 Non-Functional Requirements Mapping](05-non-functional-requirements.md)
+- [ ] [06 Data Design](06-data-design.md)
+- [ ] [07 System Components & Modules](07-system-components.md)
+- [ ] [08 Implementation Strategy](08-implementation-strategy.md)
+- [ ] [09 Deployment & Release Strategy](09-deployment-release.md)
+- [ ] [10 Revision History](10-revision-history.md)
 
 ## Reading paths
 
@@ -40,7 +40,7 @@ If this TDD and the PRD disagree, the PRD wins until the TDD is updated.
 
 ## Cross-references
 
-- `docs/prd/_index.md` — product requirements, the source of truth for behaviour.
-- `docs/planning/APPLICATION.md` — field-by-field application form specification.
-- `docs/planning/ADMIN.md` — admin console structure and workflows.
-- `docs/planning/OPEN_QUESTIONS.md` — 30 requirements questions with stakeholder answers.
+- `docs/product/prd/_index.md` — product requirements, the source of truth for behaviour.
+- `docs/product/specs/applicant-form.md` — field-by-field application form specification.
+- `docs/product/specs/admin-console.md` — admin console structure and workflows.
+- `docs/product/open-questions.md` — 30 requirements questions with stakeholder answers.

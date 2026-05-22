@@ -6,7 +6,7 @@ area: invitations
 opened: 2026-05-13
 opened_by: Claude (via Brian Wagner)
 related:
-  - docs/planning/APPLICANT_INVITATION_FLOW.md §7
+  - docs/product/specs/invitation-flow.md §7
   - prisma/schema.prisma (Invitation model)
 ---
 
