@@ -30,11 +30,14 @@ export default async function RespondPage() {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
 
-  const data = await withUserContext(
+  // Load the applicant's own application under their RLS context. This
+  // establishes ownership: `leadApplicantId: user.id` plus RLS guarantees the
+  // returned row belongs to the logged-in applicant.
+  const application = await withUserContext(
     user.id,
     user.role as RlsRole,
-    async (tx) => {
-      const application = await tx.application.findFirst({
+    (tx) =>
+      tx.application.findFirst({
         where: { leadApplicantId: user.id },
         orderBy: { updatedAt: "desc" },
         select: {
@@ -53,26 +56,22 @@ export default async function RespondPage() {
             orderBy: { uploadedAt: "desc" },
           },
         },
-      });
-
-      if (!application) {
-        return { application: null, request: null };
-      }
-
-      const request = await getLatestMissingDocsRequest(tx, application.id);
-      return { application, request };
-    }
+      })
   );
 
-  if (!data.application) redirect("/");
-
-  const { application, request } = data;
+  if (!application) redirect("/");
 
   // Not paused → nothing to respond to. Send the applicant to the status page,
   // which explains the current state.
   if (application.status !== "PAUSED") {
     redirect("/status");
   }
+
+  // Ownership + PAUSED confirmed above. Only now read the assessor-owned
+  // `APPLICATION_PAUSED` audit row (service-role context) — see the security
+  // note in `getLatestMissingDocsRequest`. The applicant can therefore only
+  // ever surface the request for their own paused application.
+  const request = await getLatestMissingDocsRequest(application.id);
 
   // Paused but no recorded request (e.g. a legacy pause). Show a gentle empty
   // state directing the applicant to the email they received.
