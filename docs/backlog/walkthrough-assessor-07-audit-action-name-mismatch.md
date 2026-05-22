@@ -1,6 +1,6 @@
 ---
 title: Guide 07 names the wrong audit action for assessor document uploads
-status: open
+status: closed
 severity: low
 area: docs
 opened: 2026-05-20
