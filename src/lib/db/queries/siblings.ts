@@ -335,19 +335,29 @@ export async function removeSiblingLink(
  * @param familyGroupId            The family group to reorder
  * @param orderedBursaryAccountIds Full ordered array of bursary account IDs
  *                                 (all members must be included)
+ *
+ * The reassignment is done in two phases within the caller's transaction to
+ * avoid tripping the unique index `(family_group_id, priority_order)`: every
+ * affected row is first bumped into a non-colliding temporary range (negated
+ * final positions), then set to the final 1..N values. A single-pass update
+ * could transiently assign a priority another row still holds (e.g. setting
+ * row B to 1 while row A is still 1), which violates the constraint mid-update.
  */
 export async function reorderSiblingPriority(
   tx: Tx,
   familyGroupId: string,
   orderedBursaryAccountIds: string[]
 ): Promise<void> {
+  // Phase 1: move every affected row to a temporary, collision-free range.
+  // Negating the (1-based) final position guarantees uniqueness within the
+  // group and cannot overlap any valid (positive) priority_order value.
   for (let i = 0; i < orderedBursaryAccountIds.length; i++) {
     const { count } = await tx.siblingLink.updateMany({
       where: {
         familyGroupId,
         bursaryAccountId: orderedBursaryAccountIds[i],
       },
-      data: { priorityOrder: i + 1 },
+      data: { priorityOrder: -(i + 1) },
     });
 
     // Under RLS denial the rows are invisible and updateMany affects 0 rows
@@ -358,5 +368,17 @@ export async function reorderSiblingPriority(
         `Sibling link not found or not writable for account ${orderedBursaryAccountIds[i]} in group ${familyGroupId}`
       );
     }
+  }
+
+  // Phase 2: set the final 1..N priority values. No collisions remain because
+  // every row now holds a unique negative placeholder.
+  for (let i = 0; i < orderedBursaryAccountIds.length; i++) {
+    await tx.siblingLink.updateMany({
+      where: {
+        familyGroupId,
+        bursaryAccountId: orderedBursaryAccountIds[i],
+      },
+      data: { priorityOrder: i + 1 },
+    });
   }
 }
