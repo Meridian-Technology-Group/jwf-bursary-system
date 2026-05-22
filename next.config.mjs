@@ -31,7 +31,9 @@ const securityHeaders = [
       "style-src 'self' 'unsafe-inline'",
       "img-src 'self' data: blob: https://*.supabase.co",
       "font-src 'self' data:",
-      "connect-src 'self' https://*.supabase.co",
+      // api.pwnedpasswords.com is the HaveIBeenPwned k-anonymity range API
+      // queried client-side during registration to reject breached passwords.
+      "connect-src 'self' https://*.supabase.co https://api.pwnedpasswords.com",
       // Inline document preview embeds presigned Supabase Storage URLs in an
       // iframe; without frame-src the browser falls back to default-src 'self'
       // and blocks the preview.
