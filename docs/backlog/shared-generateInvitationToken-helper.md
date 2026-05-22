@@ -6,7 +6,7 @@ area: refactor
 opened: 2026-05-13
 opened_by: Claude (via Brian Wagner)
 related:
-  - docs/product/specs/invitation-flow.md §7
+  - docs/archive/specs/invitation-flow.md §7
   - src/lib/db/queries/invitations.ts (applicant)
   - src/lib/db/queries/staff-invitations.ts (staff)
 ---

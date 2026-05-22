@@ -6,7 +6,7 @@ area: docs, specs, drift
 opened: 2026-05-22
 opened_by: Brian Wagner (via Claude, during user-guide authoring)
 related:
-  - docs/product/specs/applicant-form.md (the stale spec; carries a warning banner)
+  - docs/archive/specs/applicant-form.md (the stale spec; carries a warning banner)
   - src/components/portal/sections/* (the implemented section forms)
   - prisma/schema.prisma (ApplicationSectionType enum — section source of truth)
   - docs/guides/applicant-guide.md + docs/guides/walkthroughs/applicants/ (reflect reality)
@@ -14,7 +14,7 @@ related:
 
 ## Context
 
-`docs/product/specs/applicant-form.md` is described everywhere as the
+`docs/archive/specs/applicant-form.md` is described everywhere as the
 "complete field-by-field mapping" of the applicant portal, but it is a
 **pre-build design artifact** and the implemented form has since
 diverged from it. Two divergences are confirmed against code (code is
