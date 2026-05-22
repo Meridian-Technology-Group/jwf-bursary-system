@@ -129,6 +129,7 @@ export async function setApplicationOutcomeAction(
             childName: true,
             childDob: true,
             entryYear: true,
+            entryYearGroup: true,
             school: true,
             bursaryAccountId: true,
             leadApplicantId: true,
@@ -188,6 +189,7 @@ export async function setApplicationOutcomeAction(
               childName: application.childName,
               childDob: application.childDob,
               entryYear,
+              entryYearGroup: application.entryYearGroup,
               firstAssessmentYear: application.round.academicYear,
               benchmarkPayableFees:
                 application.assessment?.yearlyPayableFees ?? null,

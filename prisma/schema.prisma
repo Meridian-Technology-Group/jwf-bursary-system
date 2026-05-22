@@ -56,6 +56,7 @@ model BursaryAccount {
   childName            String               @map("child_name")
   childDob             DateTime?            @map("child_dob") @db.Date
   entryYear            Int                  @map("entry_year")
+  entryYearGroup       EntryYearGroup?      @map("entry_year_group")
   firstAssessmentYear  String               @map("first_assessment_year")
   benchmarkPayableFees Decimal?             @map("benchmark_payable_fees") @db.Decimal(10, 2)
   leadApplicantId      String               @map("lead_applicant_id") @db.Uuid
@@ -84,6 +85,7 @@ model Application {
   childName        String               @map("child_name")
   childDob         DateTime?            @map("child_dob") @db.Date
   entryYear        Int?                 @map("entry_year")
+  entryYearGroup   EntryYearGroup?      @map("entry_year_group")
   isReassessment   Boolean              @default(false) @map("is_reassessment")
   isInternal       Boolean              @default(false) @map("is_internal")
   status           ApplicationStatus    @default(PRE_SUBMISSION)
@@ -432,6 +434,18 @@ enum Role {
 enum School {
   TRINITY
   WHITGIFT
+}
+
+/// School year-group at which a child enters (spec §4). The numeric year-group
+/// determines total schooling years (Y6→7, Y7→6, Y9→4, Y12→1); see
+/// `src/lib/assessment/schooling-years.ts`. OTHER is the escape hatch for
+/// unusual cohorts — schooling years are then entered manually by the assessor.
+enum EntryYearGroup {
+  Y6
+  Y7
+  Y9
+  Y12
+  OTHER
 }
 
 enum RoundStatus {

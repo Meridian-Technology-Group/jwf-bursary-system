@@ -13,6 +13,7 @@ import {
   RoundStatus,
   School,
 } from "@prisma/client";
+import { deriveCurrentYearGroupNumber } from "@/lib/assessment/schooling-years";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -113,18 +114,6 @@ export interface SiblingSummaryRow {
  * "Final year" cohort = current year group of Y12 or Y13 (yearsRemaining 0/1).
  */
 const FINAL_SCHOOL_YEAR = 13;
-
-/**
- * Derives the current school year group for a bursary account from its entry
- * year, mirroring the assessment form's calcSchoolingYears formula:
- *   yearInSchool = currentAcademicYear - entryYear + 1
- * The UK academic year rolls over in September (month index >= 8).
- */
-function deriveCurrentYearGroup(entryYear: number, now = new Date()): number {
-  const academicYear =
-    now.getMonth() >= 8 ? now.getFullYear() : now.getFullYear() - 1;
-  return academicYear - entryYear + 1;
-}
 
 /**
  * Returns the active round (most recent OPEN), falling back to the most
@@ -588,6 +577,7 @@ export async function getFinalYearBursaries(
       childName: true,
       school: true,
       entryYear: true,
+      entryYearGroup: true,
       siblingLinks: { select: { familyGroupId: true } },
       recommendations: {
         select: { yearlyPayableFees: true, createdAt: true },
@@ -625,7 +615,14 @@ export async function getFinalYearBursaries(
   const rows: FinalYearBursaryRow[] = [];
 
   for (const account of accounts) {
-    const currentYearGroup = deriveCurrentYearGroup(account.entryYear);
+    // Current year-group is derived from the entry year-group (source of truth)
+    // plus the entry calendar year. Accounts without a year-group can't be
+    // classified, so they're excluded from the final-year cohort.
+    const currentYearGroup = deriveCurrentYearGroupNumber(
+      account.entryYearGroup,
+      account.entryYear
+    );
+    if (currentYearGroup === null) continue;
     const yearsRemaining = FINAL_SCHOOL_YEAR - currentYearGroup;
 
     // Final-year cohort: Y12 / Y13 (0 or 1 years remaining).
