@@ -19,8 +19,6 @@ interface ColumnDef {
 
 const COLUMNS: ColumnDef[] = [
   { header: "Reference", key: "reference", width: 18 },
-  { header: "First Name", key: "childFirstName", width: 18 },
-  { header: "Last Name", key: "childLastName", width: 18 },
   { header: "School", key: "school", width: 12 },
   { header: "Family Synopsis", key: "familySynopsis", width: 40 },
   { header: "Accommodation", key: "accommodationType", width: 22 },
@@ -104,8 +102,6 @@ export async function buildXlsxBuffer(rows: ExportRow[]): Promise<Buffer> {
   rows.forEach((row) => {
     const addedRow = sheet.addRow({
       reference: row.reference,
-      childFirstName: row.childFirstName,
-      childLastName: row.childLastName,
       school: row.school,
       familySynopsis: row.familySynopsis,
       accommodationType: row.accommodationType,
