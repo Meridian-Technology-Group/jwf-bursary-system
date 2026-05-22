@@ -7,7 +7,7 @@ Detailed wireframes will be produced during the design phase. This section descr
 Screenshots of the current Symplectic Grant Tracker system are available in the `screenshots/` directory and documented in:
 
 - **[APPLICATION.md](../specs/applicant-form.md)** — every input component in the applicant portal, section by section
-- **[ADMIN.md](../specs/admin-console.md)** — admin console screens, workflows, and assessment tools
+- **[ADMIN.md](../../discovery/admin-console.md)** — legacy Grant Tracker admin console screens and workflows (discovery baseline for the replacement)
 
 These serve as the baseline for the replacement. The new system should replicate all documented functionality while improving usability, terminology (replacing grant-tracker jargon with bursary-specific language), and mobile responsiveness.
 

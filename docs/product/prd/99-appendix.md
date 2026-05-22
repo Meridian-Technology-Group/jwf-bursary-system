@@ -6,7 +6,7 @@
 |----------|----------|-------------|
 | README.md | `../../../README.md` | Master requirements document: system overview, two-layer data model, lifecycle, calculation model, reference tables, domain concepts, scope |
 | APPLICATION.md | `../specs/applicant-form.md` | Complete field-by-field mapping of every input in the applicant portal |
-| ADMIN.md | `../specs/admin-console.md` | Documentation of the current admin console structure and workflows |
+| ADMIN.md | `../../discovery/admin-console.md` | Discovery doc: the **legacy** Grant Tracker admin console structure (as-is baseline for the replacement) |
 | OPEN_QUESTIONS.md | `../open-questions.md` | 30 requirements questions with stakeholder answers |
 | Assessment Model Spreadsheet | `./Assessment Model Notional Calculations - BW.xlsx` | Source spreadsheet for the four-stage calculation model and reference tables |
 | Payable Fees Logic | `../payable_fees_logic.png` | Visual reference for the payable fees formula |
