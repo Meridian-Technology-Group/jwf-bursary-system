@@ -13,7 +13,7 @@ related:
   - PR #54 (staging → main promotion) — explicitly EXCLUDED MFA
   - PR #56 (re-applied behind the STAFF_MFA_ENFORCED/VERCEL_ENV flag + idempotent enrol) — merged to staging
   - PR #57 (staging → main promotion) — shipped MFA to prod; enforced by the VERCEL_ENV=production default
-  - docs/walkthroughs/admins/14-reset-staff-mfa.md
+  - docs/guides/walkthroughs/admins/14-reset-staff-mfa.md
   - src/lib/auth/mfa-flag.ts
   - src/middleware.ts
   - src/app/(auth)/login/page.tsx

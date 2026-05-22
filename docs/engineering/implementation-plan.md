@@ -2,7 +2,7 @@
 ## Technical Implementation Plan
 
 **Version:** 1.0 | **Date:** 2026-02-25 | **Purpose:** Phased work packages for Claude Code implementation
-**Source docs:** `docs/TDD.md` v1.0, `docs/PRD.md` v1.2, `README.md`, `docs/planning/APPLICATION.md`, `docs/planning/ADMIN.md`
+**Source docs:** `docs/TDD.md` v1.0, `docs/PRD.md` v1.2, `README.md`, `docs/product/specs/applicant-form.md`, `docs/product/specs/admin-console.md`
 
 ---
 
@@ -1060,7 +1060,7 @@ All ──► WP-23 (Deploy)
 | **TDD** | `docs/TDD.md` | Architecture, data model (17 entities), component specs, calculation engine, API routes, deployment |
 | **PRD** | `docs/PRD.md` | 104 functional requirements, user stories, wireframe descriptions, metrics |
 | **README** | `README.md` | Domain model, calculation formulas, reference tables, lifecycle, scope |
-| **Application Spec** | `docs/planning/APPLICATION.md` | Field-by-field applicant form spec (10 sections, conditional logic, upload slots) |
-| **Admin Spec** | `docs/planning/ADMIN.md` | Current Grant Tracker admin console structure (for replacement reference) |
-| **Open Questions** | `docs/planning/OPEN_QUESTIONS.md` | 30 Q&As with Foundation assessor clarifying business logic |
-| **Assessment Spreadsheet** | `docs/planning/Assessment Model Notional Calculations - BW.xlsx` | Source spreadsheet for calculation model and reference values |
+| **Application Spec** | `docs/product/specs/applicant-form.md` | Field-by-field applicant form spec (10 sections, conditional logic, upload slots) |
+| **Admin Spec** | `docs/product/specs/admin-console.md` | Current Grant Tracker admin console structure (for replacement reference) |
+| **Open Questions** | `docs/product/open-questions.md` | 30 Q&As with Foundation assessor clarifying business logic |
+| **Assessment Spreadsheet** | `docs/product/assessment-model.xlsx` | Source spreadsheet for calculation model and reference values |

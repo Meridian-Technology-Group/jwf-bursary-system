@@ -7,7 +7,7 @@ opened: 2026-05-19
 opened_by: walkthrough verification pass (post-fix re-run)
 related:
   - src/app/(admin)/users/actions.ts (revokeStaffInvitationAction)
-  - docs/walkthroughs/admins/15-resend-or-revoke-invitation.md
+  - docs/guides/walkthroughs/admins/15-resend-or-revoke-invitation.md
 ---
 
 ## Context

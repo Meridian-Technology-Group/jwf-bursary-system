@@ -26,11 +26,11 @@ The system handles approximately 100–200 applications per annual round, with 1
 
 | Document | Location | Description |
 |----------|----------|-------------|
-| Product Requirements Document | [PRD.md](./PRD.md) | Full functional and non-functional requirements |
-| Master Requirements / Domain Model | [README.md](../README.md) | System overview, two-layer data model, calculation model, reference tables, domain concepts |
-| Application Form Specification | [APPLICATION.md](./planning/APPLICATION.md) | Field-by-field mapping of every applicant portal input |
-| Admin Console Specification | [ADMIN.md](./planning/ADMIN.md) | Current admin console structure and workflows |
-| Open Questions & Answers | [OPEN_QUESTIONS.md](./planning/OPEN_QUESTIONS.md) | 30 requirements questions with stakeholder answers |
-| Assessment Model Spreadsheet | [Assessment Model Notional Calculations - BW.xlsx](./Assessment%20Model%20Notional%20Calculations%20-%20BW.xlsx) | Source spreadsheet for calculation model and reference tables |
+| Product Requirements Document | [PRD.md](../../product/prd/_index.md) | Full functional and non-functional requirements |
+| Master Requirements / Domain Model | [README.md](../../README.md) | System overview, two-layer data model, calculation model, reference tables, domain concepts |
+| Application Form Specification | [APPLICATION.md](../../product/specs/applicant-form.md) | Field-by-field mapping of every applicant portal input |
+| Admin Console Specification | [ADMIN.md](../../product/specs/admin-console.md) | Current admin console structure and workflows |
+| Open Questions & Answers | [OPEN_QUESTIONS.md](../../product/open-questions.md) | 30 requirements questions with stakeholder answers |
+| Assessment Model Spreadsheet | [Assessment Model Notional Calculations - BW.xlsx](../../product/assessment-model.xlsx) | Source spreadsheet for calculation model and reference tables |
 
 ---

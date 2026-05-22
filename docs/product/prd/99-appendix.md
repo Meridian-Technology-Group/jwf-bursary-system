@@ -4,10 +4,10 @@
 
 | Document | Location | Description |
 |----------|----------|-------------|
-| README.md | `../README.md` | Master requirements document: system overview, two-layer data model, lifecycle, calculation model, reference tables, domain concepts, scope |
-| APPLICATION.md | `../APPLICATION.md` | Complete field-by-field mapping of every input in the applicant portal |
-| ADMIN.md | `../ADMIN.md` | Documentation of the current admin console structure and workflows |
-| OPEN_QUESTIONS.md | `../OPEN_QUESTIONS.md` | 30 requirements questions with stakeholder answers |
+| README.md | `../../../README.md` | Master requirements document: system overview, two-layer data model, lifecycle, calculation model, reference tables, domain concepts, scope |
+| APPLICATION.md | `../specs/applicant-form.md` | Complete field-by-field mapping of every input in the applicant portal |
+| ADMIN.md | `../specs/admin-console.md` | Documentation of the current admin console structure and workflows |
+| OPEN_QUESTIONS.md | `../open-questions.md` | 30 requirements questions with stakeholder answers |
 | Assessment Model Spreadsheet | `./Assessment Model Notional Calculations - BW.xlsx` | Source spreadsheet for the four-stage calculation model and reference tables |
 | Payable Fees Logic | `../payable_fees_logic.png` | Visual reference for the payable fees formula |
 | Progress Report Schedule | `../image002.png` | Year-by-year re-assessment tracking in the current system |
@@ -15,7 +15,7 @@
 
 ### Appendix B: Glossary
 
-Key terms are defined in the [Key Domain Concepts](../README.md#key-domain-concepts) section of README.md. The most critical terms for this PRD:
+Key terms are defined in the [Key Domain Concepts](../../../README.md#key-domain-concepts) section of README.md. The most critical terms for this PRD:
 
 | Term | Definition |
 |------|-----------|

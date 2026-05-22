@@ -7,7 +7,7 @@ opened: 2026-05-22
 opened_by: walkthrough-verification (pass 7)
 related:
   - PR #51 (in-portal respond-to-missing-docs page)
-  - docs/walkthroughs/applicants/24-respond-to-missing-documents-request.md
+  - docs/guides/walkthroughs/applicants/24-respond-to-missing-documents-request.md
 ---
 
 ## Context

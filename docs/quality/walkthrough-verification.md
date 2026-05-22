@@ -1,7 +1,7 @@
 # Walkthrough Verification — Plan & Results
 
 > **Last updated:** 2026-05-22 (pass 9 — post-PR-#50 MFA re-walk) · **Branch:** `chore/walkthrough-verification-pass`
-> Verifies all 81 walkthrough guides in `docs/walkthroughs/` against a
+> Verifies all 81 walkthrough guides in `docs/guides/walkthroughs/` against a
 > running instance via the Playwright MCP. Methodology is in the
 > [Appendix](#appendix--how-this-pass-was-run) at the bottom; the results
 > are up top.

@@ -16,7 +16,7 @@ npm-debug.log*
 
 # misc
 .DS_Store
-docs/planning/screenshots
+docs/assets/screenshots
 .vercel
 
 /src/generated/prisma
