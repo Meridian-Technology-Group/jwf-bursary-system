@@ -441,11 +441,9 @@ export default async function ReviewPage() {
   );
   const hasBlockingGaps = allErrorGaps.length > 0;
 
-  const validMap = new Map<ApplicationSectionType, boolean>();
   const startedMap = new Map<ApplicationSectionType, boolean>();
   const gapMap = new Map<ApplicationSectionType, typeof allErrorGaps>();
   for (const gs of gapStatuses) {
-    validMap.set(gs.sectionType as ApplicationSectionType, gs.isFullyValid);
     startedMap.set(gs.sectionType as ApplicationSectionType, gs.isStarted);
     gapMap.set(
       gs.sectionType as ApplicationSectionType,
@@ -455,17 +453,22 @@ export default async function ReviewPage() {
 
   // Build data map from sections
   const sectionDataMap = new Map<ApplicationSectionType, unknown>();
+  // Section completeness comes from the persisted application_sections.isComplete
+  // flag (data saved + server-side validated on Save and Continue), NOT from the
+  // document-gap computation, which treats skipped optional uploads as incomplete.
+  const completeMap = new Map<ApplicationSectionType, boolean>();
   for (const s of application.sections) {
     sectionDataMap.set(s.section as ApplicationSectionType, s.data);
+    completeMap.set(s.section as ApplicationSectionType, s.isComplete);
   }
 
-  const completedCount = SECTION_ORDER.filter((s) => validMap.get(s) === true).length;
+  const completedCount = SECTION_ORDER.filter((s) => completeMap.get(s) === true).length;
 
-  const totalSatisfied = gapStatuses.reduce((acc, gs) => acc + gs.progress.satisfied, 0);
-  const totalItems = gapStatuses.reduce((acc, gs) => acc + gs.progress.total, 0);
+  // Progress mirrors the "sections fully complete" counter so the bar and the
+  // N-of-10 figure agree — both read is_complete, not the document-gap source.
   const progressPct =
-    totalItems > 0
-      ? parseFloat(((totalSatisfied / totalItems) * 100).toFixed(1))
+    SECTION_ORDER.length > 0
+      ? parseFloat(((completedCount / SECTION_ORDER.length) * 100).toFixed(1))
       : 0;
 
   return (
@@ -581,8 +584,10 @@ export default async function ReviewPage() {
 
         <div className="space-y-4">
           {SUMMARY_SECTIONS.map((sectionType, idx) => {
-            const isFullyValid = validMap.get(sectionType) === true;
-            const isStarted = startedMap.get(sectionType) === true;
+            const isFullyValid = completeMap.get(sectionType) === true;
+            const isStarted =
+              completeMap.get(sectionType) === true ||
+              startedMap.get(sectionType) === true;
             const sectionErrorGaps = gapMap.get(sectionType) ?? [];
             const hasErrors = sectionErrorGaps.length > 0;
             const editHref = `/apply/${SECTION_SLUGS[sectionType]}`;
