@@ -16,6 +16,7 @@ import { withUserContext, type RlsRole } from "@/lib/db/prisma";
 import { upsertRecommendation } from "@/lib/db/queries/recommendations";
 import type { UpsertRecommendationInput } from "@/lib/db/queries/recommendations";
 import { createAuditLog } from "@/lib/audit/log";
+import { generateBursaryAccountReference } from "@/lib/bursary-accounts/reference";
 import { sendEmail } from "@/lib/email/send";
 import { EmailTemplateType } from "@prisma/client";
 
@@ -126,12 +127,19 @@ export async function setApplicationOutcomeAction(
             reference: true,
             status: true,
             childName: true,
+            childDob: true,
+            entryYear: true,
             school: true,
+            bursaryAccountId: true,
+            leadApplicantId: true,
             leadApplicant: {
               select: { id: true, email: true, firstName: true, lastName: true },
             },
             round: {
               select: { academicYear: true },
+            },
+            assessment: {
+              select: { yearlyPayableFees: true },
             },
           },
         });
@@ -155,6 +163,45 @@ export async function setApplicationOutcomeAction(
           where: { id: applicationId },
           data: { status: outcome },
         });
+
+        // Promote a qualifying application into an ongoing BursaryAccount.
+        // Idempotent: only create when the outcome is QUALIFIES and the
+        // application is not already linked to an account (re-assessments
+        // already carry a bursary_account_id and are skipped here).
+        if (outcome === "QUALIFIES" && !application.bursaryAccountId) {
+          const reference = await generateBursaryAccountReference(
+            tx,
+            application.round.academicYear
+          );
+
+          // BursaryAccount.entryYear is required; fall back to the round's
+          // starting academic year (e.g. "2025/2026" -> 2025) when the
+          // application did not capture an explicit entry year.
+          const entryYear =
+            application.entryYear ??
+            parseInt(application.round.academicYear.slice(0, 4), 10);
+
+          const account = await tx.bursaryAccount.create({
+            data: {
+              reference,
+              school: application.school,
+              childName: application.childName,
+              childDob: application.childDob,
+              entryYear,
+              firstAssessmentYear: application.round.academicYear,
+              benchmarkPayableFees:
+                application.assessment?.yearlyPayableFees ?? null,
+              leadApplicantId: application.leadApplicantId,
+              status: "ACTIVE",
+            },
+            select: { id: true },
+          });
+
+          await tx.application.update({
+            where: { id: applicationId },
+            data: { bursaryAccountId: account.id },
+          });
+        }
 
         return { success: true as const, application };
       }
