@@ -13,7 +13,7 @@
 
 import { getCurrentUser } from "@/lib/auth/roles";
 import { withAdminContext, withUserContext, type RlsRole } from "@/lib/db/prisma";
-import { getApplicationForUser, getSectionStatusList } from "@/lib/db/queries/applications";
+import { getCurrentApplicationForUser, getSectionStatusList } from "@/lib/db/queries/applications";
 import { getOrAcceptLatestInvitationForUser } from "@/lib/db/queries/invitations";
 import { StatusBadge, type ApplicationStatus } from "@/components/shared/status-badge";
 import { OnboardingCard } from "@/app/(portal)/onboarding-card";
@@ -41,7 +41,7 @@ export default async function PortalDashboardPage() {
           user.id,
           user.role as RlsRole,
           async (tx) => {
-            const app = await getApplicationForUser(tx, user.id);
+            const app = await getCurrentApplicationForUser(tx, user.id);
             let completed = 0;
             if (app) {
               const statuses = await getSectionStatusList(tx, app.id);
@@ -68,6 +68,8 @@ export default async function PortalDashboardPage() {
       })()
     : { application: null, completedSections: 0, invitation: null };
 
+  const isDraft = application?.status === "PRE_SUBMISSION";
+
   const progressPercent = application
     ? Math.round((completedSections / TOTAL_SECTIONS) * 100)
     : 0;
@@ -85,7 +87,9 @@ export default async function PortalDashboardPage() {
         </h1>
         <p className="mt-1 text-sm text-slate-500">
           {application
-            ? `${roundLabel} — continue your bursary application below.`
+            ? isDraft
+              ? `${roundLabel} — continue your bursary application below.`
+              : `${roundLabel} — view your application status below.`
             : "Your bursary portal is ready."}
         </p>
       </div>
@@ -114,26 +118,28 @@ export default async function PortalDashboardPage() {
               </div>
             </div>
 
-            {/* Progress summary */}
-            <div className="mt-6 border-t border-slate-100 pt-5">
-              <div className="flex items-center justify-between text-sm">
-                <span className="text-slate-500">Sections complete</span>
-                <span className="font-medium text-primary-900">
-                  {completedSections} of {TOTAL_SECTIONS}
-                </span>
+            {/* Progress summary — only meaningful while the draft is editable */}
+            {isDraft && (
+              <div className="mt-6 border-t border-slate-100 pt-5">
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-slate-500">Sections complete</span>
+                  <span className="font-medium text-primary-900">
+                    {completedSections} of {TOTAL_SECTIONS}
+                  </span>
+                </div>
+                <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-slate-100">
+                  <div
+                    className="h-full rounded-full bg-accent-600 transition-all"
+                    style={{ width: `${progressPercent}%` }}
+                    role="progressbar"
+                    aria-valuenow={progressPercent}
+                    aria-valuemin={0}
+                    aria-valuemax={100}
+                    aria-label={`${progressPercent}% complete`}
+                  />
+                </div>
               </div>
-              <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-slate-100">
-                <div
-                  className="h-full rounded-full bg-accent-600 transition-all"
-                  style={{ width: `${progressPercent}%` }}
-                  role="progressbar"
-                  aria-valuenow={progressPercent}
-                  aria-valuemin={0}
-                  aria-valuemax={100}
-                  aria-label={`${progressPercent}% complete`}
-                />
-              </div>
-            </div>
+            )}
           </div>
 
           {/* Quick actions */}
@@ -142,27 +148,29 @@ export default async function PortalDashboardPage() {
               Quick actions
             </h2>
             <div className="grid gap-4 sm:grid-cols-2">
-              {/* Continue application */}
-              <a
-                href="/apply/child-details"
-                className="group flex items-center gap-4 rounded-xl border border-slate-200 bg-white p-5 shadow-sm transition-shadow hover:shadow-md focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-600"
-              >
-                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary-900 text-white">
-                  <FileText className="h-5 w-5" aria-hidden="true" />
-                </div>
-                <div className="min-w-0 flex-1">
-                  <p className="font-medium text-slate-900 group-hover:text-primary-900">
-                    Continue Application
-                  </p>
-                  <p className="mt-0.5 text-sm text-slate-500">
-                    Pick up where you left off
-                  </p>
-                </div>
-                <ArrowRight
-                  className="h-4 w-4 shrink-0 text-slate-300 group-hover:text-primary-600 transition-colors"
-                  aria-hidden="true"
-                />
-              </a>
+              {/* Continue application — only while the draft is still editable */}
+              {isDraft && (
+                <a
+                  href="/apply/child-details"
+                  className="group flex items-center gap-4 rounded-xl border border-slate-200 bg-white p-5 shadow-sm transition-shadow hover:shadow-md focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-600"
+                >
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary-900 text-white">
+                    <FileText className="h-5 w-5" aria-hidden="true" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="font-medium text-slate-900 group-hover:text-primary-900">
+                      Continue Application
+                    </p>
+                    <p className="mt-0.5 text-sm text-slate-500">
+                      Pick up where you left off
+                    </p>
+                  </div>
+                  <ArrowRight
+                    className="h-4 w-4 shrink-0 text-slate-300 group-hover:text-primary-600 transition-colors"
+                    aria-hidden="true"
+                  />
+                </a>
+              )}
 
               {/* View status */}
               <a
