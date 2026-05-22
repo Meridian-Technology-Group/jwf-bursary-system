@@ -290,8 +290,11 @@ export async function submitApplication(applicationId: string): Promise<never> {
           leadApplicantId: true,
           childName: true,
           school: true,
+          entryYear: true,
+          entryYearGroup: true,
+          round: { select: { academicYear: true } },
           sections: {
-            select: { section: true, isComplete: true },
+            select: { section: true, isComplete: true, data: true },
           },
         },
       })
@@ -350,6 +353,30 @@ export async function submitApplication(applicationId: string): Promise<never> {
     throw new Error(JSON.stringify(payload));
   }
 
+  // ── Promote entry year-group + entry calendar year onto the columns ───────
+  // The applicant picks the entry year-group in CHILD_DETAILS (spec §4); it
+  // lives in section JSONB until submit, when we copy it to the first-class
+  // `entryYearGroup` column that the assessment engine + reports read. A new
+  // entrant's entry *calendar* year is the round they're applying to. We never
+  // clobber values already set (e.g. carried into a re-assessment application).
+  const childDetailsData = application.sections.find(
+    (s) => s.section === "CHILD_DETAILS"
+  )?.data as { entryYearGroup?: unknown } | undefined;
+  const VALID_GROUPS = ["Y6", "Y7", "Y9", "Y12", "OTHER"] as const;
+  const rawGroup = childDetailsData?.entryYearGroup;
+  const childEntryYearGroup =
+    typeof rawGroup === "string" &&
+    (VALID_GROUPS as readonly string[]).includes(rawGroup)
+      ? (rawGroup as (typeof VALID_GROUPS)[number])
+      : null;
+  const roundStartYear = Number.parseInt(
+    application.round.academicYear.slice(0, 4),
+    10
+  );
+  const entryYearGroupToPersist = application.entryYearGroup ?? childEntryYearGroup;
+  const entryYearToPersist =
+    application.entryYear ?? (Number.isNaN(roundStartYear) ? null : roundStartYear);
+
   // ── Mark as SUBMITTED ─────────────────────────────────────────────────────
   // The status update is committed in its own transaction so that a subsequent
   // audit-log failure can never roll it back. (The audit INSERT runs inside a
@@ -363,6 +390,8 @@ export async function submitApplication(applicationId: string): Promise<never> {
       data: {
         status: "SUBMITTED",
         submittedAt,
+        entryYearGroup: entryYearGroupToPersist,
+        entryYear: entryYearToPersist,
       },
     });
   });

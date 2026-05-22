@@ -54,6 +54,11 @@ import {
   calculateAssessment,
   calculateDerivedSavings,
 } from "@/lib/assessment/calculator";
+import {
+  calculateSchoolingYearsRemainingFromEntry,
+  ENTRY_YEAR_GROUP_LABELS,
+  type EntryYearGroupCode,
+} from "@/lib/assessment/schooling-years";
 import type { FamilyTypeConfigRow } from "@/lib/db/queries/reference-tables";
 import { cn } from "@/lib/utils";
 import type {
@@ -146,6 +151,8 @@ interface AssessmentFormProps {
   applicationId: string;
   school: "WHITGIFT" | "TRINITY";
   applicationEntryYear: number | null;
+  /** Entry year-group (spec §4) — source of truth for schooling-years. */
+  applicationEntryYearGroup: EntryYearGroupCode | null;
   familyTypeConfigs: FamilyTypeConfigRow[];
   defaultAnnualFees: number;
   defaultCouncilTax: number;
@@ -177,17 +184,21 @@ function formatCurrency(value: number): string {
   }).format(value);
 }
 
-// Calculate schooling years remaining from entry year
-// Formula: 13 - (currentAcademicYear - entryYear + 1)
-// Clamped to [0, 13]
-function calcSchoolingYears(entryYear: number | null): number {
-  if (!entryYear) return 7; // sensible default
-  const now = new Date();
-  const academicYear =
-    now.getMonth() >= 8 ? now.getFullYear() : now.getFullYear() - 1;
-  const yearInSchool = academicYear - entryYear + 1;
-  const remaining = 13 - yearInSchool;
-  return Math.max(0, Math.min(13, remaining));
+// Default schooling years when nothing can be derived (no year-group, or an
+// OTHER cohort) and the assessor hasn't yet entered a value manually.
+const DEFAULT_SCHOOLING_YEARS = 7;
+
+// Schooling years remaining, derived from the entry year-group (source of
+// truth) and the entry calendar year. Returns the derived value, or the
+// fallback when the group is OTHER/unknown so the assessor can enter it by hand.
+function deriveSchoolingYears(
+  group: EntryYearGroupCode | null,
+  entryCalendarYear: number | null
+): number {
+  return (
+    calculateSchoolingYearsRemainingFromEntry(group, entryCalendarYear) ??
+    DEFAULT_SCHOOLING_YEARS
+  );
 }
 
 const DEFAULT_EARNER: EarnerFormValues = {
@@ -335,6 +346,7 @@ export function AssessmentForm({
   applicationId,
   school: _school,
   applicationEntryYear,
+  applicationEntryYearGroup,
   familyTypeConfigs,
   defaultAnnualFees,
   defaultCouncilTax,
@@ -375,7 +387,7 @@ export function AssessmentForm({
   const [schoolingYearsRemaining, setSchoolingYearsRemaining] =
     React.useState<number>(
       assessment.schoolingYearsRemaining ??
-        calcSchoolingYears(applicationEntryYear)
+        deriveSchoolingYears(applicationEntryYearGroup, applicationEntryYear)
     );
   const [entryYearDisplay, setEntryYearDisplay] = React.useState<string>(
     applicationEntryYear ? String(applicationEntryYear) : ""
@@ -854,11 +866,31 @@ export function AssessmentForm({
               />
             </FieldRow>
 
-            {/* Entry year + schooling years remaining */}
+            {/* Entry year-group (source of truth), entry calendar year, and
+                derived schooling years remaining. */}
+            <FieldRow
+              label="Entry Year Group"
+              htmlFor="entry-year-group"
+              hint="Set by the applicant (spec §4); drives schooling years"
+            >
+              <Input
+                id="entry-year-group"
+                type="text"
+                value={
+                  applicationEntryYearGroup
+                    ? ENTRY_YEAR_GROUP_LABELS[applicationEntryYearGroup]
+                    : "—"
+                }
+                readOnly
+                disabled
+                className="h-9 border-slate-200 bg-slate-50 text-sm"
+              />
+            </FieldRow>
+
             <FieldRow
               label="Entry Year"
               htmlFor="entry-year"
-              hint="Academic year of school entry (e.g. 2019)"
+              hint="Calendar year of school entry (e.g. 2019)"
             >
               <Input
                 id="entry-year"
@@ -869,8 +901,15 @@ export function AssessmentForm({
                 onChange={(e) => setEntryYearDisplay(e.target.value)}
                 onBlur={() => {
                   const yr = parseInt(entryYearDisplay, 10);
+                  // Re-derive from the year-group + entry calendar year. When the
+                  // group is OTHER/unknown the derivation is null, so we leave the
+                  // assessor's manual schooling-years value untouched.
                   if (!isNaN(yr)) {
-                    setSchoolingYearsRemaining(calcSchoolingYears(yr));
+                    const derived = calculateSchoolingYearsRemainingFromEntry(
+                      applicationEntryYearGroup,
+                      yr
+                    );
+                    if (derived !== null) setSchoolingYearsRemaining(derived);
                   }
                   scheduleAutoSave();
                 }}
@@ -883,7 +922,7 @@ export function AssessmentForm({
             <FieldRow
               label="Schooling Years Remaining"
               htmlFor="schooling-years"
-              hint="Calculated from entry year (0–13)"
+              hint="Derived from entry year-group + entry year (0–13)"
             >
               <Input
                 id="schooling-years"

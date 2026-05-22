@@ -9,7 +9,7 @@ related:
   - ../../src/app/(admin)/rounds/page.tsx
   - ../../src/app/(admin)/rounds/[id]/page.tsx
   - ../../src/app/(admin)/admin/page.tsx
-  - ../tdd/07-system-components.md
+  - ../engineering/tdd/07-system-components.md
 ---
 
 ## Context

@@ -18,13 +18,22 @@
 
 import "dotenv/config";
 import { config } from "dotenv";
-config({ path: ".env.local", override: true });
+// override: false so explicit process.env vars (command line / CI secrets) win
+// over .env.local. .env.local still fills gaps for plain local dev. This stops
+// a nonprod .env.local from silently misrouting an explicit prod seed run.
+config({ path: ".env.local", override: false });
 
 import { PrismaClient } from "@prisma/client";
 import { createClient } from "@supabase/supabase-js";
 
 import { councilTaxDefaults, familyTypeConfigs, schoolFees } from "./seed-data/reference";
 import { reasonCodes } from "./seed-data/reason-codes";
+
+// Eyeball-confirm the target before any writes. Print the project ref only
+// (the URL subdomain), never the full URL or any secret.
+const targetProjectRef =
+  process.env.NEXT_PUBLIC_SUPABASE_URL?.match(/https?:\/\/([^.]+)\./)?.[1] ?? "unknown";
+console.log(`[seed:reference] target Supabase project: ${targetProjectRef}`);
 
 const seedDatabaseUrl = process.env.DIRECT_URL ?? process.env.DATABASE_URL;
 const prisma = new PrismaClient({

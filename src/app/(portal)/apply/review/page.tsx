@@ -16,6 +16,7 @@ import { ApplicationSectionType } from "@prisma/client";
 import { getCurrentUser } from "@/lib/auth/roles";
 import { withUserContext, type RlsRole } from "@/lib/db/prisma";
 import { getSectionGapStatuses } from "@/lib/portal/section-gaps";
+import { ENTRY_YEAR_GROUP_LABELS } from "@/lib/assessment/schooling-years";
 import { cn } from "@/lib/utils";
 import type {
   ChildDetailsData,
@@ -156,13 +157,6 @@ function parseSafe<T>(raw: unknown): T | null {
 
 type SummaryRow = { label: string; value: string };
 
-const ENTRY_YEAR_GROUP_LABELS: Record<string, string> = {
-  Y6: "Year 6",
-  Y7: "Year 7",
-  Y9: "Year 9",
-  Y12: "Year 12",
-  OTHER: "Other",
-};
 
 function renderChildDetails(raw: unknown): SummaryRow[] {
   const d = parseSafe<ChildDetailsData>(raw);

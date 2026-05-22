@@ -1,38 +1,44 @@
 ---
 title: B8 — MFA (TOTP) for ADMIN / ASSESSOR / VIEWER
-status: open
+status: closed
 severity: critical
 area: auth, security, compliance
 opened: 2026-05-19
 opened_by: Claude (via Brian Wagner)
-state: built + verified, then reverted; held for feature-flag + go-live decision
+closed: 2026-05-22
+state: shipped to production behind a prod-only feature flag and enforced in prod (PR #56 → staging, PR #57 → main)
 related:
   - PR #50 (MVP TOTP MFA gate, /login/mfa enrol+challenge, admin reset-MFA control) — built & verified
-  - PR #53 (revert of #50 on staging) — MFA backed out pending this decision
+  - PR #53 (revert of #50 on staging) — MFA backed out pending the feature-flag + go-live decision
   - PR #54 (staging → main promotion) — explicitly EXCLUDED MFA
-  - docs/walkthroughs/admins/14-reset-staff-mfa.md
+  - PR #56 (re-applied behind the STAFF_MFA_ENFORCED/VERCEL_ENV flag + idempotent enrol) — merged to staging
+  - PR #57 (staging → main promotion) — shipped MFA to prod; enforced by the VERCEL_ENV=production default
+  - docs/guides/walkthroughs/admins/14-reset-staff-mfa.md
+  - src/lib/auth/mfa-flag.ts
   - src/middleware.ts
   - src/app/(auth)/login/page.tsx
   - MSA Schedule 4 §8 (mandatory MFA for staff roles)
   - MSA Schedule 1 §2 (Gate G3 / G4 sign-off)
 ---
 
-> **Status (2026-05-22): built and verified, then deliberately reverted.**
-> The MVP was implemented in **PR #50** and verified end-to-end on a local
-> prod build (see "Verified behaviour" below). It was then **reverted from
-> `staging` in PR #53** and **excluded from the `staging → main` promotion
-> (PR #54)**. So **no environment enforces staff MFA today** (prod, staging,
-> and local are all single-factor right now).
+> **Status (2026-05-22): CLOSED — shipped to production and enforced.**
+> The MVP (PR #50) was re-applied behind a production-only feature flag in
+> **PR #56** (merged to `staging`), smoke-tested on `staging` with
+> `STAFF_MFA_ENFORCED=true` (enrolment + login confirmed), then promoted to
+> `main` in **PR #57**. Staff MFA is now **enforced in production** by default
+> via `VERCEL_ENV === 'production'` (see "Decision: feature-flag"). The §8
+> acceptance gate is satisfied.
 >
-> It was held back for two reasons, both tracked here:
-> 1. **Make it feature-flagged** so it only enforces in production and doesn't
->    block testing in staging/local (see "Decision: feature-flag" below).
-> 2. **Settle the go-live questions** (backup codes vs admin-reset-only; the
->    rollout window) before turning it on (see "Open decisions").
+> **Enforcement matrix:** prod = ON (default); staging/local = OFF unless
+> `STAFF_MFA_ENFORCED=true`. Kill-switch: set `STAFF_MFA_ENFORCED=false` in the
+> prod env + redeploy to disable without a code revert.
 >
-> The code is preserved in git history. **Re-enable by re-applying #50 *with*
-> the feature flag added** (preferred over a plain revert-of-the-revert, so the
-> flag ships at the same time).
+> **Recovery (MVP):** admin-reset-only — an ADMIN clears a staff member's
+> factor from `/users`, or the manual SQL under "Lockout recovery". No
+> self-service backup codes in the MVP (deferred — see below).
+>
+> **Still deferred to follow-ups:** backup/recovery codes, WebAuthn/passkey,
+> force-re-enrolment policy. Tracked under "Deferred" below.
 
 ## Why it matters
 
@@ -98,14 +104,23 @@ blocked — while keeping it impossible to accidentally ship prod with MFA off.
   discipline is to toggle the flag on in staging and have real staff enrol
   *before* trusting it in prod.
 
-## Known rough edge (fix before turn-on)
+## Known rough edge — FIXED (PR #56)
 
-The very first `/login/mfa` hit immediately after login can race and create a
+The very first `/login/mfa` hit immediately after login could race and create a
 **duplicate unverified factor** → "A factor with the friendly name … already
-exists". A page reload (when no verified factor exists) recovers and shows the
-setup screen. Before go-live, make enrol idempotent: unenrol/dedupe any stale
-**unverified** factor before calling `enroll`. (Non-blocking, but real staff
-shouldn't see it on day one.)
+exists". Two fixes shipped in PR #56:
+
+1. **Idempotent dedup** — unenrol stale **unverified** factors before `enroll`.
+   The original loop iterated `listFactors().totp`, but the Supabase JS client
+   only populates `.totp` with **verified** factors (unverified live in `.all`),
+   so the dedup was a no-op; it now iterates `.all`.
+2. **Unique friendly name** — the dedup alone can't help on a true first hit
+   (the login `router.push` + `router.refresh` fires two concurrent server
+   renders, each calling `enroll()` with the default empty name → collision).
+   Each `enroll()` now gets a unique `staff-totp-<uuid>` friendly name, so
+   concurrent enrolments both succeed; Supabase drops the orphan on verify.
+
+Verified on the local prod build and on the staging smoke — no first-hit error.
 
 ## Lockout recovery
 
@@ -121,20 +136,20 @@ shouldn't see it on day one.)
 - **Self-service backup codes are NOT in the MVP** (see deferred) — today a
   staff member who loses their authenticator depends on an admin / the SQL.
 
-## Rollout runbook (recommended)
+## Rollout runbook — DONE
 
-1. Re-apply PR #50's code **with the feature flag added** (gate the middleware
-   gate + the login redirect); fix the duplicate-factor race. Off in
-   staging/local by default.
-2. Set `STAFF_MFA_ENFORCED=true` on the **staging** env; have the real
-   Foundation staff (e.g. Alex, Charlotte, the assessors) enrol + smoke-test on
-   the staging URL. (This is the b8 mitigation — a real pre-prod smoke.)
-3. Fix anything the smoke surfaces.
-4. **Coordinated prod turn-on** in a window: enable in the Vercel **Production**
-   env (or rely on the `VERCEL_ENV` default), with the lockout SQL ready and an
-   admin on standby. Every staff user is funnelled to `/login/mfa/setup` on
-   their next admin action.
-5. Confirm a couple of staff enrol successfully; keep the env kill-switch handy.
+1. ✅ Re-applied PR #50's code **with the feature flag** (gated the middleware
+   gate + the login redirect) and fixed the duplicate-factor race — **PR #56**,
+   merged to `staging`. Off in staging/local by default.
+2. ✅ Smoke-tested on `staging` with `STAFF_MFA_ENFORCED=true` — enrolment +
+   login confirmed working (2026-05-22).
+3. ✅ No blocking issues surfaced.
+4. ✅ **Prod turn-on** — promoted to `main` in **PR #57**; prod enforces via the
+   `VERCEL_ENV=production` default. Every staff user is funnelled to
+   `/login/mfa` on their next admin action.
+5. ⏭️ **Operational watch:** confirm Foundation staff enrol successfully on
+   their first prod sign-in; kill-switch (`STAFF_MFA_ENFORCED=false` + redeploy)
+   and the lockout SQL remain on standby.
 
 ## Deferred to a follow-up (post-MVP)
 
@@ -148,14 +163,14 @@ shouldn't see it on day one.)
 - **IP allow-lists, password-rotation, session-timeout tuning** — separate
   Schedule 4 §8 items, not B8.
 
-## Open decisions (need owner input)
+## Open decisions — RESOLVED (2026-05-22, owner: Brian)
 
-1. **Flag signal:** `VERCEL_ENV === 'production'` default, explicit
-   `STAFF_MFA_ENFORCED` env var, or **both** (recommended)?
-2. **Backup codes:** build self-service recovery codes **before** go-live, or
-   ship MVP go-live with **admin-reset-only** recovery and add codes after?
-3. **Rollout timing:** when to run the staging smoke + the coordinated prod
-   turn-on, and which staff enrol first.
+1. **Flag signal:** ✅ **Both** — `VERCEL_ENV === 'production'` default + an
+   explicit `STAFF_MFA_ENFORCED` override (kill-switch). Shipped in PR #56.
+2. **Backup codes:** ✅ Ship MVP go-live with **admin-reset-only** recovery;
+   self-service backup codes deferred to a follow-up.
+3. **Rollout timing:** ✅ Staging smoke (2026-05-22) → prod turn-on the same day
+   via PR #57. Real staff enrol on their next prod sign-in.
 
 ## Implementation notes (for re-applying #50 + flag)
 

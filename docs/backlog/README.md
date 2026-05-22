@@ -10,7 +10,7 @@ faded.
 - **One file per item.** Filename in `kebab-case`, ending in `.md`.
 - Use the [`_template.md`](_template.md) as the starting point.
 - Keep each file short — a paragraph of context plus a proposed approach is
-  usually enough. Anything longer probably belongs in `docs/planning/`.
+  usually enough. Anything longer probably belongs in `docs/product/`.
 - Status values: `open`, `in-progress`, `done`, `won't-do`. Drop the file
   into `done/` or delete it once shipped — git history preserves it.
 - Severity values: `low`, `medium`, `high`, `critical`. Use sparingly —

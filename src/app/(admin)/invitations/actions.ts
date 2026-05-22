@@ -685,6 +685,7 @@ export async function createReassessmentApplicationAction(
           childName: account.childName,
           childDob: account.childDob,
           entryYear: account.entryYear,
+          entryYearGroup: account.entryYearGroup,
           isReassessment: true,
           status: "PRE_SUBMISSION",
         },
