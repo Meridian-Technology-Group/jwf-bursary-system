@@ -10,11 +10,16 @@
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { Role } from "@prisma/client";
-import { withUserContext, type RlsRole } from "@/lib/db/prisma";
+import { InvitationStatus, Role } from "@prisma/client";
+import { withAdminContext, withUserContext, type RlsRole } from "@/lib/db/prisma";
 import { requireRole } from "@/lib/auth/roles";
-import { getLatestAcceptedInvitationForUser } from "@/lib/db/queries/invitations";
+import {
+  getLatestAcceptedInvitationForUser,
+  markInvitationAccepted,
+} from "@/lib/db/queries/invitations";
 import { generateApplicationReference } from "@/lib/applications/reference";
+import { createReassessmentApplicationFromInvitation } from "@/lib/db/queries/reassessment";
+import { createAuditLog } from "@/lib/audit/log";
 
 // ---------------------------------------------------------------------------
 // Validation schema
@@ -150,4 +155,191 @@ export async function startApplicationAction(
   }
 
   redirect("/apply/child-details");
+}
+
+// ---------------------------------------------------------------------------
+// beginReassessmentAction
+// ---------------------------------------------------------------------------
+
+/**
+ * Error-only result. On success the action calls `redirect()` (see
+ * StartApplicationResult for why the client never observes a success object).
+ */
+export type BeginReassessmentResult = { success: false; error: string };
+
+/**
+ * Begins a re-assessment from the portal "Welcome back" card.
+ *
+ * Unlike the first-year onboarding card, a re-assessment invite is left
+ * PENDING on login (see getOrAcceptLatestInvitationForUser). This action is
+ * where it is finally consumed:
+ *
+ *   1. Find the user's PENDING re-assessment invite (bursaryAccountId set).
+ *   2. Create the fully prepopulated re-assessment application (shared helper).
+ *   3. Mark the invitation ACCEPTED + write the ACCEPT_INVITATION audit log.
+ *   4. Redirect into the form.
+ *
+ * Runs under admin context: writes to invitations.status and the
+ * cross-application prepopulation reads are not granted to the app_user role.
+ */
+export async function beginReassessmentAction(): Promise<BeginReassessmentResult> {
+  const user = await requireRole([Role.APPLICANT]);
+
+  try {
+    const result = await withAdminContext(async (tx) => {
+      const invitation = await tx.invitation.findFirst({
+        where: {
+          authUserId: user.id,
+          status: InvitationStatus.PENDING,
+          bursaryAccountId: { not: null },
+        },
+        orderBy: { createdAt: "desc" },
+      });
+
+      if (!invitation) {
+        return {
+          error:
+            "We could not find a pending re-assessment invitation for your account. Please contact the Foundation.",
+        };
+      }
+
+      if (!invitation.roundId) {
+        return {
+          error:
+            "Your re-assessment invitation does not have an assessment round assigned. Please contact the Foundation.",
+        };
+      }
+
+      if (invitation.expiresAt < new Date()) {
+        return {
+          error:
+            "This re-assessment invitation has expired. Please contact the Foundation for a new one.",
+        };
+      }
+
+      const { id: applicationId } =
+        await createReassessmentApplicationFromInvitation(tx, invitation);
+
+      await markInvitationAccepted(tx, invitation.id, user.id);
+
+      await createAuditLog(tx, {
+        userId: user.id,
+        action: "ACCEPT_INVITATION",
+        entityType: "Invitation",
+        entityId: invitation.id,
+        context: `Re-assessment invitation accepted by ${invitation.email}`,
+        metadata: {
+          email: invitation.email,
+          roundId: invitation.roundId,
+          bursaryAccountId: invitation.bursaryAccountId,
+          applicationId,
+        },
+      });
+
+      return { error: null };
+    });
+
+    if (result.error) {
+      return { success: false, error: result.error };
+    }
+
+    revalidatePath("/");
+  } catch (err) {
+    const message =
+      err instanceof Error ? err.message : "Something went wrong.";
+    console.error("[portal/actions] beginReassessmentAction error:", err);
+    return { success: false, error: message };
+  }
+
+  redirect("/apply/child-details");
+}
+
+// ---------------------------------------------------------------------------
+// submitMissingDocsResponse
+// ---------------------------------------------------------------------------
+
+export type ActionResult =
+  | { success: true }
+  | { success: false; error: string };
+
+/**
+ * Applicant-side counterpart to the assessor's `pauseApplication` action.
+ *
+ * Called from the "Respond to a missing-documents request" page when the
+ * applicant has re-uploaded the requested files and clicks "Send to
+ * assessor". Transitions the application PAUSED → NOT_STARTED (the status
+ * the portal surfaces as "Under Review") and records a
+ * `MISSING_DOCS_RESPONDED` audit row that mirrors the assessor's
+ * `APPLICATION_PAUSED` entry.
+ *
+ * Ownership and the PAUSED precondition are both enforced server-side so the
+ * action is safe even if the page state is stale.
+ */
+export async function submitMissingDocsResponse(
+  applicationId: string
+): Promise<ActionResult> {
+  const user = await requireRole([Role.APPLICANT]);
+
+  try {
+    const result = await withUserContext(
+      user.id,
+      user.role as RlsRole,
+      async (tx) => {
+        const application = await tx.application.findUnique({
+          where: { id: applicationId },
+          select: {
+            id: true,
+            reference: true,
+            status: true,
+            leadApplicantId: true,
+          },
+        });
+
+        if (!application || application.leadApplicantId !== user.id) {
+          return { success: false as const, error: "Application not found." };
+        }
+
+        if (application.status !== "PAUSED") {
+          return {
+            success: false as const,
+            error:
+              "This application is not currently awaiting documents, so there is nothing to send.",
+          };
+        }
+
+        await tx.application.update({
+          where: { id: applicationId },
+          data: { status: "NOT_STARTED" },
+        });
+
+        await createAuditLog(tx, {
+          userId: user.id,
+          action: "MISSING_DOCS_RESPONDED",
+          entityType: "Application",
+          entityId: applicationId,
+          context: "Applicant responded to a missing-documents request",
+          metadata: {
+            fromStatus: "PAUSED",
+            toStatus: "NOT_STARTED",
+            reference: application.reference,
+          },
+        });
+
+        return { success: true as const };
+      }
+    );
+
+    if (!result.success) return result;
+
+    revalidatePath("/respond");
+    revalidatePath("/status");
+    revalidatePath("/");
+    return { success: true };
+  } catch (err) {
+    console.error("[portal/actions] submitMissingDocsResponse error:", err);
+    return {
+      success: false,
+      error: "Failed to send your response. Please try again.",
+    };
+  }
 }

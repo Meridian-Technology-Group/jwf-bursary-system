@@ -16,7 +16,11 @@ import { createSupabaseAdminClient } from "@/lib/auth/supabase-admin";
 import { getAppUrl } from "@/lib/app-url";
 import { withAdminContext, withUserContext, type RlsRole } from "@/lib/db/prisma";
 import { createAuditLog } from "@/lib/audit/log";
-import { createStaffInvitation } from "@/lib/db/queries/staff-invitations";
+import {
+  createStaffInvitation,
+  markStaffInvitationExpired,
+  regenerateStaffInvitationToken,
+} from "@/lib/db/queries/staff-invitations";
 import { sendEmail } from "@/lib/email/send";
 
 // ---------------------------------------------------------------------------
@@ -169,6 +173,126 @@ export async function inviteStaffAction(
 
   revalidatePath("/users");
   return { success: true };
+}
+
+// ---------------------------------------------------------------------------
+// resendStaffInvitationAction
+// ---------------------------------------------------------------------------
+
+const StaffInvitationIdSchema = z.string().uuid("Invalid invitation ID");
+
+/**
+ * Re-sends a PENDING staff invitation: regenerates the token + TTL and
+ * dispatches the INVITE_STAFF email with the new link.
+ */
+export async function resendStaffInvitationAction(
+  invitationIdRaw: string
+): Promise<StaffActionResult> {
+  const admin = await requireRole([Role.ADMIN]);
+
+  const parsed = StaffInvitationIdSchema.safeParse(invitationIdRaw);
+  if (!parsed.success) {
+    return { success: false, error: "Invalid invitation ID" };
+  }
+
+  const invitationId = parsed.data;
+  const appUrl = getAppUrl();
+
+  try {
+    const refreshed = await withAdminContext(async (tx) => {
+      const existing = await tx.staffInvitation.findUnique({
+        where: { id: invitationId },
+      });
+      if (!existing) {
+        return { ok: false as const, error: "Invitation not found." };
+      }
+      if (existing.status !== "PENDING") {
+        return {
+          ok: false as const,
+          error: "Only PENDING invitations can be re-sent.",
+        };
+      }
+      const updated = await regenerateStaffInvitationToken(tx, invitationId);
+      await createAuditLog(tx, {
+        userId: admin.id,
+        action: "RESEND_STAFF_INVITATION",
+        entityType: "StaffInvitation",
+        entityId: invitationId,
+        context: `Re-sent invitation to ${updated.email}`,
+        metadata: { email: updated.email, role: updated.role },
+      });
+      return { ok: true as const, invitation: updated };
+    });
+
+    if (!refreshed.ok) return { success: false, error: refreshed.error };
+
+    const inv = refreshed.invitation;
+    const emailResult = await sendEmail(inv.email, "INVITE_STAFF", {
+      first_name: inv.firstName ?? inv.email.split("@")[0],
+      role: inv.role,
+      registration_link: `${appUrl}/register/staff?token=${inv.token}`,
+    });
+    if (!emailResult.success) {
+      return {
+        success: false,
+        error: `Token refreshed but email failed to send: ${emailResult.error}`,
+      };
+    }
+    revalidatePath("/users");
+    return { success: true };
+  } catch (err) {
+    const message =
+      err instanceof Error ? err.message : "Failed to re-send invitation";
+    console.error("[users] resendStaffInvitationAction error:", err);
+    return { success: false, error: message };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// revokeStaffInvitationAction
+// ---------------------------------------------------------------------------
+
+/**
+ * Marks a PENDING staff invitation EXPIRED so the link can no longer be used.
+ */
+export async function revokeStaffInvitationAction(
+  invitationIdRaw: string
+): Promise<StaffActionResult> {
+  const admin = await requireRole([Role.ADMIN]);
+
+  const parsed = StaffInvitationIdSchema.safeParse(invitationIdRaw);
+  if (!parsed.success) {
+    return { success: false, error: "Invalid invitation ID" };
+  }
+
+  const invitationId = parsed.data;
+
+  try {
+    const revoked = await withAdminContext(async (tx) => {
+      const updated = await markStaffInvitationExpired(tx, invitationId);
+      if (!updated) {
+        return { ok: false as const, error: "Invitation is not pending." };
+      }
+      await createAuditLog(tx, {
+        userId: admin.id,
+        action: "REVOKE_STAFF_INVITATION",
+        entityType: "StaffInvitation",
+        entityId: invitationId,
+        context: `Revoked invitation to ${updated.email}`,
+        metadata: { email: updated.email, role: updated.role },
+      });
+      return { ok: true as const };
+    });
+
+    if (!revoked.ok) return { success: false, error: revoked.error };
+    revalidatePath("/users");
+    return { success: true };
+  } catch (err) {
+    const message =
+      err instanceof Error ? err.message : "Failed to revoke invitation";
+    console.error("[users] revokeStaffInvitationAction error:", err);
+    return { success: false, error: message };
+  }
 }
 
 // ---------------------------------------------------------------------------

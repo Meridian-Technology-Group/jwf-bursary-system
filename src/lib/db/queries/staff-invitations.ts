@@ -96,3 +96,64 @@ export async function markStaffInvitationAccepted(
     },
   });
 }
+
+// ---------------------------------------------------------------------------
+// listPendingStaffInvitations
+// ---------------------------------------------------------------------------
+
+/**
+ * Returns all PENDING staff invitations ordered by most-recent first, plus
+ * the email of the admin who created each one (for the "Sent By" column).
+ */
+export async function listPendingStaffInvitations(tx: Tx) {
+  return tx.staffInvitation.findMany({
+    where: { status: InvitationStatus.PENDING },
+    orderBy: { createdAt: "desc" },
+    include: {
+      inviter: { select: { firstName: true, lastName: true, email: true } },
+    },
+  });
+}
+
+// ---------------------------------------------------------------------------
+// regenerateStaffInvitationToken
+// ---------------------------------------------------------------------------
+
+/**
+ * Issues a fresh token and a fresh TTL on an existing PENDING staff
+ * invitation. Returns the updated row so the caller can send the new link.
+ */
+export async function regenerateStaffInvitationToken(
+  tx: Tx,
+  id: string,
+  ttlHours = 72
+): Promise<StaffInvitation> {
+  const expiresAt = new Date(Date.now() + ttlHours * 3_600_000);
+  return tx.staffInvitation.update({
+    where: { id },
+    data: {
+      token: generateInvitationToken(),
+      expiresAt,
+    },
+  });
+}
+
+// ---------------------------------------------------------------------------
+// markStaffInvitationExpired
+// ---------------------------------------------------------------------------
+
+/**
+ * Revokes a staff invitation by flipping its status to EXPIRED. Returns the
+ * updated row (or null when no row matched / not PENDING).
+ */
+export async function markStaffInvitationExpired(
+  tx: Tx,
+  id: string
+): Promise<StaffInvitation | null> {
+  const existing = await tx.staffInvitation.findUnique({ where: { id } });
+  if (!existing || existing.status !== InvitationStatus.PENDING) return null;
+  return tx.staffInvitation.update({
+    where: { id },
+    data: { status: InvitationStatus.EXPIRED },
+  });
+}

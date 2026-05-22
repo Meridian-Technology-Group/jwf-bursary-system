@@ -22,6 +22,10 @@ import {
   getIncomeBandDistribution,
   getPropertyCategoryDistribution,
   getReasonCodeFrequency,
+  getFinalYearBursaries,
+  getSiblingBursarySummary,
+  type FinalYearBursaryRow,
+  type SiblingSummaryRow,
 } from "@/lib/db/queries/reports";
 import { withUserContext, type RlsRole } from "@/lib/db/prisma";
 import { HorizontalBarChart } from "@/components/admin/charts/horizontal-bar-chart";
@@ -39,6 +43,8 @@ const SECTIONS = [
   { id: "income-bands", label: "Income Bands" },
   { id: "property-categories", label: "Property Categories" },
   { id: "reason-codes", label: "Reason Codes" },
+  { id: "final-year-bursaries", label: "Final-Year Bursaries" },
+  { id: "sibling-summary", label: "Sibling Summary" },
 ] as const;
 
 function SectionNav() {
@@ -211,6 +217,194 @@ function ReasonCodeTable({
   );
 }
 
+// ─── Shared formatters ────────────────────────────────────────────────────────
+
+function formatGBP(value: number | null): string {
+  if (value === null) return "—";
+  return new Intl.NumberFormat("en-GB", {
+    style: "currency",
+    currency: "GBP",
+    maximumFractionDigits: 0,
+  }).format(value);
+}
+
+const SCHOOL_LABEL: Record<string, string> = {
+  TRINITY: "Trinity",
+  WHITGIFT: "Whitgift",
+};
+
+// ─── Final-year bursaries table ───────────────────────────────────────────────
+
+function FinalYearTable({ rows }: { rows: FinalYearBursaryRow[] }) {
+  if (rows.length === 0) {
+    return (
+      <div className="rounded-lg border border-dashed border-slate-200 py-8 text-center">
+        <p className="text-sm text-slate-400">
+          No active bursaries are in their final school years (Y12 / Y13).
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="overflow-x-auto rounded-lg border border-slate-200">
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="border-b border-slate-200 bg-slate-50">
+            <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+              Reference
+            </th>
+            <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+              Child
+            </th>
+            <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+              School
+            </th>
+            <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500 w-24">
+              Entry year
+            </th>
+            <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500 w-28">
+              Current year
+            </th>
+            <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-slate-500 w-32">
+              Yearly payable fees
+            </th>
+            <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-slate-500 w-20">
+              Siblings
+            </th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-slate-100">
+          {rows.map((row) => (
+            <tr key={row.id} className="hover:bg-slate-50">
+              <td className="px-4 py-3 font-mono text-xs font-semibold text-primary-900">
+                {row.reference}
+              </td>
+              <td className="px-4 py-3 text-slate-700">{row.childName}</td>
+              <td className="px-4 py-3 text-slate-700">
+                {SCHOOL_LABEL[row.school] ?? row.school}
+              </td>
+              <td className="px-4 py-3 tabular-nums text-slate-700">
+                {row.entryYear}
+              </td>
+              <td className="px-4 py-3 text-slate-700">
+                <span className="inline-flex items-center rounded-full bg-accent-50 px-2 py-0.5 text-xs font-semibold text-accent-700">
+                  Y{row.currentYearGroup}
+                </span>
+                {row.yearsRemaining === 0 && (
+                  <span className="ml-1.5 text-xs text-slate-400">
+                    (final year)
+                  </span>
+                )}
+              </td>
+              <td className="px-4 py-3 text-right tabular-nums font-semibold text-slate-800">
+                {formatGBP(row.yearlyPayableFees)}
+              </td>
+              <td className="px-4 py-3 text-right tabular-nums text-slate-700">
+                {row.siblingCount}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+// ─── Sibling summary table ────────────────────────────────────────────────────
+
+function SiblingSummaryTable({ rows }: { rows: SiblingSummaryRow[] }) {
+  if (rows.length === 0) {
+    return (
+      <div className="rounded-lg border border-dashed border-slate-200 py-8 text-center">
+        <p className="text-sm text-slate-400">
+          No families with two or more linked bursary accounts.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      {rows.map((family) => (
+        <div
+          key={family.familyGroupId}
+          className="overflow-hidden rounded-lg border border-slate-200"
+        >
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 bg-slate-50 px-4 py-3">
+            <div>
+              <p className="text-xs uppercase tracking-wide text-slate-500">
+                Family group
+              </p>
+              <p className="font-mono text-xs font-semibold text-primary-900">
+                {family.familyGroupId}
+              </p>
+            </div>
+            <dl className="flex flex-wrap items-center gap-x-6 gap-y-1 text-sm">
+              <div className="flex items-baseline gap-1.5">
+                <dt className="text-xs text-slate-500">Children</dt>
+                <dd className="font-semibold tabular-nums text-slate-900">
+                  {family.childrenCount}
+                </dd>
+              </div>
+              <div className="flex items-baseline gap-1.5">
+                <dt className="text-xs text-slate-500">Combined fees</dt>
+                <dd className="font-semibold tabular-nums text-slate-900">
+                  {formatGBP(family.combinedYearlyPayableFees)}
+                </dd>
+              </div>
+              <div className="flex items-baseline gap-1.5">
+                <dt className="text-xs text-slate-500">Combined award</dt>
+                <dd className="font-semibold tabular-nums text-primary-900">
+                  {formatGBP(family.combinedBursaryAward)}
+                </dd>
+              </div>
+            </dl>
+          </div>
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-slate-100 text-xs uppercase tracking-wide text-slate-500">
+                <th className="px-4 py-2 text-left font-semibold w-12">#</th>
+                <th className="px-4 py-2 text-left font-semibold">Reference</th>
+                <th className="px-4 py-2 text-left font-semibold">Child</th>
+                <th className="px-4 py-2 text-left font-semibold">School</th>
+                <th className="px-4 py-2 text-right font-semibold">
+                  Yearly payable fees
+                </th>
+                <th className="px-4 py-2 text-right font-semibold">
+                  Bursary award
+                </th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {family.children.map((child) => (
+                <tr key={child.bursaryAccountId} className="hover:bg-slate-50">
+                  <td className="px-4 py-2 tabular-nums text-slate-400">
+                    {child.priorityOrder}
+                  </td>
+                  <td className="px-4 py-2 font-mono text-xs font-semibold text-primary-900">
+                    {child.reference}
+                  </td>
+                  <td className="px-4 py-2 text-slate-700">{child.childName}</td>
+                  <td className="px-4 py-2 text-slate-700">
+                    {SCHOOL_LABEL[child.school] ?? child.school}
+                  </td>
+                  <td className="px-4 py-2 text-right tabular-nums text-slate-800">
+                    {formatGBP(child.yearlyPayableFees)}
+                  </td>
+                  <td className="px-4 py-2 text-right tabular-nums text-slate-800">
+                    {formatGBP(child.bursaryAward)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 // ─── No data placeholder ──────────────────────────────────────────────────────
 
 function NoDataPlaceholder({ height = 200 }: { height?: number }) {
@@ -285,6 +479,8 @@ export default async function ReportsPage({ searchParams }: PageProps) {
     incomeBands,
     propertyCategories,
     reasonCodes,
+    finalYearBursaries,
+    siblingSummary,
   ] = await withUserContext(
     user.id,
     user.role as RlsRole,
@@ -295,6 +491,9 @@ export default async function ReportsPage({ searchParams }: PageProps) {
         getIncomeBandDistribution(tx, selectedRoundId),
         getPropertyCategoryDistribution(tx, selectedRoundId),
         getReasonCodeFrequency(tx, selectedRoundId),
+        // Bursary accounts span rounds, so these two reports are not round-scoped.
+        getFinalYearBursaries(tx),
+        getSiblingBursarySummary(tx),
       ])
   );
 
@@ -417,6 +616,29 @@ export default async function ReportsPage({ searchParams }: PageProps) {
           ranked by frequency.
         </p>
         <ReasonCodeTable rows={reasonCodes} />
+      </ReportSection>
+
+      {/* ── Section 6: Active bursaries approaching final year ───────────────── */}
+      <ReportSection
+        id="final-year-bursaries"
+        title="Active bursaries approaching final year"
+      >
+        <p className="mb-4 text-sm text-slate-500">
+          Active bursary holders entering their final school years (Y12 / Y13),
+          to plan succession in the sibling priority order. Spans all rounds —
+          not filtered by the selected round.
+        </p>
+        <FinalYearTable rows={finalYearBursaries} />
+      </ReportSection>
+
+      {/* ── Section 7: Sibling bursary summary ──────────────────────────────── */}
+      <ReportSection id="sibling-summary" title="Sibling bursary summary">
+        <p className="mb-4 text-sm text-slate-500">
+          Families with two or more linked bursary accounts, with combined
+          yearly payable fees and bursary award, sorted by combined award. Spans
+          all rounds — not filtered by the selected round.
+        </p>
+        <SiblingSummaryTable rows={siblingSummary} />
       </ReportSection>
     </div>
   );

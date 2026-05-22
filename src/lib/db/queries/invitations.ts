@@ -241,6 +241,60 @@ export async function getLatestAcceptedInvitationForUser(
 }
 
 // ---------------------------------------------------------------------------
+// getOrAcceptLatestInvitationForUser
+// ---------------------------------------------------------------------------
+
+/**
+ * Self-healing variant for the portal dashboard. Returns the most recent
+ * invitation for the user regardless of status, and auto-flips a PENDING
+ * row to ACCEPTED on read so a returning applicant who logs in directly
+ * (without using the /register?token=… link) does not see "No invitation
+ * found" on their dashboard.
+ *
+ * Why: applicants whose auth user was pre-provisioned (intake creates the
+ * Supabase user up front, see queue/actions.ts) can sign in with a known
+ * password before they ever click the invitation link. Without this
+ * auto-accept the dashboard query (ACCEPTED-only) returns null and the
+ * onboarding card never appears.
+ *
+ * IMPORTANT — re-assessment invitations are NOT auto-accepted here. A
+ * re-assessment invite (identified by a non-null `bursaryAccountId`) is
+ * consumed lazily by the "Begin re-assessment" card, which both creates the
+ * application AND pre-populates it from the previous year. If we flipped it
+ * to ACCEPTED on login the card's accept step (which only acts on PENDING
+ * rows) would refuse, leaving the holder with no way to start — the exact
+ * dead-end documented in the walkthrough backlog. So we leave re-assessment
+ * rows PENDING and return them as-is for the dashboard to surface.
+ *
+ * Must be called from an admin context — writes to invitations.status are
+ * not granted to the app_user role under RLS.
+ */
+export async function getOrAcceptLatestInvitationForUser(
+  tx: Tx,
+  userId: string
+): Promise<Invitation | null> {
+  const invitation = await tx.invitation.findFirst({
+    where: { authUserId: userId },
+    orderBy: [{ acceptedAt: "desc" }, { createdAt: "desc" }],
+  });
+
+  if (!invitation) return null;
+  if (invitation.status === InvitationStatus.ACCEPTED) return invitation;
+  if (invitation.status !== InvitationStatus.PENDING) return null;
+
+  // Re-assessment invites stay PENDING — consumed by the Begin card instead.
+  if (invitation.bursaryAccountId) return invitation;
+
+  return tx.invitation.update({
+    where: { id: invitation.id },
+    data: {
+      status: InvitationStatus.ACCEPTED,
+      acceptedAt: new Date(),
+    },
+  });
+}
+
+// ---------------------------------------------------------------------------
 // getActiveBursaryHolders
 // ---------------------------------------------------------------------------
 

@@ -10,8 +10,9 @@
 
 import { Suspense } from "react";
 import { getCurrentUser } from "@/lib/auth/roles";
-import { withUserContext, type RlsRole } from "@/lib/db/prisma";
+import { withAdminContext, withUserContext, type RlsRole } from "@/lib/db/prisma";
 import { getApplicationForUser } from "@/lib/db/queries/applications";
+import { getOrAcceptLatestInvitationForUser } from "@/lib/db/queries/invitations";
 import { getSectionGapStatuses } from "@/lib/portal/section-gaps";
 import { PortalMobileHeader } from "@/components/portal/portal-mobile-header";
 import { PortalDesktopSidebar } from "@/components/portal/portal-desktop-sidebar";
@@ -51,10 +52,30 @@ export default async function PortalLayout({
     );
     if (application) {
       const gapStatuses = await getSectionGapStatuses(application.id);
-      sidebarSections = buildSidebarSections(gapStatuses);
+      sidebarSections = buildSidebarSections(gapStatuses, {
+        isReassessment: application.isReassessment,
+      });
       roundName = application.round?.academicYear
         ? `${application.round.academicYear} Assessment Round`
         : undefined;
+    } else {
+      // No application yet — sidebar still shows the academic year derived
+      // from the user's invitation so the label is correct on the
+      // onboarding card / pre-section pages.
+      const invitation = await withAdminContext((tx) =>
+        getOrAcceptLatestInvitationForUser(tx, user.id)
+      );
+      if (invitation?.roundId) {
+        const round = await withAdminContext((tx) =>
+          tx.round.findUnique({
+            where: { id: invitation.roundId! },
+            select: { academicYear: true },
+          })
+        );
+        roundName = round?.academicYear
+          ? `${round.academicYear} Assessment Round`
+          : undefined;
+      }
     }
   }
 
