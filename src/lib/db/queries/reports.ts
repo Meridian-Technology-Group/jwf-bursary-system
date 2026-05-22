@@ -432,15 +432,19 @@ export async function getIncomeBandDistribution(
 // ─── getPropertyCategoryDistribution ─────────────────────────────────────────
 
 /**
- * Groups assessments by property category for the given round.
+ * Groups recommendations by property category for the given round.
+ *
+ * Property category is recorded on the Recommendation (the Recommendation tab),
+ * not the Assessment — Assessment.propertyCategory stays null. Read from
+ * recommendations so the report reflects assessor-entered categories.
  */
 export async function getPropertyCategoryDistribution(
   tx: Tx,
   roundId: string
 ): Promise<PropertyCategoryRow[]> {
-  const assessments = await tx.assessment.findMany({
+  const recommendations = await tx.recommendation.findMany({
     where: {
-      application: { roundId },
+      roundId,
       propertyCategory: { not: null },
     },
     select: { propertyCategory: true },
@@ -448,12 +452,12 @@ export async function getPropertyCategoryDistribution(
 
   const categoryMap = new Map<number, number>();
 
-  for (const assessment of assessments) {
-    const cat = assessment.propertyCategory!;
+  for (const recommendation of recommendations) {
+    const cat = recommendation.propertyCategory!;
     categoryMap.set(cat, (categoryMap.get(cat) ?? 0) + 1);
   }
 
-  const total = assessments.length;
+  const total = recommendations.length;
   const entries = Array.from(categoryMap.entries()).sort(([a], [b]) => a - b);
 
   return entries.map(([category, count]) => ({
