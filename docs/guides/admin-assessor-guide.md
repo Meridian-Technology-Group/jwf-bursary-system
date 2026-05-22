@@ -781,27 +781,25 @@ The **Reports** page (`/reports`) shows aggregate statistics per round. Pick a
 round in the top-right round selector; the URL updates with the round id. A live
 status-tile dashboard also exists at `/admin`.
 
-The report sections available today:
+The report sections available today (seven, picked from the tab strip):
 
 | Report | What it shows | Walkthrough |
 |--------|---------------|-------------|
-| **School Comparison** | Per-school totals, average award %, average monthly payable fees (the practical *round summary* view today) | [Round summary](walkthroughs/assessors/31-round-summary.md) |
 | **Award Distribution** | Recommended bursary award **percentages** in bands; higher-award bands highlighted | [Bursary awards](walkthroughs/assessors/32-bursary-awards.md) |
+| **School Comparison** | Per-school totals, average award %, average monthly payable fees (the practical *round summary* view today) | [Round summary](walkthroughs/assessors/31-round-summary.md) |
 | **Income Bands** | Histogram of calculated household net income | [Income distribution](walkthroughs/assessors/33-income-distribution.md) |
 | **Property Categories** | Count per property category (1–12); the £750K line sits around 8–9 | [Property category distribution](walkthroughs/assessors/34-property-category-distribution.md) |
-| **Reason Code Frequency** | Reason codes ranked by use across the round | [Reason code frequency](walkthroughs/assessors/35-reason-code-frequency.md) |
+| **Reason Codes** | Reason codes ranked by use across the round | [Reason code frequency](walkthroughs/assessors/35-reason-code-frequency.md) |
+| **Final-Year Bursaries** | ACTIVE accounts whose holders are in Y12/Y13 (0–1 years remaining), with latest yearly payable fees and sibling count — for succession planning. Not round-scoped. | [Active bursaries approaching final year](walkthroughs/assessors/36-active-bursaries-final-year.md) |
+| **Sibling Summary** | Families with two or more linked accounts, with combined children count, combined yearly payable fees, and combined award. Not round-scoped. | [Sibling bursary summary](walkthroughs/assessors/37-sibling-bursary-summary.md) |
 
-Two further reports are **specified but not yet implemented** — *Active bursaries
-approaching final year* (Y12/Y13 succession planning) and the *Sibling bursary
-summary* (combined family totals). Until they ship, derive the same information
-from the recommendation export and the per-application sibling list; the
-walkthroughs describe the manual workaround. See [Active bursaries approaching
-final year](walkthroughs/assessors/36-active-bursaries-final-year.md) and
-[Sibling bursary summary](walkthroughs/assessors/37-sibling-bursary-summary.md).
 The reporting requirements are in PRD [09 — Reporting and export](../product/prd/09-reporting-and-export.md).
 
-> A dedicated *Round summary* card on `/reports` is on the roadmap; for now the
-> School Comparison card plus the queue status filters give you the same totals.
+> The one report named in the spec that has **no dedicated `/reports` section** is
+> a standalone *Round Summary* (total applications by status/outcome/school for a
+> single round). For now the **School Comparison** card plus the queue status
+> filters and the `/admin` status tiles give you the same totals. Tracked in
+> [`docs/backlog/round-summary-report-section.md`](../backlog/round-summary-report-section.md).
 
 > 📷 *Screenshot: the Reports page with the round selector and the Award
 > Distribution and Property Categories charts.*

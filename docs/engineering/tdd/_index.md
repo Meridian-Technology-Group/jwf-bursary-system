@@ -42,5 +42,5 @@ If this TDD and the PRD disagree, the PRD wins until the TDD is updated.
 
 - `docs/product/prd/_index.md` — product requirements, the source of truth for behaviour.
 - `docs/product/specs/applicant-form.md` — field-by-field application form specification.
-- `docs/product/specs/admin-console.md` — admin console structure and workflows.
+- `docs/discovery/admin-console.md` — legacy Grant Tracker admin console structure (discovery baseline; not the system we built).
 - `docs/product/open-questions.md` — 30 requirements questions with stakeholder answers.

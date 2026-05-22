@@ -1,5 +1,15 @@
 # Admin Portal (Management Console) - System Documentation
 
+> **⚠️ Discovery artifact — describes the LEGACY system, not what we built.**
+> This documents the **Symplectic Grant Tracker** console the Foundation used
+> *before* this project — captured during discovery as the as-is baseline for
+> the replacement. It is **not** a specification of the bursary system in this
+> repository and must not be used to understand or verify the current admin
+> console. For the system we built, see the
+> [Admin & Assessor Guide](../guides/admin-assessor-guide.md) and the
+> [assessor](../guides/walkthroughs/assessors/) / [admin](../guides/walkthroughs/admins/)
+> walkthroughs. Retained for historical/discovery reference only.
+
 ## Overview
 
 The John Whitgift Foundation Bursary Portal uses the **Symplectic Grant Tracker** (part of Digital Science) as its management console. The admin interface is accessed at `bursaries.johnwhitgiftfoundation.org/console/`. It provides a full grant lifecycle management system repurposed for bursary assessments.
