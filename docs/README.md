@@ -40,9 +40,13 @@ set stays small and trustworthy. Git history preserves the full record.
 
 ## Status note — handover deliverables
 
-The two `guides/*-guide.md` user guides are **complete** (MSA Schedule 1 §4).
-Still outstanding before go-live: the `operations/` runbooks and the
-`engineering/{data-model,api-reference,repo-structure,open-source-manifest}.md`
-references remain **stubs**, and the [parity test](quality/parity-test/) awaits
-the Foundation's ten historical cases (Schedule 1 §3). Each stub carries an
-outline and a `STATUS: STUB` marker.
+The MSA Schedule 1 §4 documentation deliverables are **complete**: the two
+[`guides/*-guide.md`](guides/) user guides; the [`operations/`](operations/)
+runbooks (deployment, environment variables, backup/restore, incident response,
+hypercare); and the engineering references
+([data-model](engineering/data-model.md), [API reference](engineering/api-reference.md),
+[repo structure](engineering/repo-structure.md),
+[open-source manifest](engineering/open-source-manifest.md)).
+
+The remaining acceptance item is the [parity test](quality/parity-test/), which
+awaits the Foundation's ten historical cases (Schedule 1 §3).
