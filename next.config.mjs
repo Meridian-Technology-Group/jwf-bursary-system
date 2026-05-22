@@ -32,6 +32,10 @@ const securityHeaders = [
       "img-src 'self' data: blob: https://*.supabase.co",
       "font-src 'self' data:",
       "connect-src 'self' https://*.supabase.co",
+      // Inline document preview embeds presigned Supabase Storage URLs in an
+      // iframe; without frame-src the browser falls back to default-src 'self'
+      // and blocks the preview.
+      "frame-src 'self' https://*.supabase.co",
       "frame-ancestors 'none'",
       "form-action 'self'",
       "base-uri 'self'",
