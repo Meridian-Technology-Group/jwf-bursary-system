@@ -1,5 +1,27 @@
 # Bursary Application Portal - Complete Input Mapping
 
+> **⚠️ Known stale — verify against the implementation before relying on this.**
+> This is a pre-build field map and the implemented portal has since diverged
+> from it. Confirmed divergences (code is the source of truth):
+> - **Section structure.** The live form has **10 sections** with **Family
+>   Identification as its own section** (`ApplicationSectionType`:
+>   `CHILD_DETAILS, FAMILY_ID, PARENT_DETAILS, DEPENDENT_CHILDREN,
+>   DEPENDENT_ELDERLY, OTHER_INFO, PARENTS_INCOME, ASSETS_LIABILITIES,
+>   ADDITIONAL_INFO, DECLARATION`). This doc folds Family ID into Section 1 and
+>   numbers the rest differently.
+> - **Employment status.** The live form uses a **7-option** set mirroring the
+>   assessor enum (`PAYE`, `BENEFITS`, `SELF_EMPLOYED_DIRECTOR`,
+>   `SELF_EMPLOYED_SOLE`, `OLD_AGE_PENSION`, `PAST_PENSION`, `UNEMPLOYED`; see
+>   `src/components/portal/sections/parent-details-form.tsx`). This doc lists a
+>   superseded set (Employed / Self-employed CIS / Retired …).
+>
+> A full field-by-field re-verification is tracked in
+> [`docs/backlog/applicant-form-spec-stale-vs-implementation.md`](../../backlog/applicant-form-spec-stale-vs-implementation.md).
+> For the current applicant experience, the
+> [Applicant User Guide](../../guides/applicant-guide.md) and the
+> [applicant walkthroughs](../../guides/walkthroughs/applicants/) reflect the
+> implemented form.
+
 ## Overview
 
 The John Whitgift Foundation Bursary Portal is a multi-page application form for bursary assessment (e.g. 2026/27 academic year). A left sidebar shows progress (percentage complete) and navigation across all sections. Each page has **Previous**, **Next**, and **Save And Close** buttons.

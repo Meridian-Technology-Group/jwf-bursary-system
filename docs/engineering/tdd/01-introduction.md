@@ -28,9 +28,9 @@ The system handles approximately 100–200 applications per annual round, with 1
 |----------|----------|-------------|
 | Product Requirements Document | [PRD.md](../../product/prd/_index.md) | Full functional and non-functional requirements |
 | Master Requirements / Domain Model | [README.md](../../README.md) | System overview, two-layer data model, calculation model, reference tables, domain concepts |
-| Application Form Specification | [APPLICATION.md](../../product/specs/applicant-form.md) | Field-by-field mapping of every applicant portal input |
-| Admin Console Specification | [ADMIN.md](../../product/specs/admin-console.md) | Current admin console structure and workflows |
-| Open Questions & Answers | [OPEN_QUESTIONS.md](../../product/open-questions.md) | 30 requirements questions with stakeholder answers |
+| Application Form Specification | [APPLICATION.md](../../archive/specs/applicant-form.md) | Field-by-field mapping of every applicant portal input (archived build spec) |
+| Admin Console (legacy, discovery) | [ADMIN.md](../../archive/discovery/admin-console.md) | Legacy Grant Tracker admin console structure — as-is discovery baseline, not the system we built |
+| Open Questions & Answers | [OPEN_QUESTIONS.md](../../archive/planning/open-questions.md) | 30 requirements questions with stakeholder answers (archived) |
 | Assessment Model Spreadsheet | [Assessment Model Notional Calculations - BW.xlsx](../../product/assessment-model.xlsx) | Source spreadsheet for calculation model and reference tables |
 
 ---

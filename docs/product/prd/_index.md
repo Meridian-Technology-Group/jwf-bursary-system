@@ -56,6 +56,6 @@ The TDD in `tdd/_index.md` says how the system is built. If this PRD and the TDD
 ## Cross-references
 
 - `docs/engineering/tdd/_index.md` — engineering blueprint; every PRD requirement is traced to an implementing component.
-- `docs/product/specs/applicant-form.md` — field-by-field applicant portal form specification.
-- `docs/product/specs/admin-console.md` — current admin console structure and workflows (baseline for the replacement).
-- `docs/product/open-questions.md` — 30 requirements questions with stakeholder answers.
+- `docs/archive/specs/applicant-form.md` — field-by-field applicant portal form specification (archived build spec; carries a stale-vs-implementation banner).
+- `docs/archive/discovery/admin-console.md` — discovery doc: the **legacy** Grant Tracker admin console structure (as-is baseline for the replacement; not a spec of the system we built).
+- `docs/archive/planning/open-questions.md` — 30 requirements questions with stakeholder answers (archived; requirements gathering complete).

@@ -5,9 +5,9 @@
 | Document | Location | Description |
 |----------|----------|-------------|
 | README.md | `../../../README.md` | Master requirements document: system overview, two-layer data model, lifecycle, calculation model, reference tables, domain concepts, scope |
-| APPLICATION.md | `../specs/applicant-form.md` | Complete field-by-field mapping of every input in the applicant portal |
-| ADMIN.md | `../specs/admin-console.md` | Documentation of the current admin console structure and workflows |
-| OPEN_QUESTIONS.md | `../open-questions.md` | 30 requirements questions with stakeholder answers |
+| APPLICATION.md | `../../archive/specs/applicant-form.md` | Complete field-by-field mapping of every input in the applicant portal (archived build spec) |
+| ADMIN.md | `../../archive/discovery/admin-console.md` | Discovery doc: the **legacy** Grant Tracker admin console structure (as-is baseline for the replacement) |
+| OPEN_QUESTIONS.md | `../../archive/planning/open-questions.md` | 30 requirements questions with stakeholder answers (archived) |
 | Assessment Model Spreadsheet | `./Assessment Model Notional Calculations - BW.xlsx` | Source spreadsheet for the four-stage calculation model and reference tables |
 | Payable Fees Logic | `../payable_fees_logic.png` | Visual reference for the payable fees formula |
 | Progress Report Schedule | `../image002.png` | Year-by-year re-assessment tracking in the current system |

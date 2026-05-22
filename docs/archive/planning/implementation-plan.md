@@ -2,7 +2,7 @@
 ## Technical Implementation Plan
 
 **Version:** 1.0 | **Date:** 2026-02-25 | **Purpose:** Phased work packages for Claude Code implementation
-**Source docs:** `docs/TDD.md` v1.0, `docs/PRD.md` v1.2, `README.md`, `docs/product/specs/applicant-form.md`, `docs/product/specs/admin-console.md`
+**Source docs:** `docs/TDD.md` v1.0, `docs/PRD.md` v1.2, `README.md`, `docs/product/specs/applicant-form.md`, `docs/discovery/admin-console.md`
 
 ---
 
@@ -1061,6 +1061,6 @@ All ──► WP-23 (Deploy)
 | **PRD** | `docs/PRD.md` | 104 functional requirements, user stories, wireframe descriptions, metrics |
 | **README** | `README.md` | Domain model, calculation formulas, reference tables, lifecycle, scope |
 | **Application Spec** | `docs/product/specs/applicant-form.md` | Field-by-field applicant form spec (10 sections, conditional logic, upload slots) |
-| **Admin Spec** | `docs/product/specs/admin-console.md` | Current Grant Tracker admin console structure (for replacement reference) |
+| **Admin Spec (legacy)** | `docs/discovery/admin-console.md` | Legacy Grant Tracker admin console structure (discovery baseline for replacement reference) |
 | **Open Questions** | `docs/product/open-questions.md` | 30 Q&As with Foundation assessor clarifying business logic |
 | **Assessment Spreadsheet** | `docs/product/assessment-model.xlsx` | Source spreadsheet for calculation model and reference values |
