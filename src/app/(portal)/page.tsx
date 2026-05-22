@@ -18,7 +18,8 @@ import { getOrAcceptLatestInvitationForUser } from "@/lib/db/queries/invitations
 import { StatusBadge, type ApplicationStatus } from "@/components/shared/status-badge";
 import { OnboardingCard } from "@/app/(portal)/onboarding-card";
 import { ReassessmentCard } from "@/app/(portal)/reassessment-card";
-import { FileText, ArrowRight, ClipboardList } from "lucide-react";
+import { FileText, ArrowRight, ClipboardList, Upload } from "lucide-react";
+import Link from "next/link";
 
 /** Map Prisma ApplicationStatus to StatusBadge's display type. */
 function toBadgeStatus(status: string): ApplicationStatus {
@@ -154,6 +155,31 @@ export default async function PortalDashboardPage() {
 
       {application ? (
         <>
+          {/* Paused — missing documents call to action */}
+          {application.status === "PAUSED" && (
+            <Link
+              href="/respond"
+              className="group flex items-start gap-4 rounded-xl border border-yellow-300 bg-yellow-50 p-6 shadow-sm transition-shadow hover:shadow-md focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-600"
+            >
+              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-yellow-100">
+                <Upload className="h-6 w-6 text-yellow-700" aria-hidden="true" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="font-semibold text-yellow-900">
+                  Action needed: respond to a document request
+                </p>
+                <p className="mt-1 text-sm text-yellow-800">
+                  An assessor has asked for more documents. Upload them to get
+                  your assessment moving again.
+                </p>
+              </div>
+              <ArrowRight
+                className="h-4 w-4 shrink-0 text-yellow-500 group-hover:text-yellow-700 transition-colors"
+                aria-hidden="true"
+              />
+            </Link>
+          )}
+
           {/* Application status card */}
           <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
             <div className="flex items-start justify-between gap-4">
