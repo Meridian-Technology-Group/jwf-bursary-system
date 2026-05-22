@@ -6,7 +6,13 @@
  */
 
 import type { Tx } from "@/lib/db/prisma";
-import { ApplicationStatus, AssessmentStatus, RoundStatus } from "@prisma/client";
+import {
+  ApplicationStatus,
+  AssessmentStatus,
+  BursaryAccountStatus,
+  RoundStatus,
+  School,
+} from "@prisma/client";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -66,7 +72,59 @@ export interface ReasonCodeFrequencyRow {
   count: number;
 }
 
+export interface FinalYearBursaryRow {
+  id: string;
+  reference: string;
+  childName: string;
+  school: School;
+  entryYear: number;
+  /** Derived current year group (1–13), e.g. 12 = Y12, 13 = Y13. */
+  currentYearGroup: number;
+  /** Derived years of schooling remaining (0 or 1 for this cohort). */
+  yearsRemaining: number;
+  /** Latest recommended yearly payable fees across the account, if any. */
+  yearlyPayableFees: number | null;
+  /** Number of linked siblings in the same family group. */
+  siblingCount: number;
+}
+
+export interface SiblingSummaryChild {
+  bursaryAccountId: string;
+  reference: string;
+  childName: string;
+  school: School;
+  priorityOrder: number;
+  yearlyPayableFees: number | null;
+  bursaryAward: number | null;
+}
+
+export interface SiblingSummaryRow {
+  familyGroupId: string;
+  childrenCount: number;
+  combinedYearlyPayableFees: number;
+  combinedBursaryAward: number;
+  children: SiblingSummaryChild[];
+}
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
+
+/**
+ * The number of school year groups from entry to leaving (Y13 is the last).
+ * "Final year" cohort = current year group of Y12 or Y13 (yearsRemaining 0/1).
+ */
+const FINAL_SCHOOL_YEAR = 13;
+
+/**
+ * Derives the current school year group for a bursary account from its entry
+ * year, mirroring the assessment form's calcSchoolingYears formula:
+ *   yearInSchool = currentAcademicYear - entryYear + 1
+ * The UK academic year rolls over in September (month index >= 8).
+ */
+function deriveCurrentYearGroup(entryYear: number, now = new Date()): number {
+  const academicYear =
+    now.getMonth() >= 8 ? now.getFullYear() : now.getFullYear() - 1;
+  return academicYear - entryYear + 1;
+}
 
 /**
  * Returns the active round (most recent OPEN), falling back to the most
@@ -502,4 +560,201 @@ export async function getReasonCodeFrequency(
   }
 
   return Array.from(freqMap.values()).sort((a, b) => b.count - a.count);
+}
+
+// ─── getFinalYearBursaries ─────────────────────────────────────────────────────
+
+/**
+ * Returns ACTIVE bursary accounts whose holders are in their final school years
+ * (Y12 / Y13), so the foundation can plan succession.
+ *
+ * "Final year" is derived from the account's entry year using the same formula
+ * as the assessment form: an account is in the final-year cohort when its
+ * current year group is Y12 or Y13 (i.e. yearsRemaining of 1 or 0). Accounts
+ * span rounds, so this report is not round-scoped.
+ *
+ * The latest recommended yearly payable fees (most recent recommendation linked
+ * to the account) is surfaced per the guide. Sibling count is the number of
+ * other accounts sharing any of the account's family groups.
+ */
+export async function getFinalYearBursaries(
+  tx: Tx
+): Promise<FinalYearBursaryRow[]> {
+  const accounts = await tx.bursaryAccount.findMany({
+    where: { status: BursaryAccountStatus.ACTIVE },
+    select: {
+      id: true,
+      reference: true,
+      childName: true,
+      school: true,
+      entryYear: true,
+      siblingLinks: { select: { familyGroupId: true } },
+      recommendations: {
+        select: { yearlyPayableFees: true, createdAt: true },
+        orderBy: { createdAt: "desc" },
+        take: 1,
+      },
+    },
+    orderBy: { reference: "asc" },
+  });
+
+  // Sibling counts: how many distinct accounts share each family group.
+  const familyGroupIds = Array.from(
+    new Set(
+      accounts.flatMap((a) => a.siblingLinks.map((l) => l.familyGroupId))
+    )
+  );
+  const groupSize = new Map<string, number>();
+  if (familyGroupIds.length > 0) {
+    const links = await tx.siblingLink.findMany({
+      where: { familyGroupId: { in: familyGroupIds } },
+      select: { familyGroupId: true, bursaryAccountId: true },
+    });
+    const perGroup = new Map<string, Set<string>>();
+    for (const link of links) {
+      if (!perGroup.has(link.familyGroupId)) {
+        perGroup.set(link.familyGroupId, new Set());
+      }
+      perGroup.get(link.familyGroupId)!.add(link.bursaryAccountId);
+    }
+    for (const [groupId, accountSet] of Array.from(perGroup.entries())) {
+      groupSize.set(groupId, accountSet.size);
+    }
+  }
+
+  const rows: FinalYearBursaryRow[] = [];
+
+  for (const account of accounts) {
+    const currentYearGroup = deriveCurrentYearGroup(account.entryYear);
+    const yearsRemaining = FINAL_SCHOOL_YEAR - currentYearGroup;
+
+    // Final-year cohort: Y12 / Y13 (0 or 1 years remaining).
+    if (yearsRemaining > 1 || yearsRemaining < 0) continue;
+
+    // Distinct sibling accounts in the same family group(s), excluding self.
+    const accountFamilyGroups = Array.from(
+      new Set(account.siblingLinks.map((l) => l.familyGroupId))
+    );
+    let siblingCount = 0;
+    for (const groupId of accountFamilyGroups) {
+      siblingCount += Math.max(0, (groupSize.get(groupId) ?? 1) - 1);
+    }
+
+    const latestRec = account.recommendations[0];
+
+    rows.push({
+      id: account.id,
+      reference: account.reference,
+      childName: account.childName,
+      school: account.school,
+      entryYear: account.entryYear,
+      currentYearGroup,
+      yearsRemaining,
+      yearlyPayableFees:
+        latestRec && latestRec.yearlyPayableFees !== null
+          ? Number(latestRec.yearlyPayableFees)
+          : null,
+      siblingCount,
+    });
+  }
+
+  // Final year (Y13) first, then by reference.
+  return rows.sort(
+    (a, b) =>
+      a.yearsRemaining - b.yearsRemaining ||
+      a.reference.localeCompare(b.reference)
+  );
+}
+
+// ─── getSiblingBursarySummary ──────────────────────────────────────────────────
+
+/**
+ * Returns families (FamilyGroups) with two or more linked bursary accounts,
+ * with combined totals across the linked siblings.
+ *
+ * Per-child yearly payable fees and bursary award are taken from the most
+ * recent recommendation linked to each account. Accounts span rounds, so this
+ * report is not round-scoped. Single-child family groups are excluded — the
+ * report is about families with siblings.
+ */
+export async function getSiblingBursarySummary(
+  tx: Tx
+): Promise<SiblingSummaryRow[]> {
+  const links = await tx.siblingLink.findMany({
+    select: {
+      familyGroupId: true,
+      priorityOrder: true,
+      bursaryAccount: {
+        select: {
+          id: true,
+          reference: true,
+          childName: true,
+          school: true,
+          recommendations: {
+            select: { yearlyPayableFees: true, bursaryAward: true, createdAt: true },
+            orderBy: { createdAt: "desc" },
+            take: 1,
+          },
+        },
+      },
+    },
+    orderBy: [{ familyGroupId: "asc" }, { priorityOrder: "asc" }],
+  });
+
+  const groups = new Map<string, SiblingSummaryChild[]>();
+
+  for (const link of links) {
+    const account = link.bursaryAccount;
+    const latestRec = account.recommendations[0];
+
+    const child: SiblingSummaryChild = {
+      bursaryAccountId: account.id,
+      reference: account.reference,
+      childName: account.childName,
+      school: account.school,
+      priorityOrder: link.priorityOrder,
+      yearlyPayableFees:
+        latestRec && latestRec.yearlyPayableFees !== null
+          ? Number(latestRec.yearlyPayableFees)
+          : null,
+      bursaryAward:
+        latestRec && latestRec.bursaryAward !== null
+          ? Number(latestRec.bursaryAward)
+          : null,
+    };
+
+    if (!groups.has(link.familyGroupId)) {
+      groups.set(link.familyGroupId, []);
+    }
+    groups.get(link.familyGroupId)!.push(child);
+  }
+
+  const rows: SiblingSummaryRow[] = [];
+
+  for (const [familyGroupId, children] of Array.from(groups.entries())) {
+    // Families with siblings: two or more linked accounts.
+    if (children.length < 2) continue;
+
+    const combinedYearlyPayableFees = children.reduce(
+      (sum: number, c: SiblingSummaryChild) => sum + (c.yearlyPayableFees ?? 0),
+      0
+    );
+    const combinedBursaryAward = children.reduce(
+      (sum: number, c: SiblingSummaryChild) => sum + (c.bursaryAward ?? 0),
+      0
+    );
+
+    rows.push({
+      familyGroupId,
+      childrenCount: children.length,
+      combinedYearlyPayableFees,
+      combinedBursaryAward,
+      children,
+    });
+  }
+
+  // Highest combined bursary award first.
+  return rows.sort(
+    (a, b) => b.combinedBursaryAward - a.combinedBursaryAward
+  );
 }
