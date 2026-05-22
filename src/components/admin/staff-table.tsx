@@ -9,7 +9,7 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { UserX, Loader2 } from "lucide-react";
+import { UserX, Loader2, ShieldOff } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import {
@@ -30,6 +30,7 @@ import {
 import {
   updateStaffRoleAction,
   deactivateStaffAction,
+  resetStaffMfaAction,
 } from "@/app/(admin)/users/actions";
 
 // ---------------------------------------------------------------------------
@@ -93,6 +94,8 @@ function StaffRow({
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [deactivateOpen, setDeactivateOpen] = useState(false);
+  const [resetMfaOpen, setResetMfaOpen] = useState(false);
+  const [resetMfaNotice, setResetMfaNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const isDeactivated = user.role === "DELETED";
 
@@ -123,6 +126,24 @@ function StaffRow({
         setError(result.error ?? "Failed to deactivate user");
       } else {
         setDeactivateOpen(false);
+        router.refresh();
+      }
+    });
+  }
+
+  function handleResetMfa() {
+    setError(null);
+    setResetMfaNotice(null);
+    const formData = new FormData();
+    formData.set("userId", user.id);
+
+    startTransition(async () => {
+      const result = await resetStaffMfaAction(formData);
+      if (!result.success) {
+        setError(result.error ?? "Failed to reset MFA");
+      } else {
+        setResetMfaOpen(false);
+        setResetMfaNotice("MFA reset — the user will re-enrol on next sign-in.");
         router.refresh();
       }
     });
@@ -190,6 +211,18 @@ function StaffRow({
                 </SelectContent>
               </Select>
 
+              {/* Reset MFA button */}
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-8 text-amber-600 hover:text-amber-700 hover:bg-amber-50"
+                onClick={() => setResetMfaOpen(true)}
+                disabled={isPending}
+                title="Reset MFA (clears the user's authenticator factor)"
+              >
+                <ShieldOff className="h-4 w-4" aria-hidden="true" />
+              </Button>
+
               {/* Deactivate button */}
               <Button
                 variant="ghost"
@@ -209,6 +242,9 @@ function StaffRow({
           )}
           {error && (
             <p className="mt-1 text-xs text-red-600">{error}</p>
+          )}
+          {resetMfaNotice && (
+            <p className="mt-1 text-xs text-green-600">{resetMfaNotice}</p>
           )}
         </td>
       </tr>
@@ -241,6 +277,40 @@ function StaffRow({
             >
               {isPending && <Loader2 className="h-4 w-4 animate-spin" />}
               Deactivate
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Reset MFA confirmation dialog */}
+      <Dialog open={resetMfaOpen} onOpenChange={setResetMfaOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Reset MFA</DialogTitle>
+            <DialogDescription>
+              Clear the MFA (authenticator) factor for{" "}
+              <strong>{formatName(user.firstName, user.lastName, user.email)}</strong>?
+              They will be signed out of all sessions and prompted to enrol a
+              new authenticator the next time they sign in. Use this when a
+              staff member has lost their device.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setResetMfaOpen(false)}
+              disabled={isPending}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleResetMfa}
+              disabled={isPending}
+              className="gap-2"
+            >
+              {isPending && <Loader2 className="h-4 w-4 animate-spin" />}
+              Reset MFA
             </Button>
           </DialogFooter>
         </DialogContent>
