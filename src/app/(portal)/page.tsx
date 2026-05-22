@@ -56,29 +56,66 @@ export default async function PortalDashboardPage() {
         // PENDING first-year invitation on first sight (a write the app_user
         // role is not granted under RLS), but deliberately leaves a PENDING
         // re-assessment invite untouched so the Begin card can consume it.
-        let inv = null;
-        let roundYear: string | null = null;
-        if (!userScope.app) {
-          inv = await withAdminContext((tx) =>
-            getOrAcceptLatestInvitationForUser(tx, user.id)
+        //
+        // We must run this even when the holder already has an application:
+        // getCurrentApplicationForUser returns their most-recent app of ANY
+        // round/status, which for a returning bursary holder is last year's
+        // (completed) application. Without checking for a pending re-assessment
+        // invite here, the dashboard would show that prior-year app and the
+        // "Begin re-assessment" card would never appear (the re-assessment
+        // dead-end). So we always fetch the invite, then below decide whether a
+        // pending re-assessment for a not-yet-started round should take over.
+        const inv = await withAdminContext((tx) =>
+          getOrAcceptLatestInvitationForUser(tx, user.id)
+        );
+
+        // A pending re-assessment invite (non-null bursaryAccountId) only takes
+        // over the dashboard when the holder has NOT yet created an application
+        // in that invite's round. Once they click Begin, a current-round app
+        // exists and we fall back to showing its progress instead.
+        let hasAppInInviteRound = false;
+        if (
+          inv?.bursaryAccountId &&
+          inv.status === "PENDING" &&
+          inv.roundId
+        ) {
+          hasAppInInviteRound = await withUserContext(
+            user.id,
+            user.role as RlsRole,
+            async (tx) => {
+              const roundApp = await tx.application.findFirst({
+                where: { leadApplicantId: user.id, roundId: inv.roundId! },
+                select: { id: true },
+              });
+              return roundApp !== null;
+            }
           );
-          // Re-assessment cards need the new round's academic year for the
-          // "welcome back" copy.
-          if (inv?.bursaryAccountId && inv.roundId) {
-            const round = await withAdminContext((tx) =>
-              tx.round.findUnique({
-                where: { id: inv!.roundId! },
-                select: { academicYear: true },
-              })
-            );
-            roundYear = round?.academicYear ?? null;
-          }
+        }
+
+        const showReassessment =
+          !!inv?.bursaryAccountId &&
+          inv.status === "PENDING" &&
+          !hasAppInInviteRound;
+
+        // Re-assessment cards need the new round's academic year for the
+        // "welcome back" copy. Fetch it only when the card will actually show.
+        let roundYear: string | null = null;
+        if (showReassessment && inv?.roundId) {
+          const round = await withAdminContext((tx) =>
+            tx.round.findUnique({
+              where: { id: inv.roundId! },
+              select: { academicYear: true },
+            })
+          );
+          roundYear = round?.academicYear ?? null;
         }
 
         return {
-          application: userScope.app,
+          // When a pending re-assessment should take over, suppress the
+          // prior-year application so the dashboard falls through to the card.
+          application: showReassessment ? null : userScope.app,
           completedSections: userScope.completed,
-          invitation: inv,
+          invitation: showReassessment || !userScope.app ? inv : null,
           inviteRoundYear: roundYear,
         };
       })()
