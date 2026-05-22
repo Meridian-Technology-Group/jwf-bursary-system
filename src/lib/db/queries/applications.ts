@@ -250,12 +250,37 @@ export interface SectionStatusResult {
 /**
  * Returns the applicant's current active application (most recently updated
  * with PRE_SUBMISSION status), or null if none exists.
+ *
+ * Use this for the editable apply flow, which only operates on the draft.
+ * For the dashboard's "current application whatever its status" need, use
+ * getCurrentApplicationForUser instead.
  */
 export async function getApplicationForUser(tx: Tx, userId: string) {
   return tx.application.findFirst({
     where: {
       leadApplicantId: userId,
       status: "PRE_SUBMISSION",
+    },
+    orderBy: { updatedAt: "desc" },
+    include: {
+      round: {
+        select: { academicYear: true, status: true },
+      },
+    },
+  });
+}
+
+/**
+ * Returns the applicant's most recent application of any status (most
+ * recently updated), or null if none exists. Unlike getApplicationForUser
+ * this does not filter to PRE_SUBMISSION, so a submitted/under-review/
+ * decided application is still returned — which the dashboard needs so it
+ * reflects the real state instead of falling back to onboarding.
+ */
+export async function getCurrentApplicationForUser(tx: Tx, userId: string) {
+  return tx.application.findFirst({
+    where: {
+      leadApplicantId: userId,
     },
     orderBy: { updatedAt: "desc" },
     include: {
