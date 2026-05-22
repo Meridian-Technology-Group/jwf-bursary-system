@@ -73,6 +73,9 @@ const schema = z.object({
   }),
   roundId: z.string().min(1, "Please select a round"),
   reason: z.string().max(500, "Reason must be 500 characters or fewer").optional(),
+  entryYearGroup: z.enum(["Y6", "Y7", "Y9", "Y12", "OTHER"], {
+    error: "Please select an entry year group",
+  }),
   entryYear: z.string().min(1, "Please select an entry year"),
 });
 
@@ -82,6 +85,20 @@ type FormValues = z.infer<typeof schema>;
 
 const currentYear = new Date().getFullYear();
 const ENTRY_YEARS = Array.from({ length: 8 }, (_, i) => currentYear + i - 1);
+
+const ENTRY_YEAR_GROUP_OPTIONS: { value: string; label: string }[] = [
+  { value: "Y6", label: "Year 6" },
+  { value: "Y7", label: "Year 7" },
+  { value: "Y9", label: "Year 9" },
+  { value: "Y12", label: "Year 12" },
+  { value: "OTHER", label: "Other" },
+];
+
+/** Parses the start calendar year from an academic-year string ("2026/27" → 2026). */
+function roundStartYear(academicYear: string): string {
+  const m = academicYear.match(/^(\d{4})/);
+  return m ? m[1] : "";
+}
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
@@ -100,6 +117,7 @@ export function InternalRequestDialog({ rounds }: InternalRequestDialogProps) {
       school: undefined,
       roundId: "",
       reason: "",
+      entryYearGroup: undefined,
       entryYear: "",
     },
   });
@@ -123,6 +141,7 @@ export function InternalRequestDialog({ rounds }: InternalRequestDialogProps) {
     formData.set("childName", values.childName);
     formData.set("school", values.school);
     formData.set("roundId", values.roundId);
+    formData.set("entryYearGroup", values.entryYearGroup);
     formData.set("entryYear", values.entryYear);
     if (values.reason) {
       formData.set("reason", values.reason);
@@ -300,7 +319,20 @@ export function InternalRequestDialog({ rounds }: InternalRequestDialogProps) {
                         <FormLabel>Academic Round</FormLabel>
                         <Select
                           value={field.value}
-                          onValueChange={field.onChange}
+                          onValueChange={(value) => {
+                            field.onChange(value);
+                            // Default the entry calendar year to the round's
+                            // start year (a new entrant enters in this round).
+                            // Editable below for back-dated ad-hoc cases.
+                            const round = rounds.find((r) => r.id === value);
+                            if (round && !form.getValues("entryYear")) {
+                              form.setValue(
+                                "entryYear",
+                                roundStartYear(round.academicYear),
+                                { shouldValidate: true }
+                              );
+                            }
+                          }}
                           disabled={isPending}
                         >
                           <FormControl>
@@ -326,13 +358,49 @@ export function InternalRequestDialog({ rounds }: InternalRequestDialogProps) {
                     )}
                   />
 
-                  {/* Entry year (select) */}
+                  {/* Entry year-group (select) — source of truth for schooling years */}
+                  <FormField
+                    control={form.control}
+                    name="entryYearGroup"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Entry Year Group</FormLabel>
+                        <Select
+                          value={field.value}
+                          onValueChange={field.onChange}
+                          disabled={isPending}
+                        >
+                          <FormControl>
+                            <SelectTrigger>
+                              <SelectValue placeholder="Select year group" />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            {ENTRY_YEAR_GROUP_OPTIONS.map((opt) => (
+                              <SelectItem key={opt.value} value={opt.value}>
+                                {opt.label}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  {/* Entry calendar year (select) — defaults to the round's
+                      start year; edit for back-dated ad-hoc entrants. */}
                   <FormField
                     control={form.control}
                     name="entryYear"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Entry Year</FormLabel>
+                        <FormLabel>
+                          Entry Calendar Year{" "}
+                          <span className="text-xs font-normal text-slate-400">
+                            (year they started at the school)
+                          </span>
+                        </FormLabel>
                         <Select
                           value={field.value}
                           onValueChange={field.onChange}

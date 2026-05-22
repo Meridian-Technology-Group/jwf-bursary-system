@@ -302,6 +302,7 @@ export default async function AssessmentPage({ params }: Props) {
       applicationId={params.id}
       school={application.school}
       applicationEntryYear={application.entryYear}
+      applicationEntryYearGroup={application.entryYearGroup}
       familyTypeConfigs={configs.familyTypeConfigs}
       defaultAnnualFees={configs.annualFees}
       defaultCouncilTax={configs.councilTax}

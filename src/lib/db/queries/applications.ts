@@ -160,6 +160,7 @@ export async function getApplicationWithDetails(
       // childName: intentionally omitted — see getApplicationNamesForReveal.
       childDob: true,
       entryYear: true,
+      entryYearGroup: true,
       isReassessment: true,
       isInternal: true,
       assignedToId: true,

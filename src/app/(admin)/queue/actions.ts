@@ -20,7 +20,7 @@
 import { randomBytes } from "node:crypto";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { School } from "@prisma/client";
+import { School, EntryYearGroup } from "@prisma/client";
 import { requireRole, Role } from "@/lib/auth/roles";
 import { withAdminContext, type Tx } from "@/lib/db/prisma";
 import { createAuditLog } from "@/lib/audit/log";
@@ -41,6 +41,9 @@ const InternalRequestSchema = z.object({
   }),
   roundId: z.string().uuid("Please select an assessment round"),
   reason: z.string().max(500, "Reason must be 500 characters or fewer").optional(),
+  entryYearGroup: z.nativeEnum(EntryYearGroup, {
+    error: () => ({ message: "Please select an entry year group" }),
+  }),
   entryYear: z.coerce
     .number()
     .int()
@@ -71,6 +74,7 @@ export async function createInternalRequestAction(
     school: (formData.get("school") as string | null) ?? "",
     roundId: (formData.get("roundId") as string | null) ?? "",
     reason: (formData.get("reason") as string | null) ?? undefined,
+    entryYearGroup: (formData.get("entryYearGroup") as string | null) ?? "",
     entryYear: (formData.get("entryYear") as string | null) ?? "",
   };
 
@@ -82,8 +86,16 @@ export async function createInternalRequestAction(
     };
   }
 
-  const { parentEmail, parentName, childName, school, roundId, reason, entryYear } =
-    parsed.data;
+  const {
+    parentEmail,
+    parentName,
+    childName,
+    school,
+    roundId,
+    reason,
+    entryYearGroup,
+    entryYear,
+  } = parsed.data;
 
   const supabase = createSupabaseAdminClient();
   const appUrl = getAppUrl();
@@ -219,6 +231,7 @@ export async function createInternalRequestAction(
           school,
           childName,
           entryYear,
+          entryYearGroup,
           isInternal: true,
           status: "PRE_SUBMISSION",
         },
