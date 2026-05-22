@@ -79,9 +79,11 @@ shape and "effective date" semantics.
 - [[14-reset-staff-mfa|**Reset another staff member's MFA**]] — when an assessor loses
   their authenticator device. Requires admin access to the
   Supabase dashboard or MCP (delete the row in `auth.mfa_factors`).
-  **NOTE:** MFA itself is currently in the backlog as B8; this
-  guide will land alongside that work. See
-  `docs/backlog/b8-mfa-for-admin-and-assessor.md`.
+  **NOTE:** staff MFA (B8) shipped to production and is enforced; an
+  admin can reset another staff member's factor from the Users page,
+  with the Supabase-dashboard/MCP route as the manual fallback. The
+  decision record is archived at
+  `docs/archive/backlog/b8-mfa-for-admin-and-assessor.md`.
 - [[15-resend-or-revoke-invitation|**Re-send or revoke an invitation**]] — when an invitation email is
   lost, expired, or sent in error. Re-send pushes a fresh link;
   revoke marks the invitation expired so the link cannot be used.

@@ -6,7 +6,7 @@ area: invitations, copy
 opened: 2026-05-13
 opened_by: Claude (via Brian Wagner)
 related:
-  - docs/product/specs/invitation-flow.md §4.4, §7
+  - docs/archive/specs/invitation-flow.md §4.4, §7
   - prisma/seed-data/email-templates.ts (INVITATION)
   - prisma/migrations/20260513220100_seed_email_templates/migration.sql
 ---

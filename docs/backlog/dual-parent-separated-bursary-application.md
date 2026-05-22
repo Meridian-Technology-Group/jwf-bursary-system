@@ -13,7 +13,7 @@ related:
   - src/app/(admin)/applications/[id]/assessment/page.tsx
   - src/components/admin/assessment-form.tsx (PARENT_1 / PARENT_2 earners)
   - src/lib/assessment/stage1-income.ts, stage2-assets.ts
-  - the applicant invitation flow spec (docs/product/specs/invitation-flow.md)
+  - the applicant invitation flow spec (docs/archive/specs/invitation-flow.md)
 ---
 
 ## Context

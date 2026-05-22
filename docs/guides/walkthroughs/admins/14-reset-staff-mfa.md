@@ -49,6 +49,6 @@ clear their MFA factor so they can re-enrol on next sign-in.
 
 ## Cross-references
 
-- See `docs/backlog/b8-mfa-for-admin-and-assessor.md` for the
+- See `docs/archive/backlog/b8-mfa-for-admin-and-assessor.md` for the
   upcoming application-level reset flow.
 - See [[13-audit-log-review]] for normal application audit trail.
