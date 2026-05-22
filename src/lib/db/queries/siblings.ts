@@ -296,7 +296,11 @@ export async function removeSiblingLink(
     select: { familyGroupId: true },
   });
 
-  if (!link) return;
+  // If the row is not visible (RLS) or does not exist, do not report a
+  // silent success — the caller (and the user) must know the unlink failed.
+  if (!link) {
+    throw new Error(`Sibling link not found or not writable: ${siblingLinkId}`);
+  }
 
   await tx.siblingLink.delete({ where: { id: siblingLinkId } });
 
@@ -338,12 +342,21 @@ export async function reorderSiblingPriority(
   orderedBursaryAccountIds: string[]
 ): Promise<void> {
   for (let i = 0; i < orderedBursaryAccountIds.length; i++) {
-    await tx.siblingLink.updateMany({
+    const { count } = await tx.siblingLink.updateMany({
       where: {
         familyGroupId,
         bursaryAccountId: orderedBursaryAccountIds[i],
       },
       data: { priorityOrder: i + 1 },
     });
+
+    // Under RLS denial the rows are invisible and updateMany affects 0 rows
+    // without throwing — that would silently no-op and revert on reload.
+    // Treat a missing/unwritable row as a hard failure so the API surfaces it.
+    if (count === 0) {
+      throw new Error(
+        `Sibling link not found or not writable for account ${orderedBursaryAccountIds[i]} in group ${familyGroupId}`
+      );
+    }
   }
 }

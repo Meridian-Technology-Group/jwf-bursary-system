@@ -106,8 +106,12 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
     return NextResponse.json(result, { status: 201 });
   } catch (err) {
-    const message = err instanceof Error ? err.message : "Failed to create sibling link";
+    // Do not leak the raw Prisma/driver error (table names, SQL, RLS detail)
+    // to the client — log it server-side and return a sanitised message.
     console.error("[POST /api/siblings] Error:", err);
-    return NextResponse.json({ error: message }, { status: 500 });
+    return NextResponse.json(
+      { error: "Failed to create sibling link" },
+      { status: 500 }
+    );
   }
 }
