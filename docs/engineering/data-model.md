@@ -573,17 +573,16 @@ against staging or prod.
 
 ## Known schema / DB consistency notes
 
-- **`email_templates.type @unique` drift — RESOLVED on nonprod.** The backlog
-  entry
-  [`docs/backlog/email-template-type-unique-not-enforced.md`](../backlog/email-template-type-unique-not-enforced.md)
-  records that the `@unique` on `EmailTemplate.type` was once not enforced in
-  the database. As of this writing the unique index **does exist** on
-  `supabase-nonprod` (`email_templates_type_key`, confirmed via `pg_indexes`;
-  8 rows, 8 distinct types), and the initial-schema migration creates it
-  (line 421). So nonprod is consistent with the schema. **Action for the
-  next engineer:** verify the same index exists on `supabase-prod` before
-  go-live, then close the backlog item. (`pg_constraint` will *not* show it —
-  Prisma `@unique` materialises as a unique *index*, not a table constraint.)
+- **`email_templates.type @unique` — enforced; non-issue (closed).** A former
+  backlog entry (now archived at
+  [`archive/backlog/email-template-type-unique-not-enforced.md`](../archive/backlog/email-template-type-unique-not-enforced.md))
+  claimed the `@unique` on `EmailTemplate.type` was not enforced in the database.
+  It is: the unique index `email_templates_type_key` exists on **both**
+  `supabase-nonprod` (2026-05-22) and `supabase-prod` (2026-05-23), confirmed via
+  `pg_indexes`, and the initial-schema migration creates it (line 421). The
+  original report was a false alarm — it queried `pg_constraint`, which does
+  *not* show a Prisma `@unique` because that materialises as a unique *index*,
+  not a table constraint.
 - **No `FamilyGroup` table.** "Family group" is a shared `familyGroupId` UUID on
   `SiblingLink` rows, not a first-class entity (see SiblingLink note above).
 - **`Round`/reference reads under `app_user`.** Several reference tables were

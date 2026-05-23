@@ -223,14 +223,16 @@ prod (`CLAUDE.md`).
 Full details and value sources are in
 [`environment-variables.md`](environment-variables.md).
 
-> ℹ️ **Backlog status.** The item
-> [`backlog/migrate-deploy-not-automated.md`](../backlog/migrate-deploy-not-automated.md)
-> records that the Vercel build deliberately does *not* run
-> `prisma migrate deploy`, leaving migrations manual. That item's preferred fix
-> was "Option 1 — pre-deploy migrate via GitHub Actions against the matching
-> Supabase env." **`db-push.yml` implements exactly that and therefore
-> supersedes the backlog item** (it should be closed once the prod secrets are
-> in place). The §5.2 workstation route remains the documented fallback.
+> ℹ️ **Backlog status — closed.** The Vercel build deliberately does *not* run
+> `prisma migrate deploy`; `db-push.yml` runs it instead via GitHub Actions
+> against the matching Supabase project. This resolved (and closed) the former
+> backlog item, now archived at
+> [`archive/backlog/migrate-deploy-not-automated.md`](../archive/backlog/migrate-deploy-not-automated.md).
+> **Residual go-live check:** each db-push job is gated on its DB secrets and
+> *silently skips* if they're absent — confirm `PROD_DATABASE_URL` /
+> `PROD_DIRECT_URL` (and the staging equivalents) are set in the GitHub repo
+> secrets, or prod migrations would never run. The §5.2 workstation route
+> remains the documented fallback.
 
 ---
 
