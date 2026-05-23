@@ -1,14 +1,23 @@
 ---
 title: email_templates.type @unique is not enforced in the database
-status: open
+status: done
 severity: medium
 area: schema, drift
 opened: 2026-05-13
 opened_by: Claude (via Brian Wagner)
+closed: 2026-05-23
 related:
   - prisma/schema.prisma (EmailTemplate model)
   - prisma/migrations/20260301180442_initial_schema/migration.sql
 ---
+
+> **CLOSED (2026-05-23): not a real defect — the constraint IS enforced.**
+> The original investigation queried `pg_constraint`, but a Prisma `@unique`
+> compiles to a unique **index**, not a table constraint — so it never showed up
+> there. Verified via `pg_indexes` on **both** environments (2026-05-22 nonprod,
+> 2026-05-23 prod): the unique index `email_templates_type_key` exists on
+> `public.email_templates (type)` in each. The initial-schema migration creates
+> it. No migration or data fix is needed.
 
 ## Context
 
