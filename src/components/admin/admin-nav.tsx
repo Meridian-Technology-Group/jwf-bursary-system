@@ -25,6 +25,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { JwfLogo } from "@/components/brand/jwf-logo";
+import { formatBuildLabel } from "@/lib/build-info";
 
 // ─── Nav structure ────────────────────────────────────────────────────────────
 
@@ -223,6 +224,17 @@ export function AdminNav({ collapsed, userName, userEmail, userRole }: AdminNavP
             {!collapsed && "Sign out"}
           </button>
         </form>
+
+        {/* Build fingerprint (backlog #15): version · env · short SHA.
+            Lets testers confirm which build a given URL is serving. */}
+        {!collapsed && (
+          <p
+            className="mt-2 truncate px-2 text-[10px] text-neutral-500"
+            title="Running build"
+          >
+            {formatBuildLabel()}
+          </p>
+        )}
       </div>
     </div>
   );
