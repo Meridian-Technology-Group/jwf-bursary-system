@@ -20,14 +20,17 @@
   round-summary report and is a large self-contained UX rebuild. Neither
   is in Waves 0–2.
 
-## The 20 open items
+## The open items
+
+Numbered 1–20 from the original sweep; #3 and #3b have since been archived
+(superseded by the Vercel WAF decision), leaving 19 active.
 
 | # | Item | Sev | Type | Primary surface |
 |---|------|-----|------|-----------------|
-| 1 | prod-auth-rate-limiting-disabled | **high** | ops | Vercel KV provisioning |
+| 1 | prod-auth-rate-limiting-disabled | **high** | code+ops | Vercel WAF rule in `vercel.json` + delete app limiter |
 | 2 | prod-resend-webhook-secret-unset | med | ops | Vercel env var |
-| 3 | rate-limiter-fails-open-when-kv-unset | med | code | `src/lib/rate-limit.ts` |
-| 3b | migrate-rate-limit-off-vercel-kv-sdk | low | deps | `src/lib/rate-limit.ts` (added 2026-05-24) |
+| ~~3~~ | ~~rate-limiter-fails-open-when-kv-unset~~ | — | — | **archived** — superseded by #1 (WAF has no KV to fail open) |
+| ~~3b~~ | ~~migrate-rate-limit-off-vercel-kv-sdk~~ | — | — | **archived** — superseded by #1 (limiter deleted, not migrated) |
 | 4 | shared-generateInvitationToken-helper | low | refactor | invitation queries |
 | 5 | invite-email-failure-leaves-orphan-rows | med | code | `(admin)/invitations/actions.ts` |
 | 6 | revoke-staff-invitation-leaves-orphan-profile | low | code | `(admin)/users/actions.ts` |
@@ -48,9 +51,12 @@
 
 ## Dependencies & coupling that drive the sequence
 
-- **#1 must precede #3's prod deploy.** #3 makes the app *fail loud /
-  refuse to boot* in prod when KV is unset. Shipping #3 before KV is
-  provisioned (#1) would brick prod. Order: provision KV → ship fail-loud.
+- **#1 is now a single self-contained PR** (Vercel WAF). Adding the
+  `vercel.json` WAF rule and deleting the app-level limiter (+ its
+  `@upstash/ratelimit` / `@vercel/kv` deps) is one change with no env-var or
+  store dependency. The old "provision KV → then fail-loud" ordering is gone —
+  #3 and #3b were archived because WAF removes the fail-open failure mode and
+  leaves no SDK to migrate.
 - **#4 is foundational for the invitation cluster.** Trivial, low-risk;
   removes the duplicated token helper before #5/#7/#9 touch the same files.
 - **#8 and #9 both edit the INVITATION template** (copy change vs.
@@ -81,18 +87,20 @@
 The system is live with PII and **rate limiting off in prod** — the only
 "affects users today / high" cluster.
 
-> **Vercel KV is sunset (2026-05-24).** Provision **Upstash for Redis via the
-> Vercel Marketplace**, not the old "Vercel KV" product. The Marketplace
-> integration still injects `KV_REST_API_URL` / `KV_REST_API_TOKEN`, so
-> provisioning alone lights up prod rate limiting with **no code change** — the
-> env-var contract is preserved. The deprecated `@vercel/kv` *SDK* is separate
-> debt (item #3b), folded into the #3 PR since both edit `rate-limit.ts`.
+> **Rate limiting moves to Vercel WAF (2026-05-24).** Vercel KV is sunset, and
+> Vercel WAF rate limiting is GA on Pro with a fixed-window algorithm matching
+> this app's intent (5 req / 15 min, by IP). Adopt WAF and **delete** the
+> app-level limiter — no KV/Upstash store, no env vars, no SDK, edge-enforced.
+> This collapses the former #3 (fail-open guard) and #3b (SDK migration) into a
+> single PR; both are archived. ~1–2 WAF rules — trivially within Pro's 40-rule
+> allowance.
 
 | # | Action | Owner | Gate |
 |---|--------|-------|------|
-| 1 | Install **Upstash for Redis** (Vercel Marketplace) → connect to Production; verify `KV_REST_API_URL` / `KV_REST_API_TOKEN` are injected | **Brian** (env/integration needs approval per CLAUDE.md) | — |
+| 1a | Add the WAF fixed-window rule(s) to `vercel.json` for `/login` + `/reset-password` (IP-keyed); verify on a preview deploy | Claude | — |
+| 1b | Delete `src/lib/rate-limit.ts` + its call sites; drop `@upstash/ratelimit` + `@vercel/kv` from `package.json`; add the go-live checklist line | Claude | after 1a verified |
+| 1c | Confirm the WAF rule is **active in Production** (Project → Firewall) | **Brian** | after 1a/1b merged & promoted |
 | 2 | Set `RESEND_WEBHOOK_SECRET` in Production | **Brian** | — |
-| 3 + 3b | Fail-loud-in-prod **and** migrate `@vercel/kv` → `@upstash/redis` in `lib/rate-limit.ts` (one PR) + Sentry breadcrumb + go-live checklist line | Claude | **merge gated on #1 done** |
 
 ## Wave 1 — Parallel cleanup tracks (independent file sets)
 

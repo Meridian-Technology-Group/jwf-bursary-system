@@ -86,14 +86,23 @@ server-only and sensitive; treat as a credential.
 
 > 📷 *Screenshot: Resend dashboard → Webhooks → endpoint detail showing the Signing Secret field.*
 
-### Rate limiting (Vercel KV / Upstash)
+### Rate limiting (Vercel WAF)
 
-| Variable | Scope | Where the value comes from | Production value | Preview value | Notes |
-|---|---|---|---|---|---|
-| `KV_REST_API_URL` | Server | Vercel dashboard → **Storage** → the KV/Upstash store → **`.env` tab** | Prod KV REST URL | Nonprod KV REST URL | Used by `@upstash/ratelimit` for auth throttling (5 req / 15 min, by IP). |
-| `KV_REST_API_TOKEN` | **Secret** | Same store → **`.env` tab** | Prod KV token | Nonprod KV token | Pairs with the URL. **If either is unset, the rate limiter fails OPEN (silently disabled)** — login/reset throttling is off (`src/lib/rate-limit.ts`). Required in Production. |
+**No environment variables.** Auth rate limiting is enforced at the edge by
+**Vercel WAF**, not by application code, so there is no KV/Upstash store to
+provision and no `KV_REST_API_*` keys to set. The throttle is a fixed-window
+rule (5 requests / 15 minutes, keyed by IP) on the `/login` and
+`/reset-password` paths, defined in `vercel.json` and promoted with the code.
 
-> 📷 *Screenshot: Vercel → Storage → KV store → ".env" tab listing KV_REST_API_URL and KV_REST_API_TOKEN.*
+What to verify instead of an env var:
+
+- The WAF rate-limit rule is **active** in the Vercel project (Project →
+  **Firewall**, or `vercel firewall rules ls`). This is the go-live check that
+  replaces "is `KV_REST_API_*` set?".
+- A burst of >5 login attempts inside 15 minutes from one IP returns an edge
+  **429 / challenge** rather than reaching the sign-in action.
+
+> 📷 *Screenshot: Vercel → project → Firewall tab showing the active "Auth rate limit" rule.*
 
 ### App / Vercel
 
@@ -166,5 +175,5 @@ database and Storage admin**. Three hard rules:
 3. If it is ever exposed, rotate it immediately (§4) and treat it as a security
    incident — see [`incident-response.md`](incident-response.md).
 
-The same care applies to `DATABASE_URL`, `DIRECT_URL`, `RESEND_API_KEY`,
-`RESEND_WEBHOOK_SECRET`, and `KV_REST_API_TOKEN`.
+The same care applies to `DATABASE_URL`, `DIRECT_URL`, `RESEND_API_KEY`, and
+`RESEND_WEBHOOK_SECRET`.

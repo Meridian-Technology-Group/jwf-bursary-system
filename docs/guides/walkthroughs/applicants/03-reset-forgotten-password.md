@@ -28,8 +28,11 @@ email at any time.
   address you typed is actually registered — that's a privacy
   feature, not a bug. If you genuinely typed the right address and
   still get nothing, contact the bursary team directly.
-- **"Too many attempts"** — the system rate-limits reset
-  requests. Wait a few minutes and try again.
+- **"Too many requests" / a verification check** — for security the
+  system limits how many reset requests can come from one place in a
+  short time. If you've tried several times in a row you may be
+  temporarily blocked or asked to confirm you're human. Wait a few
+  minutes and try again.
 - **The reset link itself is expired.** Reset links don't stay
   valid forever. Request another one by repeating the steps above.
 

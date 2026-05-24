@@ -1,16 +1,21 @@
 ---
 title: Migrate rate-limit.ts off the deprecated @vercel/kv SDK to @upstash/redis
-status: open
+status: won't-do
 severity: low
 area: security, auth, deps, infra
 opened: 2026-05-24
 opened_by: brian
+closed: 2026-05-24
 related:
-  - src/lib/rate-limit.ts (imports `kv` from @vercel/kv)
-  - package.json (@vercel/kv ^3.0.0, @upstash/ratelimit ^2.0.8)
-  - prod-auth-rate-limiting-disabled.md (provisioning side)
-  - rate-limiter-fails-open-when-kv-unset.md (same file; fold both into one PR)
+  - prod-auth-rate-limiting-disabled.md (the superseding WAF decision)
 ---
+
+> **CLOSED (2026-05-24): SUPERSEDED.** Auth rate limiting is moving to **Vercel
+> WAF** (edge-enforced, configured in `vercel.json`), so `src/lib/rate-limit.ts`
+> and its `@vercel/kv` / `@upstash/ratelimit` dependencies are being **deleted**,
+> not migrated. There is no SDK left to swap. Tracked in
+> [prod-auth-rate-limiting-disabled.md](./prod-auth-rate-limiting-disabled.md).
+> Original context retained below for history.
 
 ## Context
 

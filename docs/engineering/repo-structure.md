@@ -24,7 +24,7 @@ integration points are called out below.
 | Auth / Storage | Supabase (SSR auth via `@supabase/ssr`, Storage for documents) |
 | Styling | Tailwind CSS 3 + shadcn/ui (Radix primitives) |
 | Email | Resend (with a Svix-signed inbound webhook) |
-| Rate limiting | `@upstash/ratelimit` over Vercel KV |
+| Rate limiting | Vercel WAF (edge fixed-window rule in `vercel.json`) |
 | Tests | Vitest |
 | Hosting | Vercel (region `lhr1`) |
 
@@ -217,11 +217,15 @@ a Prisma migration, not via the seed scripts (see the quick-reference table).
 `documents.ts` (upload/list/delete against the Supabase `documents` bucket) and
 `sniff.ts` (magic-byte content-type sniffing to validate uploads).
 
-### `src/lib/rate-limit.ts`
+### `src/lib/rate-limit.ts` — _deprecated, being removed_
 
-Upstash Ratelimit over Vercel KV: 5 requests per 15-minute window, keyed by IP,
-guarding sensitive auth endpoints. If KV is not configured (e.g. local dev), it
-degrades to a no-op that allows all requests and logs a warning once at load.
+The former application-layer limiter (Upstash Ratelimit over Vercel KV: 5
+requests / 15-minute window, keyed by IP). **Auth rate limiting has moved to
+Vercel WAF** — an edge fixed-window rule on `/login` and `/reset-password`
+defined in `vercel.json`, with the same 5-per-15-minute / per-IP shape. This
+file and its `@upstash/ratelimit` / `@vercel/kv` dependencies are slated for
+removal; see
+[`docs/backlog/prod-auth-rate-limiting-disabled.md`](../backlog/prod-auth-rate-limiting-disabled.md).
 
 ### Other `lib` modules
 
@@ -358,7 +362,7 @@ Every path below has been verified against the tree.
 | Auth route protection / redirects | `src/middleware.ts` |
 | Server-side role checks | `src/lib/auth/roles.ts` |
 | Password / breach policy | `src/lib/auth/password-policy.ts` |
-| Rate limiting | `src/lib/rate-limit.ts` |
+| Rate limiting | `vercel.json` (Vercel WAF rule) — formerly `src/lib/rate-limit.ts` |
 | The data model | `prisma/schema.prisma` |
 | **RLS policies** | `prisma/migrations/` (e.g. `*_enable_row_level_security`) |
 | Reference seed data | `prisma/seed-reference.ts` + `prisma/seed-data/reference.ts` |
