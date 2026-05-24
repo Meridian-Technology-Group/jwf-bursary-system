@@ -1,6 +1,6 @@
 ---
 title: INVITATION template body should call out single-use + 30-day expiry
-status: open
+status: done
 severity: low
 area: invitations, copy
 opened: 2026-05-13

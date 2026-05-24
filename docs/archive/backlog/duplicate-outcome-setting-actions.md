@@ -1,6 +1,6 @@
 ---
 title: Two parallel "set application outcome" server actions with divergent behaviour
-status: open
+status: done
 severity: medium
 area: assessment, recommendation, correctness
 opened: 2026-05-23

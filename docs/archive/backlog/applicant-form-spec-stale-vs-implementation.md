@@ -1,6 +1,6 @@
 ---
 title: Re-verify applicant-form.md field-by-field against the implemented portal
-status: open
+status: done
 severity: medium
 area: docs, specs, drift
 opened: 2026-05-22
