@@ -41,6 +41,7 @@ import { sendEmail } from "@/lib/email/send";
 import { withAdminContext } from "@/lib/db/prisma";
 import { createAuditLog } from "@/lib/audit/log";
 import { prepopulateReassessment, getPreviousYearApplication } from "@/lib/db/queries/reassessment";
+import { ensurePrimaryContributor } from "@/lib/db/queries/contributors";
 
 import { AUDIT_ACTIONS, AUDIT_ENTITY_TYPES } from "@/lib/audit/actions";
 
@@ -724,6 +725,10 @@ export async function createReassessmentApplicationAction(
           status: "PRE_SUBMISSION",
         },
       });
+
+      // Every application must have a PRIMARY contributor from creation so the
+      // section write path can tag the owner (dual-parent foundation).
+      await ensurePrimaryContributor(tx, application.id, account.leadApplicantId);
 
       // Pre-populate from the most recent previous year application
       const previous = await getPreviousYearApplication(tx, bursaryAccountId, roundId);

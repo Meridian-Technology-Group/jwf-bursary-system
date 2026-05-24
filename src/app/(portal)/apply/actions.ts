@@ -20,6 +20,10 @@ import {
   getSectionData,
   upsertSection,
 } from "@/lib/db/queries/applications";
+import {
+  ensurePrimaryContributor,
+  resolveOwningContributorId,
+} from "@/lib/db/queries/contributors";
 import { withUserContext, withAdminContext, type RlsRole } from "@/lib/db/prisma";
 import { sendEmail } from "@/lib/email/send";
 import { createAuditLog } from "@/lib/audit/log";
@@ -99,27 +103,70 @@ async function getOwnedApplicationId(): Promise<string | null> {
 }
 
 /**
- * Resolves both the current user and their owned application ID in one step.
- * Returns nulls if not authenticated or no application exists.
+ * Resolves the current user, their owned application ID, and the contributor
+ * id they write/read sections as — in one step. Returns null if not
+ * authenticated or no application exists.
+ *
+ * For the lead applicant the owning contributor is their PRIMARY contributor.
+ * Every section save/read for the lead applicant is scoped to this contributor
+ * (dual-parent foundation, PR 4a), so their experience is identical to before:
+ * they see and write exactly their own sections.
+ *
+ * The PRIMARY contributor is created at application-creation time (all five
+ * create paths call `ensurePrimaryContributor` under admin context, and PR 1's
+ * migration backfilled every pre-existing application), so on this hot path we
+ * only need to RESOLVE it with a SELECT — which the lead applicant is allowed
+ * to do under RLS. We must NOT upsert here: the `application_contributors`
+ * write policy is admin-only, so an applicant-context write (even the no-op
+ * `update: {}`, which `@updatedAt` turns into a real UPDATE) is filtered to
+ * zero rows and Prisma throws P2025 — which would break every section save.
+ * The admin-context self-heal below only runs for the (should-be-impossible)
+ * case of an application with no PRIMARY contributor.
  */
 async function getOwnedApplicationContext(): Promise<{
   user: CurrentUser;
   appId: string;
+  ownerContributorId: string;
 } | null> {
   const user = await getCurrentUser();
   if (!user) return null;
 
-  const application = await withUserContext(
+  const resolved = await withUserContext(
     user.id,
     user.role as RlsRole,
-    (tx) =>
-      tx.application.findFirst({
+    async (tx) => {
+      const application = await tx.application.findFirst({
         where: { leadApplicantId: user.id, status: "PRE_SUBMISSION" },
         select: { id: true },
-      })
+      });
+      if (!application) return null;
+
+      const ownerContributorId = await resolveOwningContributorId(
+        tx,
+        application.id,
+        user.id
+      );
+      return { appId: application.id, ownerContributorId };
+    }
   );
-  if (!application) return null;
-  return { user, appId: application.id };
+
+  if (!resolved) return null;
+
+  // Self-heal: an application should always have a PRIMARY contributor (created
+  // at application creation). If one is missing (a legacy row), create it under
+  // admin context — the applicant-scoped transaction above cannot, by policy.
+  let ownerContributorId = resolved.ownerContributorId;
+  if (!ownerContributorId) {
+    ownerContributorId = await withAdminContext((tx) =>
+      ensurePrimaryContributor(tx, resolved.appId, user.id)
+    );
+  }
+
+  return {
+    user,
+    appId: resolved.appId,
+    ownerContributorId,
+  };
 }
 
 // ─── Actions ─────────────────────────────────────────────────────────────────
@@ -156,7 +203,7 @@ export async function saveSection(
 
   try {
     await withUserContext(ctx.user.id, ctx.user.role as RlsRole, (tx) =>
-      upsertSection(tx, ctx.appId, section, result.data, true)
+      upsertSection(tx, ctx.appId, section, result.data, true, ctx.ownerContributorId)
     );
     // Revalidate the portal layout so the sidebar progress stepper + bar
     // pick up the new completion state immediately.
@@ -186,7 +233,7 @@ export async function saveSectionDraft(
 
   try {
     await withUserContext(ctx.user.id, ctx.user.role as RlsRole, (tx) =>
-      upsertSection(tx, ctx.appId, section, data, false)
+      upsertSection(tx, ctx.appId, section, data, false, ctx.ownerContributorId)
     );
     return { success: true };
   } catch (err) {
@@ -213,7 +260,7 @@ export async function getSection(
   const row = await withUserContext(
     ctx.user.id,
     ctx.user.role as RlsRole,
-    (tx) => getSectionData(tx, ctx.appId, section)
+    (tx) => getSectionData(tx, ctx.appId, section, ctx.ownerContributorId)
   );
   return {
     data: row?.data ?? null,
@@ -234,7 +281,7 @@ export async function getSectionStatus(
   const rows = await withUserContext(
     ctx.user.id,
     ctx.user.role as RlsRole,
-    (tx) => getSectionStatusList(tx, ctx.appId)
+    (tx) => getSectionStatusList(tx, ctx.appId, ctx.ownerContributorId)
   );
 
   return rows.map((r) => ({
@@ -279,11 +326,30 @@ export async function submitApplication(applicationId: string): Promise<never> {
   }
 
   // ── Load application ───────────────────────────────────────────────────────
+  // Resolve the lead applicant's PRIMARY contributor first, then scope the
+  // completeness check to ONLY their sections (dual-parent foundation, PR 4a).
+  // For a single-parent application this is every section, so behaviour is
+  // unchanged; once a SECONDARY can own its own section copies (PR 4b) the
+  // primary's submit gate must not be affected by the secondary's rows.
+  // Resolve the PRIMARY contributor (SELECT) — never upsert on this path; the
+  // contributor write policy is admin-only and an applicant-context write would
+  // be RLS-filtered (P2025). Self-heal under admin context only if missing.
+  let ownerContributorId = await withUserContext(
+    user.id,
+    user.role as RlsRole,
+    (tx) => resolveOwningContributorId(tx, applicationId, user.id)
+  );
+  if (!ownerContributorId) {
+    ownerContributorId = await withAdminContext((tx) =>
+      ensurePrimaryContributor(tx, applicationId, user.id)
+    );
+  }
+
   const application = await withUserContext(
     user.id,
     user.role as RlsRole,
-    (tx) =>
-      tx.application.findUnique({
+    async (tx) => {
+      return tx.application.findUnique({
         where: { id: applicationId },
         select: {
           id: true,
@@ -296,10 +362,12 @@ export async function submitApplication(applicationId: string): Promise<never> {
           entryYearGroup: true,
           round: { select: { academicYear: true } },
           sections: {
+            where: { ownerContributorId },
             select: { section: true, isComplete: true, data: true },
           },
         },
-      })
+      });
+    }
   );
 
   if (!application) {

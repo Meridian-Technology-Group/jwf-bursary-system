@@ -19,6 +19,7 @@ import {
 } from "@/lib/db/queries/invitations";
 import { generateApplicationReference } from "@/lib/applications/reference";
 import { createReassessmentApplicationFromInvitation } from "@/lib/db/queries/reassessment";
+import { ensurePrimaryContributor } from "@/lib/db/queries/contributors";
 import { createAuditLog } from "@/lib/audit/log";
 import { sendEmail } from "@/lib/email/send";
 import { getAppUrl } from "@/lib/app-url";
@@ -83,9 +84,13 @@ export async function startApplicationAction(
   // Validation + DB work runs inside try; redirect happens after so the
   // NEXT_REDIRECT thrown by redirect() doesn't get swallowed by the catch.
   try {
-    const validation = await withUserContext(
-      user.id,
-      user.role as RlsRole,
+    // Runs in admin context: creating the application's PRIMARY contributor
+    // (dual-parent foundation) requires service_role, since the
+    // application_contributors write policy is admin-only (PR 1). The applicant
+    // is already authenticated above and the created application is owned by
+    // them (leadApplicantId = user.id), mirroring the register / re-assessment
+    // applicant-create paths which also run under withAdminContext.
+    const validation = await withAdminContext(
       async (tx) => {
         const invitation = await getLatestAcceptedInvitationForUser(tx, user.id);
 
@@ -130,7 +135,7 @@ export async function startApplicationAction(
 
           const reference = await generateApplicationReference(tx, school, round.academicYear);
 
-          await tx.application.create({
+          const application = await tx.application.create({
             data: {
               reference,
               roundId: invitation.roundId,
@@ -141,6 +146,10 @@ export async function startApplicationAction(
               status: "PRE_SUBMISSION",
             },
           });
+
+          // Every application must have a PRIMARY contributor from creation so
+          // the section write path can tag the owner (dual-parent foundation).
+          await ensurePrimaryContributor(tx, application.id, user.id);
         }
 
         return { error: null };

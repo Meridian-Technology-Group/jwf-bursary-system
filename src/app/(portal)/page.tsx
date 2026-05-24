@@ -14,6 +14,7 @@
 import { getCurrentUser } from "@/lib/auth/roles";
 import { withAdminContext, withUserContext, type RlsRole } from "@/lib/db/prisma";
 import { getCurrentApplicationForUser, getSectionStatusList } from "@/lib/db/queries/applications";
+import { resolveOwningContributorId } from "@/lib/db/queries/contributors";
 import { getOrAcceptLatestInvitationForUser } from "@/lib/db/queries/invitations";
 import { StatusBadge, type ApplicationStatus } from "@/components/shared/status-badge";
 import { OnboardingCard } from "@/app/(portal)/onboarding-card";
@@ -46,8 +47,26 @@ export default async function PortalDashboardPage() {
             const app = await getCurrentApplicationForUser(tx, user.id);
             let completed = 0;
             if (app) {
-              const statuses = await getSectionStatusList(tx, app.id);
-              completed = statuses.filter((s) => s.isComplete).length;
+              // Scope the progress count to the lead applicant's PRIMARY
+              // contributor (dual-parent foundation). Resolve with a SELECT —
+              // never upsert under applicant RLS (admin-only write policy). The
+              // PRIMARY contributor is created at application creation; if it is
+              // somehow absent the count stays 0 here and the write path
+              // self-heals it. For a single parent this is every section, so
+              // the count is unchanged.
+              const ownerContributorId = await resolveOwningContributorId(
+                tx,
+                app.id,
+                user.id
+              );
+              if (ownerContributorId) {
+                const statuses = await getSectionStatusList(
+                  tx,
+                  app.id,
+                  ownerContributorId
+                );
+                completed = statuses.filter((s) => s.isComplete).length;
+              }
             }
             return { app, completed };
           }
