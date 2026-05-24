@@ -1,15 +1,29 @@
 ---
 title: Set RESEND_WEBHOOK_SECRET in production (delivery events rejected)
-status: open
+status: done
 severity: medium
 area: email, infra
 opened: 2026-05-24
 opened_by: brian
+closed: 2026-05-24
 related:
   - src/app/api/webhooks/resend/route.ts
   - .env.example (RESEND_WEBHOOK_SECRET)
+  - docs/operations/environment-variables.md (single-environment Resend setup)
   - v1.0.0 release
 ---
+
+> **CLOSED (2026-05-24): RESOLVED.** `RESEND_WEBHOOK_SECRET` is now set in the
+> Vercel **Production** scope (confirmed by Brian), so the prod handler verifies
+> Svix signatures and accepts inbound delivery/bounce/complaint events instead
+> of rejecting them with 401.
+>
+> **Single Resend environment:** one webhook endpoint pointed at the production
+> URL only. The secret is set in the Production scope alone; Preview is
+> intentionally left unset (no staging endpoint registered, handler is
+> logs-only). This is documented in
+> [`docs/operations/environment-variables.md`](../../operations/environment-variables.md)
+> and the `route.ts` header comment.
 
 ## Context
 

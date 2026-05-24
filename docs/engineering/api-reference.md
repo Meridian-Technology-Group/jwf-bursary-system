@@ -73,13 +73,21 @@ Five application roles (the `Role` enum): `APPLICANT`, `ASSESSOR`, `VIEWER`,
 
 ### Rate limiting
 
-The limiter ([`src/lib/rate-limit.ts`](../../src/lib/rate-limit.ts)) is Upstash
-Ratelimit over Vercel KV: **5 requests / 15-minute fixed window, keyed by IP**.
-It is **disabled (fail-open) when `KV_REST_API_URL` / `KV_REST_API_TOKEN` are
-unset** (e.g. local dev) — a warning is logged once at module load. Applied to
-the sensitive auth pre-checks only: `checkLoginRateLimit` (key `login:<ip>`) and
-`checkResetPasswordRateLimit` (key `reset-password:<ip>`). No other endpoint is
-rate-limited at the application layer today.
+Auth rate limiting is enforced **at the edge by Vercel WAF** (configured in
+`vercel.json`), not in application code: a **fixed-window rule — 5 requests /
+15 minutes, keyed by IP** — on the `/login` and `/reset-password` paths. Because
+it runs at the edge, brute-force attempts are blocked before they reach a
+Function, and there is no store to provision or env var to set. See
+[`docs/operations/environment-variables.md`](../operations/environment-variables.md)
+and the deployment runbook for the rule definition and go-live check.
+
+> **Migration note:** the former application-layer limiter
+> (`src/lib/rate-limit.ts`, Upstash Ratelimit over Vercel KV, with
+> `checkLoginRateLimit` / `checkResetPasswordRateLimit` pre-checks) is being
+> removed in favour of WAF — see
+> [`docs/backlog/prod-auth-rate-limiting-disabled.md`](../backlog/prod-auth-rate-limiting-disabled.md).
+> Until that lands, the pre-checks may still exist in code but are superseded by
+> the WAF rule as the authoritative throttle.
 
 ### Audit logging
 
@@ -171,9 +179,9 @@ otherwise, the return shape is `{ success } | { success, error }` /
 
 | Action | File | Purpose / inputs | Guard | Side effects & audit |
 |---|---|---|---|---|
-| `checkLoginRateLimit()` | `(auth)/login/actions.ts` | IP rate-limit pre-check for sign-in | none (pre-auth) | reads limiter; **rate-limited** (`login:<ip>`) |
+| `checkLoginRateLimit()` | `(auth)/login/actions.ts` | IP rate-limit pre-check for sign-in — **deprecated, superseded by the WAF rule; slated for removal** | none (pre-auth) | reads limiter; **rate-limited** (`login:<ip>`) |
 | `isStaffMfaEnforcedAction()` | `(auth)/login/actions.ts` | Exposes the MFA flag to the client login page | none | none |
-| `checkResetPasswordRateLimit()` | `(auth)/reset-password/actions.ts` | IP rate-limit pre-check for reset email | none | **rate-limited** (`reset-password:<ip>`) |
+| `checkResetPasswordRateLimit()` | `(auth)/reset-password/actions.ts` | IP rate-limit pre-check for reset email — **deprecated, superseded by the WAF rule; slated for removal** | none | **rate-limited** (`reset-password:<ip>`) |
 | `verifyEnrolmentAction(fd)` | `(auth)/login/mfa/actions.ts` | Confirm a freshly-enrolled TOTP factor (`factorId`, `code`) | session (SSR) | challenge + verify → elevates session to `aal2` |
 | `challengeAndVerifyAction(fd)` | `(auth)/login/mfa/actions.ts` | Challenge an existing TOTP factor (`factorId`, `code`) | session (SSR) | verify → `aal2` |
 | `validateApplicantInvitationAction(token)` | `(auth)/register/actions.ts` | Validate applicant token; return prefill (incl. `isReassessment`) | token only (pre-auth, `withAdminContext`) | none |
@@ -379,7 +387,8 @@ name. Keys observed in the codebase, by area:
   creates the `BursaryAccount`, and they use different transition validation
   and audit keys (`APPLICATION_OUTCOME_SET` vs `application.outcome.set`).
   Confirm which path the UI invokes for a given flow before changing either.
-- **Rate limiting is auth-only and fail-open.** Only the login and
-  reset-password pre-checks consult the limiter, and it is disabled when KV env
-  vars are unset (all local/most preview envs). Document/export/PDF routes have
-  no application-layer throttle.
+- **Rate limiting is auth-only and edge-enforced via Vercel WAF.** The
+  fixed-window WAF rule throttles `/login` and `/reset-password` by IP; it does
+  not fail open on a missing env var (there is none) — the only failure mode is
+  the rule being absent/disabled in the Vercel project, which the go-live
+  checklist guards. Document/export/PDF routes have no throttle.

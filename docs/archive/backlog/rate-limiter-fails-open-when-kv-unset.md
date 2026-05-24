@@ -1,15 +1,24 @@
 ---
 title: Auth rate limiter fails OPEN when KV env vars are unset
-status: open
+status: won't-do
 severity: medium
 area: security, ops, auth
 opened: 2026-05-23
 opened_by: Brian Wagner (via Claude, during reference/runbook authoring)
+closed: 2026-05-24
 related:
-  - src/lib/rate-limit.ts (the no-op-when-unconfigured behaviour)
-  - docs/operations/environment-variables.md (KV_REST_API_URL / KV_REST_API_TOKEN)
-  - docs/operations/incident-response.md (triage check)
+  - prod-auth-rate-limiting-disabled.md (the superseding WAF decision)
 ---
+
+> **CLOSED (2026-05-24): SUPERSEDED.** This fail-open behaviour is a property of
+> the **application-layer** limiter (`src/lib/rate-limit.ts`), which is being
+> **deleted** in favour of **Vercel WAF** edge rate limiting. WAF has no
+> KV env var to miss, so it cannot fail open the same way — its only failure
+> mode is the rule being absent/disabled, which the deployment go-live checklist
+> now guards (see
+> [prod-auth-rate-limiting-disabled.md](./prod-auth-rate-limiting-disabled.md)
+> and `docs/operations/incident-response.md` §6.5). Original context retained
+> below for history.
 
 ## Context
 

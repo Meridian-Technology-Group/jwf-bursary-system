@@ -80,20 +80,29 @@ server-only and sensitive; treat as a credential.
 
 | Variable | Scope | Where the value comes from | Production value | Preview value | Notes |
 |---|---|---|---|---|---|
-| `RESEND_API_KEY` | **Secret** | Resend dashboard → **API Keys** → create key | Prod-domain key | Nonprod/test key | The app throws at startup if this is unset (`src/lib/email/resend.ts`). Use distinct keys per env. |
-| `RESEND_FROM_EMAIL` | Server | The verified sending address on the Resend-verified domain | `bursary@jwf.org.uk` (on the verified domain) | Same or a test address | **Domain must be verified in Resend before go-live (G4).** Falls back to a default address in `src/lib/email/send.ts` if unset. |
-| `RESEND_WEBHOOK_SECRET` | **Secret** | Resend dashboard → **Webhooks** → endpoint → **Signing Secret** (`whsec_…`) | Prod signing secret | Nonprod signing secret | Required by `/api/webhooks/resend` to verify event signatures (Svix). The handler rejects events when this is unset. Was previously commented out in staging — confirm it is set in both scopes. |
+| `RESEND_API_KEY` | **Secret** | Resend dashboard → **API Keys** → create key | The single Resend account API key | Same key | The app throws at startup if this is unset (`src/lib/email/resend.ts`). We run a **single Resend environment**, so the same key is used in both the Production and Preview scopes. |
+| `RESEND_FROM_EMAIL` | Server | The verified sending address on the Resend-verified domain | `bursary@jwf.org.uk` (on the verified domain) | Same address | **Domain must be verified in Resend before go-live (G4).** Falls back to a default address in `src/lib/email/send.ts` if unset. Single Resend environment — the same verified address is used in both scopes. |
+| `RESEND_WEBHOOK_SECRET` | **Secret** | Resend dashboard → **Webhooks** → endpoint → **Signing Secret** (`whsec_…`) | Signing secret from the single prod webhook endpoint | *Not set* — no staging endpoint registered | Required by `/api/webhooks/resend` to verify event signatures (Svix). The handler rejects events with **401** when this is unset. We run a **single Resend environment** with one webhook endpoint pointed at the production URL only; staging therefore receives no delivery events, which is intentional (the handler is logs-only). Set this in the **Production scope only**; leave Preview unset. |
 
 > 📷 *Screenshot: Resend dashboard → Webhooks → endpoint detail showing the Signing Secret field.*
 
-### Rate limiting (Vercel KV / Upstash)
+### Rate limiting (Vercel WAF)
 
-| Variable | Scope | Where the value comes from | Production value | Preview value | Notes |
-|---|---|---|---|---|---|
-| `KV_REST_API_URL` | Server | Vercel dashboard → **Storage** → the KV/Upstash store → **`.env` tab** | Prod KV REST URL | Nonprod KV REST URL | Used by `@upstash/ratelimit` for auth throttling (5 req / 15 min, by IP). |
-| `KV_REST_API_TOKEN` | **Secret** | Same store → **`.env` tab** | Prod KV token | Nonprod KV token | Pairs with the URL. **If either is unset, the rate limiter fails OPEN (silently disabled)** — login/reset throttling is off (`src/lib/rate-limit.ts`). Required in Production. |
+**No environment variables.** Auth rate limiting is enforced at the edge by
+**Vercel WAF**, not by application code, so there is no KV/Upstash store to
+provision and no `KV_REST_API_*` keys to set. The throttle is a fixed-window
+rule (5 requests / 15 minutes, keyed by IP) on the `/login` and
+`/reset-password` paths, defined in `vercel.json` and promoted with the code.
 
-> 📷 *Screenshot: Vercel → Storage → KV store → ".env" tab listing KV_REST_API_URL and KV_REST_API_TOKEN.*
+What to verify instead of an env var:
+
+- The WAF rate-limit rule is **active** in the Vercel project (Project →
+  **Firewall**, or `vercel firewall rules ls`). This is the go-live check that
+  replaces "is `KV_REST_API_*` set?".
+- A burst of >5 login attempts inside 15 minutes from one IP returns an edge
+  **429 / challenge** rather than reaching the sign-in action.
+
+> 📷 *Screenshot: Vercel → project → Firewall tab showing the active "Auth rate limit" rule.*
 
 ### App / Vercel
 
@@ -166,5 +175,5 @@ database and Storage admin**. Three hard rules:
 3. If it is ever exposed, rotate it immediately (§4) and treat it as a security
    incident — see [`incident-response.md`](incident-response.md).
 
-The same care applies to `DATABASE_URL`, `DIRECT_URL`, `RESEND_API_KEY`,
-`RESEND_WEBHOOK_SECRET`, and `KV_REST_API_TOKEN`.
+The same care applies to `DATABASE_URL`, `DIRECT_URL`, `RESEND_API_KEY`, and
+`RESEND_WEBHOOK_SECRET`.
