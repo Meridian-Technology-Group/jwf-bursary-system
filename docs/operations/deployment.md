@@ -263,6 +263,8 @@ Production releases happen **only when the user explicitly requests promotion.**
    is preserved. No one auto-merges a `staging → main` PR.
 4. The merge to `main` triggers (a) a Vercel Production build/deploy and (b) the
    `db-push-prod` job in `db-push.yml`. Confirm both succeed.
+5. Confirm production-readiness items before announcing the release:
+   - [ ] **WAF auth rate-limit rules active in Production** — both "Auth rate limit" firewall rules enabled & published (see docs/operations/waf-auth-rate-limiting.md)
 
 ### 6.3 Never run destructive migrations on prod
 
