@@ -11,12 +11,14 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { requireRole, Role } from "@/lib/auth/roles";
 import { getApplicationWithDetails } from "@/lib/db/queries/applications";
+import { getSecondaryContributor } from "@/lib/db/queries/contributors";
 import { listAssessors } from "@/lib/db/queries/profiles";
 import { withUserContext, type RlsRole } from "@/lib/db/prisma";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { ApplicationActions } from "@/components/admin/application-actions";
 import { AssignAssessorSelect } from "@/components/admin/assign-assessor-select";
 import { GdprDeleteAction } from "@/components/admin/gdpr-delete-action";
+import { AddSecondParentCard } from "@/components/admin/add-second-parent-card";
 import type { ApplicationStatus as PrismaStatus } from "@prisma/client";
 
 // Map Prisma status to StatusBadge status
@@ -95,27 +97,35 @@ export default async function ApplicationDetailLayout({
 }: Props) {
   const user = await requireRole([Role.ADMIN, Role.ASSESSOR, Role.VIEWER]);
 
-  const { application, assessors, assignedOk } = await withUserContext(
-    user.id,
-    user.role as RlsRole,
-    async (tx) => {
-      const app = await getApplicationWithDetails(tx, params.id);
-      const asrs =
-        user.role === Role.ADMIN ? await listAssessors(tx) : [];
+  const { application, assessors, assignedOk, secondary } =
+    await withUserContext(
+      user.id,
+      user.role as RlsRole,
+      async (tx) => {
+        const app = await getApplicationWithDetails(tx, params.id);
+        const asrs =
+          user.role === Role.ADMIN ? await listAssessors(tx) : [];
 
-      // ASSESSORs may only access applications assigned to them
-      let ok = true;
-      if (user.role === Role.ASSESSOR) {
-        const assigned = await tx.application.findFirst({
-          where: { id: params.id, assignedToId: user.id },
-          select: { id: true },
-        });
-        ok = !!assigned;
+        // ASSESSORs may only access applications assigned to them
+        let ok = true;
+        if (user.role === Role.ASSESSOR) {
+          const assigned = await tx.application.findFirst({
+            where: { id: params.id, assignedToId: user.id },
+            select: { id: true },
+          });
+          ok = !!assigned;
+        }
+
+        const sec = await getSecondaryContributor(tx, params.id);
+
+        return {
+          application: app,
+          assessors: asrs,
+          assignedOk: ok,
+          secondary: sec,
+        };
       }
-
-      return { application: app, assessors: asrs, assignedOk: ok };
-    }
-  );
+    );
 
   if (!application) {
     notFound();
@@ -196,6 +206,18 @@ export default async function ApplicationDetailLayout({
           applicationId={application.id}
           reference={application.reference}
           documentCount={application.documents.length}
+        />
+      )}
+
+      {/* Dual-parent: add / show second parent. ADMIN and ASSESSOR can invite;
+          VIEWER sees the status panel only when a second parent already
+          exists (the add form is gated to staff who can write). */}
+      {(user.role === Role.ADMIN ||
+        user.role === Role.ASSESSOR ||
+        secondary) && (
+        <AddSecondParentCard
+          applicationId={application.id}
+          secondary={secondary}
         />
       )}
 
