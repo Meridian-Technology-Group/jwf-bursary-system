@@ -70,6 +70,11 @@ export const AUDIT_ACTIONS = {
   ACCEPT_INVITATION: "ACCEPT_INVITATION",
   EXPIRE_INVITATIONS_CRON: "EXPIRE_INVITATIONS_CRON",
 
+  // Dual-parent (secondary contributor)
+  ADD_SECOND_PARENT: "ADD_SECOND_PARENT",
+  ADD_SECOND_PARENT_FAILED: "ADD_SECOND_PARENT_FAILED",
+  SECONDARY_PARENT_ACCEPTED: "SECONDARY_PARENT_ACCEPTED",
+
   // Staff invitations / management
   INVITE_STAFF: "INVITE_STAFF",
   INVITE_STAFF_FAILED: "INVITE_STAFF_FAILED",
@@ -113,6 +118,7 @@ export const AUDIT_ENTITY_TYPES = {
   Round: "Round",
   Invitation: "Invitation",
   StaffInvitation: "StaffInvitation",
+  ApplicationContributor: "ApplicationContributor",
   FamilyTypeConfig: "FamilyTypeConfig",
   SchoolFees: "SchoolFees",
   CouncilTaxDefault: "CouncilTaxDefault",
