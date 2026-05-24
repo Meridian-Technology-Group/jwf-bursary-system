@@ -103,6 +103,7 @@ model Application {
   assessment       Assessment?
   documents        Document[]
   contributors     ApplicationContributor[]
+  invitations      Invitation[]
 
   @@unique([roundId, leadApplicantId, childName])
   @@index([roundId, status])
@@ -404,6 +405,7 @@ model Invitation {
   school           School?
   roundId          String?          @map("round_id") @db.Uuid
   bursaryAccountId String?          @map("bursary_account_id") @db.Uuid
+  applicationId    String?          @map("application_id") @db.Uuid
   authUserId       String?          @map("auth_user_id") @db.Uuid
   token            String           @unique
   status           InvitationStatus @default(PENDING)
@@ -412,11 +414,13 @@ model Invitation {
   createdBy        String           @map("created_by") @db.Uuid
   createdAt        DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
   bursaryAccount   BursaryAccount?  @relation(fields: [bursaryAccountId], references: [id])
+  application      Application?     @relation(fields: [applicationId], references: [id], onDelete: Cascade)
   creator          Profile          @relation("InvitationCreator", fields: [createdBy], references: [id])
   round            Round?           @relation(fields: [roundId], references: [id])
 
   @@index([token])
   @@index([email])
+  @@index([applicationId])
   @@map("invitations")
 }
 
@@ -591,6 +595,9 @@ enum EmailTemplateType {
   REMINDER
   INVITE_STAFF
   MISSING_DOCS_RESPONDED
+  SECONDARY_PARENT_INVITE
+  SECONDARY_PARENT_REMINDER
+  SECONDARY_PARENT_RECEIVED
 }
 
 enum BursaryAccountStatus {
