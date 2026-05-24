@@ -14,6 +14,7 @@
 import { revalidatePath } from "next/cache";
 import { requireRole, Role } from "@/lib/auth/roles";
 import { createAuditLog } from "@/lib/audit/log";
+import { AUDIT_ACTIONS, AUDIT_ENTITY_TYPES } from "@/lib/audit/actions";
 import { withUserContext, type RlsRole } from "@/lib/db/prisma";
 import { isLockedEmailTemplateType } from "@/lib/email/locked-types";
 import type { School, EmailTemplateType } from "@prisma/client";
@@ -69,8 +70,8 @@ export async function upsertFamilyTypeConfigAction(
 
       await createAuditLog(tx, {
         userId: user.id,
-        action: "settings.family_type_config.upsert",
-        entityType: "FamilyTypeConfig",
+        action: AUDIT_ACTIONS.SETTINGS_FAMILY_TYPE_CONFIG_UPSERT,
+        entityType: AUDIT_ENTITY_TYPES.FamilyTypeConfig,
         entityId: config.id,
         context: `Updated family type config for category ${category}`,
         metadata: { category, notionalRent, utilityCosts, foodCosts },
@@ -118,8 +119,8 @@ export async function upsertSchoolFeesAction(
 
       await createAuditLog(tx, {
         userId: user.id,
-        action: "settings.school_fees.upsert",
-        entityType: "SchoolFees",
+        action: AUDIT_ACTIONS.SETTINGS_SCHOOL_FEES_UPSERT,
+        entityType: AUDIT_ENTITY_TYPES.SchoolFees,
         entityId: fees.id,
         context: `Updated annual fees for ${school}`,
         metadata: { school, annualFees },
@@ -167,8 +168,8 @@ export async function updateCouncilTaxAction(
 
       await createAuditLog(tx, {
         userId: user.id,
-        action: "settings.council_tax.update",
-        entityType: "CouncilTaxDefault",
+        action: AUDIT_ACTIONS.SETTINGS_COUNCIL_TAX_UPDATE,
+        entityType: AUDIT_ENTITY_TYPES.CouncilTaxDefault,
         entityId: record.id,
         context: `Updated council tax default to £${amount}`,
         metadata: { amount, description },
@@ -233,8 +234,10 @@ export async function upsertReasonCodeAction(
 
       await createAuditLog(tx, {
         userId: user.id,
-        action: id ? "settings.reason_code.update" : "settings.reason_code.create",
-        entityType: "ReasonCode",
+        action: id
+          ? AUDIT_ACTIONS.SETTINGS_REASON_CODE_UPDATE
+          : AUDIT_ACTIONS.SETTINGS_REASON_CODE_CREATE,
+        entityType: AUDIT_ENTITY_TYPES.ReasonCode,
         entityId: reasonCode.id,
         context: id
           ? `Updated reason code ${code}: ${label}`
@@ -287,8 +290,8 @@ export async function upsertEmailTemplateAction(
 
       await createAuditLog(tx, {
         userId: user.id,
-        action: "settings.email_template.update",
-        entityType: "EmailTemplate",
+        action: AUDIT_ACTIONS.SETTINGS_EMAIL_TEMPLATE_UPDATE,
+        entityType: AUDIT_ENTITY_TYPES.EmailTemplate,
         entityId: template.id,
         context: `Updated email template: ${type}`,
         metadata: { type, subject },
@@ -345,8 +348,8 @@ export async function setEmailTemplateEnabledAction(
 
       await createAuditLog(tx, {
         userId: user.id,
-        action: "UPDATE_EMAIL_TEMPLATE_ENABLED",
-        entityType: "EmailTemplate",
+        action: AUDIT_ACTIONS.UPDATE_EMAIL_TEMPLATE_ENABLED,
+        entityType: AUDIT_ENTITY_TYPES.EmailTemplate,
         entityId: template.id,
         context: `${enabled ? "Enabled" : "Disabled"} email template: ${type}`,
         metadata: { type, enabled },

@@ -4,6 +4,7 @@
 
 import type { Tx } from "@/lib/db/prisma";
 import { createAuditLog } from "@/lib/audit/log";
+import { AUDIT_ACTIONS, AUDIT_ENTITY_TYPES } from "@/lib/audit/actions";
 import type {
   ApplicationStatus,
   School,
@@ -219,8 +220,8 @@ export async function getApplicationNamesForReveal(
 
   await createAuditLog(tx, {
     userId,
-    action: "NAME_REVEAL",
-    entityType: "Application",
+    action: AUDIT_ACTIONS.NAME_REVEAL,
+    entityType: AUDIT_ENTITY_TYPES.Application,
     entityId: applicationId,
     context: "Application detail name reveal",
     metadata: { applicationId },

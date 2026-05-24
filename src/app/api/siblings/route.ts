@@ -11,6 +11,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireRole, Role } from "@/lib/auth/roles";
 import { withUserContext, type RlsRole } from "@/lib/db/prisma";
 import { createAuditLog } from "@/lib/audit/log";
+import { AUDIT_ACTIONS, AUDIT_ENTITY_TYPES } from "@/lib/audit/actions";
 import {
   getSiblingLinks,
   createSiblingLink,
@@ -95,8 +96,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         );
         await createAuditLog(tx, {
           userId: user.id,
-          action: "SIBLING_LINK_CREATED",
-          entityType: "SIBLING_LINK",
+          action: AUDIT_ACTIONS.SIBLING_LINK_CREATED,
+          entityType: AUDIT_ENTITY_TYPES.SiblingLink,
           context: `Family group: ${created.familyGroupId}`,
           metadata: { bursaryAccountId, targetBursaryAccountId },
         });

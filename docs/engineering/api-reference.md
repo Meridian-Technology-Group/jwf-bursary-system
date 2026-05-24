@@ -254,10 +254,10 @@ the assessment path.
 
 | Action | Purpose | Audit |
 |---|---|---|
-| `beginAssessmentAction(applicationId)` | Create the Assessment → `{success, assessmentId}` | **`assessment.begin`** |
-| `saveAssessmentAction(assessmentId, applicationId, data)` | Partial save of financial inputs/results | **`assessment.save`** (metadata lists changed fields) |
-| `completeAssessmentAction(assessmentId, applicationId)` | Mark `COMPLETED` | **`assessment.complete`** |
-| `pauseAssessmentAction(assessmentId, applicationId)` | Mark `PAUSED` | **`assessment.pause`** |
+| `beginAssessmentAction(applicationId)` | Create the Assessment → `{success, assessmentId}` | **`ASSESSMENT_BEGIN`** |
+| `saveAssessmentAction(assessmentId, applicationId, data)` | Partial save of financial inputs/results | **`ASSESSMENT_SAVE`** (metadata lists changed fields) |
+| `completeAssessmentAction(assessmentId, applicationId)` | Mark `COMPLETED` | **`ASSESSMENT_COMPLETE`** |
+| `pauseAssessmentAction(assessmentId, applicationId)` | Mark `PAUSED` | **`ASSESSMENT_PAUSE`** |
 
 ### Admin — recommendation (`(admin)/applications/[id]/recommendation/actions.ts`)
 
@@ -265,7 +265,7 @@ ADMIN/ASSESSOR; `withUserContext`.
 
 | Action | Purpose | Email | Audit |
 |---|---|---|---|
-| `saveRecommendationAction(applicationId, data)` | Upsert the recommendation (resolves assessmentId + roundId from the app); `reasonCodeIds` set the junction rows | — | **`recommendation.save`** |
+| `saveRecommendationAction(applicationId, data)` | Upsert the recommendation (resolves assessmentId + roundId from the app); `reasonCodeIds` set the junction rows | — | **`RECOMMENDATION_SAVE`** |
 | `setApplicationOutcomeAction(applicationId, outcome)` | Set `QUALIFIES`/`DOES_NOT_QUALIFY`; on first `QUALIFIES` (and no existing account) **create a `BursaryAccount`** and link it | `OUTCOME_QUALIFIES` / `OUTCOME_DNQ` | **`application.outcome.set`** |
 
 The bursary-account creation here is why the `bursary_accounts` write RLS policy
@@ -313,11 +313,11 @@ email templates, which update by id/type. Each revalidates `/settings`.
 
 | Action | Purpose | Audit |
 |---|---|---|
-| `upsertFamilyTypeConfigAction(fd)` | New `FamilyTypeConfig` version (`category`, rent/utilities/food) | **`settings.family_type_config.upsert`** |
-| `upsertSchoolFeesAction(fd)` | New `SchoolFees` version | **`settings.school_fees.upsert`** |
-| `updateCouncilTaxAction(fd)` | New `CouncilTaxDefault` version | **`settings.council_tax.update`** |
-| `upsertReasonCodeAction(fd)` | Create/update a `ReasonCode` (handles deprecation); unique-violation message on dup `code` | **`settings.reason_code.create` / `.update`** |
-| `upsertEmailTemplateAction(fd)` | Update an `EmailTemplate` subject/body by `type` | **`settings.email_template.update`** |
+| `upsertFamilyTypeConfigAction(fd)` | New `FamilyTypeConfig` version (`category`, rent/utilities/food) | **`SETTINGS_FAMILY_TYPE_CONFIG_UPSERT`** |
+| `upsertSchoolFeesAction(fd)` | New `SchoolFees` version | **`SETTINGS_SCHOOL_FEES_UPSERT`** |
+| `updateCouncilTaxAction(fd)` | New `CouncilTaxDefault` version | **`SETTINGS_COUNCIL_TAX_UPDATE`** |
+| `upsertReasonCodeAction(fd)` | Create/update a `ReasonCode` (handles deprecation); unique-violation message on dup `code` | **`SETTINGS_REASON_CODE_CREATE` / `SETTINGS_REASON_CODE_UPDATE`** |
+| `upsertEmailTemplateAction(fd)` | Update an `EmailTemplate` subject/body by `type` | **`SETTINGS_EMAIL_TEMPLATE_UPDATE`** |
 
 ### Admin — users / staff (`(admin)/users/actions.ts`)
 
@@ -340,17 +340,20 @@ email templates, which update by id/type. Each revalidates `/settings`.
 
 ## Audit action key reference
 
-`AuditLog.action` is a free-form string; `entityType` is the PascalCase model
-name. Keys observed in the codebase, by area:
+`AuditLog.action` keys are SCREAMING_SNAKE and `entityType` is the PascalCase
+model name. Both are defined as a single typed source of truth in
+`src/lib/audit/actions.ts` (`AUDIT_ACTIONS` / `AUDIT_ENTITY_TYPES`); call sites
+import the constants so a typo is a compile error. Keys by area:
 
 - **Documents** — `DOCUMENT_UPLOADED_BY_ASSESSOR`, `DOCUMENT_DELETED`,
   `DOCUMENT_URL_GRANTED`, `DOCUMENT_VERIFIED`, `DOCUMENT_UNVERIFIED`.
 - **Applications** — `APPLICATION_SUBMITTED`, `APPLICATION_STATUS_CHANGED`,
   `APPLICATION_PAUSED`, `APPLICATION_RESUMED`, `APPLICATION_OUTCOME_SET`,
-  `application.outcome.set`, `APPLICATION_ASSESSOR_ASSIGNED`,
-  `MISSING_DOCS_RESPONDED`, `NAME_REVEAL`, `GDPR_DELETION`.
-- **Assessment / recommendation** — `assessment.begin`, `assessment.save`,
-  `assessment.complete`, `assessment.pause`, `recommendation.save`.
+  `APPLICATION_ASSESSOR_ASSIGNED`, `MISSING_DOCS_RESPONDED`, `NAME_REVEAL`,
+  `GDPR_DELETION`.
+- **Assessment / recommendation** — `ASSESSMENT_BEGIN`, `ASSESSMENT_SAVE`,
+  `ASSESSMENT_CHECKLIST_SAVE`, `ASSESSMENT_COMPLETE`, `ASSESSMENT_PAUSE`,
+  `RECOMMENDATION_SAVE`.
 - **Invitations** — `CREATE_INVITATION`, `BATCH_REASSESSMENT_INVITE`,
   `RESEND_INVITATION`, `REVOKE_INVITATION`, `ACCEPT_INVITATION`,
   `CREATE_REASSESSMENT_APPLICATION`, `INTERNAL_REQUEST_CREATED`.
@@ -358,29 +361,25 @@ name. Keys observed in the codebase, by area:
   `REVOKE_STAFF_INVITATION`, `ACCEPT_STAFF_INVITATION`, `UPDATE_STAFF_ROLE`,
   `RESET_STAFF_MFA`, `DEACTIVATE_STAFF`.
 - **Rounds** — `CREATE_ROUND`, `UPDATE_ROUND`, `ROUND_OPENED`, `ROUND_CLOSED`.
-- **Settings** — `settings.family_type_config.upsert`,
-  `settings.school_fees.upsert`, `settings.council_tax.update`,
-  `settings.reason_code.create`, `settings.reason_code.update`,
-  `settings.email_template.update`.
+- **Settings** — `SETTINGS_FAMILY_TYPE_CONFIG_UPSERT`,
+  `SETTINGS_SCHOOL_FEES_UPSERT`, `SETTINGS_COUNCIL_TAX_UPDATE`,
+  `SETTINGS_REASON_CODE_CREATE`, `SETTINGS_REASON_CODE_UPDATE`,
+  `SETTINGS_EMAIL_TEMPLATE_UPDATE`, `UPDATE_EMAIL_TEMPLATE_ENABLED`.
 - **Siblings** — `SIBLING_LINK_CREATED`, `SIBLING_LINK_REMOVED`,
-  `SIBLING_PRIORITY_REORDERED` (note: `entityType` here is `SIBLING_LINK`,
-  not PascalCase — a minor inconsistency, see below).
+  `SIBLING_PRIORITY_REORDERED` (`entityType` is `SiblingLink`).
 
 ---
 
 ## Known inconsistencies (verify before relying on)
 
-- **`entityType` casing for sibling audit rows.** The siblings API writes
-  `entityType: "SIBLING_LINK"` (SCREAMING_SNAKE), whereas every other call site
-  uses the PascalCase model name (`Application`, `Assessment`, `Invitation`,
-  `Profile`, …). The audit page normalises to PascalCase for display, but
-  filtering by raw `entityType` will miss these rows. Low impact; worth a
-  follow-up to align to `SiblingLink`.
-- **`audit.action` naming styles are mixed.** Most keys are SCREAMING_SNAKE,
-  but assessment/recommendation/settings actions use dotted-lowercase
-  (`assessment.save`, `application.outcome.set`, `settings.*`). Both are valid
-  (the column is free-form String) but a single convention would make the audit
-  trail easier to query.
+- **Audit naming is now standardised (backlog #10).** `action` is
+  SCREAMING_SNAKE and `entityType` is the PascalCase model name, both centralised
+  in `src/lib/audit/actions.ts`. The change is **forward-only**: historical rows
+  keep their legacy values (`assessment.save`, `SIBLING_LINK`, `settings.*`), and
+  the audit page maps those legacy values to the same label/colour/grouping via
+  `LEGACY_ACTION_ALIASES` / `LEGACY_ENTITY_TYPE_ALIASES`. When querying the raw
+  table directly for reporting, match both the new key and its legacy alias for
+  rows written before the change.
 - **Outcome set in two places.** `setOutcome` (applications actions) and
   `setApplicationOutcomeAction` (recommendation actions) both move an
   application to QUALIFIES/DOES_NOT_QUALIFY and email — but only the latter

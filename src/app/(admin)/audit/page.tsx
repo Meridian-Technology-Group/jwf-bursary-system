@@ -21,6 +21,10 @@ import {
   countFilteredAuditLogs,
 } from "@/lib/db/queries/audit";
 import type { AuditLogWithUser } from "@/lib/db/queries/audit";
+import {
+  actionColourClass,
+  canonicalEntityType,
+} from "@/lib/audit/actions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ClockIcon, UserIcon, ChevronLeftIcon, ChevronRightIcon } from "lucide-react";
@@ -39,6 +43,9 @@ const ENTITY_TYPES = [
   { value: "Document", label: "Document" },
   { value: "Assessment", label: "Assessment" },
   { value: "Invitation", label: "Invitation" },
+  // Filters by the canonical value but also matches legacy `SIBLING_LINK` rows
+  // (see entityTypeFilterValues / buildAuditWhereClause).
+  { value: "SiblingLink", label: "Sibling Link" },
 ];
 
 // ─── Timestamp helpers ────────────────────────────────────────────────────────
@@ -77,35 +84,6 @@ function displayName(user: AuditLogWithUser["user"]): string {
   return name || user.email;
 }
 
-// ─── Action colour ────────────────────────────────────────────────────────────
-
-function actionColour(action: string): string {
-  if (action.includes("PAUSED") || action.includes("pause")) {
-    return "bg-yellow-400";
-  }
-  if (
-    action.includes("OUTCOME") ||
-    action.includes("QUALIFIES") ||
-    action.includes("complete") ||
-    action.includes("SUBMITTED")
-  ) {
-    return "bg-green-500";
-  }
-  if (action.includes("RESUMED") || action.includes("begin")) {
-    return "bg-blue-500";
-  }
-  if (action.includes("DOCUMENT") || action.includes("document")) {
-    return "bg-purple-500";
-  }
-  if (action.includes("STATUS") || action.includes("DELETED")) {
-    return "bg-red-400";
-  }
-  if (action.includes("REVEAL") || action.includes("VERIFY")) {
-    return "bg-orange-400";
-  }
-  return "bg-slate-400";
-}
-
 // ─── Timeline entry ───────────────────────────────────────────────────────────
 
 function TimelineEntry({
@@ -115,7 +93,7 @@ function TimelineEntry({
   entry: AuditLogWithUser;
   isLast: boolean;
 }) {
-  const dotColour = actionColour(entry.action);
+  const dotColour = actionColourClass(entry.action);
   const details =
     entry.metadata && typeof entry.metadata === "object"
       ? JSON.stringify(entry.metadata, null, 2)
@@ -168,7 +146,7 @@ function TimelineEntry({
           </span>
 
           <span className="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-[11px] text-slate-500">
-            {entry.entityType}
+            {canonicalEntityType(entry.entityType)}
             {entry.entityId ? ` / ${entry.entityId.slice(0, 8)}…` : ""}
           </span>
 

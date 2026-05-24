@@ -12,6 +12,20 @@ related:
   - docs/engineering/api-reference.md (audit action-key reference)
 ---
 
+## Resolution (2026-05-24, forward-only)
+
+Standardised on **SCREAMING_SNAKE** for `action` and the **PascalCase model
+name** for `entityType`. Centralised the vocabulary in
+`src/lib/audit/actions.ts` (`AUDIT_ACTIONS` / `AUDIT_ENTITY_TYPES` + derived
+union types); `createAuditLog` now takes those unions so a typo is a compile
+error. All call sites import the constants. No DB backfill — historical rows
+keep their legacy values, and the audit page maps them via
+`LEGACY_ACTION_ALIASES` / `LEGACY_ENTITY_TYPE_ALIASES` so old and new rows
+render identically and the `SiblingLink` filter still matches legacy
+`SIBLING_LINK` rows. The original audit listed 6 dotted `action` keys; in
+practice the `settings.*` flows used 6 more dotted keys (incl. a
+`reason_code.create`/`.update` ternary), all normalised here too.
+
 ## Context
 
 The `AuditLog` rows written across the app use **two different naming

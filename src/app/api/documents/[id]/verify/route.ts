@@ -11,6 +11,8 @@ import { Role } from "@prisma/client";
 import { withUserContext, type RlsRole } from "@/lib/db/prisma";
 import { createAuditLog } from "@/lib/audit/log";
 
+import { AUDIT_ACTIONS, AUDIT_ENTITY_TYPES } from "@/lib/audit/actions";
+
 interface RouteParams {
   params: { id: string };
 }
@@ -70,8 +72,10 @@ export async function POST(
       // Audit log (non-blocking)
       await createAuditLog(tx, {
         userId: user.id,
-        action: updated.isVerified ? "DOCUMENT_VERIFIED" : "DOCUMENT_UNVERIFIED",
-        entityType: "Document",
+        action: updated.isVerified
+          ? AUDIT_ACTIONS.DOCUMENT_VERIFIED
+          : AUDIT_ACTIONS.DOCUMENT_UNVERIFIED,
+        entityType: AUDIT_ENTITY_TYPES.Document,
         entityId: documentId,
         context: `Slot: ${document.slot}`,
         metadata: {

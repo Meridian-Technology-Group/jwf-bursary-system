@@ -23,6 +23,8 @@ import {
 } from "@/lib/db/queries/staff-invitations";
 import { sendEmail } from "@/lib/email/send";
 
+import { AUDIT_ACTIONS, AUDIT_ENTITY_TYPES } from "@/lib/audit/actions";
+
 // ---------------------------------------------------------------------------
 // Shared result type
 // ---------------------------------------------------------------------------
@@ -124,8 +126,8 @@ export async function inviteStaffAction(
 
       await createAuditLog(tx, {
         userId: admin.id,
-        action: "INVITE_STAFF",
-        entityType: "StaffInvitation",
+        action: AUDIT_ACTIONS.INVITE_STAFF,
+        entityType: AUDIT_ENTITY_TYPES.StaffInvitation,
         entityId: inv.id,
         context: `Invited ${email} as ${role}`,
         metadata: { email, role },
@@ -184,8 +186,8 @@ export async function inviteStaffAction(
       });
       await createAuditLog(tx, {
         userId: admin.id,
-        action: "INVITE_STAFF_FAILED",
-        entityType: "StaffInvitation",
+        action: AUDIT_ACTIONS.INVITE_STAFF_FAILED,
+        entityType: AUDIT_ENTITY_TYPES.StaffInvitation,
         entityId: staffInvitationId,
         context: `Staff invitation to ${email} rolled back — email failed to send`,
         metadata: { email, role, authUserId, emailError: emailResult.error ?? null },
@@ -250,8 +252,8 @@ export async function resendStaffInvitationAction(
       const updated = await regenerateStaffInvitationToken(tx, invitationId);
       await createAuditLog(tx, {
         userId: admin.id,
-        action: "RESEND_STAFF_INVITATION",
-        entityType: "StaffInvitation",
+        action: AUDIT_ACTIONS.RESEND_STAFF_INVITATION,
+        entityType: AUDIT_ENTITY_TYPES.StaffInvitation,
         entityId: invitationId,
         context: `Re-sent invitation to ${updated.email}`,
         metadata: { email: updated.email, role: updated.role },
@@ -332,8 +334,8 @@ export async function revokeStaffInvitationAction(
 
       await createAuditLog(tx, {
         userId: admin.id,
-        action: "REVOKE_STAFF_INVITATION",
-        entityType: "StaffInvitation",
+        action: AUDIT_ACTIONS.REVOKE_STAFF_INVITATION,
+        entityType: AUDIT_ENTITY_TYPES.StaffInvitation,
         entityId: invitationId,
         context: `Revoked invitation to ${updated.email}`,
         metadata: {
@@ -435,8 +437,8 @@ export async function updateStaffRoleAction(
 
         await createAuditLog(tx, {
           userId: admin.id,
-          action: "UPDATE_STAFF_ROLE",
-          entityType: "Profile",
+          action: AUDIT_ACTIONS.UPDATE_STAFF_ROLE,
+          entityType: AUDIT_ENTITY_TYPES.Profile,
           entityId: userId,
           context: `Changed ${previous.email} role from ${previous.role} to ${newRole}`,
           metadata: { previousRole: previous.role, newRole },
@@ -547,8 +549,8 @@ export async function resetStaffMfaAction(
     await withAdminContext((tx) =>
       createAuditLog(tx, {
         userId: admin.id,
-        action: "RESET_STAFF_MFA",
-        entityType: "Profile",
+        action: AUDIT_ACTIONS.RESET_STAFF_MFA,
+        entityType: AUDIT_ENTITY_TYPES.Profile,
         entityId: userId,
         context: `Reset MFA for ${target.email} (${factors.length} factor(s) removed)`,
         metadata: { email: target.email, factorCount: factors.length },
@@ -625,8 +627,8 @@ export async function deactivateStaffAction(
 
         await createAuditLog(tx, {
           userId: admin.id,
-          action: "DEACTIVATE_STAFF",
-          entityType: "Profile",
+          action: AUDIT_ACTIONS.DEACTIVATE_STAFF,
+          entityType: AUDIT_ENTITY_TYPES.Profile,
           entityId: userId,
           context: `Deactivated ${target.email} (was ${target.role})`,
           metadata: { email: target.email, previousRole: target.role },

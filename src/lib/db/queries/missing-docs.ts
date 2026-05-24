@@ -13,6 +13,8 @@
 import { withAdminContext } from "@/lib/db/prisma";
 import { ALL_DOCUMENT_SLOTS } from "@/lib/documents/slots";
 
+import { AUDIT_ACTIONS, AUDIT_ENTITY_TYPES } from "@/lib/audit/actions";
+
 export interface MissingDocsRequest {
   /** Document slot identifiers the assessor asked the applicant to provide. */
   requestedSlots: string[];
@@ -46,9 +48,9 @@ export async function getLatestMissingDocsRequest(
   const row = await withAdminContext((tx) =>
     tx.auditLog.findFirst({
       where: {
-        entityType: "Application",
+        entityType: AUDIT_ENTITY_TYPES.Application,
         entityId: applicationId,
-        action: "APPLICATION_PAUSED",
+        action: AUDIT_ACTIONS.APPLICATION_PAUSED,
       },
       orderBy: { createdAt: "desc" },
       select: { metadata: true, createdAt: true },

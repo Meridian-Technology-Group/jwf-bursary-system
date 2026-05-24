@@ -11,6 +11,7 @@
 import { revalidatePath } from "next/cache";
 import { requireRole, Role } from "@/lib/auth/roles";
 import { createAuditLog } from "@/lib/audit/log";
+import { AUDIT_ACTIONS, AUDIT_ENTITY_TYPES } from "@/lib/audit/actions";
 import { withUserContext, type RlsRole } from "@/lib/db/prisma";
 import type { ChecklistTab } from "@prisma/client";
 
@@ -45,8 +46,8 @@ export async function saveChecklistNotes(
 
       await createAuditLog(tx, {
         userId: user.id,
-        action: "assessment.checklist.save",
-        entityType: "AssessmentChecklist",
+        action: AUDIT_ACTIONS.ASSESSMENT_CHECKLIST_SAVE,
+        entityType: AUDIT_ENTITY_TYPES.AssessmentChecklist,
         entityId: assessmentId,
         context: `Checklist notes saved for tab ${tab}`,
         metadata: { assessmentId, applicationId, tab, notesLength: notes.length },
