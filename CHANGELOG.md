@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.2.0](https://github.com/Meridian-Technology-Group/jwf-bursary-system/compare/v1.1.1...v1.2.0) (2026-05-24)
+
+
+### Features
+
+* **email:** admin per-event email enable/disable toggles ([#94](https://github.com/Meridian-Technology-Group/jwf-bursary-system/issues/94)) ([3543df8](https://github.com/Meridian-Technology-Group/jwf-bursary-system/commit/3543df852d8752fa2aabac8b50ccc3aee542adf8))
+* **email:** notify assessor when applicant responds to missing-docs request ([#13](https://github.com/Meridian-Technology-Group/jwf-bursary-system/issues/13)) ([#95](https://github.com/Meridian-Technology-Group/jwf-bursary-system/issues/95)) ([c68420f](https://github.com/Meridian-Technology-Group/jwf-bursary-system/commit/c68420fbe16f6420921f265b9218db90e7bc4d89))
+
+
+### Refactors
+
+* **audit:** standardise AuditLog action/entityType naming (backlog [#10](https://github.com/Meridian-Technology-Group/jwf-bursary-system/issues/10)) ([#96](https://github.com/Meridian-Technology-Group/jwf-bursary-system/issues/96)) ([e5f5b73](https://github.com/Meridian-Technology-Group/jwf-bursary-system/commit/e5f5b73fce4d187518be6238ecb9e74cd92b0594))
+
 ## [1.1.1](https://github.com/Meridian-Technology-Group/jwf-bursary-system/compare/v1.1.0...v1.1.1) (2026-05-24)
 
 
