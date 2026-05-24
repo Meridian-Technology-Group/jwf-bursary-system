@@ -11,23 +11,25 @@ datasource db {
 /// Extends Supabase Auth user with application-specific profile data.
 /// id matches auth.users.id.
 model Profile {
-  id                      String            @id @default(uuid()) @db.Uuid
-  role                    Role              @default(APPLICANT)
-  firstName               String?           @map("first_name")
-  lastName                String?           @map("last_name")
-  email                   String            @unique
+  id                      String                   @id @default(uuid()) @db.Uuid
+  role                    Role                     @default(APPLICANT)
+  firstName               String?                  @map("first_name")
+  lastName                String?                  @map("last_name")
+  email                   String                   @unique
   phone                   String?
-  createdAt               DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt               DateTime          @updatedAt @map("updated_at") @db.Timestamptz(6)
-  assignedApplications    Application[]     @relation("ApplicationAssignee")
-  applicationsAsLead      Application[]     @relation("ApplicationLeadApplicant")
-  assessmentsAsOwner      Assessment[]      @relation("AssessmentAssessor")
+  createdAt               DateTime                 @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt               DateTime                 @updatedAt @map("updated_at") @db.Timestamptz(6)
+  assignedApplications    Application[]            @relation("ApplicationAssignee")
+  applicationsAsLead      Application[]            @relation("ApplicationLeadApplicant")
+  assessmentsAsOwner      Assessment[]             @relation("AssessmentAssessor")
   auditLogs               AuditLog[]
   bursaryAccounts         BursaryAccount[]
   documentsUploaded       Document[]
   emailTemplateUpdates    EmailTemplate[]
-  invitationsCreated      Invitation[]      @relation("InvitationCreator")
-  staffInvitationsCreated StaffInvitation[] @relation("StaffInvitationCreator")
+  invitationsCreated      Invitation[]             @relation("InvitationCreator")
+  staffInvitationsCreated StaffInvitation[]        @relation("StaffInvitationCreator")
+  contributorLinks        ApplicationContributor[] @relation("ContributorProfile")
+  contributorsInvited     ApplicationContributor[] @relation("ContributorInvitedBy")
 
   @@map("profiles")
 }
@@ -76,30 +78,31 @@ model BursaryAccount {
 
 /// One application per child per round.
 model Application {
-  id               String               @id @default(uuid()) @db.Uuid
-  reference        String               @unique
-  roundId          String               @map("round_id") @db.Uuid
-  bursaryAccountId String?              @map("bursary_account_id") @db.Uuid
-  leadApplicantId  String               @map("lead_applicant_id") @db.Uuid
+  id               String                   @id @default(uuid()) @db.Uuid
+  reference        String                   @unique
+  roundId          String                   @map("round_id") @db.Uuid
+  bursaryAccountId String?                  @map("bursary_account_id") @db.Uuid
+  leadApplicantId  String                   @map("lead_applicant_id") @db.Uuid
   school           School
-  childName        String               @map("child_name")
-  childDob         DateTime?            @map("child_dob") @db.Date
-  entryYear        Int?                 @map("entry_year")
-  entryYearGroup   EntryYearGroup?      @map("entry_year_group")
-  isReassessment   Boolean              @default(false) @map("is_reassessment")
-  isInternal       Boolean              @default(false) @map("is_internal")
-  status           ApplicationStatus    @default(PRE_SUBMISSION)
-  submittedAt      DateTime?            @map("submitted_at") @db.Timestamptz(6)
-  createdAt        DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt        DateTime             @updatedAt @map("updated_at") @db.Timestamptz(6)
-  assignedToId     String?              @map("assigned_to_id") @db.Uuid
+  childName        String                   @map("child_name")
+  childDob         DateTime?                @map("child_dob") @db.Date
+  entryYear        Int?                     @map("entry_year")
+  entryYearGroup   EntryYearGroup?          @map("entry_year_group")
+  isReassessment   Boolean                  @default(false) @map("is_reassessment")
+  isInternal       Boolean                  @default(false) @map("is_internal")
+  status           ApplicationStatus        @default(PRE_SUBMISSION)
+  submittedAt      DateTime?                @map("submitted_at") @db.Timestamptz(6)
+  createdAt        DateTime                 @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime                 @updatedAt @map("updated_at") @db.Timestamptz(6)
+  assignedToId     String?                  @map("assigned_to_id") @db.Uuid
   sections         ApplicationSection[]
-  assignedTo       Profile?             @relation("ApplicationAssignee", fields: [assignedToId], references: [id])
-  bursaryAccount   BursaryAccount?      @relation(fields: [bursaryAccountId], references: [id])
-  leadApplicant    Profile              @relation("ApplicationLeadApplicant", fields: [leadApplicantId], references: [id])
-  round            Round                @relation(fields: [roundId], references: [id])
+  assignedTo       Profile?                 @relation("ApplicationAssignee", fields: [assignedToId], references: [id])
+  bursaryAccount   BursaryAccount?          @relation(fields: [bursaryAccountId], references: [id])
+  leadApplicant    Profile                  @relation("ApplicationLeadApplicant", fields: [leadApplicantId], references: [id])
+  round            Round                    @relation(fields: [roundId], references: [id])
   assessment       Assessment?
   documents        Document[]
+  contributors     ApplicationContributor[]
 
   @@unique([roundId, leadApplicantId, childName])
   @@index([roundId, status])
@@ -110,17 +113,66 @@ model Application {
 }
 
 /// Stores applicant-entered form data per section as JSONB.
+///
+/// `ownerContributorId` identifies which contributor (parent) owns this
+/// section's data. It is backfilled to the PRIMARY contributor for all
+/// existing rows (see migration). The column is nullable and the
+/// `@@unique([applicationId, section])` constraint is unchanged for now:
+/// the dual-parent feature relaxes the constraint and wires the write path
+/// to populate this column in a later PR (PR 4 — restricted secondary
+/// portal), where multiple contributors can own distinct copies of the
+/// parent-financial sections. Nothing reads this column until then.
 model ApplicationSection {
-  id            String                 @id @default(uuid()) @db.Uuid
-  applicationId String                 @map("application_id") @db.Uuid
-  section       ApplicationSectionType
-  data          Json                   @default("{}")
-  isComplete    Boolean                @default(false) @map("is_complete")
-  updatedAt     DateTime               @updatedAt @map("updated_at") @db.Timestamptz(6)
-  application   Application            @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  id                 String                  @id @default(uuid()) @db.Uuid
+  applicationId      String                  @map("application_id") @db.Uuid
+  ownerContributorId String?                 @map("owner_contributor_id") @db.Uuid
+  section            ApplicationSectionType
+  data               Json                    @default("{}")
+  isComplete         Boolean                 @default(false) @map("is_complete")
+  updatedAt          DateTime                @updatedAt @map("updated_at") @db.Timestamptz(6)
+  application        Application             @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  ownerContributor   ApplicationContributor? @relation(fields: [ownerContributorId], references: [id], onDelete: SetNull)
 
   @@unique([applicationId, section])
+  @@index([ownerContributorId])
   @@map("application_sections")
+}
+
+/// Links a parent/guardian Profile to an Application as a contributor.
+///
+/// Supports the dual-parent (separated/divorced) case: each application has
+/// exactly one PRIMARY contributor (the lead applicant, who owns the child's
+/// data and receives all communications) and AT MOST one SECONDARY contributor
+/// (a second parent who supplies only their own financials and documents).
+///
+/// The "at most one of each role per application" rule is enforced by
+/// `@@unique([applicationId, role])`. A given profile can only be linked once
+/// per application (`@@unique([applicationId, profileId])`).
+///
+/// Introduced additively: the PRIMARY row is backfilled for every existing
+/// application. The SECONDARY role and its associated portal/RLS/assessment
+/// behaviour are wired up in subsequent PRs.
+model ApplicationContributor {
+  id            String                       @id @default(uuid()) @db.Uuid
+  applicationId String                       @map("application_id") @db.Uuid
+  profileId     String                       @map("profile_id") @db.Uuid
+  role          ApplicationContributorRole
+  status        ApplicationContributorStatus @default(INVITED)
+  invitedById   String?                      @map("invited_by_id") @db.Uuid
+  invitedAt     DateTime?                    @map("invited_at") @db.Timestamptz(6)
+  submittedAt   DateTime?                    @map("submitted_at") @db.Timestamptz(6)
+  createdAt     DateTime                     @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime                     @updatedAt @map("updated_at") @db.Timestamptz(6)
+  application   Application                  @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  profile       Profile                      @relation("ContributorProfile", fields: [profileId], references: [id])
+  invitedBy     Profile?                     @relation("ContributorInvitedBy", fields: [invitedById], references: [id])
+  sections      ApplicationSection[]
+
+  @@unique([applicationId, role])
+  @@unique([applicationId, profileId])
+  @@index([applicationId])
+  @@index([profileId])
+  @@map("application_contributors")
 }
 
 /// Metadata for uploaded files. Files stored in Supabase Storage.
@@ -478,6 +530,17 @@ enum AssessmentOutcome {
 enum EarnerLabel {
   PARENT_1
   PARENT_2
+}
+
+enum ApplicationContributorRole {
+  PRIMARY
+  SECONDARY
+}
+
+enum ApplicationContributorStatus {
+  INVITED
+  IN_PROGRESS
+  SUBMITTED
 }
 
 enum EmploymentStatus {
