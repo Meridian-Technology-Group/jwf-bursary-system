@@ -6,7 +6,7 @@ area: security, auth, infra
 opened: 2026-05-24
 opened_by: brian
 related:
-  - vercel.json (the WAF rule to add)
+  - docs/operations/waf-auth-rate-limiting.md (runbook — CLI procedure)
   - src/lib/rate-limit.ts (legacy app-level limiter — to be removed)
   - src/app/(auth)/login/actions.ts, src/app/(auth)/reset-password/actions.ts (call sites to clean up)
   - docs/operations/environment-variables.md, docs/operations/incident-response.md, docs/operations/deployment.md
@@ -27,8 +27,12 @@ Two facts changed the fix (2026-05-24):
    KV" store to provision anymore (existing stores were migrated to Upstash
    Redis; new ones come from the Marketplace).
 2. **Vercel WAF rate limiting is GA on the Pro plan** (fixed-window algorithm —
-   exactly what this app uses). It's edge-enforced, costs ~$0.50 per 1M allowed
-   requests, and is configured declaratively in `vercel.json`.
+   exactly what this app uses). It's edge-enforced and costs ~$0.50 per 1M
+   allowed requests. **Correction (2026-05-24):** it is *not* configurable in
+   `vercel.json` — that surface only supports binary `deny`/`challenge`, no
+   `rateLimit` window/limit/keys. Rate-limit rules are project-level firewall
+   state created via the `vercel firewall` CLI (or dashboard/SDK) and published
+   explicitly. See `docs/operations/waf-auth-rate-limiting.md`.
 
 **Decision: move auth rate limiting to Vercel WAF and delete the app-level
 limiter.** This removes the KV/Upstash store, the `@upstash/ratelimit` +
@@ -48,14 +52,13 @@ need throttling. The earlier "register" framing was loose.)
 
 ## Proposed approach
 
-1. **Add the WAF rule(s)** in `vercel.json` — fixed-window, 5 requests /
-   15 minutes, keyed by IP, on the `/login` and `/reset-password` paths.
-   Recommended: a single rule keyed on **IP + path** covering both paths
-   (independent per-path buckets, one rule to maintain); two single-path rules
-   are equally fine. Action: `deny` (429) or `challenge`. Well within Pro's
-   40-rule allowance (this is 1–2 rules).
-   *(Rules can also be managed via `vercel firewall rules add` or the dashboard,
-   but `vercel.json` keeps them in-repo, reviewable, and promoted with code.)*
+1. **Add the WAF rule(s)** via `vercel firewall rules add` — fixed-window,
+   5 requests / 900 s (15 min), keyed by IP, action `deny` (429) or
+   `challenge`. Use **two single-path rules** (`/login`, `/reset-password`)
+   so the buckets stay independent — mirroring the deleted limiter's separate
+   `login:` / `reset-password:` buckets. Stage, `vercel firewall diff`, then
+   `vercel firewall publish`. Well within Pro's 40-rule allowance.
+   See `docs/operations/waf-auth-rate-limiting.md` for the exact commands.
 2. **Verify on a preview deploy:** >5 attempts in 15 min from one IP returns an
    edge 429/challenge before the sign-in action runs; a normal user is
    unaffected.
