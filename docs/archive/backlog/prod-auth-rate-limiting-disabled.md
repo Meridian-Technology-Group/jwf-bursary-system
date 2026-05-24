@@ -1,6 +1,6 @@
 ---
 title: Enable auth rate limiting in production via Vercel WAF
-status: open
+status: done
 severity: high
 area: security, auth, infra
 opened: 2026-05-24

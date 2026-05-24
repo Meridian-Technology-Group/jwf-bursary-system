@@ -1,6 +1,6 @@
 ---
 title: Automate version bumping (decide major vs minor before deploy)
-status: open
+status: done
 severity: low
 area: release, ci, build
 opened: 2026-05-24

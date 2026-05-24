@@ -35,7 +35,19 @@ import { CurrencyInput } from "@/components/portal/form-fields/currency-input";
 import { DateInput } from "@/components/portal/form-fields/date-input";
 import { ConditionalField } from "@/components/portal/form-fields/conditional-field";
 import { CountryCombobox } from "@/components/portal/form-fields/country-combobox";
+import { FileUpload, type UploadedDocument } from "@/components/portal/file-upload";
 import type { ParentDetailsFormValues } from "@/lib/schemas/parent-details";
+import type { DocumentMeta } from "@/lib/db/queries/applications";
+
+/** Resolve a stored document id to the FileUpload `existingDocument` shape. */
+function resolveDoc(
+  docId: string | undefined,
+  documentMap: Record<string, DocumentMeta> | undefined
+): { id: string; filename: string; fileSize: number; uploadedAt: string } | undefined {
+  if (!docId || !documentMap?.[docId]) return undefined;
+  const doc = documentMap[docId];
+  return { id: doc.id, filename: doc.filename, fileSize: doc.fileSize, uploadedAt: doc.uploadedAt };
+}
 
 const TITLES = [
   { value: "MR", label: "Mr" },
@@ -300,13 +312,44 @@ function ParentContactFields({
 interface ParentEmploymentFieldsProps {
   prefix: "parent1Employment" | "parent2Employment";
   parentLabel: string;
+  /** Slot suffix: "_PARENT_1" or "_PARENT_2" */
+  slotSuffix: "_PARENT_1" | "_PARENT_2";
+  applicationId: string;
+  documentMap?: Record<string, DocumentMeta>;
 }
 
 function ParentEmploymentFields({
   prefix,
   parentLabel,
+  slotSuffix,
+  applicationId,
+  documentMap,
 }: ParentEmploymentFieldsProps) {
-  const { control } = useFormContext<ParentDetailsFormValues>();
+  const { control, setValue, getValues } = useFormContext<ParentDetailsFormValues>();
+
+  // Capture initial doc IDs once (stable refs so existingDocument doesn't
+  // change on every render and reset the FileUpload state).
+  const initialCertifiedAccountsDocId = React.useRef(getValues(`${prefix}.certifiedAccountsDocumentId`));
+  const initialBalanceSheetDocId = React.useRef(getValues(`${prefix}.balanceSheetDocumentId`));
+  const initialLeftSelfEmploymentDocId = React.useRef(getValues(`${prefix}.leftSelfEmploymentDocumentId`));
+  const initialScholarshipDocId = React.useRef(getValues(`${prefix}.scholarshipDocumentId`));
+
+  const existingCertifiedAccounts = React.useMemo(
+    () => resolveDoc(initialCertifiedAccountsDocId.current, documentMap),
+    [documentMap]
+  );
+  const existingBalanceSheet = React.useMemo(
+    () => resolveDoc(initialBalanceSheetDocId.current, documentMap),
+    [documentMap]
+  );
+  const existingLeftSelfEmployment = React.useMemo(
+    () => resolveDoc(initialLeftSelfEmploymentDocId.current, documentMap),
+    [documentMap]
+  );
+  const existingScholarship = React.useMemo(
+    () => resolveDoc(initialScholarshipDocId.current, documentMap),
+    [documentMap]
+  );
 
   const status = useWatch({
     control,
@@ -443,23 +486,63 @@ function ParentEmploymentFields({
             )}
           />
 
-          <div className="rounded-md border border-dashed border-slate-300 bg-slate-50 p-4">
-            <p className="text-sm font-medium text-slate-700">
-              Upload: Copy of latest certified/audited accounts
-            </p>
-            <p className="mt-1 text-xs text-slate-500">
-              Document upload available once application is created.
-            </p>
-          </div>
+          <FileUpload
+            slot={`CERTIFIED_ACCOUNTS${slotSuffix}`}
+            label="Copy of latest certified/audited accounts"
+            applicationId={applicationId}
+            existingDocument={existingCertifiedAccounts}
+            onUploadComplete={(doc: UploadedDocument) => {
+              setValue(`${prefix}.certifiedAccountsDocumentId`, doc.id, {
+                shouldValidate: true,
+                shouldDirty: true,
+              });
+            }}
+            onRemove={() => {
+              setValue(`${prefix}.certifiedAccountsDocumentId`, undefined, {
+                shouldValidate: true,
+                shouldDirty: true,
+              });
+            }}
+          />
+          <FormField
+            control={control}
+            name={`${prefix}.certifiedAccountsDocumentId` as "parent1Employment.certifiedAccountsDocumentId"}
+            render={() => (
+              <FormItem className="hidden" aria-hidden="true">
+                <FormControl><input type="hidden" /></FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
 
-          <div className="rounded-md border border-dashed border-slate-300 bg-slate-50 p-4">
-            <p className="text-sm font-medium text-slate-700">
-              Upload: Copy of latest balance sheet
-            </p>
-            <p className="mt-1 text-xs text-slate-500">
-              Document upload available once application is created.
-            </p>
-          </div>
+          <FileUpload
+            slot={`BALANCE_SHEET${slotSuffix}`}
+            label="Copy of latest balance sheet"
+            applicationId={applicationId}
+            existingDocument={existingBalanceSheet}
+            onUploadComplete={(doc: UploadedDocument) => {
+              setValue(`${prefix}.balanceSheetDocumentId`, doc.id, {
+                shouldValidate: true,
+                shouldDirty: true,
+              });
+            }}
+            onRemove={() => {
+              setValue(`${prefix}.balanceSheetDocumentId`, undefined, {
+                shouldValidate: true,
+                shouldDirty: true,
+              });
+            }}
+          />
+          <FormField
+            control={control}
+            name={`${prefix}.balanceSheetDocumentId` as "parent1Employment.balanceSheetDocumentId"}
+            render={() => (
+              <FormItem className="hidden" aria-hidden="true">
+                <FormControl><input type="hidden" /></FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
         </ConditionalField>
 
         <YesNoToggle
@@ -469,14 +552,35 @@ function ParentEmploymentFields({
         />
 
         <ConditionalField show={leftSelfEmployment === true}>
-          <div className="rounded-md border border-dashed border-slate-300 bg-slate-50 p-4">
-            <p className="text-sm font-medium text-slate-700">
-              Upload: Evidence of previous self-employment
-            </p>
-            <p className="mt-1 text-xs text-slate-500">
-              Document upload available once application is created.
-            </p>
-          </div>
+          <FileUpload
+            slot={`LEFT_SELF_EMPLOYMENT${slotSuffix}`}
+            label="Evidence of previous self-employment"
+            hint="You can upload this now, or any time before you submit the application."
+            applicationId={applicationId}
+            existingDocument={existingLeftSelfEmployment}
+            onUploadComplete={(doc: UploadedDocument) => {
+              setValue(`${prefix}.leftSelfEmploymentDocumentId`, doc.id, {
+                shouldValidate: true,
+                shouldDirty: true,
+              });
+            }}
+            onRemove={() => {
+              setValue(`${prefix}.leftSelfEmploymentDocumentId`, undefined, {
+                shouldValidate: true,
+                shouldDirty: true,
+              });
+            }}
+          />
+          <FormField
+            control={control}
+            name={`${prefix}.leftSelfEmploymentDocumentId` as "parent1Employment.leftSelfEmploymentDocumentId"}
+            render={() => (
+              <FormItem className="hidden" aria-hidden="true">
+                <FormControl><input type="hidden" /></FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
         </ConditionalField>
 
         <CurrencyInput
@@ -493,14 +597,35 @@ function ParentEmploymentFields({
         />
 
         <ConditionalField show={receivesScholarship === true}>
-          <div className="rounded-md border border-dashed border-slate-300 bg-slate-50 p-4">
-            <p className="text-sm font-medium text-slate-700">
-              Upload: Evidence of scholarship / maintenance
-            </p>
-            <p className="mt-1 text-xs text-slate-500">
-              Document upload available once application is created.
-            </p>
-          </div>
+          <FileUpload
+            slot={`SCHOLARSHIP${slotSuffix}`}
+            label="Evidence of scholarship / maintenance"
+            hint="You can upload this now, or any time before you submit the application."
+            applicationId={applicationId}
+            existingDocument={existingScholarship}
+            onUploadComplete={(doc: UploadedDocument) => {
+              setValue(`${prefix}.scholarshipDocumentId`, doc.id, {
+                shouldValidate: true,
+                shouldDirty: true,
+              });
+            }}
+            onRemove={() => {
+              setValue(`${prefix}.scholarshipDocumentId`, undefined, {
+                shouldValidate: true,
+                shouldDirty: true,
+              });
+            }}
+          />
+          <FormField
+            control={control}
+            name={`${prefix}.scholarshipDocumentId` as "parent1Employment.scholarshipDocumentId"}
+            render={() => (
+              <FormItem className="hidden" aria-hidden="true">
+                <FormControl><input type="hidden" /></FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
         </ConditionalField>
       </ConditionalField>
 
@@ -569,7 +694,15 @@ function ParentEmploymentFields({
 
 // ─── Main component ───────────────────────────────────────────────────────────
 
-export function ParentDetailsForm() {
+interface ParentDetailsFormProps {
+  applicationId: string;
+  documentMap?: Record<string, DocumentMeta>;
+}
+
+export function ParentDetailsForm({
+  applicationId,
+  documentMap,
+}: ParentDetailsFormProps) {
   const { control } = useFormContext<ParentDetailsFormValues>();
 
   const isSoleParent = useWatch({ control, name: "isSoleParent" });
@@ -631,13 +764,25 @@ export function ParentDetailsForm() {
 
       {/* Parent 1 */}
       <ParentContactFields prefix="parent1Contact" parentLabel="Parent / Guardian 1" />
-      <ParentEmploymentFields prefix="parent1Employment" parentLabel="Parent / Guardian 1" />
+      <ParentEmploymentFields
+        prefix="parent1Employment"
+        parentLabel="Parent / Guardian 1"
+        slotSuffix="_PARENT_1"
+        applicationId={applicationId}
+        documentMap={documentMap}
+      />
 
       {/* Parent 2 — conditional on not sole parent */}
       <ConditionalField show={isSoleParent === false}>
         <hr className="border-slate-200" />
         <ParentContactFields prefix="parent2Contact" parentLabel="Parent / Guardian 2" />
-        <ParentEmploymentFields prefix="parent2Employment" parentLabel="Parent / Guardian 2" />
+        <ParentEmploymentFields
+          prefix="parent2Employment"
+          parentLabel="Parent / Guardian 2"
+          slotSuffix="_PARENT_2"
+          applicationId={applicationId}
+          documentMap={documentMap}
+        />
       </ConditionalField>
     </div>
   );

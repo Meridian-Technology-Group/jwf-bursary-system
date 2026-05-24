@@ -1,6 +1,6 @@
 ---
 title: Invitation email-send failure leaves an orphan auth user + invitation row
-status: open
+status: done
 severity: medium
 area: invitations, auth
 opened: 2026-05-13
