@@ -6,21 +6,9 @@
  * the RLS context (typically `withAdminContext` for staff invite work).
  */
 
-import { randomBytes } from "node:crypto";
 import { InvitationStatus, type Role, type StaffInvitation } from "@prisma/client";
 import type { Tx } from "@/lib/db/prisma";
-
-// ---------------------------------------------------------------------------
-// Token helper
-// ---------------------------------------------------------------------------
-
-/**
- * Generates a URL-safe single-use invitation token.
- * 32 random bytes encoded as base64url = ~43 chars of entropy.
- */
-export function generateInvitationToken(): string {
-  return randomBytes(32).toString("base64url");
-}
+import { generateInvitationToken } from "@/lib/db/queries/invitation-token";
 
 // ---------------------------------------------------------------------------
 // createStaffInvitation

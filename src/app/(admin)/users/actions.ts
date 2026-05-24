@@ -99,6 +99,7 @@ export async function inviteStaffAction(
   //    Any failure here triggers an auth-user rollback below (so we never
   //    leave an orphan auth.users row).
   let token: string;
+  let staffInvitationId: string;
   try {
     const result = await withAdminContext(async (tx) => {
       const profile = await createProfile(tx, {
@@ -130,7 +131,7 @@ export async function inviteStaffAction(
         metadata: { email, role },
       });
 
-      return { success: true as const, token: inv.token };
+      return { success: true as const, token: inv.token, invitationId: inv.id };
     });
 
     if (!result.success) {
@@ -144,6 +145,7 @@ export async function inviteStaffAction(
       };
     }
     token = result.token;
+    staffInvitationId = result.invitationId;
   } catch (err) {
     // DB work threw — roll back the auth user.
     await supabase.auth.admin.deleteUser(authUserId).catch((rollbackErr) => {
@@ -155,8 +157,12 @@ export async function inviteStaffAction(
     return { success: false, error: message };
   }
 
-  // 3. Send the branded Resend email. If this fails, we keep the StaffInvitation
-  //    row so the admin can re-send later — but surface the error to the caller.
+  // 3. Send the branded Resend email. The send is inside the rollback
+  //    boundary (#5, mirroring the applicant path): a failure would otherwise
+  //    leave an orphan StaffInvitation + profile + auth user that surfaces as
+  //    a phantom staff user who never got a link. On failure we hard-roll-back
+  //    — delete the invitation row + profile, delete the auth user, and write
+  //    a failure audit entry — then surface a clear error.
   const emailResult = await sendEmail(email, "INVITE_STAFF", {
     first_name: firstName ?? email.split("@")[0],
     role,
@@ -165,9 +171,38 @@ export async function inviteStaffAction(
 
   if (!emailResult.success) {
     console.error("[users] inviteStaffAction email error:", emailResult.error);
+
+    // Roll back the just-created invitation row + profile and record it.
+    await withAdminContext(async (tx) => {
+      await tx.staffInvitation
+        .delete({ where: { id: staffInvitationId } })
+        .catch((err) => {
+          console.error("[users] staff invitation rollback failed:", err);
+        });
+      await tx.profile.delete({ where: { id: authUserId } }).catch((err) => {
+        console.error("[users] profile rollback failed:", err);
+      });
+      await createAuditLog(tx, {
+        userId: admin.id,
+        action: "INVITE_STAFF_FAILED",
+        entityType: "StaffInvitation",
+        entityId: staffInvitationId,
+        context: `Staff invitation to ${email} rolled back — email failed to send`,
+        metadata: { email, role, authUserId, emailError: emailResult.error ?? null },
+      });
+    }).catch((err) => {
+      console.error("[users] inviteStaffAction rollback tx failed:", err);
+    });
+
+    // Roll back the auth user so we never leave an orphan account behind.
+    await supabase.auth.admin.deleteUser(authUserId).catch((err) => {
+      console.error("[users] auth user rollback failed:", err);
+    });
+
+    revalidatePath("/users");
     return {
       success: false,
-      error: `Invitation created but email failed to send: ${emailResult.error}`,
+      error: `Email failed to send. The invitation was rolled back — please try again. (${emailResult.error})`,
     };
   }
 
@@ -254,6 +289,14 @@ export async function resendStaffInvitationAction(
 
 /**
  * Marks a PENDING staff invitation EXPIRED so the link can no longer be used.
+ *
+ * Mirrors the applicant `revokeInvitationAction` cleanup (#6): when the
+ * invitee never accepted, the stub profile + Supabase auth user we
+ * provisioned up front are removed so they don't linger as a phantom
+ * ASSESSOR/VIEWER in the Staff Users table. Profiles are NOT FK-cascaded
+ * from auth.users, so both must be deleted explicitly. Each cleanup is
+ * wrapped in `.catch()` — the row is already EXPIRED (no link can be used),
+ * so a partial cleanup must not fail the revoke itself.
  */
 export async function revokeStaffInvitationAction(
   invitationIdRaw: string
@@ -273,18 +316,55 @@ export async function revokeStaffInvitationAction(
       if (!updated) {
         return { ok: false as const, error: "Invitation is not pending." };
       }
+
+      // Only clean up the stub account if the invitee never accepted.
+      const cleanupAccount = updated.acceptedAt === null;
+      if (cleanupAccount) {
+        await tx.profile
+          .delete({ where: { id: updated.authUserId } })
+          .catch((err) => {
+            console.error(
+              "[users] revokeStaffInvitationAction profile cleanup failed:",
+              err
+            );
+          });
+      }
+
       await createAuditLog(tx, {
         userId: admin.id,
         action: "REVOKE_STAFF_INVITATION",
         entityType: "StaffInvitation",
         entityId: invitationId,
         context: `Revoked invitation to ${updated.email}`,
-        metadata: { email: updated.email, role: updated.role },
+        metadata: {
+          email: updated.email,
+          role: updated.role,
+          authUserId: updated.authUserId,
+          authUserDeleted: cleanupAccount,
+        },
       });
-      return { ok: true as const };
+      return {
+        ok: true as const,
+        cleanupAuthUserId: cleanupAccount ? updated.authUserId : null,
+      };
     });
 
     if (!revoked.ok) return { success: false, error: revoked.error };
+
+    // Delete the Supabase auth user outside the DB tx (it's an external call).
+    if (revoked.cleanupAuthUserId) {
+      const supabase = createSupabaseAdminClient();
+      const { error: deleteError } = await supabase.auth.admin.deleteUser(
+        revoked.cleanupAuthUserId
+      );
+      if (deleteError) {
+        console.error(
+          "[users] revokeStaffInvitationAction auth deletion warning:",
+          deleteError
+        );
+      }
+    }
+
     revalidatePath("/users");
     return { success: true };
   } catch (err) {
