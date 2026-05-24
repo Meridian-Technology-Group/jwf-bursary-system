@@ -16,13 +16,16 @@
 import { notFound, redirect } from "next/navigation";
 import { ApplicationSectionType } from "@prisma/client";
 import { getCurrentUser } from "@/lib/auth/roles";
-import { withUserContext, type RlsRole } from "@/lib/db/prisma";
+import { withUserContext, withAdminContext, type RlsRole } from "@/lib/db/prisma";
 import {
   getApplicationForUser,
   getSectionData,
   getDocumentsForApplication,
 } from "@/lib/db/queries/applications";
-import { ensurePrimaryContributor } from "@/lib/db/queries/contributors";
+import {
+  ensurePrimaryContributor,
+  resolveOwningContributorId,
+} from "@/lib/db/queries/contributors";
 import { SectionPageClient } from "./section-page-client";
 import { HIDDEN_REASSESSMENT_SECTIONS, PREPOPULATED_SECTIONS } from "@/lib/db/queries/reassessment";
 
@@ -141,17 +144,26 @@ export default async function SectionPage({ params }: PageProps) {
     ? REASSESSMENT_SECTION_ORDER
     : SECTION_ORDER;
 
+  // Resolve the lead applicant's PRIMARY contributor with a SELECT (created at
+  // application creation). Never upsert under the applicant's RLS context — the
+  // contributor write policy is admin-only (would throw P2025). Self-heal under
+  // admin context only for the should-be-impossible missing case.
+  let ownerContributorId = await withUserContext(
+    user.id,
+    user.role as RlsRole,
+    (tx) => resolveOwningContributorId(tx, application.id, user.id)
+  );
+  if (!ownerContributorId) {
+    ownerContributorId = await withAdminContext((tx) =>
+      ensurePrimaryContributor(tx, application.id, user.id)
+    );
+  }
+
   // Load existing section data, documents, and any cross-section reads needed.
   // All section reads are scoped to the lead applicant's PRIMARY contributor
   // (dual-parent foundation, PR 4a) — identical to before for a single parent.
   const { existingSection, documentMap, childFullName, isSoleParent } =
     await withUserContext(user.id, user.role as RlsRole, async (tx) => {
-      const ownerContributorId = await ensurePrimaryContributor(
-        tx,
-        application.id,
-        user.id
-      );
-
       const [section, docs] = await Promise.all([
         getSectionData(tx, application.id, sectionType, ownerContributorId),
         getDocumentsForApplication(tx, application.id),

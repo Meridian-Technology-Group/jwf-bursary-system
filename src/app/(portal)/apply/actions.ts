@@ -20,7 +20,10 @@ import {
   getSectionData,
   upsertSection,
 } from "@/lib/db/queries/applications";
-import { ensurePrimaryContributor } from "@/lib/db/queries/contributors";
+import {
+  ensurePrimaryContributor,
+  resolveOwningContributorId,
+} from "@/lib/db/queries/contributors";
 import { withUserContext, withAdminContext, type RlsRole } from "@/lib/db/prisma";
 import { sendEmail } from "@/lib/email/send";
 import { createAuditLog } from "@/lib/audit/log";
@@ -107,10 +110,18 @@ async function getOwnedApplicationId(): Promise<string | null> {
  * For the lead applicant the owning contributor is their PRIMARY contributor.
  * Every section save/read for the lead applicant is scoped to this contributor
  * (dual-parent foundation, PR 4a), so their experience is identical to before:
- * they see and write exactly their own sections. `ensurePrimaryContributor` is
- * idempotent and runs inside the same RLS-scoped transaction that resolves the
- * application, so an application that somehow lacks a PRIMARY contributor
- * (created before this code shipped, pre-backfill) self-heals on first use.
+ * they see and write exactly their own sections.
+ *
+ * The PRIMARY contributor is created at application-creation time (all five
+ * create paths call `ensurePrimaryContributor` under admin context, and PR 1's
+ * migration backfilled every pre-existing application), so on this hot path we
+ * only need to RESOLVE it with a SELECT — which the lead applicant is allowed
+ * to do under RLS. We must NOT upsert here: the `application_contributors`
+ * write policy is admin-only, so an applicant-context write (even the no-op
+ * `update: {}`, which `@updatedAt` turns into a real UPDATE) is filtered to
+ * zero rows and Prisma throws P2025 — which would break every section save.
+ * The admin-context self-heal below only runs for the (should-be-impossible)
+ * case of an application with no PRIMARY contributor.
  */
 async function getOwnedApplicationContext(): Promise<{
   user: CurrentUser;
@@ -130,7 +141,7 @@ async function getOwnedApplicationContext(): Promise<{
       });
       if (!application) return null;
 
-      const ownerContributorId = await ensurePrimaryContributor(
+      const ownerContributorId = await resolveOwningContributorId(
         tx,
         application.id,
         user.id
@@ -140,10 +151,21 @@ async function getOwnedApplicationContext(): Promise<{
   );
 
   if (!resolved) return null;
+
+  // Self-heal: an application should always have a PRIMARY contributor (created
+  // at application creation). If one is missing (a legacy row), create it under
+  // admin context — the applicant-scoped transaction above cannot, by policy.
+  let ownerContributorId = resolved.ownerContributorId;
+  if (!ownerContributorId) {
+    ownerContributorId = await withAdminContext((tx) =>
+      ensurePrimaryContributor(tx, resolved.appId, user.id)
+    );
+  }
+
   return {
     user,
     appId: resolved.appId,
-    ownerContributorId: resolved.ownerContributorId,
+    ownerContributorId,
   };
 }
 
@@ -309,15 +331,24 @@ export async function submitApplication(applicationId: string): Promise<never> {
   // For a single-parent application this is every section, so behaviour is
   // unchanged; once a SECONDARY can own its own section copies (PR 4b) the
   // primary's submit gate must not be affected by the secondary's rows.
+  // Resolve the PRIMARY contributor (SELECT) — never upsert on this path; the
+  // contributor write policy is admin-only and an applicant-context write would
+  // be RLS-filtered (P2025). Self-heal under admin context only if missing.
+  let ownerContributorId = await withUserContext(
+    user.id,
+    user.role as RlsRole,
+    (tx) => resolveOwningContributorId(tx, applicationId, user.id)
+  );
+  if (!ownerContributorId) {
+    ownerContributorId = await withAdminContext((tx) =>
+      ensurePrimaryContributor(tx, applicationId, user.id)
+    );
+  }
+
   const application = await withUserContext(
     user.id,
     user.role as RlsRole,
     async (tx) => {
-      const ownerContributorId = await ensurePrimaryContributor(
-        tx,
-        applicationId,
-        user.id
-      );
       return tx.application.findUnique({
         where: { id: applicationId },
         select: {
