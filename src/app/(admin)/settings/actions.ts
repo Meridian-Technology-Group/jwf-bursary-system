@@ -15,6 +15,7 @@ import { revalidatePath } from "next/cache";
 import { requireRole, Role } from "@/lib/auth/roles";
 import { createAuditLog } from "@/lib/audit/log";
 import { withUserContext, type RlsRole } from "@/lib/db/prisma";
+import { isLockedEmailTemplateType } from "@/lib/email/locked-types";
 import type { School, EmailTemplateType } from "@prisma/client";
 
 // ─── Result type ──────────────────────────────────────────────────────────────
@@ -299,5 +300,63 @@ export async function upsertEmailTemplateAction(
   } catch (err) {
     console.error("[upsertEmailTemplateAction]", err);
     return { success: false, error: "Failed to update email template." };
+  }
+}
+
+/**
+ * Enables or disables a single email template type.
+ *
+ * When disabled, the send chokepoint (`src/lib/email/send.ts`) short-circuits
+ * to a success-shaped no-op for that type. Locked types (INVITATION /
+ * INVITE_STAFF) carry functional registration links and may never be
+ * disabled — rejected here (defense-in-depth) using the shared
+ * LOCKED_EMAIL_TEMPLATE_TYPES set, the same source of truth the UI uses to
+ * render their switches as locked.
+ */
+export async function setEmailTemplateEnabledAction(
+  formData: FormData
+): Promise<SettingsActionResult> {
+  try {
+    const user = await requireRole([Role.ADMIN]);
+
+    const type = formData.get("type") as EmailTemplateType;
+    const enabled = formData.get("enabled") === "true";
+
+    if (!type) {
+      return { success: false, error: "Template type is required." };
+    }
+
+    // Defense-in-depth: never persist a disabled state for a locked type.
+    if (!enabled && isLockedEmailTemplateType(type)) {
+      return {
+        success: false,
+        error: `${type} is required and cannot be disabled — it carries the registration link.`,
+      };
+    }
+
+    await withUserContext(user.id, user.role as RlsRole, async (tx) => {
+      const template = await tx.emailTemplate.update({
+        where: { type },
+        data: {
+          enabled,
+          updatedBy: user.id,
+        },
+      });
+
+      await createAuditLog(tx, {
+        userId: user.id,
+        action: "UPDATE_EMAIL_TEMPLATE_ENABLED",
+        entityType: "EmailTemplate",
+        entityId: template.id,
+        context: `${enabled ? "Enabled" : "Disabled"} email template: ${type}`,
+        metadata: { type, enabled },
+      });
+    });
+
+    revalidatePath("/settings");
+    return { success: true };
+  } catch (err) {
+    console.error("[setEmailTemplateEnabledAction]", err);
+    return { success: false, error: "Failed to update email template status." };
   }
 }
