@@ -22,12 +22,13 @@
 
 ## The open items
 
-Numbered 1–20 from the original sweep; #3 and #3b have since been archived
-(superseded by the Vercel WAF decision), leaving 19 active.
+Numbered 1–20 from the original sweep; #2 is done and #3 / #3b have since
+been archived (superseded by the Vercel WAF decision), leaving **18 active**
+(rows 1 and 4–20 below).
 
 | # | Item | Sev | Type | Primary surface |
 |---|------|-----|------|-----------------|
-| 1 | prod-auth-rate-limiting-disabled | **high** | code+ops | Vercel WAF rule in `vercel.json` + delete app limiter |
+| 1 | prod-auth-rate-limiting-disabled | **high** | ops+code | Vercel WAF rules via CLI ([runbook](../operations/waf-auth-rate-limiting.md)) + delete app limiter |
 | ~~2~~ | ~~prod-resend-webhook-secret-unset~~ | — | — | **done (2026-05-24)** — secret set in Vercel Production; item archived |
 | ~~3~~ | ~~rate-limiter-fails-open-when-kv-unset~~ | — | — | **archived** — superseded by #1 (WAF has no KV to fail open) |
 | ~~3b~~ | ~~migrate-rate-limit-off-vercel-kv-sdk~~ | — | — | **archived** — superseded by #1 (limiter deleted, not migrated) |
@@ -51,11 +52,16 @@ Numbered 1–20 from the original sweep; #3 and #3b have since been archived
 
 ## Dependencies & coupling that drive the sequence
 
-- **#1 is now a single self-contained PR** (Vercel WAF). Adding the
-  `vercel.json` WAF rule and deleting the app-level limiter (+ its
-  `@upstash/ratelimit` / `@vercel/kv` deps) is one change with no env-var or
-  store dependency. The old "provision KV → then fail-loud" ordering is gone —
-  #3 and #3b were archived because WAF removes the fail-open failure mode and
+- **#1 is split: an ops action + a code PR.** The WAF rate-limit rules are
+  **not** declarable in `vercel.json` (that surface only does binary
+  `deny`/`challenge`, no `rateLimit` window/limit/keys) — they are
+  project-level firewall state created via the `vercel firewall` CLI (or
+  dashboard/SDK) and **published** explicitly. So 1a (create + publish the
+  rules — Brian-owned, see the [runbook](../operations/waf-auth-rate-limiting.md))
+  is decoupled from 1b (the code PR that deletes the app-level limiter +
+  `@upstash/ratelimit` / `@vercel/kv` deps). No env-var or store dependency
+  either way. The old "provision KV → then fail-loud" ordering is gone — #3
+  and #3b were archived because WAF removes the fail-open failure mode and
   leaves no SDK to migrate.
 - **#4 is foundational for the invitation cluster.** Trivial, low-risk;
   removes the duplicated token helper before #5/#7/#9 touch the same files.
@@ -66,10 +72,13 @@ Numbered 1–20 from the original sweep; #3 and #3b have since been archived
   *before* the column drop — two steps (backfill migration, verify, then
   drop).
 - **#12 should land before #13** so the new `MISSING_DOCS_RESPONDED`
-  template is born under the toggle system. **#13 is independently
-  blocked** by an out-of-folder RLS fix
-  (`walkthrough-applicant-24-respond-page-rls-blocks-request-read`) — that
-  must be fixed first or #13's email path is unreachable.
+  template is born under the toggle system. (The RLS blocker the #13
+  backlog doc cites as "must be fixed first" — the respond page couldn't
+  read the missing-docs request under applicant RLS — **was already fixed
+  in PR #52** via `withAdminContext` after the ownership check. The cited
+  tracking file never existed in-repo. So #13 is **not** blocked; it only
+  waits on #12. The stale "Out of scope" note in
+  `applicant-missing-docs-response-no-assessor-email.md` should be dropped.)
 - **#11 starts with a ~30-min investigation** (is `setOutcome` dead
   code?). It's a correctness risk on the qualifying → `BursaryAccount`
   path, so it ranks above its "medium" peers.
@@ -91,15 +100,22 @@ The system is live with PII and **rate limiting off in prod** — the only
 > Vercel WAF rate limiting is GA on Pro with a fixed-window algorithm matching
 > this app's intent (5 req / 15 min, by IP). Adopt WAF and **delete** the
 > app-level limiter — no KV/Upstash store, no env vars, no SDK, edge-enforced.
-> This collapses the former #3 (fail-open guard) and #3b (SDK migration) into a
-> single PR; both are archived. ~1–2 WAF rules — trivially within Pro's 40-rule
-> allowance.
+> This collapses the former #3 (fail-open guard) and #3b (SDK migration); both
+> are archived. ~1–2 WAF rules — trivially within Pro's 40-rule allowance.
+>
+> **Correction (verified 2026-05-24):** the rule is **not** declarable in
+> `vercel.json`. That surface (`routes[].mitigate`) only supports binary
+> `deny`/`challenge`; there is no `rateLimit` (window/limit/keys) field.
+> Rate-limit rules are **project-level firewall state**, created via the
+> `vercel firewall` CLI and **published** explicitly — they don't live in the
+> repo and don't promote with a git merge. Full procedure, parameters, and
+> verification: **[runbook](../operations/waf-auth-rate-limiting.md)**.
 
 | # | Action | Owner | Gate |
 |---|--------|-------|------|
-| 1a | Add the WAF fixed-window rule(s) to `vercel.json` for `/login` + `/reset-password` (IP-keyed); verify on a preview deploy | Claude | — |
-| 1b | Delete `src/lib/rate-limit.ts` + its call sites; drop `@upstash/ratelimit` + `@vercel/kv` from `package.json`; add the go-live checklist line | Claude | after 1a verified |
-| 1c | Confirm the WAF rule is **active in Production** (Project → Firewall) | **Brian** | after 1a/1b merged & promoted |
+| 1a | Create the two WAF fixed-window rules (5 req / 900 s, IP-keyed) for `/login` + `/reset-password` via `vercel firewall rules add`, then `vercel firewall publish`; verify a 429 on the 6th attempt. Per the [runbook](../operations/waf-auth-rate-limiting.md). | **Brian** (Vercel token + prod access) | — |
+| 1b | Code PR: delete `src/lib/rate-limit.ts`; remove `checkLoginRateLimit` / `checkResetPasswordRateLimit` (+ their result types & imports) from `login/actions.ts` & `reset-password/actions.ts`; drop the calls + inline error rendering from `login/page.tsx` & `reset-password/page.tsx`; drop `@upstash/ratelimit` + `@vercel/kv` from `package.json`; add the go-live checklist line | Claude | after 1a active (so prod is never unprotected between merge and rule going live) |
+| 1c | Confirm both WAF rules are **active in Production** (Project → Firewall) | **Brian** | after 1a published |
 | ~~2~~ | ~~Set `RESEND_WEBHOOK_SECRET` in Production~~ | **Brian** | ✅ done 2026-05-24 |
 
 ## Wave 1 — Parallel cleanup tracks (independent file sets)
@@ -139,8 +155,9 @@ folds in here *if* we decline to build the auto-suggest.
   "locked"* (proposal: lock `INVITE_STAFF` + `INVITATION`).
 - #10 audit naming normalization + centralized vocab module (pairs with
   touching audit code during #12; forward-only).
-- #13 missing-docs-responded email — **only after** its RLS blocker is
-  fixed and #12 has landed.
+- #13 missing-docs-responded email — **after #12 has landed**. (Its
+  previously-cited RLS blocker was already fixed in PR #52; #13 is no longer
+  blocked on it.)
 - #17-option-1 (build the family-synopsis auto-suggest) — if we choose the
   higher-value path over docs-only.
 
