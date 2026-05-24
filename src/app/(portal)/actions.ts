@@ -23,6 +23,8 @@ import { createAuditLog } from "@/lib/audit/log";
 import { sendEmail } from "@/lib/email/send";
 import { getAppUrl } from "@/lib/app-url";
 
+import { AUDIT_ACTIONS, AUDIT_ENTITY_TYPES } from "@/lib/audit/actions";
+
 // ---------------------------------------------------------------------------
 // Validation schema
 // ---------------------------------------------------------------------------
@@ -226,8 +228,8 @@ export async function beginReassessmentAction(): Promise<BeginReassessmentResult
 
       await createAuditLog(tx, {
         userId: user.id,
-        action: "ACCEPT_INVITATION",
-        entityType: "Invitation",
+        action: AUDIT_ACTIONS.ACCEPT_INVITATION,
+        entityType: AUDIT_ENTITY_TYPES.Invitation,
         entityId: invitation.id,
         context: `Re-assessment invitation accepted by ${invitation.email}`,
         metadata: {
@@ -318,8 +320,8 @@ export async function submitMissingDocsResponse(
 
         await createAuditLog(tx, {
           userId: user.id,
-          action: "MISSING_DOCS_RESPONDED",
-          entityType: "Application",
+          action: AUDIT_ACTIONS.MISSING_DOCS_RESPONDED,
+          entityType: AUDIT_ENTITY_TYPES.Application,
           entityId: applicationId,
           context: "Applicant responded to a missing-documents request",
           metadata: {

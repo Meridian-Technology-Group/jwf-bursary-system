@@ -26,6 +26,8 @@ import { createReassessmentApplicationFromInvitation } from "@/lib/db/queries/re
 import { validatePasswordStrength } from "@/lib/auth/password-policy";
 import { createAuditLog } from "@/lib/audit/log";
 
+import { AUDIT_ACTIONS, AUDIT_ENTITY_TYPES } from "@/lib/audit/actions";
+
 // ---------------------------------------------------------------------------
 // createProfileAction — server-action wrapper for the magic-link flow
 // ---------------------------------------------------------------------------
@@ -310,8 +312,8 @@ export async function acceptApplicantInvitationAction(
 
       await createAuditLog(tx, {
         userId: invitation.authUserId!,
-        action: "ACCEPT_INVITATION",
-        entityType: "Invitation",
+        action: AUDIT_ACTIONS.ACCEPT_INVITATION,
+        entityType: AUDIT_ENTITY_TYPES.Invitation,
         entityId: invitation.id,
         context: `Applicant invitation accepted by ${invitation.email}`,
         metadata: {

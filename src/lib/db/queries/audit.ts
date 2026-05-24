@@ -4,6 +4,7 @@
 
 import type { Tx } from "@/lib/db/prisma";
 import type { AuditLog, Profile, Prisma } from "@prisma/client";
+import { entityTypeFilterValues } from "@/lib/audit/actions";
 
 export type AuditLogWithUser = AuditLog & {
   user: Pick<Profile, "id" | "firstName" | "lastName" | "email"> | null;
@@ -64,7 +65,11 @@ function buildAuditWhereClause(
   const where: Prisma.AuditLogWhereInput = {};
 
   if (filters.entityType) {
-    where.entityType = filters.entityType;
+    // Expand the requested entityType to include any legacy aliases (forward-only
+    // display support — e.g. a `SiblingLink` filter also matches historical
+    // `SIBLING_LINK` rows). Single-value filters collapse to an equality match.
+    const values = entityTypeFilterValues(filters.entityType);
+    where.entityType = values.length === 1 ? values[0] : { in: values };
   }
 
   if (filters.action) {

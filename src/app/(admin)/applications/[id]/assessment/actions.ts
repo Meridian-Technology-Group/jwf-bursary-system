@@ -23,6 +23,7 @@ import {
 } from "@/lib/db/queries/assessments";
 import type { AssessmentSaveInput } from "@/lib/db/queries/assessments";
 import { createAuditLog } from "@/lib/audit/log";
+import { AUDIT_ACTIONS, AUDIT_ENTITY_TYPES } from "@/lib/audit/actions";
 
 // ─── Begin Assessment ─────────────────────────────────────────────────────────
 
@@ -40,8 +41,8 @@ export async function beginAssessmentAction(
         const created = await createAssessment(tx, applicationId, user.id);
         await createAuditLog(tx, {
           userId: user.id,
-          action: "assessment.begin",
-          entityType: "Assessment",
+          action: AUDIT_ACTIONS.ASSESSMENT_BEGIN,
+          entityType: AUDIT_ENTITY_TYPES.Assessment,
           entityId: created.id,
           context: `Created assessment for application ${applicationId}`,
           metadata: { applicationId, assessmentId: created.id },
@@ -77,8 +78,8 @@ export async function saveAssessmentAction(
       });
       await createAuditLog(tx, {
         userId: user.id,
-        action: "assessment.save",
-        entityType: "Assessment",
+        action: AUDIT_ACTIONS.ASSESSMENT_SAVE,
+        entityType: AUDIT_ENTITY_TYPES.Assessment,
         entityId: assessmentId,
         context: "Assessment data saved",
         metadata: { assessmentId, applicationId, fieldsUpdated: Object.keys(data) },
@@ -108,8 +109,8 @@ export async function completeAssessmentAction(
       await completeAssessment(tx, assessmentId);
       await createAuditLog(tx, {
         userId: user.id,
-        action: "assessment.complete",
-        entityType: "Assessment",
+        action: AUDIT_ACTIONS.ASSESSMENT_COMPLETE,
+        entityType: AUDIT_ENTITY_TYPES.Assessment,
         entityId: assessmentId,
         context: "Assessment marked as COMPLETED",
         metadata: { assessmentId, applicationId },
@@ -139,8 +140,8 @@ export async function pauseAssessmentAction(
       await pauseAssessment(tx, assessmentId);
       await createAuditLog(tx, {
         userId: user.id,
-        action: "assessment.pause",
-        entityType: "Assessment",
+        action: AUDIT_ACTIONS.ASSESSMENT_PAUSE,
+        entityType: AUDIT_ENTITY_TYPES.Assessment,
         entityId: assessmentId,
         context: "Assessment paused",
         metadata: { assessmentId, applicationId },

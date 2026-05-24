@@ -37,6 +37,8 @@ import { withAdminContext } from "@/lib/db/prisma";
 import { createAuditLog } from "@/lib/audit/log";
 import { prepopulateReassessment, getPreviousYearApplication } from "@/lib/db/queries/reassessment";
 
+import { AUDIT_ACTIONS, AUDIT_ENTITY_TYPES } from "@/lib/audit/actions";
+
 // ---------------------------------------------------------------------------
 // Validation schema
 // ---------------------------------------------------------------------------
@@ -183,8 +185,8 @@ export async function createInvitationAction(
 
       await createAuditLog(tx, {
         userId: user.id,
-        action: "CREATE_INVITATION",
-        entityType: "Invitation",
+        action: AUDIT_ACTIONS.CREATE_INVITATION,
+        entityType: AUDIT_ENTITY_TYPES.Invitation,
         entityId: inv.id,
         context: `Sent invitation to ${email}`,
         metadata: {
@@ -262,8 +264,8 @@ export async function createInvitationAction(
       });
       await createAuditLog(tx, {
         userId: user.id,
-        action: "CREATE_INVITATION_FAILED",
-        entityType: "Invitation",
+        action: AUDIT_ACTIONS.CREATE_INVITATION_FAILED,
+        entityType: AUDIT_ENTITY_TYPES.Invitation,
         entityId: invitationId,
         context: `Invitation to ${email} rolled back — email failed to send`,
         metadata: {
@@ -399,8 +401,8 @@ export async function batchReassessmentInviteAction(
 
         await createAuditLog(tx, {
           userId: user.id,
-          action: "BATCH_REASSESSMENT_INVITE",
-          entityType: "Invitation",
+          action: AUDIT_ACTIONS.BATCH_REASSESSMENT_INVITE,
+          entityType: AUDIT_ENTITY_TYPES.Invitation,
           entityId: invitation.id,
           context: `Sent reassessment invitation to ${email}`,
           metadata: {
@@ -519,8 +521,8 @@ export async function resendInvitationAction(
 
       await createAuditLog(tx, {
         userId: user.id,
-        action: "RESEND_INVITATION",
-        entityType: "Invitation",
+        action: AUDIT_ACTIONS.RESEND_INVITATION,
+        entityType: AUDIT_ENTITY_TYPES.Invitation,
         entityId: invitationId,
         context: `Resent invitation to ${invitation.email}`,
         metadata: {
@@ -612,8 +614,8 @@ export async function revokeInvitationAction(
 
       await createAuditLog(tx, {
         userId: user.id,
-        action: "REVOKE_INVITATION",
-        entityType: "Invitation",
+        action: AUDIT_ACTIONS.REVOKE_INVITATION,
+        entityType: AUDIT_ENTITY_TYPES.Invitation,
         entityId: invitationId,
         context: `Revoked invitation to ${invitation.email}`,
         metadata: {
@@ -725,8 +727,8 @@ export async function createReassessmentApplicationAction(
       }
 
       await createAuditLog(tx, {
-        action: "CREATE_REASSESSMENT_APPLICATION",
-        entityType: "Application",
+        action: AUDIT_ACTIONS.CREATE_REASSESSMENT_APPLICATION,
+        entityType: AUDIT_ENTITY_TYPES.Application,
         entityId: application.id,
         context: `Re-assessment application created for ${account.childName}`,
         metadata: {

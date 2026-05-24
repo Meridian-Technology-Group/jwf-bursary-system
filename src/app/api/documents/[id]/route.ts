@@ -15,6 +15,8 @@ import { deleteDocument } from "@/lib/storage/documents";
 import { createAuditLog } from "@/lib/audit/log";
 import { logError } from "@/lib/log";
 
+import { AUDIT_ACTIONS, AUDIT_ENTITY_TYPES } from "@/lib/audit/actions";
+
 interface RouteParams {
   params: Promise<{ id: string }>;
 }
@@ -86,8 +88,8 @@ export async function DELETE(
       await tx.document.delete({ where: { id: documentId } });
       await createAuditLog(tx, {
         userId: user.id,
-        action: "DOCUMENT_DELETED",
-        entityType: "Document",
+        action: AUDIT_ACTIONS.DOCUMENT_DELETED,
+        entityType: AUDIT_ENTITY_TYPES.Document,
         entityId: documentId,
         context: `Slot: ${document.slot}`,
         metadata: {

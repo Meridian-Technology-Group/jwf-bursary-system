@@ -26,6 +26,8 @@ import { createAuditLog } from "@/lib/audit/log";
 import { getSectionGapStatuses, type SectionGap } from "@/lib/portal/section-gaps";
 import { logError } from "@/lib/log";
 
+import { AUDIT_ACTIONS, AUDIT_ENTITY_TYPES } from "@/lib/audit/actions";
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 export interface SaveSectionResult {
@@ -405,8 +407,8 @@ export async function submitApplication(applicationId: string): Promise<never> {
   await withAdminContext(async (tx) => {
     await createAuditLog(tx, {
       userId: user.id,
-      action: "APPLICATION_SUBMITTED",
-      entityType: "Application",
+      action: AUDIT_ACTIONS.APPLICATION_SUBMITTED,
+      entityType: AUDIT_ENTITY_TYPES.Application,
       entityId: applicationId,
       context: `Reference: ${application.reference}`,
       metadata: {

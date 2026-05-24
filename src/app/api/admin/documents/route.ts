@@ -21,6 +21,8 @@ import { uploadDocument } from "@/lib/storage/documents";
 import { sniffContentType } from "@/lib/storage/sniff";
 import { createAuditLog } from "@/lib/audit/log";
 
+import { AUDIT_ACTIONS, AUDIT_ENTITY_TYPES } from "@/lib/audit/actions";
+
 const ACCEPTED_MIME = ["application/pdf", "image/jpeg", "image/png"];
 const MAX_SIZE_BYTES = 20 * 1024 * 1024; // 20 MB
 
@@ -164,8 +166,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
         await createAuditLog(tx, {
           userId: user.id,
-          action: "DOCUMENT_UPLOADED_BY_ASSESSOR",
-          entityType: "Document",
+          action: AUDIT_ACTIONS.DOCUMENT_UPLOADED_BY_ASSESSOR,
+          entityType: AUDIT_ENTITY_TYPES.Document,
           entityId: doc.id,
           context: `Assessor uploaded document for slot: ${slot}`,
           metadata: {

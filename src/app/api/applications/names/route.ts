@@ -14,6 +14,8 @@ import { withUserContext, type RlsRole } from "@/lib/db/prisma";
 import { getApplicationNames } from "@/lib/db/queries/applications";
 import { createAuditLog } from "@/lib/audit/log";
 
+import { AUDIT_ACTIONS, AUDIT_ENTITY_TYPES } from "@/lib/audit/actions";
+
 export async function GET(request: NextRequest) {
   // Auth check — ASSESSOR only
   const user = await getCurrentUser();
@@ -42,8 +44,8 @@ export async function GET(request: NextRequest) {
       const fetched = await getApplicationNames(tx, applicationIds);
       await createAuditLog(tx, {
         userId: user.id,
-        action: "NAME_REVEAL",
-        entityType: "Application",
+        action: AUDIT_ACTIONS.NAME_REVEAL,
+        entityType: AUDIT_ENTITY_TYPES.Application,
         context: "Admin queue name reveal",
         metadata: {
           applicationIds,

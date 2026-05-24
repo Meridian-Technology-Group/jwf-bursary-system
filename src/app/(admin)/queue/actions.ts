@@ -30,6 +30,8 @@ import { createProfile } from "@/lib/auth/create-profile";
 import { getAppUrl } from "@/lib/app-url";
 import { createInvitation } from "@/lib/db/queries/invitations";
 
+import { AUDIT_ACTIONS, AUDIT_ENTITY_TYPES } from "@/lib/audit/actions";
+
 // ─── Validation schema ────────────────────────────────────────────────────────
 
 const InternalRequestSchema = z.object({
@@ -315,8 +317,8 @@ export async function createInternalRequestAction(
   await withAdminContext((tx) =>
     createAuditLog(tx, {
       userId: user.id,
-      action: "INTERNAL_REQUEST_CREATED",
-      entityType: "Application",
+      action: AUDIT_ACTIONS.INTERNAL_REQUEST_CREATED,
+      entityType: AUDIT_ENTITY_TYPES.Application,
       entityId: application.id,
       context: `Internal bursary request created for ${childName} (${parentEmail})`,
       metadata: {

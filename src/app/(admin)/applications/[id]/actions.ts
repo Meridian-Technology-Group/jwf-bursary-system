@@ -31,6 +31,8 @@ import { createSupabaseAdminClient } from "@/lib/auth/supabase-admin";
 import { setApplicationOutcome } from "@/lib/applications/set-outcome-core";
 import type { ApplicationStatus } from "@prisma/client";
 
+import { AUDIT_ACTIONS, AUDIT_ENTITY_TYPES } from "@/lib/audit/actions";
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 export type ActionResult =
@@ -126,8 +128,8 @@ export async function updateApplicationStatus(
 
         await createAuditLog(tx, {
           userId: user.id,
-          action: "APPLICATION_STATUS_CHANGED",
-          entityType: "Application",
+          action: AUDIT_ACTIONS.APPLICATION_STATUS_CHANGED,
+          entityType: AUDIT_ENTITY_TYPES.Application,
           entityId: applicationId,
           context: context ?? `Status changed from ${oldStatus} to ${newStatus}`,
           metadata: {
@@ -230,8 +232,8 @@ export async function pauseApplication(
     await withUserContext(user.id, user.role as RlsRole, (tx) =>
       createAuditLog(tx, {
         userId: user.id,
-        action: "APPLICATION_PAUSED",
-        entityType: "Application",
+        action: AUDIT_ACTIONS.APPLICATION_PAUSED,
+        entityType: AUDIT_ENTITY_TYPES.Application,
         entityId: applicationId,
         context: "Application paused — missing documents requested",
         metadata: {
@@ -290,8 +292,8 @@ export async function resumeApplication(
 
         await createAuditLog(tx, {
           userId: user.id,
-          action: "APPLICATION_RESUMED",
-          entityType: "Application",
+          action: AUDIT_ACTIONS.APPLICATION_RESUMED,
+          entityType: AUDIT_ENTITY_TYPES.Application,
           entityId: applicationId,
           context: "Application resumed from PAUSED to NOT_STARTED",
           metadata: {
@@ -360,8 +362,8 @@ export async function assignApplicationAction(
 
       await createAuditLog(tx, {
         userId: user.id,
-        action: "APPLICATION_ASSESSOR_ASSIGNED",
-        entityType: "Application",
+        action: AUDIT_ACTIONS.APPLICATION_ASSESSOR_ASSIGNED,
+        entityType: AUDIT_ENTITY_TYPES.Application,
         entityId: applicationId,
         context: assessorId
           ? `Application assigned to assessor ${assessorId}`
@@ -576,8 +578,8 @@ export async function gdprDeleteApplicantAction(
     await withAdminContext((tx) =>
       createAuditLog(tx, {
         userId: user.id,
-        action: "GDPR_DELETION",
-        entityType: "Application",
+        action: AUDIT_ACTIONS.GDPR_DELETION,
+        entityType: AUDIT_ENTITY_TYPES.Application,
         entityId: applicationId,
         context: `GDPR deletion performed on application ${application.reference}`,
         metadata: {

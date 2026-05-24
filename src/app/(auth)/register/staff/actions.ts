@@ -20,6 +20,8 @@ import {
 } from "@/lib/db/queries/staff-invitations";
 import { createAuditLog } from "@/lib/audit/log";
 
+import { AUDIT_ACTIONS, AUDIT_ENTITY_TYPES } from "@/lib/audit/actions";
+
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
@@ -191,8 +193,8 @@ export async function acceptStaffInvitationAction(
 
       await createAuditLog(tx, {
         userId: invitation.authUserId,
-        action: "ACCEPT_STAFF_INVITATION",
-        entityType: "StaffInvitation",
+        action: AUDIT_ACTIONS.ACCEPT_STAFF_INVITATION,
+        entityType: AUDIT_ENTITY_TYPES.StaffInvitation,
         entityId: invitation.id,
         context: `Staff invitation accepted by ${invitation.email}`,
         metadata: { email: invitation.email, role: invitation.role },
