@@ -67,7 +67,6 @@ export type ValidateApplicantInvitationResult =
       email: string;
       firstName: string | null;
       lastName: string | null;
-      applicantName: string | null;
       childName: string | null;
       school: School | null;
       roundId: string | null;
@@ -137,7 +136,6 @@ export async function validateApplicantInvitationAction(
       email: invitation.email,
       firstName: invitation.firstName,
       lastName: invitation.lastName,
-      applicantName: invitation.applicantName,
       childName: invitation.childName,
       school: invitation.school,
       roundId: invitation.roundId,
