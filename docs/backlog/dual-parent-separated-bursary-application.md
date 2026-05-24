@@ -16,6 +16,10 @@ related:
   - the applicant invitation flow spec (docs/archive/specs/invitation-flow.md)
 ---
 
+> **Build plan:** a code-grounded, PR-by-PR implementation plan lives at
+> [`docs/engineering/dual-parent-implementation-plan.md`](../engineering/dual-parent-implementation-plan.md).
+> This file remains the source of truth for scope and the eight locked decisions.
+
 ## Context
 
 The bursary subject is a **child**. When that child's parents are
