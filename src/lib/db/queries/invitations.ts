@@ -101,16 +101,16 @@ export async function listInvitations(
  *
  * `token` is auto-generated via `generateInvitationToken()` when the caller
  * does not supply one. `firstName`, `lastName`, and `authUserId` are
- * optional: the legacy admin invite path (which only knows the email and a
- * single `applicantName` string) can omit them, while the hardened path
- * planned in PR2 will pass all three so the acceptance flow can skip the
- * `auth.users` paged scan.
+ * optional: callers that only know the email can omit them, while the
+ * hardened path passes all three so the acceptance flow can skip the
+ * `auth.users` paged scan. The applicant display name is derived from
+ * `firstName`/`lastName`; the legacy `applicantName` column is no longer
+ * written and is being retired (backlog #9).
  */
 export async function createInvitation(
   tx: Tx,
   data: {
     email: string;
-    applicantName?: string;
     firstName?: string;
     lastName?: string;
     childName?: string;
@@ -126,7 +126,6 @@ export async function createInvitation(
   return tx.invitation.create({
     data: {
       email: data.email,
-      applicantName: data.applicantName ?? null,
       firstName: data.firstName ?? null,
       lastName: data.lastName ?? null,
       childName: data.childName ?? null,

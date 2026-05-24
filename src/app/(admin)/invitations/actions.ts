@@ -43,7 +43,6 @@ import { prepopulateReassessment, getPreviousYearApplication } from "@/lib/db/qu
 
 const InvitationSchema = z.object({
   email: z.string().email("A valid email address is required"),
-  applicantName: z.string().optional(),
   firstName: z.string().optional(),
   lastName: z.string().optional(),
   childName: z.string().optional(),
@@ -73,17 +72,13 @@ export interface BatchInviteResult {
 
 /**
  * Composes a single-line applicant display name from the structured first /
- * last fields, falling back to whatever raw `applicantName` was supplied, and
- * finally to the empty string.
+ * last fields, falling back to the empty string.
  */
 function composeApplicantName(
   firstName: string | undefined,
-  lastName: string | undefined,
-  applicantName: string | undefined
+  lastName: string | undefined
 ): string {
-  const composed = [firstName, lastName].filter(Boolean).join(" ").trim();
-  if (composed) return composed;
-  return applicantName?.trim() ?? "";
+  return [firstName, lastName].filter(Boolean).join(" ").trim();
 }
 
 function schoolLabel(school: School | undefined | null): string {
@@ -102,7 +97,6 @@ export async function createInvitationAction(
 
   const raw = {
     email: formData.get("email") as string,
-    applicantName: (formData.get("applicantName") as string) || undefined,
     firstName: (formData.get("firstName") as string) || undefined,
     lastName: (formData.get("lastName") as string) || undefined,
     childName: (formData.get("childName") as string) || undefined,
@@ -118,14 +112,10 @@ export async function createInvitationAction(
     };
   }
 
-  const { email, applicantName, firstName, lastName, childName, school, roundId } =
+  const { email, firstName, lastName, childName, school, roundId } =
     parsed.data;
 
-  const effectiveApplicantName = composeApplicantName(
-    firstName,
-    lastName,
-    applicantName
-  );
+  const effectiveApplicantName = composeApplicantName(firstName, lastName);
 
   const expiresAt = new Date();
   expiresAt.setDate(expiresAt.getDate() + 30);
@@ -172,7 +162,6 @@ export async function createInvitationAction(
 
       const inv = await createInvitation(tx, {
         email,
-        applicantName: effectiveApplicantName || undefined,
         firstName,
         lastName,
         childName,
@@ -357,11 +346,9 @@ export async function batchReassessmentInviteAction(
   for (let i = 0; i < holders.length; i++) {
     const holder = holders[i];
     const { email, firstName, lastName } = holder.leadApplicant;
-    const applicantName = composeApplicantName(
-      firstName ?? undefined,
-      lastName ?? undefined,
-      undefined
-    ) || email;
+    const applicantName =
+      composeApplicantName(firstName ?? undefined, lastName ?? undefined) ||
+      email;
 
     // Per-row auth-user provisioning.
     let authUserId: string | null = null;
@@ -399,7 +386,6 @@ export async function batchReassessmentInviteAction(
 
         const invitation = await createInvitation(tx, {
           email,
-          applicantName,
           firstName: firstName ?? undefined,
           lastName: lastName ?? undefined,
           childName: holder.childName,
@@ -548,8 +534,7 @@ export async function resendInvitationAction(
     const applicantName =
       composeApplicantName(
         invitation.firstName ?? undefined,
-        invitation.lastName ?? undefined,
-        invitation.applicantName ?? undefined
+        invitation.lastName ?? undefined
       ) || invitation.email;
 
     const emailResult = await sendEmail(invitation.email, "INVITATION", {

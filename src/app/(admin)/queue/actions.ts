@@ -241,9 +241,11 @@ export async function createInternalRequestAction(
       const expiresAt = new Date();
       expiresAt.setDate(expiresAt.getDate() + 30);
 
+      const [parentFirstName, ...parentRest] = parentName.trim().split(/\s+/);
       const invitation = await createInvitation(tx, {
         email: parentEmail,
-        applicantName: parentName,
+        firstName: parentFirstName,
+        lastName: parentRest.length > 0 ? parentRest.join(" ") : undefined,
         childName,
         school,
         roundId,

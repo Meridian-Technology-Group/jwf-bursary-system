@@ -54,7 +54,6 @@ const schema = z.object({
   email: z.string().email("A valid email address is required"),
   firstName: z.string().optional(),
   lastName: z.string().optional(),
-  applicantName: z.string().optional(),
   childName: z.string().optional(),
   school: z.enum(["TRINITY", "WHITGIFT", "__none__"]).optional(),
   roundId: z
@@ -84,7 +83,6 @@ export function SendInvitationForm({
       email: "",
       firstName: "",
       lastName: "",
-      applicantName: "",
       childName: "",
       school: "__none__",
       roundId: defaultRoundId ?? "__none__",
@@ -99,7 +97,6 @@ export function SendInvitationForm({
     formData.set("email", values.email);
     if (values.firstName) formData.set("firstName", values.firstName);
     if (values.lastName) formData.set("lastName", values.lastName);
-    if (values.applicantName) formData.set("applicantName", values.applicantName);
     if (values.childName) formData.set("childName", values.childName);
     if (values.school && values.school !== "__none__") formData.set("school", values.school);
     formData.set("roundId", values.roundId);
@@ -112,7 +109,6 @@ export function SendInvitationForm({
           email: "",
           firstName: "",
           lastName: "",
-          applicantName: "",
           childName: "",
           school: "__none__",
           roundId: defaultRoundId ?? "__none__",
@@ -201,30 +197,6 @@ export function SendInvitationForm({
                     <Input
                       placeholder="Smith"
                       autoComplete="family-name"
-                      {...field}
-                      disabled={isPending}
-                    />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
-            {/* Applicant Name (display fallback) */}
-            <FormField
-              control={form.control}
-              name="applicantName"
-              render={({ field }) => (
-                <FormItem className="sm:col-span-2">
-                  <FormLabel>
-                    Display Name{" "}
-                    <span className="text-xs font-normal text-slate-400">
-                      (optional — defaults to first + last)
-                    </span>
-                  </FormLabel>
-                  <FormControl>
-                    <Input
-                      placeholder="Jane Smith"
                       {...field}
                       disabled={isPending}
                     />
