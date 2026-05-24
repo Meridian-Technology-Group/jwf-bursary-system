@@ -235,9 +235,16 @@ set severity (§2), then work the first checks below.
 ### 6.5 Rate-limiter behaviour
 
 - **Symptom:** legitimate users throttled, or brute-force not being throttled.
-- First checks: confirm `KV_REST_API_URL` / `KV_REST_API_TOKEN` are set in
-  Production. If unset, the limiter **fails open** (disabled) — set them and
-  redeploy (`src/lib/rate-limit.ts`).
+- Auth rate limiting is a **Vercel WAF** fixed-window rule (5 req / 15 min, by
+  IP) on `/login` and `/reset-password`, defined in `vercel.json`.
+- **Not being throttled:** confirm the rule is **active** in the Vercel project
+  (Project → **Firewall**, or `vercel firewall rules ls`). Unlike the old
+  KV-backed limiter, there is no env var to miss — the only failure mode is the
+  rule being absent or disabled.
+- **Legitimate users throttled:** inspect the rule
+  (`vercel firewall rules inspect "<name>"`); check the window/threshold and the
+  IP key (shared-NAT corporate clients can collide). Adjust in `vercel.json`,
+  or temporarily set the rule action to **log** while investigating.
 
 ---
 

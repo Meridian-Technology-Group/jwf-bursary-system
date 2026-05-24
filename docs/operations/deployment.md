@@ -35,9 +35,12 @@ named below, here is what it is and the role it plays here:
 - **Resend** — the transactional-email provider (invitation emails,
   password-reset links, status notifications). See
   [`environment-variables.md`](environment-variables.md) for its keys.
-- **Upstash / Vercel KV** — a small managed Redis store used only by the
-  login/password-reset **rate limiter**. ("KV" = key-value store.) If its
-  credentials are absent, the limiter quietly disables itself — see §6.4.
+- **Vercel WAF** — Vercel's edge Web Application Firewall provides the
+  login/password-reset **rate limiter** (a fixed-window rule defined in
+  `vercel.json`). No external store or credentials are needed — see
+  [`incident-response.md`](incident-response.md) §6.5. The only failure mode is
+  the rule not being active in the Vercel project, which the go-live checklist
+  guards.
 
 > 📷 *Screenshot: Vercel dashboard project overview for the bursary system, showing the Production and Preview deployments side by side.*
 

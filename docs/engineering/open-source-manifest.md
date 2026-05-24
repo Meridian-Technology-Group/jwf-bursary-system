@@ -80,8 +80,8 @@ from the lockfile.
 | `@supabase/supabase-js` | 2.98.0 | MIT | https://github.com/supabase/supabase-js |
 | `resend` | 6.9.3 | MIT | https://github.com/resend/resend-node |
 | `svix` | 1.84.1 | MIT | https://github.com/svix/svix-webhooks |
-| `@upstash/ratelimit` | 2.0.8 | MIT | https://github.com/upstash/ratelimit-js |
-| `@vercel/kv` | 3.0.0 | Apache-2.0 | https://github.com/vercel/storage |
+| `@upstash/ratelimit` † | 2.0.8 | MIT | https://github.com/upstash/ratelimit-js |
+| `@vercel/kv` † | 3.0.0 | Apache-2.0 | https://github.com/vercel/storage |
 | `zod` | 4.3.6 | MIT | https://github.com/colinhacks/zod |
 | `react-hook-form` | 7.71.2 | MIT | https://github.com/react-hook-form/react-hook-form |
 | `@hookform/resolvers` | 5.2.2 | MIT | https://github.com/react-hook-form/resolvers |
@@ -99,6 +99,12 @@ from the lockfile.
 | `tailwind-merge` | 3.5.0 | MIT | https://github.com/dcastil/tailwind-merge |
 | `tailwindcss-animate` | 1.0.7 | MIT | (npm package; no public repo declared) |
 | `@tailwindcss/forms` | 0.5.11 | MIT | https://github.com/tailwindlabs/tailwindcss-forms |
+
+> † **Slated for removal.** `@upstash/ratelimit` and `@vercel/kv` backed the
+> former application-layer auth limiter. Auth rate limiting has moved to Vercel
+> WAF (edge-enforced), so both dependencies will be dropped when
+> `src/lib/rate-limit.ts` is removed — see
+> [`docs/backlog/prod-auth-rate-limiting-disabled.md`](../backlog/prod-auth-rate-limiting-disabled.md).
 
 ### Radix UI primitives (shadcn/ui foundation)
 
