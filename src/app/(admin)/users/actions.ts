@@ -289,6 +289,14 @@ export async function resendStaffInvitationAction(
 
 /**
  * Marks a PENDING staff invitation EXPIRED so the link can no longer be used.
+ *
+ * Mirrors the applicant `revokeInvitationAction` cleanup (#6): when the
+ * invitee never accepted, the stub profile + Supabase auth user we
+ * provisioned up front are removed so they don't linger as a phantom
+ * ASSESSOR/VIEWER in the Staff Users table. Profiles are NOT FK-cascaded
+ * from auth.users, so both must be deleted explicitly. Each cleanup is
+ * wrapped in `.catch()` — the row is already EXPIRED (no link can be used),
+ * so a partial cleanup must not fail the revoke itself.
  */
 export async function revokeStaffInvitationAction(
   invitationIdRaw: string
@@ -308,18 +316,55 @@ export async function revokeStaffInvitationAction(
       if (!updated) {
         return { ok: false as const, error: "Invitation is not pending." };
       }
+
+      // Only clean up the stub account if the invitee never accepted.
+      const cleanupAccount = updated.acceptedAt === null;
+      if (cleanupAccount) {
+        await tx.profile
+          .delete({ where: { id: updated.authUserId } })
+          .catch((err) => {
+            console.error(
+              "[users] revokeStaffInvitationAction profile cleanup failed:",
+              err
+            );
+          });
+      }
+
       await createAuditLog(tx, {
         userId: admin.id,
         action: "REVOKE_STAFF_INVITATION",
         entityType: "StaffInvitation",
         entityId: invitationId,
         context: `Revoked invitation to ${updated.email}`,
-        metadata: { email: updated.email, role: updated.role },
+        metadata: {
+          email: updated.email,
+          role: updated.role,
+          authUserId: updated.authUserId,
+          authUserDeleted: cleanupAccount,
+        },
       });
-      return { ok: true as const };
+      return {
+        ok: true as const,
+        cleanupAuthUserId: cleanupAccount ? updated.authUserId : null,
+      };
     });
 
     if (!revoked.ok) return { success: false, error: revoked.error };
+
+    // Delete the Supabase auth user outside the DB tx (it's an external call).
+    if (revoked.cleanupAuthUserId) {
+      const supabase = createSupabaseAdminClient();
+      const { error: deleteError } = await supabase.auth.admin.deleteUser(
+        revoked.cleanupAuthUserId
+      );
+      if (deleteError) {
+        console.error(
+          "[users] revokeStaffInvitationAction auth deletion warning:",
+          deleteError
+        );
+      }
+    }
+
     revalidatePath("/users");
     return { success: true };
   } catch (err) {
