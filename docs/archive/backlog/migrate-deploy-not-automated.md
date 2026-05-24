@@ -1,15 +1,30 @@
 ---
 title: prisma migrate deploy is not run on deploy — migrations applied manually
-status: open
+status: done
 severity: medium
 area: build, ci, ops
 opened: 2026-05-13
 opened_by: Claude (via Brian Wagner)
+closed: 2026-05-23
 related:
+  - .github/workflows/db-push.yml (the resolving workflow)
   - package.json (build script)
   - commit 3a8c4fc (fix(build): drop prisma migrate deploy from build script)
   - CLAUDE.md (Schema / migration discipline)
 ---
+
+> **CLOSED (2026-05-23): RESOLVED by `.github/workflows/db-push.yml`.** This is
+> exactly the proposed "Option 1" — a GitHub Actions job runs `prisma migrate
+> deploy` against the matching Supabase project on push (`staging` →
+> `supabase-nonprod`, `main` → `supabase-prod`), using the direct connection
+> URL. The deployment runbook ([`docs/operations/deployment.md`](../../operations/deployment.md))
+> documents the path.
+>
+> **One residual pre-go-live check (carried into the deployment runbook, not
+> this item):** each job is *gated on its DB secrets and silently skips* if they
+> are absent — so confirm `PROD_DATABASE_URL` / `PROD_DIRECT_URL` (and the
+> staging equivalents) are set in the GitHub repo secrets, or prod migrations
+> would quietly never run.
 
 ## Context
 

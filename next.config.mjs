@@ -1,3 +1,5 @@
+import { withSentryConfig } from "@sentry/nextjs";
+
 /** @type {import('next').NextConfig} */
 
 // Security headers applied to every response. See docs/security-audit.md §2.5.
@@ -33,7 +35,9 @@ const securityHeaders = [
       "font-src 'self' data:",
       // api.pwnedpasswords.com is the HaveIBeenPwned k-anonymity range API
       // queried client-side during registration to reject breached passwords.
-      "connect-src 'self' https://*.supabase.co https://api.pwnedpasswords.com",
+      // *.sentry.io is the Sentry ingest endpoint the browser SDK POSTs events
+      // to; without it the CSP blocks client-side error reporting.
+      "connect-src 'self' https://*.supabase.co https://api.pwnedpasswords.com https://*.sentry.io",
       // Inline document preview embeds presigned Supabase Storage URLs in an
       // iframe; without frame-src the browser falls back to default-src 'self'
       // and blocks the preview.
@@ -54,9 +58,26 @@ const nextConfig = {
   eslint: {
     ignoreDuringBuilds: true,
   },
+  // Required on Next 14 for `src/instrumentation.ts` (Sentry init) to run.
+  experimental: {
+    instrumentationHook: true,
+  },
   async headers() {
     return [{ source: "/:path*", headers: securityHeaders }];
   },
 };
 
-export default nextConfig;
+// Wrap with Sentry. Source maps upload only when SENTRY_AUTH_TOKEN is present
+// (set in the Vercel Production/Preview envs), so local and CI builds — which
+// have no token — build normally and skip the upload step.
+export default withSentryConfig(nextConfig, {
+  org: process.env.SENTRY_ORG,
+  project: process.env.SENTRY_PROJECT,
+  authToken: process.env.SENTRY_AUTH_TOKEN,
+  silent: !process.env.CI,
+  widenClientFileUpload: true,
+  disableLogger: true,
+  sourcemaps: { disable: !process.env.SENTRY_AUTH_TOKEN },
+  // Do not auto-tunnel through the app: the strict CSP allows *.sentry.io
+  // directly, and a tunnel route would need a middleware carve-out.
+});
