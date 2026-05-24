@@ -22,6 +22,7 @@ import {
   getSectionData,
   getDocumentsForApplication,
 } from "@/lib/db/queries/applications";
+import { ensurePrimaryContributor } from "@/lib/db/queries/contributors";
 import { SectionPageClient } from "./section-page-client";
 import { HIDDEN_REASSESSMENT_SECTIONS, PREPOPULATED_SECTIONS } from "@/lib/db/queries/reassessment";
 
@@ -140,24 +141,42 @@ export default async function SectionPage({ params }: PageProps) {
     ? REASSESSMENT_SECTION_ORDER
     : SECTION_ORDER;
 
-  // Load existing section data, documents, and any cross-section reads needed
+  // Load existing section data, documents, and any cross-section reads needed.
+  // All section reads are scoped to the lead applicant's PRIMARY contributor
+  // (dual-parent foundation, PR 4a) — identical to before for a single parent.
   const { existingSection, documentMap, childFullName, isSoleParent } =
     await withUserContext(user.id, user.role as RlsRole, async (tx) => {
+      const ownerContributorId = await ensurePrimaryContributor(
+        tx,
+        application.id,
+        user.id
+      );
+
       const [section, docs] = await Promise.all([
-        getSectionData(tx, application.id, sectionType),
+        getSectionData(tx, application.id, sectionType, ownerContributorId),
         getDocumentsForApplication(tx, application.id),
       ]);
 
       let childName: string | undefined;
       if (sectionType === "DEPENDENT_CHILDREN") {
-        const childSection = await getSectionData(tx, application.id, "CHILD_DETAILS");
+        const childSection = await getSectionData(
+          tx,
+          application.id,
+          "CHILD_DETAILS",
+          ownerContributorId
+        );
         const childData = childSection?.data as { childFullName?: string } | null;
         childName = childData?.childFullName ?? undefined;
       }
 
       let soleParent: boolean | undefined;
       if (sectionType === "PARENTS_INCOME") {
-        const parentSection = await getSectionData(tx, application.id, "PARENT_DETAILS");
+        const parentSection = await getSectionData(
+          tx,
+          application.id,
+          "PARENT_DETAILS",
+          ownerContributorId
+        );
         const parentData = parentSection?.data as { isSoleParent?: boolean } | null;
         soleParent = parentData?.isSoleParent;
       }

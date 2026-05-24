@@ -29,6 +29,7 @@ import {
 } from "@/lib/db/queries/invitations";
 import { generateApplicationReference } from "@/lib/applications/reference";
 import { createReassessmentApplicationFromInvitation } from "@/lib/db/queries/reassessment";
+import { ensurePrimaryContributor } from "@/lib/db/queries/contributors";
 import { validatePasswordStrength } from "@/lib/auth/password-policy";
 import { createAuditLog } from "@/lib/audit/log";
 
@@ -318,7 +319,7 @@ export async function acceptApplicantInvitationAction(
           round?.academicYear ?? ""
         );
 
-        await tx.application.create({
+        const application = await tx.application.create({
           data: {
             reference,
             roundId: invitation.roundId,
@@ -329,6 +330,14 @@ export async function acceptApplicantInvitationAction(
             status: "PRE_SUBMISSION",
           },
         });
+
+        // Every application must have a PRIMARY contributor from creation so
+        // the section write path can tag the owner (dual-parent foundation).
+        await ensurePrimaryContributor(
+          tx,
+          application.id,
+          invitation.authUserId!
+        );
       }
 
       await markInvitationAccepted(tx, invitation.id, invitation.authUserId!);

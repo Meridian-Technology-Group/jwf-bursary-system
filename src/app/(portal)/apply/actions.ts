@@ -20,6 +20,7 @@ import {
   getSectionData,
   upsertSection,
 } from "@/lib/db/queries/applications";
+import { ensurePrimaryContributor } from "@/lib/db/queries/contributors";
 import { withUserContext, withAdminContext, type RlsRole } from "@/lib/db/prisma";
 import { sendEmail } from "@/lib/email/send";
 import { createAuditLog } from "@/lib/audit/log";
@@ -99,27 +100,51 @@ async function getOwnedApplicationId(): Promise<string | null> {
 }
 
 /**
- * Resolves both the current user and their owned application ID in one step.
- * Returns nulls if not authenticated or no application exists.
+ * Resolves the current user, their owned application ID, and the contributor
+ * id they write/read sections as — in one step. Returns null if not
+ * authenticated or no application exists.
+ *
+ * For the lead applicant the owning contributor is their PRIMARY contributor.
+ * Every section save/read for the lead applicant is scoped to this contributor
+ * (dual-parent foundation, PR 4a), so their experience is identical to before:
+ * they see and write exactly their own sections. `ensurePrimaryContributor` is
+ * idempotent and runs inside the same RLS-scoped transaction that resolves the
+ * application, so an application that somehow lacks a PRIMARY contributor
+ * (created before this code shipped, pre-backfill) self-heals on first use.
  */
 async function getOwnedApplicationContext(): Promise<{
   user: CurrentUser;
   appId: string;
+  ownerContributorId: string;
 } | null> {
   const user = await getCurrentUser();
   if (!user) return null;
 
-  const application = await withUserContext(
+  const resolved = await withUserContext(
     user.id,
     user.role as RlsRole,
-    (tx) =>
-      tx.application.findFirst({
+    async (tx) => {
+      const application = await tx.application.findFirst({
         where: { leadApplicantId: user.id, status: "PRE_SUBMISSION" },
         select: { id: true },
-      })
+      });
+      if (!application) return null;
+
+      const ownerContributorId = await ensurePrimaryContributor(
+        tx,
+        application.id,
+        user.id
+      );
+      return { appId: application.id, ownerContributorId };
+    }
   );
-  if (!application) return null;
-  return { user, appId: application.id };
+
+  if (!resolved) return null;
+  return {
+    user,
+    appId: resolved.appId,
+    ownerContributorId: resolved.ownerContributorId,
+  };
 }
 
 // ─── Actions ─────────────────────────────────────────────────────────────────
@@ -156,7 +181,7 @@ export async function saveSection(
 
   try {
     await withUserContext(ctx.user.id, ctx.user.role as RlsRole, (tx) =>
-      upsertSection(tx, ctx.appId, section, result.data, true)
+      upsertSection(tx, ctx.appId, section, result.data, true, ctx.ownerContributorId)
     );
     // Revalidate the portal layout so the sidebar progress stepper + bar
     // pick up the new completion state immediately.
@@ -186,7 +211,7 @@ export async function saveSectionDraft(
 
   try {
     await withUserContext(ctx.user.id, ctx.user.role as RlsRole, (tx) =>
-      upsertSection(tx, ctx.appId, section, data, false)
+      upsertSection(tx, ctx.appId, section, data, false, ctx.ownerContributorId)
     );
     return { success: true };
   } catch (err) {
@@ -213,7 +238,7 @@ export async function getSection(
   const row = await withUserContext(
     ctx.user.id,
     ctx.user.role as RlsRole,
-    (tx) => getSectionData(tx, ctx.appId, section)
+    (tx) => getSectionData(tx, ctx.appId, section, ctx.ownerContributorId)
   );
   return {
     data: row?.data ?? null,
@@ -234,7 +259,7 @@ export async function getSectionStatus(
   const rows = await withUserContext(
     ctx.user.id,
     ctx.user.role as RlsRole,
-    (tx) => getSectionStatusList(tx, ctx.appId)
+    (tx) => getSectionStatusList(tx, ctx.appId, ctx.ownerContributorId)
   );
 
   return rows.map((r) => ({
@@ -279,11 +304,21 @@ export async function submitApplication(applicationId: string): Promise<never> {
   }
 
   // ── Load application ───────────────────────────────────────────────────────
+  // Resolve the lead applicant's PRIMARY contributor first, then scope the
+  // completeness check to ONLY their sections (dual-parent foundation, PR 4a).
+  // For a single-parent application this is every section, so behaviour is
+  // unchanged; once a SECONDARY can own its own section copies (PR 4b) the
+  // primary's submit gate must not be affected by the secondary's rows.
   const application = await withUserContext(
     user.id,
     user.role as RlsRole,
-    (tx) =>
-      tx.application.findUnique({
+    async (tx) => {
+      const ownerContributorId = await ensurePrimaryContributor(
+        tx,
+        applicationId,
+        user.id
+      );
+      return tx.application.findUnique({
         where: { id: applicationId },
         select: {
           id: true,
@@ -296,10 +331,12 @@ export async function submitApplication(applicationId: string): Promise<never> {
           entryYearGroup: true,
           round: { select: { academicYear: true } },
           sections: {
+            where: { ownerContributorId },
             select: { section: true, isComplete: true, data: true },
           },
         },
-      })
+      });
+    }
   );
 
   if (!application) {

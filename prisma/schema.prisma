@@ -125,16 +125,16 @@ model Application {
 /// parent-financial sections. Nothing reads this column until then.
 model ApplicationSection {
   id                 String                  @id @default(uuid()) @db.Uuid
-  applicationId      String                  @map("application_id") @db.Uuid
-  ownerContributorId String?                 @map("owner_contributor_id") @db.Uuid
+  applicationId      String                 @map("application_id") @db.Uuid
+  ownerContributorId String                 @map("owner_contributor_id") @db.Uuid
   section            ApplicationSectionType
-  data               Json                    @default("{}")
-  isComplete         Boolean                 @default(false) @map("is_complete")
-  updatedAt          DateTime                @updatedAt @map("updated_at") @db.Timestamptz(6)
-  application        Application             @relation(fields: [applicationId], references: [id], onDelete: Cascade)
-  ownerContributor   ApplicationContributor? @relation(fields: [ownerContributorId], references: [id], onDelete: SetNull)
+  data               Json                   @default("{}")
+  isComplete         Boolean                @default(false) @map("is_complete")
+  updatedAt          DateTime               @updatedAt @map("updated_at") @db.Timestamptz(6)
+  application        Application            @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  ownerContributor   ApplicationContributor @relation(fields: [ownerContributorId], references: [id], onDelete: Cascade)
 
-  @@unique([applicationId, section])
+  @@unique([applicationId, section, ownerContributorId])
   @@index([ownerContributorId])
   @@map("application_sections")
 }
