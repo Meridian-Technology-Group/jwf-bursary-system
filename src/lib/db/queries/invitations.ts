@@ -117,6 +117,7 @@ export async function createInvitation(
     school?: School;
     roundId?: string;
     bursaryAccountId?: string;
+    applicationId?: string;
     authUserId?: string;
     token?: string;
     createdBy: string;
@@ -132,6 +133,7 @@ export async function createInvitation(
       school: data.school ?? null,
       roundId: data.roundId ?? null,
       bursaryAccountId: data.bursaryAccountId ?? null,
+      applicationId: data.applicationId ?? null,
       authUserId: data.authUserId ?? null,
       token: data.token ?? generateInvitationToken(),
       createdBy: data.createdBy,
@@ -278,6 +280,13 @@ export async function getOrAcceptLatestInvitationForUser(
 
   // Re-assessment invites stay PENDING — consumed by the Begin card instead.
   if (invitation.bursaryAccountId) return invitation;
+
+  // Secondary-parent invites (applicationId set) must be accepted through the
+  // /register?token=… flow so the matching SECONDARY contributor is flipped to
+  // IN_PROGRESS (see acceptApplicantInvitationAction). Auto-accepting on a bare
+  // login here would mark the invitation ACCEPTED without advancing the
+  // contributor, stranding them. Leave it PENDING and return as-is.
+  if (invitation.applicationId) return invitation;
 
   return tx.invitation.update({
     where: { id: invitation.id },
