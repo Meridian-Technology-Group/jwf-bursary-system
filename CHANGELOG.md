@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.1.1](https://github.com/Meridian-Technology-Group/jwf-bursary-system/compare/v1.1.0...v1.1.1) (2026-05-24)
+
+
+### Bug Fixes
+
+* **portal:** parent-details required uploads — render uploader + gate at submit ([#90](https://github.com/Meridian-Technology-Group/jwf-bursary-system/issues/90)) ([b8973fa](https://github.com/Meridian-Technology-Group/jwf-bursary-system/commit/b8973fa36ee77e79488f09dcd864988726db2f4a))
+
 ## [1.1.0](https://github.com/Meridian-Technology-Group/jwf-bursary-system/compare/v1.0.0...v1.1.0) (2026-05-24)
 
 
