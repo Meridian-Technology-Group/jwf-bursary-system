@@ -1,6 +1,6 @@
 ---
 title: No assessor-notification email when applicant responds to missing-docs
-status: open
+status: done
 severity: low
 area: email
 opened: 2026-05-22

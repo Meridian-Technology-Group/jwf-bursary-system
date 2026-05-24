@@ -1,6 +1,6 @@
 ---
 title: Add a dedicated "Round Summary" report section to /reports
-status: open
+status: wont-do
 severity: low
 area: reporting
 opened: 2026-05-22
@@ -59,3 +59,9 @@ this can equally be closed as `won't-do` — flag for owner decision.
 
 - Cross-round / longitudinal summaries (covered by the other report
   sections and the inline deltas discussed in the round-cockpit item).
+
+## Resolution — closed won't-do (2026-05-24)
+
+Round situational awareness is absorbed by the deferred #18 Round Cockpit; a
+standalone round-summary report would likely be discarded when #18 lands. Decided
+to close rather than build now. Revisit only if #18 is descoped.

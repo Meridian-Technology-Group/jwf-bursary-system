@@ -1,6 +1,6 @@
 ---
 title: AuditLog action + entityType naming is inconsistent across call sites
-status: open
+status: done
 severity: low
 area: audit, consistency
 opened: 2026-05-23
