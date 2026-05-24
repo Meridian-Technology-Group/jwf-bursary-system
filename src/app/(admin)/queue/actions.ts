@@ -29,6 +29,7 @@ import { createSupabaseAdminClient } from "@/lib/auth/supabase-admin";
 import { createProfile } from "@/lib/auth/create-profile";
 import { getAppUrl } from "@/lib/app-url";
 import { createInvitation } from "@/lib/db/queries/invitations";
+import { ensurePrimaryContributor } from "@/lib/db/queries/contributors";
 
 import { AUDIT_ACTIONS, AUDIT_ENTITY_TYPES } from "@/lib/audit/actions";
 
@@ -239,6 +240,11 @@ export async function createInternalRequestAction(
         },
         select: { id: true, reference: true },
       });
+
+      // Every application must have a PRIMARY contributor from creation so the
+      // section write path can tag the owner (dual-parent foundation). The lead
+      // applicant here is the invited parent's profile.
+      await ensurePrimaryContributor(tx, application.id, profile!.id);
 
       const expiresAt = new Date();
       expiresAt.setDate(expiresAt.getDate() + 30);

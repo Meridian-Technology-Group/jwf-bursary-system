@@ -7,7 +7,7 @@
 import type { Tx } from "@/lib/db/prisma";
 import {
   ApplicationContributorRole,
-  type ApplicationContributorStatus,
+  ApplicationContributorStatus,
 } from "@prisma/client";
 
 export interface SecondaryContributorSummary {
@@ -59,4 +59,74 @@ export async function getSecondaryContributor(
     invitedAt: contributor.invitedAt,
     submittedAt: contributor.submittedAt,
   };
+}
+
+/**
+ * Idempotently ensures the PRIMARY contributor row exists for an application
+ * and returns its id (dual-parent foundation, PR 4a).
+ *
+ * Every application has exactly one PRIMARY contributor (the lead applicant) —
+ * existing applications were backfilled in PR 1, and the section-owner NOT NULL
+ * migration backfills any created in between. Newly-created applications must
+ * call this immediately after `application.create` (within the SAME
+ * transaction) so the "every section is owned by a contributor" invariant holds
+ * from the first write.
+ *
+ * Keyed on `UNIQUE(application_id, role=PRIMARY)`: a concurrent or repeated call
+ * is a no-op `update: {}`. The lead applicant's contributor starts IN_PROGRESS
+ * (they are actively filling in the application, unlike an INVITED secondary).
+ *
+ * @returns the PRIMARY contributor id.
+ */
+export async function ensurePrimaryContributor(
+  tx: Tx,
+  applicationId: string,
+  leadApplicantId: string
+): Promise<string> {
+  const contributor = await tx.applicationContributor.upsert({
+    where: {
+      applicationId_role: {
+        applicationId,
+        role: ApplicationContributorRole.PRIMARY,
+      },
+    },
+    create: {
+      applicationId,
+      profileId: leadApplicantId,
+      role: ApplicationContributorRole.PRIMARY,
+      status: ApplicationContributorStatus.IN_PROGRESS,
+      invitedAt: new Date(),
+    },
+    update: {},
+    select: { id: true },
+  });
+
+  return contributor.id;
+}
+
+/**
+ * Resolves the contributor id that the given profile owns on an application
+ * (PRIMARY or SECONDARY), or null if the profile is not a contributor.
+ *
+ * Used by the section write path to tag the right owner: for the lead applicant
+ * this resolves to their PRIMARY contributor; for the second parent (PR 4b) it
+ * resolves to their SECONDARY contributor. Relies on
+ * `UNIQUE(application_id, profile_id)` — a profile is linked at most once.
+ */
+export async function resolveOwningContributorId(
+  tx: Tx,
+  applicationId: string,
+  profileId: string
+): Promise<string | null> {
+  const contributor = await tx.applicationContributor.findUnique({
+    where: {
+      applicationId_profileId: {
+        applicationId,
+        profileId,
+      },
+    },
+    select: { id: true },
+  });
+
+  return contributor?.id ?? null;
 }

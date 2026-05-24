@@ -294,14 +294,21 @@ export async function getCurrentApplicationForUser(tx: Tx, userId: string) {
 }
 
 /**
- * Returns completion status for all sections of an application.
+ * Returns completion status for all sections of an application OWNED BY a
+ * specific contributor.
+ *
+ * Sections are scoped by owner (dual-parent foundation, PR 4a): for the lead
+ * applicant this is their PRIMARY contributor, so the result is identical to
+ * the pre-dual-parent behaviour (every existing section is owned by the
+ * PRIMARY). A future SECONDARY contributor (PR 4b) sees only its own copies.
  */
 export async function getSectionStatusList(
   tx: Tx,
-  applicationId: string
+  applicationId: string,
+  ownerContributorId: string
 ): Promise<SectionStatusResult[]> {
   const rows = await tx.applicationSection.findMany({
-    where: { applicationId },
+    where: { applicationId, ownerContributorId },
     select: { section: true, isComplete: true, updatedAt: true },
   });
 
@@ -313,21 +320,27 @@ export async function getSectionStatusList(
 }
 
 /**
- * Upserts a single ApplicationSection row.
+ * Upserts a single ApplicationSection row owned by a specific contributor.
+ *
+ * Targets the contributor-scoped unique (applicationId, section,
+ * ownerContributorId). For the lead applicant `ownerContributorId` is their
+ * PRIMARY contributor — behaviour is identical to before (one row per section).
  */
 export async function upsertSection(
   tx: Tx,
   applicationId: string,
   section: ApplicationSectionType,
   data: unknown,
-  isComplete: boolean
+  isComplete: boolean,
+  ownerContributorId: string
 ) {
   const jsonData = data as Prisma.InputJsonValue;
   return tx.applicationSection.upsert({
     where: {
-      applicationId_section: {
+      applicationId_section_ownerContributorId: {
         applicationId,
         section,
+        ownerContributorId,
       },
     },
     update: {
@@ -337,6 +350,7 @@ export async function upsertSection(
     create: {
       applicationId,
       section,
+      ownerContributorId,
       data: jsonData,
       isComplete,
     },
@@ -344,19 +358,21 @@ export async function upsertSection(
 }
 
 /**
- * Loads a single section's data for an application.
- * Returns null if the section has not been saved yet.
+ * Loads a single section's data for an application, scoped to the owning
+ * contributor. Returns null if that contributor has not saved this section yet.
  */
 export async function getSectionData(
   tx: Tx,
   applicationId: string,
-  section: ApplicationSectionType
+  section: ApplicationSectionType,
+  ownerContributorId: string
 ) {
   return tx.applicationSection.findUnique({
     where: {
-      applicationId_section: {
+      applicationId_section_ownerContributorId: {
         applicationId,
         section,
+        ownerContributorId,
       },
     },
     select: { data: true, isComplete: true, updatedAt: true },

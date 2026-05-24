@@ -8,6 +8,7 @@
 import type { Tx } from "@/lib/db/prisma";
 import type { ApplicationSectionType, Invitation } from "@prisma/client";
 import { generateApplicationReference } from "@/lib/applications/reference";
+import { ensurePrimaryContributor } from "@/lib/db/queries/contributors";
 
 // ─── Section types that are pre-populated from the previous year ─────────────
 
@@ -152,6 +153,25 @@ export async function prepopulateReassessment(
   applicationId: string,
   previousApplicationId: string
 ): Promise<void> {
+  // Resolve the new application's lead applicant so we can ensure/resolve its
+  // PRIMARY contributor — every section row created here must be owned by it
+  // (dual-parent foundation). Callers already create the contributor before
+  // calling this, but ensuring here keeps the helper self-contained.
+  const newApplication = await tx.application.findUnique({
+    where: { id: applicationId },
+    select: { leadApplicantId: true },
+  });
+  if (!newApplication) {
+    throw new Error(
+      `prepopulateReassessment: application ${applicationId} not found`
+    );
+  }
+  const ownerContributorId = await ensurePrimaryContributor(
+    tx,
+    applicationId,
+    newApplication.leadApplicantId
+  );
+
   // Load previous year's personal sections
   const previousSections = await tx.applicationSection.findMany({
     where: {
@@ -168,14 +188,16 @@ export async function prepopulateReassessment(
     previousSections.map((prev) =>
       tx.applicationSection.upsert({
         where: {
-          applicationId_section: {
+          applicationId_section_ownerContributorId: {
             applicationId,
             section: prev.section,
+            ownerContributorId,
           },
         },
         create: {
           applicationId,
           section: prev.section,
+          ownerContributorId,
           data: prev.data as never,
           isComplete: true,
         },
@@ -194,11 +216,16 @@ export async function prepopulateReassessment(
     FINANCIAL_SECTIONS.map((section) =>
       tx.applicationSection.upsert({
         where: {
-          applicationId_section: { applicationId, section },
+          applicationId_section_ownerContributorId: {
+            applicationId,
+            section,
+            ownerContributorId,
+          },
         },
         create: {
           applicationId,
           section,
+          ownerContributorId,
           data: {},
           isComplete: false,
         },
@@ -298,6 +325,10 @@ export async function createReassessmentApplicationFromInvitation(
       status: "PRE_SUBMISSION",
     },
   });
+
+  // Every application must have a PRIMARY contributor from creation so the
+  // section write path can tag the owner (dual-parent foundation).
+  await ensurePrimaryContributor(tx, application.id, authUserId);
 
   // Pre-populate personal sections from the most recent previous-year app.
   const previous = await getPreviousYearApplication(
