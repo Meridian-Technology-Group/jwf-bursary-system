@@ -527,6 +527,7 @@ enum EmailTemplateType {
   REASSESSMENT
   REMINDER
   INVITE_STAFF
+  MISSING_DOCS_RESPONDED
 }
 
 enum BursaryAccountStatus {
