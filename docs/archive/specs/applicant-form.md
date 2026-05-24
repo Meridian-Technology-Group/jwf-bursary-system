@@ -1,665 +1,628 @@
 # Bursary Application Portal - Complete Input Mapping
 
-> **⚠️ Known stale — verify against the implementation before relying on this.**
-> This is a pre-build field map and the implemented portal has since diverged
-> from it. Confirmed divergences (code is the source of truth):
-> - **Section structure.** The live form has **10 sections** with **Family
->   Identification as its own section** (`ApplicationSectionType`:
->   `CHILD_DETAILS, FAMILY_ID, PARENT_DETAILS, DEPENDENT_CHILDREN,
->   DEPENDENT_ELDERLY, OTHER_INFO, PARENTS_INCOME, ASSETS_LIABILITIES,
->   ADDITIONAL_INFO, DECLARATION`). This doc folds Family ID into Section 1 and
->   numbers the rest differently.
-> - **Employment status.** The live form uses a **7-option** set mirroring the
->   assessor enum (`PAYE`, `BENEFITS`, `SELF_EMPLOYED_DIRECTOR`,
->   `SELF_EMPLOYED_SOLE`, `OLD_AGE_PENSION`, `PAST_PENSION`, `UNEMPLOYED`; see
->   `src/components/portal/sections/parent-details-form.tsx`). This doc lists a
->   superseded set (Employed / Self-employed CIS / Retired …).
+> **✅ Reconciled against the implementation on 2026-05-24.**
+> This field map has been walked field-by-field against the shipped portal
+> (`src/components/portal/sections/*`, `src/lib/schemas/*`, `src/types/application.ts`,
+> and `prisma/schema.prisma`). It now describes the form **as built**, with the
+> pre-build design having been corrected throughout. Code remains the source of
+> truth; where this doc and the code disagree, fix the doc.
 >
-> A full field-by-field re-verification is tracked in
-> [`docs/backlog/applicant-form-spec-stale-vs-implementation.md`](../../backlog/applicant-form-spec-stale-vs-implementation.md).
-> For the current applicant experience, the
+> Items the **types/schemas define but the UI does not yet collect** are marked
+> inline as **⚠️ NOT YET BUILT (stub)** so QA and screenshot capture are not
+> misled. Those stubs are genuine implementation gaps, not doc drift — see the
+> "Implementation gaps" note at the foot of this document.
+>
+> For the user-facing source of truth, see the
 > [Applicant User Guide](../../guides/applicant-guide.md) and the
-> [applicant walkthroughs](../../guides/walkthroughs/applicants/) reflect the
-> implemented form.
+> [applicant walkthroughs](../../guides/walkthroughs/applicants/).
+> Reconciliation tracked in
+> [`docs/backlog/applicant-form-spec-stale-vs-implementation.md`](../../backlog/applicant-form-spec-stale-vs-implementation.md).
 
 ## Overview
 
-The John Whitgift Foundation Bursary Portal is a multi-page application form for bursary assessment (e.g. 2026/27 academic year). A left sidebar shows progress (percentage complete) and navigation across all sections. Each page has **Previous**, **Next**, and **Save And Close** buttons.
+The John Whitgift Foundation Bursary Portal is a multi-step application form
+for bursary assessment. The form is a **sequential wizard**: each section is its
+own page (`/apply/[section]`), and the applicant moves through them in a fixed
+order with **Previous** / **Next** / **Save** controls. A left sidebar shows
+progress and section completion. A final **Review** page
+(`/apply/review`) lists section completion before submission — this is the
+review/summary screen, *not* a data-entry section.
+
+### Section model (source of truth: `ApplicationSectionType` enum)
+
+There are **10 data sections**, each persisted as one `ApplicationSection` row
+with a JSONB `data` payload typed in `src/types/application.ts`. The wizard
+order (`SECTION_ORDER` in `src/app/(portal)/apply/[section]/page.tsx`) is:
+
+| # | Enum value | Slug | Title in UI |
+|---|------------|------|-------------|
+| 1 | `CHILD_DETAILS` | `child-details` | Details of Child |
+| 2 | `FAMILY_ID` | `family-id` | Family Identification |
+| 3 | `PARENT_DETAILS` | `parent-details` | Parent / Guardian Details |
+| 4 | `DEPENDENT_CHILDREN` | `dependent-children` | Dependent Children |
+| 5 | `DEPENDENT_ELDERLY` | `dependent-elderly` | Dependent Elderly |
+| 6 | `OTHER_INFO` | `other-info` | Other Information Required |
+| 7 | `PARENTS_INCOME` | `parents-income` | Parents' Income |
+| 8 | `ASSETS_LIABILITIES` | `assets-liabilities` | Parents' Assets & Liabilities |
+| 9 | `ADDITIONAL_INFO` | `additional-info` | Additional Information |
+| 10 | `DECLARATION` | `declaration` | Declaration |
+
+> **Re-assessments:** `FAMILY_ID` is hidden entirely for re-assessment
+> applications (`REASSESSMENT_SECTION_ORDER`), so the wizard runs across 9
+> sections. ID is only checked in year 1.
+
+> **Correction vs. the pre-build design:** the original design folded Family
+> Identification into "Details of Child" and listed a "Validation Summary"
+> section plus standalone "How to Apply"/"Checklist"/"Terms and Conditions"
+> pages. In the shipped form, Family Identification is its own section (#2), and
+> there is no Validation-Summary *data* section — completion is shown on the
+> Review page.
 
 ---
 
-## Navigation Structure (Sidebar Sections)
+## Section 1: Details of Child (`CHILD_DETAILS`)
 
-1. How to Apply
-2. Checklist
-3. **Details of child**
-4. **Parent/guardian details**
-   - Dependent children
-   - Dependent elderly
-5. **Other information required**
-6. **Parents' income**
-7. **Parents' assets & liabilities**
-8. **Additional information**
-9. **Declaration**
-10. Validation summary
-11. Terms and Conditions (link)
+Implemented in `src/components/portal/sections/child-details-form.tsx`;
+validated by `src/lib/schemas/child-details.ts`; typed by `ChildDetailsData`.
+
+### 1.1 School selection
+
+| Field | Type | Required | Notes |
+|-------|------|----------|-------|
+| School you are applying for | **Dropdown** (`Select`) | Yes | Two options: **Trinity School** (`TRINITY`) / **Whitgift School** (`WHITGIFT`). Stored as `school`. |
+| School year your child is applying to enter | **Dropdown** (`Select`) | Yes | Options: Year 6 (`Y6`) / Year 7 (`Y7`) / Year 9 (`Y9`) / Year 12 (`Y12`) / Other (`OTHER`). Stored as `entryYearGroup`. |
+
+> **Correction:** school is a **dropdown**, not an autocomplete/type-ahead. The
+> pre-build "Are you applying to another school? (Yes/No)" field **does not
+> exist**. A **new** required field — *School year your child is applying to
+> enter* (`entryYearGroup`) — has been **added** since the design (per §4 of the
+> spec; the assessor reconciles `OTHER` by hand).
+
+### 1.2 Child information
+
+| Field | Type | Required | Notes |
+|-------|------|----------|-------|
+| Child's full name | Text input | Yes | `childFullName` |
+| Gender | Dropdown | Yes | Options: Male / Female / Prefer not to say / Other. `gender` |
+| Date of birth | Date input | Yes | `dateOfBirth` (ISO `YYYY-MM-DD`) |
+| Place of birth | **Country combobox** | Yes | Searchable country picker. `placeOfBirth` |
+
+### 1.3 Birth certificate
+
+| Field | Type | Required | Notes |
+|-------|------|----------|-------|
+| Birth Certificate | File upload (functional) | Yes | Slot `BIRTH_CERTIFICATE`. Hint: "must show child's name, date of birth, place of birth, and parents' names." Stored as `birthCertificateDocumentId`. |
+
+### 1.4 Child's current address
+
+| Field | Type | Required | Notes |
+|-------|------|----------|-------|
+| Does the child live at the same address as Parent/Guardian 1? | Yes/No toggle | Yes | `sameAddressAsParent1` |
+
+**If "No" (`sameAddressAsParent1 === false`)** the child's address fields appear
+(`childAddress.*`):
+
+| Field | Type | Required | Notes |
+|-------|------|----------|-------|
+| Address line 1 | Text input | Yes | |
+| Address line 2 | Text input | No | |
+| City / Town | Text input | Yes | |
+| Postcode | Text input | Yes | Rendered uppercase |
+| Country | Country combobox | Yes | |
+
+### 1.5 Current school
+
+| Field | Type | Required | Notes |
+|-------|------|----------|-------|
+| School currently attended | Text input | Yes | `currentSchool` (free text, **not** a dropdown) |
+| Start date at current school | Date input | Yes | `currentSchoolStartDate` |
 
 ---
 
-## Section 1: Details of Child
+## Section 2: Family Identification (`FAMILY_ID`)
 
-### 1.1 School Selection
+Implemented in `family-id-form.tsx`; typed by `FamilyIdData` /
+`FamilyMemberIdentity`. Hidden for re-assessments.
 
-| Field | Type | Required | Notes |
-|-------|------|----------|-------|
-| School you are applying for | Autocomplete text input | Yes | Must select "Trinity School" or "Whitgift School" from options that appear as you type |
-| Are you applying to another school? | Radio: Yes / No | Yes | |
+Instruction banner: *"This includes all dependent children and any dependent
+elderly family members."*
 
-### 1.2 Child Information
+A repeatable list of family members. **"Add family member"** opens a modal that
+collects **only the member's name**; the citizenship question and uploads live
+on the member's card after it is added.
 
-| Field | Type | Required | Notes |
-|-------|------|----------|-------|
-| Child's full name | Text input | Yes | |
-| Gender | Dropdown | Yes | |
-| Date of birth | Date picker (DD/MM/YYYY) | Yes | |
-| Place of birth | Dropdown (countries) | Yes | |
-
-### 1.3 Birth Certificate
+#### Add family member modal
 
 | Field | Type | Required | Notes |
 |-------|------|----------|-------|
-| Child's full birth certificate | File upload | Yes | "Must include names of parents and place of birth." Actions: Attach / Document Attached / View / Use / Delete |
+| Family member name | Text input | Yes | Modal has **Save** / **Cancel** |
 
-### 1.4 Child's Current Address
+> **Correction:** in the pre-build design the modal also asked the
+> British-citizen question and held the uploads. In the shipped form the modal
+> captures the **name only**; the citizenship toggle and conditional uploads are
+> rendered on the per-member **card** in the list.
 
-| Field | Type | Required | Notes |
-|-------|------|----------|-------|
-| Is the child's current address the same as Parent/Guardian 1? | Radio: Yes / No | Yes | |
-
-**If "No" (or address differs):**
-
-| Field | Type | Required | Notes |
-|-------|------|----------|-------|
-| Address Line 1 | Text input | Yes | Note: "The address details can be edited in the 'Manage My Details' section of the Portal" |
-| Address Line 2 | Text input | No | |
-| City/Town | Text input | Yes | |
-| Postcode | Text input | Yes | |
-| Country | Dropdown | Yes | |
-
-### 1.5 Current School
+#### Per-member card
 
 | Field | Type | Required | Notes |
 |-------|------|----------|-------|
-| School currently attended by child | Dropdown | Yes | |
-| Start Date of school currently attended | Date picker (DD/MM/YYYY) | Yes | |
-
-### 1.6 Identification for All Family Members
-
-Instruction: *"Note: this includes all dependent children and any dependent elderly."*
-
-Repeatable sub-form via **"Add..."** button (opens modal dialog):
-
-#### Family Member Modal
-
-| Field | Type | Required | Notes |
-|-------|------|----------|-------|
-| Family Member | Text input | Yes | Name of the family member |
-| Is this family member a British citizen? | Radio: Yes / No | Yes | Drives conditional uploads below |
+| Is this family member a British citizen? | Yes/No toggle | — | `isBritishCitizen` (defaults to **Yes** when the member is added) |
 
 **If British citizen = Yes:**
 
 | Field | Type | Required | Notes |
 |-------|------|----------|-------|
-| Upload UK Passport | File upload | Yes | |
+| UK Passport | File upload (functional) | — | Slot `FAMILY_ID_PASSPORT_{index}`; `ukPassportDocumentId` |
 
 **If British citizen = No:**
 
 | Field | Type | Required | Notes |
 |-------|------|----------|-------|
-| Upload Passport | File upload | Yes | |
-| Upload Evidence of Indefinite Leave to Remain in the UK | File upload | Yes | |
-
-Modal has **Save** and **Cancel** buttons.
+| Passport | File upload (functional) | — | Slot `FAMILY_ID_PASSPORT_{index}`; `passportDocumentId` |
+| Evidence of Indefinite Leave to Remain in the UK | File upload (functional) | — | Slot `FAMILY_ID_ILR_{index}`; `ilrDocumentId` |
 
 ---
 
-## Section 2: Parent/Guardian Details
+## Section 3: Parent / Guardian Details (`PARENT_DETAILS`)
 
-### 2.1 Sole Parent Question
+Implemented in `parent-details-form.tsx`; validated by
+`src/lib/schemas/parent-details.ts`; typed by `ParentDetailsData`.
 
-| Field | Type | Required | Notes |
-|-------|------|----------|-------|
-| Are you applying as a sole parent / guardian? | Radio: Yes / No | Yes | "If yes, only sections relevant to you will be displayed on this list." "If no, both sections should appear on this list for you and your partner to fill in." |
-
-### 2.2 Relationship Status
+### 3.1 Sole parent
 
 | Field | Type | Required | Notes |
 |-------|------|----------|-------|
-| Please indicate your relationship status as applicants | Radio group | Yes | Options: Single / Married / Widowed / Separated / Divorced / In a Civil Partnership / Cohabiting |
+| Are you applying as a sole parent / guardian? | Yes/No toggle | Yes | `isSoleParent`. When Yes, the Parent/Guardian 2 blocks are hidden across this section, Parents' Income, and Assets & Liabilities. |
 
-### 2.3 Parent / Guardian 1 - Contact Details
-
-Note: *"Your contact details are in the 'Manage My Details' section of the Portal."*
+### 3.2 Relationship status
 
 | Field | Type | Required | Notes |
 |-------|------|----------|-------|
-| Title | Dropdown | Yes | |
-| First Name(s) | Text input | Yes | |
-| Last Name | Text input | Yes | |
-| Telephone No | Text input | No | |
-| Telephone No 2 | Text input | No | |
-| Mobile No | Text input | No | |
-| Email address | Text (read-only) | N/A | Pre-populated from portal account |
-| Address Line 1 | Text input | Yes | |
-| Address Line 2 | Text input | No | |
-| City/Town | Text input | Yes | |
-| Postcode | Text input | Yes | |
-| Country | Dropdown | Yes | |
+| Relationship status | Radio group | Yes | Options: Single / Married / Widowed / Separated / Divorced / In a Civil Partnership / Cohabiting. `relationshipStatus` |
 
-### 2.4 Parent / Guardian 1 - Employment Details
+### 3.3 Parent / Guardian 1 — Contact details (`parent1Contact`)
+
+Helper text: *"Your contact details are in the 'Manage My Details' section of the
+Portal."*
 
 | Field | Type | Required | Notes |
 |-------|------|----------|-------|
-| Employment status | Radio group | Yes | Options: Employed / Unemployed / Self-employed / Self-employed (CIS registered) / Self-employed and employed / Retired |
+| Title | Dropdown | Yes | Mr / Mrs / Ms / Miss / Dr / Prof / Other |
+| First name(s) | Text input | Yes | |
+| Last name | Text input | Yes | |
+| Telephone no. | Text input (`tel`) | No | |
+| Mobile no. | Text input (`tel`) | No | |
+| Address line 1 | Text input | Yes | |
+| Address line 2 | Text input | No | |
+| City / Town | Text input | Yes | |
+| Postcode | Text input | Yes | Validated against a UK postcode pattern when country is UK/blank |
+| Country | Country combobox | Yes | |
 
-#### Conditional fields based on employment status:
+> **Correction:** Parent/Guardian **1** has **no email field rendered** (email
+> comes from the portal account). The pre-build "Telephone No 2" field is
+> **not** rendered for either parent (the `telephone2` key exists in the schema
+> but has no input). The schema marks `telephone`, `telephone2`, `mobile`, and
+> `email` as optional.
 
-**If Employed, Self-employed, Self-employed (CIS), or Self-employed and employed:**
-
-| Field | Type | Required | Notes |
-|-------|------|----------|-------|
-| Your profession, business or trade | Text input / Dropdown | Yes | |
-| Name and address of employer or address of business | Text area | Yes | |
-| Book/Account year end date | Date field | Yes | Reference date for accounts |
-| Are you a director of this company? | Radio: Yes / No | Yes | |
-
-**If director = Yes (sub-conditional):**
-
-| Field | Type | Required | Notes |
-|-------|------|----------|-------|
-| Please state proportion or exact value of shares or stake in % | Text / Number input | Yes | |
-| Copy of latest certified/audited accounts | File upload | Yes | |
-| Copy of latest Balance Sheet | File upload | Yes | |
-
-**Continuing for employed/self-employed statuses:**
+### 3.4 Parent / Guardian 1 — Employment details (`parent1Employment`)
 
 | Field | Type | Required | Notes |
 |-------|------|----------|-------|
-| Have you left self-employment since April [year]? | Radio: Yes / No | Yes | Year is dynamic based on assessment period |
+| Employment status | Radio group | Yes | **7 options** (see below). `status` |
 
-**If left self-employment = Yes:**
+**Employment status options** (values mirror the assessor-side
+`EmploymentStatus` enum so the applicant's choice flows into Stage 1 income — see
+B11):
 
-| Field | Type | Required | Notes |
-|-------|------|----------|-------|
-| Upload evidence of previous self-employment | File upload | Yes | |
+| Value | Applicant-facing label |
+|-------|------------------------|
+| `PAYE` | Employed (PAYE) |
+| `BENEFITS` | Receiving benefits only (not working) |
+| `SELF_EMPLOYED_DIRECTOR` | Self-employed — company director |
+| `SELF_EMPLOYED_SOLE` | Self-employed — sole trader |
+| `OLD_AGE_PENSION` | Receiving state / old-age pension |
+| `PAST_PENSION` | Receiving private or occupational pension |
+| `UNEMPLOYED` | Unemployed |
 
-**Continuing:**
+> **Correction:** the pre-build option set (Employed / Self-employed / CIS /
+> Self-employed and employed / Retired) is **superseded** by the 7-option set
+> above.
 
-| Field | Type | Required | Notes |
-|-------|------|----------|-------|
-| Gross Pay | Currency (£) input | Yes | |
-| Do you receive a scholarship / maintenance? | Radio: Yes / No | Yes | |
-
-**If receives scholarship/maintenance = Yes:**
-
-| Field | Type | Required | Notes |
-|-------|------|----------|-------|
-| Upload evidence of your scholarship / maintenance | File upload | Yes | |
-
-**If Unemployed:**
-
-| Field | Type | Required | Notes |
-|-------|------|----------|-------|
-| Please provide details | Text area | Yes | Details of circumstances |
-
-### 2.5 Declaration of Parent / Guardian 1
-
-Declaration text reads (paraphrased): *"I declare to the best of my knowledge and belief, all the particulars here submitted are true and contain a full statement of our income from all sources during the period stated. I understand that the provision of false information will lead to my application being disqualified from assessment under the bursary scheme and full fees would become payable thereafter."*
+**Conditional — "working" statuses (`PAYE`, `SELF_EMPLOYED_DIRECTOR`,
+`SELF_EMPLOYED_SOLE`):**
 
 | Field | Type | Required | Notes |
 |-------|------|----------|-------|
-| Acceptance checkbox/radio | Checkbox or Radio | Yes | Must confirm declaration |
+| Profession, business or trade | Text input | Yes (when working) | `profession` |
+| Name and address of employer or business | Textarea | Yes (when working) | `employerAddress` |
+| Book / Account year end date | Date input | No | `bookYearEndDate` |
+| Are you a director of this company? | Yes/No toggle | No | `isDirector` |
 
-### 2.6 Parent / Guardian 2 - Contact Details
-
-**Conditional: Only shown when "sole parent" = No.**
+**If director = Yes:**
 
 | Field | Type | Required | Notes |
 |-------|------|----------|-------|
-| Title | Dropdown | Yes | |
-| First Name | Text input | Yes | |
-| Last Name | Text input | Yes | |
-| Email address | Text input | Yes | |
-| Telephone No | Text input | No | |
-| Mobile No | Text input | No | |
-| Surname (birth/maiden) | Text input | No | |
-| Registered on (portal) | Display text | N/A | Indicates whether this parent has registered on the portal |
+| Proportion or exact value of shares / stake (%) | Text input | Yes (when director) | `sharePercentage` |
+| Copy of latest certified/audited accounts | **⚠️ NOT YET BUILT (stub)** | — | Placeholder box: "Document upload available once application is created." `certifiedAccountsDocumentId` exists in the type but no upload control is wired. |
+| Copy of latest balance sheet | **⚠️ NOT YET BUILT (stub)** | — | As above. `balanceSheetDocumentId`. |
 
-### 2.7 Parent / Guardian 2 - Employment Details
+**Continuing (working statuses):**
 
-**Conditional: Only shown when "sole parent" = No.**
+| Field | Type | Required | Notes |
+|-------|------|----------|-------|
+| Have you left self-employment since April? | Yes/No toggle | No | `leftSelfEmployment` |
+| Evidence of previous self-employment | **⚠️ NOT YET BUILT (stub)** | — | Placeholder box. The **schema** requires `leftSelfEmploymentDocumentId` when `leftSelfEmployment` is true, but no upload control is rendered — see "Implementation gaps". |
+| Gross pay | Currency (£) | Yes (when working) | `grossPay` |
+| Do you receive a scholarship / maintenance? | Yes/No toggle | No | `receivesScholarship` |
+| Evidence of scholarship / maintenance | **⚠️ NOT YET BUILT (stub)** | — | Placeholder box. Schema requires `scholarshipDocumentId` when `receivesScholarship` is true, but no upload control is rendered. |
 
-Same structure as Parent/Guardian 1 employment details (Section 2.4), with identical fields and conditional logic.
+**Conditional — `UNEMPLOYED`:**
 
-### 2.8 Declaration of Parent / Guardian 2
+| Field | Type | Required | Notes |
+|-------|------|----------|-------|
+| Please provide details | Textarea | Yes (when unemployed) | `unemployedDetails` |
 
-**Conditional: Only shown when "sole parent" = No.**
+> Note: `BENEFITS`, `OLD_AGE_PENSION`, and `PAST_PENSION` reveal **neither** the
+> working-fields block nor the unemployed details box.
 
-Same declaration text and acceptance field as Parent/Guardian 1 (Section 2.5).
+### 3.5 Declaration of Parent / Guardian 1
+
+Inline declaration text ("I declare to the best of my knowledge and belief …
+full fees would become payable thereafter.") followed by:
+
+| Field | Type | Required | Notes |
+|-------|------|----------|-------|
+| I accept the above declaration | Checkbox | — (not enforced in schema) | `declarationAccepted` |
+
+### 3.6–3.8 Parent / Guardian 2 (`parent2Contact`, `parent2Employment`)
+
+Shown **only when `isSoleParent === false`**. Same contact, employment, and
+declaration structure as Parent/Guardian 1, **plus** one extra field:
+
+| Field | Type | Required | Notes |
+|-------|------|----------|-------|
+| Email address | Text input (`email`) | Yes (when shown) | `parent2Contact.email` — rendered for Parent 2 only |
+
+> **Correction:** the pre-build "Surname (birth/maiden)" and "Registered on
+> (portal)" fields for Parent 2 are **not** in the shipped form. Parent 2's
+> contact/employment are validated by re-running the Parent 1 schema inside
+> `superRefine` only when not a sole parent.
 
 ---
 
-## Section 3: Dependent Children
+## Section 4: Dependent Children (`DEPENDENT_CHILDREN`)
 
-### 3.1 Number of Dependent Children
+Implemented in `dependent-children-form.tsx`; validated by
+`src/lib/schemas/dependent-children.ts`; typed by `DependentChildrenData`.
 
-| Field | Type | Required | Notes |
-|-------|------|----------|-------|
-| How many children do you have still living at your address, or who are still financially dependent on you (e.g. studying at University)? | Number input | Yes | |
-
-### 3.2 Dependent Children at John Whitgift Foundation Schools
-
-Instruction: *"Please provide information on the child named in this application as well as any other dependent children."*
-
-Displayed as a table with columns:
-
-| Column | Type | Notes |
-|--------|------|-------|
-| Name | Text (may be pre-populated) | Name of child; the named applicant child is pre-filled |
-| Dependent status (date) | Date / Text | |
-| Surname of other parent | Text | If applicable |
-| Amount of bursary | Currency (£) | Current bursary amount, if any |
-| School | Text / Dropdown | Which school they attend |
-
-Rows can be added via **"Add..."** button.
-
-### 3.3 Dependent Children at Other Schools
-
-Additional section for children at non-Foundation schools (details can be added).
-
-### 3.4 Add Child Modal
+### 4.1 Count
 
 | Field | Type | Required | Notes |
 |-------|------|----------|-------|
-| Is this child | Dropdown | Yes | Options include: "(Select)" / "The named child of this application" / other dependent children |
-| Children's unearned income | Currency (£) input | Yes | "Where a value is not applicable for you, please enter 0." Label: "Actual to [date]" (e.g. 06/04/2021, dynamic based on tax year) |
+| How many children do you have still living at your address, or who are still financially dependent on you? | Number input | Yes | Help text: "Include children studying at university or college." `numberOfDependentChildren` |
 
-**If "The named child of this application" is selected:**
-- Displays read-only: **"Child (named on this application): [Child Name]"**
+### 4.2 Children table
 
-Modal has **Save** and **Cancel** buttons.
+One flat, repeatable table (**no** separate "Foundation schools" vs. "other
+schools" sub-tables). Columns: **Name**, **School**, **Bursary (£)**,
+**Unearned income (£)**, Actions. Rows are added/edited via the **Add child** /
+**Edit child** modal.
+
+> **Validation:** `superRefine` requires **at least one** child row and at most
+> **one** row flagged as the named child of this application.
+
+#### Add / Edit child modal
+
+| Field | Type | Required | Notes |
+|-------|------|----------|-------|
+| This is the named child of this application | Checkbox | No | When checked, **Name** is auto-filled from Section 1's child name and locked. `isNamedChild` |
+| Child name | Text input | Yes | `name` (disabled when named-child is checked) |
+| School | Text input | No | `school` |
+| Amount of bursary (£) | Currency input | No | `bursaryAmount` |
+| Children's unearned income (£) | Currency input | Yes | Help text: "Where a value is not applicable, please enter 0." `unearnedIncome` |
+
+> **Correction:** the pre-build "Dependent status (date)" and "Surname of other
+> parent" columns/fields are **not** in the shipped modal (the
+> `dependentStatusDate` / `surnameOtherParent` keys exist in the type but are
+> not collected). There is no dropdown for "Is this child"; selection of the
+> named child is the checkbox above.
 
 ---
 
-## Section 4: Dependent Elderly
+## Section 5: Dependent Elderly (`DEPENDENT_ELDERLY`)
 
-### 4.1 Elderly Dependants at Home
+Implemented in `dependent-elderly-form.tsx`; validated by
+`src/lib/schemas/dependent-elderly.ts`; typed by `DependentElderlyData`.
 
-| Field | Type | Required | Notes |
-|-------|------|----------|-------|
-| Do you have any elderly dependant that you are providing for at home? | Radio: Yes / No | Yes | |
-
-**If Yes:**
+### 5.1 Elderly dependants at home
 
 | Field | Type | Required | Notes |
 |-------|------|----------|-------|
-| How many? | Number input | Yes | |
-| Please provide information about the elderly dependants | Repeatable sub-form via **"Add..."** button | Yes | Opens modal |
+| Do you have any elderly dependant that you are providing for at home? | Yes/No toggle | Yes | `hasElderlyAtHome` |
+| How many? | Number input | Yes (when Yes) | `elderlyAtHomeCount` |
+| Per-dependant details (names, DOB, 100+ flag) | **⚠️ NOT YET BUILT (stub)** | — | Placeholder box: "Elderly dependant details form will be fully implemented in a future work package." |
 
-#### Add Elderly Dependant (At Home) Modal
-
-| Field | Type | Required | Notes |
-|-------|------|----------|-------|
-| First Name | Text input | Yes | |
-| Middle Name(s) | Text input | No | |
-| Surname | Text input | Yes | |
-| Date of birth | Date picker | No | "Please note that dates 100+ years ago cannot be inputted. If this is the case, please use the checkbox below." |
-| The elderly dependant is 100+ years old | Checkbox | No | Use when DOB cannot be entered due to system limitation |
-
-### 4.2 Elderly Dependants in a Care Home
+### 5.2 Elderly dependants in a care home
 
 | Field | Type | Required | Notes |
 |-------|------|----------|-------|
-| Do you have any elderly dependant that you are providing for in a care home? | Radio: Yes / No | Yes | |
+| Do you have any elderly dependant that you are providing for in a care home? | Yes/No toggle | Yes | `hasElderlyInCare` |
+| How many? | Number input | Yes (when Yes) | `elderlyInCareCount` |
+| Per-dependant + care home details (name, DOB, care home name, fees, invoice upload) | **⚠️ NOT YET BUILT (stub)** | — | Placeholder box: "Care home dependant details form will be fully implemented in a future work package." |
 
-**If Yes:**
-
-| Field | Type | Required | Notes |
-|-------|------|----------|-------|
-| How many? | Number input | Yes | |
-| Please provide information about the elderly dependants | Repeatable sub-form via **"Add..."** button | Yes | Opens modal |
-
-#### Add Elderly Dependant (Care Home) Modal
-
-| Field | Type | Required | Notes |
-|-------|------|----------|-------|
-| First Name | Text input | Yes | |
-| Middle Name(s) | Text input | No | |
-| Surname | Text input | Yes | |
-| Date of birth | Date picker | No | Same 100+ year note as above |
-| The elderly dependant is 100+ years old | Checkbox | No | |
-| Care Home Name | Text input | Yes | |
-| Care Home Fees | Currency (£) input | Yes | |
-| Latest invoice from the care home regarding monthly charges for your dependent elderly | File upload | Yes | |
-
-Modal has **Save** and **Cancel** buttons.
+> **Correction:** the rich per-dependant modals described in the pre-build
+> design (first/middle/surname, DOB with 100+ checkbox, care home name/fees,
+> invoice upload) are **defined in the type and Zod schema**
+> (`ElderlyDependant`) **but the UI only collects the Yes/No + count today.** See
+> "Implementation gaps."
 
 ---
 
-## Section 5: Other Information Required
+## Section 6: Other Information Required (`OTHER_INFO`)
 
-### 5.1 Court Orders
+Implemented in `other-info-form.tsx`; typed by `OtherInfoData`.
 
-| Field | Type | Required | Notes |
-|-------|------|----------|-------|
-| Do you have a court order for the payment of school fees? | Radio: Yes / No | Yes | |
-
-**If Yes:**
+### 6.1 Court orders
 
 | Field | Type | Required | Notes |
 |-------|------|----------|-------|
-| Amount to be paid (Term) | Currency (£) input | Yes | Amount per term |
-| Amount to be paid (Year) | Currency (£) input | Yes | Amount per year |
-| Please upload evidence of the Court Order | File upload | Yes | |
+| Do you have a court order for the payment of school fees? | Yes/No toggle | Yes | `hasCOurtOrder` (note the camelCase typo `hasCOurtOrder` in the type/field name) |
+| Amount per term | Currency (£) | Yes (when Yes) | `courtOrderTermAmount` |
+| Amount per year | Currency (£) | Yes (when Yes) | `courtOrderYearAmount` |
+| Evidence of Court Order | **⚠️ NOT YET BUILT (stub)** | — | Placeholder box. `courtOrderDocumentId` exists in the type but no upload control is wired. |
 
-### 5.2 School Maintenance Payments
-
-| Field | Type | Required | Notes |
-|-------|------|----------|-------|
-| Upload school/maintenance payment evidence | File upload | Conditional | "Not Maintained / Financial Statement" option visible |
-
-### 5.3 Insurance Policies
+### 6.2 Insurance policies
 
 | Field | Type | Required | Notes |
 |-------|------|----------|-------|
-| Do you have the benefit of any insurance policies specifically to pay school? | Radio: Yes / No | Yes | |
+| Do you have the benefit of any insurance policies specifically to pay school fees? | Yes/No toggle | Yes | `hasInsurancePolicy` |
+| Amount to be paid this school year | Currency (£) | Yes (when Yes) | `insurancePolicyAmount` |
 
-**If Yes:**
+> **Correction:** the pre-build insurance **date-range** fields are **not**
+> rendered (`insurancePolicyStartDate` / `insurancePolicyEndDate` exist in the
+> type but have no inputs). The pre-build "School Maintenance Payments" upload
+> sub-section is **not** present (`maintenancePaymentDocumentId` is unused by the
+> UI).
 
-| Field | Type | Required | Notes |
-|-------|------|----------|-------|
-| Amount to be paid in respect of this school year starting | Currency (£) input | Yes | |
-| Date range fields | Date pickers | Yes | Start/end dates for the policy period |
-
-### 5.4 Outstanding School Fees
-
-| Field | Type | Required | Notes |
-|-------|------|----------|-------|
-| Are any outstanding school fees at any other school? | Radio: Yes / No | Yes | |
-
-**If Yes:**
+### 6.3 Outstanding school fees
 
 | Field | Type | Required | Notes |
 |-------|------|----------|-------|
-| Name(s) of school | Text input | Yes | |
-| Amount owed | Currency (£) input | Yes | |
+| Are any outstanding school fees owed at any other school? | Yes/No toggle | Yes | `hasOutstandingFees` |
+| Name(s) of school | Text input | Yes (when Yes) | `outstandingFeesSchoolName` |
+| Amount owed | Currency (£) | Yes (when Yes) | `outstandingFeesAmount` |
 
 ---
 
-## Section 6: Parents' Income
+## Section 7: Parents' Income (`PARENTS_INCOME`)
 
-Page header: *"Please complete the table below showing GROSS INCOME before deduction of tax from all sources of income for the financial year ended 5 April [year]."*
+Implemented in `parents-income-form.tsx`; typed by `ParentsIncomeData` /
+`ParentIncomeRecord`. The whole block repeats for Parent/Guardian 2 unless
+`isSoleParent` is true.
 
-*"Where a source is not applicable to you, please enter 0."*
+Banner: *"Please complete the table below showing GROSS INCOME before deduction
+of tax from all sources of income. Where a source is not applicable to you,
+please enter 0."* Single column header: **"To April (actual)."**
 
-**This entire section is repeated for each Parent/Guardian (1 and 2, if applicable).**
+### 7.1 Income table (per parent) — 14 line items
 
-### 6.1 Income Table (per parent)
+All 14 are currency (£) inputs; enter 0 where not applicable:
 
-Header: **"Parent / Guardian [N] - Income"**
+`salaryWagesPension`, `supplementsAndBonus`, `otherBenefitsAndCommissions`,
+`amountFromPartner`, `workingTaxCredits`, `grossInterestReceived`,
+`allDividendIncome`, `grossRentsReceived`, `allIncomeBonds`, `otherGrossIncomes`,
+`maintenanceOrEquivalents`, `bursariesOrSponsorships`, `otherIncomeNotIncluded`,
+`otherIncome`.
 
-Column: **"To April [year] (Actual)"**
-
-| Income Source | Type | Required | Notes |
-|--------------|------|----------|-------|
-| Salary / wages, state or private pension(s) | Currency (£) | Yes | Enter 0 if N/A |
-| Any supplement(s) and/or bonus | Currency (£) | Yes | Enter 0 if N/A |
-| Any other benefits and commission(s) | Currency (£) | Yes | Enter 0 if N/A |
-| Amount supplied by partner | Currency (£) | Yes | Enter 0 if N/A |
-| Working tax credits | Currency (£) | Yes | Enter 0 if N/A |
-| Gross interest received (on deposits) | Currency (£) | Yes | Enter 0 if N/A |
-| All dividend income (UK or overseas) | Currency (£) | Yes | Enter 0 if N/A |
-| Gross rent(s) received | Currency (£) | Yes | Enter 0 if N/A |
-| All income (bonds) | Currency (£) | Yes | Enter 0 if N/A |
-| Other gross income(s) | Currency (£) | Yes | Enter 0 if N/A |
-| Maintenance or equivalent(s) | Currency (£) | Yes | Enter 0 if N/A |
-| Bursaries / sponsorships | Currency (£) | Yes | Enter 0 if N/A |
-| Other income not included above | Currency (£) | Yes | Enter 0 if N/A |
-| Other income | Currency (£) | Yes | Enter 0 if N/A |
-
-### 6.2 Supporting Documents (per parent)
+### 7.2 Supporting documents (per parent) — all functional uploads
 
 | Field | Type | Required | Notes |
 |-------|------|----------|-------|
-| Do you have any regular capital repayments? | Radio: Yes / No | Yes | |
-| Upload details of repayments | File upload | Conditional | If Yes to above |
-| Last P60 to April [year] | File upload | Yes | P60 / P45 or equivalent |
-| HMRC Self Assessment tax return | File upload | Conditional | If self-employed or filed self-assessment |
-| Upload benefits evidence | File upload | Conditional | If receiving state benefits |
+| P60 | File upload (functional) | **Yes — always** | Slot `P60_PARENT_{N}`; `p60DocumentId` |
+| Self-assessment tax return (SA302) | File upload (functional) | Conditional | Shown when `allDividendIncome > 0` OR `grossRentsReceived > 0` OR `allIncomeBonds > 0`. Slot `SELF_ASSESSMENT_PARENT_{N}`; `selfAssessmentDocumentId` |
+| Benefits / tax credits evidence | File upload (functional) | Conditional | Shown when `workingTaxCredits > 0` OR `otherBenefitsAndCommissions > 0`. Slot `BENEFITS_EVIDENCE_PARENT_{N}`; `benefitsEvidenceDocumentId` |
+| Do you make regular capital repayments? | Yes/No toggle | Yes | `hasCapitalRepayments` |
+| Capital repayments evidence | File upload (functional) | Conditional | Shown when `hasCapitalRepayments` is true. Slot `CAPITAL_REPAYMENTS_PARENT_{N}`; `capitalRepaymentsDocumentId` |
 
-### 6.3 Confirmation
+> **Correction:** the conditional triggers above are **derived from the income
+> figures** (and the capital-repayments toggle), not from the employment status.
+> These uploads are **functional**, unlike the stubs elsewhere.
+
+### 7.3 Confirmation
 
 | Field | Type | Required | Notes |
 |-------|------|----------|-------|
-| I confirm that all documents uploaded on this page are current and legible | Checkbox | Yes | |
+| I confirm that all documents uploaded on this page are current and legible | Checkbox | Yes | `documentsConfirmed` |
 
 ---
 
-## Section 7: Parents' Assets & Liabilities
+## Section 8: Parents' Assets & Liabilities (`ASSETS_LIABILITIES`)
 
-### 7.1 Capital Assets - What You Own
+Implemented in `assets-liabilities-form.tsx`; typed by `AssetsLiabilitiesData`.
 
-| Field | Type | Required | Notes |
-|-------|------|----------|-------|
-| Do you own or rent your house? | Dropdown | Yes | Options: Own / Rent (and possibly other options) |
-| Approximate value of residence/property | Currency (£) | Yes | |
-| Value of your car(s) | Currency (£) | Yes | |
-| Value of other possessions including home contents | Currency (£) | Yes | |
-| Total of all stocks or shares/equities | Currency (£) | Yes | |
-| Approximate value of investments (Bonds, PEPs, ISAs etc) | Currency (£) | Yes | |
-| Approximate value of any other assets not included above | Currency (£) | Yes | |
-
-### 7.2 Other Properties
+### 8.1 Capital assets — what you own
 
 | Field | Type | Required | Notes |
 |-------|------|----------|-------|
-| Do you have any other properties? | Radio: Yes / No | Yes | |
+| Do you own or rent your home? | Dropdown | Yes | Own (`OWN`) / Rent (`RENT`). `propertyOwnership` |
+| Approximate value of residence/property | Currency (£) | Yes | `residenceValue` |
+| Value of your car(s) | Currency (£) | Yes | `carValue` |
+| Value of other possessions including home contents | Currency (£) | Yes | `otherPossessionsValue` |
+| Total of all stocks or shares / equities | Currency (£) | Yes | `stocksAndSharesValue` |
+| Approximate value of investments (Bonds, PEPs, ISAs, etc.) | Currency (£) | Yes | `investmentsValue` |
+| Approximate value of any other assets not included above | Currency (£) | Yes | `otherAssetsValue` |
 
-**If Yes:**
-
-| Field | Type | Required | Notes |
-|-------|------|----------|-------|
-| Total value of any other properties owned (in the UK or abroad) | Currency (£) | Yes | |
-| Is any other property rental insurance? | Radio: Yes / No | Conditional | |
-| Total value of any other properties rented (in the UK or abroad) | Currency (£) | Conditional | |
-
-### 7.3 Outstanding Community / Mortgage Balance
+### 8.2 Other properties
 
 | Field | Type | Required | Notes |
 |-------|------|----------|-------|
-| Other Outstanding Mortgage Balance | Currency (£) | Yes | |
+| Do you have any other properties? | Yes/No toggle | Yes | `hasOtherProperties` |
+| Total value of any other properties owned | Currency (£) | Yes (when Yes) | `otherPropertiesTotalValue` |
+| Property list table (address / postcode / value rows) | **⚠️ NOT YET BUILT (stub)** | — | Placeholder box: "Property list table will be fully implemented in a future work package." The `otherProperties[]` array and `OtherProperty` type exist but no add-property modal is rendered. |
 
-### 7.4 Property Evidence Upload
+> **Correction:** the shipped form does **not** render the separate "rental
+> property" radio/value (`hasRentalProperty` / `rentalPropertyValue` are in the
+> type, no inputs), nor the "Other Outstanding Mortgage Balance"
+> (`otherMortgageBalance`) field as a standalone control.
 
-| Field | Type | Required | Notes |
-|-------|------|----------|-------|
-| Upload Council Tax bill OR EVIDENCE for the property in which you reside | File upload | Yes | |
-
-### 7.5 Bank Statements
-
-| Field | Type | Required | Notes |
-|-------|------|----------|-------|
-| Last 3 months bank statements/investment accounts for ALL accounts and evidence of shareholdings (Parent/Guardian 1) | File upload (multiple) | Yes | "Please upload one attachment at a time." Multiple upload slots available |
-| Last 3 months bank/building/investment/pension accounts for all accounts and holdings (Parent/Guardian 2) | File upload (multiple) | Conditional | Only if two parents; multiple upload slots available |
-
-### 7.6 Other Owned Properties List
-
-Instruction: *"List the addresses below of all other owned properties and value of each."*
-
-Table with columns:
-
-| Column | Type | Required |
-|--------|------|----------|
-| Address | Text | Yes |
-| Postcode | Text | Yes |
-| Value | Currency (£) | Yes |
-
-Rows added via **"Add..."** button.
-
-#### Add Property Modal
-
-| Field | Type | Required |
-|-------|------|----------|
-| Address | Text input | Yes |
-| Postcode | Text input | Yes |
-| Value | Currency (£) input | Yes |
-
-Modal has **Save** and **Cancel** buttons.
-
-### 7.7 Capital Liabilities - What You Owe
+### 8.3 Capital liabilities — what you owe
 
 | Field | Type | Required | Notes |
 |-------|------|----------|-------|
-| Outstanding mortgage (main property/family home) | Currency (£) | Yes | |
-| Total of all other outstanding mortgages as referred to in section above | Currency (£) | Yes | |
-| Total of any current overdraft | Currency (£) | Yes | |
-| Do you have any hire/hire purchase agreements? | Radio: Yes / No | Yes | |
+| Outstanding mortgage (main family home) | Currency (£) | Yes | `outstandingMainMortgage` |
+| Total of all other outstanding mortgages | Currency (£) | Yes | `totalOtherMortgages` |
+| Total of any current overdraft | Currency (£) | Yes | `currentOverdraft` |
+| Do you have any hire / hire purchase agreements? | Yes/No toggle | Yes | `hasHirePurchase` |
+| Total of all hire purchase balances outstanding | Currency (£) | Yes (when Yes) | `hirePurchaseBalance` |
 
-**If hire purchase = Yes:**
+> **Correction:** the shipped form does **not** render the pre-build
+> "changes to liabilities" question (`hasLiabilityChanges` is in the type, no
+> input), the liabilities evidence uploads (`liabilitiesAgreementsDocumentId` /
+> `liabilitiesStatementDocumentId`), or a separate other-properties liabilities
+> table.
 
-| Field | Type | Required | Notes |
-|-------|------|----------|-------|
-| Total of all hire/hire balances outstanding | Currency (£) | Yes | |
-
-### 7.8 Liabilities Evidence Upload
-
-| Field | Type | Required | Notes |
-|-------|------|----------|-------|
-| Upload Liabilities Agreements | File upload | Yes | |
-| Upload most recent statement/monthly statement or similar | File upload | Yes | |
-
-### 7.9 Changes to Liabilities
+### 8.4 Supporting documents — all functional uploads
 
 | Field | Type | Required | Notes |
 |-------|------|----------|-------|
-| Do you have any changes that could affect the amount you owe? | Radio: Yes / No | Yes | |
+| Council tax bill | File upload (functional) | **Yes — always** | Slot `COUNCIL_TAX`; `councilTaxDocumentId` |
+| Bank statements — Parent / Guardian 1 | File upload, **multiple** (functional) | **Yes — always** | Slot `BANK_STATEMENT_PARENT_1`; `parent1BankStatementDocumentIds[]`. Hint: "three most recent monthly statements." |
+| Bank statements — Parent / Guardian 2 | File upload, **multiple** (functional) | Yes (when not sole parent) | Slot `BANK_STATEMENT_PARENT_2`; `parent2BankStatementDocumentIds[]` |
 
-### 7.10 Other Owned Properties - Liabilities
-
-Instruction: *"List the addresses below of all other owned properties and value and charges of each."*
-
-Same table structure as 7.6 but for recording liabilities/charges against other properties.
-
-### 7.11 Confirmation
+### 8.5 Confirmation
 
 | Field | Type | Required | Notes |
 |-------|------|----------|-------|
-| I confirm that all documents uploaded on this page are current and legible | Checkbox | Yes | |
+| I confirm that all documents uploaded on this page are current and legible | Checkbox | Yes | `documentsConfirmed` |
 
 ---
 
-## Section 8: Additional Information
+## Section 9: Additional Information (`ADDITIONAL_INFO`)
 
-### 8.1 Circumstances Checklist
+Implemented in `additional-info-form.tsx`; typed by `AdditionalInfoData`.
 
-Instruction: *"Please use the form to tell us if in a current / previous application:"*
+### 9.1 Circumstances checklist
 
-Each circumstance has a Yes/No indicator and a file upload field:
+Six circumstances; each is a Yes/No toggle (`.applies`). When set to Yes, a
+**stub** upload box appears:
 
-| Circumstance | Type | Required | Notes |
-|-------------|------|----------|-------|
-| Divorced (if applicable) | Yes/No + File upload | Conditional | Upload supporting documents |
-| Separated (if applicable) | Yes/No + File upload | Conditional | Upload supporting documents |
-| Sick / unable to work | Yes/No + File upload | Conditional | Upload supporting documents |
-| Rent (current statement or lease) | Yes/No + File upload | Conditional | Upload supporting documents |
-| Been made redundant or lost employment | Yes/No + File upload | Conditional | Upload supporting documents |
-| Receiving benefits | Yes/No + File upload | Conditional | Upload supporting documents |
+| Circumstance | Key | Upload |
+|--------------|-----|--------|
+| Divorced (if applicable) | `divorced` | **⚠️ NOT YET BUILT (stub)** — "Document upload available once application is created." |
+| Separated (if applicable) | `separated` | **⚠️ NOT YET BUILT (stub)** |
+| Sick / unable to work | `sickUnableToWork` | **⚠️ NOT YET BUILT (stub)** |
+| Paying rent (current statement or lease) | `rent` | **⚠️ NOT YET BUILT (stub)** |
+| Been made redundant or lost employment | `madeRedundant` | **⚠️ NOT YET BUILT (stub)** |
+| Receiving benefits | `receivingBenefits` | **⚠️ NOT YET BUILT (stub)** |
 
-### 8.2 Additional Narrative
+> Each `CircumstanceItem` has a `documentId` slot in the type, but the upload
+> controls are placeholder boxes today.
 
-Instruction: *"Please help us identify any difficulties which you think we may consider to be factors in assessing need for this award. The bursary committee is unable to consider any information that is not included in your application."*
-
-| Field | Type | Required | Notes |
-|-------|------|----------|-------|
-| Free-text explanation | Text area (large, multi-line) | No | Character/word limit indicator visible (shows remaining count) |
-
-### 8.3 Additional Document Upload
+### 9.2 Additional narrative
 
 | Field | Type | Required | Notes |
 |-------|------|----------|-------|
-| Additional supporting documents | File upload via **"Add"** button | No | For any extra evidence not covered by other sections |
+| Additional narrative | Textarea | No | `additionalNarrative`. Live character counter, **3000**-character soft limit. |
+
+> The `additionalDocumentIds[]` "extra supporting documents" slot exists in the
+> type but there is **no general additional-document upload control** in the UI.
 
 ---
 
-## Section 9: Declaration
+## Section 10: Declaration (`DECLARATION`)
 
-### 9.1 Declaration Text
+Implemented in `declaration-form.tsx`; typed by `DeclarationData`.
 
-A comprehensive legal declaration stating (summarised):
-
-1. "I/We the undersigned do solemnly and sincerely declare that to the best of our knowledge the information provided is accurate and complete."
-2. Income and assets are truthfully declared from all sources.
-3. The Foundation and Whitgift School may verify information provided.
-4. False information will result in disqualification from the bursary scheme.
-5. Bursary awards are subject to annual re-assessment; parents/guardians must re-apply.
-6. Parents/guardians accept that the Foundation's decision is final.
-7. Acceptance of the Bursary Contract terms - agreement to the assessment and any resulting conditions.
-8. Financial information submitted will be used solely for the bursary application process.
-9. Reference to a separate Bursary Contract which governs the award terms.
-10. Acknowledgement regarding data protection and privacy.
-
-### 9.2 Declaration Acceptance
+A numbered legal declaration (10 points) followed by:
 
 | Field | Type | Required | Notes |
 |-------|------|----------|-------|
-| "By clicking this box, we are of the view this declaration you agreed to the terms and conditions above." | Checkbox | Yes | Must be checked to submit |
-| On behalf of the Applicant | Text / Signature | Yes | Name of person accepting |
+| By clicking this box, I/we agree to the terms and conditions … | Checkbox | Yes | `accepted` |
+| On behalf of the applicant | Text input | Yes | `signedOnBehalfOf` — full name of the person accepting |
+
+A warning note reminds the applicant that submitting is a legal commitment.
 
 ---
 
-## Section 10: Validation Summary
+## Review / submission
 
-Not captured in screenshots. This is an auto-generated page that lists all incomplete or invalid fields across the entire application, allowing the applicant to identify and fix issues before final submission.
+After the 10 sections, `/apply/review` shows section completion (X of 10
+complete, percentage) and gates submission. This is the screen the pre-build
+design called the "Validation Summary" — it is **not** a data-entry section.
 
 ---
 
-## Appendix: Field Type Legend
+## Implementation gaps surfaced during reconciliation
+
+The reconciliation found several fields that are **typed and/or Zod-validated
+but not yet collected by the UI**. These are flagged inline as **⚠️ NOT YET
+BUILT (stub)** above. They are implementation gaps, not documentation drift, and
+the most material ones are recorded here so they are not lost:
+
+1. **Document uploads rendered as placeholder boxes** (no working upload):
+   director's certified accounts & balance sheet, evidence of previous
+   self-employment, scholarship/maintenance evidence (Section 3); court-order
+   evidence (Section 6); all six circumstance uploads (Section 9). The
+   parent-details `superRefine` **requires** `leftSelfEmploymentDocumentId` and
+   `scholarshipDocumentId` when their toggles are Yes — but the form provides
+   **no control to satisfy that rule**, which can block progress. *Worth a
+   separate form-bug ticket if not already tracked.*
+2. **Dependent Elderly detail capture** (Section 5): only Yes/No + count is
+   collected; the per-dependant and care-home detail modals (and the care-home
+   invoice upload) are stubbed.
+3. **Other-properties list table** (Section 8): only the total value is
+   collected; the per-property address/postcode/value rows are stubbed.
+4. **Unused liability/insurance fields**: `hasRentalProperty`,
+   `rentalPropertyValue`, `otherMortgageBalance`, `hasLiabilityChanges`,
+   liabilities evidence uploads, and insurance date-range fields are defined in
+   the types but not rendered.
+
+Per the backlog item's "Out of scope" note, these are **not** fixed here — this
+pass only makes the doc TRUE. Build decisions for the stubs belong in their own
+tickets.
+
+---
+
+## Appendix: Field type legend
 
 | Type | Description |
 |------|-------------|
 | Text input | Single-line text field |
-| Text area | Multi-line text field |
-| Dropdown | Select from predefined options |
-| Autocomplete text input | Type-ahead search with suggestions |
-| Radio: Yes / No | Binary radio button choice |
-| Radio group | Multiple radio button options (select one) |
+| Textarea | Multi-line text field |
+| Dropdown (`Select`) | Select from predefined options |
+| Country combobox | Searchable country picker |
+| Yes/No toggle | Binary toggle component (`YesNoToggle`) |
+| Radio group | Multiple radio options (select one) |
 | Checkbox | Single tickbox for confirmation/boolean |
-| Date picker | Date input field (DD/MM/YYYY format) |
-| Currency (£) input | Numeric input with pound sterling prefix |
+| Date input | Date field (`DateInput`) |
+| Currency (£) input | Numeric input with pound prefix (`CurrencyInput`) |
 | Number input | Numeric-only input |
-| File upload | File attachment control with Attach/View/Delete actions |
-| Display text | Read-only information, not an input |
+| File upload (functional) | Working `FileUpload` control (attach / view / remove) |
+| ⚠️ NOT YET BUILT (stub) | Placeholder box; no working control rendered yet |
 
-## Appendix: Conditional Logic Summary
+## Appendix: Conditional logic summary (as built)
 
 | Trigger | Condition | Effect |
 |---------|-----------|--------|
-| Sole parent/guardian | = Yes | Hide Parent/Guardian 2 sections entirely |
-| Sole parent/guardian | = No | Show Parent/Guardian 2 contact, employment, and declaration sections |
-| Child address same as Parent 1 | = No | Show child's separate address fields |
-| Family member is British citizen | = Yes | Show "Upload UK Passport" only |
-| Family member is British citizen | = No | Show "Upload Passport" + "Upload Evidence of Indefinite Leave to Remain" |
-| Employment status | = Employed / Self-employed / etc. | Show profession, employer, director question, and related fields |
-| Employment status | = Unemployed | Show explanation text area |
-| Are you a director? | = Yes | Show share %, upload audited accounts, upload balance sheet |
-| Left self-employment since April? | = Yes | Show upload for evidence of previous self-employment |
-| Receive scholarship/maintenance? | = Yes | Show upload for scholarship/maintenance evidence |
-| Court order for school fees? | = Yes | Show amount fields + upload evidence |
-| Insurance policies to pay school? | = Yes | Show amount + date range fields |
-| Outstanding fees at other school? | = Yes | Show school name + amount owed |
-| Elderly dependant at home? | = Yes | Show "How many?" + Add dependant form |
-| Elderly dependant in care home? | = Yes | Show "How many?" + Add dependant form (with care home fields) |
-| Other properties? | = Yes | Show total value + property list table |
-| Hire/hire purchase agreements? | = Yes | Show total balances outstanding |
-| Add Child > "Is this child" | = "The named child of this application" | Display child name read-only |
-| Elderly dependant 100+ years old | = Checked | Bypass date of birth input limitation |
+| `isSoleParent` | = Yes | Hide Parent/Guardian 2 contact, employment, declaration, income block, and P2 bank statements |
+| `isSoleParent` | = No | Show all Parent/Guardian 2 blocks (P2 email field becomes required) |
+| `sameAddressAsParent1` | = No | Show child's separate address fields |
+| `isBritishCitizen` (per family member) | = Yes | Show UK Passport upload only |
+| `isBritishCitizen` (per family member) | = No | Show Passport + ILR uploads |
+| `status` ∈ {`PAYE`, `SELF_EMPLOYED_DIRECTOR`, `SELF_EMPLOYED_SOLE`} | true | Show profession/employer/director/gross-pay/scholarship block |
+| `status` = `UNEMPLOYED` | true | Show "Please provide details" textarea |
+| `isDirector` | = Yes | Show share % (+ stubbed accounts/balance-sheet upload boxes) |
+| `leftSelfEmployment` | = Yes | Show stubbed self-employment evidence box (schema also requires the doc id) |
+| `receivesScholarship` | = Yes | Show stubbed scholarship evidence box (schema also requires the doc id) |
+| `isNamedChild` (Add child modal) | = checked | Auto-fill and lock the child name from Section 1 |
+| `hasCOurtOrder` | = Yes | Show term/year amounts + stubbed evidence box |
+| `hasInsurancePolicy` | = Yes | Show amount-this-year field |
+| `hasOutstandingFees` | = Yes | Show school name + amount owed |
+| `hasElderlyAtHome` | = Yes | Show "How many?" + stubbed details box |
+| `hasElderlyInCare` | = Yes | Show "How many?" + stubbed details box |
+| `hasOtherProperties` | = Yes | Show total value + stubbed property-list box |
+| `hasHirePurchase` | = Yes | Show outstanding balance field |
+| `allDividendIncome` / `grossRentsReceived` / `allIncomeBonds` > 0 | true | Show SA302 upload (per parent) |
+| `workingTaxCredits` / `otherBenefitsAndCommissions` > 0 | true | Show benefits evidence upload (per parent) |
+| `hasCapitalRepayments` | = Yes | Show capital repayments evidence upload (per parent) |
+| Circumstance `.applies` (Section 9) | = Yes | Show stubbed circumstance evidence box |

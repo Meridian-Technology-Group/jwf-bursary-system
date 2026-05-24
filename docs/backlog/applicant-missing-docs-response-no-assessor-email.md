@@ -46,7 +46,10 @@ closing for parity with the guide and to avoid silent waits.
 
 ## Out of scope
 
-- The RLS read blocker that currently prevents the respond page from
-  loading the request at all (tracked in
-  `walkthrough-applicant-24-respond-page-rls-blocks-request-read.md`).
-  That must be fixed first before this email path is reachable.
+- The RLS read blocker that previously prevented the respond page from
+  loading the request at all. **Resolved in PR #52** (`b1300dd`, 2026-05-22)
+  — the missing-docs request is now read under `withAdminContext` after the
+  page confirms applicant ownership + PAUSED state. The respond flow is
+  reachable, so this item is **no longer blocked** by it. (The cited
+  `walkthrough-applicant-24-respond-page-rls-blocks-request-read.md` was
+  never filed in-repo.)

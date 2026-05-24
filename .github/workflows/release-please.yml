@@ -1,0 +1,42 @@
+name: release-please
+
+# Automated version bumping (backlog #14).
+#
+# Model: release-PR. On every push to `main`, release-please opens (or updates)
+# a single "release PR" that bumps package.json `version`, regenerates
+# CHANGELOG.md from Conventional Commits, and updates the manifest. NOTHING is
+# tagged or released until a human merges that release PR — which matches the
+# team rule that only the user merges to `main`. Merging the release PR is what
+# creates the git tag + GitHub release.
+#
+# It does NOT publish to any registry: the package is `private: true` and there
+# is no `npm publish` step, so this is purely version/changelog/tag automation.
+#
+# Version policy (recorded here as the single source of truth):
+#   - feat:                  -> minor   (new functionality)
+#   - fix: / perf: / sec:    -> patch   (bug/security/perf fixes)
+#   - feat!: / BREAKING CHANGE footer -> major (breaking changes)
+#   - chore:/docs:/refactor:/test:/ci: -> no release on their own
+# The major-vs-minor-vs-patch call is therefore made at commit time via the
+# Conventional Commit type, not ad-hoc at deploy time.
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: googleapis/release-please-action@v4
+        with:
+          # Default GITHUB_TOKEN. See note in the PR description about the repo
+          # setting required for Actions to open PRs.
+          token: ${{ secrets.GITHUB_TOKEN }}
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json

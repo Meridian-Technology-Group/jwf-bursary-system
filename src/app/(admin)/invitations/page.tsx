@@ -176,7 +176,7 @@ export default async function InvitationsPage({
                         {inv.email}
                       </td>
                       <td className="whitespace-nowrap px-4 py-3 text-sm text-slate-600">
-                        {inv.applicantName ?? "—"}
+                        {[inv.firstName, inv.lastName].filter(Boolean).join(" ") || "—"}
                       </td>
                       <td className="whitespace-nowrap px-4 py-3 text-sm text-slate-600">
                         {inv.childName ?? "—"}

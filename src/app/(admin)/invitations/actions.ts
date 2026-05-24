@@ -43,7 +43,6 @@ import { prepopulateReassessment, getPreviousYearApplication } from "@/lib/db/qu
 
 const InvitationSchema = z.object({
   email: z.string().email("A valid email address is required"),
-  applicantName: z.string().optional(),
   firstName: z.string().optional(),
   lastName: z.string().optional(),
   childName: z.string().optional(),
@@ -73,17 +72,13 @@ export interface BatchInviteResult {
 
 /**
  * Composes a single-line applicant display name from the structured first /
- * last fields, falling back to whatever raw `applicantName` was supplied, and
- * finally to the empty string.
+ * last fields, falling back to the empty string.
  */
 function composeApplicantName(
   firstName: string | undefined,
-  lastName: string | undefined,
-  applicantName: string | undefined
+  lastName: string | undefined
 ): string {
-  const composed = [firstName, lastName].filter(Boolean).join(" ").trim();
-  if (composed) return composed;
-  return applicantName?.trim() ?? "";
+  return [firstName, lastName].filter(Boolean).join(" ").trim();
 }
 
 function schoolLabel(school: School | undefined | null): string {
@@ -102,7 +97,6 @@ export async function createInvitationAction(
 
   const raw = {
     email: formData.get("email") as string,
-    applicantName: (formData.get("applicantName") as string) || undefined,
     firstName: (formData.get("firstName") as string) || undefined,
     lastName: (formData.get("lastName") as string) || undefined,
     childName: (formData.get("childName") as string) || undefined,
@@ -118,14 +112,10 @@ export async function createInvitationAction(
     };
   }
 
-  const { email, applicantName, firstName, lastName, childName, school, roundId } =
+  const { email, firstName, lastName, childName, school, roundId } =
     parsed.data;
 
-  const effectiveApplicantName = composeApplicantName(
-    firstName,
-    lastName,
-    applicantName
-  );
+  const effectiveApplicantName = composeApplicantName(firstName, lastName);
 
   const expiresAt = new Date();
   expiresAt.setDate(expiresAt.getDate() + 30);
@@ -172,7 +162,6 @@ export async function createInvitationAction(
 
       const inv = await createInvitation(tx, {
         email,
-        applicantName: effectiveApplicantName || undefined,
         firstName,
         lastName,
         childName,
@@ -242,7 +231,12 @@ export async function createInvitationAction(
     return { success: false, error: message };
   }
 
-  // 3. Send branded INVITATION email.
+  // 3. Send branded INVITATION email. The email is now inside the rollback
+  //    boundary (#5): a send failure would otherwise leave a PENDING orphan
+  //    row + auth user that looks valid but whose token never reached the
+  //    recipient. On failure we hard-roll-back — delete the invitation row,
+  //    delete the auth user, and write a failure audit entry so the attempt
+  //    stays visible — then surface a clear error to the admin.
   const emailResult = await sendEmail(email, "INVITATION", {
     applicant_name: effectiveApplicantName || email,
     child_name: childName ?? "",
@@ -257,10 +251,47 @@ export async function createInvitationAction(
       "[invitations] createInvitationAction email error:",
       emailResult.error
     );
-    // Keep the invitation row so the admin can Resend later.
+
+    // Roll back the just-created invitation row and record the failure.
+    await withAdminContext(async (tx) => {
+      await tx.invitation.delete({ where: { id: invitationId } }).catch((err) => {
+        console.error(
+          "[invitations] createInvitationAction invitation rollback failed:",
+          err
+        );
+      });
+      await createAuditLog(tx, {
+        userId: user.id,
+        action: "CREATE_INVITATION_FAILED",
+        entityType: "Invitation",
+        entityId: invitationId,
+        context: `Invitation to ${email} rolled back — email failed to send`,
+        metadata: {
+          email,
+          roundId: roundId ?? null,
+          authUserId,
+          emailError: emailResult.error ?? null,
+        },
+      });
+    }).catch((err) => {
+      console.error(
+        "[invitations] createInvitationAction rollback tx failed:",
+        err
+      );
+    });
+
+    // Roll back the auth user so we never leave an orphan account behind.
+    await supabase.auth.admin.deleteUser(authUserId).catch((err) => {
+      console.error(
+        "[invitations] createInvitationAction auth rollback failed:",
+        err
+      );
+    });
+
+    revalidatePath("/invitations");
     return {
       success: false,
-      error: `Invitation created but email failed to send: ${emailResult.error}`,
+      error: `Email failed to send. The invitation was rolled back — please try again. (${emailResult.error})`,
     };
   }
 
@@ -315,11 +346,9 @@ export async function batchReassessmentInviteAction(
   for (let i = 0; i < holders.length; i++) {
     const holder = holders[i];
     const { email, firstName, lastName } = holder.leadApplicant;
-    const applicantName = composeApplicantName(
-      firstName ?? undefined,
-      lastName ?? undefined,
-      undefined
-    ) || email;
+    const applicantName =
+      composeApplicantName(firstName ?? undefined, lastName ?? undefined) ||
+      email;
 
     // Per-row auth-user provisioning.
     let authUserId: string | null = null;
@@ -357,7 +386,6 @@ export async function batchReassessmentInviteAction(
 
         const invitation = await createInvitation(tx, {
           email,
-          applicantName,
           firstName: firstName ?? undefined,
           lastName: lastName ?? undefined,
           childName: holder.childName,
@@ -506,8 +534,7 @@ export async function resendInvitationAction(
     const applicantName =
       composeApplicantName(
         invitation.firstName ?? undefined,
-        invitation.lastName ?? undefined,
-        invitation.applicantName ?? undefined
+        invitation.lastName ?? undefined
       ) || invitation.email;
 
     const emailResult = await sendEmail(invitation.email, "INVITATION", {
