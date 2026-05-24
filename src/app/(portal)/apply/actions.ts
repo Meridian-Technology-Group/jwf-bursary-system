@@ -402,8 +402,10 @@ export async function submitApplication(applicationId: string): Promise<never> {
 
   // ── Validate no error-severity gaps remain (defence-in-depth) ────────────
   // This check catches missing required documents and structural rule failures
-  // that isComplete alone does not capture.
-  const gapStatuses = await getSectionGapStatuses(applicationId);
+  // that isComplete alone does not capture. Scoped to the lead applicant's
+  // PRIMARY contributor (dual-parent, PR 4b) so the secondary's owned section
+  // rows and uploaded documents can never affect the primary's submit gate.
+  const gapStatuses = await getSectionGapStatuses(applicationId, ownerContributorId);
   const errorGaps: SectionGap[] = gapStatuses.flatMap((gs) =>
     gs.gaps.filter((g) => g.severity === "error")
   );

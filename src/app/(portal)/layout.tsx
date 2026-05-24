@@ -12,6 +12,7 @@ import { Suspense } from "react";
 import { getCurrentUser } from "@/lib/auth/roles";
 import { withAdminContext, withUserContext, type RlsRole } from "@/lib/db/prisma";
 import { getApplicationForUser } from "@/lib/db/queries/applications";
+import { resolveOwningContributorId } from "@/lib/db/queries/contributors";
 import { getOrAcceptLatestInvitationForUser } from "@/lib/db/queries/invitations";
 import { getSectionGapStatuses } from "@/lib/portal/section-gaps";
 import { PortalMobileHeader } from "@/components/portal/portal-mobile-header";
@@ -45,13 +46,30 @@ export default async function PortalLayout({
   let sidebarSections: SidebarSection[] | undefined;
   let roundName: string | undefined;
   if (user) {
-    const application = await withUserContext(
+    const resolved = await withUserContext(
       user.id,
       user.role as RlsRole,
-      (tx) => getApplicationForUser(tx, user.id)
+      async (tx) => {
+        const application = await getApplicationForUser(tx, user.id);
+        if (!application) return { application: null, ownerContributorId: null };
+        // Scope the sidebar progress to the lead applicant's PRIMARY
+        // contributor (dual-parent, PR 4b) — a SELECT, never an upsert under
+        // applicant RLS. For a single parent this is every section, so the
+        // sidebar is unchanged. The secondary uses a separate /contribute shell
+        // and never renders this layout's wizard sidebar.
+        const ownerContributorId = await resolveOwningContributorId(
+          tx,
+          application.id,
+          user.id
+        );
+        return { application, ownerContributorId };
+      }
     );
+    const application = resolved.application;
     if (application) {
-      const gapStatuses = await getSectionGapStatuses(application.id);
+      const gapStatuses = resolved.ownerContributorId
+        ? await getSectionGapStatuses(application.id, resolved.ownerContributorId)
+        : await getSectionGapStatuses(application.id);
       sidebarSections = buildSidebarSections(gapStatuses, {
         isReassessment: application.isReassessment,
       });
