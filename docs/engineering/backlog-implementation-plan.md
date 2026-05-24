@@ -28,7 +28,7 @@ Numbered 1–20 from the original sweep; #3 and #3b have since been archived
 | # | Item | Sev | Type | Primary surface |
 |---|------|-----|------|-----------------|
 | 1 | prod-auth-rate-limiting-disabled | **high** | code+ops | Vercel WAF rule in `vercel.json` + delete app limiter |
-| 2 | prod-resend-webhook-secret-unset | med | ops | Vercel env var |
+| ~~2~~ | ~~prod-resend-webhook-secret-unset~~ | — | — | **done (2026-05-24)** — secret set in Vercel Production; item archived |
 | ~~3~~ | ~~rate-limiter-fails-open-when-kv-unset~~ | — | — | **archived** — superseded by #1 (WAF has no KV to fail open) |
 | ~~3b~~ | ~~migrate-rate-limit-off-vercel-kv-sdk~~ | — | — | **archived** — superseded by #1 (limiter deleted, not migrated) |
 | 4 | shared-generateInvitationToken-helper | low | refactor | invitation queries |
@@ -100,7 +100,7 @@ The system is live with PII and **rate limiting off in prod** — the only
 | 1a | Add the WAF fixed-window rule(s) to `vercel.json` for `/login` + `/reset-password` (IP-keyed); verify on a preview deploy | Claude | — |
 | 1b | Delete `src/lib/rate-limit.ts` + its call sites; drop `@upstash/ratelimit` + `@vercel/kv` from `package.json`; add the go-live checklist line | Claude | after 1a verified |
 | 1c | Confirm the WAF rule is **active in Production** (Project → Firewall) | **Brian** | after 1a/1b merged & promoted |
-| 2 | Set `RESEND_WEBHOOK_SECRET` in Production | **Brian** | — |
+| ~~2~~ | ~~Set `RESEND_WEBHOOK_SECRET` in Production~~ | **Brian** | ✅ done 2026-05-24 |
 
 ## Wave 1 — Parallel cleanup tracks (independent file sets)
 
