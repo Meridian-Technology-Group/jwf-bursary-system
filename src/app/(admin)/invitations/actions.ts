@@ -242,7 +242,12 @@ export async function createInvitationAction(
     return { success: false, error: message };
   }
 
-  // 3. Send branded INVITATION email.
+  // 3. Send branded INVITATION email. The email is now inside the rollback
+  //    boundary (#5): a send failure would otherwise leave a PENDING orphan
+  //    row + auth user that looks valid but whose token never reached the
+  //    recipient. On failure we hard-roll-back — delete the invitation row,
+  //    delete the auth user, and write a failure audit entry so the attempt
+  //    stays visible — then surface a clear error to the admin.
   const emailResult = await sendEmail(email, "INVITATION", {
     applicant_name: effectiveApplicantName || email,
     child_name: childName ?? "",
@@ -257,10 +262,47 @@ export async function createInvitationAction(
       "[invitations] createInvitationAction email error:",
       emailResult.error
     );
-    // Keep the invitation row so the admin can Resend later.
+
+    // Roll back the just-created invitation row and record the failure.
+    await withAdminContext(async (tx) => {
+      await tx.invitation.delete({ where: { id: invitationId } }).catch((err) => {
+        console.error(
+          "[invitations] createInvitationAction invitation rollback failed:",
+          err
+        );
+      });
+      await createAuditLog(tx, {
+        userId: user.id,
+        action: "CREATE_INVITATION_FAILED",
+        entityType: "Invitation",
+        entityId: invitationId,
+        context: `Invitation to ${email} rolled back — email failed to send`,
+        metadata: {
+          email,
+          roundId: roundId ?? null,
+          authUserId,
+          emailError: emailResult.error ?? null,
+        },
+      });
+    }).catch((err) => {
+      console.error(
+        "[invitations] createInvitationAction rollback tx failed:",
+        err
+      );
+    });
+
+    // Roll back the auth user so we never leave an orphan account behind.
+    await supabase.auth.admin.deleteUser(authUserId).catch((err) => {
+      console.error(
+        "[invitations] createInvitationAction auth rollback failed:",
+        err
+      );
+    });
+
+    revalidatePath("/invitations");
     return {
       success: false,
-      error: `Invitation created but email failed to send: ${emailResult.error}`,
+      error: `Email failed to send. The invitation was rolled back — please try again. (${emailResult.error})`,
     };
   }
 
