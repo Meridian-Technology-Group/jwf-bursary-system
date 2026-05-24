@@ -4,6 +4,14 @@
 > (`prod-auth-rate-limiting-disabled`). Replaces the deleted app-level
 > limiter (`src/lib/rate-limit.ts`, Upstash + Vercel KV). Authored
 > 2026-05-24.
+>
+> **STATUS: LIVE in Production (2026-05-24).** Both rules created via the
+> `vercel firewall` CLI, published, and verified — a 6th `POST /login`
+> from one IP within 15 min is blocked at the edge (HTTP 403) while 1–5
+> pass through. CLI v50.9.x lacks the `firewall` subcommand; this was run
+> with `npx vercel@latest` (v54), which reuses the existing global auth +
+> linked project. The procedure below is the reference for re-running,
+> tuning, or rollback.
 
 ## TL;DR — the mechanism is NOT `vercel.json`
 
@@ -47,10 +55,22 @@ independent — matching prior behaviour.
 | Window | 900 s (15 min) | `--rate-limit-window 900` |
 | Requests | 5 | `--rate-limit-requests 5` |
 | Key | client IP | `--rate-limit-keys ip` |
-| Action on exceed | deny (HTTP 429) | `--rate-limit-action deny` |
+| Action on exceed | deny → **HTTP 403** | `--rate-limit-action deny` |
 
-> Window is in **seconds** (Vercel's docs example: `--rate-limit-window 60`
-> = "100 req/min"). 15 min = 900.
+> Window is in **seconds** (range 10–3600; Vercel's docs example:
+> `--rate-limit-window 60` = "100 req/min"). 15 min = 900.
+>
+> **Two conditions per rule (AND'd):** `path` *and* `method=POST`. The
+> method condition is essential — without it the rule counts **every**
+> request to the path, including GET page loads, and a user refreshing the
+> login page could exhaust the budget. The old app limiter only ran on the
+> form submission (the server action = a POST to the page route), so
+> matching `method eq POST` reproduces that exactly: only login/reset
+> *attempts* count, not page views.
+>
+> **Action returns HTTP 403**, not 429 — Vercel's `deny` mitigation blocks
+> at the edge with 403 Forbidden. (`--rate-limit-action` has no 429 option;
+> use `challenge` if you'd prefer a challenge page over a hard block.)
 
 ## Prerequisites
 
@@ -68,10 +88,16 @@ targeting the **production** project, not a preview-only scope.
 `vercel firewall rules add` **stages** a draft; nothing is live until
 `publish`. Path op `pre` = prefix match.
 
+If your installed CLI lacks the `firewall` subcommand (pre-v52-ish),
+prefix each command with `npx vercel@latest` — it reuses the global auth +
+the linked project in `.vercel/project.json`.
+
 ```bash
-# /login (also covers /login/mfa, which is fine — same auth surface)
+# /login — POST only (also covers /login/mfa, same auth surface)
 vercel firewall rules add "Auth rate limit — login" \
+  --description "Throttle login attempts: 5 POSTs / 15 min per IP. Replaces app-level limiter (backlog #1)." \
   --condition '{"type":"path","op":"pre","value":"/login"}' \
+  --condition '{"type":"method","op":"eq","value":"POST"}' \
   --action rate_limit \
   --rate-limit-algo fixed_window \
   --rate-limit-window 900 \
@@ -79,9 +105,11 @@ vercel firewall rules add "Auth rate limit — login" \
   --rate-limit-keys ip \
   --rate-limit-action deny --yes
 
-# /reset-password
+# /reset-password — POST only
 vercel firewall rules add "Auth rate limit — reset-password" \
+  --description "Throttle password-reset requests: 5 POSTs / 15 min per IP. Replaces app-level limiter (backlog #1)." \
   --condition '{"type":"path","op":"pre","value":"/reset-password"}' \
+  --condition '{"type":"method","op":"eq","value":"POST"}' \
   --action rate_limit \
   --rate-limit-algo fixed_window \
   --rate-limit-window 900 \
@@ -90,17 +118,19 @@ vercel firewall rules add "Auth rate limit — reset-password" \
   --rate-limit-action deny --yes
 ```
 
-> **Exact vs prefix:** `pre` on `/login` also throttles `/login/mfa`. That's
-> acceptable (still an auth surface). If you want exact-path buckets, check
-> the supported op via `vercel firewall rules list --expand` and use the
-> exact-match op instead. The reset flow is a single `/reset-password` page.
+> **Why `method eq POST`:** without it the rule counts GET page loads too,
+> which would throttle users who merely refresh the login page. The server
+> action (the actual attempt) is a POST to the page route, so matching POST
+> reproduces the old limiter's behaviour exactly.
 
-> **Action choice:** `deny` returns a bare edge **429** before the server
-> action runs — so the old friendly inline message ("Too many attempts, try
-> again in 15 minutes") no longer appears; the user sees Vercel's 429. Use
+> **`pre` vs exact path:** `pre` on `/login` also covers `/login/mfa` — fine,
+> same auth surface, and login + MFA submissions share one 5/15-min bucket.
+
+> **The old inline message is gone.** A blocked request gets Vercel's edge
+> **403** before the server action runs, so the friendly "Too many attempts"
+> copy (removed with the limiter in step 1b) no longer shows. Use
 > `--rate-limit-action challenge` instead if you'd rather present a
-> challenge than a hard block. Either way the in-app message is gone (the
-> code that rendered it is removed in PR step 1b).
+> challenge page than a hard 403.
 
 ## Step 2 — Review the staged changes
 
@@ -119,18 +149,26 @@ This makes the staged rules active **in production**.
 
 ## Step 4 — Verify (post-publish, against production)
 
-From a single IP, hit `/login` >5 times inside 15 min:
+The rule matches **POST**, so test with POST (a raw POST isn't a valid
+Next.js server action — the app returns 405 — but that still proves the
+request reached the function; what we're checking is the edge block on the
+6th). From a single IP, >5 POSTs inside 15 min:
 
 ```bash
 for i in $(seq 1 7); do
-  printf '%s ' "$i"
-  curl -s -o /dev/null -w '%{http_code}\n' https://<prod-domain>/login
+  code=$(curl -s -o /dev/null -w '%{http_code}' -X POST \
+    https://jwf-bursary-system.vercel.app/login \
+    -H 'content-type: application/x-www-form-urlencoded' --data 'waf-verification=1')
+  printf '  attempt %d -> HTTP %s\n' "$i" "$code"
+  sleep 0.4
 done
 ```
 
-Expected: first 5 succeed (200/3xx), requests 6–7 return **429** (or a
-challenge). A normal user making a handful of attempts is unaffected.
-Cross-check in **Project → Firewall** that the rules show recent denials.
+Expected (and observed 2026-05-24): attempts 1–5 reach the app (**405**),
+attempts 6–7 are blocked at the edge (**403**). A normal user making a
+couple of real attempts is unaffected; GET page loads are never counted.
+Note this throttles the *testing* IP for ~15 min (self-expiring).
+Cross-check `vercel firewall overview` (Firewall: Enabled, 2 active rules).
 
 ## Rollback
 

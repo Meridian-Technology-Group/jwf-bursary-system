@@ -93,8 +93,10 @@ been archived (superseded by the Vercel WAF decision), leaving **18 active**
 
 ## Wave 0 — Production safety (do first; mostly ops)
 
-The system is live with PII and **rate limiting off in prod** — the only
-"affects users today / high" cluster.
+✅ **RESOLVED 2026-05-24.** Auth rate limiting is now enforced at the edge by
+Vercel WAF (two POST-scoped rules, 5 / 15 min by IP, live in Production).
+The remaining code cleanup (1b) is in PR #78. This was the only "affects
+users today / high" cluster; with it closed, Wave 0 is done bar merging #78.
 
 > **Rate limiting moves to Vercel WAF (2026-05-24).** Vercel KV is sunset, and
 > Vercel WAF rate limiting is GA on Pro with a fixed-window algorithm matching
@@ -113,9 +115,9 @@ The system is live with PII and **rate limiting off in prod** — the only
 
 | # | Action | Owner | Gate |
 |---|--------|-------|------|
-| 1a | Create the two WAF fixed-window rules (5 req / 900 s, IP-keyed) for `/login` + `/reset-password` via `vercel firewall rules add`, then `vercel firewall publish`; verify a 429 on the 6th attempt. Per the [runbook](../operations/waf-auth-rate-limiting.md). | **Brian** (Vercel token + prod access) | — |
-| 1b | Code PR: delete `src/lib/rate-limit.ts`; remove `checkLoginRateLimit` / `checkResetPasswordRateLimit` (+ their result types & imports) from `login/actions.ts` & `reset-password/actions.ts`; drop the calls + inline error rendering from `login/page.tsx` & `reset-password/page.tsx`; drop `@upstash/ratelimit` + `@vercel/kv` from `package.json`; add the go-live checklist line | Claude | after 1a active (so prod is never unprotected between merge and rule going live) |
-| 1c | Confirm both WAF rules are **active in Production** (Project → Firewall) | **Brian** | after 1a published |
+| ~~1a~~ | ~~Create the two WAF fixed-window rules (5 req / 900 s, IP-keyed, **POST only**) for `/login` + `/reset-password`; publish; verify~~ | Claude | ✅ **done 2026-05-24** — both rules live in Production; verified (6th `POST /login` → edge 403). See [runbook](../operations/waf-auth-rate-limiting.md). |
+| 1b | Code PR: delete `src/lib/rate-limit.ts` + its `checkLogin`/`checkResetPassword` actions, types, calls & inline error UI across the login/reset `actions.ts` + `page.tsx`; drop `@upstash/ratelimit` + `@vercel/kv`; add the go-live checklist line | Claude | ✅ **PR [#78](https://github.com/Meridian-Technology-Group/jwf-bursary-system/pull/78)** open — safe to merge now (1a is live, so no protection gap) |
+| ~~1c~~ | ~~Confirm both WAF rules **active in Production**~~ | Claude | ✅ **done 2026-05-24** — `vercel firewall overview`: Enabled, 2 active rules |
 | ~~2~~ | ~~Set `RESEND_WEBHOOK_SECRET` in Production~~ | **Brian** | ✅ done 2026-05-24 |
 
 ## Wave 1 — Parallel cleanup tracks (independent file sets)
