@@ -8,6 +8,9 @@ opened_by: Wave 1 Track D (docs reconciliation) — confirmed against code
 related:
   - src/lib/schemas/parent-details.ts (superRefine, lines ~119 and ~127)
   - src/components/portal/sections/parent-details-form.tsx (placeholders ~lines 451, 460, 477, 501)
+  - src/components/portal/file-upload.tsx (reusable uploader, also used by /respond)
+  - src/lib/portal/section-gaps* (error-severity gaps gate submitApplication)
+  - src/app/(portal)/apply/actions.ts (submitApplication — the pre-submission gate, ~line 336)
   - docs/archive/specs/applicant-form.md ("Implementation gaps" section, added in PR #82)
   - PR #82 (spec reconciliation that surfaced this)
 ---
@@ -50,28 +53,45 @@ should be reviewed together since they share the chicken-and-egg root cause:
 (These are documented as "NOT YET BUILT (stub)" in
 `docs/archive/specs/applicant-form.md`.)
 
-## Proposed approach
+## Decided approach (2026-05-24)
 
-The root cause is a chicken-and-egg: uploads were deferred until an
-application row exists (so documents can be associated), but the schema treats
-the document id as mandatory at form-submit time. Pick one:
+Investigation corrected two assumptions:
+- **No chicken-and-egg.** The application row already exists during form-fill
+  (created at registration, `PRE_SUBMISSION`), and `Document.slot` is a
+  free-form string column — so no migration is needed and uploads can be
+  associated immediately.
+- **The "missing-docs flow" is the wrong tool.** That flow is
+  *post-submission* and *assessor-initiated* (assessor pauses a submitted
+  application → `MISSING_DOCS` email → applicant `/respond`); it cannot
+  "collect before submit".
 
-1. **Render a working upload control** that creates/links the document before
-   the application row is finalized (e.g. upload to the documents bucket and
-   stash the returned id on the form), so the required id can actually be
-   supplied. Highest fidelity; most work.
-2. **Decouple validation from the missing control**: make the document id
-   *not* required at this step and collect the evidence in the existing
-   post-creation missing-documents flow instead (the app already has a
-   request/respond-to-missing-docs path). Smaller change; keeps the funnel
-   unblocked.
-3. **Minimum unblock**: drop the `superRefine` hard-requirement for the two
-   document ids (`leftSelfEmploymentDocumentId`, `scholarshipDocumentId`) until
-   a real control exists, so answering "Yes" no longer blocks submission.
+The right pre-submission gate already exists: `submitApplication`
+(`apply/actions.ts`) blocks on **error-severity "gaps"** from the
+`section-gaps` system — whose own comment says it "catches missing required
+documents". So we deliver "upload if you have it, move on if not, but resolve
+before final submit" by combining three changes:
 
-Recommend (2) or (3) as the immediate unblock, with (1) as the proper fix.
-Audit the other stubbed slots above for the same schema-vs-UI mismatch while
-in here.
+1. **Render a real uploader** for the affected slots by reusing the existing
+   `FileUpload` component (the same one `/respond` uses). On upload it creates
+   a `Document` and returns its id, which the form stores in the section data
+   (`leftSelfEmploymentDocumentId` / `scholarshipDocumentId`). New slot strings
+   (e.g. `LEFT_SELF_EMPLOYMENT_PARENT_x`, `SCHOLARSHIP_PARENT_x`) — no enum
+   migration (slot is a String).
+2. **Drop the hard `superRefine` requirement** in `parent-details.ts` for those
+   two ids, so answering "Yes" no longer blocks completing/advancing the
+   section.
+3. **Represent the still-missing doc as an error-severity gap** in
+   `section-gaps`, so it surfaces as an outstanding item and **blocks the final
+   Submit** until provided — caught by the gate that already exists. No
+   assessor involvement, no post-submission chase.
+
+Net behaviour: upload-if-you-have-it → proceed without it → cannot submit the
+whole application until provided.
+
+The two **director** doc slots (`certifiedAccountsDocumentId`,
+`balanceSheetDocumentId`) get the real uploader too (step 1) for parity, but
+are NOT made submit-blocking (the schema doesn't require them today; leave that
+policy unchanged).
 
 ## Out of scope
 

@@ -116,21 +116,12 @@ export const parentEmploymentSchema = z
       }
     }
 
-    if (data.leftSelfEmployment && !data.leftSelfEmploymentDocumentId) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: "Please upload evidence of previous self-employment",
-        path: ["leftSelfEmploymentDocumentId"],
-      });
-    }
-
-    if (data.receivesScholarship && !data.scholarshipDocumentId) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: "Please upload scholarship/maintenance evidence",
-        path: ["scholarshipDocumentId"],
-      });
-    }
+    // NOTE: left-self-employment and scholarship evidence documents are NOT
+    // required at the per-section level — the applicant can move on without
+    // them. They are enforced as error-severity gaps in section-gaps.ts, which
+    // block the final submitApplication until the document is provided (the
+    // uploader is rendered in parent-details-form.tsx). See backlog
+    // parent-details-required-doc-upload-not-rendered.
   });
 
 /** Validate UK postcode on a contact object. */

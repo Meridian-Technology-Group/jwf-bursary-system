@@ -136,12 +136,66 @@ const SECTION_EVALUATORS: Partial<Record<SectionType, GapEvaluator>> = {
   FAMILY_ID: () => [],
 
   // ── Section 3: PARENT_DETAILS ───────────────────────────────────────────────
-  // Director certified accounts / balance sheet are stored as documentIds in
-  // the form data (not as named Document rows with a canonical slot).  The
-  // slots are declared in types/application.ts but the FileUpload component
-  // for parent-details was not included in the initial scope for gap-checking.
-  // B2/A4 should revisit once CERTIFIED_ACCOUNTS_PARENT_* slots are wired.
-  PARENT_DETAILS: () => [],
+  // Conditional document rules (per parent):
+  //   - left-self-employment evidence: required when leftSelfEmployment === true
+  //   - scholarship/maintenance evidence: required when receivesScholarship === true
+  // These are error-severity so they block submitApplication, but they are NOT
+  // enforced per-section (the form lets the applicant move on without them —
+  // see parent-details.ts), so the evidence can be uploaded any time before
+  // final submission. Director certified-accounts / balance-sheet uploads are
+  // offered but not required, so they are intentionally not gap-checked.
+  PARENT_DETAILS: (raw, uploadedSlots) => {
+    const gaps: SectionGap[] = [];
+    const data = parseSectionData<ParentDetailsData>(raw);
+    if (!data) return gaps;
+
+    function evaluateParent(
+      employment: ParentDetailsData["parent1Employment"] | undefined,
+      earner: "PARENT_1" | "PARENT_2"
+    ) {
+      if (!employment) return;
+
+      const suffix = earner === "PARENT_1" ? "_PARENT_1" : "_PARENT_2";
+      const label = earner === "PARENT_1" ? "Parent/Guardian 1" : "Parent/Guardian 2";
+      const fieldPrefix = earner === "PARENT_1" ? "parent1Employment" : "parent2Employment";
+
+      if (employment.leftSelfEmployment === true) {
+        const hasDoc =
+          (typeof employment.leftSelfEmploymentDocumentId === "string" &&
+            employment.leftSelfEmploymentDocumentId.length > 0) ||
+          uploadedSlots.has(`LEFT_SELF_EMPLOYMENT${suffix}`);
+        if (!hasDoc) {
+          gaps.push({
+            id: `PARENT_DETAILS:LEFT_SELF_EMPLOYMENT${suffix}`,
+            sectionType: "PARENT_DETAILS",
+            label: `Evidence of previous self-employment for ${label} is required`,
+            severity: "error",
+            fieldRef: `${fieldPrefix}.leftSelfEmploymentDocumentId`,
+          });
+        }
+      }
+
+      if (employment.receivesScholarship === true) {
+        const hasDoc =
+          (typeof employment.scholarshipDocumentId === "string" &&
+            employment.scholarshipDocumentId.length > 0) ||
+          uploadedSlots.has(`SCHOLARSHIP${suffix}`);
+        if (!hasDoc) {
+          gaps.push({
+            id: `PARENT_DETAILS:SCHOLARSHIP${suffix}`,
+            sectionType: "PARENT_DETAILS",
+            label: `Scholarship / maintenance evidence for ${label} is required`,
+            severity: "error",
+            fieldRef: `${fieldPrefix}.scholarshipDocumentId`,
+          });
+        }
+      }
+    }
+
+    evaluateParent(data.parent1Employment, "PARENT_1");
+    evaluateParent(data.parent2Employment, "PARENT_2");
+    return gaps;
+  },
 
   // ── Section 4: DEPENDENT_CHILDREN ──────────────────────────────────────────
   // Structural rules:
