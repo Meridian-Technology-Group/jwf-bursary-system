@@ -240,6 +240,7 @@ export interface EmailTemplateRow {
   type: EmailTemplateType;
   subject: string;
   body: string;
+  enabled: boolean;
   mergeFields: string[];
   updatedAt: Date;
 }
@@ -257,6 +258,7 @@ export async function getAllEmailTemplates(tx: Tx): Promise<EmailTemplateRow[]> 
     type: row.type,
     subject: row.subject,
     body: row.body,
+    enabled: row.enabled,
     mergeFields: Array.isArray(row.mergeFields) ? (row.mergeFields as string[]) : [],
     updatedAt: row.updatedAt,
   }));

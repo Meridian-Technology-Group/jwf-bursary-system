@@ -11,6 +11,7 @@ import { Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import {
   Select,
@@ -19,7 +20,17 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { upsertEmailTemplateAction } from "@/app/(admin)/settings/actions";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import {
+  setEmailTemplateEnabledAction,
+  upsertEmailTemplateAction,
+} from "@/app/(admin)/settings/actions";
+import { isLockedEmailTemplateType } from "@/lib/email/locked-types";
 import type { EmailTemplateRow } from "@/lib/db/queries/reference-tables";
 import type { EmailTemplateType } from "@prisma/client";
 
@@ -69,9 +80,15 @@ export function EmailTemplateEditor({ templates }: EmailTemplateEditorProps) {
   const [subject, setSubject] = React.useState("");
   const [body, setBody] = React.useState("");
   const [mergeFields, setMergeFields] = React.useState<string[]>([]);
+  const [enabled, setEnabled] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
   const [saved, setSaved] = React.useState(false);
   const [isPending, startTransition] = useTransition();
+  const [isToggling, startToggleTransition] = useTransition();
+
+  const isLocked = selectedType
+    ? isLockedEmailTemplateType(selectedType as EmailTemplateType)
+    : false;
 
   // Sync editor state when selection changes
   React.useEffect(() => {
@@ -79,6 +96,7 @@ export function EmailTemplateEditor({ templates }: EmailTemplateEditorProps) {
       setSubject("");
       setBody("");
       setMergeFields([]);
+      setEnabled(true);
       return;
     }
     const tpl = templates.find((t) => t.type === selectedType);
@@ -86,14 +104,36 @@ export function EmailTemplateEditor({ templates }: EmailTemplateEditorProps) {
       setSubject(tpl.subject);
       setBody(tpl.body);
       setMergeFields(tpl.mergeFields);
+      setEnabled(tpl.enabled);
     } else {
       setSubject("");
       setBody("");
       setMergeFields(COMMON_MERGE_FIELDS);
+      setEnabled(true);
     }
     setSaved(false);
     setError(null);
   }, [selectedType, templates]);
+
+  function handleToggleEnabled(next: boolean) {
+    if (!selectedType || isLocked) return;
+    setError(null);
+    setSaved(false);
+    // Optimistic update; reverted on failure.
+    const previous = enabled;
+    setEnabled(next);
+    const fd = new FormData();
+    fd.set("type", selectedType);
+    fd.set("enabled", String(next));
+
+    startToggleTransition(async () => {
+      const result = await setEmailTemplateEnabledAction(fd);
+      if (!result.success) {
+        setEnabled(previous);
+        setError(result.error);
+      }
+    });
+  }
 
   function handleSave() {
     if (!selectedType) return;
@@ -147,6 +187,50 @@ export function EmailTemplateEditor({ templates }: EmailTemplateEditorProps) {
 
       {selectedType && (
         <>
+          {/* Enable / disable toggle */}
+          <div className="flex items-start justify-between gap-4 rounded-lg border border-slate-200 bg-white px-4 py-3">
+            <div className="space-y-0.5">
+              <Label htmlFor="templateEnabled" className="text-sm font-medium">
+                Send this email
+              </Label>
+              <p className="text-xs text-slate-500">
+                {isLocked
+                  ? "Required — carries the registration link and cannot be turned off."
+                  : enabled
+                    ? "This email is sent automatically when its event occurs."
+                    : "This email is currently suppressed and will not be sent."}
+              </p>
+            </div>
+            {isLocked ? (
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    {/* span wrapper so the tooltip still fires on a disabled control */}
+                    <span className="inline-flex">
+                      <Switch
+                        id="templateEnabled"
+                        checked
+                        disabled
+                        aria-label="Locked — required email"
+                      />
+                    </span>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    Required — carries the registration link
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            ) : (
+              <Switch
+                id="templateEnabled"
+                checked={enabled}
+                disabled={isToggling}
+                onCheckedChange={handleToggleEnabled}
+                aria-label={enabled ? "Disable this email" : "Enable this email"}
+              />
+            )}
+          </div>
+
           {/* Subject */}
           <div className="space-y-1.5">
             <Label htmlFor="templateSubject" className="text-sm font-medium">

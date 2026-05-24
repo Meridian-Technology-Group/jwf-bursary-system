@@ -77,6 +77,20 @@ export async function sendEmail(
       };
     }
 
+    // 1a. Enforcement gate — if an admin has disabled this template type,
+    // short-circuit to a success-shaped no-op so callers keep working, and
+    // emit a structured, observable skip event. This single gate covers all
+    // current and future send sites. Locked types (INVITATION / INVITE_STAFF)
+    // can never reach enabled=false because the toggle action rejects them.
+    if (!template.enabled) {
+      logInfo("email.skipped", {
+        templateType,
+        recipientHash: hashEmail(to),
+        reason: "template_disabled",
+      });
+      return { success: true, skipped: true };
+    }
+
     // 2. Apply merge field substitution to subject and body.
     const subject = replaceMergeFields(template.subject, mergeData);
     const plainBody = replaceMergeFields(template.body, mergeData);
@@ -170,6 +184,17 @@ export async function sendBatchEmails(
       const error = `Email template not found for type: ${templateType}`;
       result.failed = recipients.length;
       result.errors.push(error);
+      return result;
+    }
+
+    // Enforcement gate — see sendEmail. A disabled template no-ops for every
+    // recipient: zero sent, zero failed, one skip log line (success-shaped).
+    if (!template.enabled) {
+      logInfo("email.skipped", {
+        templateType,
+        recipientCount: recipients.length,
+        reason: "template_disabled",
+      });
       return result;
     }
 
