@@ -27,6 +27,7 @@
 | 1 | prod-auth-rate-limiting-disabled | **high** | ops | Vercel KV provisioning |
 | 2 | prod-resend-webhook-secret-unset | med | ops | Vercel env var |
 | 3 | rate-limiter-fails-open-when-kv-unset | med | code | `src/lib/rate-limit.ts` |
+| 3b | migrate-rate-limit-off-vercel-kv-sdk | low | deps | `src/lib/rate-limit.ts` (added 2026-05-24) |
 | 4 | shared-generateInvitationToken-helper | low | refactor | invitation queries |
 | 5 | invite-email-failure-leaves-orphan-rows | med | code | `(admin)/invitations/actions.ts` |
 | 6 | revoke-staff-invitation-leaves-orphan-profile | low | code | `(admin)/users/actions.ts` |
@@ -80,11 +81,18 @@
 The system is live with PII and **rate limiting off in prod** — the only
 "affects users today / high" cluster.
 
+> **Vercel KV is sunset (2026-05-24).** Provision **Upstash for Redis via the
+> Vercel Marketplace**, not the old "Vercel KV" product. The Marketplace
+> integration still injects `KV_REST_API_URL` / `KV_REST_API_TOKEN`, so
+> provisioning alone lights up prod rate limiting with **no code change** — the
+> env-var contract is preserved. The deprecated `@vercel/kv` *SDK* is separate
+> debt (item #3b), folded into the #3 PR since both edit `rate-limit.ts`.
+
 | # | Action | Owner | Gate |
 |---|--------|-------|------|
-| 1 | Provision Vercel KV (Upstash); add `KV_REST_API_URL` / `KV_REST_API_TOKEN` to Production | **Brian** (env vars need approval per CLAUDE.md) | — |
+| 1 | Install **Upstash for Redis** (Vercel Marketplace) → connect to Production; verify `KV_REST_API_URL` / `KV_REST_API_TOKEN` are injected | **Brian** (env/integration needs approval per CLAUDE.md) | — |
 | 2 | Set `RESEND_WEBHOOK_SECRET` in Production | **Brian** | — |
-| 3 | Fail-loud-in-prod in `lib/rate-limit.ts` + Sentry breadcrumb + go-live checklist line | Claude | **merge gated on #1 done** |
+| 3 + 3b | Fail-loud-in-prod **and** migrate `@vercel/kv` → `@upstash/redis` in `lib/rate-limit.ts` (one PR) + Sentry breadcrumb + go-live checklist line | Claude | **merge gated on #1 done** |
 
 ## Wave 1 — Parallel cleanup tracks (independent file sets)
 
