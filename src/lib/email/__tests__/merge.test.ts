@@ -95,6 +95,34 @@ const callSiteData: Record<string, EmailMergeData> = {
     reference: "TRI-2026-0001",
     application_link: "https://app.example.com/applications/app-123",
   },
+  // src/app/(admin)/invitations/actions.ts — addSecondParentAction
+  SECONDARY_PARENT_INVITE: {
+    secondary_parent_name: "Jamie Parent",
+    child_name: "Sam Parent",
+    school: "Trinity School",
+    round_year: "2026/27",
+    registration_link: "https://app.example.com/register?token=abc",
+    deadline: "01/06/2026",
+  },
+  // NOTE: no call site sends SECONDARY_PARENT_RECEIVED yet — the secondary
+  // portal submit step (PR 4) will. We still assert the seed body resolves
+  // cleanly given the keys its `mergeFields` list advertises.
+  SECONDARY_PARENT_RECEIVED: {
+    secondary_parent_name: "Jamie Parent",
+    child_name: "Sam Parent",
+    school: "Trinity School",
+    round_year: "2026/27",
+  },
+  // NOTE: no call site sends SECONDARY_PARENT_REMINDER yet — a reminder
+  // action/cron (later PR) will. Asserted against its declared mergeFields.
+  SECONDARY_PARENT_REMINDER: {
+    secondary_parent_name: "Jamie Parent",
+    child_name: "Sam Parent",
+    school: "Trinity School",
+    round_year: "2026/27",
+    registration_link: "https://app.example.com/register?token=abc",
+    deadline: "01/06/2026",
+  },
 };
 
 const UNRESOLVED_TOKEN = /\{\{[^}]+\}\}/;
