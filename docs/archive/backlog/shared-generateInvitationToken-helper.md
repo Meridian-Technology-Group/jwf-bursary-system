@@ -1,6 +1,6 @@
 ---
 title: Consolidate generateInvitationToken into a shared helper
-status: open
+status: done
 severity: low
 area: refactor
 opened: 2026-05-13

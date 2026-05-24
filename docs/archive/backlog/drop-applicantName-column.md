@@ -1,6 +1,6 @@
 ---
 title: Drop Invitation.applicantName once firstName/lastName fully cover it
-status: open
+status: done
 severity: low
 area: schema, cleanup
 opened: 2026-05-13

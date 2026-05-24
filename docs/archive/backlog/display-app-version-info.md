@@ -1,6 +1,6 @@
 ---
 title: Display running version / build info in the app (for testers)
-status: open
+status: done
 severity: low
 area: ui, observability, build
 opened: 2026-05-24

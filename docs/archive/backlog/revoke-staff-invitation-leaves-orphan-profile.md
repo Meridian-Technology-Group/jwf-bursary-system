@@ -1,6 +1,6 @@
 ---
 title: Revoking a staff invitation leaves the profile + auth user in place
-status: open
+status: done
 severity: low
 area: admin-ui, invitations
 opened: 2026-05-19

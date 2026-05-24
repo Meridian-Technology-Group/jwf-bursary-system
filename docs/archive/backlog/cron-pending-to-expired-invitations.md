@@ -1,6 +1,6 @@
 ---
 title: Cron job to expire PENDING invitations after expiresAt
-status: open
+status: done
 severity: low
 area: invitations
 opened: 2026-05-13
