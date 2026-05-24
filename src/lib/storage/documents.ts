@@ -37,24 +37,44 @@ export interface UploadDocumentResult {
   error?: string;
 }
 
+export interface UploadDocumentOptions {
+  /**
+   * Server-verified MIME type (from magic-byte sniffing). When provided, this
+   * is used as the Storage object's contentType instead of the client-supplied
+   * `file.type`. See docs/security-audit.md §2.10.
+   */
+  verifiedContentType?: string;
+  /**
+   * Optional storage sub-namespace inserted between the applicationId and the
+   * slot, e.g. "secondary" → `documents/{appId}/secondary/{slot}/...`. Used by
+   * the dual-parent feature (PR 4b) to keep the SECONDARY contributor's files
+   * under their own prefix so the storage-RLS backstop can isolate them. Must
+   * contain no path separators (validated by the caller). When omitted the
+   * path is the legacy `documents/{appId}/{slot}/...`.
+   */
+  subNamespace?: string;
+}
+
 /**
  * Uploads a file to Supabase Storage and returns the storage path.
  *
  * @param file          The File object to upload.
  * @param applicationId The application this document belongs to.
  * @param slot          The document slot identifier (e.g. "BIRTH_CERTIFICATE").
+ * @param options       Verified MIME type and optional storage sub-namespace.
+ *                      For backwards compatibility a bare string is accepted and
+ *                      treated as `verifiedContentType`.
  */
 export async function uploadDocument(
   file: File,
   applicationId: string,
   slot: string,
-  /**
-   * Server-verified MIME type (from magic-byte sniffing). When provided, this
-   * is used as the Storage object's contentType instead of the client-supplied
-   * `file.type`. See docs/security-audit.md §2.10.
-   */
-  verifiedContentType?: string
+  options?: string | UploadDocumentOptions
 ): Promise<UploadDocumentResult> {
+  const opts: UploadDocumentOptions =
+    typeof options === "string" ? { verifiedContentType: options } : options ?? {};
+  const { verifiedContentType, subNamespace } = opts;
+
   await ensureBucket();
 
   const supabase = createSupabaseAdminClient();
@@ -68,7 +88,10 @@ export async function uploadDocument(
 
   // Sanitise filename: strip path separators and normalise whitespace
   const safeFilename = file.name.replace(/[/\\]/g, "_").replace(/\s+/g, "_");
-  const storagePath = `documents/${applicationId}/${slot}/${uuid}_${safeFilename}`;
+  const prefix = subNamespace
+    ? `documents/${applicationId}/${subNamespace}/${slot}`
+    : `documents/${applicationId}/${slot}`;
+  const storagePath = `${prefix}/${uuid}_${safeFilename}`;
 
   // Convert File → ArrayBuffer for the upload
   const arrayBuffer = await file.arrayBuffer();
