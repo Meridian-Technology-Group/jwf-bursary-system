@@ -165,7 +165,7 @@ function SectionFormContent({
   switch (sectionType) {
     case "CHILD_DETAILS": return <ChildDetailsForm applicationId={applicationId} documentMap={documentMap} />;
     case "FAMILY_ID": return <FamilyIdForm applicationId={applicationId} documentMap={documentMap} />;
-    case "PARENT_DETAILS": return <ParentDetailsForm />;
+    case "PARENT_DETAILS": return <ParentDetailsForm applicationId={applicationId} documentMap={documentMap} />;
     case "DEPENDENT_CHILDREN": return <DependentChildrenForm childFullName={childFullName} />;
     case "DEPENDENT_ELDERLY": return <DependentElderlyForm />;
     case "OTHER_INFO": return <OtherInfoForm />;
