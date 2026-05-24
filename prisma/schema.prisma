@@ -346,7 +346,6 @@ model CouncilTaxDefault {
 model Invitation {
   id               String           @id @default(uuid()) @db.Uuid
   email            String
-  applicantName    String?          @map("applicant_name")
   firstName        String?          @map("first_name")
   lastName         String?          @map("last_name")
   childName        String?          @map("child_name")
