@@ -85,9 +85,13 @@ Each item below has its own guide in this folder.
 
 ### Tab 3 — Writing the recommendation
 
-- [[17-build-family-synopsis|**Build the family synopsis**]] — auto-populated suggestions from
-  assessment data (single/married, number of children, employment),
-  editable.
+- [[17-build-family-synopsis|**Build the family synopsis**]] — a free-text
+  field you write **manually**, using the assessment data on screen
+  (single/married, number of children, employment) as your reference.
+  The field opens blank on a new assessment; it does **not**
+  auto-populate or auto-suggest. (Auto-suggestion from assessment data is
+  spec'd as future work — see
+  `docs/backlog/family-synopsis-auto-population.md`.)
 - [[18-set-accommodation-income-property|**Set accommodation status, income category, property category**]] —
   these are the fields the school sees. Income and property are
   **categories** ("£15K–£25K"), not precise figures.
