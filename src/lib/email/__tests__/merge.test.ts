@@ -88,6 +88,13 @@ const callSiteData: Record<string, EmailMergeData> = {
     role: "ASSESSOR",
     registration_link: "https://app.example.com/register/staff?token=xyz",
   },
+  // src/app/(portal)/actions.ts — submitMissingDocsResponse
+  MISSING_DOCS_RESPONDED: {
+    assessor_name: "Jordan Assessor",
+    child_name: "Sam Parent",
+    reference: "TRI-2026-0001",
+    application_link: "https://app.example.com/applications/app-123",
+  },
 };
 
 const UNRESOLVED_TOKEN = /\{\{[^}]+\}\}/;

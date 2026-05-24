@@ -20,6 +20,8 @@ import {
 import { generateApplicationReference } from "@/lib/applications/reference";
 import { createReassessmentApplicationFromInvitation } from "@/lib/db/queries/reassessment";
 import { createAuditLog } from "@/lib/audit/log";
+import { sendEmail } from "@/lib/email/send";
+import { getAppUrl } from "@/lib/app-url";
 
 // ---------------------------------------------------------------------------
 // Validation schema
@@ -291,7 +293,9 @@ export async function submitMissingDocsResponse(
             id: true,
             reference: true,
             status: true,
+            childName: true,
             leadApplicantId: true,
+            assignedToId: true,
           },
         });
 
@@ -325,11 +329,61 @@ export async function submitMissingDocsResponse(
           },
         });
 
-        return { success: true as const };
+        return {
+          success: true as const,
+          reference: application.reference,
+          childName: application.childName,
+          assignedToId: application.assignedToId,
+        };
       }
     );
 
     if (!result.success) return result;
+
+    // Notify the assigned assessor that the applicant has responded.
+    // Non-blocking: failures (or no assigned assessor) must not break the
+    // applicant's response flow. Routes through sendEmail, so the #12
+    // per-template enable/disable toggle governs whether it actually sends.
+    if (result.assignedToId) {
+      try {
+        const assessor = await withAdminContext((tx) =>
+          tx.profile.findUnique({
+            where: { id: result.assignedToId as string },
+            select: { email: true, firstName: true, lastName: true },
+          })
+        );
+
+        if (assessor?.email) {
+          const assessorName =
+            `${assessor.firstName ?? ""} ${assessor.lastName ?? ""}`.trim() ||
+            "Assessor";
+          const emailResult = await sendEmail(
+            assessor.email,
+            "MISSING_DOCS_RESPONDED",
+            {
+              assessor_name: assessorName,
+              child_name: result.childName,
+              reference: result.reference,
+              application_link: `${getAppUrl()}/applications/${applicationId}`,
+            }
+          );
+          if (!emailResult.success) {
+            console.warn(
+              `[portal/actions] MISSING_DOCS_RESPONDED email failed for ${applicationId}: ${emailResult.error}`
+            );
+          }
+        } else {
+          console.warn(
+            `[portal/actions] MISSING_DOCS_RESPONDED: assigned assessor ${result.assignedToId} has no email; skipping notification for ${applicationId}`
+          );
+        }
+      } catch (emailErr) {
+        console.warn(
+          `[portal/actions] MISSING_DOCS_RESPONDED email error for ${applicationId}:`,
+          emailErr
+        );
+      }
+    }
 
     revalidatePath("/respond");
     revalidatePath("/status");

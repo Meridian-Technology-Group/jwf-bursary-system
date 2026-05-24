@@ -45,6 +45,7 @@ const TEMPLATE_LABELS: Record<EmailTemplateType, string> = {
   REASSESSMENT: "Reassessment",
   REMINDER: "Reminder",
   INVITE_STAFF: "Staff Invitation",
+  MISSING_DOCS_RESPONDED: "Missing Documents — Applicant Responded",
 };
 
 // ─── Merge field hints ────────────────────────────────────────────────────────
