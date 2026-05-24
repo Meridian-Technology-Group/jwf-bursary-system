@@ -13,6 +13,8 @@ import { createRound, updateRound, closeRound } from "@/lib/db/queries/rounds";
 import { withUserContext, type RlsRole } from "@/lib/db/prisma";
 import { createAuditLog } from "@/lib/audit/log";
 
+import { AUDIT_ACTIONS, AUDIT_ENTITY_TYPES } from "@/lib/audit/actions";
+
 // ---------------------------------------------------------------------------
 // Validation schemas
 // ---------------------------------------------------------------------------
@@ -84,8 +86,8 @@ export async function createRoundAction(
 
       await createAuditLog(tx, {
         userId: user.id,
-        action: "CREATE_ROUND",
-        entityType: "Round",
+        action: AUDIT_ACTIONS.CREATE_ROUND,
+        entityType: AUDIT_ENTITY_TYPES.Round,
         entityId: round.id,
         context: `Created round ${academicYear}`,
         metadata: { academicYear, openDate, closeDate },
@@ -147,8 +149,8 @@ export async function updateRoundAction(
 
       await createAuditLog(tx, {
         userId: user.id,
-        action: "UPDATE_ROUND",
-        entityType: "Round",
+        action: AUDIT_ACTIONS.UPDATE_ROUND,
+        entityType: AUDIT_ENTITY_TYPES.Round,
         entityId: id,
         context: `Updated round ${academicYear}`,
         metadata: { academicYear, openDate, closeDate },
@@ -224,8 +226,8 @@ export async function openRoundAction(
 
       await createAuditLog(tx, {
         userId: user.id,
-        action: "ROUND_OPENED",
-        entityType: "Round",
+        action: AUDIT_ACTIONS.ROUND_OPENED,
+        entityType: AUDIT_ENTITY_TYPES.Round,
         entityId: id,
         context: `Opened round ${updated.academicYear}`,
         metadata: { academicYear: updated.academicYear },
@@ -280,8 +282,8 @@ export async function closeRoundAction(
 
       await createAuditLog(tx, {
         userId: user.id,
-        action: "ROUND_CLOSED",
-        entityType: "Round",
+        action: AUDIT_ACTIONS.ROUND_CLOSED,
+        entityType: AUDIT_ENTITY_TYPES.Round,
         entityId: id,
         context: `Closed round ${round.academicYear}`,
         metadata: { academicYear: round.academicYear },

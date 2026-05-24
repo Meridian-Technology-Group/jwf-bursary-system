@@ -16,6 +16,7 @@ import { withUserContext, type RlsRole } from "@/lib/db/prisma";
 import { upsertRecommendation } from "@/lib/db/queries/recommendations";
 import type { UpsertRecommendationInput } from "@/lib/db/queries/recommendations";
 import { createAuditLog } from "@/lib/audit/log";
+import { AUDIT_ACTIONS, AUDIT_ENTITY_TYPES } from "@/lib/audit/actions";
 import { setApplicationOutcome } from "@/lib/applications/set-outcome-core";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -74,8 +75,8 @@ export async function saveRecommendationAction(
 
         await createAuditLog(tx, {
           userId: user.id,
-          action: "recommendation.save",
-          entityType: "Recommendation",
+          action: AUDIT_ACTIONS.RECOMMENDATION_SAVE,
+          entityType: AUDIT_ENTITY_TYPES.Recommendation,
           entityId: assessmentId,
           context: `Recommendation saved for application ${applicationId}`,
           metadata: {

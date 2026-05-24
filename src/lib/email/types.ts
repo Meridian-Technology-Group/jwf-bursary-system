@@ -12,6 +12,13 @@ export interface SendEmailResult {
   messageId?: string;
   /** Human-readable error description, present on failure. */
   error?: string;
+  /**
+   * True when the send was intentionally suppressed because an admin disabled
+   * this template type. The result is still success-shaped so callers proceed
+   * normally; this flag lets interested callers distinguish a no-op from a
+   * real send.
+   */
+  skipped?: boolean;
 }
 
 /**

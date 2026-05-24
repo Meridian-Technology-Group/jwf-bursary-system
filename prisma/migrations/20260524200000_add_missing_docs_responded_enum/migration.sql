@@ -1,0 +1,12 @@
+-- Backlog #13 (applicant-missing-docs-response-no-assessor-email):
+-- extend the EmailTemplateType enum with MISSING_DOCS_RESPONDED so the
+-- applicant's "I've sent my documents" response can notify the assigned
+-- assessor.
+--
+-- Must run in its own migration: Postgres requires `ALTER TYPE ... ADD VALUE`
+-- to be committed before the new value can be referenced by subsequent DDL/DML
+-- in the same transaction. The template-seed INSERT that uses this value lives
+-- in a SEPARATE, later migration (20260524200100_seed_missing_docs_responded_template)
+-- so `prisma migrate deploy` does not fail with "unsafe use of new value of
+-- enum type". Mirrors 20260513184725_add_staff_invitation_enum.
+ALTER TYPE "EmailTemplateType" ADD VALUE IF NOT EXISTS 'MISSING_DOCS_RESPONDED';

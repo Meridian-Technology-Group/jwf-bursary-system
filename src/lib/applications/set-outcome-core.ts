@@ -26,6 +26,8 @@ import { generateBursaryAccountReference } from "@/lib/bursary-accounts/referenc
 import { sendEmail } from "@/lib/email/send";
 import { EmailTemplateType, type ApplicationStatus } from "@prisma/client";
 
+import { AUDIT_ACTIONS, AUDIT_ENTITY_TYPES } from "@/lib/audit/actions";
+
 export type SetOutcomeResult =
   | { success: true }
   | { success: false; error: string };
@@ -198,8 +200,8 @@ export async function setApplicationOutcome(
     await withUserContext(user.id, user.role as RlsRole, (tx) =>
       createAuditLog(tx, {
         userId: user.id,
-        action: "APPLICATION_OUTCOME_SET",
-        entityType: "Application",
+        action: AUDIT_ACTIONS.APPLICATION_OUTCOME_SET,
+        entityType: AUDIT_ENTITY_TYPES.Application,
         entityId: applicationId,
         context: `Outcome set to ${outcome}`,
         metadata: {

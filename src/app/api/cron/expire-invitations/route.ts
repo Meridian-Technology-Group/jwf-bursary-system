@@ -20,6 +20,8 @@ import { InvitationStatus } from "@prisma/client";
 import { withAdminContext } from "@/lib/db/prisma";
 import { createAuditLog } from "@/lib/audit/log";
 
+import { AUDIT_ACTIONS, AUDIT_ENTITY_TYPES } from "@/lib/audit/actions";
+
 // This route touches the DB and reads request headers — never statically
 // optimised or cached.
 export const dynamic = "force-dynamic";
@@ -60,8 +62,8 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       // nightly no-op runs don't flood the audit trail.
       if (applicants > 0 || staff > 0) {
         await createAuditLog(tx, {
-          action: "EXPIRE_INVITATIONS_CRON",
-          entityType: "Invitation",
+          action: AUDIT_ACTIONS.EXPIRE_INVITATIONS_CRON,
+          entityType: AUDIT_ENTITY_TYPES.Invitation,
           context: `Expired ${applicants} applicant and ${staff} staff invitation(s) past expiry`,
           metadata: {
             applicantInvitationsExpired: applicants,

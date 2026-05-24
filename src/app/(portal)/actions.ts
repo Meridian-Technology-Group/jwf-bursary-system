@@ -20,6 +20,10 @@ import {
 import { generateApplicationReference } from "@/lib/applications/reference";
 import { createReassessmentApplicationFromInvitation } from "@/lib/db/queries/reassessment";
 import { createAuditLog } from "@/lib/audit/log";
+import { sendEmail } from "@/lib/email/send";
+import { getAppUrl } from "@/lib/app-url";
+
+import { AUDIT_ACTIONS, AUDIT_ENTITY_TYPES } from "@/lib/audit/actions";
 
 // ---------------------------------------------------------------------------
 // Validation schema
@@ -224,8 +228,8 @@ export async function beginReassessmentAction(): Promise<BeginReassessmentResult
 
       await createAuditLog(tx, {
         userId: user.id,
-        action: "ACCEPT_INVITATION",
-        entityType: "Invitation",
+        action: AUDIT_ACTIONS.ACCEPT_INVITATION,
+        entityType: AUDIT_ENTITY_TYPES.Invitation,
         entityId: invitation.id,
         context: `Re-assessment invitation accepted by ${invitation.email}`,
         metadata: {
@@ -291,7 +295,9 @@ export async function submitMissingDocsResponse(
             id: true,
             reference: true,
             status: true,
+            childName: true,
             leadApplicantId: true,
+            assignedToId: true,
           },
         });
 
@@ -314,8 +320,8 @@ export async function submitMissingDocsResponse(
 
         await createAuditLog(tx, {
           userId: user.id,
-          action: "MISSING_DOCS_RESPONDED",
-          entityType: "Application",
+          action: AUDIT_ACTIONS.MISSING_DOCS_RESPONDED,
+          entityType: AUDIT_ENTITY_TYPES.Application,
           entityId: applicationId,
           context: "Applicant responded to a missing-documents request",
           metadata: {
@@ -325,11 +331,61 @@ export async function submitMissingDocsResponse(
           },
         });
 
-        return { success: true as const };
+        return {
+          success: true as const,
+          reference: application.reference,
+          childName: application.childName,
+          assignedToId: application.assignedToId,
+        };
       }
     );
 
     if (!result.success) return result;
+
+    // Notify the assigned assessor that the applicant has responded.
+    // Non-blocking: failures (or no assigned assessor) must not break the
+    // applicant's response flow. Routes through sendEmail, so the #12
+    // per-template enable/disable toggle governs whether it actually sends.
+    if (result.assignedToId) {
+      try {
+        const assessor = await withAdminContext((tx) =>
+          tx.profile.findUnique({
+            where: { id: result.assignedToId as string },
+            select: { email: true, firstName: true, lastName: true },
+          })
+        );
+
+        if (assessor?.email) {
+          const assessorName =
+            `${assessor.firstName ?? ""} ${assessor.lastName ?? ""}`.trim() ||
+            "Assessor";
+          const emailResult = await sendEmail(
+            assessor.email,
+            "MISSING_DOCS_RESPONDED",
+            {
+              assessor_name: assessorName,
+              child_name: result.childName,
+              reference: result.reference,
+              application_link: `${getAppUrl()}/applications/${applicationId}`,
+            }
+          );
+          if (!emailResult.success) {
+            console.warn(
+              `[portal/actions] MISSING_DOCS_RESPONDED email failed for ${applicationId}: ${emailResult.error}`
+            );
+          }
+        } else {
+          console.warn(
+            `[portal/actions] MISSING_DOCS_RESPONDED: assigned assessor ${result.assignedToId} has no email; skipping notification for ${applicationId}`
+          );
+        }
+      } catch (emailErr) {
+        console.warn(
+          `[portal/actions] MISSING_DOCS_RESPONDED email error for ${applicationId}:`,
+          emailErr
+        );
+      }
+    }
 
     revalidatePath("/respond");
     revalidatePath("/status");

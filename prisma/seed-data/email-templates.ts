@@ -9,7 +9,8 @@ export type EmailTemplateType =
   | "OUTCOME_DNQ"
   | "REASSESSMENT"
   | "REMINDER"
-  | "INVITE_STAFF";
+  | "INVITE_STAFF"
+  | "MISSING_DOCS_RESPONDED";
 
 interface EmailTemplateData {
   type: EmailTemplateType;
@@ -250,5 +251,24 @@ Yours sincerely,
 
 The Bursary Office
 John Whitgift Foundation`,
+  },
+  {
+    type: "MISSING_DOCS_RESPONDED",
+    subject: "Documents received — {{reference}} ({{child_name}})",
+    mergeFields: [
+      "assessor_name",
+      "child_name",
+      "reference",
+      "application_link",
+    ],
+    body: `Dear {{assessor_name}},
+
+The applicant for {{child_name}} (application reference {{reference}}) has responded to your request for missing documents and uploaded the requested files.
+
+The application has moved out of the paused state and is back in your queue for review:
+{{application_link}}
+
+Regards,
+JWF Bursary System`,
   },
 ];

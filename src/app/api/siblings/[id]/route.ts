@@ -11,6 +11,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireRole, Role } from "@/lib/auth/roles";
 import { withUserContext, type RlsRole } from "@/lib/db/prisma";
 import { createAuditLog } from "@/lib/audit/log";
+import { AUDIT_ACTIONS, AUDIT_ENTITY_TYPES } from "@/lib/audit/actions";
 import {
   removeSiblingLink,
   reorderSiblingPriority,
@@ -34,8 +35,8 @@ export async function DELETE(
       await removeSiblingLink(tx, siblingLinkId);
       await createAuditLog(tx, {
         userId: user.id,
-        action: "SIBLING_LINK_REMOVED",
-        entityType: "SIBLING_LINK",
+        action: AUDIT_ACTIONS.SIBLING_LINK_REMOVED,
+        entityType: AUDIT_ENTITY_TYPES.SiblingLink,
         entityId: siblingLinkId,
       });
     });
@@ -94,8 +95,8 @@ export async function PATCH(
       await reorderSiblingPriority(tx, familyGroupId, orderedIds);
       await createAuditLog(tx, {
         userId: user.id,
-        action: "SIBLING_PRIORITY_REORDERED",
-        entityType: "SIBLING_LINK",
+        action: AUDIT_ACTIONS.SIBLING_PRIORITY_REORDERED,
+        entityType: AUDIT_ENTITY_TYPES.SiblingLink,
         context: `Family group: ${familyGroupId}`,
         metadata: { orderedIds },
       });

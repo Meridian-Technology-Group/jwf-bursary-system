@@ -11,11 +11,14 @@
  */
 
 import type { Tx } from "@/lib/db/prisma";
+import type { AuditAction, AuditEntityType } from "@/lib/audit/actions";
 
 export interface CreateAuditLogParams {
   userId?: string;
-  action: string;
-  entityType: string;
+  /** Canonical SCREAMING_SNAKE action key — see `@/lib/audit/actions`. */
+  action: AuditAction;
+  /** PascalCase Prisma model name — see `@/lib/audit/actions`. */
+  entityType: AuditEntityType;
   entityId?: string;
   context?: string;
   metadata?: Record<string, unknown>;

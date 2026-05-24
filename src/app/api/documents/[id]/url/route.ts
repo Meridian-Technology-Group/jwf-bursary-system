@@ -19,6 +19,8 @@ import { withUserContext, type RlsRole } from "@/lib/db/prisma";
 import { createSupabaseAdminClient } from "@/lib/auth/supabase-admin";
 import { createAuditLog } from "@/lib/audit/log";
 
+import { AUDIT_ACTIONS, AUDIT_ENTITY_TYPES } from "@/lib/audit/actions";
+
 const BUCKET_NAME = process.env.SUPABASE_STORAGE_BUCKET ?? "documents";
 const EXPIRY_SECONDS = 300; // 5 minutes — once a URL leaves the app it cannot be revoked
 
@@ -102,8 +104,8 @@ export async function GET(
   await withUserContext(user.id, user.role as RlsRole, (tx) =>
     createAuditLog(tx, {
       userId: user.id,
-      action: "DOCUMENT_URL_GRANTED",
-      entityType: "Document",
+      action: AUDIT_ACTIONS.DOCUMENT_URL_GRANTED,
+      entityType: AUDIT_ENTITY_TYPES.Document,
       entityId: document.id,
       context: `Signed URL issued (${EXPIRY_SECONDS}s, ${forceDownload ? "download" : "inline"})`,
       metadata: {
