@@ -16,9 +16,7 @@ import { withUserContext, type RlsRole } from "@/lib/db/prisma";
 import { upsertRecommendation } from "@/lib/db/queries/recommendations";
 import type { UpsertRecommendationInput } from "@/lib/db/queries/recommendations";
 import { createAuditLog } from "@/lib/audit/log";
-import { generateBursaryAccountReference } from "@/lib/bursary-accounts/reference";
-import { sendEmail } from "@/lib/email/send";
-import { EmailTemplateType } from "@prisma/client";
+import { setApplicationOutcome } from "@/lib/applications/set-outcome-core";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -107,150 +105,21 @@ export async function saveRecommendationAction(
 /**
  * Sets the application status to QUALIFIES or DOES_NOT_QUALIFY.
  * Sends the appropriate outcome email to the lead applicant.
+ *
+ * Thin wrapper around the shared core in
+ * `@/lib/applications/set-outcome-core` (backlog #11) — see that module for
+ * the transition validation, idempotent BursaryAccount creation, email and
+ * canonical audit write. This entry point revalidates the recommendation and
+ * application-detail paths.
  */
 export async function setApplicationOutcomeAction(
   applicationId: string,
   outcome: "QUALIFIES" | "DOES_NOT_QUALIFY"
 ): Promise<{ success: true } | { success: false; error: string }> {
-  try {
-    const user = await requireRole([Role.ADMIN, Role.ASSESSOR]);
-
-    // Phase 1: load app, validate, update status (single RLS tx)
-    const pre = await withUserContext(
-      user.id,
-      user.role as RlsRole,
-      async (tx) => {
-        const application = await tx.application.findUnique({
-          where: { id: applicationId },
-          select: {
-            id: true,
-            reference: true,
-            status: true,
-            childName: true,
-            childDob: true,
-            entryYear: true,
-            entryYearGroup: true,
-            school: true,
-            bursaryAccountId: true,
-            leadApplicantId: true,
-            leadApplicant: {
-              select: { id: true, email: true, firstName: true, lastName: true },
-            },
-            round: {
-              select: { academicYear: true },
-            },
-            assessment: {
-              select: { yearlyPayableFees: true },
-            },
-          },
-        });
-
-        if (!application) {
-          return { success: false as const, error: "Application not found." };
-        }
-
-        // Guard: do not re-set an already-terminal status
-        if (
-          application.status === "QUALIFIES" ||
-          application.status === "DOES_NOT_QUALIFY"
-        ) {
-          return {
-            success: false as const,
-            error: "Application outcome has already been set.",
-          };
-        }
-
-        await tx.application.update({
-          where: { id: applicationId },
-          data: { status: outcome },
-        });
-
-        // Promote a qualifying application into an ongoing BursaryAccount.
-        // Idempotent: only create when the outcome is QUALIFIES and the
-        // application is not already linked to an account (re-assessments
-        // already carry a bursary_account_id and are skipped here).
-        if (outcome === "QUALIFIES" && !application.bursaryAccountId) {
-          const reference = await generateBursaryAccountReference(
-            tx,
-            application.round.academicYear
-          );
-
-          // BursaryAccount.entryYear is required; fall back to the round's
-          // starting academic year (e.g. "2025/2026" -> 2025) when the
-          // application did not capture an explicit entry year.
-          const entryYear =
-            application.entryYear ??
-            parseInt(application.round.academicYear.slice(0, 4), 10);
-
-          const account = await tx.bursaryAccount.create({
-            data: {
-              reference,
-              school: application.school,
-              childName: application.childName,
-              childDob: application.childDob,
-              entryYear,
-              entryYearGroup: application.entryYearGroup,
-              firstAssessmentYear: application.round.academicYear,
-              benchmarkPayableFees:
-                application.assessment?.yearlyPayableFees ?? null,
-              leadApplicantId: application.leadApplicantId,
-              status: "ACTIVE",
-            },
-            select: { id: true },
-          });
-
-          await tx.application.update({
-            where: { id: applicationId },
-            data: { bursaryAccountId: account.id },
-          });
-        }
-
-        return { success: true as const, application };
-      }
-    );
-
-    if (!pre.success) return pre;
-    const { application } = pre;
-
-    // Send outcome email to the lead applicant
-    const templateType =
-      outcome === "QUALIFIES"
-        ? EmailTemplateType.OUTCOME_QUALIFIES
-        : EmailTemplateType.OUTCOME_DNQ;
-
-    const schoolLabel = application.school === "TRINITY" ? "Trinity School" : "Whitgift School";
-    await sendEmail(application.leadApplicant.email, templateType, {
-      applicant_name:
-        `${application.leadApplicant.firstName ?? ""} ${application.leadApplicant.lastName ?? ""}`.trim() ||
-        "Applicant",
-      child_name: application.childName,
-      school: schoolLabel,
-      reference: application.reference,
-      academic_year: application.round.academicYear,
-    });
-
-    await withUserContext(user.id, user.role as RlsRole, (tx) =>
-      createAuditLog(tx, {
-        userId: user.id,
-        action: "application.outcome.set",
-        entityType: "Application",
-        entityId: applicationId,
-        context: `Application outcome set to ${outcome}`,
-        metadata: {
-          applicationId,
-          outcome,
-          previousStatus: application.status,
-          emailSentTo: application.leadApplicant.email,
-        },
-      })
-    );
-
+  const result = await setApplicationOutcome(applicationId, outcome);
+  if (result.success) {
     revalidatePath(`/applications/${applicationId}/recommendation`);
     revalidatePath(`/applications/${applicationId}`);
-
-    return { success: true };
-  } catch (err) {
-    console.error("[setApplicationOutcomeAction]", err);
-    return { success: false, error: "Failed to set application outcome." };
   }
+  return result;
 }

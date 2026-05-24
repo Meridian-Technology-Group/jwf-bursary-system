@@ -28,6 +28,7 @@ import { sendEmail } from "@/lib/email/send";
 import { humaniseSlot } from "@/lib/documents/slots";
 import { deleteDocument } from "@/lib/storage/documents";
 import { createSupabaseAdminClient } from "@/lib/auth/supabase-admin";
+import { setApplicationOutcome } from "@/lib/applications/set-outcome-core";
 import type { ApplicationStatus } from "@prisma/client";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -320,91 +321,22 @@ export async function resumeApplication(
 /**
  * Sets the final outcome of a COMPLETED application to QUALIFIES or
  * DOES_NOT_QUALIFY, and sends the appropriate outcome email.
+ *
+ * Thin wrapper around the shared core in
+ * `@/lib/applications/set-outcome-core` (backlog #11) — see that module for
+ * the transition validation, idempotent BursaryAccount creation, email and
+ * canonical audit write. This entry point revalidates the application-detail
+ * paths.
  */
 export async function setOutcome(
   applicationId: string,
   outcome: "QUALIFIES" | "DOES_NOT_QUALIFY"
 ): Promise<ActionResult> {
-  try {
-    const user = await requireRole([Role.ADMIN, Role.ASSESSOR]);
-
-    const pre = await withUserContext(
-      user.id,
-      user.role as RlsRole,
-      async (tx) => {
-        const application = await fetchApplicationForStatus(tx, applicationId);
-        if (!application) {
-          return { success: false as const, error: "Application not found." };
-        }
-
-        if (!isValidTransition(application.status, outcome)) {
-          return {
-            success: false as const,
-            error: `Cannot set outcome ${outcome} from status ${application.status}.`,
-          };
-        }
-
-        await tx.application.update({
-          where: { id: applicationId },
-          data: { status: outcome },
-        });
-
-        return { success: true as const, application };
-      }
-    );
-
-    if (!pre.success) return pre;
-    const { application } = pre;
-
-    // Send appropriate outcome email
-    const templateType =
-      outcome === "QUALIFIES" ? "OUTCOME_QUALIFIES" : "OUTCOME_DNQ";
-
-    const outcomeSchoolLabel = application.school === "TRINITY" ? "Trinity School" : "Whitgift School";
-    const emailResult = await sendEmail(
-      application.leadApplicant.email,
-      templateType,
-      {
-        applicant_name:
-          `${application.leadApplicant.firstName ?? ""} ${application.leadApplicant.lastName ?? ""}`.trim() ||
-          "Applicant",
-        reference: application.reference,
-        child_name: application.childName,
-        school: outcomeSchoolLabel,
-        academic_year: application.round.academicYear,
-      }
-    );
-
-    if (!emailResult.success) {
-      console.warn(
-        `[setOutcome] ${templateType} email failed for ${applicationId}: ${emailResult.error}`
-      );
-    }
-
-    await withUserContext(user.id, user.role as RlsRole, (tx) =>
-      createAuditLog(tx, {
-        userId: user.id,
-        action: "APPLICATION_OUTCOME_SET",
-        entityType: "Application",
-        entityId: applicationId,
-        context: `Outcome set to ${outcome}`,
-        metadata: {
-          fromStatus: application.status,
-          toStatus: outcome,
-          reference: application.reference,
-          emailSent: emailResult.success,
-          emailMessageId: emailResult.messageId ?? null,
-        },
-      })
-    );
-
+  const result = await setApplicationOutcome(applicationId, outcome);
+  if (result.success) {
     revalidateApplicationPaths(applicationId);
-
-    return { success: true };
-  } catch (err) {
-    console.error("[setOutcome]", err);
-    return { success: false, error: "Failed to set application outcome." };
   }
+  return result;
 }
 
 // ─── assignApplicationAction ──────────────────────────────────────────────────
