@@ -80,9 +80,9 @@ server-only and sensitive; treat as a credential.
 
 | Variable | Scope | Where the value comes from | Production value | Preview value | Notes |
 |---|---|---|---|---|---|
-| `RESEND_API_KEY` | **Secret** | Resend dashboard → **API Keys** → create key | Prod-domain key | Nonprod/test key | The app throws at startup if this is unset (`src/lib/email/resend.ts`). Use distinct keys per env. |
-| `RESEND_FROM_EMAIL` | Server | The verified sending address on the Resend-verified domain | `bursary@jwf.org.uk` (on the verified domain) | Same or a test address | **Domain must be verified in Resend before go-live (G4).** Falls back to a default address in `src/lib/email/send.ts` if unset. |
-| `RESEND_WEBHOOK_SECRET` | **Secret** | Resend dashboard → **Webhooks** → endpoint → **Signing Secret** (`whsec_…`) | Prod signing secret | Nonprod signing secret | Required by `/api/webhooks/resend` to verify event signatures (Svix). The handler rejects events when this is unset. Was previously commented out in staging — confirm it is set in both scopes. |
+| `RESEND_API_KEY` | **Secret** | Resend dashboard → **API Keys** → create key | The single Resend account API key | Same key | The app throws at startup if this is unset (`src/lib/email/resend.ts`). We run a **single Resend environment**, so the same key is used in both the Production and Preview scopes. |
+| `RESEND_FROM_EMAIL` | Server | The verified sending address on the Resend-verified domain | `bursary@jwf.org.uk` (on the verified domain) | Same address | **Domain must be verified in Resend before go-live (G4).** Falls back to a default address in `src/lib/email/send.ts` if unset. Single Resend environment — the same verified address is used in both scopes. |
+| `RESEND_WEBHOOK_SECRET` | **Secret** | Resend dashboard → **Webhooks** → endpoint → **Signing Secret** (`whsec_…`) | Signing secret from the single prod webhook endpoint | *Not set* — no staging endpoint registered | Required by `/api/webhooks/resend` to verify event signatures (Svix). The handler rejects events with **401** when this is unset. We run a **single Resend environment** with one webhook endpoint pointed at the production URL only; staging therefore receives no delivery events, which is intentional (the handler is logs-only). Set this in the **Production scope only**; leave Preview unset. |
 
 > 📷 *Screenshot: Resend dashboard → Webhooks → endpoint detail showing the Signing Secret field.*
 

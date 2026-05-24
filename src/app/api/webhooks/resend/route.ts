@@ -4,19 +4,25 @@
 // Resend sends a POST request to this endpoint whenever an email changes
 // delivery state (delivered, bounced, complained, etc.).
 //
-// Resend signs webhook payloads using the Svix library. Signature verification
-// requires installing the `svix` package and adding a RESEND_WEBHOOK_SECRET
-// to your environment variables (available from the Resend dashboard under
-// Webhooks > Signing Secret).
+// Resend signs webhook payloads using the Svix library, and this handler
+// verifies that signature before processing any event. The signing secret
+// comes from the Resend dashboard (Webhooks > endpoint > Signing Secret) and
+// must be set as RESEND_WEBHOOK_SECRET. When that secret is unset, or the
+// Svix signature headers are missing/invalid, the request is rejected with
+// 401 (see the verification block in POST below). The `svix` package is
+// already a dependency.
 //
-// Until that secret is configured, the handler logs the event payload and
-// returns 200 — this is safe because delivery webhooks carry no PII beyond
-// the email address and message ID, and are idempotent.
+// This project runs a single Resend environment with one webhook endpoint
+// pointed at the production URL, so RESEND_WEBHOOK_SECRET is set in the
+// Vercel Production scope only. See docs/operations/environment-variables.md.
 //
-// To enable verification:
-//   1. npm install svix
-//   2. Add RESEND_WEBHOOK_SECRET=whsec_... to .env.local
-//   3. Uncomment the verification block below.
+// Once the signature is verified, the handler logs the event and returns 200.
+// Delivery webhooks carry no PII beyond the email address (hashed before
+// logging) and the message ID, and are idempotent.
+//
+// Local/preview setup:
+//   1. Add RESEND_WEBHOOK_SECRET=whsec_... to .env.local
+//   2. Point a Resend webhook endpoint at your local/preview URL.
 
 import { NextRequest, NextResponse } from "next/server";
 import { Webhook } from "svix";
