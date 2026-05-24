@@ -1,6 +1,6 @@
 ---
 title: Parent-details required document uploads are validated but never rendered (applicant hard-block)
-status: open
+status: done
 severity: high
 area: applicant-form, validation, uploads
 opened: 2026-05-24
