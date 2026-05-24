@@ -6,28 +6,28 @@
 > scope and rationale. Update the wave tables as items ship; close the
 > underlying backlog file (move to `docs/archive/backlog/`) when done.
 
-## Status — updated 2026-05-24 (shipped in v1.1.0)
+## Status — updated 2026-05-24
 
-**Waves 0 + 1 are DONE and in production (v1.1.0).** Shipped & archived:
-#1 (WAF rate limiting), #2 (webhook secret), #4 (token helper), #5 (invite
-email-failure rollback), #6 (staff-revoke cleanup), #7 (expire cron), #8
-(invitation copy), #9 (drop `applicantName`), #11 (outcome de-dup), #14
-(release-please), #15 (version display), #19 (applicant-form spec). #17 had
-only its **docs half** shipped (option 2); the auto-suggest feature is a
-pending decision.
+**Routine backlog is COMPLETE.** Everything except the two deferred epics is
+shipped or closed.
 
-**Open (8):**
+- **In production (v1.1.0):** #1 (WAF rate limiting), #2 (webhook secret), #4
+  (token helper), #5 (invite email-failure rollback), #6 (staff-revoke cleanup),
+  #7 (expire cron), #8 (invitation copy), #9 (drop `applicantName`), #11 (outcome
+  de-dup), #14 (release-please), #15 (version display), #19 (applicant-form spec).
+- **In production (v1.1.1):** the parent-details required-upload hard-block fix.
+- **Shipped to staging, promoting as v1.2.0:** #12 (email event toggles), #13
+  (missing-docs-responded assessor email), #10 (audit naming standardization).
+- **Closed `won't-do` (2026-05-24):** #16 (round-summary report — absorbed by the
+  deferred #18 cockpit) and #17 (synopsis auto-suggest — docs already corrected;
+  low-value polish).
+
+**Still open — only the two deferred epics:**
 
 | Item | Sev | Note |
 |------|-----|------|
-| `parent-details-required-doc-upload-not-rendered` | **high** | NEW bug — applicant hard-block; **next dev priority** |
-| `admin-email-event-toggles` (#12) | med | Wave 2 lead; #13 + #10 follow |
-| `applicant-missing-docs-response-no-assessor-email` (#13) | low | after #12 (RLS blocker already fixed) |
-| `audit-log-naming-inconsistencies` (#10) | low | pairs with #12 |
-| `family-synopsis-auto-population` (#17) | low | DECISION: build option-1 or close won't-do |
-| `round-summary-report-section` (#16) | low | DECISION: build or won't-do (tied to #18) |
-| `admin-round-cockpit-concept` (#18) | med | DEFERRED epic |
-| `dual-parent-separated-bursary-application` (#20) | **high** | DEFERRED XL epic; needs Foundation policy answers |
+| `admin-round-cockpit-concept` (#18) | med | DEFERRED epic — large `/rounds` UX rebuild; needs a scheduling decision |
+| `dual-parent-separated-bursary-application` (#20) | **high** | DEFERRED XL epic — **blocked on Foundation policy answers** (joint-asset double-counting, identity matching, sole-parent reconciliation) |
 
 > **Repo-health note (release-please + long-lived `staging`):** release-please
 > commits the version bump to `main` only, so `staging` lags by the

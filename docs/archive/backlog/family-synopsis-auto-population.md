@@ -1,6 +1,6 @@
 ---
 title: Family synopsis does not auto-populate — docs imply it does
-status: open
+status: wont-do
 severity: low
 area: assessment, recommendation, docs
 opened: 2026-05-22
@@ -62,3 +62,10 @@ build it before go-live.
 - Auto-populating the other recommendation fields (accommodation,
   categories) — they already pre-fill from the assessment/calculation
   where applicable; this item is specifically the free-text synopsis.
+
+## Resolution — closed won't-do (2026-05-24)
+
+The docs over-promise was corrected (option 2, shipped via PR #82): the synopsis
+is written manually and opens blank. The auto-suggest feature itself (option 1)
+is low-value polish; closing rather than building. Revisit only if the Foundation
+requests it.

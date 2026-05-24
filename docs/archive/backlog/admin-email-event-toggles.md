@@ -1,6 +1,6 @@
 ---
 title: Admin toggle to enable/disable specific event-based emails
-status: open
+status: done
 severity: medium
 area: email, admin-settings, schema
 opened: 2026-05-22
