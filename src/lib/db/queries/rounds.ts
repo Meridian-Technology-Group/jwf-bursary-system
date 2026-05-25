@@ -27,6 +27,15 @@ export interface RoundWithCounts {
     complete: number;
     total: number;
   };
+  /**
+   * Decided-outcome split for the round (computed the same way as `getRound`).
+   * Lets the Season Ledger show qualification % without a richer per-round
+   * fetch. Non-breaking additive field.
+   */
+  statusBreakdown: {
+    qualifies: number;
+    doesNotQualify: number;
+  };
 }
 
 export interface RoundDetail extends RoundWithCounts {
@@ -34,10 +43,6 @@ export interface RoundDetail extends RoundWithCounts {
     school: string;
     count: number;
   }>;
-  statusBreakdown: {
-    qualifies: number;
-    doesNotQualify: number;
-  };
 }
 
 // ---------------------------------------------------------------------------
@@ -59,9 +64,11 @@ export async function listRounds(tx: Tx): Promise<RoundWithCounts[]> {
   });
 
   return rounds.map((round) => {
-    const counts = buildCounts(round.applications.map((a) => a.status));
+    const statuses = round.applications.map((a) => a.status);
+    const counts = buildCounts(statuses);
+    const statusBreakdown = buildStatusBreakdown(statuses);
     const { applications: _apps, ...rest } = round;
-    return { ...rest, counts };
+    return { ...rest, counts, statusBreakdown };
   });
 }
 
@@ -97,12 +104,7 @@ export async function getRound(tx: Tx, id: string): Promise<RoundDetail | null> 
     ([school, count]) => ({ school, count })
   );
 
-  const statusBreakdown = {
-    qualifies: statuses.filter((s) => s === ApplicationStatus.QUALIFIES).length,
-    doesNotQualify: statuses.filter(
-      (s) => s === ApplicationStatus.DOES_NOT_QUALIFY
-    ).length,
-  };
+  const statusBreakdown = buildStatusBreakdown(statuses);
 
   const { applications: _apps, ...rest } = round;
   return { ...rest, counts, schoolBreakdown, statusBreakdown };
@@ -192,5 +194,14 @@ function buildCounts(statuses: ApplicationStatus[]) {
     inProgress: statuses.filter((s) => IN_PROGRESS_STATUSES.includes(s)).length,
     complete: statuses.filter((s) => COMPLETE_STATUSES.includes(s)).length,
     total: statuses.length,
+  };
+}
+
+function buildStatusBreakdown(statuses: ApplicationStatus[]) {
+  return {
+    qualifies: statuses.filter((s) => s === ApplicationStatus.QUALIFIES).length,
+    doesNotQualify: statuses.filter(
+      (s) => s === ApplicationStatus.DOES_NOT_QUALIFY
+    ).length,
   };
 }
