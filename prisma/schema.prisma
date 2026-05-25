@@ -207,44 +207,46 @@ model Document {
 
 /// Core assessor workspace. Stores all financial data and calculation results.
 model Assessment {
-  id                       String                @id @default(uuid()) @db.Uuid
-  applicationId            String                @unique @map("application_id") @db.Uuid
-  assessorId               String                @map("assessor_id") @db.Uuid
-  familyTypeCategory       Int?                  @map("family_type_category")
-  notionalRent             Decimal?              @map("notional_rent") @db.Decimal(10, 2)
-  utilityCosts             Decimal?              @map("utility_costs") @db.Decimal(10, 2)
-  foodCosts                Decimal?              @map("food_costs") @db.Decimal(10, 2)
-  annualFees               Decimal?              @map("annual_fees") @db.Decimal(10, 2)
-  councilTax               Decimal?              @map("council_tax") @db.Decimal(10, 2)
-  schoolingYearsRemaining  Int?                  @map("schooling_years_remaining")
-  totalHouseholdNetIncome  Decimal?              @map("total_household_net_income") @db.Decimal(10, 2)
-  netAssetsYearlyValuation Decimal?              @map("net_assets_yearly_valuation") @db.Decimal(10, 2)
-  hndiAfterNs              Decimal?              @map("hndi_after_ns") @db.Decimal(10, 2)
-  requiredBursary          Decimal?              @map("required_bursary") @db.Decimal(10, 2)
-  grossFees                Decimal?              @map("gross_fees") @db.Decimal(10, 2)
-  scholarshipPct           Decimal?              @default(0) @map("scholarship_pct") @db.Decimal(5, 2)
-  bursaryAward             Decimal?              @map("bursary_award") @db.Decimal(10, 2)
-  netYearlyFees            Decimal?              @map("net_yearly_fees") @db.Decimal(10, 2)
-  vatRate                  Decimal?              @default(20.00) @map("vat_rate") @db.Decimal(5, 2)
-  yearlyPayableFees        Decimal?              @map("yearly_payable_fees") @db.Decimal(10, 2)
-  monthlyPayableFees       Decimal?              @map("monthly_payable_fees") @db.Decimal(10, 2)
-  manualAdjustment         Decimal?              @default(0) @map("manual_adjustment") @db.Decimal(10, 2)
-  manualAdjustmentReason   String?               @map("manual_adjustment_reason")
-  propertyCategory         Int?                  @map("property_category")
-  propertyExceedsThreshold Boolean               @default(false) @map("property_exceeds_threshold")
-  dishonestyFlag           Boolean               @default(false) @map("dishonesty_flag")
-  creditRiskFlag           Boolean               @default(false) @map("credit_risk_flag")
-  status                   AssessmentStatus      @default(NOT_STARTED)
-  outcome                  AssessmentOutcome?
-  completedAt              DateTime?             @map("completed_at") @db.Timestamptz(6)
-  createdAt                DateTime              @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt                DateTime              @updatedAt @map("updated_at") @db.Timestamptz(6)
-  checklists               AssessmentChecklist[]
-  earners                  AssessmentEarner[]
-  property                 AssessmentProperty?
-  application              Application           @relation(fields: [applicationId], references: [id], onDelete: Cascade)
-  assessor                 Profile               @relation("AssessmentAssessor", fields: [assessorId], references: [id])
-  recommendation           Recommendation?
+  id                            String                @id @default(uuid()) @db.Uuid
+  applicationId                 String                @unique @map("application_id") @db.Uuid
+  assessorId                    String                @map("assessor_id") @db.Uuid
+  familyTypeCategory            Int?                  @map("family_type_category")
+  notionalRent                  Decimal?              @map("notional_rent") @db.Decimal(10, 2)
+  utilityCosts                  Decimal?              @map("utility_costs") @db.Decimal(10, 2)
+  foodCosts                     Decimal?              @map("food_costs") @db.Decimal(10, 2)
+  annualFees                    Decimal?              @map("annual_fees") @db.Decimal(10, 2)
+  councilTax                    Decimal?              @map("council_tax") @db.Decimal(10, 2)
+  schoolingYearsRemaining       Int?                  @map("schooling_years_remaining")
+  totalHouseholdNetIncome       Decimal?              @map("total_household_net_income") @db.Decimal(10, 2)
+  netAssetsYearlyValuation      Decimal?              @map("net_assets_yearly_valuation") @db.Decimal(10, 2)
+  hndiAfterNs                   Decimal?              @map("hndi_after_ns") @db.Decimal(10, 2)
+  requiredBursary               Decimal?              @map("required_bursary") @db.Decimal(10, 2)
+  grossFees                     Decimal?              @map("gross_fees") @db.Decimal(10, 2)
+  scholarshipPct                Decimal?              @default(0) @map("scholarship_pct") @db.Decimal(5, 2)
+  bursaryAward                  Decimal?              @map("bursary_award") @db.Decimal(10, 2)
+  netYearlyFees                 Decimal?              @map("net_yearly_fees") @db.Decimal(10, 2)
+  vatRate                       Decimal?              @default(20.00) @map("vat_rate") @db.Decimal(5, 2)
+  yearlyPayableFees             Decimal?              @map("yearly_payable_fees") @db.Decimal(10, 2)
+  monthlyPayableFees            Decimal?              @map("monthly_payable_fees") @db.Decimal(10, 2)
+  manualAdjustment              Decimal?              @default(0) @map("manual_adjustment") @db.Decimal(10, 2)
+  manualAdjustmentReason        String?               @map("manual_adjustment_reason")
+  propertyCategory              Int?                  @map("property_category")
+  propertyExceedsThreshold      Boolean               @default(false) @map("property_exceeds_threshold")
+  dishonestyFlag                Boolean               @default(false) @map("dishonesty_flag")
+  creditRiskFlag                Boolean               @default(false) @map("credit_risk_flag")
+  secondaryParentOverride       Boolean               @default(false) @map("secondary_parent_override")
+  secondaryParentOverrideReason String?               @map("secondary_parent_override_reason")
+  status                        AssessmentStatus      @default(NOT_STARTED)
+  outcome                       AssessmentOutcome?
+  completedAt                   DateTime?             @map("completed_at") @db.Timestamptz(6)
+  createdAt                     DateTime              @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt                     DateTime              @updatedAt @map("updated_at") @db.Timestamptz(6)
+  checklists                    AssessmentChecklist[]
+  earners                       AssessmentEarner[]
+  property                      AssessmentProperty?
+  application                   Application           @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  assessor                      Profile               @relation("AssessmentAssessor", fields: [assessorId], references: [id])
+  recommendation                Recommendation?
 
   @@map("assessments")
 }
