@@ -9,7 +9,8 @@
  *   school   (optional) — "TRINITY" | "WHITGIFT"
  *   format   (optional) — "xlsx" (default) | "csv"
  *
- * Auth: ASSESSOR or VIEWER role required.
+ * Auth: ADMIN, ASSESSOR, or VIEWER role required (matches the /exports page
+ * and the round cockpit's export-readiness buttons).
  */
 
 import { NextRequest, NextResponse } from "next/server";
@@ -30,7 +31,11 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  if (user.role !== Role.ASSESSOR && user.role !== Role.VIEWER) {
+  if (
+    user.role !== Role.ADMIN &&
+    user.role !== Role.ASSESSOR &&
+    user.role !== Role.VIEWER
+  ) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 

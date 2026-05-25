@@ -1,7 +1,7 @@
 /**
  * Export Recommendations page — /admin/exports
  *
- * Server component. Requires ASSESSOR or VIEWER role.
+ * Server component. Requires ADMIN, ASSESSOR, or VIEWER role.
  * Renders a round selector, optional school filter, format toggle,
  * and a download button that calls /api/exports/recommendations.
  */
