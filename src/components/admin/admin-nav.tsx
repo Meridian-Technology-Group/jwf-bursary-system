@@ -50,8 +50,8 @@ const NAV_GROUPS: NavGroup[] = [
     heading: "Assessment Rounds",
     items: [
       { label: "Applications", href: "/queue", icon: ClipboardList },
+      { label: "All Rounds", href: "/rounds", icon: CalendarRange },
       { label: "Current Round", href: "/rounds/current", icon: Gauge },
-      { label: "Rounds", href: "/rounds", icon: CalendarRange },
     ],
   },
   {
