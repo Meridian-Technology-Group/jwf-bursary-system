@@ -1,5 +1,25 @@
 # Changelog
 
+## [1.3.0](https://github.com/Meridian-Technology-Group/jwf-bursary-system/compare/v1.2.0...v1.3.0) (2026-05-25)
+
+
+### Features
+
+* **data-model:** add ApplicationContributor foundation for dual-parent ([#20](https://github.com/Meridian-Technology-Group/jwf-bursary-system/issues/20)) ([#101](https://github.com/Meridian-Technology-Group/jwf-bursary-system/issues/101)) ([04785ae](https://github.com/Meridian-Technology-Group/jwf-bursary-system/commit/04785ae00566dc297eb7dd90dc9fe2db67d29c86))
+* **dual-parent:** assessor dual-view + completeness gating ([#20](https://github.com/Meridian-Technology-Group/jwf-bursary-system/issues/20), PR 5/6) ([#110](https://github.com/Meridian-Technology-Group/jwf-bursary-system/issues/110)) ([d20fb46](https://github.com/Meridian-Technology-Group/jwf-bursary-system/commit/d20fb46115a5ba83ff9e63a6f170a6751192a2ac))
+* **dual-parent:** GDPR cascade + re-assessment carry-forward ([#20](https://github.com/Meridian-Technology-Group/jwf-bursary-system/issues/20), PR 6/6) ([#111](https://github.com/Meridian-Technology-Group/jwf-bursary-system/issues/111)) ([8886ab4](https://github.com/Meridian-Technology-Group/jwf-bursary-system/commit/8886ab4d3a267ab0460e37242925c3b49ef7b614))
+* **dual-parent:** invitation flow — add second parent ([#20](https://github.com/Meridian-Technology-Group/jwf-bursary-system/issues/20), PR 3/6) [replaces [#103](https://github.com/Meridian-Technology-Group/jwf-bursary-system/issues/103)] ([#106](https://github.com/Meridian-Technology-Group/jwf-bursary-system/issues/106)) ([f403ae9](https://github.com/Meridian-Technology-Group/jwf-bursary-system/commit/f403ae9e9e3e7b55136558fe21aba621810640b8))
+* **dual-parent:** restricted secondary-parent portal + document enforcement ([#20](https://github.com/Meridian-Technology-Group/jwf-bursary-system/issues/20), PR 4b/6) ([#109](https://github.com/Meridian-Technology-Group/jwf-bursary-system/issues/109)) ([d0d1701](https://github.com/Meridian-Technology-Group/jwf-bursary-system/commit/d0d1701826f3a4572e2398129c54867551692023))
+* **dual-parent:** section-ownership write-path foundation ([#20](https://github.com/Meridian-Technology-Group/jwf-bursary-system/issues/20), PR 4a/6) [replaces [#104](https://github.com/Meridian-Technology-Group/jwf-bursary-system/issues/104)] ([#107](https://github.com/Meridian-Technology-Group/jwf-bursary-system/issues/107)) ([43da5fd](https://github.com/Meridian-Technology-Group/jwf-bursary-system/commit/43da5fd910d5c0009ceddf1ad1d14449156eceef))
+* **rls:** contributor privacy isolation for dual-parent ([#20](https://github.com/Meridian-Technology-Group/jwf-bursary-system/issues/20), PR 2/6) [replaces [#102](https://github.com/Meridian-Technology-Group/jwf-bursary-system/issues/102)] ([#105](https://github.com/Meridian-Technology-Group/jwf-bursary-system/issues/105)) ([1e47c44](https://github.com/Meridian-Technology-Group/jwf-bursary-system/commit/1e47c449cafe80759e03434f99491ae76be4acab))
+
+
+### Documentation
+
+* **backlog:** /contribute portal shows full applicant sidebar ([#20](https://github.com/Meridian-Technology-Group/jwf-bursary-system/issues/20)) ([#115](https://github.com/Meridian-Technology-Group/jwf-bursary-system/issues/115)) ([03a20fc](https://github.com/Meridian-Technology-Group/jwf-bursary-system/commit/03a20fc81b72a8fb3c8bdb1d78a3fd0810049c14))
+* **dual-parent:** document the second-parent flow across demo + guides ([#20](https://github.com/Meridian-Technology-Group/jwf-bursary-system/issues/20)) ([#112](https://github.com/Meridian-Technology-Group/jwf-bursary-system/issues/112)) ([816edfe](https://github.com/Meridian-Technology-Group/jwf-bursary-system/commit/816edfe222b0baaa82e36f4d57b0846586fd32d6))
+* **plan:** add dual-parent (separated) implementation plan ([#20](https://github.com/Meridian-Technology-Group/jwf-bursary-system/issues/20)) ([#100](https://github.com/Meridian-Technology-Group/jwf-bursary-system/issues/100)) ([da9b743](https://github.com/Meridian-Technology-Group/jwf-bursary-system/commit/da9b7438e733907f4690d04549e2914b66472cae))
+
 ## [1.2.0](https://github.com/Meridian-Technology-Group/jwf-bursary-system/compare/v1.1.1...v1.2.0) (2026-05-24)
 
 
