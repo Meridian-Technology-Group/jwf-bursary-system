@@ -14,6 +14,7 @@ import Link from "next/link";
 import {
   LayoutDashboard,
   ClipboardList,
+  Gauge,
   CalendarRange,
   Mail,
   BarChart2,
@@ -49,6 +50,7 @@ const NAV_GROUPS: NavGroup[] = [
     heading: "Assessment Rounds",
     items: [
       { label: "Applications", href: "/queue", icon: ClipboardList },
+      { label: "Current Round", href: "/rounds/current", icon: Gauge },
       { label: "Rounds", href: "/rounds", icon: CalendarRange },
     ],
   },
