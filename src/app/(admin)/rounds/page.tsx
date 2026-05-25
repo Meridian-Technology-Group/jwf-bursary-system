@@ -14,34 +14,11 @@ import { withUserContext, type RlsRole } from "@/lib/db/prisma";
 import { listRounds } from "@/lib/db/queries/rounds";
 import { CreateRoundDialog } from "@/components/admin/create-round-dialog";
 import { RoundActionsCell } from "@/components/admin/round-actions-cell";
-import { cn } from "@/lib/utils";
+import { RoundStatusBadge } from "@/components/admin/round-status-badge";
 
 export const metadata = {
   title: "Assessment Rounds",
 };
-
-// ---------------------------------------------------------------------------
-// Status badge
-// ---------------------------------------------------------------------------
-
-function RoundStatusBadge({ status }: { status: "DRAFT" | "OPEN" | "CLOSED" }) {
-  const styles = {
-    DRAFT: "bg-neutral-100 text-neutral-600",
-    OPEN: "bg-green-50 text-green-700",
-    CLOSED: "bg-neutral-100 text-neutral-500",
-  } as const;
-
-  return (
-    <span
-      className={cn(
-        "inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium",
-        styles[status]
-      )}
-    >
-      {status}
-    </span>
-  );
-}
 
 // ---------------------------------------------------------------------------
 // Helpers
