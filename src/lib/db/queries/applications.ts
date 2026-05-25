@@ -5,8 +5,8 @@
 import type { Tx } from "@/lib/db/prisma";
 import { createAuditLog } from "@/lib/audit/log";
 import { AUDIT_ACTIONS, AUDIT_ENTITY_TYPES } from "@/lib/audit/actions";
+import { ApplicationStatus } from "@prisma/client";
 import type {
-  ApplicationStatus,
   School,
   Application,
   Round,
@@ -57,6 +57,17 @@ export interface ListApplicationsFilters {
   school?: School;
   search?: string;
   assignedToId?: string;
+  /**
+   * Restrict to an explicit set of application ids (drill-in from the Round
+   * Cockpit watchlist — keeps the queue identical to the lane's count). An
+   * EMPTY array intentionally returns zero rows, not "all".
+   */
+  ids?: string[];
+  /**
+   * Undecided filter: applications whose status is NOT QUALIFIES /
+   * DOES_NOT_QUALIFY. A plain status filter, not a watchlist rule.
+   */
+  undecided?: boolean;
 }
 
 /**
@@ -90,6 +101,21 @@ export async function listApplications(
 
   if (filters.assignedToId) {
     where.assignedToId = filters.assignedToId;
+  }
+
+  if (filters.ids !== undefined) {
+    // An empty array must return zero rows (not "all"), so set the `in`
+    // constraint unconditionally — Prisma `{ in: [] }` matches nothing.
+    where.id = { in: filters.ids };
+  }
+
+  if (filters.undecided) {
+    where.status = {
+      notIn: [
+        ApplicationStatus.QUALIFIES,
+        ApplicationStatus.DOES_NOT_QUALIFY,
+      ],
+    };
   }
 
   const applications = await tx.application.findMany({

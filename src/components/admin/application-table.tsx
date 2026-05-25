@@ -8,6 +8,7 @@
  */
 
 import * as React from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   useReactTable,
@@ -27,6 +28,8 @@ import {
   MoreHorizontal,
   Eye,
   AlertTriangle,
+  Filter,
+  X,
 } from "lucide-react";
 import { formatDistanceToNow, format } from "date-fns";
 
@@ -40,6 +43,7 @@ import {
 } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Alert } from "@/components/ui/alert";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -87,6 +91,17 @@ interface ApplicationRow extends ApplicationListItem {
 interface ApplicationTableProps {
   applications: ApplicationListItem[];
   rounds: RoundOption[];
+  /** Seed the round dropdown from a drill-in URL (defaults to "all"). */
+  initialRound?: string;
+  /** Seed the school dropdown from a drill-in URL (defaults to "all"). */
+  initialSchool?: string;
+  /** Seed the status multi-select from a drill-in URL (defaults to none). */
+  initialStatuses?: ApplicationStatus[];
+  /**
+   * When present, render a dismissible banner above the table describing the
+   * server-side filter applied via the URL, with a "Clear filters" link.
+   */
+  activeFilter?: { label: string; clearHref: string };
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -282,15 +297,23 @@ function StatusFilter({ selected, onChange }: StatusFilterProps) {
 export function ApplicationTable({
   applications,
   rounds,
+  initialRound,
+  initialSchool,
+  initialStatuses,
+  activeFilter,
 }: ApplicationTableProps) {
   const router = useRouter();
 
-  // Filter state
-  const [selectedRound, setSelectedRound] = React.useState<string>("all");
-  const [selectedSchool, setSelectedSchool] = React.useState<string>("all");
+  // Filter state — seeded from drill-in props when present, else current defaults.
+  const [selectedRound, setSelectedRound] = React.useState<string>(
+    initialRound ?? "all"
+  );
+  const [selectedSchool, setSelectedSchool] = React.useState<string>(
+    initialSchool ?? "all"
+  );
   const [selectedStatuses, setSelectedStatuses] = React.useState<
     ApplicationStatus[]
-  >([]);
+  >(initialStatuses ?? []);
   const [searchText, setSearchText] = React.useState("");
 
   // Name reveal state
@@ -519,6 +542,25 @@ export function ApplicationTable({
 
   return (
     <div className="space-y-4">
+      {/* Active drill-in filter banner */}
+      {activeFilter && (
+        <Alert className="flex items-center justify-between gap-3 border-primary-200 bg-primary-50/60 py-2.5 text-primary-900">
+          <span className="flex items-center gap-2 text-sm">
+            <Filter className="h-4 w-4 shrink-0 text-primary-700" aria-hidden="true" />
+            <span>
+              <span className="font-medium">Showing:</span> {activeFilter.label}
+            </span>
+          </span>
+          <Link
+            href={activeFilter.clearHref}
+            className="inline-flex items-center gap-1 rounded-full border border-primary-200 bg-white px-2.5 py-1 text-xs font-medium text-primary-700 transition-colors hover:bg-primary-50"
+          >
+            <X className="h-3 w-3" aria-hidden="true" />
+            Clear filters
+          </Link>
+        </Alert>
+      )}
+
       {/* Filter bar */}
       <div className="flex flex-wrap items-center gap-3 rounded-lg bg-neutral-50 px-4 py-3 border border-neutral-200">
         {/* Round selector */}
