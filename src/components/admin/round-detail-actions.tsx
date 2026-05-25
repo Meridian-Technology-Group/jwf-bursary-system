@@ -7,6 +7,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import { BarChart3, Download } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { CloseRoundDialog } from "./close-round-dialog";
 import { OpenRoundDialog } from "./open-round-dialog";
@@ -29,9 +30,30 @@ export function RoundDetailActions({
   const [openDialogOpen, setOpenDialogOpen] = useState(false);
   const [batchDialogOpen, setBatchDialogOpen] = useState(false);
 
+  // ── Closed rounds are archived: read-only actions only. No inviting/closing;
+  //    just navigate to the report and the export archive. ──────────────────────
+  if (status === "CLOSED") {
+    return (
+      <div className="flex flex-wrap items-center gap-2">
+        <Button variant="outline" size="sm" asChild>
+          <Link href="/reports">
+            <BarChart3 className="mr-1.5 h-4 w-4" aria-hidden="true" />
+            View report
+          </Link>
+        </Button>
+        <Button variant="outline" size="sm" asChild>
+          <Link href={`/exports?roundId=${roundId}`}>
+            <Download className="mr-1.5 h-4 w-4" aria-hidden="true" />
+            Export archive
+          </Link>
+        </Button>
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-wrap items-center gap-2">
-      {/* Always show: navigate to invitations pre-filtered for this round */}
+      {/* Navigate to invitations pre-filtered for this round (non-closed only) */}
       <Button variant="outline" size="sm" asChild>
         <Link href={`/invitations?roundId=${roundId}`}>
           Send Invitations

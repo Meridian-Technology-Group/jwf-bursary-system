@@ -27,10 +27,12 @@ import { getRound, type RoundDetail } from "./rounds";
 import { getRoundWatchlist } from "./round-watchlist";
 import type { WatchlistResult } from "./round-watchlist-eval";
 import {
+  computeOutcomesDelta,
   deriveExportReadiness,
   deriveStageStrip,
   deriveTimeProgress,
   type ExportReadiness,
+  type OutcomesDelta,
   type StageNode,
   type TimeProgress,
 } from "./round-cockpit-eval";
@@ -40,6 +42,7 @@ export {
   deriveTimeProgress,
   deriveStageStrip,
   deriveExportReadiness,
+  computeOutcomesDelta,
 } from "./round-cockpit-eval";
 export type {
   TimeProgress,
@@ -51,6 +54,8 @@ export type {
   StageActivity,
   ExportReadiness,
   ExportReadinessInput,
+  OutcomesCounts,
+  OutcomesDelta,
 } from "./round-cockpit-eval";
 
 // ─── Public output types ─────────────────────────────────────────────────────────
@@ -81,6 +86,12 @@ export interface CockpitData {
   pipeline: CockpitPipeline;
   timeProgress: TimeProgress;
   outcomes: CockpitOutcomes;
+  /**
+   * Year-on-year qualification-rate delta vs the prior round (next-earlier
+   * `academicYear`). Null when there is no prior round or either round has zero
+   * decisions (no computable rate).
+   */
+  outcomesDelta: OutcomesDelta | null;
   exportReadiness: ExportReadiness[];
   stageStrip: StageNode[];
 }
@@ -145,8 +156,9 @@ export async function getRoundCockpit(
 
   const applicationIds = applications.map((a) => a.id);
 
-  // ── 2. Export audit rows (round-scoped) + decisions-to-date audit count. ────
-  const [exportRows, decisionsToDate] = await Promise.all([
+  // ── 2. Export audit rows (round-scoped) + decisions-to-date audit count +
+  //       the prior round (next-earlier academicYear) for the YoY delta. ──────
+  const [exportRows, decisionsToDate, priorRound] = await Promise.all([
     tx.auditLog.findMany({
       where: {
         action: AUDIT_ACTIONS.RECOMMENDATION_EXPORT,
@@ -164,7 +176,24 @@ export async function getRoundCockpit(
           },
         })
       : Promise.resolve(0),
+    // Prior round = the round with the next-earlier academicYear.
+    tx.round.findFirst({
+      where: { academicYear: { lt: round.academicYear } },
+      orderBy: { academicYear: "desc" },
+      select: { id: true, academicYear: true },
+    }),
   ]);
+
+  // Prior-round qualification counts (QUALIFIES vs DOES_NOT_QUALIFY), used to
+  // compute the year-on-year qualification-rate delta. Only fetched when a prior
+  // round exists.
+  const priorCounts = priorRound
+    ? await tx.application.groupBy({
+        by: ["status"],
+        where: { roundId: priorRound.id, status: { in: DECIDED_STATUSES } },
+        _count: { _all: true },
+      })
+    : null;
 
   // ── 3. Per-school decided + latest decision time. ───────────────────────────
   //
@@ -269,15 +298,38 @@ export async function getRoundCockpit(
     },
   );
 
+  // ── 6. Prior-round outcomes delta. ───────────────────────────────────────────
+  const outcomes: CockpitOutcomes = {
+    qualifies: round.statusBreakdown.qualifies,
+    doesNotQualify: round.statusBreakdown.doesNotQualify,
+  };
+
+  const priorOutcomes =
+    priorRound && priorCounts
+      ? {
+          qualifies:
+            priorCounts.find((c) => c.status === ApplicationStatus.QUALIFIES)
+              ?._count._all ?? 0,
+          doesNotQualify:
+            priorCounts.find(
+              (c) => c.status === ApplicationStatus.DOES_NOT_QUALIFY,
+            )?._count._all ?? 0,
+        }
+      : null;
+
+  const outcomesDelta = computeOutcomesDelta(
+    outcomes,
+    priorOutcomes,
+    priorRound?.academicYear ?? null,
+  );
+
   return {
     round,
     watchlist,
     pipeline,
     timeProgress,
-    outcomes: {
-      qualifies: round.statusBreakdown.qualifies,
-      doesNotQualify: round.statusBreakdown.doesNotQualify,
-    },
+    outcomes,
+    outcomesDelta,
     exportReadiness,
     stageStrip,
   };

@@ -18,7 +18,11 @@ export const metadata = {
   title: "Export Recommendations",
 };
 
-export default async function ExportsPage() {
+export default async function ExportsPage({
+  searchParams,
+}: {
+  searchParams: { roundId?: string };
+}) {
   const user = await requireRole([Role.ADMIN, Role.ASSESSOR, Role.VIEWER]);
 
   const rounds = await withUserContext(user.id, user.role as RlsRole, (tx) =>
@@ -45,7 +49,7 @@ export default async function ExportsPage() {
       </div>
 
       {/* Filter form + download */}
-      <ExportFilterForm rounds={rounds} />
+      <ExportFilterForm rounds={rounds} defaultRoundId={searchParams.roundId} />
     </div>
   );
 }
