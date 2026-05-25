@@ -179,6 +179,35 @@ emailing the office."
 
 ---
 
+### Scene 9B — 🟦/🟩 + 🟧 Separated families: invite a second parent *(optional, ~4 min)*
+*Show this when the audience cares about divorced/separated households — the
+Foundation assesses on **both** parents' income regardless of marital status,
+but the two parents usually can't share one login or see each other's finances.*
+
+**DO:**
+- 🟦/🟩 On the **application detail**, use **"Add second parent"** → enter the
+  other parent's email + name → send. *(Admins **and** assessors can do this, at
+  any point — at first invite, after submission, or mid-assessment.)*
+- 🟧 In a **second-parent window**, accept the invite → set a password → land on
+  a **restricted `/contribute` portal**: only **their own** Parent Details,
+  Income, and Assets & Liabilities, plus document uploads. The **child's name is
+  read-only**; they see **nothing** of the first parent's data or documents.
+  Complete the short wizard → **Submit**.
+
+**SAY:**
+- "One parent is **primary** — they own the child's application and receive every
+  communication, including the final outcome. The **second parent** is invited
+  only to supply **their own** financial picture."
+- "**Strict privacy both ways**: neither parent can see the other's income,
+  contact details, or documents. The assessor sees **both**, side by side."
+- "If the second parent never responds, the assessor isn't stuck — they can
+  **proceed without the second parent**, recording a reason (we'll see that next)."
+
+**Signpost:** Pre-create a second-parent invite in rehearsal so the inbox link is
+ready; otherwise this adds an email round-trip.
+
+---
+
 ### Scene 10 — 🟦 Admin: assign to the assessor *(~2 min)*
 **DO:** 🟦 ADMIN → **Queue** → the new submission appears → open it → header
 **Assign Assessor** dropdown → select your assessor.
@@ -191,12 +220,20 @@ appears in *that* assessor's queue and nobody else's."
 ### Scene 11 — 🟩 Assessor: review & run the assessment *(~10–12 min — heart of the staff story)*
 **DO:** 🟩 ASSESSOR → refresh **Queue** → the assigned application is there → open it.
 - **Tab 1 — Applicant Data:** read-only submission; **verify documents** (tick each).
+  - *(separated families — if you ran Scene 9B)* The data + documents show **both
+    parents side by side**, labelled **Parent 1 (primary)** and **Parent 2 (second
+    parent)**. Note the **completeness gate**: the case can't be assessed until
+    the primary has submitted **and** the second parent has submitted (or you
+    click **Proceed without second parent** and give a reason). The queue shows a
+    **2nd-parent status** indicator (Submitted / Awaiting / Override).
 - *(skippable)* Show **Request Missing Documents** — templated email + how it
   pauses the case. Then move on.
 - **Tab 2 — Assessment:** the **split-screen** — documents left, data-entry right.
   - **Stage 1 — Income:** employment status per parent; enter **verified net
-    figures** from the documents; included vs excluded benefits. Household net
-    income updates live.
+    figures** from the documents; included vs excluded benefits. *(For a separated
+    family, you key the primary as Parent 1 and the second parent as Parent 2 —
+    both incomes combine, against the child's single household costs.)* Household
+    net income updates live.
   - **Stage 2 — Assets:** savings, property, savings divisor.
   - **Stage 3 — Living costs:** auto-populated from family type; **HNDI after
     necessary spending**.
