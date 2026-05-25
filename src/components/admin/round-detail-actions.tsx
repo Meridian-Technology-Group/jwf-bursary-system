@@ -11,20 +11,24 @@ import { BarChart3, Download } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { CloseRoundDialog } from "./close-round-dialog";
 import { OpenRoundDialog } from "./open-round-dialog";
-import { BatchInviteDialog } from "./batch-invite-dialog";
+import {
+  BatchInviteDialog,
+  type BatchInviteHolder,
+} from "./batch-invite-dialog";
 
 interface RoundDetailActionsProps {
   roundId: string;
   academicYear: string;
   status: "DRAFT" | "OPEN" | "CLOSED";
-  activeBursaryHolderCount: number;
+  /** Eligible (active, not-yet-invited) re-assessment candidates for this round. */
+  activeBursaryHolders: BatchInviteHolder[];
 }
 
 export function RoundDetailActions({
   roundId,
   academicYear,
   status,
-  activeBursaryHolderCount,
+  activeBursaryHolders,
 }: RoundDetailActionsProps) {
   const [closeDialogOpen, setCloseDialogOpen] = useState(false);
   const [openDialogOpen, setOpenDialogOpen] = useState(false);
@@ -72,14 +76,14 @@ export function RoundDetailActions({
         </Button>
       )}
 
-      {/* Batch re-assessment only when round is OPEN and there are holders */}
-      {status === "OPEN" && (
+      {/* Re-assessment invites only when round is OPEN and there are holders */}
+      {status === "OPEN" && activeBursaryHolders.length > 0 && (
         <Button
           variant="outline"
           size="sm"
           onClick={() => setBatchDialogOpen(true)}
         >
-          Batch Re-assessment Invite
+          Re-assessment invites
         </Button>
       )}
 
@@ -112,7 +116,7 @@ export function RoundDetailActions({
       <BatchInviteDialog
         roundId={roundId}
         academicYear={academicYear}
-        holderCount={activeBursaryHolderCount}
+        holders={activeBursaryHolders}
         open={batchDialogOpen}
         onOpenChange={setBatchDialogOpen}
       />

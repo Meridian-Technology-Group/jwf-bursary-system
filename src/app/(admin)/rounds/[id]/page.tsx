@@ -198,7 +198,21 @@ export default async function RoundDetailPage({
             roundId={round.id}
             academicYear={round.academicYear}
             status={round.status}
-            activeBursaryHolderCount={activeBursaryHolders.length}
+            activeBursaryHolders={activeBursaryHolders.map((holder) => {
+              const applicantName =
+                [holder.leadApplicant.firstName, holder.leadApplicant.lastName]
+                  .filter(Boolean)
+                  .join(" ")
+                  .trim() || holder.leadApplicant.email;
+              return {
+                id: holder.id,
+                reference: holder.reference,
+                childName: holder.childName,
+                school: holder.school,
+                applicantName,
+                email: holder.leadApplicant.email,
+              };
+            })}
           />
         </div>
 

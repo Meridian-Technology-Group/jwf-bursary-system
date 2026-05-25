@@ -310,24 +310,157 @@ export async function createInvitationAction(
 }
 
 // ---------------------------------------------------------------------------
-// batchReassessmentInviteAction (hardened — per-row auth-user rollback)
+// Reassessment invite — shared hardened core
 // ---------------------------------------------------------------------------
 
+type EligibleHolder = Awaited<
+  ReturnType<typeof getActiveBursaryHolders>
+>[number];
+
 /**
- * Sends reassessment invitations to all active bursary holders that have not
- * yet been invited for the specified round. Each row is wrapped in its own
- * try/catch so a single failure does not poison the whole batch, and each
- * row gets the same auth-user-up-front + rollback hardening as
- * `createInvitationAction`.
+ * Provisions one re-assessment invitation for a single eligible bursary holder
+ * with the same auth-user-up-front + rollback hardening as
+ * `createInvitationAction`. Mutates `result` in place (increments `sent` /
+ * `failed`, appends to `errors`). Shared by both the all-holders batch action
+ * and the selective action so the auth-user / rollback logic lives in exactly
+ * one place.
  */
-export async function batchReassessmentInviteAction(
-  roundId: string
+async function sendReassessmentInviteForHolder(
+  holder: EligibleHolder,
+  ctx: {
+    roundId: string;
+    academicYear: string;
+    userId: string;
+    supabase: ReturnType<typeof createSupabaseAdminClient>;
+    appUrl: string;
+  },
+  result: BatchInviteResult
+): Promise<void> {
+  const { roundId, academicYear, userId, supabase, appUrl } = ctx;
+  const { email, firstName, lastName } = holder.leadApplicant;
+  const applicantName =
+    composeApplicantName(firstName ?? undefined, lastName ?? undefined) ||
+    email;
+
+  // Per-row auth-user provisioning.
+  let authUserId: string | null = null;
+  try {
+    const tempPassword = randomBytes(24).toString("base64url");
+    const { data: created, error: supabaseError } =
+      await supabase.auth.admin.createUser({
+        email,
+        password: tempPassword,
+        email_confirm: true,
+        app_metadata: { role: "APPLICANT" },
+      });
+
+    if (supabaseError || !created?.user) {
+      throw new Error(supabaseError?.message ?? "Failed to create auth user");
+    }
+    authUserId = created.user.id;
+
+    const expiresAt = new Date();
+    expiresAt.setDate(expiresAt.getDate() + 30);
+
+    const txResult = await withAdminContext(async (tx) => {
+      const profile = await createProfile(tx, {
+        id: authUserId!,
+        email,
+        role: Role.APPLICANT,
+        firstName: firstName ?? undefined,
+        lastName: lastName ?? undefined,
+      });
+      if (!profile.success) {
+        return { success: false as const, error: profile.error };
+      }
+
+      const invitation = await createInvitation(tx, {
+        email,
+        firstName: firstName ?? undefined,
+        lastName: lastName ?? undefined,
+        childName: holder.childName,
+        school: holder.school,
+        roundId,
+        bursaryAccountId: holder.id,
+        authUserId: authUserId!,
+        createdBy: userId,
+        expiresAt,
+      });
+
+      await createAuditLog(tx, {
+        userId,
+        action: AUDIT_ACTIONS.BATCH_REASSESSMENT_INVITE,
+        entityType: AUDIT_ENTITY_TYPES.Invitation,
+        entityId: invitation.id,
+        context: `Sent reassessment invitation to ${email}`,
+        metadata: {
+          email,
+          roundId,
+          bursaryAccountId: holder.id,
+          authUserId,
+        },
+      });
+
+      return {
+        success: true as const,
+        invitationId: invitation.id,
+        token: invitation.token,
+        expiresAt,
+      };
+    });
+
+    if (!txResult.success) {
+      throw new Error(txResult.error ?? "Failed to create invitation");
+    }
+
+    // Send branded reassessment email
+    const emailResult = await sendEmail(email, "REASSESSMENT", {
+      applicant_name: applicantName,
+      child_name: holder.childName,
+      school: schoolLabel(holder.school),
+      round_year: academicYear,
+      registration_link: `${appUrl}/register?token=${txResult.token}`,
+      deadline: txResult.expiresAt.toLocaleDateString("en-GB"),
+    });
+
+    if (emailResult.success) {
+      result.sent++;
+    } else {
+      result.failed++;
+      result.errors.push(`${email}: ${emailResult.error}`);
+    }
+  } catch (err) {
+    // Roll back the auth user if we got that far.
+    if (authUserId) {
+      await supabase.auth.admin.deleteUser(authUserId).catch((rollbackErr) => {
+        console.error(
+          `[reassessment-invite] auth rollback failed for ${email}:`,
+          rollbackErr
+        );
+      });
+    }
+    const message = err instanceof Error ? err.message : "Unknown error";
+    result.failed++;
+    result.errors.push(`${email}: ${message}`);
+    console.error(`[reassessment-invite] Error for ${email}:`, err);
+  }
+}
+
+/**
+ * Loads the eligible (active, not-yet-invited) holders for a round plus the
+ * round's academic year, then runs `sendReassessmentInviteForHolder` over the
+ * provided holder list (already filtered/scoped by the caller). Centralises
+ * the load, rate-limit delay and revalidation so both public actions share it.
+ */
+async function runReassessmentInvites(
+  roundId: string,
+  selectIds: string[] | null
 ): Promise<BatchInviteResult> {
   const user = await requireRole([Role.ADMIN]);
 
   const result: BatchInviteResult = { sent: 0, failed: 0, errors: [] };
 
-  let holders: Awaited<ReturnType<typeof getActiveBursaryHolders>> = [];
+  let eligible: EligibleHolder[] = [];
   let academicYear = "";
   try {
     const loaded = await withAdminContext(async (tx) => {
@@ -338,131 +471,35 @@ export async function batchReassessmentInviteAction(
       });
       return { holders: h, academicYear: round?.academicYear ?? "" };
     });
-    holders = loaded.holders;
+    eligible = loaded.holders;
     academicYear = loaded.academicYear;
   } catch (err) {
     const message =
       err instanceof Error ? err.message : "Failed to load bursary holders";
-    console.error("[batch-invite] Load error:", err);
+    console.error("[reassessment-invite] Load error:", err);
     result.errors.push(message);
+    return result;
+  }
+
+  // When a selection is supplied, filter to it — defensively ignoring any id
+  // that is not currently eligible (already invited / inactive). When null,
+  // invite all eligible holders (the legacy batch behaviour).
+  const holders =
+    selectIds === null
+      ? eligible
+      : eligible.filter((h) => selectIds.includes(h.id));
+
+  if (holders.length === 0) {
+    result.errors.push("No eligible holders selected");
     return result;
   }
 
   const supabase = createSupabaseAdminClient();
   const appUrl = getAppUrl();
+  const ctx = { roundId, academicYear, userId: user.id, supabase, appUrl };
 
   for (let i = 0; i < holders.length; i++) {
-    const holder = holders[i];
-    const { email, firstName, lastName } = holder.leadApplicant;
-    const applicantName =
-      composeApplicantName(firstName ?? undefined, lastName ?? undefined) ||
-      email;
-
-    // Per-row auth-user provisioning.
-    let authUserId: string | null = null;
-    try {
-      const tempPassword = randomBytes(24).toString("base64url");
-      const { data: created, error: supabaseError } =
-        await supabase.auth.admin.createUser({
-          email,
-          password: tempPassword,
-          email_confirm: true,
-          app_metadata: { role: "APPLICANT" },
-        });
-
-      if (supabaseError || !created?.user) {
-        throw new Error(
-          supabaseError?.message ?? "Failed to create auth user"
-        );
-      }
-      authUserId = created.user.id;
-
-      const expiresAt = new Date();
-      expiresAt.setDate(expiresAt.getDate() + 30);
-
-      const txResult = await withAdminContext(async (tx) => {
-        const profile = await createProfile(tx, {
-          id: authUserId!,
-          email,
-          role: Role.APPLICANT,
-          firstName: firstName ?? undefined,
-          lastName: lastName ?? undefined,
-        });
-        if (!profile.success) {
-          return { success: false as const, error: profile.error };
-        }
-
-        const invitation = await createInvitation(tx, {
-          email,
-          firstName: firstName ?? undefined,
-          lastName: lastName ?? undefined,
-          childName: holder.childName,
-          school: holder.school,
-          roundId,
-          bursaryAccountId: holder.id,
-          authUserId: authUserId!,
-          createdBy: user.id,
-          expiresAt,
-        });
-
-        await createAuditLog(tx, {
-          userId: user.id,
-          action: AUDIT_ACTIONS.BATCH_REASSESSMENT_INVITE,
-          entityType: AUDIT_ENTITY_TYPES.Invitation,
-          entityId: invitation.id,
-          context: `Sent reassessment invitation to ${email}`,
-          metadata: {
-            email,
-            roundId,
-            bursaryAccountId: holder.id,
-            authUserId,
-          },
-        });
-
-        return {
-          success: true as const,
-          invitationId: invitation.id,
-          token: invitation.token,
-          expiresAt,
-        };
-      });
-
-      if (!txResult.success) {
-        throw new Error(txResult.error ?? "Failed to create invitation");
-      }
-
-      // Send branded reassessment email
-      const emailResult = await sendEmail(email, "REASSESSMENT", {
-        applicant_name: applicantName,
-        child_name: holder.childName,
-        school: schoolLabel(holder.school),
-        round_year: academicYear,
-        registration_link: `${appUrl}/register?token=${txResult.token}`,
-        deadline: txResult.expiresAt.toLocaleDateString("en-GB"),
-      });
-
-      if (emailResult.success) {
-        result.sent++;
-      } else {
-        result.failed++;
-        result.errors.push(`${email}: ${emailResult.error}`);
-      }
-    } catch (err) {
-      // Roll back the auth user if we got that far.
-      if (authUserId) {
-        await supabase.auth.admin.deleteUser(authUserId).catch((rollbackErr) => {
-          console.error(
-            `[batch-invite] auth rollback failed for ${email}:`,
-            rollbackErr
-          );
-        });
-      }
-      const message =
-        err instanceof Error ? err.message : "Unknown error";
-      result.failed++;
-      result.errors.push(`${email}: ${message}`);
-      console.error(`[batch-invite] Error for ${email}:`, err);
-    }
+    await sendReassessmentInviteForHolder(holders[i], ctx, result);
 
     // Rate-limit delay between sends (100 ms), skip after last item
     if (i < holders.length - 1) {
@@ -472,6 +509,45 @@ export async function batchReassessmentInviteAction(
 
   revalidatePath("/invitations");
   return result;
+}
+
+// ---------------------------------------------------------------------------
+// batchReassessmentInviteAction (hardened — per-row auth-user rollback)
+// ---------------------------------------------------------------------------
+
+/**
+ * Sends reassessment invitations to ALL active bursary holders that have not
+ * yet been invited for the specified round. Thin wrapper over the shared
+ * `runReassessmentInvites` core (selectIds = null → all eligible). Retained for
+ * backwards compatibility; the selective action is preferred from the UI.
+ */
+export async function batchReassessmentInviteAction(
+  roundId: string
+): Promise<BatchInviteResult> {
+  return runReassessmentInvites(roundId, null);
+}
+
+// ---------------------------------------------------------------------------
+// reassessmentInviteSelectedAction (selective — staff pick the holders)
+// ---------------------------------------------------------------------------
+
+/**
+ * Sends reassessment invitations to a STAFF-SELECTED subset of the active
+ * bursary holders for a round. Each requested id is filtered against the
+ * currently-eligible set, so an id that is not eligible (already invited /
+ * inactive) is silently ignored — we never invite a holder that isn't a valid
+ * re-assessment candidate. Shares the exact same hardened per-row provisioning
+ * + rollback as the batch action.
+ */
+export async function reassessmentInviteSelectedAction(
+  roundId: string,
+  bursaryAccountIds: string[]
+): Promise<BatchInviteResult> {
+  const ids = Array.isArray(bursaryAccountIds) ? bursaryAccountIds : [];
+  if (ids.length === 0) {
+    return { sent: 0, failed: 0, errors: ["No eligible holders selected"] };
+  }
+  return runReassessmentInvites(roundId, ids);
 }
 
 // ---------------------------------------------------------------------------
