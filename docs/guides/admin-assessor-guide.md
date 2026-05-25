@@ -323,6 +323,37 @@ From the **Invitation History** table on `/invitations`, the row actions on any
 Accepted invitations cannot be resent or revoked — the recipient already has an
 account. See [Re-send or revoke an invitation](walkthroughs/admins/15-resend-or-revoke-invitation.md).
 
+### Separated / divorced parents: inviting a second parent (Admin or Assessor)
+
+The Foundation assesses on **both** parents' income regardless of marital status.
+When parents are separated, they generally can't share a login or supply each
+other's documents — so one parent completes the application as the **primary**,
+and you invite the **second parent** to provide *their own* financials through a
+private, restricted portal.
+
+**To add a second parent:** open the **application detail** and use **Add second
+parent** — enter their email and name. Both **admins and assessors** can do this,
+**at any time**: at first intake, after the primary submits, or mid-assessment.
+There is **exactly one** second parent per application. If the email already
+belongs to someone in the system (for example, they're a lead applicant for
+another child), the invitation **links that existing account** rather than
+creating a duplicate.
+
+**What the second parent sees:** a trimmed `/contribute` portal with only *their
+own* parent details, income, and assets/liabilities, plus document uploads. They
+see the **child's name** for context and **nothing else** — not the child's full
+application, nor the primary's income, contacts, or documents. The card on the
+application detail shows their status (**Invited / In progress / Submitted**).
+
+**Privacy is enforced both ways** — the primary cannot see the second parent's
+data or documents either. Only staff (assessor/admin/viewer) see both. The final
+**outcome email goes to the primary parent only**.
+
+**Re-assessment:** when you create a re-assessment for a child who had a second
+parent last year, the **Add second parent** card prompts you to **re-invite**
+them (pre-filled) or **skip** — the second parent is invited fresh for the new
+round; nothing is carried over silently.
+
 ---
 
 ## Reviewing a submission
@@ -346,6 +377,34 @@ There is no "edit" button: to correct a value, either the applicant resubmits,
 or you record the correct, evidence-based figure in the assessment workspace
 where it takes precedence. Use the document cards to flip into the PDFs while you
 read. See [Read the submitted application](walkthroughs/assessors/05-read-submitted-application.md).
+
+### Separated families: two parents, one assessment
+
+When a [second parent](#separated--divorced-parents-inviting-a-second-parent-admin-or-assessor)
+has been added, the Applicant Data tab shows **both parents' submitted financial
+sections and documents side by side**, labelled **Parent 1 (primary applicant)**
+and **Parent 2 (second parent)**. The child-level sections (Child Details,
+Dependents, etc.) belong to the primary and appear once. Documents are grouped by
+who uploaded them, so it's always clear whose payslip you're verifying.
+
+**The completeness gate.** A case with a second parent can't be assessed until
+the **primary has submitted *and* the second parent has submitted**. Until then,
+**Begin assessment** is blocked with a note showing the second parent's status,
+and the queue shows a **2nd-parent indicator** (Submitted / Awaiting / Override).
+This is the only change to *when* you can start; single-parent cases are
+unchanged (primary submission is enough).
+
+**If the second parent doesn't respond.** Use **Proceed without second parent**
+on the application. You must give a **reason** (recorded and audit-logged); the
+case then unblocks and is assessed on the primary's information alone (a single
+earner). Use this when the second parent is uncontactable or declines to take
+part — it's the deliberate, evidenced escape hatch, not the default.
+
+When both parents are in, you key the **primary's verified figures as Parent 1
+and the second parent's as Parent 2** in Stage 1 — the two incomes combine, but
+the living costs are the child's single (primary) household, exactly as the
+[four-stage engine](#running-the-assessment--the-four-stage-calculation-engine)
+already works for a two-earner household.
 
 ### Verifying documents
 
@@ -884,6 +943,16 @@ the red **I understand, delete** button. This:
 - writes a `GDPR_DELETION` audit entry **with no personal data in the entry
   itself** — so the fact of deletion is logged without retaining what was
   deleted.
+
+**Separated families.** If the application has a [second parent](#separated--divorced-parents-inviting-a-second-parent-admin-or-assessor),
+the same deletion also erases their contribution — their sections, their uploaded
+documents, and their link to this application. The second parent's **profile and
+login are erased too, *unless* that person is still lawfully linked elsewhere**
+(for example, they are the lead applicant for another child, or a second parent
+on another application). In that case their account is **retained** and only
+their data on *this* application is removed — so erasing one child's record never
+destroys an unrelated, still-active account. The audit entry records which path
+was taken (erased vs retained).
 
 A **7-year retention guard** blocks deletion of applications inside the retention
 window that are tied to an active or recently-closed bursary; if the button is

@@ -24,6 +24,7 @@ Please don't worry if any of this feels daunting. You can complete the form a li
 - [Reviewing and submitting](#reviewing-and-submitting)
 - [After you submit](#after-you-submit)
 - [Returning families: re-assessment](#returning-families-re-assessment-year-two-and-beyond)
+- [Separated or divorced parents](#separated-or-divorced-parents)
 - [Your data and privacy](#your-data-and-privacy)
 - [If something goes wrong](#if-something-goes-wrong)
 - [Frequently asked questions](#frequently-asked-questions)
@@ -375,6 +376,56 @@ This is background — there's nothing to do in the portal, but it helps you rea
 The Foundation uses **last year's payable fees** (your share of the fees after last year's bursary) as a **benchmark**. If your finances are roughly unchanged, your contribution stays roughly the same and the bursary absorbs any rise in school fees. Where your award changes materially, the outcome letter explains why using short, plain-English **reason codes** — for example *Increase in income*, *Reduction in income*, *New dependant*, *Property sale/purchase*, *Inheritance received*, or *Redundancy/job loss* — and the direction (up or down) each pushed your award.
 
 The practical lesson: if a number looks unusually high or low this year for a one-off reason, **explain it in Section 9**. That lets the assessor apply a one-off reason rather than treating it as a permanent change. Always declare the new figures honestly — a genuine drop in income may well increase your bursary. A large change in either direction usually means the assessor will want a friendly conversation; that's normal, not a problem. Full detail: [What changes year-on-year](walkthroughs/applicants/28-what-changes-year-on-year.md).
+
+---
+
+## Separated or divorced parents
+
+The Foundation assesses a bursary on **both** parents' income, whether or not the
+parents live together or are still a couple. When parents are separated or
+divorced, you usually can't — and shouldn't have to — share one login or fill in
+each other's finances. The system handles this with a **second-parent invitation**.
+
+### How it works
+
+- **One parent is the *primary* applicant.** They complete the child's
+  application as normal (everything in this guide), receive all communications,
+  and are the one told the final outcome.
+- **The second parent is invited separately.** The bursary office (or the
+  assessor) adds the second parent to the application and sends them their own
+  invitation. This can happen at any time — when the application is first set up,
+  after the primary has submitted, or while the assessment is underway.
+
+### If you're the second parent
+
+You'll receive an email inviting you to provide your financial details for your
+child's bursary application. When you accept and sign in, you'll see a **short,
+private form** — only:
+
+- **Your** parent/guardian details,
+- **Your** income, and
+- **Your** assets and liabilities, with slots to upload **your** supporting
+  documents (payslips, P60, bank statements).
+
+You'll see your **child's name** for context, but **nothing else** — not the
+child's full application, not the other parent's income, contact details, or
+documents. When you've finished, you submit your part and you're done; you don't
+need to re-enter anything about the child.
+
+### Privacy between the two parents
+
+This separation is strict and works **both ways**: the primary parent cannot see
+the second parent's figures or documents, and the second parent cannot see the
+primary's. Only the Foundation's assessors see both, together, to work out the
+award. The final outcome is sent to the **primary** parent.
+
+If the second parent doesn't respond, the assessor can still complete the
+assessment on the information available, noting that the second parent did not
+take part.
+
+> Separated-parent applications are handled by the bursary office — there's no
+> "invite the other parent" button on the applicant side. If your family needs
+> this, contact the team and they'll set it up.
 
 ---
 
