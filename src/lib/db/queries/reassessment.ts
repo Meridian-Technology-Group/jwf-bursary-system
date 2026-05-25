@@ -7,6 +7,7 @@
 
 import type { Tx } from "@/lib/db/prisma";
 import type { ApplicationSectionType, Invitation } from "@prisma/client";
+import { ApplicationContributorRole } from "@prisma/client";
 import { generateApplicationReference } from "@/lib/applications/reference";
 import { ensurePrimaryContributor } from "@/lib/db/queries/contributors";
 
@@ -409,5 +410,100 @@ export async function getPreviousAssessment(
     yearlyPayableFees: a.yearlyPayableFees?.toString() ?? null,
     monthlyPayableFees: a.monthlyPayableFees?.toString() ?? null,
     schoolingYearsRemaining: a.schoolingYearsRemaining ?? null,
+  };
+}
+
+// ─── getPriorYearSecondaryContributor ─────────────────────────────────────────
+
+/**
+ * The second parent who contributed to the PREVIOUS-year application for the
+ * same bursary account, surfaced so staff can choose to re-invite them for the
+ * new round (dual-parent feature, backlog #20, PR 6, decision #6).
+ */
+export interface PriorYearSecondaryContributor {
+  /** The prior-year application the secondary contributed to. */
+  previousApplicationId: string;
+  previousAcademicYear: string | null;
+  /** Pre-fill values for the re-invite form. */
+  email: string;
+  firstName: string | null;
+  lastName: string | null;
+}
+
+/**
+ * Given a NEW (re-assessment) application, finds whether the bursary account's
+ * PRIOR-year application had a SECONDARY contributor (second parent). Returns
+ * that parent's name/email for pre-filling a re-invite prompt, or null.
+ *
+ * Carry-forward, NOT auto-link (decision #6): we never silently create a live
+ * secondary contributor on the new round. We only surface the prior parent so
+ * staff can re-invite them through the normal `addSecondParentAction` path
+ * (which sends a fresh invite and registers them for the new round) or skip.
+ *
+ * Returns null when:
+ *   - the application is not a re-assessment / has no bursary account, OR
+ *   - there is no prior-year application, OR
+ *   - the prior-year application had no SECONDARY contributor, OR
+ *   - the current application ALREADY has a SECONDARY contributor (nothing to
+ *     prompt — staff have already actioned the second parent for this round).
+ *
+ * MUST run under a context that can read the contributor rows of BOTH the
+ * current and the prior-year application (assigned assessor / ADMIN / VIEWER
+ * via RLS, or service_role). The prompt is staff-only, so this is always called
+ * from an admin-side load.
+ */
+export async function getPriorYearSecondaryContributor(
+  tx: Tx,
+  applicationId: string
+): Promise<PriorYearSecondaryContributor | null> {
+  // Resolve the new application's bursary account + round. No bursary account
+  // means it cannot be a re-assessment of a prior year → nothing to carry.
+  const current = await tx.application.findUnique({
+    where: { id: applicationId },
+    select: {
+      bursaryAccountId: true,
+      roundId: true,
+      contributors: {
+        where: { role: ApplicationContributorRole.SECONDARY },
+        select: { id: true },
+      },
+    },
+  });
+
+  if (!current?.bursaryAccountId) return null;
+
+  // If the current application already has a second parent, there is nothing to
+  // prompt — staff have already added (or re-invited) one for this round.
+  if (current.contributors.length > 0) return null;
+
+  // Find the most recent PRIOR-year application for this bursary account.
+  const previous = await getPreviousYearApplication(
+    tx,
+    current.bursaryAccountId,
+    current.roundId
+  );
+  if (!previous) return null;
+
+  // Did that prior-year application have a SECONDARY contributor?
+  const priorSecondary = await tx.applicationContributor.findUnique({
+    where: {
+      applicationId_role: {
+        applicationId: previous.id,
+        role: ApplicationContributorRole.SECONDARY,
+      },
+    },
+    select: {
+      profile: { select: { email: true, firstName: true, lastName: true } },
+    },
+  });
+
+  if (!priorSecondary) return null;
+
+  return {
+    previousApplicationId: previous.id,
+    previousAcademicYear: previous.round.academicYear,
+    email: priorSecondary.profile.email,
+    firstName: priorSecondary.profile.firstName,
+    lastName: priorSecondary.profile.lastName,
   };
 }
