@@ -21,9 +21,11 @@ import {
   Inbox,
   Loader2,
   Gavel,
+  Archive,
   School as SchoolIcon,
 } from "lucide-react";
 import { requireRole, Role } from "@/lib/auth/roles";
+import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
 import { withUserContext, type RlsRole } from "@/lib/db/prisma";
 import { getRoundCockpit } from "@/lib/db/queries/round-cockpit";
 import { getActiveBursaryHolders } from "@/lib/db/queries/invitations";
@@ -79,8 +81,18 @@ export default async function RoundDetailPage({
 
   if (!cockpit) notFound();
 
-  const { round, watchlist, pipeline, timeProgress, outcomes, exportReadiness, stageStrip } =
-    cockpit;
+  const {
+    round,
+    watchlist,
+    pipeline,
+    timeProgress,
+    outcomes,
+    outcomesDelta,
+    exportReadiness,
+    stageStrip,
+  } = cockpit;
+
+  const isClosed = round.status === "CLOSED";
 
   // Pipeline tile configs — clickable when a drill-in href is available.
   const pipelineTiles: Array<{ config: TileConfig; count: number }> = [
@@ -190,8 +202,23 @@ export default async function RoundDetailPage({
           />
         </div>
 
+        {/* Closed-round notice — calm, neutral; archived for reference. */}
+        {isClosed && (
+          <Alert className="border-slate-200 bg-slate-50 text-slate-600">
+            <Archive className="h-4 w-4 text-slate-400" aria-hidden="true" />
+            <AlertTitle className="text-slate-700">Round closed</AlertTitle>
+            <AlertDescription className="text-slate-500">
+              This round is closed — archived for reference.
+            </AlertDescription>
+          </Alert>
+        )}
+
         {/* Stage strip — pure status instrument, renders for every status. */}
-        <div className="rounded-xl border border-slate-200 bg-white px-5 py-5 shadow-sm">
+        <div
+          className={`rounded-xl border border-slate-200 bg-white px-5 py-5 shadow-sm${
+            isClosed ? " opacity-90" : ""
+          }`}
+        >
           <RoundStageStrip stages={stageStrip} />
         </div>
       </header>
@@ -217,7 +244,7 @@ export default async function RoundDetailPage({
       {/* ── Mid grid: Progress gauge · Outcomes ──────────────────────────── */}
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         <RoundProgressGauge timeProgress={timeProgress} />
-        <RoundOutcomesBar outcomes={outcomes} />
+        <RoundOutcomesBar outcomes={outcomes} delta={outcomesDelta} />
       </div>
 
       {/* ── School split · Export readiness ──────────────────────────────── */}

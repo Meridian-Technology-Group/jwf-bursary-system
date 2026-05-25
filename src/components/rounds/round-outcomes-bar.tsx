@@ -11,16 +11,25 @@
  * `aria-label` carries the split), and avoids recharts stacking quirks for a
  * single category. The existing `HorizontalBarChart` stays for the multi-bar
  * report surfaces.
+ *
+ * When a prior-round qualification-rate delta is available (`delta`), a
+ * `DeltaBadge` is shown beside the heading, e.g. "▲ +12pp vs 2025/26". When
+ * `delta` is null nothing extra renders.
  */
+
+import { DeltaBadge } from "@/components/rounds/delta-badge";
+import type { OutcomesDelta } from "@/lib/db/queries/round-cockpit-eval";
 
 interface RoundOutcomesBarProps {
   outcomes: {
     qualifies: number;
     doesNotQualify: number;
   };
+  /** Year-on-year qualification-rate delta, or null when none is computable. */
+  delta?: OutcomesDelta | null;
 }
 
-export function RoundOutcomesBar({ outcomes }: RoundOutcomesBarProps) {
+export function RoundOutcomesBar({ outcomes, delta }: RoundOutcomesBarProps) {
   const { qualifies, doesNotQualify } = outcomes;
   const total = qualifies + doesNotQualify;
 
@@ -34,12 +43,21 @@ export function RoundOutcomesBar({ outcomes }: RoundOutcomesBarProps) {
       className="flex flex-col rounded-xl border border-slate-200 bg-white p-5 shadow-sm"
     >
       <div className="flex items-baseline justify-between gap-3">
-        <h2
-          id="round-outcomes-heading"
-          className="text-base font-medium text-primary-900"
-        >
-          Outcomes
-        </h2>
+        <div className="flex flex-wrap items-center gap-2">
+          <h2
+            id="round-outcomes-heading"
+            className="text-base font-medium text-primary-900"
+          >
+            Outcomes
+          </h2>
+          {delta && (
+            <DeltaBadge
+              value={delta.deltaPoints}
+              direction={delta.direction}
+              suffix={`pp vs ${delta.priorLabel}`}
+            />
+          )}
+        </div>
         {total > 0 && (
           <span className="text-xs text-slate-400">
             <span className="tabular-nums">{total}</span> decided

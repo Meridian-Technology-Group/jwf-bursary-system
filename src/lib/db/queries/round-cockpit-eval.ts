@@ -267,6 +267,68 @@ export function deriveStageStrip(
   });
 }
 
+// ─── Prior-round outcomes delta ──────────────────────────────────────────────────
+
+export interface OutcomesCounts {
+  qualifies: number;
+  doesNotQualify: number;
+}
+
+export interface OutcomesDelta {
+  /** This round's qualification rate, whole percent. */
+  currentRatePct: number;
+  /** The prior round's qualification rate, whole percent. */
+  priorRatePct: number;
+  /** currentRatePct − priorRatePct, rounded percentage points (may be negative). */
+  deltaPoints: number;
+  /** Visual direction of the delta. */
+  direction: "up" | "down" | "neutral";
+  /** Academic-year label of the prior round, e.g. "2025/26". */
+  priorLabel: string;
+}
+
+/** Qualification rate as a whole percent, or null when there are no decisions. */
+function qualificationRatePct(counts: OutcomesCounts): number | null {
+  const decided = counts.qualifies + counts.doesNotQualify;
+  if (decided <= 0) return null;
+  return Math.round((counts.qualifies / decided) * 100);
+}
+
+/**
+ * Compare this round's qualification rate to the prior round's.
+ *
+ * Returns `null` when:
+ *   - there is no prior round (`prior` / `priorLabel` is null), OR
+ *   - EITHER round has zero decisions (a rate cannot be computed for it).
+ *
+ * `deltaPoints` is the difference in percentage points (current − prior),
+ * rounded; `direction` is `up` for a positive delta, `down` for negative,
+ * `neutral` for exactly zero.
+ */
+export function computeOutcomesDelta(
+  current: OutcomesCounts,
+  prior: OutcomesCounts | null,
+  priorLabel: string | null,
+): OutcomesDelta | null {
+  if (prior === null || priorLabel === null) return null;
+
+  const currentRatePct = qualificationRatePct(current);
+  const priorRatePct = qualificationRatePct(prior);
+  if (currentRatePct === null || priorRatePct === null) return null;
+
+  const deltaPoints = Math.round(currentRatePct - priorRatePct);
+  const direction: OutcomesDelta["direction"] =
+    deltaPoints > 0 ? "up" : deltaPoints < 0 ? "down" : "neutral";
+
+  return {
+    currentRatePct,
+    priorRatePct,
+    deltaPoints,
+    direction,
+    priorLabel,
+  };
+}
+
 // ─── Export readiness ────────────────────────────────────────────────────────────
 
 export interface ExportReadinessInput {

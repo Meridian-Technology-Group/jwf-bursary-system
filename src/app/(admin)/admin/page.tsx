@@ -22,6 +22,7 @@ import {
   XCircle,
   CalendarRange,
   ChevronRight,
+  ArrowRight,
 } from "lucide-react";
 import { requireRole, Role } from "@/lib/auth/roles";
 import { withUserContext, type RlsRole } from "@/lib/db/prisma";
@@ -225,12 +226,21 @@ export default async function AdminDashboardPage() {
 
   return (
     <div className="space-y-8">
-      {/* Page header */}
-      <div>
-        <h1 className="text-2xl font-semibold text-primary-900">Dashboard</h1>
-        <p className="mt-1 text-sm text-slate-500">
-          Overview of the {activeRound.academicYear} assessment round.
-        </p>
+      {/* Page header — with a prominent CTA into the active round's cockpit. */}
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-semibold text-primary-900">Dashboard</h1>
+          <p className="mt-1 text-sm text-slate-500">
+            Overview of the {activeRound.academicYear} assessment round.
+          </p>
+        </div>
+        <Link
+          href={`/rounds/${activeRound.id}`}
+          className="inline-flex items-center gap-2 rounded-lg bg-primary-900 px-4 py-2 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-primary-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-500 focus-visible:ring-offset-2"
+        >
+          Open Cockpit
+          <ArrowRight className="h-4 w-4" aria-hidden="true" />
+        </Link>
       </div>
 
       {/* Summary tiles — 3x2 grid */}

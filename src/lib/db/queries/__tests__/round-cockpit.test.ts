@@ -4,6 +4,7 @@ import {
   deriveTimeProgress,
   deriveStageStrip,
   deriveExportReadiness,
+  computeOutcomesDelta,
   type StageStripCounts,
   type StageActivity,
   type StageState,
@@ -487,5 +488,81 @@ describe("deriveExportReadiness", () => {
     expect(rows.map((r) => r.school)).toEqual([School.TRINITY, School.WHITGIFT]);
     expect(rows[0].allExported).toBe(true);
     expect(rows[1].allExported).toBe(false);
+  });
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+// computeOutcomesDelta
+// ════════════════════════════════════════════════════════════════════════════
+
+describe("computeOutcomesDelta", () => {
+  it("up: current rate higher than prior → positive delta, direction up", () => {
+    // current 7/(7+3)=70%, prior 58/(58+42)=58% → +12pp.
+    const delta = computeOutcomesDelta(
+      { qualifies: 7, doesNotQualify: 3 },
+      { qualifies: 58, doesNotQualify: 42 },
+      "2025/26",
+    );
+    expect(delta).not.toBeNull();
+    expect(delta!.currentRatePct).toBe(70);
+    expect(delta!.priorRatePct).toBe(58);
+    expect(delta!.deltaPoints).toBe(12);
+    expect(delta!.direction).toBe("up");
+    expect(delta!.priorLabel).toBe("2025/26");
+  });
+
+  it("down: current rate lower than prior → negative delta, direction down", () => {
+    // current 40%, prior 60% → −20pp.
+    const delta = computeOutcomesDelta(
+      { qualifies: 4, doesNotQualify: 6 },
+      { qualifies: 6, doesNotQualify: 4 },
+      "2024/25",
+    );
+    expect(delta!.deltaPoints).toBe(-20);
+    expect(delta!.direction).toBe("down");
+  });
+
+  it("neutral: identical rates → zero delta, direction neutral", () => {
+    const delta = computeOutcomesDelta(
+      { qualifies: 5, doesNotQualify: 5 },
+      { qualifies: 30, doesNotQualify: 30 },
+      "2023/24",
+    );
+    expect(delta!.deltaPoints).toBe(0);
+    expect(delta!.direction).toBe("neutral");
+  });
+
+  it("null when there is no prior round", () => {
+    expect(
+      computeOutcomesDelta({ qualifies: 5, doesNotQualify: 5 }, null, null),
+    ).toBeNull();
+    // prior present but no label is also treated as no prior.
+    expect(
+      computeOutcomesDelta(
+        { qualifies: 5, doesNotQualify: 5 },
+        { qualifies: 1, doesNotQualify: 1 },
+        null,
+      ),
+    ).toBeNull();
+  });
+
+  it("null when the prior round has zero decisions", () => {
+    expect(
+      computeOutcomesDelta(
+        { qualifies: 5, doesNotQualify: 5 },
+        { qualifies: 0, doesNotQualify: 0 },
+        "2025/26",
+      ),
+    ).toBeNull();
+  });
+
+  it("null when the current round has zero decisions", () => {
+    expect(
+      computeOutcomesDelta(
+        { qualifies: 0, doesNotQualify: 0 },
+        { qualifies: 5, doesNotQualify: 5 },
+        "2025/26",
+      ),
+    ).toBeNull();
   });
 });

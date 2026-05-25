@@ -15,9 +15,13 @@
 
 import Link from "next/link";
 import { ArrowRight } from "lucide-react";
-import type { StageNode } from "@/lib/db/queries/round-cockpit";
+import type {
+  OutcomesDelta,
+  StageNode,
+} from "@/lib/db/queries/round-cockpit";
 import { RoundStatusBadge } from "@/components/admin/round-status-badge";
 import { RoundStageStrip } from "@/components/rounds/round-stage-strip";
+import { DeltaBadge } from "@/components/rounds/delta-badge";
 
 export interface ActiveRoundHeroProps {
   id: string;
@@ -35,6 +39,8 @@ export interface ActiveRoundHeroProps {
     qualifies: number;
     doesNotQualify: number;
   };
+  /** Year-on-year qualification-rate delta, or null when none is computable. */
+  delta?: OutcomesDelta | null;
 }
 
 const PIPELINE_LABELS: Array<{ key: keyof ActiveRoundHeroProps["pipeline"]; label: string }> = [
@@ -51,6 +57,7 @@ export function ActiveRoundHero({
   stageStrip,
   pipeline,
   outcomes,
+  delta,
 }: ActiveRoundHeroProps) {
   const closesLabel =
     daysToClose > 0
@@ -142,8 +149,15 @@ export function ActiveRoundHero({
           </span>
         </span>
         {qualifyPct !== null && (
-          <span className="text-slate-500">
+          <span className="flex items-center gap-2 text-slate-500">
             {qualifyPct}% qualification rate
+            {delta && (
+              <DeltaBadge
+                value={delta.deltaPoints}
+                direction={delta.direction}
+                suffix={`pp vs ${delta.priorLabel}`}
+              />
+            )}
           </span>
         )}
       </div>

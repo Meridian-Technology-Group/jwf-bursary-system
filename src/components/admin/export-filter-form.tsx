@@ -37,6 +37,8 @@ interface Round {
 
 interface ExportFilterFormProps {
   rounds: Round[];
+  /** Pre-selected round (e.g. from a `?roundId=` deep link); falls back to the first round. */
+  defaultRoundId?: string;
 }
 
 const SCHOOL_OPTIONS = [
@@ -50,8 +52,16 @@ const FORMAT_OPTIONS = [
   { value: "csv", label: "CSV" },
 ] as const;
 
-export function ExportFilterForm({ rounds }: ExportFilterFormProps) {
-  const [roundId, setRoundId] = useState<string>(rounds[0]?.id ?? "");
+export function ExportFilterForm({
+  rounds,
+  defaultRoundId,
+}: ExportFilterFormProps) {
+  // Honor a `?roundId=` deep link when it matches a known round; else first round.
+  const initialRoundId =
+    defaultRoundId && rounds.some((r) => r.id === defaultRoundId)
+      ? defaultRoundId
+      : rounds[0]?.id ?? "";
+  const [roundId, setRoundId] = useState<string>(initialRoundId);
   const [school, setSchool] = useState<string>("__all__");
   const [format, setFormat] = useState<"xlsx" | "csv">("xlsx");
 
