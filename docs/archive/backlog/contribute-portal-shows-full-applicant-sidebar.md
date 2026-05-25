@@ -1,17 +1,44 @@
 ---
 title: Secondary-parent /contribute portal shows the full applicant section sidebar
-status: open
+status: done
 severity: low
 area: portal, dual-parent, ux
 opened: 2026-05-25
 opened_by: Brian Wagner (via Claude)
+resolved: 2026-05-25
+resolved_in: "#118 (PR), #119 (staging→main promotion)"
 related:
-  - src/app/(portal)/layout.tsx
-  - src/components/portal/portal-sidebar-sections.tsx
-  - src/app/(portal)/contribute/*
+  - src/app/(contribute)/layout.tsx
+  - src/components/portal/portal-sidebar-sections.ts
+  - src/app/(contribute)/contribute/*
   - "#109 (PR 4b — restricted secondary-parent portal)"
   - docs/engineering/dual-parent-implementation-plan.md
 ---
+
+## Resolution (2026-05-25, #118)
+
+Gave `/contribute` its **own route-group layout** instead of inheriting the
+applicant `(portal)` shell. Moved `src/app/(portal)/contribute/` →
+`src/app/(contribute)/contribute/` (URLs unchanged — route groups don't affect
+paths; the moved files are pure renames) and added
+`src/app/(contribute)/layout.tsx`.
+
+The new layout renders a **trimmed three-section stepper** — Your Details → Your
+Income → Your Assets & Liabilities, plus a synthetic **Review** step — linking to
+`/contribute/*`, with an owner-scoped **"N of 3"** progress bar built from
+`getSectionGapStatuses(applicationId, contributorId)`. Keyed off the **route**
+(not the user's identity), so a parent who is both a lead applicant on one
+application and a second parent on another always gets the right nav per URL.
+
+The sidebar primitives gained `basePath` (default `"/apply"`) and
+`countSynthetic` (default `true`) props, so the applicant wizard is byte-for-byte
+unchanged. The new layout also **omits the applicant sticky `PortalBottomNav`** —
+the contribute `SectionForm` already renders its own Back/Continue — which
+removed a duplicate, partly-dead bottom bar (confirmed in scope with the
+reporter).
+
+Verified live on a seeded second-parent session: sidebar shows the 3 steps +
+Review with "0 of 3", no `/apply/*` links, no duplicate bottom bar.
 
 ## Context
 
