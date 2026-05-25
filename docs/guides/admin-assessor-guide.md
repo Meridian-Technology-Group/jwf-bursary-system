@@ -57,8 +57,9 @@ Two reading paths:
 Throughout, links like [Triage the queue](walkthroughs/assessors/01-triage-the-queue.md)
 take you to the detailed walkthrough for that task.
 
-> 📷 *Screenshot: the signed-in admin console home, showing the sidebar and the
-> round dashboard tiles.*
+![The signed-in admin console home with the left sidebar and the round dashboard status tiles.](images/admin/01-admin-console-home.png)
+
+*The signed-in admin console home — the left sidebar and the round dashboard status tiles, with the **Open round** button top-right.*
 
 ---
 
@@ -136,7 +137,9 @@ Open the application URL and sign in with your work email and password. Staff
 accounts are created by invitation only (see [Invite a staff member](walkthroughs/admins/10-invite-a-staff-member.md));
 there is no self sign-up for staff.
 
-> 📷 *Screenshot: the staff login page.*
+![The staff sign-in page with the Foundation crest, email and password fields, and a Sign in button.](images/admin/02-staff-login.png)
+
+*The staff login page.*
 
 ### Multi-factor authentication (MFA) — live and enforced
 
@@ -213,8 +216,9 @@ A live **dashboard** at `/admin` shows status tiles across all rounds, and
 carries a primary **Open round** button that takes you straight to the active
 round's dashboard.
 
-> 📷 *Screenshot: the sidebar with the Assessment Rounds group (Applications ·
-> All Rounds · Current Round) and the dashboard's Open round button.*
+![The admin sidebar showing the Assessment Rounds group with Applications, All Rounds and Current Round entries.](images/admin/04-sidebar-assessment-rounds.png)
+
+*The sidebar with the **Assessment Rounds** group — Applications · All Rounds · Current Round. (The dashboard's **Open round** button is shown in the console-home image above.)*
 
 ### The application queue
 
@@ -260,8 +264,9 @@ Admin actions:
 
 Assessors and viewers do not see the bulk-action toolbar.
 
-> 📷 *Screenshot: the queue with row checkboxes ticked and the bulk-action
-> toolbar showing Assign assessor and Send re-assessment invite.*
+![The application queue with two row checkboxes ticked and the bulk-action toolbar showing "2 selected", Assign assessor and Send re-assessment invite.](images/admin/05-queue-bulk-actions.png)
+
+*The queue with row checkboxes ticked and the bulk-action toolbar — **Assign assessor** and **Send re-assessment invite**.*
 
 ### The four-tab application detail view
 
@@ -287,7 +292,9 @@ The tab strip moves you between:
 
 See [Open an application](walkthroughs/assessors/02-open-an-application.md).
 
-> 📷 *Screenshot: the application header card and the four-tab strip.*
+![The application detail header card with reference, school and status badges, above the Applicant Data / Assessment / Recommendation / History tab strip.](images/admin/06-application-header-tabs.png)
+
+*The application header card (reference, school badge, round and status) and the four-tab strip, with the consolidated **Manage** card beneath.*
 
 ### Name masking and "Show names" — a recurring principle
 
@@ -305,8 +312,9 @@ This is by design: revealing a name is a deliberate, accountable act, not the
 default state. Only reveal names when you need them, and expect every reveal to
 be reviewable by an admin in the [audit log](walkthroughs/admins/13-audit-log-review.md).
 
-> 📷 *Screenshot: the queue with names hidden, and the amber "Names visible —
-> audit logged" pill after toggling Show names.*
+![The application queue with applicant names hidden — only reference numbers shown — and the Show names toggle in the filter bar.](images/admin/07-queue-names-hidden.png)
+
+*The queue with names hidden — only reference numbers are shown. Toggling **Show names** (top-right of the filter bar) reveals the names and surfaces an amber "Names visible — audit logged" pill, writing a `REVEAL` entry to the audit log.*
 
 ---
 
@@ -469,8 +477,9 @@ In the **Documents (n)** card, each row shows the **slot name** (e.g.
 If a slot holds the wrong file, do **not** verify it — request a re-upload or
 upload the correct file yourself. See [Verify uploaded documents](walkthroughs/assessors/06-verify-uploaded-documents.md).
 
-> 📷 *Screenshot: the Documents card with verified (green tick) and unverified
-> (grey) rows, and the inline document viewer open.*
+![The Documents card listing five slots, the first verified with a green tick and the rest unverified, each with a View button.](images/admin/08-documents-card.png)
+
+*The Documents card — a verified row (green tick) and unverified (grey) rows, each with a **View** button that opens the file inline.*
 
 ### Uploading a document on behalf of an applicant
 
@@ -545,8 +554,9 @@ note tabs (*Bursary*, *Living Conditions*, *Debt*, *Other Fees*, *Staff*,
 *Financial Profile*) for narrative observations. See [Set up the assessment
 workspace](walkthroughs/assessors/09-set-up-assessment-workspace.md).
 
-> 📷 *Screenshot: the split-screen assessment workspace — document viewer left,
-> Stage 1 income form right, calculation sidebar far right.*
+![The split-screen assessment workspace — document viewer on the left, the assessment form in the centre, and the live calculation sidebar on the right.](images/admin/09-assessment-workspace.png)
+
+*The split-screen assessment workspace — the document viewer on the left, the assessment form in the centre (Section A shown), and the live calculation sidebar on the right.*
 
 ### Stage 1 — Income
 
@@ -649,8 +659,9 @@ sibling-linked applications a **Sibling payable fees absorbed** line appears —
 the older siblings' fees deducted before the bursary is worked out. See [Stage 4
 — Bursary impact](walkthroughs/assessors/13-stage-4-bursary-impact.md).
 
-> 📷 *Screenshot: the calculation sidebar showing all four stages and the bold
-> Yearly / Monthly Payable Fees lines.*
+![The live calculation sidebar listing Stage 1 income, Stage 2 assets, Stage 3 HNDI, Stage 4 required bursary, and the payable-fees breakdown.](images/admin/10-calculation-sidebar.png)
+
+*The calculation sidebar — all four stages and the bold **Yearly** / **Monthly Payable** fees lines, updating live as figures are entered.*
 
 ### Manual adjustment
 
@@ -773,8 +784,9 @@ dialog. This:
 This action cannot be undone in the app — a wrong outcome requires admin
 intervention via the audit trail. See [Complete the assessment](walkthroughs/assessors/22-complete-the-assessment.md).
 
-> 📷 *Screenshot: the Set Application Outcome card with the Qualifies / Does Not
-> Qualify buttons and the confirmation dialog.*
+![The Set Application Outcome card with Qualifies and Does Not Qualify buttons, and the "Confirm: Qualifies" dialog warning that an outcome email will be sent.](images/admin/11-set-outcome-dialog.png)
+
+*The **Set Application Outcome** card with the **Qualifies** / **Does Not Qualify** buttons, and the confirmation dialog that fires the outcome email once confirmed.*
 
 ---
 
@@ -803,8 +815,9 @@ schools.
 
 The underlying business rules are in PRD [06 — Sibling linking](../product/prd/06-sibling-linking.md).
 
-> 📷 *Screenshot: the Linked Siblings card with priority badges and the up/down
-> reorder arrows.*
+![The Linked Siblings card showing two linked children with priority badges 1 and 2, up/down reorder arrows, and Unlink buttons.](images/admin/12-linked-siblings.png)
+
+*The **Linked Siblings** card — each child with a priority badge (1, 2, …), up/down reorder arrows, and an **Unlink** action.*
 
 ---
 
@@ -924,8 +937,9 @@ The reporting requirements are in PRD [09 — Reporting and export](../product/p
 > filters and the `/admin` status tiles give you the same totals. Tracked in
 > [`docs/backlog/round-summary-report-section.md`](../backlog/round-summary-report-section.md).
 
-> 📷 *Screenshot: the Reports page with the round selector and the Award
-> Distribution and Property Categories charts.*
+![The Reports page with a round selector, a section tab strip, and the Award Distribution, School Comparison, Income Bands and Property Categories sections.](images/admin/14-reports.png)
+
+*The Reports page — the round selector and section tabs, with the **Award Distribution** and **Property Categories** charts among the sections.*
 
 ---
 
@@ -965,8 +979,9 @@ dashboard. Beneath it, any **DRAFT** rounds appear as prompts to open them, and
 **CLOSED** rounds form a compact, reverse-chronological list you can click into
 for their (read-only) dashboard and reports.
 
-> 📷 *Screenshot: the Season Ledger with the OPEN round hero card, a DRAFT
-> prompt, and the compact list of CLOSED rounds.*
+![The Season Ledger with an OPEN round hero card showing the lifecycle strip and pipeline numbers, above a compact list of past CLOSED rounds.](images/admin/15-season-ledger.png)
+
+*The Season Ledger — the OPEN round hero card (lifecycle strip, pipeline and outcome numbers) above the compact, reverse-chronological list of CLOSED rounds. A DRAFT round, when one exists, appears here as a prompt to open it.*
 
 ### The round dashboard
 
@@ -995,9 +1010,9 @@ stands. It replaces the old summary-card-and-school-table page with:
 For a **CLOSED** round the dashboard renders **read-only**: a *"Round closed"*
 banner appears, and the actions become **View report** / **Export archive**.
 
-> 📷 *Screenshot: the round dashboard — lifecycle strip across the top, the
-> Needs Attention watchlist, pipeline tiles, and the per-school Export readiness
-> panel.*
+![The round dashboard with a lifecycle stage strip across the top, a Needs Attention watchlist, pipeline tiles, time and outcome panels, and per-school export readiness.](images/admin/16-round-dashboard.png)
+
+*The round dashboard — the lifecycle stage strip across the top, the **Needs Attention** watchlist, the pipeline tiles, and the per-school **Export readiness** panel.*
 
 #### The Needs Attention watchlist
 
@@ -1042,7 +1057,9 @@ school fees, property categories) see the README reference tables and the source
 [`assessment-model.xlsx`](../product/assessment-model.xlsx). The seven email
 templates are listed in the [email template reference](#email-template-reference).
 
-> 📷 *Screenshot: the Settings page with the five reference-data tabs.*
+![The Settings page with five tabs — Family Types, School Fees, Council Tax, Reason Codes, Email Templates — showing the Family Type configurations table.](images/admin/17-settings-tabs.png)
+
+*The Settings page with the five reference-data tabs — Family Types, School Fees, Council Tax, Reason Codes, Email Templates.*
 
 ---
 
@@ -1082,8 +1099,9 @@ the applicant. Keep your own written evidence of the request — the system reco
 the deletion, not the request. See [Delete an applicant under GDPR](walkthroughs/admins/12-delete-applicant-gdpr.md)
 and PRD [10 — GDPR and data](../product/prd/10-gdpr-and-data.md).
 
-> 📷 *Screenshot: the two-step "Permanently Delete Applicant Data?" confirmation
-> dialog.*
+![The GDPR Data Deletion dialog listing what is permanently deleted, anonymised and retained, with Cancel and Proceed to Confirmation buttons.](images/admin/18-gdpr-delete-dialog.png)
+
+*The first step of the two-step GDPR deletion dialog — what is permanently deleted, anonymised and retained, with **Proceed to Confirmation** leading to the final red **I understand, delete** step.*
 
 ### Audit log review
 
@@ -1106,8 +1124,9 @@ Logged events include status changes, document uploads/verifications, name
 reveals, invitations, assessment completions, outcomes, GDPR deletions and staff
 MFA resets. See [Audit log review](walkthroughs/admins/13-audit-log-review.md).
 
-> 📷 *Screenshot: the Audit Log page with the filter bar and an expanded metadata
-> row.*
+![The Audit Log page with a filter bar (entity type, action, date range) and a timeline of entries, the first expanded to show its metadata payload.](images/admin/19-audit-log.png)
+
+*The Audit Log page — the filter bar (entity type, action, date range) and the timeline, with one row's metadata expanded.*
 
 ---
 
