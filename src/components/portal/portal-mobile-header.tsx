@@ -25,17 +25,26 @@ interface PortalMobileHeaderProps {
   userName: string;
   sections?: SidebarSection[];
   roundName?: string;
+  basePath?: string;
+  countSynthetic?: boolean;
 }
 
 export function PortalMobileHeader({
   userName,
   sections,
   roundName,
+  basePath,
+  countSynthetic = true,
 }: PortalMobileHeaderProps) {
   const [open, setOpen] = useState(false);
-  const total = sections?.length ?? 10;
+  // Exclude synthetic (non-section) steps from the compact count when the
+  // caller opts out — keeps /contribute's header at "N/3" not "N/4".
+  const countedSections = countSynthetic
+    ? sections
+    : sections?.filter((s) => !s.isSynthetic);
+  const total = countedSections?.length ?? 10;
   const completed =
-    sections?.filter((s) => s.status === "complete").length ?? 0;
+    countedSections?.filter((s) => s.status === "complete").length ?? 0;
   const progressPct = total > 0 ? Math.round((completed / total) * 100) : 0;
 
   return (
@@ -85,7 +94,12 @@ export function PortalMobileHeader({
               <SheetTitle>Application sections</SheetTitle>
             </SheetHeader>
             <div className="h-full">
-              <PortalSidebarContent sections={sections} roundName={roundName} />
+              <PortalSidebarContent
+                sections={sections}
+                roundName={roundName}
+                basePath={basePath}
+                countSynthetic={countSynthetic}
+              />
               {/* User at bottom */}
               <div className="border-t border-slate-200 bg-slate-50 px-6 py-3">
                 <p className="truncate text-xs text-slate-500">

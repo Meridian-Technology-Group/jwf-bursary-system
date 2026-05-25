@@ -11,16 +11,25 @@ interface PortalDesktopSidebarProps {
   userName: string;
   sections?: SidebarSection[];
   roundName?: string;
+  basePath?: string;
+  countSynthetic?: boolean;
 }
 
 export function PortalDesktopSidebar({
   userName,
   sections,
   roundName,
+  basePath,
+  countSynthetic,
 }: PortalDesktopSidebarProps) {
   return (
     <div className="flex h-full flex-col">
-      <PortalSidebarContent sections={sections} roundName={roundName} />
+      <PortalSidebarContent
+        sections={sections}
+        roundName={roundName}
+        basePath={basePath}
+        countSynthetic={countSynthetic}
+      />
 
       {/* User name at bottom */}
       <div className="border-t border-slate-200 bg-slate-50 px-6 py-3">
