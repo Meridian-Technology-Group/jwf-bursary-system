@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.3.1](https://github.com/Meridian-Technology-Group/jwf-bursary-system/compare/v1.3.0...v1.3.1) (2026-05-25)
+
+
+### Bug Fixes
+
+* **dual-parent:** give /contribute its own trimmed sidebar shell ([#20](https://github.com/Meridian-Technology-Group/jwf-bursary-system/issues/20)) ([#118](https://github.com/Meridian-Technology-Group/jwf-bursary-system/issues/118)) ([c4b4de8](https://github.com/Meridian-Technology-Group/jwf-bursary-system/commit/c4b4de849706a80a9b3d8dde9e8ff07598913cff))
+
+
+### Documentation
+
+* **backlog:** close + archive /contribute trimmed-sidebar ticket ([#20](https://github.com/Meridian-Technology-Group/jwf-bursary-system/issues/20)) ([#121](https://github.com/Meridian-Technology-Group/jwf-bursary-system/issues/121)) ([9498e58](https://github.com/Meridian-Technology-Group/jwf-bursary-system/commit/9498e5806574ff6f8fd4f335ee3b350525e65acf))
+* **backlog:** close + archive dual-parent epic ([#20](https://github.com/Meridian-Technology-Group/jwf-bursary-system/issues/20)), shipped v1.3.0 ([#117](https://github.com/Meridian-Technology-Group/jwf-bursary-system/issues/117)) ([5bb1d74](https://github.com/Meridian-Technology-Group/jwf-bursary-system/commit/5bb1d746275b17e6d95e757a44a265e99102b6ee))
+
 ## [1.3.0](https://github.com/Meridian-Technology-Group/jwf-bursary-system/compare/v1.2.0...v1.3.0) (2026-05-25)
 
 
