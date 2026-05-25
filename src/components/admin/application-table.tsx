@@ -406,15 +406,15 @@ function BulkToolbar({
             });
           }}
         >
-          <SelectTrigger className="h-8 w-[200px] border-primary-200 bg-white text-xs">
+          <SelectTrigger className="h-8 w-[190px] shrink-0 border-primary-200 bg-white text-xs">
             {isPending ? (
-              <span className="flex items-center gap-1.5 text-slate-400">
-                <Loader2 className="h-3 w-3 animate-spin" aria-hidden="true" />
+              <span className="flex items-center gap-1.5 whitespace-nowrap text-slate-400">
+                <Loader2 className="h-3 w-3 shrink-0 animate-spin" aria-hidden="true" />
                 Saving…
               </span>
             ) : (
-              <span className="flex items-center gap-1.5 text-slate-600">
-                <UserPlus className="h-3.5 w-3.5" aria-hidden="true" />
+              <span className="flex items-center gap-1.5 whitespace-nowrap text-slate-600">
+                <UserPlus className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
                 Assign assessor
               </span>
             )}
