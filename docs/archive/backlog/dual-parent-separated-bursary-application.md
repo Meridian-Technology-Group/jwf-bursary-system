@@ -1,11 +1,13 @@
 ---
 title: Dual-parent (separated/divorced) bursary application — invite a second parent to supply their own financials
-status: open
+status: done
 severity: high
 type: feature
 area: invitations, portal, assessment, data-model, calculation, gdpr
 opened: 2026-05-22
 opened_by: Brian Wagner (via Claude)
+closed: 2026-05-25
+closed_by: Brian Wagner (via Claude)
 related:
   - prisma/schema.prisma (Application, ApplicationSection, Profile, Invitation, EarnerLabel)
   - src/app/(admin)/invitations/actions.ts
@@ -16,9 +18,20 @@ related:
   - the applicant invitation flow spec (docs/archive/specs/invitation-flow.md)
 ---
 
-> **Build plan:** a code-grounded, PR-by-PR implementation plan lives at
-> [`docs/engineering/dual-parent-implementation-plan.md`](../engineering/dual-parent-implementation-plan.md).
-> This file remains the source of truth for scope and the eight locked decisions.
+> **✅ SHIPPED to production 2026-05-25 — tagged `v1.3.0`.** Delivered as 6 PRs
+> (data model → contributor RLS → invite flow → secondary `/contribute` portal →
+> assessor dual-view + completeness gate → GDPR cascade + re-assessment
+> carry-forward; PRs #101/#105/#106/#107/#109/#110/#111) plus docs (#112) and
+> the sole-parent reconciliation rule approved by the product owner on
+> 2026-05-25. Verified end-to-end on staging via a Playwright walkthrough.
+> Out-of-scope policy items (joint-asset double-counting, inter-parent
+> maintenance) carry data-model fields but defer calculation logic pending
+> Foundation rules. Remaining cosmetic follow-up tracked separately:
+> [`contribute-portal-shows-full-applicant-sidebar.md`](../../backlog/contribute-portal-shows-full-applicant-sidebar.md).
+>
+> **Build plan:** the code-grounded, PR-by-PR implementation plan lives at
+> [`docs/engineering/dual-parent-implementation-plan.md`](../../engineering/dual-parent-implementation-plan.md).
+> This file records the original scope and the eight locked decisions.
 
 ## Context
 
