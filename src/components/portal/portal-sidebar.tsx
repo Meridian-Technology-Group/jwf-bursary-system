@@ -79,19 +79,35 @@ interface PortalSidebarContentProps {
   lastSaved?: string;
   /** Section data — if not provided, uses defaults */
   sections?: SidebarSection[];
+  /**
+   * Route prefix the stepper links into and matches the active section against.
+   * Defaults to "/apply" (lead-applicant wizard). The secondary-parent
+   * /contribute layout passes "/contribute".
+   */
+  basePath?: string;
+  /**
+   * Whether synthetic (non-section) entries count toward the "N of M sections
+   * complete" label and the progress bar. The /apply stepper counts its
+   * synthetic Review step (unchanged); the /contribute stepper excludes it so
+   * the count reads "N of 3" over the real sections only.
+   */
+  countSynthetic?: boolean;
 }
 
 export function PortalSidebarContent({
   roundName,
   lastSaved,
   sections,
+  basePath = "/apply",
+  countSynthetic = true,
 }: PortalSidebarContentProps) {
   const pathname = usePathname();
   const sectionList = sections ?? DEFAULT_SIDEBAR_SECTIONS;
 
-  // Derive active section from URL: /apply/parent-details → "parent-details"
-  const currentSlug = pathname?.startsWith("/apply/")
-    ? pathname.replace("/apply/", "").split("/")[0]
+  // Derive active section from URL: `${basePath}/parent-details` → "parent-details"
+  const prefix = `${basePath}/`;
+  const currentSlug = pathname?.startsWith(prefix)
+    ? pathname.slice(prefix.length).split("/")[0]
     : null;
   const currentSection =
     sectionList.find((s) => s.slug === currentSlug)?.id ?? 0;
@@ -100,11 +116,14 @@ export function PortalSidebarContent({
   // Sum satisfied and total across all sections, then compute percentage.
   // A section that is 3/4 satisfied (e.g. form saved + 2 of 3 docs) contributes
   // 3 to the numerator and 4 to the denominator.
-  const totalSatisfied = sectionList.reduce(
+  const countedSections = countSynthetic
+    ? sectionList
+    : sectionList.filter((s) => !s.isSynthetic);
+  const totalSatisfied = countedSections.reduce(
     (acc, s) => acc + s.progressSatisfied,
     0
   );
-  const totalItems = sectionList.reduce(
+  const totalItems = countedSections.reduce(
     (acc, s) => acc + s.progressTotal,
     0
   );
@@ -114,7 +133,7 @@ export function PortalSidebarContent({
       : 0;
 
   // Human-readable label: show satisfied / total at the item level.
-  const completedSections = sectionList.filter(
+  const completedSections = countedSections.filter(
     (s) => s.status === "complete"
   ).length;
 
@@ -159,7 +178,7 @@ export function PortalSidebarContent({
             return (
               <li key={section.id}>
                 <a
-                  href={`/apply/${section.slug}`}
+                  href={`${basePath}/${section.slug}`}
                   className={cn(
                     "flex items-center gap-3 rounded-md px-3 py-2.5 text-sm transition-colors",
                     isActive
@@ -212,7 +231,7 @@ export function PortalSidebarContent({
       {/* Progress bar — partial fill based on item-level satisfied/total */}
       <div className="border-t border-slate-200 px-6 py-4">
         <div className="flex items-center justify-between text-xs text-slate-500 mb-1.5">
-          <span>{completedSections} of {sectionList.length} sections complete</span>
+          <span>{completedSections} of {countedSections.length} sections complete</span>
           <span className="font-medium text-primary-700">{progressPct}%</span>
         </div>
         <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-200">

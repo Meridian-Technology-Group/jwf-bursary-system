@@ -6,10 +6,10 @@
 > scope and rationale. Update the wave tables as items ship; close the
 > underlying backlog file (move to `docs/archive/backlog/`) when done.
 
-## Status — updated 2026-05-24
+## Status — updated 2026-05-25
 
-**Routine backlog is COMPLETE.** Everything except the two deferred epics is
-shipped or closed.
+**Routine backlog is COMPLETE, and the dual-parent epic (#20) has shipped.**
+Only the Round Cockpit epic (#18) remains, plus one small cosmetic follow-up.
 
 - **In production (v1.1.0):** #1 (WAF rate limiting), #2 (webhook secret), #4
   (token helper), #5 (invite email-failure rollback), #6 (staff-revoke cleanup),
@@ -21,13 +21,19 @@ shipped or closed.
 - **Closed `won't-do` (2026-05-24):** #16 (round-summary report — absorbed by the
   deferred #18 cockpit) and #17 (synopsis auto-suggest — docs already corrected;
   low-value polish).
+- **Shipped to production (v1.3.0, 2026-05-25):** #20 dual-parent (separated)
+  applications — 6 PRs end-to-end (data model → contributor RLS → invite →
+  secondary `/contribute` portal → assessor dual-view + gate → GDPR cascade +
+  re-assessment), Playwright-verified on staging. Item closed and archived to
+  `docs/archive/backlog/`. Out-of-scope policy items (joint-asset double-counting,
+  inter-parent maintenance) carry fields, defer logic pending Foundation rules.
 
-**Still open — only the two deferred epics:**
+**Still open:**
 
 | Item | Sev | Note |
 |------|-----|------|
 | `admin-round-cockpit-concept` (#18) | med | DEFERRED epic — large `/rounds` UX rebuild; needs a scheduling decision |
-| `dual-parent-separated-bursary-application` (#20) | **high** | DEFERRED XL epic — **blocked on Foundation policy answers** (joint-asset double-counting, identity matching, sole-parent reconciliation) |
+| `contribute-portal-shows-full-applicant-sidebar` | low | Cosmetic follow-up from #20 — the secondary `/contribute` flow reuses the full applicant sidebar |
 
 > **Repo-health note (release-please + long-lived `staging`):** release-please
 > commits the version bump to `main` only, so `staging` lags by the
@@ -77,7 +83,7 @@ been archived (superseded by the Vercel WAF decision), leaving **18 active**
 | 17 | family-synopsis-auto-population | low | feature/docs | recommendation form |
 | 18 | admin-round-cockpit-concept | med | UX (large) | `/rounds` rebuild — **DEFERRED** |
 | 19 | applicant-form-spec-stale-vs-implementation | med | docs | spec reconciliation |
-| 20 | dual-parent-separated-bursary-application | **high** | feature (XL) | end-to-end — **DEFERRED** |
+| 20 | dual-parent-separated-bursary-application | **high** | feature (XL) | end-to-end — ✅ **SHIPPED v1.3.0 (2026-05-25)**, archived |
 
 ## Dependencies & coupling that drive the sequence
 
