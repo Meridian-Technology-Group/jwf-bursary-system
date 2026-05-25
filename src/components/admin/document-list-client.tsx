@@ -40,15 +40,55 @@ import type { Document } from "@prisma/client";
 
 interface DocumentListClientProps {
   documents: Document[];
+  /**
+   * Dual-parent (PR 5): optional contributor grouping. When the application
+   * has a SECONDARY contributor, each document is tagged with the short label
+   * of the contributor that uploaded it ("Parent 1" / "Parent 2") so the
+   * assessor can tell whose document they are viewing. The primary contributor
+   * id is used to resolve NULL-uploader (legacy) documents to "Parent 1".
+   * Omit this prop (single-parent applications) to render exactly as before.
+   */
+  contributorGroups?: {
+    /** uploadedByContributorId → short label ("Parent 1" / "Parent 2"). */
+    labelByContributorId: Record<string, string>;
+    /** Contributor id treated as the owner of NULL-uploader documents. */
+    primaryContributorId: string | null;
+  };
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
-export function DocumentListClient({ documents }: DocumentListClientProps) {
-  // Stable, alphabetical-by-slot order so prev/next is predictable.
+export function DocumentListClient({
+  documents,
+  contributorGroups,
+}: DocumentListClientProps) {
+  // Resolve a document's contributor group label, or null when not grouping.
+  const labelForDoc = React.useCallback(
+    (doc: Document): string | null => {
+      if (!contributorGroups) return null;
+      const { labelByContributorId, primaryContributorId } = contributorGroups;
+      const cid = doc.uploadedByContributorId ?? primaryContributorId;
+      if (cid && labelByContributorId[cid]) return labelByContributorId[cid];
+      // Unknown / unmatched uploader → treat as primary group.
+      return primaryContributorId
+        ? labelByContributorId[primaryContributorId] ?? null
+        : null;
+    },
+    [contributorGroups]
+  );
+
+  // Stable order: group by contributor label (Parent 1 before Parent 2), then
+  // alphabetical-by-slot within each group, so prev/next walks one parent's
+  // documents then the other. Without grouping this is the prior slot order.
   const sortedDocs = React.useMemo(
-    () => [...documents].sort((a, b) => a.slot.localeCompare(b.slot)),
-    [documents]
+    () =>
+      [...documents].sort((a, b) => {
+        const la = labelForDoc(a);
+        const lb = labelForDoc(b);
+        if (la && lb && la !== lb) return la.localeCompare(lb);
+        return a.slot.localeCompare(b.slot);
+      }),
+    [documents, labelForDoc]
   );
 
   const [selectedId, setSelectedId] = React.useState<string | null>(
@@ -188,6 +228,11 @@ export function DocumentListClient({ documents }: DocumentListClientProps) {
                   <span className="truncate font-medium text-slate-800">
                     {humaniseSlot(selectedDoc.slot)}
                   </span>
+                  {labelForDoc(selectedDoc) && (
+                    <span className="shrink-0 rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-500">
+                      {labelForDoc(selectedDoc)}
+                    </span>
+                  )}
                 </span>
               )}
             </SelectValue>
@@ -208,6 +253,11 @@ export function DocumentListClient({ documents }: DocumentListClientProps) {
                     />
                   )}
                   <span className="font-medium">{humaniseSlot(doc.slot)}</span>
+                  {labelForDoc(doc) && (
+                    <span className="shrink-0 rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-500">
+                      {labelForDoc(doc)}
+                    </span>
+                  )}
                   <span className="truncate text-slate-400">
                     · {doc.filename}
                   </span>

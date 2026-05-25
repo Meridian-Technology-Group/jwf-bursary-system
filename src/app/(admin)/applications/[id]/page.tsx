@@ -13,6 +13,8 @@ import {
   getApplicationWithDetails,
   getApplicationNamesForReveal,
 } from "@/lib/db/queries/applications";
+import { getApplicationContributors } from "@/lib/db/queries/contributors";
+import { contributorRoleLabel, isParentOwnedSection } from "@/lib/contributors/dual-view";
 import { getSiblingLinks } from "@/lib/db/queries/siblings";
 import {
   Card,
@@ -188,19 +190,28 @@ export default async function ApplicantDataPage({ params }: Props) {
   const user = await requireRole([Role.ADMIN, Role.ASSESSOR, Role.VIEWER]);
   const isAssessor = user.role === Role.ADMIN || user.role === Role.ASSESSOR;
 
-  const { application, siblingLinks, names } = await withUserContext(
-    user.id,
-    user.role as RlsRole,
-    async (tx) => {
+  const { application, siblingLinks, names, contributors } =
+    await withUserContext(user.id, user.role as RlsRole, async (tx) => {
       const app = await getApplicationWithDetails(tx, params.id);
-      if (!app) return { application: null, siblingLinks: [], names: null };
+      if (!app)
+        return {
+          application: null,
+          siblingLinks: [],
+          names: null,
+          contributors: [],
+        };
       const siblings = app.bursaryAccountId
         ? await getSiblingLinks(tx, app.bursaryAccountId)
         : [];
       const revealed = await getApplicationNamesForReveal(tx, app.id, user.id);
-      return { application: app, siblingLinks: siblings, names: revealed };
-    }
-  );
+      const ctribs = await getApplicationContributors(tx, params.id);
+      return {
+        application: app,
+        siblingLinks: siblings,
+        names: revealed,
+        contributors: ctribs,
+      };
+    });
 
   if (!application) {
     notFound();
@@ -208,6 +219,38 @@ export default async function ApplicantDataPage({ params }: Props) {
 
   const { sections, documents, bursaryAccountId } = application;
   const currentChildName = names?.childName ?? "";
+
+  // ── Dual-parent: separate sections by owning contributor ───────────────────
+  // When a SECONDARY contributor exists, the parent-owned sections
+  // (PARENT_DETAILS / PARENTS_INCOME / ASSETS_LIABILITIES) have a copy per
+  // parent. We label each section card with its owner ("Parent 1 (primary
+  // applicant)" / "Parent 2 (second parent)"). Child-level sections are
+  // PRIMARY-owned only and shown once. When there is NO secondary, the owner
+  // label is omitted entirely and the view is exactly as before.
+  const primaryContributorId = contributors.find(
+    (c) => c.role === "PRIMARY"
+  )?.id;
+  const hasSecondary = contributors.some((c) => c.role === "SECONDARY");
+  const ownerLabelById = new Map(
+    contributors.map((c) => [c.id, contributorRoleLabel(c.role)])
+  );
+
+  function ownerLabelFor(ownerContributorId: string): string | null {
+    if (!hasSecondary) return null;
+    return ownerLabelById.get(ownerContributorId) ?? null;
+  }
+
+  // Deterministic order: primary's sections first, then secondary's, each in
+  // the section enum order the query already returns. Within a section, the
+  // primary copy precedes the secondary copy.
+  const orderedSections = hasSecondary
+    ? [...sections].sort((a, b) => {
+        const aPrimary = a.ownerContributorId === primaryContributorId ? 0 : 1;
+        const bPrimary = b.ownerContributorId === primaryContributorId ? 0 : 1;
+        if (aPrimary !== bPrimary) return aPrimary - bPrimary;
+        return a.section.localeCompare(b.section);
+      })
+    : sections;
 
   if (sections.length === 0) {
     return (
@@ -244,18 +287,32 @@ export default async function ApplicantDataPage({ params }: Props) {
       <AdminUpload applicationId={application.id} />
 
       {/* Section data cards */}
-      {sections.map((section) => {
+      {orderedSections.map((section) => {
         const sectionData = section.data as Record<string, unknown>;
         const hasData =
           sectionData && Object.keys(sectionData).length > 0;
 
+        // Owner label only when a second parent exists AND this is a
+        // parent-owned section (child-level sections are primary-only).
+        const ownerLabel =
+          hasSecondary && isParentOwnedSection(section.section)
+            ? ownerLabelFor(section.ownerContributorId)
+            : null;
+
         return (
           <Card key={section.id} className="overflow-hidden">
             <CardHeader className="bg-neutral-50 px-6 py-4 border-b border-neutral-100">
-              <div className="flex items-center justify-between">
-                <CardTitle className="text-sm font-semibold text-slate-700">
-                  {SECTION_LABELS[section.section] ?? section.section}
-                </CardTitle>
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex flex-wrap items-center gap-2">
+                  <CardTitle className="text-sm font-semibold text-slate-700">
+                    {SECTION_LABELS[section.section] ?? section.section}
+                  </CardTitle>
+                  {ownerLabel && (
+                    <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-600">
+                      {ownerLabel}
+                    </span>
+                  )}
+                </div>
                 <span
                   className={
                     section.isComplete
