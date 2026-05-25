@@ -14,6 +14,7 @@ import {
   type ListApplicationsFilters,
 } from "@/lib/db/queries/applications";
 import { getRoundWatchlist } from "@/lib/db/queries/round-watchlist";
+import { listAssessors } from "@/lib/db/queries/profiles";
 import type { WatchlistRuleId } from "@/lib/db/queries/round-watchlist";
 import { ApplicationTable } from "@/components/admin/application-table";
 import { InternalRequestDialog } from "@/components/admin/internal-request-dialog";
@@ -91,7 +92,7 @@ export default async function QueuePage({
   if (school) applicationFilters.school = school;
   if (undecided) applicationFilters.undecided = true;
 
-  const { applications, rounds } = await withUserContext(
+  const { applications, rounds, assessors } = await withUserContext(
     profile.id,
     profile.role as RlsRole,
     async (tx) => {
@@ -117,11 +118,13 @@ export default async function QueuePage({
         applicationFilters.ids = [];
       }
 
-      const [applications, rounds] = await Promise.all([
+      // Assessor list only needed for the ADMIN bulk-assign dropdown.
+      const [applications, rounds, assessors] = await Promise.all([
         listApplications(tx, applicationFilters),
         listRounds(tx),
+        profile.role === Role.ADMIN ? listAssessors(tx) : Promise.resolve([]),
       ]);
-      return { applications, rounds };
+      return { applications, rounds, assessors };
     }
   );
 
@@ -159,6 +162,8 @@ export default async function QueuePage({
       <ApplicationTable
         applications={applications}
         rounds={rounds}
+        assessors={assessors}
+        userRole={profile.role}
         initialRound={initialRound}
         initialSchool={initialSchool}
         initialStatuses={initialStatuses}

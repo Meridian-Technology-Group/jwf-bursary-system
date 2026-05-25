@@ -10,6 +10,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { useTransition } from "react";
 import {
   useReactTable,
   getCoreRowModel,
@@ -19,6 +20,7 @@ import {
   createColumnHelper,
   type SortingState,
   type ColumnFiltersState,
+  type RowSelectionState,
 } from "@tanstack/react-table";
 import {
   ChevronUp,
@@ -30,6 +32,8 @@ import {
   AlertTriangle,
   Filter,
   X,
+  Loader2,
+  UserPlus,
 } from "lucide-react";
 import { formatDistanceToNow, format } from "date-fns";
 
@@ -69,15 +73,23 @@ import {
 import { StatusBadge } from "@/components/shared/status-badge";
 import { cn } from "@/lib/utils";
 
+import { bulkAssignApplicationsAction } from "@/app/(admin)/applications/[id]/actions";
+
 import type {
   ApplicationListItem,
   SecondParentIndicator,
 } from "@/lib/db/queries/applications";
-import type { ApplicationStatus, School } from "@prisma/client";
+import type { ApplicationStatus, School, Role } from "@prisma/client";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 type RoundOption = { id: string; academicYear: string; status: string };
+
+type AssessorOption = {
+  id: string;
+  firstName: string | null;
+  lastName: string | null;
+};
 
 interface NameData {
   childName: string;
@@ -91,6 +103,16 @@ interface ApplicationRow extends ApplicationListItem {
 interface ApplicationTableProps {
   applications: ApplicationListItem[];
   rounds: RoundOption[];
+  /**
+   * Assessors available for the bulk-assign dropdown. Only populated (and only
+   * used) for ADMIN; empty for ASSESSOR/VIEWER.
+   */
+  assessors?: AssessorOption[];
+  /**
+   * The viewer's role. Selection + bulk toolbar are ADMIN-only — non-ADMIN
+   * users get no checkbox column at all (no dead UI).
+   */
+  userRole?: Role;
   /** Seed the round dropdown from a drill-in URL (defaults to "all"). */
   initialRound?: string;
   /** Seed the school dropdown from a drill-in URL (defaults to "all"). */
@@ -292,17 +314,177 @@ function StatusFilter({ selected, onChange }: StatusFilterProps) {
   );
 }
 
+// ─── Bulk-action toolbar ────────────────────────────────────────────────────────
+
+// Sentinel value for the "Unassigned" option in the bulk-assign Select
+// (mirrors AssignAssessorSelect — Radix Select cannot use an empty string).
+const BULK_UNASSIGNED_VALUE = "__unassigned__";
+
+type BulkFeedback = { kind: "success" | "error"; message: string } | null;
+
+/**
+ * Descriptor for a bulk action. Keeping these in an array makes it cheap to add
+ * further actions later (e.g. bulk status change, export-selected) — each one
+ * renders its own control inside the toolbar. For now there is a single action:
+ * Assign assessor (which also covers Unassign via the sentinel option).
+ */
+interface BulkAction {
+  id: string;
+  /** Renders the action's control. */
+  render: (ctx: {
+    selectedIds: string[];
+    isPending: boolean;
+    run: (fn: () => Promise<void>) => void;
+  }) => React.ReactNode;
+}
+
+interface BulkToolbarProps {
+  selectedIds: string[];
+  assessors: AssessorOption[];
+  onClear: () => void;
+  /**
+   * Called after a successful action so the parent can refresh + clear the
+   * selection. Note: clearing unmounts this toolbar, so success feedback is
+   * surfaced by the parent (which outlives the toolbar), not here.
+   */
+  onActionComplete: () => void;
+  /** Report feedback up so it survives the toolbar unmounting on success. */
+  onFeedback: (feedback: BulkFeedback) => void;
+}
+
+function BulkToolbar({
+  selectedIds,
+  assessors,
+  onClear,
+  onActionComplete,
+  onFeedback,
+}: BulkToolbarProps) {
+  const [isPending, startTransition] = useTransition();
+
+  const count = selectedIds.length;
+
+  // Wraps an async action in a transition. Shared by every BulkAction.
+  const run = React.useCallback(
+    (fn: () => Promise<void>) => {
+      onFeedback(null);
+      startTransition(() => {
+        void fn();
+      });
+    },
+    [onFeedback]
+  );
+
+  // The set of available bulk actions. Extend this array to add more.
+  const actions: BulkAction[] = [
+    {
+      id: "assign-assessor",
+      render: ({ selectedIds, isPending, run }) => (
+        <Select
+          disabled={isPending || selectedIds.length === 0}
+          onValueChange={(value) => {
+            const assessorId =
+              value === BULK_UNASSIGNED_VALUE ? null : value;
+            run(async () => {
+              const result = await bulkAssignApplicationsAction(
+                selectedIds,
+                assessorId
+              );
+              if (result.success) {
+                onFeedback({
+                  kind: "success",
+                  message: `Assigned ${result.updated} application${
+                    result.updated === 1 ? "" : "s"
+                  }.`,
+                });
+                onActionComplete();
+              } else {
+                onFeedback({
+                  kind: "error",
+                  message: result.error ?? "Bulk assignment failed.",
+                });
+              }
+            });
+          }}
+        >
+          <SelectTrigger className="h-8 w-[200px] border-primary-200 bg-white text-xs">
+            {isPending ? (
+              <span className="flex items-center gap-1.5 text-slate-400">
+                <Loader2 className="h-3 w-3 animate-spin" aria-hidden="true" />
+                Saving…
+              </span>
+            ) : (
+              <span className="flex items-center gap-1.5 text-slate-600">
+                <UserPlus className="h-3.5 w-3.5" aria-hidden="true" />
+                Assign assessor
+              </span>
+            )}
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value={BULK_UNASSIGNED_VALUE}>
+              <span className="text-slate-400 italic">Unassigned</span>
+            </SelectItem>
+            {assessors.map((assessor) => {
+              const name =
+                `${assessor.firstName ?? ""} ${
+                  assessor.lastName ?? ""
+                }`.trim() || assessor.id;
+              return (
+                <SelectItem key={assessor.id} value={assessor.id}>
+                  {name}
+                </SelectItem>
+              );
+            })}
+          </SelectContent>
+        </Select>
+      ),
+    },
+  ];
+
+  return (
+    <div className="sticky top-0 z-10 flex flex-wrap items-center gap-3 rounded-lg border border-primary-200 bg-primary-50/80 px-4 py-2.5 shadow-sm backdrop-blur">
+      <span className="text-sm font-medium text-primary-900">
+        {count} selected
+      </span>
+      <Button
+        variant="ghost"
+        size="sm"
+        className="h-7 px-2 text-xs text-slate-500 hover:text-slate-700"
+        onClick={onClear}
+        disabled={isPending}
+      >
+        <X className="mr-1 h-3 w-3" aria-hidden="true" />
+        Clear
+      </Button>
+
+      <div className="h-5 w-px bg-primary-200" aria-hidden="true" />
+
+      {actions.map((action) => (
+        <React.Fragment key={action.id}>
+          {action.render({ selectedIds, isPending, run })}
+        </React.Fragment>
+      ))}
+    </div>
+  );
+}
+
 // ─── Main component ───────────────────────────────────────────────────────────
 
 export function ApplicationTable({
   applications,
   rounds,
+  assessors = [],
+  userRole,
   initialRound,
   initialSchool,
   initialStatuses,
   activeFilter,
 }: ApplicationTableProps) {
   const router = useRouter();
+
+  // Selection + bulk actions are ADMIN-only. Non-ADMIN users (ASSESSOR/VIEWER)
+  // have no bulk actions available, so we hide the checkbox column and toolbar
+  // entirely rather than show a dead UI.
+  const bulkEnabled = userRole === "ADMIN";
 
   // Filter state — seeded from drill-in props when present, else current defaults.
   const [selectedRound, setSelectedRound] = React.useState<string>(
@@ -327,6 +509,17 @@ export function ApplicationTable({
   const [sorting, setSorting] = React.useState<SortingState>([]);
   const [columnFilters, setColumnFilters] =
     React.useState<ColumnFiltersState>([]);
+  const [rowSelection, setRowSelection] = React.useState<RowSelectionState>({});
+  const [bulkFeedback, setBulkFeedback] = React.useState<BulkFeedback>(null);
+
+  // Selection coherence: clear the selection whenever any filter changes so we
+  // never act on rows that have scrolled out of the filtered view. Keeping
+  // hidden rows selected would let a bulk action hit applications the user can
+  // no longer see. Simplest safe behaviour: reset on filter change.
+  React.useEffect(() => {
+    setRowSelection({});
+    setBulkFeedback(null);
+  }, [selectedRound, selectedSchool, selectedStatuses, searchText]);
 
   // Derived rows with optional names merged in
   const rows: ApplicationRow[] = React.useMemo(() => {
@@ -405,6 +598,37 @@ export function ApplicationTable({
 
   const columns = React.useMemo(() => {
     const base = [
+      // Leading selection column (ADMIN only). The header checkbox selects /
+      // deselects ALL currently-filtered rows (table.data === filteredRows), and
+      // shows an indeterminate state when only some are selected.
+      columnHelper.display({
+        id: "select",
+        header: ({ table }) => (
+          <Checkbox
+            checked={
+              table.getIsAllRowsSelected()
+                ? true
+                : table.getIsSomeRowsSelected()
+                  ? "indeterminate"
+                  : false
+            }
+            onCheckedChange={(value) =>
+              table.toggleAllRowsSelected(!!value)
+            }
+            onClick={(e) => e.stopPropagation()}
+            aria-label="Select all applications"
+          />
+        ),
+        cell: (info) => (
+          <Checkbox
+            checked={info.row.getIsSelected()}
+            onCheckedChange={(value) => info.row.toggleSelected(!!value)}
+            onClick={(e) => e.stopPropagation()}
+            aria-label="Select application"
+          />
+        ),
+        enableSorting: false,
+      }),
       columnHelper.accessor("reference", {
         header: "Reference",
         cell: (info) => (
@@ -526,19 +750,40 @@ export function ApplicationTable({
       }) as typeof base[0]
     );
 
-    return base;
-  }, [namesRevealed, columnHelper, router]);
+    // Drop the leading select column for non-ADMIN viewers (no bulk actions).
+    return bulkEnabled ? base : base.filter((col) => col.id !== "select");
+  }, [namesRevealed, columnHelper, router, bulkEnabled]);
 
   const table = useReactTable({
     data: filteredRows,
     columns,
-    state: { sorting, columnFilters },
+    state: { sorting, columnFilters, rowSelection },
+    enableRowSelection: bulkEnabled,
+    getRowId: (row) => row.id,
     onSortingChange: setSorting,
     onColumnFiltersChange: setColumnFilters,
+    onRowSelectionChange: setRowSelection,
     getCoreRowModel: getCoreRowModel(),
     getSortedRowModel: getSortedRowModel(),
     getFilteredRowModel: getFilteredRowModel(),
   });
+
+  // Selected application ids (stable across re-renders via getRowId === app id).
+  // Reading from rowSelection keys is sufficient because getRowId uses the id.
+  const selectedIds = React.useMemo(
+    () => Object.keys(rowSelection).filter((id) => rowSelection[id]),
+    [rowSelection]
+  );
+
+  const handleClearSelection = React.useCallback(() => {
+    setRowSelection({});
+  }, []);
+
+  // After a successful bulk action: clear selection and refresh server data.
+  const handleBulkComplete = React.useCallback(() => {
+    setRowSelection({});
+    router.refresh();
+  }, [router]);
 
   return (
     <div className="space-y-4">
@@ -632,6 +877,41 @@ export function ApplicationTable({
           </div>
         </div>
       </div>
+
+      {/* Bulk-action toolbar — ADMIN only, shown when ≥1 row is selected */}
+      {bulkEnabled && selectedIds.length > 0 && (
+        <BulkToolbar
+          selectedIds={selectedIds}
+          assessors={assessors}
+          onClear={handleClearSelection}
+          onActionComplete={handleBulkComplete}
+          onFeedback={setBulkFeedback}
+        />
+      )}
+
+      {/* Bulk-action result — lives in the parent so a success message survives
+          the toolbar unmounting after the selection is cleared. */}
+      {bulkEnabled && bulkFeedback && (
+        <div
+          role="status"
+          className={cn(
+            "flex items-center justify-between gap-3 rounded-lg border px-4 py-2 text-sm font-medium",
+            bulkFeedback.kind === "success"
+              ? "border-green-200 bg-green-50 text-green-700"
+              : "border-red-200 bg-red-50 text-red-600"
+          )}
+        >
+          <span>{bulkFeedback.message}</span>
+          <button
+            type="button"
+            onClick={() => setBulkFeedback(null)}
+            className="text-current opacity-60 hover:opacity-100"
+            aria-label="Dismiss message"
+          >
+            <X className="h-3.5 w-3.5" aria-hidden="true" />
+          </button>
+        </div>
+      )}
 
       {/* Table — horizontal scroll wrapper for mobile */}
       <div className="overflow-x-auto -mx-4 md:mx-0">
