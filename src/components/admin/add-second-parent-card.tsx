@@ -61,6 +61,13 @@ interface AddSecondParentCardProps {
   applicationId: string;
   /** Existing SECONDARY contributor, or null if none has been added yet. */
   secondary: SecondaryContributorView | null;
+  /**
+   * Dual-parent (PR 5): true when the assessor has chosen to proceed without
+   * the second parent (override on the assessment). When set and the secondary
+   * has NOT submitted, the status panel reads "Did not respond — override" so
+   * staff see the application was assessed without the second parent's input.
+   */
+  overrideActive?: boolean;
 }
 
 // ─── Schema ───────────────────────────────────────────────────────────────────
@@ -97,6 +104,7 @@ function contributorName(s: SecondaryContributorView): string {
 export function AddSecondParentCard({
   applicationId,
   secondary,
+  overrideActive = false,
 }: AddSecondParentCardProps) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
@@ -146,6 +154,17 @@ export function AddSecondParentCard({
 
   // ── Existing SECONDARY contributor → read-only status panel ───────────────
   if (secondary) {
+    // When the assessor proceeded without the second parent and they have not
+    // submitted, surface that explicitly rather than the raw invite status.
+    const showOverride =
+      overrideActive && secondary.status !== "SUBMITTED";
+    const statusLabel = showOverride
+      ? "Did not respond — proceeding without"
+      : STATUS_LABELS[secondary.status];
+    const statusClass = showOverride
+      ? "bg-slate-100 text-slate-600 border-slate-200"
+      : STATUS_CLASSES[secondary.status];
+
     return (
       <Card className="mb-6">
         <CardHeader className="pb-3">
@@ -163,9 +182,9 @@ export function AddSecondParentCard({
             )}
           </div>
           <span
-            className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium ${STATUS_CLASSES[secondary.status]}`}
+            className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium ${statusClass}`}
           >
-            {STATUS_LABELS[secondary.status]}
+            {statusLabel}
           </span>
         </CardContent>
       </Card>

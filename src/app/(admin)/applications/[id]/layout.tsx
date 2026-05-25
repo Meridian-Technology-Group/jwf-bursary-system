@@ -97,7 +97,7 @@ export default async function ApplicationDetailLayout({
 }: Props) {
   const user = await requireRole([Role.ADMIN, Role.ASSESSOR, Role.VIEWER]);
 
-  const { application, assessors, assignedOk, secondary } =
+  const { application, assessors, assignedOk, secondary, secondaryOverride } =
     await withUserContext(
       user.id,
       user.role as RlsRole,
@@ -118,11 +118,19 @@ export default async function ApplicationDetailLayout({
 
         const sec = await getSecondaryContributor(tx, params.id);
 
+        // Whether the assessor has chosen to proceed without the second parent
+        // (override on the assessment). Drives the "Override" status display.
+        const overrideRow = await tx.assessment.findUnique({
+          where: { applicationId: params.id },
+          select: { secondaryParentOverride: true },
+        });
+
         return {
           application: app,
           assessors: asrs,
           assignedOk: ok,
           secondary: sec,
+          secondaryOverride: overrideRow?.secondaryParentOverride ?? false,
         };
       }
     );
@@ -218,6 +226,7 @@ export default async function ApplicationDetailLayout({
         <AddSecondParentCard
           applicationId={application.id}
           secondary={secondary}
+          overrideActive={secondaryOverride}
         />
       )}
 

@@ -18,6 +18,8 @@ import { notFound } from "next/navigation";
 import type { Decimal } from "@prisma/client/runtime/library";
 import { requireRole, Role, type CurrentUser } from "@/lib/auth/roles";
 import { getApplicationWithDetails } from "@/lib/db/queries/applications";
+import { getApplicationContributors } from "@/lib/db/queries/contributors";
+import { buildContributorLabelMap } from "@/lib/contributors/dual-view";
 import { getAssessment } from "@/lib/db/queries/assessments";
 import { getConfigsForAssessment } from "@/lib/db/queries/reference-tables";
 import { getPreviousAssessment } from "@/lib/db/queries/reassessment";
@@ -29,6 +31,7 @@ import { SplitScreen } from "@/components/admin/split-screen";
 import { AssessmentForm, type SerialisedAssessment } from "@/components/admin/assessment-form";
 import { AssessmentChecklist } from "@/components/admin/assessment-checklist";
 import { BeginAssessmentButton } from "@/components/admin/begin-assessment-button";
+import { SecondParentGate } from "@/components/admin/second-parent-gate";
 import { DocumentListClient } from "@/components/admin/document-list-client";
 import { ClipboardList } from "lucide-react";
 
@@ -120,17 +123,43 @@ export default async function AssessmentPage({ params }: Props) {
   const user = await requireRole([Role.ADMIN, Role.ASSESSOR, Role.VIEWER]);
   const isViewer = user.role === Role.VIEWER;
 
-  const { application, assessment } = await withUserContext(
+  const { application, assessment, contributors } = await withUserContext(
     user.id,
     user.role as RlsRole,
     async (tx) => {
       const app = await getApplicationWithDetails(tx, params.id);
-      if (!app) return { application: null, assessment: null };
+      if (!app)
+        return { application: null, assessment: null, contributors: [] };
       const a = await getAssessment(tx, params.id);
-      return { application: app, assessment: a };
+      const ctribs = await getApplicationContributors(tx, params.id);
+      return { application: app, assessment: a, contributors: ctribs };
     }
   );
   if (!application) notFound();
+
+  // ── Dual-parent context ────────────────────────────────────────────────────
+  // The SECONDARY contributor (second parent), if any, plus the PRIMARY's id
+  // (used to anchor NULL-uploader legacy documents to "Parent 1"). When there
+  // is NO secondary, everything below collapses to the single-parent behaviour.
+  const primaryContributor = contributors.find((c) => c.role === "PRIMARY");
+  const secondaryContributor = contributors.find((c) => c.role === "SECONDARY");
+  const hasSubmittedSecondary =
+    secondaryContributor?.status === "SUBMITTED";
+  const hasUnsubmittedSecondary =
+    !!secondaryContributor && secondaryContributor.status !== "SUBMITTED";
+
+  // Document grouping passed to the workspace document list. Only built when a
+  // secondary exists, so single-parent applications render exactly as before.
+  const contributorGroups = secondaryContributor
+    ? {
+        labelByContributorId: Object.fromEntries(
+          Object.entries(buildContributorLabelMap(contributors)).map(
+            ([id, v]) => [id, v.shortLabel]
+          )
+        ),
+        primaryContributorId: primaryContributor?.id ?? null,
+      }
+    : undefined;
 
   const { documents, isReassessment, bursaryAccountId, round } = application;
 
@@ -150,32 +179,53 @@ export default async function AssessmentPage({ params }: Props) {
           />
         )}
 
-        {/* Begin assessment CTA */}
-        <div className="flex flex-col items-center justify-center gap-5 rounded-xl border border-dashed border-slate-300 bg-white px-6 py-16 text-center shadow-sm">
-          <ClipboardList
-            className="h-12 w-12 text-slate-200"
-            aria-hidden="true"
+        {/* Begin assessment CTA. When a second parent was invited but has not
+            submitted and there is no override yet, the gate blocks Begin and
+            offers the "proceed without second parent" control instead. */}
+        {!isViewer && hasUnsubmittedSecondary && secondaryContributor ? (
+          <SecondParentGate
+            applicationId={params.id}
+            secondaryStatus={secondaryContributor.status}
+            secondaryName={
+              [secondaryContributor.firstName, secondaryContributor.lastName]
+                .filter(Boolean)
+                .join(" ")
+                .trim() ||
+              secondaryContributor.email ||
+              "Second parent"
+            }
           />
-          <div>
-            <p className="text-base font-semibold text-slate-700">
-              Assessment not yet started
-            </p>
-            <p className="mt-1.5 text-sm text-slate-400">
-              Begin the assessment to open the workspace with all documents
-              and income entry forms.
-            </p>
+        ) : (
+          <div className="flex flex-col items-center justify-center gap-5 rounded-xl border border-dashed border-slate-300 bg-white px-6 py-16 text-center shadow-sm">
+            <ClipboardList
+              className="h-12 w-12 text-slate-200"
+              aria-hidden="true"
+            />
+            <div>
+              <p className="text-base font-semibold text-slate-700">
+                Assessment not yet started
+              </p>
+              <p className="mt-1.5 text-sm text-slate-400">
+                Begin the assessment to open the workspace with all documents
+                and income entry forms.
+              </p>
+            </div>
+
+            {!isViewer && <BeginAssessmentButton applicationId={params.id} />}
+
+            {isViewer && hasUnsubmittedSecondary && (
+              <p className="rounded-md border border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-700">
+                Awaiting the second parent&apos;s submission
+              </p>
+            )}
+
+            {isViewer && (
+              <p className="rounded-md border border-slate-200 bg-slate-50 px-4 py-2 text-sm text-slate-500">
+                Viewer access — assessment can only be started by an Assessor
+              </p>
+            )}
           </div>
-
-          {!isViewer && (
-            <BeginAssessmentButton applicationId={params.id} />
-          )}
-
-          {isViewer && (
-            <p className="rounded-md border border-slate-200 bg-slate-50 px-4 py-2 text-sm text-slate-500">
-              Viewer access — assessment can only be started by an Assessor
-            </p>
-          )}
-        </div>
+        )}
       </div>
     );
   }
@@ -247,6 +297,8 @@ export default async function AssessmentPage({ params }: Props) {
     propertyExceedsThreshold: assessment.propertyExceedsThreshold,
     dishonestyFlag: assessment.dishonestyFlag,
     creditRiskFlag: assessment.creditRiskFlag,
+    secondaryParentOverride: assessment.secondaryParentOverride,
+    secondaryParentOverrideReason: assessment.secondaryParentOverrideReason,
     status: assessment.status,
     outcome: assessment.outcome,
     completedAt: assessment.completedAt,
@@ -295,6 +347,14 @@ export default async function AssessmentPage({ params }: Props) {
     })),
   };
 
+  // A SUBMITTED secondary forces two-earner mode (primary = Parent 1,
+  // secondary = Parent 2) and the form hides/disables the sole-parent toggle.
+  // The assessor override (secondary did not respond) falls back to
+  // primary-only / single-earner — so two-earner is only forced while the
+  // secondary is SUBMITTED *and* no override is in effect.
+  const forceTwoEarner =
+    hasSubmittedSecondary && !serialisedAssessment.secondaryParentOverride;
+
   // Build the form panel
   const formPanel = (
     <AssessmentForm
@@ -307,12 +367,20 @@ export default async function AssessmentPage({ params }: Props) {
       defaultAnnualFees={configs.annualFees}
       defaultCouncilTax={configs.councilTax}
       siblingPayableFees={siblingPayableFees}
+      forceTwoEarner={forceTwoEarner}
+      secondaryParentOverride={serialisedAssessment.secondaryParentOverride}
     />
   );
 
   // Build the document panel (left side of split-screen).
-  // The client component owns its own toolbar / empty state.
-  const documentListPanel = <DocumentListClient documents={documents} />;
+  // The client component owns its own toolbar / empty state. When a second
+  // parent exists, documents are labelled by uploading contributor.
+  const documentListPanel = (
+    <DocumentListClient
+      documents={documents}
+      contributorGroups={contributorGroups}
+    />
+  );
 
   return (
     <div className="space-y-5">
