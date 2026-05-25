@@ -20,8 +20,10 @@ import { requireRole, Role } from "@/lib/auth/roles";
 import { withUserContext, type RlsRole } from "@/lib/db/prisma";
 import { getRound } from "@/lib/db/queries/rounds";
 import { getActiveBursaryHolders } from "@/lib/db/queries/invitations";
+import { getRoundWatchlist } from "@/lib/db/queries/round-watchlist";
 import { RoundDetailActions } from "@/components/admin/round-detail-actions";
 import { RoundStatusBadge } from "@/components/admin/round-status-badge";
+import { NeedsAttentionLane } from "@/components/rounds/needs-attention-lane";
 import { cn } from "@/lib/utils";
 
 export async function generateMetadata({
@@ -94,13 +96,14 @@ export default async function RoundDetailPage({
 }) {
   const user = await requireRole([Role.ADMIN, Role.ASSESSOR, Role.VIEWER]);
 
-  const [round, activeBursaryHolders] = await withUserContext(
+  const [round, activeBursaryHolders, watchlist] = await withUserContext(
     user.id,
     user.role as RlsRole,
     (tx) =>
       Promise.all([
         getRound(tx, params.id),
         getActiveBursaryHolders(tx, params.id),
+        getRoundWatchlist(tx, params.id),
       ])
   );
 
@@ -193,6 +196,9 @@ export default async function RoundDetailPage({
           activeBursaryHolderCount={activeBursaryHolders.length}
         />
       </div>
+
+      {/* Needs Attention (Stage B — temporary slot; Stage D reorganises the page) */}
+      <NeedsAttentionLane rules={watchlist?.rules ?? []} />
 
       {/* Summary cards */}
       <section aria-label="Application summary">
