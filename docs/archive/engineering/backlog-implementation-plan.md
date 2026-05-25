@@ -1,5 +1,12 @@
 # Backlog Implementation Plan
 
+> **CLOSED / ARCHIVED 2026-05-25.** Every wave in this plan has shipped. The
+> routine backlog (Waves 0–2) is complete, the dual-parent epic (#20) shipped in
+> v1.3.0, and the `/contribute` sidebar follow-up shipped in v1.3.1. The only
+> remaining open item — the Round Cockpit (#18) — is now tracked directly from
+> its backlog file (`docs/backlog/admin-round-cockpit-concept.md`). Kept for
+> historical sequencing context only; not a live work tracker.
+
 > Cross-cutting sequencing plan for the open items in
 > [`docs/backlog/`](../backlog/). Authored 2026-05-24. This is a
 > *planning* artifact — the per-item files remain the source of truth for

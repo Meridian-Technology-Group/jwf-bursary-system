@@ -1,5 +1,13 @@
 # Dual-Parent (Separated / Divorced) — Implementation Plan
 
+> **CLOSED / ARCHIVED 2026-05-25.** All six PRs shipped to production in v1.3.0
+> (2026-05-25); the `/contribute` sidebar follow-up shipped in v1.3.1. The
+> backlog file is archived at
+> `docs/archive/backlog/dual-parent-separated-bursary-application.md`. Retained
+> for the code-grounded findings and PR sequencing as historical reference.
+> Deferred calc work (joint-asset double-counting, inter-parent maintenance)
+> remains pending Foundation rules — fields are carried, logic is not built.
+
 > Build-ready engineering plan for the backlog epic
 > [`dual-parent-separated-bursary-application`](../backlog/dual-parent-separated-bursary-application.md)
 > (#20). Authored 2026-05-24. The backlog file remains the source of truth for
