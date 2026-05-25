@@ -70,6 +70,29 @@ const SECTION_TYPE_TO_SLUG: Record<string, string> = {
   DECLARATION: "declaration",
 };
 
+// ─── Secondary-parent /contribute stepper ────────────────────────────────────
+// The second parent fills ONLY their own three sections (PR 4b, backlog #20).
+// This trimmed list backs the dedicated /contribute layout sidebar so a second
+// parent never sees the full 11-section applicant nav. Labels match the
+// /contribute section page titles ("Your …"). The Review entry is synthetic —
+// navigable but excluded from the "N of 3 sections complete" count (see
+// `countSynthetic` in PortalSidebarContent).
+
+export const CONTRIBUTE_SIDEBAR_SECTIONS: SidebarSection[] = [
+  { id: 1, label: "Your Details", slug: "parent-details", status: "not_started", gapCount: 0, progressSatisfied: 0, progressTotal: 1 },
+  { id: 2, label: "Your Income", slug: "parents-income", status: "not_started", gapCount: 0, progressSatisfied: 0, progressTotal: 1 },
+  { id: 3, label: "Your Assets & Liabilities", slug: "assets-liabilities", status: "not_started", gapCount: 0, progressSatisfied: 0, progressTotal: 1 },
+  // Synthetic Review step — navigable; status from the global gap roll-up.
+  // progressTotal: 0 so it never skews the partial-fill progress bar.
+  { id: 4, label: "Review", slug: "review", status: "not_started", gapCount: 0, progressSatisfied: 0, progressTotal: 0, isSynthetic: true },
+];
+
+const CONTRIBUTE_SECTION_TYPES = new Set([
+  "PARENT_DETAILS",
+  "PARENTS_INCOME",
+  "ASSETS_LIABILITIES",
+]);
+
 /**
  * Builds the sidebar section list from the full gap-status data returned by
  * `getSectionGapStatuses`. Surfaces tri-state status and partial progress
@@ -144,6 +167,79 @@ export function buildSidebarSections(
         status: reviewStatus,
         gapCount: totalErrorGaps,
       };
+    }
+
+    const enriched = bySlug.get(section.slug);
+    if (!enriched) return section;
+    return {
+      ...section,
+      status: enriched.status,
+      gapCount: enriched.gapCount,
+      progressSatisfied: enriched.progressSatisfied,
+      progressTotal: enriched.progressTotal,
+    };
+  });
+}
+
+/**
+ * Builds the trimmed secondary-parent /contribute stepper from owner-scoped gap
+ * statuses (i.e. `getSectionGapStatuses(applicationId, contributorId)` — only
+ * the second parent's owned sections + own documents).
+ *
+ * Surfaces tri-state status / partial progress for the three contribution
+ * sections, plus a synthetic Review entry whose status rolls up the three.
+ * Status rules mirror `buildSidebarSections`.
+ */
+export function buildContributeSidebarSections(
+  gapStatuses: SectionGapStatus[]
+): SidebarSection[] {
+  const relevant = gapStatuses.filter((gs) =>
+    CONTRIBUTE_SECTION_TYPES.has(gs.sectionType)
+  );
+
+  const bySlug = new Map<
+    string,
+    { status: SectionStatus; gapCount: number; progressSatisfied: number; progressTotal: number }
+  >();
+
+  for (const gs of relevant) {
+    const slug = SECTION_TYPE_TO_SLUG[gs.sectionType];
+    if (!slug) continue;
+
+    const errorGapCount = gs.gaps.filter((g) => g.severity === "error").length;
+
+    let status: SectionStatus;
+    if (gs.isFullyValid) {
+      status = "complete";
+    } else if ((gs.isStarted || gs.isDbComplete) && errorGapCount > 0) {
+      status = "needs_attention";
+    } else {
+      status = "not_started";
+    }
+
+    bySlug.set(slug, {
+      status,
+      gapCount: errorGapCount,
+      progressSatisfied: gs.progress.satisfied,
+      progressTotal: gs.progress.total,
+    });
+  }
+
+  // Synthetic Review status from the global error-gap roll-up across the three.
+  const totalErrorGaps = relevant.reduce(
+    (acc, gs) => acc + gs.gaps.filter((g) => g.severity === "error").length,
+    0
+  );
+  const anyStarted = relevant.some((gs) => gs.isStarted);
+  const reviewStatus: SectionStatus = !anyStarted
+    ? "not_started"
+    : totalErrorGaps === 0
+      ? "complete"
+      : "needs_attention";
+
+  return CONTRIBUTE_SIDEBAR_SECTIONS.map((section) => {
+    if (section.isSynthetic && section.slug === "review") {
+      return { ...section, status: reviewStatus, gapCount: totalErrorGaps };
     }
 
     const enriched = bySlug.get(section.slug);
