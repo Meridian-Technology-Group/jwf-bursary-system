@@ -429,7 +429,7 @@ export function evaluateWatchlist(
         "assessment has",
         "assessments have",
       )} been paused for over 7 days`,
-      drillHref: `/queue?roundId=${roundId}&status=paused`,
+      drillHref: `/queue?roundId=${roundId}&status=PAUSED`,
       applicationIds: rule4Ids,
     },
     {
@@ -441,7 +441,7 @@ export function evaluateWatchlist(
         "assessment has",
         "assessments have",
       )} had no activity for over 5 days`,
-      drillHref: `/queue?roundId=${roundId}&stale=5`,
+      drillHref: `/queue?roundId=${roundId}&stale=1`,
       applicationIds: rule5Ids,
     },
   ];
