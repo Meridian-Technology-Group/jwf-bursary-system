@@ -20,7 +20,7 @@ import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { UserPlus, Loader2, CheckCircle2 } from "lucide-react";
+import { UserPlus, Loader2, CheckCircle2, History, X } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -57,6 +57,20 @@ export interface SecondaryContributorView {
   lastName: string | null;
 }
 
+/**
+ * The second parent who contributed to the PRIOR-year application, surfaced on
+ * a re-assessment so staff can re-invite them for the new round (PR 6,
+ * decision #6). Carry-forward, not auto-link: re-inviting goes through the
+ * normal `addSecondParentAction` path.
+ */
+export interface PriorYearSecondaryView {
+  email: string;
+  firstName: string | null;
+  lastName: string | null;
+  /** The academic year the parent contributed (for the prompt copy). */
+  previousAcademicYear: string | null;
+}
+
 interface AddSecondParentCardProps {
   applicationId: string;
   /** Existing SECONDARY contributor, or null if none has been added yet. */
@@ -68,6 +82,12 @@ interface AddSecondParentCardProps {
    * staff see the application was assessed without the second parent's input.
    */
   overrideActive?: boolean;
+  /**
+   * Dual-parent (PR 6): the second parent from the prior-year application,
+   * present only on a re-assessment that has NO second parent yet. When set,
+   * the card shows a "re-invite" prompt pre-filled with their details.
+   */
+  priorYearSecondary?: PriorYearSecondaryView | null;
 }
 
 // ─── Schema ───────────────────────────────────────────────────────────────────
@@ -105,17 +125,33 @@ export function AddSecondParentCard({
   applicationId,
   secondary,
   overrideActive = false,
+  priorYearSecondary = null,
 }: AddSecondParentCardProps) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [serverError, setServerError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
+  const [promptDismissed, setPromptDismissed] = useState(false);
   const [isPending, startTransition] = useTransition();
 
   const form = useForm<FormValues>({
     resolver: zodResolver(schema),
     defaultValues: { email: "", firstName: "", lastName: "" },
   });
+
+  // Open the add dialog pre-filled with the prior-year parent's details so the
+  // re-invite goes through the normal addSecondParentAction path for the new
+  // round. The staff member can still edit before sending.
+  function openReinvite() {
+    if (!priorYearSecondary) return;
+    form.reset({
+      email: priorYearSecondary.email,
+      firstName: priorYearSecondary.firstName ?? "",
+      lastName: priorYearSecondary.lastName ?? "",
+    });
+    setServerError(null);
+    setOpen(true);
+  }
 
   function handleOpenChange(next: boolean) {
     if (isPending) return;
@@ -191,9 +227,55 @@ export function AddSecondParentCard({
     );
   }
 
-  // ── No second parent yet → add control + dialog ───────────────────────────
+  // ── No second parent yet → optional carry-forward prompt + add control ─────
+  const priorName = priorYearSecondary
+    ? [priorYearSecondary.firstName, priorYearSecondary.lastName]
+        .filter(Boolean)
+        .join(" ")
+        .trim() || priorYearSecondary.email
+    : null;
+  const showReinvitePrompt = !!priorYearSecondary && !promptDismissed;
+
   return (
     <Card className="mb-6">
+      {showReinvitePrompt && priorYearSecondary && (
+        <div className="flex flex-wrap items-start justify-between gap-3 border-b border-amber-200 bg-amber-50 px-6 py-3">
+          <div className="flex items-start gap-2 text-sm text-amber-800">
+            <History
+              className="mt-0.5 h-4 w-4 shrink-0 text-amber-600"
+              aria-hidden="true"
+            />
+            <p>
+              A second parent{" "}
+              <span className="font-medium">({priorName})</span> contributed
+              {priorYearSecondary.previousAcademicYear
+                ? ` in ${priorYearSecondary.previousAcademicYear}`
+                : " last year"}
+              . Re-invite them for this round?
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <Button
+              size="sm"
+              className="gap-2"
+              onClick={openReinvite}
+            >
+              <UserPlus className="h-4 w-4" aria-hidden="true" />
+              Re-invite
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              className="gap-1 text-amber-700 hover:bg-amber-100"
+              onClick={() => setPromptDismissed(true)}
+            >
+              <X className="h-4 w-4" aria-hidden="true" />
+              Skip
+            </Button>
+          </div>
+        </div>
+      )}
+
       <CardContent className="flex flex-wrap items-center justify-between gap-3 py-4">
         <div className="text-sm text-slate-600">
           <p className="font-medium text-slate-800">Second parent</p>

@@ -12,6 +12,7 @@ import { notFound, redirect } from "next/navigation";
 import { requireRole, Role } from "@/lib/auth/roles";
 import { getApplicationWithDetails } from "@/lib/db/queries/applications";
 import { getSecondaryContributor } from "@/lib/db/queries/contributors";
+import { getPriorYearSecondaryContributor } from "@/lib/db/queries/reassessment";
 import { listAssessors } from "@/lib/db/queries/profiles";
 import { withUserContext, type RlsRole } from "@/lib/db/prisma";
 import { StatusBadge } from "@/components/shared/status-badge";
@@ -97,43 +98,59 @@ export default async function ApplicationDetailLayout({
 }: Props) {
   const user = await requireRole([Role.ADMIN, Role.ASSESSOR, Role.VIEWER]);
 
-  const { application, assessors, assignedOk, secondary, secondaryOverride } =
-    await withUserContext(
-      user.id,
-      user.role as RlsRole,
-      async (tx) => {
-        const app = await getApplicationWithDetails(tx, params.id);
-        const asrs =
-          user.role === Role.ADMIN ? await listAssessors(tx) : [];
+  const {
+    application,
+    assessors,
+    assignedOk,
+    secondary,
+    secondaryOverride,
+    priorYearSecondary,
+  } = await withUserContext(
+    user.id,
+    user.role as RlsRole,
+    async (tx) => {
+      const app = await getApplicationWithDetails(tx, params.id);
+      const asrs = user.role === Role.ADMIN ? await listAssessors(tx) : [];
 
-        // ASSESSORs may only access applications assigned to them
-        let ok = true;
-        if (user.role === Role.ASSESSOR) {
-          const assigned = await tx.application.findFirst({
-            where: { id: params.id, assignedToId: user.id },
-            select: { id: true },
-          });
-          ok = !!assigned;
-        }
-
-        const sec = await getSecondaryContributor(tx, params.id);
-
-        // Whether the assessor has chosen to proceed without the second parent
-        // (override on the assessment). Drives the "Override" status display.
-        const overrideRow = await tx.assessment.findUnique({
-          where: { applicationId: params.id },
-          select: { secondaryParentOverride: true },
+      // ASSESSORs may only access applications assigned to them
+      let ok = true;
+      if (user.role === Role.ASSESSOR) {
+        const assigned = await tx.application.findFirst({
+          where: { id: params.id, assignedToId: user.id },
+          select: { id: true },
         });
-
-        return {
-          application: app,
-          assessors: asrs,
-          assignedOk: ok,
-          secondary: sec,
-          secondaryOverride: overrideRow?.secondaryParentOverride ?? false,
-        };
+        ok = !!assigned;
       }
-    );
+
+      const sec = await getSecondaryContributor(tx, params.id);
+
+      // Whether the assessor has chosen to proceed without the second parent
+      // (override on the assessment). Drives the "Override" status display.
+      const overrideRow = await tx.assessment.findUnique({
+        where: { applicationId: params.id },
+        select: { secondaryParentOverride: true },
+      });
+
+      // Re-assessment carry-forward (dual-parent PR 6, decision #6): if this
+      // application has NO second parent yet but the prior-year application for
+      // the same bursary account had one, surface them for a re-invite prompt.
+      // Only meaningful for staff who can write (ADMIN / ASSESSOR) and when no
+      // secondary exists yet — the helper enforces the latter internally.
+      const prior =
+        !sec && (user.role === Role.ADMIN || user.role === Role.ASSESSOR)
+          ? await getPriorYearSecondaryContributor(tx, params.id)
+          : null;
+
+      return {
+        application: app,
+        assessors: asrs,
+        assignedOk: ok,
+        secondary: sec,
+        secondaryOverride: overrideRow?.secondaryParentOverride ?? false,
+        priorYearSecondary: prior,
+      };
+    }
+  );
 
   if (!application) {
     notFound();
@@ -227,6 +244,17 @@ export default async function ApplicationDetailLayout({
           applicationId={application.id}
           secondary={secondary}
           overrideActive={secondaryOverride}
+          priorYearSecondary={
+            priorYearSecondary
+              ? {
+                  email: priorYearSecondary.email,
+                  firstName: priorYearSecondary.firstName,
+                  lastName: priorYearSecondary.lastName,
+                  previousAcademicYear:
+                    priorYearSecondary.previousAcademicYear,
+                }
+              : null
+          }
         />
       )}
 
