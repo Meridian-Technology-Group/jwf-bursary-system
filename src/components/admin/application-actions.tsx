@@ -213,7 +213,7 @@ export function ApplicationActions({
 
   return (
     <>
-      <div className="rounded-xl border border-slate-200 bg-white px-6 py-4 shadow-sm mb-6">
+      <div className="rounded-xl border border-slate-200 bg-white px-6 py-4 shadow-sm">
         <div className="flex flex-wrap items-center justify-between gap-3">
           {/* Left: context label */}
           <div className="flex items-center gap-2">
