@@ -29,6 +29,10 @@ import { humaniseSlot } from "@/lib/documents/slots";
 import { deleteDocument } from "@/lib/storage/documents";
 import { createSupabaseAdminClient } from "@/lib/auth/supabase-admin";
 import { setApplicationOutcome } from "@/lib/applications/set-outcome-core";
+import {
+  getSecondaryContributorForGdpr,
+  decideSecondaryProfileErasure,
+} from "@/lib/db/queries/secondary-gdpr";
 import type { ApplicationStatus } from "@prisma/client";
 
 import { AUDIT_ACTIONS, AUDIT_ENTITY_TYPES } from "@/lib/audit/actions";
@@ -399,6 +403,21 @@ export async function assignApplicationAction(
  *              AuditLog.userId → null (where userId matches)
  *   RETAIN:    Round, aggregate statistics, ReasonCode reference data.
  *
+ * Dual-parent (backlog #20, PR 6): if the application has a SECONDARY
+ * contributor (a second parent who supplied their own financials/documents),
+ * their contribution is erased too. Their owned sections and documents are
+ * already covered by the by-applicationId deletes below (sections and Document
+ * rows are deleted for the WHOLE application, and Storage objects are deleted by
+ * enumerating every Document row's storagePath — including the secondary's
+ * `documents/{appId}/secondary/...` files). What this action adds is: deleting
+ * the ApplicationContributor rows (the application is ANONYMISED not deleted, so
+ * the ON DELETE CASCADE never fires), and — guarded — anonymising the
+ * secondary's Profile + deleting their Supabase auth user. That last step ONLY
+ * happens when the secondary's Profile is linked to nothing else; if they are a
+ * lead applicant for another child (or a secondary elsewhere) the Profile and
+ * auth user are RETAINED and only their link + data on THIS application is
+ * removed. See `decideSecondaryProfileErasure`.
+ *
  * Access: ASSESSOR role only.
  * Guard:  Cannot delete if application was submitted within the last 7 years.
  */
@@ -457,7 +476,25 @@ export async function gdprDeleteApplicantAction(
 
     const leadApplicantId = application.leadApplicantId;
 
-    // 3. Delete Storage files first (non-fatal: continue on partial failure)
+    // 2b. Resolve the SECONDARY contributor (second parent), if any, and decide
+    //     whether their Profile + Supabase auth user may be erased. The decision
+    //     is computed here (read-only) so the mutating transaction below and the
+    //     post-transaction auth deletion both act on a single, consistent
+    //     verdict. RETAIN if the profile is lawfully linked elsewhere.
+    const secondary = await withAdminContext((tx) =>
+      getSecondaryContributorForGdpr(tx, applicationId)
+    );
+    const secondaryProfileDecision = secondary
+      ? await withAdminContext((tx) =>
+          decideSecondaryProfileErasure(tx, secondary.profileId, applicationId)
+        )
+      : null;
+
+    // 3. Delete Storage files first (non-fatal: continue on partial failure).
+    //    application.documents enumerates EVERY Document row for this
+    //    application regardless of uploader, so secondary uploads under
+    //    `documents/{appId}/secondary/{slot}/...` are deleted from Storage here
+    //    too — each row carries its own storagePath.
     const storageErrors: string[] = [];
     for (const doc of application.documents) {
       try {
@@ -545,6 +582,52 @@ export async function gdprDeleteApplicantAction(
           role: "DELETED",
         },
       });
+
+      // j. Dual-parent secondary erasure. The application is ANONYMISED (not
+      //    deleted) so the ON DELETE CASCADE on ApplicationContributor.application
+      //    never fires — delete every contributor row for this application
+      //    explicitly (both PRIMARY and SECONDARY). The PRIMARY's lead profile is
+      //    already anonymised above; the SECONDARY's profile is handled by the
+      //    shared-profile guard below.
+      await tx.applicationContributor.deleteMany({ where: { applicationId } });
+
+      if (secondary && secondaryProfileDecision) {
+        // The secondary's owned sections and Document rows were already removed
+        // by the by-applicationId deletes (steps d/e) and their Storage objects
+        // by the enumeration in step 3 — nothing extra to delete here.
+
+        if (secondaryProfileDecision.canErase) {
+          // Profile linked ONLY to this application → erase it like the lead.
+          // Delete invitations addressed to the secondary, null their audit
+          // rows, then anonymise the profile.
+          await tx.invitation.deleteMany({
+            where: { email: secondary.email },
+          });
+          await tx.auditLog.updateMany({
+            where: { userId: secondary.profileId },
+            data: { userId: null },
+          });
+          await tx.profile.update({
+            where: { id: secondary.profileId },
+            data: {
+              firstName: null,
+              lastName: null,
+              phone: null,
+              email: `[deleted-${secondary.profileId}]@removed.invalid`,
+              role: "DELETED",
+            },
+          });
+        } else {
+          // Profile lawfully linked elsewhere (lead applicant of another child,
+          // or secondary on another application, or owns a bursary account) →
+          // RETAIN it. Only this application's secondary invitation is removed
+          // so it no longer points at an erased application. The profile, its
+          // auth user and its audit trail are left untouched.
+          await tx.invitation.deleteMany({
+            where: { applicationId, email: secondary.email },
+          });
+        }
+      }
     });
 
     // 4b. Delete the Supabase Auth user (GDPR Art. 17). The DB Profile is
@@ -571,6 +654,34 @@ export async function gdprDeleteApplicantAction(
       );
     }
 
+    // 4c. Dual-parent: delete the SECONDARY parent's Supabase auth user — but
+    //     ONLY when the shared-profile guard cleared erasure (profile linked to
+    //     nothing else). When retained, we never touch their auth user. Their
+    //     Profile was anonymised inside the transaction above (canErase branch).
+    let secondaryAuthDeleteError: string | null = null;
+    if (secondary && secondaryProfileDecision?.canErase) {
+      try {
+        const admin = createSupabaseAdminClient();
+        const { error } = await admin.auth.admin.deleteUser(
+          secondary.profileId
+        );
+        if (error) {
+          secondaryAuthDeleteError = error.message;
+          console.error(
+            "[gdprDeleteApplicantAction] secondary auth.admin.deleteUser failed:",
+            error
+          );
+        }
+      } catch (err) {
+        secondaryAuthDeleteError =
+          err instanceof Error ? err.message : String(err);
+        console.error(
+          "[gdprDeleteApplicantAction] secondary auth.admin.deleteUser threw:",
+          err
+        );
+      }
+    }
+
     // 5. Write the GDPR audit log entry (using a system/null user as the
     //    lead applicant's userId was just nulled — we record the assessor).
     //    Admin context so the audit insert succeeds independently of the
@@ -587,6 +698,32 @@ export async function gdprDeleteApplicantAction(
           leadApplicantId,
           storageErrors: storageErrors.length > 0 ? storageErrors : undefined,
           authDeleteError: authDeleteError ?? undefined,
+          // Dual-parent secondary-contributor handling (omitted entirely for
+          // single-parent applications so their audit shape is unchanged).
+          secondary: secondary
+            ? {
+                contributorId: secondary.contributorId,
+                profileId: secondary.profileId,
+                // RETAINED when linked elsewhere; ERASED (anonymised + auth
+                // deleted) when linked only to this application.
+                profileHandling: secondaryProfileDecision?.canErase
+                  ? "erased"
+                  : "retained",
+                links: secondaryProfileDecision
+                  ? {
+                      otherContributorLinks:
+                        secondaryProfileDecision.otherContributorLinks,
+                      leadApplicantApplications:
+                        secondaryProfileDecision.leadApplicantApplications,
+                      bursaryAccounts: secondaryProfileDecision.bursaryAccounts,
+                    }
+                  : undefined,
+                authDeleted:
+                  secondaryProfileDecision?.canErase &&
+                  !secondaryAuthDeleteError,
+                authDeleteError: secondaryAuthDeleteError ?? undefined,
+              }
+            : undefined,
         },
       })
     );
