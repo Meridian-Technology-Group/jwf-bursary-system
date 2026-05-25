@@ -14,7 +14,11 @@ import Link from "next/link";
 import { CheckCircle2, AlertTriangle, Edit2, XCircle, ChevronRight } from "lucide-react";
 import { ApplicationSectionType } from "@prisma/client";
 import { getCurrentUser } from "@/lib/auth/roles";
-import { withUserContext, type RlsRole } from "@/lib/db/prisma";
+import { withUserContext, withAdminContext, type RlsRole } from "@/lib/db/prisma";
+import {
+  ensurePrimaryContributor,
+  resolveOwningContributorId,
+} from "@/lib/db/queries/contributors";
 import { getSectionGapStatuses } from "@/lib/portal/section-gaps";
 import { ENTRY_YEAR_GROUP_LABELS } from "@/lib/assessment/schooling-years";
 import { cn } from "@/lib/utils";
@@ -402,7 +406,37 @@ export default async function ReviewPage() {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
 
-  // Load application with full section data (needed for summary cards)
+  // Resolve the lead applicant's PRIMARY contributor first so every read below
+  // is scoped to their owned section/document rows (dual-parent, PR 4b) — the
+  // review page must never surface the secondary's data. A SELECT under
+  // applicant RLS; self-heal under admin context only if (impossibly) missing.
+  const appIdForOwner = await withUserContext(
+    user.id,
+    user.role as RlsRole,
+    (tx) =>
+      tx.application
+        .findFirst({
+          where: { leadApplicantId: user.id },
+          orderBy: { updatedAt: "desc" },
+          select: { id: true },
+        })
+        .then((a) => a?.id ?? null)
+  );
+
+  if (!appIdForOwner) redirect("/");
+
+  let ownerContributorId = await withUserContext(
+    user.id,
+    user.role as RlsRole,
+    (tx) => resolveOwningContributorId(tx, appIdForOwner, user.id)
+  );
+  if (!ownerContributorId) {
+    ownerContributorId = await withAdminContext((tx) =>
+      ensurePrimaryContributor(tx, appIdForOwner, user.id)
+    );
+  }
+
+  // Load application with the PRIMARY-owned section data + documents only
   const application = await withUserContext(
     user.id,
     user.role as RlsRole,
@@ -412,9 +446,11 @@ export default async function ReviewPage() {
         orderBy: { updatedAt: "desc" },
         include: {
           sections: {
+            where: { ownerContributorId: ownerContributorId! },
             select: { section: true, isComplete: true, data: true },
           },
           documents: {
+            where: { uploadedByContributorId: ownerContributorId! },
             select: { slot: true, filename: true },
           },
         },
@@ -428,7 +464,7 @@ export default async function ReviewPage() {
   }
 
   // ── Gap analysis ───────────────────────────────────────────────────────────
-  const gapStatuses = await getSectionGapStatuses(application.id);
+  const gapStatuses = await getSectionGapStatuses(application.id, ownerContributorId);
 
   const allErrorGaps = gapStatuses.flatMap((gs) =>
     gs.gaps.filter((g) => g.severity === "error")

@@ -61,10 +61,25 @@ export interface SectionGapStatus {
 
 // ─── Internal helpers ─────────────────────────────────────────────────────────
 
-/** Returns the set of slot strings that have at least one uploaded document. */
-async function getUploadedSlots(applicationId: string): Promise<Set<string>> {
+/**
+ * Returns the set of slot strings that have at least one uploaded document.
+ *
+ * When `ownerContributorId` is provided the document set is scoped to that
+ * contributor's own uploads (dual-parent, PR 4b): the primary's submit gate
+ * must not count the secondary's documents and vice-versa. When omitted the
+ * legacy behaviour (all of the application's documents) is preserved.
+ */
+async function getUploadedSlots(
+  applicationId: string,
+  ownerContributorId?: string
+): Promise<Set<string>> {
   const rows = await prisma.document.findMany({
-    where: { applicationId },
+    where: {
+      applicationId,
+      ...(ownerContributorId
+        ? { uploadedByContributorId: ownerContributorId }
+        : {}),
+    },
     select: { slot: true },
   });
   return new Set(rows.map((r) => r.slot));
@@ -541,16 +556,28 @@ function computeProgress(
  * Makes 2 DB round-trips:
  *   1. Load all ApplicationSection rows for the application (data + isComplete).
  *   2. Load all Document rows (slot only) to build the uploaded-slots set.
+ *
+ * `ownerContributorId` (dual-parent, PR 4b) scopes BOTH reads to a single
+ * contributor's owned sections + uploaded documents. The PRIMARY's submit gate
+ * (submitApplication) passes the lead applicant's PRIMARY contributor so it
+ * never sees the SECONDARY's duplicate section rows or documents; the secondary
+ * portal passes the SECONDARY contributor. When omitted the function preserves
+ * its original unscoped behaviour (every section / document on the application)
+ * for any caller that has not been migrated.
  */
 export async function getSectionGapStatuses(
-  applicationId: string
+  applicationId: string,
+  ownerContributorId?: string
 ): Promise<SectionGapStatus[]> {
   const [sectionRows, uploadedSlots] = await Promise.all([
     prisma.applicationSection.findMany({
-      where: { applicationId },
+      where: {
+        applicationId,
+        ...(ownerContributorId ? { ownerContributorId } : {}),
+      },
       select: { section: true, data: true, isComplete: true },
     }),
-    getUploadedSlots(applicationId),
+    getUploadedSlots(applicationId, ownerContributorId),
   ]);
 
   // Build quick lookup: SectionType → row

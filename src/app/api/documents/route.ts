@@ -8,17 +8,31 @@
  *
  * Server-side validation → Supabase Storage upload → Prisma Document record.
  * Returns the created Document on success.
+ *
+ * Contributor-aware authorization (dual-parent, PR 4b):
+ *   - The lead applicant (PRIMARY contributor) uploads to the legacy
+ *     `documents/{appId}/{slot}/...` namespace; the document is tagged with
+ *     their PRIMARY contributor id.
+ *   - A SECONDARY contributor uploads to `documents/{appId}/secondary/{slot}/...`
+ *     and the document is tagged with their SECONDARY contributor id, so the
+ *     route handlers (the enforcing layer) can later isolate it from the
+ *     primary. The role is RESOLVED server-side from the session — never trusted
+ *     from the request — and an applicant who is neither contributor is rejected.
  */
 
 import { NextRequest, NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth/roles";
-import { withUserContext, type RlsRole } from "@/lib/db/prisma";
+import { withUserContext, withAdminContext, type RlsRole } from "@/lib/db/prisma";
 import { uploadDocument } from "@/lib/storage/documents";
 import { sniffContentType } from "@/lib/storage/sniff";
+import { ensurePrimaryContributor } from "@/lib/db/queries/contributors";
 import { logError } from "@/lib/log";
+import { ApplicationContributorRole } from "@prisma/client";
 
 const ACCEPTED_MIME = ["application/pdf", "image/jpeg", "image/png"];
 const MAX_SIZE_BYTES = 20 * 1024 * 1024; // 20 MB
+
+const SECONDARY_NAMESPACE = "secondary";
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
   // ── Auth ────────────────────────────────────────────────────────────────────
@@ -86,7 +100,11 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     );
   }
 
-  // ── Ownership check: application must belong to the current user ───────────
+  // ── Authorization: resolve the caller's contributor role on this application ─
+  // The application is fetched (status guard + existence). Whether the caller is
+  // the PRIMARY (lead) or the SECONDARY contributor is resolved server-side from
+  // their contributor row; an applicant who is neither is forbidden. This is the
+  // enforcing layer — the storage RLS namespace is only a backstop.
   const application = await withUserContext(
     user.id,
     user.role as RlsRole,
@@ -103,9 +121,6 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       { status: 404 }
     );
   }
-  if (application.leadApplicantId !== user.id) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
   if (application.status === "SUBMITTED") {
     return NextResponse.json(
       { error: "Cannot upload documents to a submitted application" },
@@ -113,12 +128,51 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     );
   }
 
+  const isLeadApplicant = application.leadApplicantId === user.id;
+
+  // Resolve which contributor the caller owns (PRIMARY for the lead applicant;
+  // SECONDARY for the second parent). Under RLS the caller may SELECT their own
+  // contributor row.
+  const contributor = await withUserContext(
+    user.id,
+    user.role as RlsRole,
+    (tx) =>
+      tx.applicationContributor.findUnique({
+        where: {
+          applicationId_profileId: { applicationId, profileId: user.id },
+        },
+        select: { id: true, role: true },
+      })
+  );
+
+  const isSecondary =
+    contributor?.role === ApplicationContributorRole.SECONDARY;
+
+  if (!isLeadApplicant && !isSecondary) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
+  // Determine the owning contributor id + storage namespace. The contributor
+  // row resolved above (keyed on applicationId+profileId) IS the caller's own
+  // row — their PRIMARY row for the lead applicant, their SECONDARY row for the
+  // second parent.
+  let uploadedByContributorId: string | null = contributor?.id ?? null;
+  if (isLeadApplicant && !uploadedByContributorId) {
+    // Self-heal the (should-be-impossible) missing PRIMARY contributor under
+    // admin context — the applicant cannot upsert the contributor row by policy.
+    uploadedByContributorId = await withAdminContext((tx) =>
+      ensurePrimaryContributor(tx, applicationId, user.id)
+    );
+  }
+
+  const subNamespace = isSecondary ? SECONDARY_NAMESPACE : undefined;
+
   // ── Upload to Supabase Storage ─────────────────────────────────────────────
   const { storagePath, error: storageError } = await uploadDocument(
     file,
     applicationId,
     slot,
-    verifiedContentType
+    { verifiedContentType, subNamespace }
   );
 
   if (storageError || !storagePath) {
@@ -143,6 +197,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
             fileSize: file.size,
             storagePath,
             uploadedBy: user.id,
+            uploadedByContributorId,
           },
           select: {
             id: true,

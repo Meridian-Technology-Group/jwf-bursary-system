@@ -11,10 +11,14 @@
  * shown directing them to contact the Foundation.
  */
 
+import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth/roles";
 import { withAdminContext, withUserContext, type RlsRole } from "@/lib/db/prisma";
 import { getCurrentApplicationForUser, getSectionStatusList } from "@/lib/db/queries/applications";
-import { resolveOwningContributorId } from "@/lib/db/queries/contributors";
+import {
+  getSecondaryContributorContext,
+  resolveOwningContributorId,
+} from "@/lib/db/queries/contributors";
 import { getOrAcceptLatestInvitationForUser } from "@/lib/db/queries/invitations";
 import { StatusBadge, type ApplicationStatus } from "@/components/shared/status-badge";
 import { OnboardingCard } from "@/app/(portal)/onboarding-card";
@@ -37,6 +41,35 @@ const TOTAL_SECTIONS = 10;
 export default async function PortalDashboardPage() {
   const user = await getCurrentUser();
   const firstName = user?.firstName ?? "there";
+
+  // Dual-parent (PR 4b): a SECONDARY contributor is not a lead applicant and
+  // owns no application — they were invited to supply their financials on a
+  // child's application owned by the primary parent. Detect this FIRST and send
+  // them to their restricted /contribute flow so they never see (or attempt)
+  // the full applicant wizard. The lookup runs under their own RLS context; the
+  // secondary may SELECT their own contributor row.
+  //
+  // Guard: only redirect when they are NOT also a lead applicant of their own
+  // application — a person who is primary on one child's application keeps their
+  // primary dashboard (their /contribute flow remains reachable directly).
+  if (user) {
+    const routing = await withUserContext(
+      user.id,
+      user.role as RlsRole,
+      async (tx) => {
+        const ownApp = await tx.application.findFirst({
+          where: { leadApplicantId: user.id },
+          select: { id: true },
+        });
+        if (ownApp) return { redirectToContribute: false };
+        const secondary = await getSecondaryContributorContext(tx, user.id);
+        return { redirectToContribute: secondary !== null };
+      }
+    );
+    if (routing.redirectToContribute) {
+      redirect("/contribute");
+    }
+  }
 
   const { application, completedSections, invitation, inviteRoundYear } = user
     ? await (async () => {

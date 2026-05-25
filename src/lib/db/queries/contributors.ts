@@ -130,3 +130,70 @@ export async function resolveOwningContributorId(
 
   return contributor?.id ?? null;
 }
+
+/**
+ * The application a given profile is the SECONDARY contributor of, resolved
+ * from the session (NOT a client-supplied applicationId).
+ *
+ * A SECONDARY contributor is not a lead applicant and owns no application of
+ * their own; they were invited to supply their financials on a child's
+ * application owned by the PRIMARY parent. This helper finds that single
+ * application + the caller's own SECONDARY contributor id, plus the read-only
+ * child context the secondary is allowed to see (name + school).
+ *
+ * It is the secondary-side analogue of `getOwnedApplicationContext` in
+ * apply/actions.ts and underpins the IDOR-hardening of every /contribute
+ * action: the application is derived from the authenticated profile, never
+ * trusted from the request.
+ *
+ * MUST be called inside a `withUserContext(profileId, "APPLICANT", …)`
+ * transaction. Under RLS the secondary may SELECT their own contributor row
+ * and (via applications_secondary_select) the child-context application row —
+ * both reads are allowed. Returns null if the profile is not a SECONDARY
+ * contributor of any application.
+ */
+export interface SecondaryContributorContext {
+  applicationId: string;
+  contributorId: string;
+  status: ApplicationContributorStatus;
+  childName: string;
+  school: string;
+  /** The round's academic year (e.g. "2026-2027"), for email copy. */
+  roundYear: string | null;
+}
+
+export async function getSecondaryContributorContext(
+  tx: Tx,
+  profileId: string
+): Promise<SecondaryContributorContext | null> {
+  const contributor = await tx.applicationContributor.findFirst({
+    where: {
+      profileId,
+      role: ApplicationContributorRole.SECONDARY,
+    },
+    select: {
+      id: true,
+      status: true,
+      application: {
+        select: {
+          id: true,
+          childName: true,
+          school: true,
+          round: { select: { academicYear: true } },
+        },
+      },
+    },
+    orderBy: { invitedAt: "desc" },
+  });
+
+  if (!contributor) return null;
+
+  return {
+    applicationId: contributor.application.id,
+    contributorId: contributor.id,
+    status: contributor.status,
+    childName: contributor.application.childName,
+    school: contributor.application.school,
+    roundYear: contributor.application.round?.academicYear ?? null,
+  };
+}

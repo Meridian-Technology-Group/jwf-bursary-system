@@ -168,6 +168,7 @@ model ApplicationContributor {
   profile       Profile                      @relation("ContributorProfile", fields: [profileId], references: [id])
   invitedBy     Profile?                     @relation("ContributorInvitedBy", fields: [invitedById], references: [id])
   sections      ApplicationSection[]
+  documents     Document[]
 
   @@unique([applicationId, role])
   @@unique([applicationId, profileId])
@@ -177,21 +178,30 @@ model ApplicationContributor {
 }
 
 /// Metadata for uploaded files. Files stored in Supabase Storage.
+///
+/// `uploadedByContributorId` anchors the document to the contributor (PRIMARY
+/// or SECONDARY) who uploaded it, so the document route handlers can scope
+/// cross-contributor access by a direct equality check rather than re-deriving
+/// the uploader's role at access time (dual-parent feature, PR 4b). Nullable:
+/// a NULL describes a legacy row (pre-PR-4b) and is treated as PRIMARY-owned.
 model Document {
-  id            String      @id @default(uuid()) @db.Uuid
-  applicationId String      @map("application_id") @db.Uuid
-  slot          String
-  filename      String
-  mimeType      String      @map("mime_type")
-  fileSize      Int         @map("file_size")
-  storagePath   String      @map("storage_path")
-  isVerified    Boolean     @default(false) @map("is_verified")
-  uploadedBy    String      @map("uploaded_by") @db.Uuid
-  uploadedAt    DateTime    @default(now()) @map("uploaded_at") @db.Timestamptz(6)
-  application   Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
-  uploader      Profile     @relation(fields: [uploadedBy], references: [id])
+  id                      String                  @id @default(uuid()) @db.Uuid
+  applicationId           String                  @map("application_id") @db.Uuid
+  slot                    String
+  filename                String
+  mimeType                String                  @map("mime_type")
+  fileSize                Int                     @map("file_size")
+  storagePath             String                  @map("storage_path")
+  isVerified              Boolean                 @default(false) @map("is_verified")
+  uploadedBy              String                  @map("uploaded_by") @db.Uuid
+  uploadedByContributorId String?                 @map("uploaded_by_contributor_id") @db.Uuid
+  uploadedAt              DateTime                @default(now()) @map("uploaded_at") @db.Timestamptz(6)
+  application             Application             @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  uploader                Profile                 @relation(fields: [uploadedBy], references: [id])
+  uploadedByContributor   ApplicationContributor? @relation(fields: [uploadedByContributorId], references: [id], onDelete: SetNull)
 
   @@index([applicationId, slot])
+  @@index([uploadedByContributorId])
   @@map("documents")
 }
 
