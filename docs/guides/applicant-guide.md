@@ -8,7 +8,9 @@ A bursary is financial help with school fees, awarded by the John Whitgift Found
 
 Please don't worry if any of this feels daunting. You can complete the form a little at a time, over several sessions, on a phone or a laptop — and the bursary team is there to help if you get stuck. Take it one section at a time.
 
-> 📷 *Screenshot: the portal welcome screen with the John Whitgift Foundation crest and a "Sign in to your account" panel.*
+![The portal sign-in screen with the John Whitgift Foundation crest and a "Sign in to your account" panel.](images/applicant/01-portal-welcome.png)
+
+*The portal welcome screen — the John Whitgift Foundation crest and the "Sign in to your account" panel.*
 
 ---
 
@@ -52,7 +54,7 @@ A few conventions used throughout:
 
 - **Buttons and labels** you'll see on screen are shown in **bold**.
 - The first time a money or tax term appears, it's explained in plain words — and they're all gathered in the [Glossary](#glossary).
-- Lines marked 📷 mark where a screenshot belongs. The team is adding these as the screens settle; the guide reads fully without them.
+- Screenshots show the key screens of the portal. The exact wording on screen may evolve slightly as the system is refined, but the layout matches what you'll see.
 
 ---
 
@@ -119,7 +121,9 @@ The subject line of the invitation will mention "bursary" or "invitation". Open 
 
 You'll be signed in straight away. The first thing you'll see is a short card, **Let's set up your application**, asking you to confirm the **school** your child has been offered a place at and your **child's full name** as it appears on the birth certificate. Confirm both, and you're into the form.
 
-> 📷 *Screenshot: the "Create your account" page showing the read-only email, name fields, and password boxes.*
+![The "Create your account" page with a read-only email, first and last name fields, and password boxes.](images/applicant/02-create-account.png)
+
+*The "Create your account" page — the read-only email at the top, the name fields, and the password boxes.*
 
 Full detail: [Accept your invitation and set up your account](walkthroughs/applicants/01-accept-invitation-and-set-up-account.md).
 
@@ -155,7 +159,9 @@ Tip: add the portal to your home screen for one-tap access (Safari: share icon �
 
 When you sign in, you land on your **dashboard** — your home base. It tells you, at a glance, where you are with your application.
 
-> 📷 *Screenshot: the dashboard showing the "Welcome back" greeting, the application status card with a progress bar, and the "Continue Application" and "View Status" cards.*
+![The applicant dashboard with a "Welcome back" greeting, an application status card with a Draft badge and progress bar, and the Continue Application and View Status cards.](images/applicant/03-dashboard.png)
+
+*The dashboard — the "Welcome back" greeting, the application status card with its **Draft** badge and progress bar, and the **Continue Application** and **View Status** cards. (The section list on the left shows nine sections here because this is a re-assessment, which skips Family Identification.)*
 
 At the top you'll see a friendly **Welcome back** greeting and a line naming your assessment round (for example, *2026/27 Assessment Round*).
 
@@ -239,7 +245,9 @@ Your chance to flag special circumstances and add anything that didn't fit elsew
 
 The final step — a legal declaration you read and agree to. You reach it only after the review page (next) has cleared every issue. You'll tick a box confirming the information is true, and type your full name as a typed **signature** (it must match a parent/guardian name from Section 3). Only one parent needs to sign, but by signing you confirm you're authorised to do so for the household. Full detail: [Section 10 — Declaration](walkthroughs/applicants/15-section-10-declaration.md).
 
-> 📷 *Screenshot: a typical form section showing the sidebar section list, a part-filled set of fields, and the "Save and Continue" button in the bottom bar.*
+![A form section (Details of Child) with the sidebar section list, part-filled fields, an empty Birth Certificate upload slot, and the Save and Continue bar.](images/applicant/04-form-section.png)
+
+*A typical form section — the sidebar section list on the left, a part-filled set of fields (here pre-filled from last year), an empty "Choose file" upload slot, and the **Save and Continue** button in the bottom bar.*
 
 ---
 
@@ -253,7 +261,9 @@ Every required document has its own **slot** with a clear label (such as "Birth 
 
 To upload: click **Choose file**, pick your file, and watch the short progress bar. When it finishes, the slot turns **green** with a tick and shows the filename, the file size, a **View** link (opens the file so you can check it's the right one), and a **Remove** option. Full detail: [Upload a document](walkthroughs/applicants/16-upload-a-document.md).
 
-> 📷 *Screenshot: an empty upload slot (dashed box with "Choose file") beside a completed green slot showing the filename, View, and Remove.*
+![A completed green upload slot showing the filename, file size, upload date, View and Remove buttons.](images/applicant/05-upload-slots.png)
+
+*A completed upload slot — the green tick, the filename, the file size, and **View** / **Remove**. An empty slot appears as a dashed "Choose file" box (visible in the form-section image above).*
 
 ### Slots that take several files (bank statements)
 
@@ -277,7 +287,9 @@ No scanner needed. On your phone, tap **Choose file** on the slot and pick **Tak
 
 When you've worked through the sections, you arrive at the **Review Your Application** page — the last checkpoint before the declaration.
 
-> 📷 *Screenshot: the review page showing the progress bar, the issues panel with "Go fix this" links, and the section cards with status pills.*
+![The Review Your Application page with a progress bar, a status banner, and a card per section showing a Complete or Not started status pill and an Edit button.](images/applicant/06-review-page.png)
+
+*The review page — the progress bar, the status banner, and a card for each section with its status pill (**Complete** / **Not started**) and an **Edit** button. When something required is still missing, an issues panel with "Go fix this" links appears here.*
 
 ### The review page
 
@@ -310,7 +322,9 @@ From this point your application becomes **read-only** — you can view it but n
 
 Once submitted, the portal becomes a way to track your application. Sign in any time and click **View Status** to see exactly where things stand.
 
-> 📷 *Screenshot: the Application Status page showing the reference card, the four-step timeline, and the decision-date notice.*
+![The Application Status page with the reference card, the four-step Draft to Outcome Available timeline, and the decision-date notice.](images/applicant/07-status-page.png)
+
+*The Application Status page — the reference card, the four-step timeline (**Draft → Submitted → Under Review → Outcome Available**), and the decision-date notice.*
 
 ### Checking your status
 
@@ -654,4 +668,4 @@ The full click-by-click guides, grouped as in their [index](walkthroughs/applica
 
 ---
 
-*This guide is a contractual deliverable under MSA Schedule 1 §4 (applicant User guide). Screenshots marked 📷 will be added once the user interface is final. If anything here doesn't match what you see on screen, the bursary team will help — and would be glad to know, so the guide can be kept accurate.*
+*This guide is a contractual deliverable under MSA Schedule 1 §4 (applicant User guide). Screenshots show the portal as at the current release and will be refreshed as the interface evolves. If anything here doesn't match what you see on screen, the bursary team will help — and would be glad to know, so the guide can be kept accurate.*

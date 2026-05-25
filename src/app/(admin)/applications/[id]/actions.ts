@@ -385,6 +385,85 @@ export async function assignApplicationAction(
   }
 }
 
+// ─── bulkAssignApplicationsAction ─────────────────────────────────────────────
+
+/** Hard cap on how many applications a single bulk assign may touch. */
+const BULK_ASSIGN_MAX = 500;
+
+/**
+ * Assigns (or unassigns) MANY applications to a single assessor in one pass.
+ *
+ * Mirrors `assignApplicationAction` but over a list of ids. Each application
+ * gets its own `APPLICATION_ASSESSOR_ASSIGNED` audit row (identical action +
+ * metadata shape to the single action) so the per-application trail is
+ * preserved — there is no aggregate "bulk" audit event by design.
+ *
+ * ADMIN only. Empty input is a no-op success; oversized input is rejected.
+ * Runs every update + audit write inside a single `withUserContext` so RLS
+ * `current_user_id()` / role are set once for the whole batch.
+ */
+export async function bulkAssignApplicationsAction(
+  applicationIds: string[],
+  assessorId: string | null
+): Promise<{ success: boolean; updated: number; error?: string }> {
+  try {
+    const user = await requireRole([Role.ADMIN]);
+
+    // De-dupe and drop falsy ids defensively.
+    const ids = Array.from(new Set(applicationIds.filter(Boolean)));
+
+    if (ids.length === 0) {
+      return { success: true, updated: 0 };
+    }
+    if (ids.length > BULK_ASSIGN_MAX) {
+      return {
+        success: false,
+        updated: 0,
+        error: `Cannot assign more than ${BULK_ASSIGN_MAX} applications at once.`,
+      };
+    }
+
+    const updated = await withUserContext(
+      user.id,
+      user.role as RlsRole,
+      async (tx) => {
+        let count = 0;
+        for (const applicationId of ids) {
+          await tx.application.update({
+            where: { id: applicationId },
+            data: { assignedToId: assessorId },
+          });
+
+          await createAuditLog(tx, {
+            userId: user.id,
+            action: AUDIT_ACTIONS.APPLICATION_ASSESSOR_ASSIGNED,
+            entityType: AUDIT_ENTITY_TYPES.Application,
+            entityId: applicationId,
+            context: assessorId
+              ? `Application assigned to assessor ${assessorId}`
+              : "Application unassigned from assessor",
+            metadata: { assessorId },
+          });
+
+          count += 1;
+        }
+        return count;
+      }
+    );
+
+    revalidatePath("/queue");
+
+    return { success: true, updated };
+  } catch (err) {
+    console.error("[bulkAssignApplicationsAction]", err);
+    return {
+      success: false,
+      updated: 0,
+      error: "Failed to assign applications.",
+    };
+  }
+}
+
 // humaniseSlot is exported from @/lib/documents/slots — imported above.
 
 // ─── gdprDeleteApplicantAction ───────────────────────────────────────────────

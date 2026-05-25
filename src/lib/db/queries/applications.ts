@@ -64,6 +64,12 @@ export interface ListApplicationsFilters {
    */
   ids?: string[];
   /**
+   * Restrict to applications linked to an explicit set of BursaryAccount ids
+   * (re-assessment-eligible drill-in from the queue). An EMPTY array
+   * intentionally returns zero rows, not "all".
+   */
+  bursaryAccountIds?: string[];
+  /**
    * Undecided filter: applications whose status is NOT QUALIFIES /
    * DOES_NOT_QUALIFY. A plain status filter, not a watchlist rule.
    */
@@ -107,6 +113,11 @@ export async function listApplications(
     // An empty array must return zero rows (not "all"), so set the `in`
     // constraint unconditionally — Prisma `{ in: [] }` matches nothing.
     where.id = { in: filters.ids };
+  }
+
+  if (filters.bursaryAccountIds !== undefined) {
+    // Same empty-array semantics as `ids`: an empty set matches nothing.
+    where.bursaryAccountId = { in: filters.bursaryAccountIds };
   }
 
   if (filters.undecided) {

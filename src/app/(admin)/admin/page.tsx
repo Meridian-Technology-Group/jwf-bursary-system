@@ -238,7 +238,7 @@ export default async function AdminDashboardPage() {
           href={`/rounds/${activeRound.id}`}
           className="inline-flex items-center gap-2 rounded-lg bg-primary-900 px-4 py-2 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-primary-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-500 focus-visible:ring-offset-2"
         >
-          Open Cockpit
+          Open round
           <ArrowRight className="h-4 w-4" aria-hidden="true" />
         </Link>
       </div>

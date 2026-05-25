@@ -71,11 +71,18 @@ continuing.
 ---
 
 ### Scene 2 — 🟦 Admin: orientation *(~4 min)*
-**DO:** Walk the left-hand nav. Land on the **Dashboard** (`/admin`); read the
-status tiles. Open the **Queue** (`/queue`) briefly.
+**DO:** Walk the left-hand nav — point out the **Assessment Rounds** group:
+**Applications** (`/queue`), **All Rounds** (`/rounds`), **Current Round**
+(`/rounds/current`). Land on the **Dashboard** (`/admin`); read the status tiles
+and the primary **Open round** button. Open the **Queue** (`/queue`) briefly.
 
 **SAY:**
-- "The dashboard is the at-a-glance health of the current round."
+- "The dashboard is the at-a-glance health of the current round — and **Open
+  round** jumps straight to the live round's **round dashboard**, the
+  operational home we'll see next."
+- "Navigation splits cleanly: **Applications** is the queue, **All Rounds** is
+  the season ledger of every cycle, **Current Round** is a one-click shortcut to
+  the active one."
 - On the queue: "**Names are hidden by default** — reference, school, status.
   There's a **Show Names** toggle and every reveal is **audit-logged**. Data
   minimisation is baked in." *(Toggle once; we revisit the audit trail at the end.)*
@@ -99,12 +106,32 @@ status tiles. Open the **Queue** (`/queue`) briefly.
 
 ---
 
-### Scene 4 — 🟦 Admin: create & open a round *(~3 min)*
-**DO:** **Rounds** (`/rounds`) → **Create** (academic year e.g. "2026/27",
-open/close dates, decision target) → starts **DRAFT** → **Open** it.
+### Scene 4 — 🟦 Admin: create & open a round, meet the round dashboard *(~4 min)*
+**DO:**
+- **All Rounds** (`/rounds`) → **Create** (academic year e.g. "2026/27",
+  open/close dates, decision target) → starts **DRAFT** → **Open** it.
+- Back on **All Rounds**, point at the **Season Ledger**: the **OPEN round hero
+  card** (lifecycle strip + headline numbers + **Open round** button), any
+  **DRAFT** prompts, and the compact list of past **CLOSED** rounds.
+- Click **Open round** to land on the **round dashboard** (`/rounds/[id]`). Walk
+  the **lifecycle stage strip** (Setup → Invitations Sent → Submissions Open →
+  Assessment → Decision → Export → Closed), the **Needs Attention** watchlist,
+  the **pipeline tiles** (Invited / Submitted / In Assessment / Decided), **Time
+  & Progress**, **Outcomes**, and per-school **Export readiness**.
 
-**SAY:** "Everything hangs off a **round**. Only **one is open at a time** — the
-system enforces that. Opening it is what lets applicants register."
+**SAY:**
+- "Everything hangs off a **round**. Only **one is open at a time** — the system
+  enforces that. Opening it is what lets applicants register."
+- "**All Rounds** is a **season ledger** — the open round front and centre, past
+  rounds tucked into a tidy history."
+- "The **round dashboard** is mission control for a live round: where every
+  application sits, a ranked **Needs Attention** list of what's overdue, and how
+  many decisions a day are needed to close on time. Click any tile to drop into
+  the queue **already filtered**."
+
+**Signpost:** On a brand-new round most tiles read zero and the watchlist is
+empty — that's expected; it fills up as the demo (and Scene 15's seeded data)
+adds applications.
 
 ---
 
@@ -289,15 +316,23 @@ export the recommendation list as **XLSX/CSV**; open it.
 
 ### Scene 15 — 🟦 Admin: breadth at scale (lean on seeded data) *(~6 min, partly skippable)*
 **DO:** Use the **existing seeded caseload** so it looks real:
-- **Queue** filtered/sorted across multiple applications and schools.
+- **Round dashboard** (`/rounds/[id]`): show the **Needs Attention** watchlist
+  populated against the seeded round — aged invitations, missing docs,
+  assessments stalled, recommendations awaiting an outcome — and click a row to
+  drop into the **pre-filtered queue** (note the "Showing: … · Clear filters"
+  banner).
+- **Queue** filtered/sorted across multiple applications and schools. Show
+  **multi-select** (row checkboxes + select-all) and the **bulk-action toolbar**
+  — **Assign assessor** across several cases at once.
 - **Sibling linking:** open a multi-child family → **Link Siblings** → show the
   household assessed as one unit and fees cascading across siblings.
 - **Reports** (`/reports`): Award Distribution, School Comparison, Income Bands,
   Property Categories, Reason Codes, Final-Year Bursaries, Sibling Summary.
 
-**SAY:** "A real round is 100–200 applications across two schools. Here it is at
-scale — filterable queue, **sibling-aware** assessment, live **reporting** for
-the Foundation and trustees."
+**SAY:** "A real round is 100–200 applications across two schools. The **round
+dashboard's watchlist** keeps the team pointed at what's overdue, the queue's
+**bulk actions** assign work in one move, and assessment stays **sibling-aware**
+— with live **reporting** for the Foundation and trustees."
 
 ---
 
@@ -315,11 +350,27 @@ guard) rather than running it. Mention **Reset MFA** on the Users page.
 
 ---
 
-### Scene 17 — Re-assessment story *(~2 min, talk-only)*
-**SAY:** "Next year, the Foundation re-invites bursary holders in **one batch**.
-Details pre-fill, the ID section is skipped, finances are re-entered. The
-assessor sees **last year's figures side-by-side** and a **benchmark** so awards
-stay consistent — the year-on-year continuity the old grant tool couldn't do."
+### Scene 17 — 🟦 Re-assessment story *(~3 min)*
+**DO:** *(needs the open round + seeded bursary holders; otherwise run talk-only.)*
+- **Queue** (`/queue`) → turn on the **Re-assessment eligible** filter — active
+  holders not yet invited to the open round.
+- **Select** a few holders with the row checkboxes (or **select-all**) → in the
+  **bulk-action toolbar**, click **Send re-assessment invite**.
+- Show the **confirmation**: the **number selected** and the **target (open)
+  round** → confirm → point at the **invited / skipped / failed** summary.
+
+**SAY:**
+- "Re-assessment is **selective, not all-or-nothing**. The Foundation chooses
+  exactly which holders to re-invite from the queue — filter to the eligible
+  ones, tick the families you want, send in one action. Ineligible picks are
+  skipped automatically and you get a clean invited/skipped/failed summary."
+- "From there it's the familiar flow: details pre-fill, the ID section is
+  skipped, finances are re-entered. The assessor then sees **last year's figures
+  side-by-side** and a **benchmark** so awards stay consistent — the
+  year-on-year continuity the old grant tool couldn't do."
+
+**Signpost:** No seeded holders to re-invite? Run this talk-only and just *show*
+the **Re-assessment eligible** filter on the queue.
 *(If a multi-year account is seeded, show the History tab.)*
 
 ---

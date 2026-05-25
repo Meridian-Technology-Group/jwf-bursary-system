@@ -14,6 +14,10 @@ import {
   type ListApplicationsFilters,
 } from "@/lib/db/queries/applications";
 import { getRoundWatchlist } from "@/lib/db/queries/round-watchlist";
+import { getActiveRound } from "@/lib/db/queries/reports";
+import { getActiveBursaryHolders } from "@/lib/db/queries/invitations";
+import { RoundStatus } from "@prisma/client";
+import { listAssessors } from "@/lib/db/queries/profiles";
 import type { WatchlistRuleId } from "@/lib/db/queries/round-watchlist";
 import { ApplicationTable } from "@/components/admin/application-table";
 import { InternalRequestDialog } from "@/components/admin/internal-request-dialog";
@@ -77,6 +81,11 @@ export default async function QueuePage({
   const status = parseStatus(params.status);
   const school = parseSchool(params.school);
   const undecided = isTruthyFlag(params.undecided);
+  // Re-assessment-eligible drill-in: ADMIN-only. Shows the prior-round winning
+  // applications linked to bursary holders who are eligible to be invited into
+  // the open round (cross-round is intended).
+  const reassessEligible =
+    profile.role === Role.ADMIN && isTruthyFlag(params.reassessEligible);
 
   // Derived, round-scoped flags (resolved against the stage-B watchlist).
   const activeDerivedFlags = Object.keys(DERIVED_RULE_BY_FLAG).filter((flag) =>
@@ -91,10 +100,26 @@ export default async function QueuePage({
   if (school) applicationFilters.school = school;
   if (undecided) applicationFilters.undecided = true;
 
-  const { applications, rounds } = await withUserContext(
+  const { applications, rounds, assessors, reassessRoundYear } =
+    await withUserContext(
     profile.id,
     profile.role as RlsRole,
     async (tx) => {
+      // Re-assessment-eligible filter: resolve the OPEN round, then scope the
+      // queue to the applications linked to its eligible bursary holders. No
+      // open round → show nothing (empty bursaryAccountIds set).
+      let reassessRoundYear: string | null = null;
+      if (reassessEligible) {
+        const round = await getActiveRound(tx);
+        if (round && round.status === RoundStatus.OPEN) {
+          reassessRoundYear = round.academicYear;
+          const holders = await getActiveBursaryHolders(tx, round.id);
+          applicationFilters.bursaryAccountIds = holders.map((h) => h.id);
+        } else {
+          applicationFilters.bursaryAccountIds = [];
+        }
+      }
+
       // Resolve derived flags against the watchlist so the queue shows EXACTLY
       // the applications the lane counted. Only meaningful when a round is
       // scoped (the watchlist is per-round).
@@ -117,11 +142,13 @@ export default async function QueuePage({
         applicationFilters.ids = [];
       }
 
-      const [applications, rounds] = await Promise.all([
+      // Assessor list only needed for the ADMIN bulk-assign dropdown.
+      const [applications, rounds, assessors] = await Promise.all([
         listApplications(tx, applicationFilters),
         listRounds(tx),
+        profile.role === Role.ADMIN ? listAssessors(tx) : Promise.resolve([]),
       ]);
-      return { applications, rounds };
+      return { applications, rounds, assessors, reassessRoundYear };
     }
   );
 
@@ -131,14 +158,25 @@ export default async function QueuePage({
   const initialStatuses = status ? [status] : undefined;
 
   // Plain-English descriptor of the active filter for the dismissible banner.
-  const activeFilter = describeActiveFilter({
-    roundId,
-    status,
-    school,
-    undecided,
-    activeDerivedFlags,
-    rounds,
-  });
+  // The re-assessment-eligible drill-in owns the banner when active (it is the
+  // dominant, cross-round descriptor).
+  const activeFilter = reassessEligible
+    ? {
+        label:
+          "Re-assessment eligible" +
+          (reassessRoundYear
+            ? ` · → ${reassessRoundYear}`
+            : " · no open round"),
+        clearHref: "/queue",
+      }
+    : describeActiveFilter({
+        roundId,
+        status,
+        school,
+        undecided,
+        activeDerivedFlags,
+        rounds,
+      });
 
   return (
     <div className="space-y-6">
@@ -159,10 +197,14 @@ export default async function QueuePage({
       <ApplicationTable
         applications={applications}
         rounds={rounds}
+        assessors={assessors}
+        userRole={profile.role}
         initialRound={initialRound}
         initialSchool={initialSchool}
         initialStatuses={initialStatuses}
         activeFilter={activeFilter}
+        reassessEligibleActive={reassessEligible}
+        reassessTargetRound={reassessRoundYear}
       />
     </div>
   );

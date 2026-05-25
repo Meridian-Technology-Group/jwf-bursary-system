@@ -2,7 +2,12 @@
 
 /**
  * Client wrapper for round detail page action buttons.
- * Houses the CloseRoundDialog + BatchInviteDialog state.
+ * Houses the CloseRoundDialog + OpenRoundDialog state.
+ *
+ * Re-assessment invites are no longer initiated from here — they live in the
+ * `/queue` bulk-action system (select the eligible holders' applications, then
+ * "Send re-assessment invite"). Use the "Re-assessment eligible" queue filter
+ * to find the candidates.
  */
 
 import { useState } from "react";
@@ -11,24 +16,20 @@ import { BarChart3, Download } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { CloseRoundDialog } from "./close-round-dialog";
 import { OpenRoundDialog } from "./open-round-dialog";
-import { BatchInviteDialog } from "./batch-invite-dialog";
 
 interface RoundDetailActionsProps {
   roundId: string;
   academicYear: string;
   status: "DRAFT" | "OPEN" | "CLOSED";
-  activeBursaryHolderCount: number;
 }
 
 export function RoundDetailActions({
   roundId,
   academicYear,
   status,
-  activeBursaryHolderCount,
 }: RoundDetailActionsProps) {
   const [closeDialogOpen, setCloseDialogOpen] = useState(false);
   const [openDialogOpen, setOpenDialogOpen] = useState(false);
-  const [batchDialogOpen, setBatchDialogOpen] = useState(false);
 
   // ── Closed rounds are archived: read-only actions only. No inviting/closing;
   //    just navigate to the report and the export archive. ──────────────────────
@@ -72,17 +73,6 @@ export function RoundDetailActions({
         </Button>
       )}
 
-      {/* Batch re-assessment only when round is OPEN and there are holders */}
-      {status === "OPEN" && (
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => setBatchDialogOpen(true)}
-        >
-          Batch Re-assessment Invite
-        </Button>
-      )}
-
       {/* Close round */}
       {status === "OPEN" && (
         <Button
@@ -107,14 +97,6 @@ export function RoundDetailActions({
         academicYear={academicYear}
         open={openDialogOpen}
         onOpenChange={setOpenDialogOpen}
-      />
-
-      <BatchInviteDialog
-        roundId={roundId}
-        academicYear={academicYear}
-        holderCount={activeBursaryHolderCount}
-        open={batchDialogOpen}
-        onOpenChange={setBatchDialogOpen}
       />
     </div>
   );

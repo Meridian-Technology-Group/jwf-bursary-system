@@ -57,8 +57,9 @@ Two reading paths:
 Throughout, links like [Triage the queue](walkthroughs/assessors/01-triage-the-queue.md)
 take you to the detailed walkthrough for that task.
 
-> 📷 *Screenshot: the signed-in admin console home, showing the sidebar and the
-> round dashboard tiles.*
+![The signed-in admin console home with the left sidebar and the round dashboard status tiles.](images/admin/01-admin-console-home.png)
+
+*The signed-in admin console home — the left sidebar and the round dashboard status tiles, with the **Open round** button top-right.*
 
 ---
 
@@ -119,8 +120,9 @@ walkthrough.
 3. Invite the families:
    - First-time applicants — single invite (Admin) or the assessor's
      **Internal Request** flow — [Invite one applicant](walkthroughs/assessors/03-invite-applicant-new-bursary.md), [Invite for an internal / ad-hoc bursary](walkthroughs/assessors/04-invite-internal-ad-hoc-bursary.md).
-   - Existing bursary holders — batch re-assessment invitations from the round
-     detail page — [Batch re-assessment invitations](walkthroughs/admins/11-batch-reassessment-invitations.md).
+   - Existing bursary holders — selective re-assessment invitations from the
+     queue: filter to **Re-assessment eligible**, select the holders, and use the
+     **Send re-assessment invite** bulk action — [Selective re-assessment invitations](walkthroughs/admins/11-batch-reassessment-invitations.md).
 
 Once a family accepts and submits, the application appears in the queue and the
 assessor takes over with fast-path A.
@@ -135,7 +137,9 @@ Open the application URL and sign in with your work email and password. Staff
 accounts are created by invitation only (see [Invite a staff member](walkthroughs/admins/10-invite-a-staff-member.md));
 there is no self sign-up for staff.
 
-> 📷 *Screenshot: the staff login page.*
+![The staff sign-in page with the Foundation crest, email and password fields, and a Sign in button.](images/admin/02-staff-login.png)
+
+*The staff login page.*
 
 ### Multi-factor authentication (MFA) — live and enforced
 
@@ -197,13 +201,24 @@ and, for the operational detail, the runbook under [`docs/operations/`](../opera
 ### The admin console layout
 
 After signing in you land in the admin console. A **left sidebar** groups the
-main areas: **Applications** (the queue), **Rounds**, **Invitations**,
-**Exports**, **Reports**, **Audit**, **Settings** and **Users**. Some entries
-(Rounds, Settings, Users, Audit) are Admin-facing; assessors and viewers see the
-case-work entries. A live **dashboard** at `/admin` shows status tiles across
-all rounds.
+main areas. The **Assessment Rounds** group holds three entries:
 
-> 📷 *Screenshot: the sidebar with the grouped navigation sections.*
+- **Applications** (`/queue`) — the queue of everything you can assess.
+- **All Rounds** (`/rounds`) — the season ledger of every round (see [Admin:
+  round lifecycle](#admin-round-lifecycle)).
+- **Current Round** (`/rounds/current`) — a shortcut that jumps straight to the
+  active (OPEN) round's **round dashboard**.
+
+Other groups hold **Invitations**, **Exports**, **Reports**, **Audit**,
+**Settings** and **Users**. Some entries (All Rounds / Current Round, Settings,
+Users, Audit) are Admin-facing; assessors and viewers see the case-work entries.
+A live **dashboard** at `/admin` shows status tiles across all rounds, and
+carries a primary **Open round** button that takes you straight to the active
+round's dashboard.
+
+![The admin sidebar showing the Assessment Rounds group with Applications, All Rounds and Current Round entries.](images/admin/04-sidebar-assessment-rounds.png)
+
+*The sidebar with the **Assessment Rounds** group — Applications · All Rounds · Current Round. (The dashboard's **Open round** button is shown in the console-home image above.)*
 
 ### The application queue
 
@@ -219,19 +234,52 @@ Filter with the bar at the top:
 - **Status** — a multi-select popover (*Pre-Submission*, *Submitted*, *Not
   Started*, *Paused*, *Completed*, *Qualifies*, *Does Not Qualify*); the badge
   shows how many are applied, **Clear filters** wipes them.
+- **Re-assessment eligible** *(Admin)* — surfaces active bursary holders who
+  have **not yet been invited** to the open round. Use it to pick exactly who to
+  re-invite (see [Re-assessment (year 2 and beyond)](#re-assessment-year-2-and-beyond)).
 - **Search reference…** — free-text on the reference (and on names when revealed).
 
 Sort by clicking any column header (**Reference**, **School**, **Submitted**,
 **Status**, **Entry Year**). The bottom line reads `Showing N of M applications`.
 See [Triage the queue](walkthroughs/assessors/01-triage-the-queue.md).
 
+### Drilling in from the round dashboard
+
+When you click a pipeline tile or a **Needs Attention** row on the [round
+dashboard](#the-round-dashboard), the queue opens **pre-filtered** — by round,
+status, missing-docs, and so on. A **"Showing: … · Clear filters"** banner names
+the active filter so you always know which slice you are looking at; **Clear
+filters** returns you to the full queue.
+
+### Multi-select and bulk actions (Admin only)
+
+Each row carries a checkbox, and a **select-all** checkbox sits in the header.
+Selecting one or more applications reveals a **bulk-action toolbar** with two
+Admin actions:
+
+- **Assign assessor** — assign the selected applications to an assessor in one
+  step (the toolbar also offers **Unassign**).
+- **Send re-assessment invite** — invite the selected active bursary holders to
+  the open round (see [Re-assessment (year 2 and beyond)](#re-assessment-year-2-and-beyond)).
+
+Assessors and viewers do not see the bulk-action toolbar.
+
+![The application queue with two row checkboxes ticked and the bulk-action toolbar showing "2 selected", Assign assessor and Send re-assessment invite.](images/admin/05-queue-bulk-actions.png)
+
+*The queue with row checkboxes ticked and the bulk-action toolbar — **Assign assessor** and **Send re-assessment invite**.*
+
 ### The four-tab application detail view
 
 Click a row (or **Open**) to land on `/applications/[id]`. The header card shows
 the reference (e.g. `JW-2026-0042`), the school badge, the round and entry year,
 the current status badge, and — for re-assessments — an orange **Re-assessment**
-pill. An **Actions** bar beneath surfaces the next step for the current status
-(e.g. **Begin Review**, **Resume Review**, **Set Qualifies**).
+pill. Beneath it, two cards separate the everyday from the occasional:
+
+- A prominent **Actions** card surfaces the next step for the current status
+  (e.g. **Begin Review**, **Resume Review**, **Set Qualifies** / **Set Does Not
+  Qualify**).
+- A quieter, consolidated **Manage** card holds the rare actions — **Add second
+  parent** and **Delete Applicant Data (GDPR)**.
 
 The tab strip moves you between:
 
@@ -244,7 +292,9 @@ The tab strip moves you between:
 
 See [Open an application](walkthroughs/assessors/02-open-an-application.md).
 
-> 📷 *Screenshot: the application header card and the four-tab strip.*
+![The application detail header card with reference, school and status badges, above the Applicant Data / Assessment / Recommendation / History tab strip.](images/admin/06-application-header-tabs.png)
+
+*The application header card (reference, school badge, round and status) and the four-tab strip, with the consolidated **Manage** card beneath.*
 
 ### Name masking and "Show names" — a recurring principle
 
@@ -262,8 +312,9 @@ This is by design: revealing a name is a deliberate, accountable act, not the
 default state. Only reveal names when you need them, and expect every reveal to
 be reviewable by an admin in the [audit log](walkthroughs/admins/13-audit-log-review.md).
 
-> 📷 *Screenshot: the queue with names hidden, and the amber "Names visible —
-> audit logged" pill after toggling Show names.*
+![The application queue with applicant names hidden — only reference numbers shown — and the Show names toggle in the filter bar.](images/admin/07-queue-names-hidden.png)
+
+*The queue with names hidden — only reference numbers are shown. Toggling **Show names** (top-right of the filter bar) reveals the names and surfaces an amber "Names visible — audit logged" pill, writing a `REVEAL` entry to the audit log.*
 
 ---
 
@@ -302,14 +353,18 @@ Use this flow when the standard Y6 → Y7 / Y9 / Y12 mapping is not the right fi
 — here the entry year is freely editable. You never enter the family's financial
 data on their behalf. See [Invite for an internal / ad-hoc bursary](walkthroughs/assessors/04-invite-internal-ad-hoc-bursary.md).
 
-### Batch re-assessment invitations (Admin only)
+### Re-assessment invitations — selective, from the queue (Admin only)
 
-At the start of a new round, invite every active bursary holder in one action:
-open the **Rounds** list, click the **OPEN** round's academic year to reach its
-detail page, then **Send Invitations**. The dialog lists who will be invited
-(email, child, school); accounts that already have a pending or accepted
-invitation for this round are skipped, so the batch is safe to re-run. See
-[Batch re-assessment invitations](walkthroughs/admins/11-batch-reassessment-invitations.md).
+At the start of a new round you re-invite existing bursary holders, but you
+choose **who** rather than inviting everyone at once. Go to **Applications**
+(`/queue`), turn on the **Re-assessment eligible** filter (active holders not yet
+invited to the open round), **select** the specific holders with the row
+checkboxes or **select-all**, and click **Send re-assessment invite** in the
+bulk-action toolbar. A confirmation shows the **number selected** and the target
+**(open) round**; any ineligible selections are skipped, and you get an
+**invited / skipped / failed** summary. See the full walkthrough in
+[Re-assessment (year 2 and beyond)](#re-assessment-year-2-and-beyond) and
+[Selective re-assessment invitations](walkthroughs/admins/11-batch-reassessment-invitations.md).
 
 ### Re-sending or revoking an invitation (Admin only)
 
@@ -422,8 +477,9 @@ In the **Documents (n)** card, each row shows the **slot name** (e.g.
 If a slot holds the wrong file, do **not** verify it — request a re-upload or
 upload the correct file yourself. See [Verify uploaded documents](walkthroughs/assessors/06-verify-uploaded-documents.md).
 
-> 📷 *Screenshot: the Documents card with verified (green tick) and unverified
-> (grey) rows, and the inline document viewer open.*
+![The Documents card listing five slots, the first verified with a green tick and the rest unverified, each with a View button.](images/admin/08-documents-card.png)
+
+*The Documents card — a verified row (green tick) and unverified (grey) rows, each with a **View** button that opens the file inline.*
 
 ### Uploading a document on behalf of an applicant
 
@@ -498,8 +554,9 @@ note tabs (*Bursary*, *Living Conditions*, *Debt*, *Other Fees*, *Staff*,
 *Financial Profile*) for narrative observations. See [Set up the assessment
 workspace](walkthroughs/assessors/09-set-up-assessment-workspace.md).
 
-> 📷 *Screenshot: the split-screen assessment workspace — document viewer left,
-> Stage 1 income form right, calculation sidebar far right.*
+![The split-screen assessment workspace — document viewer on the left, the assessment form in the centre, and the live calculation sidebar on the right.](images/admin/09-assessment-workspace.png)
+
+*The split-screen assessment workspace — the document viewer on the left, the assessment form in the centre (Section A shown), and the live calculation sidebar on the right.*
 
 ### Stage 1 — Income
 
@@ -602,8 +659,9 @@ sibling-linked applications a **Sibling payable fees absorbed** line appears —
 the older siblings' fees deducted before the bursary is worked out. See [Stage 4
 — Bursary impact](walkthroughs/assessors/13-stage-4-bursary-impact.md).
 
-> 📷 *Screenshot: the calculation sidebar showing all four stages and the bold
-> Yearly / Monthly Payable Fees lines.*
+![The live calculation sidebar listing Stage 1 income, Stage 2 assets, Stage 3 HNDI, Stage 4 required bursary, and the payable-fees breakdown.](images/admin/10-calculation-sidebar.png)
+
+*The calculation sidebar — all four stages and the bold **Yearly** / **Monthly Payable** fees lines, updating live as figures are entered.*
 
 ### Manual adjustment
 
@@ -726,8 +784,9 @@ dialog. This:
 This action cannot be undone in the app — a wrong outcome requires admin
 intervention via the audit trail. See [Complete the assessment](walkthroughs/assessors/22-complete-the-assessment.md).
 
-> 📷 *Screenshot: the Set Application Outcome card with the Qualifies / Does Not
-> Qualify buttons and the confirmation dialog.*
+![The Set Application Outcome card with Qualifies and Does Not Qualify buttons, and the "Confirm: Qualifies" dialog warning that an outcome email will be sent.](images/admin/11-set-outcome-dialog.png)
+
+*The **Set Application Outcome** card with the **Qualifies** / **Does Not Qualify** buttons, and the confirmation dialog that fires the outcome email once confirmed.*
 
 ---
 
@@ -756,8 +815,9 @@ schools.
 
 The underlying business rules are in PRD [06 — Sibling linking](../product/prd/06-sibling-linking.md).
 
-> 📷 *Screenshot: the Linked Siblings card with priority badges and the up/down
-> reorder arrows.*
+![The Linked Siblings card showing two linked children with priority badges 1 and 2, up/down reorder arrows, and Unlink buttons.](images/admin/12-linked-siblings.png)
+
+*The **Linked Siblings** card — each child with a priority badge (1, 2, …), up/down reorder arrows, and an **Unlink** action.*
 
 ---
 
@@ -768,10 +828,20 @@ A re-assessment is a fresh application for the same bursary account, with ID
 documents skipped (checked only in year 1) and address / child details carried
 forward.
 
+- **Inviting holders (Admin, selective)** — re-assessment is no longer an
+  all-or-nothing batch. Instead, **pick** who to re-invite from the queue: open
+  **Applications** (`/queue`), turn on the **Re-assessment eligible** filter
+  (active holders not yet invited to the open round), tick the holders you want
+  (per-row checkboxes or **select-all**), and use the **Send re-assessment
+  invite** bulk action. The confirmation shows the **number selected** and the
+  **target (open) round**; ineligible selections are skipped, and you get an
+  **invited / skipped / failed** summary so you know exactly what went out.
+  There is **no round-detail "batch invite" button** — selection always happens
+  in the queue. See [Selective re-assessment invitations](walkthroughs/admins/11-batch-reassessment-invitations.md).
 - **Opening a re-assessment** — re-assessment applications carry the orange
-  **Re-assessment** pill in the queue and header. They reach you via the
-  admin's [batch re-assessment invitation](walkthroughs/admins/11-batch-reassessment-invitations.md).
-  On the **Assessment** tab, before the workspace, two extra panels appear: the
+  **Re-assessment** pill in the queue and header. Once a holder accepts and
+  submits, the case reaches you in the queue like any other. On the
+  **Assessment** tab, before the workspace, two extra panels appear: the
   **First year benchmark** banner and the **Year-on-Year Comparison** table
   (previous year's figures against this year, with trend arrows). See [Open a
   re-assessment](walkthroughs/assessors/26-open-a-reassessment.md).
@@ -814,8 +884,11 @@ downloading so the figures are current. Use this for a single case. See
 
 For a whole round, use **Exports** (`/exports`). Choose the **Assessment Round**
 (required), an optional **School Filter**, and the **File Format** (XLSX default
-or CSV), then **Download**. Only applications with a *completed recommendation*
-are included — one row each. Columns are:
+or CSV), then **Download**. **Admins, assessors and viewers** can all run this
+export. Each export is **recorded**, so the [round dashboard](#the-round-dashboard)'s
+per-school **Export readiness** reflects what has already been pulled (decided
+counts and the last-exported date). Only applications with a *completed
+recommendation* are included — one row each. Columns are:
 
 | Group | Columns |
 |-------|---------|
@@ -838,7 +911,11 @@ before sending externally if your team's policy requires it. The recommendation
 
 The **Reports** page (`/reports`) shows aggregate statistics per round. Pick a
 round in the top-right round selector; the URL updates with the round id. A live
-status-tile dashboard also exists at `/admin`.
+status-tile dashboard also exists at `/admin`, and its primary **Open round**
+button jumps straight to the active round's [round dashboard](#the-round-dashboard)
+— the day-to-day operational home for a live round, where the per-round
+pipeline, watchlist and export readiness live (reports remain the
+cross-round, trustee-facing analytics).
 
 The report sections available today (seven, picked from the tab strip):
 
@@ -860,8 +937,9 @@ The reporting requirements are in PRD [09 — Reporting and export](../product/p
 > filters and the `/admin` status tiles give you the same totals. Tracked in
 > [`docs/backlog/round-summary-report-section.md`](../backlog/round-summary-report-section.md).
 
-> 📷 *Screenshot: the Reports page with the round selector and the Award
-> Distribution and Property Categories charts.*
+![The Reports page with a round selector, a section tab strip, and the Award Distribution, School Comparison, Income Bands and Property Categories sections.](images/admin/14-reports.png)
+
+*The Reports page — the round selector and section tabs, with the **Award Distribution** and **Property Categories** charts among the sections.*
 
 ---
 
@@ -876,25 +954,83 @@ through three states.
 | **OPEN** | Live; the active round | Yes |
 | **CLOSED** | Past its window | No (but in-flight applications can still be assessed) |
 
-1. **Create** — **Rounds** → **Create Round**. Set the **Academic Year** (e.g.
-   `2026/27`), **Open Date**, **Close Date** (after open), and optional
-   **Decision Date** (after close). The round starts in **DRAFT**. See [Create a
-   new round](walkthroughs/admins/01-create-new-assessment-round.md).
-2. **Open** — in the DRAFT row's Actions, click **Open Round** and confirm.
+1. **Create** — **All Rounds** (`/rounds`) → **Create Round**. Set the
+   **Academic Year** (e.g. `2026/27`), **Open Date**, **Close Date** (after
+   open), and optional **Decision Date** (after close). The round starts in
+   **DRAFT**. See [Create a new round](walkthroughs/admins/01-create-new-assessment-round.md).
+2. **Open** — in the DRAFT round's Actions, click **Open Round** and confirm.
    **Only one round can be OPEN at a time** — the system blocks opening a second.
    Applicants can now register against it. See [Open a round](walkthroughs/admins/02-open-a-round.md).
-3. **Close** — in the OPEN row's Actions, click **Close Round** and confirm. No
+3. **Close** — in the OPEN round's Actions, click **Close Round** and confirm. No
    new applications can be submitted, but existing ones remain fully assessable.
    See [Close a round](walkthroughs/admins/03-close-a-round.md).
-4. **Historical rounds** — every prior round stays visible in the **Rounds**
-   list for reporting and re-assessment comparison. Click an academic year for
-   the round detail page: status, the three key dates, summary cards (total,
-   submitted, in progress, completed, qualifies, does not qualify) and a
-   per-school breakdown. See [View historical rounds](walkthroughs/admins/04-view-historical-rounds.md).
+4. **Historical rounds** — every prior round stays visible for reporting and
+   re-assessment comparison; closed rounds open their round dashboard read-only
+   (see below). See [View historical rounds](walkthroughs/admins/04-view-historical-rounds.md).
 
 The round-management requirements are in PRD [04 — Admin round management](../product/prd/04-admin-round-management.md).
 
-> 📷 *Screenshot: the Rounds list showing DRAFT, OPEN and CLOSED status badges.*
+### The Season Ledger (`/rounds`)
+
+**All Rounds** is a **season ledger**, not a flat table. It leads with a
+prominent **hero card for the OPEN round** — a lifecycle strip plus the headline
+pipeline and outcome numbers, and an **Open round** button into the round
+dashboard. Beneath it, any **DRAFT** rounds appear as prompts to open them, and
+**CLOSED** rounds form a compact, reverse-chronological list you can click into
+for their (read-only) dashboard and reports.
+
+![The Season Ledger with an OPEN round hero card showing the lifecycle strip and pipeline numbers, above a compact list of past CLOSED rounds.](images/admin/15-season-ledger.png)
+
+*The Season Ledger — the OPEN round hero card (lifecycle strip, pipeline and outcome numbers) above the compact, reverse-chronological list of CLOSED rounds. A DRAFT round, when one exists, appears here as a prompt to open it.*
+
+### The round dashboard
+
+Clicking a round (or **Current Round** / **Open round**) opens the **round
+dashboard** at `/rounds/[id]` — a rich, single-screen view of where the round
+stands. It replaces the old summary-card-and-school-table page with:
+
+- **Lifecycle stage strip** — Setup → Invitations Sent → Submissions Open →
+  Assessment → Decision → Export → Closed. Each node reads **not-started**,
+  **in-progress**, **complete** or **needs-attention**, so you can see at a
+  glance which phase the round is in.
+- **Needs Attention watchlist** — see [the next subsection](#the-needs-attention-watchlist).
+- **Pipeline tiles** — **Invited / Submitted / In Assessment / Decided**. Click
+  any tile to open the queue **pre-filtered** to that slice (shown via the
+  "Showing: … · Clear filters" banner).
+- **Time & Progress** — day **N of M**, **days to close**, and the
+  **decisions/day** rate required to clear the remaining backlog by the close
+  date.
+- **Outcomes** — the **qualify / does-not-qualify** split, with a year-on-year
+  delta against the prior round (e.g. *"▲ +12pp vs 2025/26"*).
+- **Export readiness (per school)** — decided counts, the **last-exported**
+  date, and a per-school **Export** button (recorded, so this stays current —
+  see [Recommendation list export](#recommendation-list-export-csv--xlsx)).
+- **Activity feed** — recent events on the round.
+
+For a **CLOSED** round the dashboard renders **read-only**: a *"Round closed"*
+banner appears, and the actions become **View report** / **Export archive**.
+
+![The round dashboard with a lifecycle stage strip across the top, a Needs Attention watchlist, pipeline tiles, time and outcome panels, and per-school export readiness.](images/admin/16-round-dashboard.png)
+
+*The round dashboard — the lifecycle stage strip across the top, the **Needs Attention** watchlist, the pipeline tiles, and the per-school **Export readiness** panel.*
+
+#### The Needs Attention watchlist
+
+The watchlist is a **ranked** list of the things in this round that need a
+human. Each row links straight to the relevant **pre-filtered** queue or record.
+It surfaces:
+
+- **Aged invitations** still unaccepted after **14 days**.
+- **Re-assessment invites expiring** in under **48 hours**.
+- **Submitted applications missing required documents**.
+- **Assessments paused** for more than **7 days**.
+- **Assessments stalled** — no activity for more than **5 days**.
+- **Recommendations awaiting an outcome** for more than **3 days**.
+- **A school with decided recommendations not yet exported**.
+- **Close date approaching** with more than **10 undecided** applications.
+
+Work the watchlist top-down and the round stays healthy; an empty watchlist
+means nothing is overdue.
 
 ---
 
@@ -921,7 +1057,9 @@ school fees, property categories) see the README reference tables and the source
 [`assessment-model.xlsx`](../product/assessment-model.xlsx). The seven email
 templates are listed in the [email template reference](#email-template-reference).
 
-> 📷 *Screenshot: the Settings page with the five reference-data tabs.*
+![The Settings page with five tabs — Family Types, School Fees, Council Tax, Reason Codes, Email Templates — showing the Family Type configurations table.](images/admin/17-settings-tabs.png)
+
+*The Settings page with the five reference-data tabs — Family Types, School Fees, Council Tax, Reason Codes, Email Templates.*
 
 ---
 
@@ -961,8 +1099,9 @@ the applicant. Keep your own written evidence of the request — the system reco
 the deletion, not the request. See [Delete an applicant under GDPR](walkthroughs/admins/12-delete-applicant-gdpr.md)
 and PRD [10 — GDPR and data](../product/prd/10-gdpr-and-data.md).
 
-> 📷 *Screenshot: the two-step "Permanently Delete Applicant Data?" confirmation
-> dialog.*
+![The GDPR Data Deletion dialog listing what is permanently deleted, anonymised and retained, with Cancel and Proceed to Confirmation buttons.](images/admin/18-gdpr-delete-dialog.png)
+
+*The first step of the two-step GDPR deletion dialog — what is permanently deleted, anonymised and retained, with **Proceed to Confirmation** leading to the final red **I understand, delete** step.*
 
 ### Audit log review
 
@@ -985,8 +1124,9 @@ Logged events include status changes, document uploads/verifications, name
 reveals, invitations, assessment completions, outcomes, GDPR deletions and staff
 MFA resets. See [Audit log review](walkthroughs/admins/13-audit-log-review.md).
 
-> 📷 *Screenshot: the Audit Log page with the filter bar and an expanded metadata
-> row.*
+![The Audit Log page with a filter bar (entity type, action, date range) and a timeline of entries, the first expanded to show its metadata payload.](images/admin/19-audit-log.png)
+
+*The Audit Log page — the filter bar (entity type, action, date range) and the timeline, with one row's metadata expanded.*
 
 ---
 
@@ -1134,7 +1274,8 @@ See [Getting help / support](#getting-help--support) in the appendix.
 | Generate PDF / export recommendation list | ✅ | ✅ | ✅ |
 | View reports & dashboards | ✅ | ✅ | ✅ |
 | Send single new-bursary invitation (Invitations page) | ✅ | ❌ | ❌ |
-| Batch re-assessment invitations | ✅ | ❌ | ❌ |
+| Selective re-assessment invitations (queue bulk action) | ✅ | ❌ | ❌ |
+| Bulk assign / unassign assessor (queue) | ✅ | ❌ | ❌ |
 | Resend / revoke invitations | ✅ | ❌ | ❌ |
 | Create / open / close rounds | ✅ | ❌ | ❌ |
 | Edit reference data & email templates | ✅ | ❌ | ❌ |
@@ -1241,7 +1382,7 @@ has an editable subject and body with documented merge fields (e.g.
 | **Missing documents** | An assessor sends a **Request Missing Documents** email (status → Paused). |
 | **Outcome — Qualifies** | The outcome is set to Qualifies. |
 | **Outcome — Does Not Qualify** | The outcome is set to Does Not Qualify. |
-| **Re-assessment invitation** | A batch (or individual) re-assessment invitation is sent for a new round. |
+| **Re-assessment invitation** | A re-assessment invitation is sent for a new round (selected holders, from the queue). |
 | **Reminder** | A reminder is sent for an outstanding action. |
 
 > Always keep `{{registration_link}}` in the invitation and re-assessment
@@ -1356,7 +1497,7 @@ The click-by-click walkthroughs are the screenshot-led companion to this guide.
 
 *Staff and applicant invitations*
 - [10 — Invite a staff member](walkthroughs/admins/10-invite-a-staff-member.md)
-- [11 — Batch re-assessment invitations](walkthroughs/admins/11-batch-reassessment-invitations.md)
+- [11 — Selective re-assessment invitations](walkthroughs/admins/11-batch-reassessment-invitations.md)
 
 *Privacy and compliance*
 - [12 — Delete an applicant under GDPR](walkthroughs/admins/12-delete-applicant-gdpr.md)
