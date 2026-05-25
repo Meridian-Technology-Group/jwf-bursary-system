@@ -12,6 +12,8 @@ import type {
   Round,
   ApplicationSection,
   ApplicationSectionType,
+  ApplicationContributorRole,
+  ApplicationContributorStatus,
   Document,
   Assessment,
   Profile,
@@ -19,6 +21,22 @@ import type {
 } from "@prisma/client";
 
 // ─── List Applications ────────────────────────────────────────────────────────
+
+/**
+ * Coarse second-parent state for the queue indicator (dual-parent, PR 5):
+ *   - "NONE"      — no second parent invited (single-parent application).
+ *   - "SUBMITTED" — second parent has submitted their details.
+ *   - "OVERRIDE"  — assessor chose to proceed without the second parent.
+ *   - "AWAITING"  — invited but not yet submitted, no override.
+ *
+ * Kept deliberately simple (no per-invite freshness): the application detail
+ * page surfaces the precise status (Invited / In progress / Submitted).
+ */
+export type SecondParentIndicator =
+  | "NONE"
+  | "SUBMITTED"
+  | "OVERRIDE"
+  | "AWAITING";
 
 export interface ApplicationListItem {
   id: string;
@@ -30,6 +48,7 @@ export interface ApplicationListItem {
   isReassessment: boolean;
   assignedToId: string | null;
   round: Pick<Round, "id" | "academicYear">;
+  secondParent: SecondParentIndicator;
 }
 
 export interface ListApplicationsFilters {
@@ -87,11 +106,33 @@ export async function listApplications(
       round: {
         select: { id: true, academicYear: true },
       },
+      // Only the SECONDARY contributor (at most one) drives the indicator.
+      contributors: {
+        where: { role: "SECONDARY" },
+        select: { status: true },
+      },
+      assessment: {
+        select: { secondaryParentOverride: true },
+      },
     },
     orderBy: { submittedAt: "desc" },
   });
 
-  return applications;
+  return applications.map((a) => {
+    const { contributors, assessment, ...rest } = a;
+    const secondary = contributors[0];
+    let secondParent: SecondParentIndicator = "NONE";
+    if (secondary) {
+      if (secondary.status === "SUBMITTED") {
+        secondParent = "SUBMITTED";
+      } else if (assessment?.secondaryParentOverride) {
+        secondParent = "OVERRIDE";
+      } else {
+        secondParent = "AWAITING";
+      }
+    }
+    return { ...rest, secondParent };
+  });
 }
 
 // ─── Application Names ────────────────────────────────────────────────────────
@@ -294,14 +335,21 @@ export async function getCurrentApplicationForUser(tx: Tx, userId: string) {
 }
 
 /**
- * Returns completion status for all sections of an application.
+ * Returns completion status for all sections of an application OWNED BY a
+ * specific contributor.
+ *
+ * Sections are scoped by owner (dual-parent foundation, PR 4a): for the lead
+ * applicant this is their PRIMARY contributor, so the result is identical to
+ * the pre-dual-parent behaviour (every existing section is owned by the
+ * PRIMARY). A future SECONDARY contributor (PR 4b) sees only its own copies.
  */
 export async function getSectionStatusList(
   tx: Tx,
-  applicationId: string
+  applicationId: string,
+  ownerContributorId: string
 ): Promise<SectionStatusResult[]> {
   const rows = await tx.applicationSection.findMany({
-    where: { applicationId },
+    where: { applicationId, ownerContributorId },
     select: { section: true, isComplete: true, updatedAt: true },
   });
 
@@ -313,21 +361,27 @@ export async function getSectionStatusList(
 }
 
 /**
- * Upserts a single ApplicationSection row.
+ * Upserts a single ApplicationSection row owned by a specific contributor.
+ *
+ * Targets the contributor-scoped unique (applicationId, section,
+ * ownerContributorId). For the lead applicant `ownerContributorId` is their
+ * PRIMARY contributor — behaviour is identical to before (one row per section).
  */
 export async function upsertSection(
   tx: Tx,
   applicationId: string,
   section: ApplicationSectionType,
   data: unknown,
-  isComplete: boolean
+  isComplete: boolean,
+  ownerContributorId: string
 ) {
   const jsonData = data as Prisma.InputJsonValue;
   return tx.applicationSection.upsert({
     where: {
-      applicationId_section: {
+      applicationId_section_ownerContributorId: {
         applicationId,
         section,
+        ownerContributorId,
       },
     },
     update: {
@@ -337,6 +391,7 @@ export async function upsertSection(
     create: {
       applicationId,
       section,
+      ownerContributorId,
       data: jsonData,
       isComplete,
     },
@@ -344,19 +399,21 @@ export async function upsertSection(
 }
 
 /**
- * Loads a single section's data for an application.
- * Returns null if the section has not been saved yet.
+ * Loads a single section's data for an application, scoped to the owning
+ * contributor. Returns null if that contributor has not saved this section yet.
  */
 export async function getSectionData(
   tx: Tx,
   applicationId: string,
-  section: ApplicationSectionType
+  section: ApplicationSectionType,
+  ownerContributorId: string
 ) {
   return tx.applicationSection.findUnique({
     where: {
-      applicationId_section: {
+      applicationId_section_ownerContributorId: {
         applicationId,
         section,
+        ownerContributorId,
       },
     },
     select: { data: true, isComplete: true, updatedAt: true },

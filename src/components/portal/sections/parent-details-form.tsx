@@ -697,11 +697,20 @@ function ParentEmploymentFields({
 interface ParentDetailsFormProps {
   applicationId: string;
   documentMap?: Record<string, DocumentMeta>;
+  /**
+   * Secondary-parent (dual-parent, PR 4b) mode. When true the sole-parent
+   * toggle and the entire Parent/Guardian 2 block are hidden, and only the
+   * single-earner ("Parent / Guardian 1") layout is shown — the second parent
+   * supplies only their own details. `isSoleParent` is held at true by the
+   * caller's default values so the schema's parent-2 validation is skipped.
+   */
+  secondaryMode?: boolean;
 }
 
 export function ParentDetailsForm({
   applicationId,
   documentMap,
+  secondaryMode = false,
 }: ParentDetailsFormProps) {
   const { control } = useFormContext<ParentDetailsFormValues>();
 
@@ -709,20 +718,22 @@ export function ParentDetailsForm({
 
   return (
     <div className="space-y-8">
-      {/* 2.1 Sole parent */}
-      <div className="rounded-md border border-slate-200 bg-slate-50 p-4">
-        <YesNoToggle
-          control={control}
-          name="isSoleParent"
-          label="Are you applying as a sole parent / guardian?"
-          description={
-            isSoleParent
-              ? "Only sections relevant to you will be displayed."
-              : "Both sections will appear for you and your partner to fill in."
-          }
-          required
-        />
-      </div>
+      {/* 2.1 Sole parent — hidden in secondary mode (held at sole-parent) */}
+      {!secondaryMode && (
+        <div className="rounded-md border border-slate-200 bg-slate-50 p-4">
+          <YesNoToggle
+            control={control}
+            name="isSoleParent"
+            label="Are you applying as a sole parent / guardian?"
+            description={
+              isSoleParent
+                ? "Only sections relevant to you will be displayed."
+                : "Both sections will appear for you and your partner to fill in."
+            }
+            required
+          />
+        </div>
+      )}
 
       {/* 2.2 Relationship status */}
       <FormField

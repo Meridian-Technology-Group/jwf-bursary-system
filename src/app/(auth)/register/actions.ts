@@ -13,7 +13,13 @@
  * branch driven by `?token_hash=…` on the registration page.
  */
 
-import { InvitationStatus, type Role, type School } from "@prisma/client";
+import {
+  ApplicationContributorRole,
+  ApplicationContributorStatus,
+  InvitationStatus,
+  type Role,
+  type School,
+} from "@prisma/client";
 import { withAdminContext } from "@/lib/db/prisma";
 import { createSupabaseAdminClient } from "@/lib/auth/supabase-admin";
 import { createProfile } from "@/lib/auth/create-profile";
@@ -23,6 +29,7 @@ import {
 } from "@/lib/db/queries/invitations";
 import { generateApplicationReference } from "@/lib/applications/reference";
 import { createReassessmentApplicationFromInvitation } from "@/lib/db/queries/reassessment";
+import { ensurePrimaryContributor } from "@/lib/db/queries/contributors";
 import { validatePasswordStrength } from "@/lib/auth/password-policy";
 import { createAuditLog } from "@/lib/audit/log";
 
@@ -271,6 +278,14 @@ export async function acceptApplicantInvitationAction(
 
       // Application row.
       //
+      // Secondary-parent invite (applicationId set): the application already
+      // exists and is owned by the PRIMARY parent. Do NOT create a new
+      // application or re-assessment. Instead, flip this contributor's
+      // SECONDARY row to IN_PROGRESS so the restricted secondary portal (PR 4)
+      // becomes available. Matched by applicationId + profileId (== authUserId)
+      // + role SECONDARY for precision; the contributor was created by
+      // addSecondParentAction with this exact profile.
+      //
       // Re-assessment invite (bursaryAccountId set): create a fully
       // prepopulated re-assessment application via the shared helper so it
       // carries the previous year's personal sections and blank financials.
@@ -278,7 +293,16 @@ export async function acceptApplicantInvitationAction(
       // First-year invite: create a plain PRE_SUBMISSION application — but
       // only when the invitation carries school + childName + roundId.
       // Otherwise the applicant completes onboarding via the portal card.
-      if (invitation.bursaryAccountId && invitation.roundId) {
+      if (invitation.applicationId) {
+        await tx.applicationContributor.updateMany({
+          where: {
+            applicationId: invitation.applicationId,
+            profileId: invitation.authUserId!,
+            role: ApplicationContributorRole.SECONDARY,
+          },
+          data: { status: ApplicationContributorStatus.IN_PROGRESS },
+        });
+      } else if (invitation.bursaryAccountId && invitation.roundId) {
         await createReassessmentApplicationFromInvitation(tx, invitation);
       } else if (
         invitation.school &&
@@ -295,7 +319,7 @@ export async function acceptApplicantInvitationAction(
           round?.academicYear ?? ""
         );
 
-        await tx.application.create({
+        const application = await tx.application.create({
           data: {
             reference,
             roundId: invitation.roundId,
@@ -306,20 +330,35 @@ export async function acceptApplicantInvitationAction(
             status: "PRE_SUBMISSION",
           },
         });
+
+        // Every application must have a PRIMARY contributor from creation so
+        // the section write path can tag the owner (dual-parent foundation).
+        await ensurePrimaryContributor(
+          tx,
+          application.id,
+          invitation.authUserId!
+        );
       }
 
       await markInvitationAccepted(tx, invitation.id, invitation.authUserId!);
 
       await createAuditLog(tx, {
         userId: invitation.authUserId!,
-        action: AUDIT_ACTIONS.ACCEPT_INVITATION,
-        entityType: AUDIT_ENTITY_TYPES.Invitation,
-        entityId: invitation.id,
-        context: `Applicant invitation accepted by ${invitation.email}`,
+        action: invitation.applicationId
+          ? AUDIT_ACTIONS.SECONDARY_PARENT_ACCEPTED
+          : AUDIT_ACTIONS.ACCEPT_INVITATION,
+        entityType: invitation.applicationId
+          ? AUDIT_ENTITY_TYPES.ApplicationContributor
+          : AUDIT_ENTITY_TYPES.Invitation,
+        entityId: invitation.applicationId ?? invitation.id,
+        context: invitation.applicationId
+          ? `Second parent ${invitation.email} accepted invitation; contributor now in progress`
+          : `Applicant invitation accepted by ${invitation.email}`,
         metadata: {
           email: invitation.email,
           roundId: invitation.roundId,
           bursaryAccountId: invitation.bursaryAccountId,
+          applicationId: invitation.applicationId,
         },
       });
     });

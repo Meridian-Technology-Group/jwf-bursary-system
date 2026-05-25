@@ -65,7 +65,10 @@ import {
 import { StatusBadge } from "@/components/shared/status-badge";
 import { cn } from "@/lib/utils";
 
-import type { ApplicationListItem } from "@/lib/db/queries/applications";
+import type {
+  ApplicationListItem,
+  SecondParentIndicator,
+} from "@/lib/db/queries/applications";
 import type { ApplicationStatus, School } from "@prisma/client";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -99,6 +102,49 @@ function SchoolBadge({ school }: { school: School }) {
   return (
     <span className="inline-flex items-center rounded-full bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-700">
       Trinity
+    </span>
+  );
+}
+
+// Dual-parent (PR 5): compact second-parent indicator for the queue. Shows
+// nothing for single-parent applications (the common case), a coloured pill
+// otherwise. "Awaiting" warns the assessor the application is not yet gated
+// ready.
+function SecondParentBadge({
+  indicator,
+}: {
+  indicator: SecondParentIndicator;
+}) {
+  if (indicator === "NONE") {
+    return <span className="text-slate-300">—</span>;
+  }
+  const config: Record<
+    Exclude<SecondParentIndicator, "NONE">,
+    { label: string; className: string }
+  > = {
+    SUBMITTED: {
+      label: "Submitted",
+      className: "bg-green-50 text-green-700 border-green-200",
+    },
+    OVERRIDE: {
+      label: "Override",
+      className: "bg-slate-100 text-slate-600 border-slate-200",
+    },
+    AWAITING: {
+      label: "Awaiting",
+      className: "bg-amber-50 text-amber-700 border-amber-200",
+    },
+  };
+  const { label, className } = config[indicator];
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-medium",
+        className
+      )}
+      title="Second parent (dual-parent application)"
+    >
+      {label}
     </span>
   );
 }
@@ -364,6 +410,11 @@ export function ApplicationTable({
       columnHelper.accessor("status", {
         header: "Status",
         cell: (info) => <StatusBadge status={mapStatus(info.getValue())} />,
+      }),
+      columnHelper.accessor("secondParent", {
+        header: "2nd Parent",
+        cell: (info) => <SecondParentBadge indicator={info.getValue()} />,
+        enableSorting: false,
       }),
       columnHelper.accessor("entryYear", {
         header: "Entry Year",

@@ -11,23 +11,25 @@ datasource db {
 /// Extends Supabase Auth user with application-specific profile data.
 /// id matches auth.users.id.
 model Profile {
-  id                      String            @id @default(uuid()) @db.Uuid
-  role                    Role              @default(APPLICANT)
-  firstName               String?           @map("first_name")
-  lastName                String?           @map("last_name")
-  email                   String            @unique
+  id                      String                   @id @default(uuid()) @db.Uuid
+  role                    Role                     @default(APPLICANT)
+  firstName               String?                  @map("first_name")
+  lastName                String?                  @map("last_name")
+  email                   String                   @unique
   phone                   String?
-  createdAt               DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt               DateTime          @updatedAt @map("updated_at") @db.Timestamptz(6)
-  assignedApplications    Application[]     @relation("ApplicationAssignee")
-  applicationsAsLead      Application[]     @relation("ApplicationLeadApplicant")
-  assessmentsAsOwner      Assessment[]      @relation("AssessmentAssessor")
+  createdAt               DateTime                 @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt               DateTime                 @updatedAt @map("updated_at") @db.Timestamptz(6)
+  assignedApplications    Application[]            @relation("ApplicationAssignee")
+  applicationsAsLead      Application[]            @relation("ApplicationLeadApplicant")
+  assessmentsAsOwner      Assessment[]             @relation("AssessmentAssessor")
   auditLogs               AuditLog[]
   bursaryAccounts         BursaryAccount[]
   documentsUploaded       Document[]
   emailTemplateUpdates    EmailTemplate[]
-  invitationsCreated      Invitation[]      @relation("InvitationCreator")
-  staffInvitationsCreated StaffInvitation[] @relation("StaffInvitationCreator")
+  invitationsCreated      Invitation[]             @relation("InvitationCreator")
+  staffInvitationsCreated StaffInvitation[]        @relation("StaffInvitationCreator")
+  contributorLinks        ApplicationContributor[] @relation("ContributorProfile")
+  contributorsInvited     ApplicationContributor[] @relation("ContributorInvitedBy")
 
   @@map("profiles")
 }
@@ -76,30 +78,32 @@ model BursaryAccount {
 
 /// One application per child per round.
 model Application {
-  id               String               @id @default(uuid()) @db.Uuid
-  reference        String               @unique
-  roundId          String               @map("round_id") @db.Uuid
-  bursaryAccountId String?              @map("bursary_account_id") @db.Uuid
-  leadApplicantId  String               @map("lead_applicant_id") @db.Uuid
+  id               String                   @id @default(uuid()) @db.Uuid
+  reference        String                   @unique
+  roundId          String                   @map("round_id") @db.Uuid
+  bursaryAccountId String?                  @map("bursary_account_id") @db.Uuid
+  leadApplicantId  String                   @map("lead_applicant_id") @db.Uuid
   school           School
-  childName        String               @map("child_name")
-  childDob         DateTime?            @map("child_dob") @db.Date
-  entryYear        Int?                 @map("entry_year")
-  entryYearGroup   EntryYearGroup?      @map("entry_year_group")
-  isReassessment   Boolean              @default(false) @map("is_reassessment")
-  isInternal       Boolean              @default(false) @map("is_internal")
-  status           ApplicationStatus    @default(PRE_SUBMISSION)
-  submittedAt      DateTime?            @map("submitted_at") @db.Timestamptz(6)
-  createdAt        DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt        DateTime             @updatedAt @map("updated_at") @db.Timestamptz(6)
-  assignedToId     String?              @map("assigned_to_id") @db.Uuid
+  childName        String                   @map("child_name")
+  childDob         DateTime?                @map("child_dob") @db.Date
+  entryYear        Int?                     @map("entry_year")
+  entryYearGroup   EntryYearGroup?          @map("entry_year_group")
+  isReassessment   Boolean                  @default(false) @map("is_reassessment")
+  isInternal       Boolean                  @default(false) @map("is_internal")
+  status           ApplicationStatus        @default(PRE_SUBMISSION)
+  submittedAt      DateTime?                @map("submitted_at") @db.Timestamptz(6)
+  createdAt        DateTime                 @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime                 @updatedAt @map("updated_at") @db.Timestamptz(6)
+  assignedToId     String?                  @map("assigned_to_id") @db.Uuid
   sections         ApplicationSection[]
-  assignedTo       Profile?             @relation("ApplicationAssignee", fields: [assignedToId], references: [id])
-  bursaryAccount   BursaryAccount?      @relation(fields: [bursaryAccountId], references: [id])
-  leadApplicant    Profile              @relation("ApplicationLeadApplicant", fields: [leadApplicantId], references: [id])
-  round            Round                @relation(fields: [roundId], references: [id])
+  assignedTo       Profile?                 @relation("ApplicationAssignee", fields: [assignedToId], references: [id])
+  bursaryAccount   BursaryAccount?          @relation(fields: [bursaryAccountId], references: [id])
+  leadApplicant    Profile                  @relation("ApplicationLeadApplicant", fields: [leadApplicantId], references: [id])
+  round            Round                    @relation(fields: [roundId], references: [id])
   assessment       Assessment?
   documents        Document[]
+  contributors     ApplicationContributor[]
+  invitations      Invitation[]
 
   @@unique([roundId, leadApplicantId, childName])
   @@index([roundId, status])
@@ -110,78 +114,139 @@ model Application {
 }
 
 /// Stores applicant-entered form data per section as JSONB.
+///
+/// `ownerContributorId` identifies which contributor (parent) owns this
+/// section's data. It is backfilled to the PRIMARY contributor for all
+/// existing rows (see migration). The column is nullable and the
+/// `@@unique([applicationId, section])` constraint is unchanged for now:
+/// the dual-parent feature relaxes the constraint and wires the write path
+/// to populate this column in a later PR (PR 4 — restricted secondary
+/// portal), where multiple contributors can own distinct copies of the
+/// parent-financial sections. Nothing reads this column until then.
 model ApplicationSection {
-  id            String                 @id @default(uuid()) @db.Uuid
-  applicationId String                 @map("application_id") @db.Uuid
-  section       ApplicationSectionType
-  data          Json                   @default("{}")
-  isComplete    Boolean                @default(false) @map("is_complete")
-  updatedAt     DateTime               @updatedAt @map("updated_at") @db.Timestamptz(6)
-  application   Application            @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  id                 String                 @id @default(uuid()) @db.Uuid
+  applicationId      String                 @map("application_id") @db.Uuid
+  ownerContributorId String                 @map("owner_contributor_id") @db.Uuid
+  section            ApplicationSectionType
+  data               Json                   @default("{}")
+  isComplete         Boolean                @default(false) @map("is_complete")
+  updatedAt          DateTime               @updatedAt @map("updated_at") @db.Timestamptz(6)
+  application        Application            @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  ownerContributor   ApplicationContributor @relation(fields: [ownerContributorId], references: [id], onDelete: Cascade)
 
-  @@unique([applicationId, section])
+  @@unique([applicationId, section, ownerContributorId])
+  @@index([ownerContributorId])
   @@map("application_sections")
 }
 
+/// Links a parent/guardian Profile to an Application as a contributor.
+///
+/// Supports the dual-parent (separated/divorced) case: each application has
+/// exactly one PRIMARY contributor (the lead applicant, who owns the child's
+/// data and receives all communications) and AT MOST one SECONDARY contributor
+/// (a second parent who supplies only their own financials and documents).
+///
+/// The "at most one of each role per application" rule is enforced by
+/// `@@unique([applicationId, role])`. A given profile can only be linked once
+/// per application (`@@unique([applicationId, profileId])`).
+///
+/// Introduced additively: the PRIMARY row is backfilled for every existing
+/// application. The SECONDARY role and its associated portal/RLS/assessment
+/// behaviour are wired up in subsequent PRs.
+model ApplicationContributor {
+  id            String                       @id @default(uuid()) @db.Uuid
+  applicationId String                       @map("application_id") @db.Uuid
+  profileId     String                       @map("profile_id") @db.Uuid
+  role          ApplicationContributorRole
+  status        ApplicationContributorStatus @default(INVITED)
+  invitedById   String?                      @map("invited_by_id") @db.Uuid
+  invitedAt     DateTime?                    @map("invited_at") @db.Timestamptz(6)
+  submittedAt   DateTime?                    @map("submitted_at") @db.Timestamptz(6)
+  createdAt     DateTime                     @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime                     @updatedAt @map("updated_at") @db.Timestamptz(6)
+  application   Application                  @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  profile       Profile                      @relation("ContributorProfile", fields: [profileId], references: [id])
+  invitedBy     Profile?                     @relation("ContributorInvitedBy", fields: [invitedById], references: [id])
+  sections      ApplicationSection[]
+  documents     Document[]
+
+  @@unique([applicationId, role])
+  @@unique([applicationId, profileId])
+  @@index([applicationId])
+  @@index([profileId])
+  @@map("application_contributors")
+}
+
 /// Metadata for uploaded files. Files stored in Supabase Storage.
+///
+/// `uploadedByContributorId` anchors the document to the contributor (PRIMARY
+/// or SECONDARY) who uploaded it, so the document route handlers can scope
+/// cross-contributor access by a direct equality check rather than re-deriving
+/// the uploader's role at access time (dual-parent feature, PR 4b). Nullable:
+/// a NULL describes a legacy row (pre-PR-4b) and is treated as PRIMARY-owned.
 model Document {
-  id            String      @id @default(uuid()) @db.Uuid
-  applicationId String      @map("application_id") @db.Uuid
-  slot          String
-  filename      String
-  mimeType      String      @map("mime_type")
-  fileSize      Int         @map("file_size")
-  storagePath   String      @map("storage_path")
-  isVerified    Boolean     @default(false) @map("is_verified")
-  uploadedBy    String      @map("uploaded_by") @db.Uuid
-  uploadedAt    DateTime    @default(now()) @map("uploaded_at") @db.Timestamptz(6)
-  application   Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
-  uploader      Profile     @relation(fields: [uploadedBy], references: [id])
+  id                      String                  @id @default(uuid()) @db.Uuid
+  applicationId           String                  @map("application_id") @db.Uuid
+  slot                    String
+  filename                String
+  mimeType                String                  @map("mime_type")
+  fileSize                Int                     @map("file_size")
+  storagePath             String                  @map("storage_path")
+  isVerified              Boolean                 @default(false) @map("is_verified")
+  uploadedBy              String                  @map("uploaded_by") @db.Uuid
+  uploadedByContributorId String?                 @map("uploaded_by_contributor_id") @db.Uuid
+  uploadedAt              DateTime                @default(now()) @map("uploaded_at") @db.Timestamptz(6)
+  application             Application             @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  uploader                Profile                 @relation(fields: [uploadedBy], references: [id])
+  uploadedByContributor   ApplicationContributor? @relation(fields: [uploadedByContributorId], references: [id], onDelete: SetNull)
 
   @@index([applicationId, slot])
+  @@index([uploadedByContributorId])
   @@map("documents")
 }
 
 /// Core assessor workspace. Stores all financial data and calculation results.
 model Assessment {
-  id                       String                @id @default(uuid()) @db.Uuid
-  applicationId            String                @unique @map("application_id") @db.Uuid
-  assessorId               String                @map("assessor_id") @db.Uuid
-  familyTypeCategory       Int?                  @map("family_type_category")
-  notionalRent             Decimal?              @map("notional_rent") @db.Decimal(10, 2)
-  utilityCosts             Decimal?              @map("utility_costs") @db.Decimal(10, 2)
-  foodCosts                Decimal?              @map("food_costs") @db.Decimal(10, 2)
-  annualFees               Decimal?              @map("annual_fees") @db.Decimal(10, 2)
-  councilTax               Decimal?              @map("council_tax") @db.Decimal(10, 2)
-  schoolingYearsRemaining  Int?                  @map("schooling_years_remaining")
-  totalHouseholdNetIncome  Decimal?              @map("total_household_net_income") @db.Decimal(10, 2)
-  netAssetsYearlyValuation Decimal?              @map("net_assets_yearly_valuation") @db.Decimal(10, 2)
-  hndiAfterNs              Decimal?              @map("hndi_after_ns") @db.Decimal(10, 2)
-  requiredBursary          Decimal?              @map("required_bursary") @db.Decimal(10, 2)
-  grossFees                Decimal?              @map("gross_fees") @db.Decimal(10, 2)
-  scholarshipPct           Decimal?              @default(0) @map("scholarship_pct") @db.Decimal(5, 2)
-  bursaryAward             Decimal?              @map("bursary_award") @db.Decimal(10, 2)
-  netYearlyFees            Decimal?              @map("net_yearly_fees") @db.Decimal(10, 2)
-  vatRate                  Decimal?              @default(20.00) @map("vat_rate") @db.Decimal(5, 2)
-  yearlyPayableFees        Decimal?              @map("yearly_payable_fees") @db.Decimal(10, 2)
-  monthlyPayableFees       Decimal?              @map("monthly_payable_fees") @db.Decimal(10, 2)
-  manualAdjustment         Decimal?              @default(0) @map("manual_adjustment") @db.Decimal(10, 2)
-  manualAdjustmentReason   String?               @map("manual_adjustment_reason")
-  propertyCategory         Int?                  @map("property_category")
-  propertyExceedsThreshold Boolean               @default(false) @map("property_exceeds_threshold")
-  dishonestyFlag           Boolean               @default(false) @map("dishonesty_flag")
-  creditRiskFlag           Boolean               @default(false) @map("credit_risk_flag")
-  status                   AssessmentStatus      @default(NOT_STARTED)
-  outcome                  AssessmentOutcome?
-  completedAt              DateTime?             @map("completed_at") @db.Timestamptz(6)
-  createdAt                DateTime              @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt                DateTime              @updatedAt @map("updated_at") @db.Timestamptz(6)
-  checklists               AssessmentChecklist[]
-  earners                  AssessmentEarner[]
-  property                 AssessmentProperty?
-  application              Application           @relation(fields: [applicationId], references: [id], onDelete: Cascade)
-  assessor                 Profile               @relation("AssessmentAssessor", fields: [assessorId], references: [id])
-  recommendation           Recommendation?
+  id                            String                @id @default(uuid()) @db.Uuid
+  applicationId                 String                @unique @map("application_id") @db.Uuid
+  assessorId                    String                @map("assessor_id") @db.Uuid
+  familyTypeCategory            Int?                  @map("family_type_category")
+  notionalRent                  Decimal?              @map("notional_rent") @db.Decimal(10, 2)
+  utilityCosts                  Decimal?              @map("utility_costs") @db.Decimal(10, 2)
+  foodCosts                     Decimal?              @map("food_costs") @db.Decimal(10, 2)
+  annualFees                    Decimal?              @map("annual_fees") @db.Decimal(10, 2)
+  councilTax                    Decimal?              @map("council_tax") @db.Decimal(10, 2)
+  schoolingYearsRemaining       Int?                  @map("schooling_years_remaining")
+  totalHouseholdNetIncome       Decimal?              @map("total_household_net_income") @db.Decimal(10, 2)
+  netAssetsYearlyValuation      Decimal?              @map("net_assets_yearly_valuation") @db.Decimal(10, 2)
+  hndiAfterNs                   Decimal?              @map("hndi_after_ns") @db.Decimal(10, 2)
+  requiredBursary               Decimal?              @map("required_bursary") @db.Decimal(10, 2)
+  grossFees                     Decimal?              @map("gross_fees") @db.Decimal(10, 2)
+  scholarshipPct                Decimal?              @default(0) @map("scholarship_pct") @db.Decimal(5, 2)
+  bursaryAward                  Decimal?              @map("bursary_award") @db.Decimal(10, 2)
+  netYearlyFees                 Decimal?              @map("net_yearly_fees") @db.Decimal(10, 2)
+  vatRate                       Decimal?              @default(20.00) @map("vat_rate") @db.Decimal(5, 2)
+  yearlyPayableFees             Decimal?              @map("yearly_payable_fees") @db.Decimal(10, 2)
+  monthlyPayableFees            Decimal?              @map("monthly_payable_fees") @db.Decimal(10, 2)
+  manualAdjustment              Decimal?              @default(0) @map("manual_adjustment") @db.Decimal(10, 2)
+  manualAdjustmentReason        String?               @map("manual_adjustment_reason")
+  propertyCategory              Int?                  @map("property_category")
+  propertyExceedsThreshold      Boolean               @default(false) @map("property_exceeds_threshold")
+  dishonestyFlag                Boolean               @default(false) @map("dishonesty_flag")
+  creditRiskFlag                Boolean               @default(false) @map("credit_risk_flag")
+  secondaryParentOverride       Boolean               @default(false) @map("secondary_parent_override")
+  secondaryParentOverrideReason String?               @map("secondary_parent_override_reason")
+  status                        AssessmentStatus      @default(NOT_STARTED)
+  outcome                       AssessmentOutcome?
+  completedAt                   DateTime?             @map("completed_at") @db.Timestamptz(6)
+  createdAt                     DateTime              @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt                     DateTime              @updatedAt @map("updated_at") @db.Timestamptz(6)
+  checklists                    AssessmentChecklist[]
+  earners                       AssessmentEarner[]
+  property                      AssessmentProperty?
+  application                   Application           @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  assessor                      Profile               @relation("AssessmentAssessor", fields: [assessorId], references: [id])
+  recommendation                Recommendation?
 
   @@map("assessments")
 }
@@ -352,6 +417,7 @@ model Invitation {
   school           School?
   roundId          String?          @map("round_id") @db.Uuid
   bursaryAccountId String?          @map("bursary_account_id") @db.Uuid
+  applicationId    String?          @map("application_id") @db.Uuid
   authUserId       String?          @map("auth_user_id") @db.Uuid
   token            String           @unique
   status           InvitationStatus @default(PENDING)
@@ -360,11 +426,13 @@ model Invitation {
   createdBy        String           @map("created_by") @db.Uuid
   createdAt        DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
   bursaryAccount   BursaryAccount?  @relation(fields: [bursaryAccountId], references: [id])
+  application      Application?     @relation(fields: [applicationId], references: [id], onDelete: Cascade)
   creator          Profile          @relation("InvitationCreator", fields: [createdBy], references: [id])
   round            Round?           @relation(fields: [roundId], references: [id])
 
   @@index([token])
   @@index([email])
+  @@index([applicationId])
   @@map("invitations")
 }
 
@@ -480,6 +548,17 @@ enum EarnerLabel {
   PARENT_2
 }
 
+enum ApplicationContributorRole {
+  PRIMARY
+  SECONDARY
+}
+
+enum ApplicationContributorStatus {
+  INVITED
+  IN_PROGRESS
+  SUBMITTED
+}
+
 enum EmploymentStatus {
   PAYE
   BENEFITS
@@ -528,6 +607,9 @@ enum EmailTemplateType {
   REMINDER
   INVITE_STAFF
   MISSING_DOCS_RESPONDED
+  SECONDARY_PARENT_INVITE
+  SECONDARY_PARENT_REMINDER
+  SECONDARY_PARENT_RECEIVED
 }
 
 enum BursaryAccountStatus {

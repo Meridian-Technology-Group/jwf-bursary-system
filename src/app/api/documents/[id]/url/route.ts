@@ -9,6 +9,16 @@
  *     browser saves the file. Default (omitted/false) issues an inline URL so the
  *     browser previews PDFs/images (required for the Tab 1 inline viewer, §14).
  *
+ * Contributor-aware authorization (dual-parent, PR 4b — this route is the
+ * enforcing layer, storage RLS is only a backstop):
+ *   - ADMIN / VIEWER and the assigned ASSESSOR may sign a URL for ANY document.
+ *   - The lead applicant (PRIMARY) may sign a URL for documents on their
+ *     application EXCEPT those uploaded by the SECONDARY contributor.
+ *   - A SECONDARY contributor may sign a URL ONLY for documents they uploaded.
+ * The document's owning contributor is read from the stable
+ * `uploadedByContributorId` anchor; a NULL anchor (legacy row) is treated as
+ * PRIMARY-owned.
+ *
  * TODO(B10): once virus-scan gating lands, both modes must check `virusScanStatus`
  * before signing a URL.
  */
@@ -18,6 +28,7 @@ import { getCurrentUser, Role } from "@/lib/auth/roles";
 import { withUserContext, type RlsRole } from "@/lib/db/prisma";
 import { createSupabaseAdminClient } from "@/lib/auth/supabase-admin";
 import { createAuditLog } from "@/lib/audit/log";
+import { ApplicationContributorRole } from "@prisma/client";
 
 import { AUDIT_ACTIONS, AUDIT_ENTITY_TYPES } from "@/lib/audit/actions";
 
@@ -43,7 +54,8 @@ export async function GET(
 
   const documentId = params.id;
 
-  // Fetch document record with application ownership/assignment context
+  // Fetch document record with application ownership/assignment context and the
+  // uploading contributor (role) so we can scope cross-contributor access.
   const document = await withUserContext(
     user.id,
     user.role as RlsRole,
@@ -55,6 +67,8 @@ export async function GET(
           storagePath: true,
           filename: true,
           applicationId: true,
+          uploadedBy: true,
+          uploadedByContributor: { select: { role: true, profileId: true } },
           application: {
             select: { leadApplicantId: true, assignedToId: true },
           },
@@ -66,12 +80,34 @@ export async function GET(
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
-  const isOwner = document.application.leadApplicantId === user.id;
   const isAdminRole = user.role === Role.ADMIN || user.role === Role.VIEWER;
   const isAssignedAssessor =
     user.role === Role.ASSESSOR && document.application.assignedToId === user.id;
 
-  if (!isOwner && !isAdminRole && !isAssignedAssessor) {
+  // A document is secondary-owned when its stable contributor anchor is the
+  // SECONDARY role. A NULL anchor (legacy row) is PRIMARY-owned by definition.
+  const isSecondaryOwnedDoc =
+    document.uploadedByContributor?.role ===
+    ApplicationContributorRole.SECONDARY;
+
+  // Lead applicant: may access their application's documents EXCEPT the
+  // secondary's uploads.
+  const isLeadApplicant =
+    document.application.leadApplicantId === user.id;
+  const leadMayAccess = isLeadApplicant && !isSecondaryOwnedDoc;
+
+  // Secondary contributor: may access ONLY documents they themselves uploaded.
+  const secondaryMayAccess =
+    isSecondaryOwnedDoc &&
+    document.uploadedByContributor?.profileId === user.id &&
+    document.uploadedBy === user.id;
+
+  if (
+    !isAdminRole &&
+    !isAssignedAssessor &&
+    !leadMayAccess &&
+    !secondaryMayAccess
+  ) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 

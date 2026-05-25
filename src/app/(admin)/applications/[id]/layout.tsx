@@ -11,12 +11,15 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { requireRole, Role } from "@/lib/auth/roles";
 import { getApplicationWithDetails } from "@/lib/db/queries/applications";
+import { getSecondaryContributor } from "@/lib/db/queries/contributors";
+import { getPriorYearSecondaryContributor } from "@/lib/db/queries/reassessment";
 import { listAssessors } from "@/lib/db/queries/profiles";
 import { withUserContext, type RlsRole } from "@/lib/db/prisma";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { ApplicationActions } from "@/components/admin/application-actions";
 import { AssignAssessorSelect } from "@/components/admin/assign-assessor-select";
 import { GdprDeleteAction } from "@/components/admin/gdpr-delete-action";
+import { AddSecondParentCard } from "@/components/admin/add-second-parent-card";
 import type { ApplicationStatus as PrismaStatus } from "@prisma/client";
 
 // Map Prisma status to StatusBadge status
@@ -95,13 +98,19 @@ export default async function ApplicationDetailLayout({
 }: Props) {
   const user = await requireRole([Role.ADMIN, Role.ASSESSOR, Role.VIEWER]);
 
-  const { application, assessors, assignedOk } = await withUserContext(
+  const {
+    application,
+    assessors,
+    assignedOk,
+    secondary,
+    secondaryOverride,
+    priorYearSecondary,
+  } = await withUserContext(
     user.id,
     user.role as RlsRole,
     async (tx) => {
       const app = await getApplicationWithDetails(tx, params.id);
-      const asrs =
-        user.role === Role.ADMIN ? await listAssessors(tx) : [];
+      const asrs = user.role === Role.ADMIN ? await listAssessors(tx) : [];
 
       // ASSESSORs may only access applications assigned to them
       let ok = true;
@@ -113,7 +122,33 @@ export default async function ApplicationDetailLayout({
         ok = !!assigned;
       }
 
-      return { application: app, assessors: asrs, assignedOk: ok };
+      const sec = await getSecondaryContributor(tx, params.id);
+
+      // Whether the assessor has chosen to proceed without the second parent
+      // (override on the assessment). Drives the "Override" status display.
+      const overrideRow = await tx.assessment.findUnique({
+        where: { applicationId: params.id },
+        select: { secondaryParentOverride: true },
+      });
+
+      // Re-assessment carry-forward (dual-parent PR 6, decision #6): if this
+      // application has NO second parent yet but the prior-year application for
+      // the same bursary account had one, surface them for a re-invite prompt.
+      // Only meaningful for staff who can write (ADMIN / ASSESSOR) and when no
+      // secondary exists yet — the helper enforces the latter internally.
+      const prior =
+        !sec && (user.role === Role.ADMIN || user.role === Role.ASSESSOR)
+          ? await getPriorYearSecondaryContributor(tx, params.id)
+          : null;
+
+      return {
+        application: app,
+        assessors: asrs,
+        assignedOk: ok,
+        secondary: sec,
+        secondaryOverride: overrideRow?.secondaryParentOverride ?? false,
+        priorYearSecondary: prior,
+      };
     }
   );
 
@@ -196,6 +231,30 @@ export default async function ApplicationDetailLayout({
           applicationId={application.id}
           reference={application.reference}
           documentCount={application.documents.length}
+        />
+      )}
+
+      {/* Dual-parent: add / show second parent. ADMIN and ASSESSOR can invite;
+          VIEWER sees the status panel only when a second parent already
+          exists (the add form is gated to staff who can write). */}
+      {(user.role === Role.ADMIN ||
+        user.role === Role.ASSESSOR ||
+        secondary) && (
+        <AddSecondParentCard
+          applicationId={application.id}
+          secondary={secondary}
+          overrideActive={secondaryOverride}
+          priorYearSecondary={
+            priorYearSecondary
+              ? {
+                  email: priorYearSecondary.email,
+                  firstName: priorYearSecondary.firstName,
+                  lastName: priorYearSecondary.lastName,
+                  previousAcademicYear:
+                    priorYearSecondary.previousAcademicYear,
+                }
+              : null
+          }
         />
       )}
 

@@ -22,7 +22,12 @@
 import { randomBytes } from "node:crypto";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { InvitationStatus, School } from "@prisma/client";
+import {
+  ApplicationContributorRole,
+  ApplicationContributorStatus,
+  InvitationStatus,
+  School,
+} from "@prisma/client";
 import { requireRole, Role } from "@/lib/auth/roles";
 import {
   createInvitation,
@@ -36,6 +41,7 @@ import { sendEmail } from "@/lib/email/send";
 import { withAdminContext } from "@/lib/db/prisma";
 import { createAuditLog } from "@/lib/audit/log";
 import { prepopulateReassessment, getPreviousYearApplication } from "@/lib/db/queries/reassessment";
+import { ensurePrimaryContributor } from "@/lib/db/queries/contributors";
 
 import { AUDIT_ACTIONS, AUDIT_ENTITY_TYPES } from "@/lib/audit/actions";
 
@@ -720,6 +726,10 @@ export async function createReassessmentApplicationAction(
         },
       });
 
+      // Every application must have a PRIMARY contributor from creation so the
+      // section write path can tag the owner (dual-parent foundation).
+      await ensurePrimaryContributor(tx, application.id, account.leadApplicantId);
+
       // Pre-populate from the most recent previous year application
       const previous = await getPreviousYearApplication(tx, bursaryAccountId, roundId);
       if (previous) {
@@ -750,4 +760,347 @@ export async function createReassessmentApplicationAction(
     console.error("[createReassessmentApplicationAction] error:", err);
     return { success: false, error: message };
   }
+}
+
+// ---------------------------------------------------------------------------
+// addSecondParentAction (dual-parent — secondary contributor invite)
+// ---------------------------------------------------------------------------
+
+/**
+ * Invites a SECOND parent to contribute to an existing application
+ * (dual-parent / separated-parent case, backlog #20, PR 3).
+ *
+ * Mirrors `createInvitationAction`'s hardening exactly:
+ *
+ *   1. Validate input (Zod). ADMIN or ASSESSOR may invite (the plan allows
+ *      assessors to add a second parent, unlike the ADMIN-only applicant
+ *      invite).
+ *   2. Guard the application exists and does NOT already have a SECONDARY
+ *      contributor (the DB UNIQUE(application_id, role) also enforces this).
+ *   3. De-dupe by email: if a Profile with that email already exists we LINK
+ *      it (reuse its id as the contributor profileId) and do NOT create a new
+ *      Supabase auth user. Otherwise we create the auth user up front with
+ *      `email_confirm: true` (suppresses the built-in OTP) and roll it back on
+ *      any failure.
+ *   4. In one withAdminContext tx: ensure the Profile exists, create the
+ *      SECONDARY ApplicationContributor (status INVITED), create a scoped
+ *      Invitation (application_id set → secondary-parent invite), and write an
+ *      audit log.
+ *   5. Send the SECONDARY_PARENT_INVITE email inside the rollback boundary. On
+ *      email failure, delete the invitation + contributor, delete the auth
+ *      user (only if we created it), and write a failure audit entry.
+ *
+ * The contributor's profileId may equal an existing applicant/staff profile;
+ * we never create a new auth user for an existing profile, so we never strand
+ * an orphan auth row.
+ */
+
+const SecondParentSchema = z.object({
+  applicationId: z.string().uuid("A valid application is required"),
+  email: z.string().email("A valid email address is required"),
+  firstName: z.string().max(100).optional(),
+  lastName: z.string().max(100).optional(),
+});
+
+export async function addSecondParentAction(
+  applicationId: string,
+  email: string,
+  firstName?: string,
+  lastName?: string
+): Promise<InvitationActionResult> {
+  const user = await requireRole([Role.ADMIN, Role.ASSESSOR]);
+
+  const parsed = SecondParentSchema.safeParse({
+    applicationId,
+    email,
+    firstName: firstName || undefined,
+    lastName: lastName || undefined,
+  });
+  if (!parsed.success) {
+    return {
+      success: false,
+      fieldErrors: parsed.error.flatten().fieldErrors as Record<
+        string,
+        string[]
+      >,
+    };
+  }
+
+  const {
+    applicationId: appId,
+    email: cleanEmail,
+    firstName: cleanFirst,
+    lastName: cleanLast,
+  } = parsed.data;
+
+  const supabase = createSupabaseAdminClient();
+  const appUrl = getAppUrl();
+
+  // 1. Load the application + guard against an existing SECONDARY contributor,
+  //    and resolve any existing profile for de-dupe-by-email. All reads happen
+  //    before we provision an auth user so we never leave an orphan behind.
+  let application: {
+    id: string;
+    roundId: string;
+    school: School;
+    childName: string;
+    academicYear: string;
+  };
+  let existingProfileId: string | null = null;
+  try {
+    const loaded = await withAdminContext(async (tx) => {
+      const app = await tx.application.findUnique({
+        where: { id: appId },
+        select: {
+          id: true,
+          roundId: true,
+          school: true,
+          childName: true,
+          round: { select: { academicYear: true } },
+          contributors: {
+            where: { role: ApplicationContributorRole.SECONDARY },
+            select: { id: true },
+          },
+        },
+      });
+
+      if (!app) {
+        return { ok: false as const, error: "Application not found." };
+      }
+      if (app.contributors.length > 0) {
+        return {
+          ok: false as const,
+          error: "A second parent has already been added to this application.",
+        };
+      }
+
+      const profile = await tx.profile.findUnique({
+        where: { email: cleanEmail },
+        select: { id: true },
+      });
+
+      return {
+        ok: true as const,
+        application: {
+          id: app.id,
+          roundId: app.roundId,
+          school: app.school,
+          childName: app.childName,
+          academicYear: app.round.academicYear,
+        },
+        existingProfileId: profile?.id ?? null,
+      };
+    });
+
+    if (!loaded.ok) {
+      return { success: false, error: loaded.error };
+    }
+    application = loaded.application;
+    existingProfileId = loaded.existingProfileId;
+  } catch (err) {
+    const message =
+      err instanceof Error ? err.message : "Failed to load application";
+    console.error("[invitations] addSecondParentAction load error:", err);
+    return { success: false, error: message };
+  }
+
+  const expiresAt = new Date();
+  expiresAt.setDate(expiresAt.getDate() + 30);
+
+  const secondaryName = composeApplicantName(cleanFirst, cleanLast);
+
+  // 2. De-dupe by email. If a profile already exists, LINK it — never create a
+  //    second auth user. Otherwise provision one up front (rolled back on any
+  //    failure below).
+  let profileId: string;
+  let createdAuthUser = false;
+  if (existingProfileId) {
+    profileId = existingProfileId;
+  } else {
+    const tempPassword = randomBytes(24).toString("base64url");
+    const { data: created, error: supabaseError } =
+      await supabase.auth.admin.createUser({
+        email: cleanEmail,
+        password: tempPassword,
+        email_confirm: true,
+        app_metadata: { role: "APPLICANT" },
+      });
+
+    if (supabaseError || !created?.user) {
+      const message = supabaseError?.message ?? "Failed to create auth user";
+      console.error(
+        "[invitations] addSecondParentAction createUser error:",
+        supabaseError
+      );
+      return { success: false, error: message };
+    }
+    profileId = created.user.id;
+    createdAuthUser = true;
+  }
+
+  // Helper: roll back a freshly-created auth user (no-op when we linked an
+  // existing profile).
+  const rollbackAuthUser = async () => {
+    if (!createdAuthUser) return;
+    await supabase.auth.admin.deleteUser(profileId).catch((err) => {
+      console.error(
+        "[invitations] addSecondParentAction auth rollback failed:",
+        err
+      );
+    });
+  };
+
+  // 3. Profile + SECONDARY contributor + scoped Invitation + audit, one tx.
+  let invitationId: string;
+  let invitationToken: string;
+  try {
+    const result = await withAdminContext(async (tx) => {
+      const profile = await createProfile(tx, {
+        id: profileId,
+        email: cleanEmail,
+        role: Role.APPLICANT,
+        firstName: cleanFirst,
+        lastName: cleanLast,
+      });
+      if (!profile.success) {
+        return { success: false as const, error: profile.error };
+      }
+
+      const contributor = await tx.applicationContributor.create({
+        data: {
+          applicationId: application.id,
+          profileId,
+          role: ApplicationContributorRole.SECONDARY,
+          status: ApplicationContributorStatus.INVITED,
+          invitedById: user.id,
+          invitedAt: new Date(),
+        },
+      });
+
+      const inv = await createInvitation(tx, {
+        email: cleanEmail,
+        firstName: cleanFirst,
+        lastName: cleanLast,
+        childName: application.childName,
+        school: application.school,
+        roundId: application.roundId,
+        applicationId: application.id,
+        authUserId: profileId,
+        createdBy: user.id,
+        expiresAt,
+      });
+
+      await createAuditLog(tx, {
+        userId: user.id,
+        action: AUDIT_ACTIONS.ADD_SECOND_PARENT,
+        entityType: AUDIT_ENTITY_TYPES.ApplicationContributor,
+        entityId: contributor.id,
+        context: `Invited second parent ${cleanEmail} to application ${application.id}`,
+        metadata: {
+          email: cleanEmail,
+          applicationId: application.id,
+          profileId,
+          linkedExistingProfile: !createdAuthUser,
+          authUserId: profileId,
+        },
+      });
+
+      return {
+        success: true as const,
+        contributorId: contributor.id,
+        invitationId: inv.id,
+        token: inv.token,
+      };
+    });
+
+    if (!result.success) {
+      await rollbackAuthUser();
+      return {
+        success: false,
+        error: result.error ?? "Failed to add second parent",
+      };
+    }
+
+    invitationId = result.invitationId;
+    invitationToken = result.token;
+  } catch (err) {
+    await rollbackAuthUser();
+    const message =
+      err instanceof Error ? err.message : "Failed to add second parent";
+    console.error("[invitations] addSecondParentAction error:", err);
+    return { success: false, error: message };
+  }
+
+  // 4. Send the SECONDARY_PARENT_INVITE email inside the rollback boundary.
+  const emailResult = await sendEmail(cleanEmail, "SECONDARY_PARENT_INVITE", {
+    secondary_parent_name: secondaryName || cleanEmail,
+    child_name: application.childName,
+    school: schoolLabel(application.school),
+    round_year: application.academicYear,
+    registration_link: `${appUrl}/register?token=${invitationToken}`,
+    deadline: expiresAt.toLocaleDateString("en-GB"),
+  });
+
+  if (!emailResult.success) {
+    console.error(
+      "[invitations] addSecondParentAction email error:",
+      emailResult.error
+    );
+
+    // Roll back the invitation + contributor and record the failure. The
+    // contributor is deleted by the invitation? No — they are independent
+    // rows, so delete both explicitly.
+    await withAdminContext(async (tx) => {
+      await tx.invitation
+        .delete({ where: { id: invitationId } })
+        .catch((err) => {
+          console.error(
+            "[invitations] addSecondParentAction invitation rollback failed:",
+            err
+          );
+        });
+      await tx.applicationContributor
+        .deleteMany({
+          where: {
+            applicationId: application.id,
+            role: ApplicationContributorRole.SECONDARY,
+          },
+        })
+        .catch((err) => {
+          console.error(
+            "[invitations] addSecondParentAction contributor rollback failed:",
+            err
+          );
+        });
+      await createAuditLog(tx, {
+        userId: user.id,
+        action: AUDIT_ACTIONS.ADD_SECOND_PARENT_FAILED,
+        entityType: AUDIT_ENTITY_TYPES.ApplicationContributor,
+        entityId: application.id,
+        context: `Second-parent invite to ${cleanEmail} rolled back — email failed to send`,
+        metadata: {
+          email: cleanEmail,
+          applicationId: application.id,
+          profileId,
+          emailError: emailResult.error ?? null,
+        },
+      });
+    }).catch((err) => {
+      console.error(
+        "[invitations] addSecondParentAction rollback tx failed:",
+        err
+      );
+    });
+
+    await rollbackAuthUser();
+
+    revalidatePath(`/applications/${application.id}`);
+    return {
+      success: false,
+      error: `Email failed to send. The second-parent invite was rolled back — please try again. (${emailResult.error})`,
+    };
+  }
+
+  revalidatePath(`/applications/${application.id}`);
+  return { success: true };
 }

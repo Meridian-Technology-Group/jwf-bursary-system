@@ -3,9 +3,17 @@
  *
  * Deletes a document:
  *   1. Requires authenticated user.
- *   2. Verifies the document belongs to the user's application.
+ *   2. Verifies the caller is allowed to delete this document (contributor-aware).
  *   3. Only allows deletion if the application is not yet submitted.
  *   4. Removes from Supabase Storage then deletes the Prisma record.
+ *
+ * Contributor-aware authorization (dual-parent, PR 4b — this route is the
+ * enforcing layer, storage RLS is only a backstop):
+ *   - The lead applicant (PRIMARY) may delete documents on their application
+ *     EXCEPT those uploaded by the SECONDARY contributor.
+ *   - A SECONDARY contributor may delete ONLY documents they uploaded.
+ * (Staff deletion is handled elsewhere; this applicant-facing route never
+ * deleted staff-side, matching prior behaviour.)
  */
 
 import { NextRequest, NextResponse } from "next/server";
@@ -14,6 +22,7 @@ import { withUserContext, type RlsRole } from "@/lib/db/prisma";
 import { deleteDocument } from "@/lib/storage/documents";
 import { createAuditLog } from "@/lib/audit/log";
 import { logError } from "@/lib/log";
+import { ApplicationContributorRole } from "@prisma/client";
 
 import { AUDIT_ACTIONS, AUDIT_ENTITY_TYPES } from "@/lib/audit/actions";
 
@@ -33,7 +42,7 @@ export async function DELETE(
 
   const { id: documentId } = await params;
 
-  // ── Fetch document with application ownership data ─────────────────────────
+  // ── Fetch document with application ownership + uploading-contributor data ──
   const document = await withUserContext(
     user.id,
     user.role as RlsRole,
@@ -45,6 +54,8 @@ export async function DELETE(
           storagePath: true,
           slot: true,
           filename: true,
+          uploadedBy: true,
+          uploadedByContributor: { select: { role: true, profileId: true } },
           application: {
             select: {
               id: true,
@@ -60,8 +71,21 @@ export async function DELETE(
     return NextResponse.json({ error: "Document not found" }, { status: 404 });
   }
 
-  // ── Ownership check ────────────────────────────────────────────────────────
-  if (document.application.leadApplicantId !== user.id) {
+  // ── Contributor-aware ownership check ──────────────────────────────────────
+  const isSecondaryOwnedDoc =
+    document.uploadedByContributor?.role ===
+    ApplicationContributorRole.SECONDARY;
+
+  const isLeadApplicant = document.application.leadApplicantId === user.id;
+  // Lead applicant may delete their application's documents EXCEPT secondary uploads.
+  const leadMayDelete = isLeadApplicant && !isSecondaryOwnedDoc;
+  // Secondary may delete ONLY documents they uploaded.
+  const secondaryMayDelete =
+    isSecondaryOwnedDoc &&
+    document.uploadedByContributor?.profileId === user.id &&
+    document.uploadedBy === user.id;
+
+  if (!leadMayDelete && !secondaryMayDelete) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 

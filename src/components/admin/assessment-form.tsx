@@ -134,6 +134,8 @@ export interface SerialisedAssessment {
   propertyExceedsThreshold: boolean;
   dishonestyFlag: boolean;
   creditRiskFlag: boolean;
+  secondaryParentOverride: boolean;
+  secondaryParentOverrideReason: string | null;
   status: AssessmentStatus;
   outcome: string | null;
   completedAt: Date | null;
@@ -158,6 +160,20 @@ interface AssessmentFormProps {
   defaultCouncilTax: number;
   /** Payable fees of older siblings (priority-ordered). Used for sequential income absorption. */
   siblingPayableFees?: number[];
+  /**
+   * Dual-parent (PR 5): true when a SUBMITTED SECONDARY contributor exists and
+   * no assessor override is in effect. Forces two-earner mode — the assessor
+   * keys the primary as Parent 1 and the second parent as Parent 2 — and the
+   * "sole parent" affordance is suppressed (both parents are contributing by
+   * definition). When false the form behaves exactly as the single-parent flow.
+   */
+  forceTwoEarner?: boolean;
+  /**
+   * Dual-parent (PR 5): true when the assessor chose "proceed without second
+   * parent". Restores single-earner / primary-only behaviour and surfaces a
+   * note explaining the second parent did not contribute.
+   */
+  secondaryParentOverride?: boolean;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -351,6 +367,8 @@ export function AssessmentForm({
   defaultAnnualFees,
   defaultCouncilTax,
   siblingPayableFees: siblingPayableFeesFromProps = [],
+  forceTwoEarner = false,
+  secondaryParentOverride = false,
 }: AssessmentFormProps) {
   const router = useRouter();
   const isReadOnly = assessment.status === "COMPLETED";
@@ -991,21 +1009,61 @@ export function AssessmentForm({
         {/* Section B: Income Entry */}
         <FormSection
           title="B. Income Entry"
-          subtitle="Parent 1 and Parent 2 income details"
+          subtitle={
+            forceTwoEarner
+              ? "Two contributing parents — key Parent 1 (primary) and Parent 2 (second parent)"
+              : secondaryParentOverride
+              ? "Primary applicant only — proceeding without the second parent"
+              : "Parent 1 and Parent 2 income details"
+          }
         >
+          {/* Dual-parent context banner */}
+          {forceTwoEarner && (
+            <div className="mb-4 flex items-start gap-2 rounded-md border border-blue-200 bg-blue-50 px-3 py-2.5 text-xs text-blue-800">
+              <AlertTriangle
+                className="mt-0.5 h-3.5 w-3.5 shrink-0"
+                aria-hidden="true"
+              />
+              <p>
+                A second parent has submitted their own financial details. This
+                is a <span className="font-semibold">two-parent</span>{" "}
+                assessment: key the primary applicant&apos;s figures as{" "}
+                <span className="font-semibold">Parent 1</span> and the second
+                parent&apos;s figures as{" "}
+                <span className="font-semibold">Parent 2</span> from their
+                respective submitted data. Both parents&apos; income is combined
+                in Stage&nbsp;1.
+              </p>
+            </div>
+          )}
+          {secondaryParentOverride && (
+            <div className="mb-4 flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs text-amber-800">
+              <AlertTriangle
+                className="mt-0.5 h-3.5 w-3.5 shrink-0"
+                aria-hidden="true"
+              />
+              <p>
+                Proceeding{" "}
+                <span className="font-semibold">without the second parent</span>
+                . Assess on the primary applicant&apos;s details only; Parent 2
+                is optional context unless the primary household has a second
+                earner.
+              </p>
+            </div>
+          )}
           <Tabs defaultValue="parent1">
             <TabsList className="mb-4 h-9 border border-slate-200 bg-slate-50">
               <TabsTrigger
                 value="parent1"
                 className="text-xs data-[state=active]:bg-white data-[state=active]:shadow-sm"
               >
-                Parent 1
+                {forceTwoEarner ? "Parent 1 (primary)" : "Parent 1"}
               </TabsTrigger>
               <TabsTrigger
                 value="parent2"
                 className="text-xs data-[state=active]:bg-white data-[state=active]:shadow-sm"
               >
-                Parent 2
+                {forceTwoEarner ? "Parent 2 (second parent)" : "Parent 2"}
               </TabsTrigger>
             </TabsList>
             <TabsContent value="parent1">
