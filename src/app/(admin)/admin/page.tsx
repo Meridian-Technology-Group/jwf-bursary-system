@@ -31,86 +31,13 @@ import {
   getDashboardFeed,
 } from "@/lib/db/queries/reports";
 import { ActivityFeed } from "@/components/admin/charts/activity-feed";
+import { StatTile, type TileConfig } from "@/components/admin/stat-tile";
 import { cn } from "@/lib/utils";
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
   title: "Dashboard",
 };
-
-// ─── Tile configuration ───────────────────────────────────────────────────────
-
-interface TileConfig {
-  label: string;
-  subLabel: string;
-  icon: React.ElementType;
-  iconBg: string;
-  iconColor: string;
-  borderAccent: string;
-  href?: string;
-}
-
-// ─── Stat tile card ───────────────────────────────────────────────────────────
-
-function StatTile({
-  config,
-  count,
-}: {
-  config: TileConfig;
-  count: number | string;
-}) {
-  const Icon = config.icon;
-
-  const inner = (
-    <div
-      className={cn(
-        "group flex items-start gap-4 rounded-xl border bg-white p-6 shadow-sm transition-shadow",
-        config.borderAccent,
-        config.href
-          ? "hover:shadow-md cursor-pointer"
-          : "cursor-default"
-      )}
-    >
-      {/* Icon badge */}
-      <div
-        className={cn(
-          "flex h-11 w-11 shrink-0 items-center justify-center rounded-lg",
-          config.iconBg
-        )}
-        aria-hidden="true"
-      >
-        <Icon className={cn("h-5 w-5", config.iconColor)} />
-      </div>
-
-      {/* Text */}
-      <div className="min-w-0 flex-1">
-        <p className="text-sm font-medium text-slate-500">{config.label}</p>
-        <p className="mt-1 text-3xl font-semibold tabular-nums text-primary-900">
-          {count}
-        </p>
-        <p className="mt-1 text-xs text-slate-400">{config.subLabel}</p>
-      </div>
-
-      {/* Arrow for clickable tiles */}
-      {config.href && (
-        <ChevronRight
-          className="h-4 w-4 shrink-0 self-center text-slate-300 transition-transform group-hover:translate-x-0.5 group-hover:text-slate-400"
-          aria-hidden="true"
-        />
-      )}
-    </div>
-  );
-
-  if (config.href) {
-    return (
-      <Link href={config.href} className="block focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-600 focus-visible:ring-offset-2 rounded-xl">
-        {inner}
-      </Link>
-    );
-  }
-
-  return inner;
-}
 
 // ─── Round tile ───────────────────────────────────────────────────────────────
 

@@ -17,6 +17,8 @@ import { getCurrentUser, Role } from "@/lib/auth/roles";
 import { withUserContext, type RlsRole } from "@/lib/db/prisma";
 import { getExportRows } from "@/lib/db/queries/exports";
 import { buildXlsxBuffer, buildCsvString } from "@/lib/export/xlsx";
+import { createAuditLog } from "@/lib/audit/log";
+import { AUDIT_ACTIONS, AUDIT_ENTITY_TYPES } from "@/lib/audit/actions";
 
 export async function GET(request: NextRequest): Promise<NextResponse> {
   // ── Auth guard ───────────────────────────────────────────────────────────────
@@ -70,6 +72,17 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       });
       if (!roundRow) return { round: null, rows: [] };
       const exportRows = await getExportRows(tx, roundId, school);
+
+      // Record the export so rule 7 ("ready but not exported") can tell
+      // whether a school's decided recommendations have been pulled.
+      await createAuditLog(tx, {
+        userId: user.id,
+        action: AUDIT_ACTIONS.RECOMMENDATION_EXPORT,
+        entityType: AUDIT_ENTITY_TYPES.Round,
+        entityId: roundId,
+        metadata: { school: school ?? "ALL", format, count: exportRows.length },
+      });
+
       return { round: roundRow, rows: exportRows };
     }
   );
