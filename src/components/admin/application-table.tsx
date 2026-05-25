@@ -34,6 +34,8 @@ import {
   X,
   Loader2,
   UserPlus,
+  Mail,
+  RefreshCw,
 } from "lucide-react";
 import { formatDistanceToNow, format } from "date-fns";
 
@@ -70,10 +72,19 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "@/components/ui/dialog";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { cn } from "@/lib/utils";
 
 import { bulkAssignApplicationsAction } from "@/app/(admin)/applications/[id]/actions";
+import { bulkReassessmentInviteFromApplicationsAction } from "@/app/(admin)/invitations/actions";
 
 import type {
   ApplicationListItem,
@@ -124,6 +135,16 @@ interface ApplicationTableProps {
    * server-side filter applied via the URL, with a "Clear filters" link.
    */
   activeFilter?: { label: string; clearHref: string };
+  /**
+   * Whether the `?reassessEligible=1` server filter is currently active. Drives
+   * the "on" state of the Re-assessment eligible filter toggle (ADMIN only).
+   */
+  reassessEligibleActive?: boolean;
+  /**
+   * Academic year of the open round re-assessment invites would target, or null
+   * when there is no open round. Surfaced in the bulk-invite confirmation.
+   */
+  reassessTargetRound?: string | null;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -338,9 +359,109 @@ interface BulkAction {
   }) => React.ReactNode;
 }
 
+/**
+ * Self-contained control for the "Send re-assessment invite" bulk action.
+ * Because this sends real emails it gates behind a confirmation Dialog before
+ * calling the server action. Result feedback is surfaced via the toolbar's
+ * shared `onFeedback` banner (which outlives the toolbar on success).
+ */
+function ReassessmentBulkAction({
+  selectedIds,
+  isPending,
+  run,
+  targetRound,
+  onFeedback,
+  onActionComplete,
+}: {
+  selectedIds: string[];
+  isPending: boolean;
+  run: (fn: () => Promise<void>) => void;
+  targetRound: string | null;
+  onFeedback: (feedback: BulkFeedback) => void;
+  onActionComplete: () => void;
+}) {
+  const [open, setOpen] = React.useState(false);
+  const count = selectedIds.length;
+
+  const handleConfirm = () => {
+    setOpen(false);
+    run(async () => {
+      const result =
+        await bulkReassessmentInviteFromApplicationsAction(selectedIds);
+      if (result.sent > 0 || result.failed === 0) {
+        onFeedback({
+          kind: result.failed > 0 ? "error" : "success",
+          message: `Invited ${result.sent} · skipped ${result.skipped} · failed ${result.failed}${
+            result.targetRound ? ` · → ${result.targetRound}` : ""
+          }`,
+        });
+        // Clear selection + refresh once at least one invite landed.
+        if (result.sent > 0) onActionComplete();
+      } else {
+        // Nothing sent: surface the first error (e.g. "No open round to invite
+        // into") rather than a misleading success summary.
+        onFeedback({
+          kind: "error",
+          message:
+            result.errors[0] ??
+            `Invited ${result.sent} · skipped ${result.skipped} · failed ${result.failed}`,
+        });
+      }
+    });
+  };
+
+  return (
+    <>
+      <Button
+        variant="outline"
+        size="sm"
+        disabled={isPending || count === 0}
+        onClick={() => setOpen(true)}
+        className="h-8 shrink-0 whitespace-nowrap border-primary-200 bg-white text-xs text-slate-600"
+      >
+        {isPending ? (
+          <Loader2 className="mr-1.5 h-3 w-3 shrink-0 animate-spin" aria-hidden="true" />
+        ) : (
+          <Mail className="mr-1.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+        )}
+        Send re-assessment invite
+      </Button>
+
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Send re-assessment invites</DialogTitle>
+            <DialogDescription>
+              Send re-assessment invites to {count} selected holder
+              {count === 1 ? "" : "s"}
+              {targetRound ? ` for round ${targetRound}` : ""}?
+              {!targetRound && (
+                <span className="mt-1 block text-amber-600">
+                  There is no open round to invite into — nothing will be sent.
+                </span>
+              )}
+              <span className="mt-2 block text-xs text-slate-500">
+                Selections without an eligible bursary holder are skipped.
+              </span>
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setOpen(false)}>
+              Cancel
+            </Button>
+            <Button onClick={handleConfirm}>Confirm</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+}
+
 interface BulkToolbarProps {
   selectedIds: string[];
   assessors: AssessorOption[];
+  /** Target round year for re-assessment invites (null = no open round). */
+  reassessTargetRound: string | null;
   onClear: () => void;
   /**
    * Called after a successful action so the parent can refresh + clear the
@@ -355,6 +476,7 @@ interface BulkToolbarProps {
 function BulkToolbar({
   selectedIds,
   assessors,
+  reassessTargetRound,
   onClear,
   onActionComplete,
   onFeedback,
@@ -438,6 +560,19 @@ function BulkToolbar({
         </Select>
       ),
     },
+    {
+      id: "reassessment-invite",
+      render: ({ selectedIds, isPending, run }) => (
+        <ReassessmentBulkAction
+          selectedIds={selectedIds}
+          isPending={isPending}
+          run={run}
+          targetRound={reassessTargetRound}
+          onFeedback={onFeedback}
+          onActionComplete={onActionComplete}
+        />
+      ),
+    },
   ];
 
   return (
@@ -478,6 +613,8 @@ export function ApplicationTable({
   initialSchool,
   initialStatuses,
   activeFilter,
+  reassessEligibleActive = false,
+  reassessTargetRound = null,
 }: ApplicationTableProps) {
   const router = useRouter();
 
@@ -841,6 +978,29 @@ export function ApplicationTable({
           onChange={setSelectedStatuses}
         />
 
+        {/* Re-assessment-eligible toggle (ADMIN only, URL-driven server filter) */}
+        {bulkEnabled && (
+          <Button
+            variant="outline"
+            size="sm"
+            aria-pressed={reassessEligibleActive}
+            onClick={() =>
+              router.push(
+                reassessEligibleActive ? "/queue" : "/queue?reassessEligible=1"
+              )
+            }
+            className={cn(
+              "h-9 shrink-0 whitespace-nowrap border-neutral-200 bg-white text-sm",
+              reassessEligibleActive
+                ? "border-primary-300 bg-primary-50 text-primary-800 hover:bg-primary-100"
+                : "text-slate-600 hover:bg-neutral-50"
+            )}
+          >
+            <RefreshCw className="mr-1.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+            Re-assessment eligible
+          </Button>
+        )}
+
         {/* Search */}
         <Input
           placeholder="Search reference…"
@@ -883,6 +1043,7 @@ export function ApplicationTable({
         <BulkToolbar
           selectedIds={selectedIds}
           assessors={assessors}
+          reassessTargetRound={reassessTargetRound}
           onClear={handleClearSelection}
           onActionComplete={handleBulkComplete}
           onFeedback={setBulkFeedback}

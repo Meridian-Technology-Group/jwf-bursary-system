@@ -2,7 +2,12 @@
 
 /**
  * Client wrapper for round detail page action buttons.
- * Houses the CloseRoundDialog + BatchInviteDialog state.
+ * Houses the CloseRoundDialog + OpenRoundDialog state.
+ *
+ * Re-assessment invites are no longer initiated from here — they live in the
+ * `/queue` bulk-action system (select the eligible holders' applications, then
+ * "Send re-assessment invite"). Use the "Re-assessment eligible" queue filter
+ * to find the candidates.
  */
 
 import { useState } from "react";
@@ -11,28 +16,20 @@ import { BarChart3, Download } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { CloseRoundDialog } from "./close-round-dialog";
 import { OpenRoundDialog } from "./open-round-dialog";
-import {
-  BatchInviteDialog,
-  type BatchInviteHolder,
-} from "./batch-invite-dialog";
 
 interface RoundDetailActionsProps {
   roundId: string;
   academicYear: string;
   status: "DRAFT" | "OPEN" | "CLOSED";
-  /** Eligible (active, not-yet-invited) re-assessment candidates for this round. */
-  activeBursaryHolders: BatchInviteHolder[];
 }
 
 export function RoundDetailActions({
   roundId,
   academicYear,
   status,
-  activeBursaryHolders,
 }: RoundDetailActionsProps) {
   const [closeDialogOpen, setCloseDialogOpen] = useState(false);
   const [openDialogOpen, setOpenDialogOpen] = useState(false);
-  const [batchDialogOpen, setBatchDialogOpen] = useState(false);
 
   // ── Closed rounds are archived: read-only actions only. No inviting/closing;
   //    just navigate to the report and the export archive. ──────────────────────
@@ -76,17 +73,6 @@ export function RoundDetailActions({
         </Button>
       )}
 
-      {/* Re-assessment invites only when round is OPEN and there are holders */}
-      {status === "OPEN" && activeBursaryHolders.length > 0 && (
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => setBatchDialogOpen(true)}
-        >
-          Re-assessment invites
-        </Button>
-      )}
-
       {/* Close round */}
       {status === "OPEN" && (
         <Button
@@ -111,14 +97,6 @@ export function RoundDetailActions({
         academicYear={academicYear}
         open={openDialogOpen}
         onOpenChange={setOpenDialogOpen}
-      />
-
-      <BatchInviteDialog
-        roundId={roundId}
-        academicYear={academicYear}
-        holders={activeBursaryHolders}
-        open={batchDialogOpen}
-        onOpenChange={setBatchDialogOpen}
       />
     </div>
   );

@@ -10,7 +10,8 @@
  *
  * All data comes from ONE `getRoundCockpit(tx, id)` bundle (which itself wraps
  * `getRound` + `getRoundWatchlist`, so neither is called again here) plus the
- * activity feed and the active-bursary-holder count `RoundDetailActions` needs.
+ * activity feed. Re-assessment invites now live in the `/queue` bulk-action
+ * system, so this page no longer loads the active-bursary-holder list.
  */
 
 export const dynamic = "force-dynamic";
@@ -28,7 +29,6 @@ import { requireRole, Role } from "@/lib/auth/roles";
 import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
 import { withUserContext, type RlsRole } from "@/lib/db/prisma";
 import { getRoundCockpit } from "@/lib/db/queries/round-cockpit";
-import { getActiveBursaryHolders } from "@/lib/db/queries/invitations";
 import { getDashboardFeed } from "@/lib/db/queries/reports";
 import { RoundDetailActions } from "@/components/admin/round-detail-actions";
 import { RoundStatusBadge } from "@/components/admin/round-status-badge";
@@ -68,13 +68,12 @@ export default async function RoundDetailPage({
 }) {
   const user = await requireRole([Role.ADMIN, Role.ASSESSOR, Role.VIEWER]);
 
-  const [cockpit, activeBursaryHolders, feed] = await withUserContext(
+  const [cockpit, feed] = await withUserContext(
     user.id,
     user.role as RlsRole,
     (tx) =>
       Promise.all([
         getRoundCockpit(tx, params.id),
-        getActiveBursaryHolders(tx, params.id),
         getDashboardFeed(tx, params.id),
       ])
   );
@@ -198,21 +197,6 @@ export default async function RoundDetailPage({
             roundId={round.id}
             academicYear={round.academicYear}
             status={round.status}
-            activeBursaryHolders={activeBursaryHolders.map((holder) => {
-              const applicantName =
-                [holder.leadApplicant.firstName, holder.leadApplicant.lastName]
-                  .filter(Boolean)
-                  .join(" ")
-                  .trim() || holder.leadApplicant.email;
-              return {
-                id: holder.id,
-                reference: holder.reference,
-                childName: holder.childName,
-                school: holder.school,
-                applicantName,
-                email: holder.leadApplicant.email,
-              };
-            })}
           />
         </div>
 

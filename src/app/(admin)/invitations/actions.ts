@@ -26,6 +26,7 @@ import {
   ApplicationContributorRole,
   ApplicationContributorStatus,
   InvitationStatus,
+  RoundStatus,
   School,
 } from "@prisma/client";
 import { requireRole, Role } from "@/lib/auth/roles";
@@ -42,6 +43,7 @@ import { withAdminContext } from "@/lib/db/prisma";
 import { createAuditLog } from "@/lib/audit/log";
 import { prepopulateReassessment, getPreviousYearApplication } from "@/lib/db/queries/reassessment";
 import { ensurePrimaryContributor } from "@/lib/db/queries/contributors";
+import { getActiveRound } from "@/lib/db/queries/reports";
 
 import { AUDIT_ACTIONS, AUDIT_ENTITY_TYPES } from "@/lib/audit/actions";
 
@@ -548,6 +550,167 @@ export async function reassessmentInviteSelectedAction(
     return { sent: 0, failed: 0, errors: ["No eligible holders selected"] };
   }
   return runReassessmentInvites(roundId, ids);
+}
+
+// ---------------------------------------------------------------------------
+// bulkReassessmentInviteFromApplicationsAction (queue bulk action)
+// ---------------------------------------------------------------------------
+
+export interface BulkReassessmentFromApplicationsResult {
+  sent: number;
+  failed: number;
+  skipped: number;
+  errors: string[];
+  targetRound: string | null;
+}
+
+/**
+ * Queue-driven re-assessment invite. The admin selects rows in the application
+ * queue (prior-round winning applications linked to a BursaryAccount) and fires
+ * this action. It:
+ *
+ *   1. Resolves the OPEN round to invite into. If there is none, every selected
+ *      application is `skipped` and we return early.
+ *   2. Loads the selected applications' `bursaryAccountId`s, keeping the
+ *      non-null, de-duplicated set (the candidate accounts).
+ *   3. Delegates to `runReassessmentInvites(openRound.id, accountIds)`, which
+ *      itself re-filters those ids against the genuinely-eligible holders for
+ *      that round (active + not-yet-invited) before sending.
+ *
+ * `skipped` semantics: a selected application is "skipped" when it did not
+ * result in an invite for a reason OTHER than a send failure — i.e. it had no
+ * bursary account, OR its account was not eligible for the open round (already
+ * invited / inactive), OR two selected applications share one account (the
+ * account is invited once, the duplicate is skipped). We compute it precisely
+ * as:
+ *
+ *   skipped = selectedCount − sent − failed
+ *
+ * which is exact here because every distinct candidate account that
+ * `runReassessmentInvites` actually attempts increments exactly one of `sent`
+ * or `failed`, and every other selected application (no account / ineligible /
+ * duplicate account) contributes neither — so it falls into `skipped`.
+ */
+export async function bulkReassessmentInviteFromApplicationsAction(
+  applicationIds: string[]
+): Promise<BulkReassessmentFromApplicationsResult> {
+  await requireRole([Role.ADMIN]);
+
+  const ids = Array.isArray(applicationIds) ? applicationIds : [];
+
+  // Cap input to bound the work + protect the per-row email rate limiting.
+  if (ids.length === 0) {
+    return {
+      sent: 0,
+      failed: 0,
+      skipped: 0,
+      errors: ["No applications selected"],
+      targetRound: null,
+    };
+  }
+  if (ids.length > 500) {
+    return {
+      sent: 0,
+      failed: 0,
+      skipped: ids.length,
+      errors: ["Too many applications selected (max 500)"],
+      targetRound: null,
+    };
+  }
+
+  // 1. Resolve the OPEN round to invite into. getActiveRound falls back to the
+  //    most recent round of any status, so we explicitly require it to be OPEN.
+  let openRound: { id: string; academicYear: string } | null = null;
+  try {
+    const round = await withAdminContext((tx) => getActiveRound(tx));
+    if (round && round.status === RoundStatus.OPEN) {
+      openRound = { id: round.id, academicYear: round.academicYear };
+    }
+  } catch (err) {
+    console.error(
+      "[invitations] bulkReassessmentInviteFromApplicationsAction round load error:",
+      err
+    );
+    return {
+      sent: 0,
+      failed: 0,
+      skipped: ids.length,
+      errors: ["Failed to resolve the open round"],
+      targetRound: null,
+    };
+  }
+
+  if (!openRound) {
+    return {
+      sent: 0,
+      failed: 0,
+      skipped: ids.length,
+      errors: ["No open round to invite into"],
+      targetRound: null,
+    };
+  }
+
+  // 2. Load the selected applications' bursary-account ids (non-null, deduped).
+  let accountIds: string[] = [];
+  try {
+    const rows = await withAdminContext((tx) =>
+      tx.application.findMany({
+        where: { id: { in: ids } },
+        select: { bursaryAccountId: true },
+      })
+    );
+    accountIds = Array.from(
+      new Set(
+        rows
+          .map((r) => r.bursaryAccountId)
+          .filter((id): id is string => id !== null)
+      )
+    );
+  } catch (err) {
+    console.error(
+      "[invitations] bulkReassessmentInviteFromApplicationsAction load error:",
+      err
+    );
+    return {
+      sent: 0,
+      failed: 0,
+      skipped: ids.length,
+      errors: ["Failed to load selected applications"],
+      targetRound: openRound.academicYear,
+    };
+  }
+
+  if (accountIds.length === 0) {
+    return {
+      sent: 0,
+      failed: 0,
+      skipped: ids.length,
+      errors: ["None of the selected applications are linked to a bursary holder"],
+      targetRound: openRound.academicYear,
+    };
+  }
+
+  // 3. Delegate to the shared core, which re-filters accountIds to the holders
+  //    actually eligible for the open round and provisions each invite.
+  const batch = await runReassessmentInvites(openRound.id, accountIds);
+
+  // `runReassessmentInvites` pushes a "No eligible holders selected" error when
+  // nothing in the set was eligible — that's a skip, not a user-facing failure,
+  // so drop it from the surfaced errors when there were no real send failures.
+  const errors =
+    batch.sent === 0 && batch.failed === 0
+      ? batch.errors.filter((e) => e !== "No eligible holders selected")
+      : batch.errors;
+
+  const skipped = Math.max(0, ids.length - batch.sent - batch.failed);
+
+  return {
+    sent: batch.sent,
+    failed: batch.failed,
+    skipped,
+    errors,
+    targetRound: openRound.academicYear,
+  };
 }
 
 // ---------------------------------------------------------------------------
