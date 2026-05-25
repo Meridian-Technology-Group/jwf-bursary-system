@@ -12,6 +12,8 @@ import type {
   Round,
   ApplicationSection,
   ApplicationSectionType,
+  ApplicationContributorRole,
+  ApplicationContributorStatus,
   Document,
   Assessment,
   Profile,
@@ -19,6 +21,22 @@ import type {
 } from "@prisma/client";
 
 // ─── List Applications ────────────────────────────────────────────────────────
+
+/**
+ * Coarse second-parent state for the queue indicator (dual-parent, PR 5):
+ *   - "NONE"      — no second parent invited (single-parent application).
+ *   - "SUBMITTED" — second parent has submitted their details.
+ *   - "OVERRIDE"  — assessor chose to proceed without the second parent.
+ *   - "AWAITING"  — invited but not yet submitted, no override.
+ *
+ * Kept deliberately simple (no per-invite freshness): the application detail
+ * page surfaces the precise status (Invited / In progress / Submitted).
+ */
+export type SecondParentIndicator =
+  | "NONE"
+  | "SUBMITTED"
+  | "OVERRIDE"
+  | "AWAITING";
 
 export interface ApplicationListItem {
   id: string;
@@ -30,6 +48,7 @@ export interface ApplicationListItem {
   isReassessment: boolean;
   assignedToId: string | null;
   round: Pick<Round, "id" | "academicYear">;
+  secondParent: SecondParentIndicator;
 }
 
 export interface ListApplicationsFilters {
@@ -87,11 +106,33 @@ export async function listApplications(
       round: {
         select: { id: true, academicYear: true },
       },
+      // Only the SECONDARY contributor (at most one) drives the indicator.
+      contributors: {
+        where: { role: "SECONDARY" },
+        select: { status: true },
+      },
+      assessment: {
+        select: { secondaryParentOverride: true },
+      },
     },
     orderBy: { submittedAt: "desc" },
   });
 
-  return applications;
+  return applications.map((a) => {
+    const { contributors, assessment, ...rest } = a;
+    const secondary = contributors[0];
+    let secondParent: SecondParentIndicator = "NONE";
+    if (secondary) {
+      if (secondary.status === "SUBMITTED") {
+        secondParent = "SUBMITTED";
+      } else if (assessment?.secondaryParentOverride) {
+        secondParent = "OVERRIDE";
+      } else {
+        secondParent = "AWAITING";
+      }
+    }
+    return { ...rest, secondParent };
+  });
 }
 
 // ─── Application Names ────────────────────────────────────────────────────────

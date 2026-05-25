@@ -21,6 +21,71 @@ export interface SecondaryContributorSummary {
 }
 
 /**
+ * A single contributor (PRIMARY or SECONDARY) of an application, with the
+ * linked profile's display name. Used by the assessor dual-view to label the
+ * two parents' submitted sections / documents and by the completeness gate.
+ *
+ * NOTE: this intentionally exposes the contributor's own name (the parent),
+ * NOT the child's name. The child-name reveal remains gated behind
+ * `getApplicationNamesForReveal` (audit-logged). A parent's own name is needed
+ * to identify which financials belong to whom in the workspace.
+ */
+export interface ApplicationContributorView {
+  id: string;
+  role: ApplicationContributorRole;
+  status: ApplicationContributorStatus;
+  profileId: string;
+  firstName: string | null;
+  lastName: string | null;
+  email: string;
+  invitedAt: Date | null;
+  submittedAt: Date | null;
+}
+
+/**
+ * Returns every contributor of an application (PRIMARY first, then SECONDARY),
+ * with each linked profile's name + email. Returns the PRIMARY only for a
+ * single-parent application, so callers can treat "length === 1" as the
+ * unchanged single-parent case.
+ *
+ * MUST run under a context that can SELECT the contributor rows (assigned
+ * assessor / ADMIN / VIEWER via RLS, or service_role).
+ */
+export async function getApplicationContributors(
+  tx: Tx,
+  applicationId: string
+): Promise<ApplicationContributorView[]> {
+  const rows = await tx.applicationContributor.findMany({
+    where: { applicationId },
+    select: {
+      id: true,
+      role: true,
+      status: true,
+      profileId: true,
+      invitedAt: true,
+      submittedAt: true,
+      profile: {
+        select: { firstName: true, lastName: true, email: true },
+      },
+    },
+    // PRIMARY sorts before SECONDARY alphabetically — deterministic ordering.
+    orderBy: { role: "asc" },
+  });
+
+  return rows.map((c) => ({
+    id: c.id,
+    role: c.role,
+    status: c.status,
+    profileId: c.profileId,
+    firstName: c.profile.firstName,
+    lastName: c.profile.lastName,
+    email: c.profile.email,
+    invitedAt: c.invitedAt,
+    submittedAt: c.submittedAt,
+  }));
+}
+
+/**
  * Returns the SECONDARY contributor for an application (the second parent),
  * or null if no second parent has been added. Includes the linked profile's
  * contact name/email so the admin UI can show who was invited and their
