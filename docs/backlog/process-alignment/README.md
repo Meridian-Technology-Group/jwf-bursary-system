@@ -117,17 +117,17 @@ who we need it from.
 |---|---|---|---|---|
 | D1 ✅ | School + entry-year: lock at admin invite and make form Q1 read-only? (Workbook Q1 shows the parent picking school.) | **DECIDED 2026-06-05 — locked at invite: Q1 shows the school read-only (parent cannot change it); entry-year is admin-side and absent from the parent form.** | 02, 04 | Brian |
 | D2 ✅ | "Received" vs "Submitted": model one submitted state + type-based label? | **DECIDED 2026-06-05 — yes: a single `SUBMITTED` form state, label derived from `applicationType` ("Received" for new, "Submitted" for rolling-over). Submission date fixed once set.** | 01, 05 | Brian |
-| D3 | Income: replace the flat 14-line model wholesale with the scoping sub-tables? | Yes — full rebuild | 02 | Charlotte |
-| D4 | Reason codes: the current 35 are placeholders — supply the real paperwork codes. | Hold; keep placeholders until supplied | 08 | Charlotte |
+| D3 ✅ | Income: replace the flat 14-line model wholesale with the scoping sub-tables? | **DECIDED (meeting) — yes, rebuild the form to the scoping workbook; remove gross-pay/bonus/out-of-scope questions (meeting-findings §"Parent form changes"). The workbook is the spec.** | 02 | Charlotte |
+| D4 ⏳ | Reason codes: the current 35 are placeholders — supply the real paperwork codes. | **NOT A DECISION — a deliverable. Charlotte to send the actual paperwork codes (meeting-findings §Recommendation). Build the mechanism on placeholders now; swap the values on arrival. Does not block Epic 08.** | 08 | Charlotte |
 | D5 ✅ | Dynamic tax-year: confirm `Round.academicYear` is the single source for the "to April YYYY" / payslip-month wording. | **DECIDED 2026-06-05 — yes: match the workbook wording/structure exactly, derive the year from `Round.academicYear`.** | 02 | Brian |
-| D6 | Retention policy: purge declined immediately? 6-yr for qualified-not-awarded? keep flat 7-yr? | Tiered: 6-yr q-n-a, 7-yr awarded, purge declined | 10 | Charlotte (+ DPO) |
-| D7 | Remove the assessor-side recommendation PDF? (Only reachable from the recommendation page.) | Remove | 08 | Charlotte |
+| D6 ✅ | Retention policy: purge declined immediately? 6-yr for qualified-not-awarded? keep flat 7-yr? | **DECIDED in direction (meeting) — purge declined; 6-yr for qualified-not-awarded (Charlotte raised this explicitly); 7-yr awarded. Year values configurable; DPO signs the legal figures. Not a blocker to build the tiers.** | 10 | Charlotte (+ DPO) |
+| D7 ✅ | Remove the assessor-side recommendation PDF? (Only reachable from the recommendation page.) | **DECIDED (meeting) — remove; Charlotte said remove if unused, and it is unused.** | 08 | Charlotte |
 | D8 | VAT %: is VAT actually applied to bursary fees, or is the field legacy? (Engine currently **applies** it — schema default **20%** at `prisma/schema.prisma:228`, deducted on the post-bursary net fee at `payable-fees.ts:50`.) | Confirm; 20% currently applied | 07 | Charlotte |
-| D9 | Scholarship: model as a distinct £ award alongside bursary? Need the scholarship process. | Add scholarship award field | 08 | Charlotte |
-| D10 | T&Cs: is `terms-and-conditions.pdf` the final wording, and must acceptance be recorded per round? | Display + record acceptance per submission | 05 | Charlotte |
-| D11 | Declaration wording: confirm the final per-parent + closing declaration text (the workbook has a version). | Default — implement the **workbook's declaration verbatim** unless Charlotte supplies different final text | 02 | Charlotte |
+| D9 ✅ | Scholarship: model as a distinct £ award alongside bursary? Need the scholarship process. | **DECIDED in direction (meeting) — yes, a distinct scholarship award alongside the bursary (meeting-findings §Recommendation). Detailed values refine during Epic 08; not a blocker to start.** | 08 | Charlotte |
+| D10 ✅ | T&Cs: is `terms-and-conditions.pdf` the final wording, and must acceptance be recorded per round? | **DECIDED (feedback.md item 3) — display the supplied `terms-and-conditions.pdf` on the portal home page; record acceptance per submission. Reopen only if the PDF is superseded.** | 05 | Charlotte |
+| D11 ⏳ | Declaration wording: confirm the final per-parent + closing declaration text (the workbook has a version). | **NOT A DECISION — a deliverable. Build with the workbook declaration verbatim now; swap if Charlotte sends different final text (meeting-findings §"send the correct form/questions and declaration text"). Does not block Epic 02.** | 02 | Charlotte |
 | D12 ✅ | Twins: one account per child keyed on (childName + DOB)? Two accounts, one lead? | **DECIDED 2026-06-05 — one account per child keyed on (childName + DOB); same-name twins resolve by DOB.** | 04 | Brian |
-| D13 | Multiple open rounds: confirm the real cap is "two concurrent" so the UI can be a 2-option control not a dropdown. | Support N, optimise UI for 2 | 03 | Charlotte |
+| D13 ✅ | Multiple open rounds: confirm the real cap is "two concurrent" so the UI can be a 2-option control not a dropdown. | **DECIDED (meeting) — two concurrent; support N but optimise the UI for two (meeting-findings §Admin/round management).** | 03 | Charlotte |
 | D14 | Fee year that drives the **payable monthly**, and how an award splits across a fee-uplift boundary. | Current-year ÷ 12 until confirmed | 07 | Charlotte |
 | D15 | Shared custody: model 50/50 as **two lead applicants** (add `CustodyArrangement`), or keep a single lead + note? | Add `CustodyArrangement`; 50/50 ⇒ either may hold the account | 09 | Charlotte |
 | D16 | Foster/guardian: a distinct relationship-status value + mandatory guardianship evidence? | Add a guardian facet + evidence upload | 09 | Charlotte |
@@ -135,7 +135,7 @@ who we need it from.
 | D18 ✅ | Portal-access revocation: a status-keyed portal/layout guard, or flip role → `DELETED`? | **DECIDED 2026-06-05 — status-keyed portal/layout guard; reserve `role = DELETED` for true erasure only.** | 10 | Brian (DPO if data) |
 | D19 | Forward-schedule horizon N + the `availableOn`/`requiredBy` date policy for generated rounds. | Years-to-final-eligible; dates from the award round + Epic 03 | 10 | Charlotte |
 | D20 ✅ | Inactivity/session-timeout logout: build it, and what idle window? | **DECIDED 2026-06-05 — build the optional idle-timeout watcher; the exact idle window still to confirm with Charlotte (does not block the build).** | 11 | Brian/Charlotte |
-| D21 | Commission the Microsoft SSO build after the spike? | Spike only; no build until commissioned | 11 | Charlotte |
+| D21 ✅ | Commission the Microsoft SSO build after the spike? | **DECIDED (meeting) — SSO is an explicit backlog item; spike only, no build until commissioned (meeting-findings §Authentication).** | 11 | Charlotte |
 
 > Household decisions D15–D17 also carry a standing validation ask: **confirm
 > every household scenario row H1–H11 in

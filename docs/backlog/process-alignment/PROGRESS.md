@@ -39,14 +39,14 @@ Legend: ⬜ not started · 🟡 in progress · ✅ shipped to staging · 🚫 bl
 | 1 | [01 Status & workflow model](plans/01-status-and-workflow-model.md) | ⬜ | — | — |
 | 1 | [03 Round management](plans/03-round-management.md) | ⬜ | 01 | — |
 | 1 | [04 Lead-applicant contacts & invitations](plans/04-lead-applicant-contacts-and-invitations.md) | ⬜ | 01 | — |
-| 2 | [02 Application form re-scope](plans/02-application-form-rescope.md) | 🚫 | 01, 04, **D3** | — |
-| 2 | [05 Parent portal experience](plans/05-parent-portal-experience.md) | 🚫 | 01, 02, 03, **D10** | — |
-| 3 | [06 Assessor experience & UI](plans/06-assessor-experience-and-ui.md) | 🚫 | 02 | — |
-| 3 | [07 Calculations & fees](plans/07-assessment-calculations-and-fees.md) | 🚫 | 06, **D8, D14** | — |
-| 3 | [08 Recommendation & outcome](plans/08-recommendation-and-outcome.md) | 🚫 | 01, 07, **D4, D7, D9** | — |
-| 3 | [09 Complex household / second parent](plans/09-complex-household-and-second-parent.md) | 🚫 | 02, 06, **D15–D17** | — |
-| 4 | [10 Data retention & account lifecycle](plans/10-data-retention-and-account-lifecycle.md) | 🚫 | 01, 03, **D6, D19** | — |
-| 4 | [11 Auth & access](plans/11-auth-and-access.md) | ⬜ | **D21** (SSO only) | — |
+| 2 | [02 Application form re-scope](plans/02-application-form-rescope.md) | ⏳ deps | 01, 04 (deps) · D3 ✅ · D11 artifact (build to workbook) | — |
+| 2 | [05 Parent portal experience](plans/05-parent-portal-experience.md) | ⏳ deps | 01, 02, 03 (deps) · D10 ✅ | — |
+| 3 | [06 Assessor experience & UI](plans/06-assessor-experience-and-ui.md) | ⏳ deps | 02 (dep) | — |
+| 3 | [07 Calculations & fees](plans/07-assessment-calculations-and-fees.md) | ⏳ deps | 06 (dep) · D8/D14 narrow, non-blocking | — |
+| 3 | [08 Recommendation & outcome](plans/08-recommendation-and-outcome.md) | ⏳ deps | 01, 07 (deps) · D7/D9 ✅ · D4 artifact (placeholders) | — |
+| 3 | [09 Complex household / second parent](plans/09-complex-household-and-second-parent.md) | ⏳ deps | 02, 06 (deps) · D15–D17 build to workbook FAQ | — |
+| 4 | [10 Data retention & account lifecycle](plans/10-data-retention-and-account-lifecycle.md) | ⏳ deps | 01, 03 (deps) · D6 ✅ (DPO signs years) · D19 narrow | — |
+| 4 | [11 Auth & access](plans/11-auth-and-access.md) | ⬜ | none · D21 ✅ (SSO deferred) · D20 ✅ (idle watcher) | — |
 
 ---
 
@@ -69,7 +69,11 @@ Six independent PRs off `staging`, no schema, no migrations
 
 ## Decision register — execution view
 
-Mirrors [README §5](README.md#5-decision-register). ✅ = resolved and safe to build against.
+Mirrors [README §5](README.md#5-decision-register). Reconciled 2026-06-05 against
+`meeting-findings.md` + `feedback.md`: Charlotte decided most "Charlotte" items in
+the meeting — the register was written too defensively. ✅ = decided, safe to build.
+📦 = **deliverable** she still owes (build to a working default now, swap on arrival).
+🔎 = narrow technical confirm (build to default, flag).
 
 | # | Owner | Status | Gates |
 |---|---|---|---|
@@ -78,24 +82,26 @@ Mirrors [README §5](README.md#5-decision-register). ✅ = resolved and safe to 
 | D5 | Brian | ✅ tax-year derives from `Round.academicYear` | 02 |
 | D12 | Brian | ✅ one account per child keyed (childName + DOB) | 04 |
 | D18 | Brian | ✅ status-keyed portal guard; `DELETED` = erasure only | 10 |
-| D20 | Brian/Charlotte | ✅ build optional idle watcher; window TBC (non-blocking) | 11 |
-| D3 | Charlotte | ⏳ income sub-table rebuild | **02** |
-| D4 | Charlotte | ⏳ real reason codes | **08** |
-| D6 | Charlotte (+DPO) | ⏳ retention tiers | **10** |
-| D7 | Charlotte | ⏳ remove assessor PDF | **08** |
-| D8 | Charlotte | ⏳ VAT applicability | **07** |
-| D9 | Charlotte | ⏳ scholarship as £ award | **08** |
-| D10 | Charlotte | ⏳ T&Cs final wording + per-round acceptance | **05** |
-| D11 | Charlotte | ⏳ declaration wording (default: workbook verbatim) | **02** |
-| D13 | Charlotte | ⏳ concurrent-round cap (UI shape) | **03** |
-| D14 | Charlotte | ⏳ fee year driving payable-monthly | **07** |
-| D15–D17 | Charlotte/Brian | ⏳ custody / guardian / remarried modelling | **09** |
-| D19 | Charlotte | ⏳ forward-schedule horizon + date policy | **10** |
-| D21 | Charlotte | ⏳ commission MS SSO build after spike | **11** |
+| D20 | Brian/Charlotte | ✅ build optional idle watcher; window TBC | 11 |
+| D3 | Charlotte | ✅ rebuild form to workbook (meeting) | 02 |
+| D7 | Charlotte | ✅ remove unused assessor PDF (meeting) | 08 |
+| D9 | Charlotte | ✅ scholarship as distinct award (meeting) | 08 |
+| D10 | Charlotte | ✅ display supplied T&Cs; record acceptance (feedback) | 05 |
+| D13 | Charlotte | ✅ two concurrent rounds, 2-optimised UI (meeting) | 03 |
+| D21 | Charlotte | ✅ SSO backlog — spike only, defer build (meeting) | 11 |
+| D6 | Charlotte (+DPO) | ✅ purge declined / 6-yr q-n-a / 7-yr awarded (meeting); DPO signs year values | 10 |
+| D4 | Charlotte | 📦 real reason codes — build on placeholders, swap when sent | 08 |
+| D11 | Charlotte | 📦 final declaration text — build workbook-verbatim, swap if sent | 02 |
+| D8 | Charlotte/finance | 🔎 VAT 20% applicability (not raised in meeting) — keep current, flag | 07 |
+| D14 | Charlotte | 🔎 fee-uplift boundary split rule — default current-yr/12, flag | 07 |
+| D15–D17 | Charlotte/Brian | 🔎 household scenario fine-detail — build to workbook FAQ; H7/H9 stay assessor flags | 09 |
+| D19 | Charlotte | 🔎 forward-schedule horizon + date policy — default years-to-final-eligible | 10 |
 
-**Critical path unblocked now:** Wave 0 (no decisions) and Epic 01 (D2 ✅).
-Epics 03/04 unblock once 01's schema lands (D1/D12 ✅). Waves 2–3 mostly await
-Charlotte.
+**Nothing is decision-blocked.** The only real sequencing constraint is the
+dependency graph (the waves). The two 📦 items (reason codes, declaration text) are
+swap-in artifacts with working defaults. 🔎 items are narrow confirmations that
+don't gate starting their epic. Critical path is purely: Wave 0 → 01 → {03, 04} →
+Wave 2 → Wave 3 → Wave 4.
 
 ---
 
