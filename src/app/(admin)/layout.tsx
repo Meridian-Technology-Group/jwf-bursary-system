@@ -29,7 +29,7 @@ export default async function AdminLayout({
   const displayName =
     user
       ? `${user.firstName ?? ""} ${user.lastName ?? ""}`.trim() || user.email
-      : "Admin";
+      : "Account";
   const userEmail = user?.email ?? undefined;
   const userRole = user?.role ?? undefined;
 
