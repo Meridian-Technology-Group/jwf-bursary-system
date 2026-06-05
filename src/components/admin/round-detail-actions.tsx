@@ -16,17 +16,25 @@ import { BarChart3, Download } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { CloseRoundDialog } from "./close-round-dialog";
 import { OpenRoundDialog } from "./open-round-dialog";
+import { EditRoundDatesButton } from "./edit-round-dialog";
 
 interface RoundDetailActionsProps {
   roundId: string;
   academicYear: string;
   status: "DRAFT" | "OPEN" | "CLOSED";
+  /** ISO yyyy-MM-dd strings for the edit-dates dialog. */
+  openDate: string;
+  closeDate: string;
+  decisionDate: string;
 }
 
 export function RoundDetailActions({
   roundId,
   academicYear,
   status,
+  openDate,
+  closeDate,
+  decisionDate,
 }: RoundDetailActionsProps) {
   const [closeDialogOpen, setCloseDialogOpen] = useState(false);
   const [openDialogOpen, setOpenDialogOpen] = useState(false);
@@ -60,6 +68,17 @@ export function RoundDetailActions({
           Send Invitations
         </Link>
       </Button>
+
+      {/* Edit / extend dates (DRAFT + OPEN). Extending closeDate keeps an OPEN
+          round open longer; cockpit pacing & Rule 8 recompute from the field. */}
+      <EditRoundDatesButton
+        roundId={roundId}
+        academicYear={academicYear}
+        status={status}
+        openDate={openDate}
+        closeDate={closeDate}
+        decisionDate={decisionDate}
+      />
 
       {/* Open round (DRAFT only) */}
       {status === "DRAFT" && (

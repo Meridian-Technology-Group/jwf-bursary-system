@@ -30,6 +30,15 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { cn } from "@/lib/utils";
 import { createInvitationAction } from "@/app/(admin)/invitations/actions";
 
 // ---------------------------------------------------------------------------
@@ -74,8 +83,14 @@ export function SendInvitationForm({
 }: SendInvitationFormProps) {
   const [serverError, setServerError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [pendingValues, setPendingValues] = useState<FormValues | null>(null);
   const [isPending, startTransition] = useTransition();
   const router = useRouter();
+
+  // Render the round picker as a two-option segmented control when there are
+  // ≤ 2 live rounds (the expected steady state per D13), falling back to a
+  // dropdown when more are live.
+  const useSegmentedRoundPicker = rounds.length > 0 && rounds.length <= 2;
 
   const form = useForm<FormValues>({
     resolver: zodResolver(schema),
@@ -89,9 +104,19 @@ export function SendInvitationForm({
     },
   });
 
-  function onSubmit(values: FormValues) {
+  // Step 1: validation passed → open the confirmation dialog instead of sending
+  // straight away. Prevents accidental invites (the demo pain point).
+  function onReview(values: FormValues) {
     setServerError(null);
     setSuccessMessage(null);
+    setPendingValues(values);
+  }
+
+  // Step 2: explicit confirm → dispatch the invite.
+  function onConfirm() {
+    const values = pendingValues;
+    if (!values) return;
+    setPendingValues(null);
 
     const formData = new FormData();
     formData.set("email", values.email);
@@ -125,6 +150,14 @@ export function SendInvitationForm({
     });
   }
 
+  const confirmRoundYear =
+    rounds.find((r) => r.id === pendingValues?.roundId)?.academicYear ?? "—";
+  const confirmRecipient = pendingValues
+    ? [pendingValues.firstName, pendingValues.lastName]
+        .filter(Boolean)
+        .join(" ") || pendingValues.email
+    : "";
+
   return (
     <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
       <h2 className="mb-4 text-base font-semibold text-slate-800">
@@ -132,7 +165,7 @@ export function SendInvitationForm({
       </h2>
 
       <Form {...form}>
-        <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+        <form onSubmit={form.handleSubmit(onReview)} className="space-y-4">
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             {/* Email */}
             <FormField
@@ -258,7 +291,8 @@ export function SendInvitationForm({
               )}
             />
 
-            {/* Round */}
+            {/* Round — live rounds only (OPEN). Two-option segmented control
+                when ≤2 are live (D13), dropdown fallback otherwise. */}
             <FormField
               control={form.control}
               name="roundId"
@@ -267,24 +301,60 @@ export function SendInvitationForm({
                   <FormLabel>
                     Round <span className="text-red-500">*</span>
                   </FormLabel>
-                  <Select
-                    onValueChange={field.onChange}
-                    value={field.value ?? "__none__"}
-                    disabled={isPending}
-                  >
+                  {rounds.length === 0 ? (
+                    <p className="text-sm text-amber-600">
+                      No open round to invite into. Open a round first.
+                    </p>
+                  ) : useSegmentedRoundPicker ? (
                     <FormControl>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select round" />
-                      </SelectTrigger>
+                      <div
+                        role="radiogroup"
+                        aria-label="Application round"
+                        className="inline-flex rounded-md border border-slate-200 p-0.5"
+                      >
+                        {rounds.map((r) => {
+                          const selected = field.value === r.id;
+                          return (
+                            <button
+                              key={r.id}
+                              type="button"
+                              role="radio"
+                              aria-checked={selected}
+                              disabled={isPending}
+                              onClick={() => field.onChange(r.id)}
+                              className={cn(
+                                "min-w-[6rem] rounded px-4 py-1.5 text-sm font-medium transition-colors",
+                                selected
+                                  ? "bg-primary-900 text-white"
+                                  : "text-slate-600 hover:bg-slate-100"
+                              )}
+                            >
+                              {r.academicYear}
+                            </button>
+                          );
+                        })}
+                      </div>
                     </FormControl>
-                    <SelectContent>
-                      {rounds.map((r) => (
-                        <SelectItem key={r.id} value={r.id}>
-                          {r.academicYear}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  ) : (
+                    <Select
+                      onValueChange={field.onChange}
+                      value={field.value ?? "__none__"}
+                      disabled={isPending}
+                    >
+                      <FormControl>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select round" />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        {rounds.map((r) => (
+                          <SelectItem key={r.id} value={r.id}>
+                            {r.academicYear}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
                   <FormMessage />
                 </FormItem>
               )}
@@ -300,13 +370,74 @@ export function SendInvitationForm({
           )}
 
           <div className="flex justify-end pt-2">
-            <Button type="submit" disabled={isPending} className="gap-2">
+            <Button
+              type="submit"
+              disabled={isPending || rounds.length === 0}
+              className="gap-2"
+            >
               <Send className="h-4 w-4" aria-hidden="true" />
               {isPending ? "Sending..." : "Send Invitation"}
             </Button>
           </div>
         </form>
       </Form>
+
+      {/* Confirmation step — naming recipient + round before dispatch, to stop
+          accidental sends (the demo pain point). Matches the bulk-action
+          confirmation pattern. */}
+      <Dialog
+        open={pendingValues !== null}
+        onOpenChange={(next) => {
+          if (!next) setPendingValues(null);
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Send this invitation?</DialogTitle>
+            <DialogDescription asChild>
+              <div className="space-y-1 pt-1 text-sm text-slate-600">
+                <p>
+                  Invite{" "}
+                  <span className="font-medium text-slate-800">
+                    {confirmRecipient}
+                  </span>{" "}
+                  into round{" "}
+                  <span className="font-medium text-slate-800">
+                    {confirmRoundYear}
+                  </span>
+                  ?
+                </p>
+                {pendingValues?.email && confirmRecipient !== pendingValues.email && (
+                  <p className="text-xs text-slate-400">{pendingValues.email}</p>
+                )}
+                <p className="pt-1 text-xs text-slate-400">
+                  This emails the applicant a link to start their bursary
+                  application.
+                </p>
+              </div>
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setPendingValues(null)}
+              disabled={isPending}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              onClick={onConfirm}
+              disabled={isPending}
+              className="gap-2"
+            >
+              <Send className="h-4 w-4" aria-hidden="true" />
+              {isPending ? "Sending..." : "Confirm & send"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

@@ -24,6 +24,8 @@ import {
 } from "@/components/ui/card";
 import { DocumentChecklist } from "@/components/admin/document-checklist";
 import { AdminUpload } from "@/components/admin/admin-upload";
+import { SubmissionDeadlineCard } from "@/components/admin/submission-deadline-card";
+import { effectiveSubmissionDeadline } from "@/lib/rounds/submission-deadline";
 import { SiblingLinkerCard } from "@/components/admin/sibling-linker";
 import { SiblingListCard } from "@/components/admin/sibling-list";
 import type { ApplicationSectionType } from "@prisma/client";
@@ -220,6 +222,15 @@ export default async function ApplicantDataPage({ params }: Props) {
   const { sections, documents, bursaryAccountId } = application;
   const currentChildName = names?.childName ?? "";
 
+  // Per-application submission deadline (Epic 03) — ADMIN-editable. The effective
+  // deadline (override ?? round close end-of-day) is derived in one helper so
+  // this display and Epic 05's parent countdown agree.
+  const isAdmin = user.role === Role.ADMIN;
+  const effective = effectiveSubmissionDeadline(
+    { submissionDeadlineAt: application.submissionDeadlineAt },
+    { closeDate: application.round.closeDate }
+  );
+
   // ── Dual-parent: separate sections by owning contributor ───────────────────
   // When a SECONDARY contributor exists, the parent-owned sections
   // (PARENT_DETAILS / PARENTS_INCOME / ASSETS_LIABILITIES) have a copy per
@@ -285,6 +296,21 @@ export default async function ApplicantDataPage({ params }: Props) {
 
       {/* Assessor document upload */}
       <AdminUpload applicationId={application.id} />
+
+      {/* Per-application submission deadline — ADMIN only */}
+      {isAdmin && (
+        <SubmissionDeadlineCard
+          applicationId={application.id}
+          submissionDeadlineAt={
+            application.submissionDeadlineAt
+              ? application.submissionDeadlineAt.toISOString()
+              : null
+          }
+          roundCloseDate={application.round.closeDate.toISOString()}
+          effectiveDeadline={effective.deadline.toISOString()}
+          isOverride={effective.isOverride}
+        />
+      )}
 
       {/* Section data cards */}
       {orderedSections.map((section) => {

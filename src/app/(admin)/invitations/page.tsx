@@ -97,12 +97,20 @@ export default async function InvitationsPage({
       ])
   );
 
-  // Default to the most recent open round for the form
-  const openRound = rounds.find((r) => r.status === "OPEN");
-  const defaultRoundId = roundIdFilter ?? openRound?.id;
+  // Epic 03 (D13): the invite picker offers LIVE rounds only — you invite into
+  // an OPEN intake, never a DRAFT/CLOSED round. `listRounds` returns newest
+  // first, so the filtered list keeps that order. CLOSED rounds never appear.
+  const liveRounds = rounds.filter((r) => r.status === "OPEN");
 
-  // Simple round options for the dropdown (all rounds, newest first)
-  const roundOptions = rounds.map((r) => ({
+  // Default to the most-recent OPEN round (first in the newest-first list). If
+  // the page was opened pre-filtered to a specific round that is itself live,
+  // honour it; otherwise fall back to the default live round.
+  const filterRoundIsLive =
+    roundIdFilter && liveRounds.some((r) => r.id === roundIdFilter);
+  const defaultRoundId = filterRoundIsLive ? roundIdFilter : liveRounds[0]?.id;
+
+  // Live round options for the picker (OPEN only, newest first).
+  const roundOptions = liveRounds.map((r) => ({
     id: r.id,
     academicYear: r.academicYear,
   }));

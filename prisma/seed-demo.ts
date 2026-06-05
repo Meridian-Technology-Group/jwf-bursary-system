@@ -87,6 +87,11 @@ function getSupabaseAdmin() {
 // ─── Round ────────────────────────────────────────────────────────────────────
 
 const ROUND_ID = "00000000-0000-4000-0000-000000000001";
+// Epic 03 (D13): demo a SECOND concurrently-OPEN round so the dashboard/queue/
+// reports round selectors and the live-rounds invite picker have something to
+// switch between. Applications are seeded into ROUND_ID; this round is empty
+// (newly opened intake) and exists to prove concurrency works end-to-end.
+const SECOND_ROUND_ID = "00000000-0000-4000-0000-000000000002";
 
 const round = {
   id: ROUND_ID,
@@ -94,6 +99,15 @@ const round = {
   openDate: new Date("2026-01-15"),
   closeDate: new Date("2026-04-30"),
   decisionDate: new Date("2026-06-30"),
+  status: "OPEN" as const,
+};
+
+const secondRound = {
+  id: SECOND_ROUND_ID,
+  academicYear: "2027/28",
+  openDate: new Date("2026-03-01"),
+  closeDate: new Date("2026-07-31"),
+  decisionDate: new Date("2026-09-30"),
   status: "OPEN" as const,
 };
 
@@ -267,6 +281,10 @@ async function seedRound(): Promise<void> {
 
   await prisma.round.create({ data: round });
   log(`Created round: ${round.academicYear} (${round.status})`);
+
+  // Second concurrently-OPEN round (Epic 03 / D13).
+  await prisma.round.create({ data: secondRound });
+  log(`Created round: ${secondRound.academicYear} (${secondRound.status})`);
 }
 
 // ─── Bursary Accounts ─────────────────────────────────────────────────────────
@@ -294,6 +312,20 @@ async function seedApplications(): Promise<void> {
     });
   }
   log(`Created ${applications.length} applications`);
+
+  // Epic 03: per-application submission-deadline overrides. Round close is
+  // 2026-04-30; demo one applicant granted a LATER deadline and one set EARLIER
+  // so the effective-deadline derivation + override marker (and Epic 05's
+  // countdown) have fixtures. NULL on every other app ⇒ inherits round close.
+  await prisma.application.update({
+    where: { id: APP_OKAFOR_ID },
+    data: { submissionDeadlineAt: new Date("2026-05-14T17:00:00Z") }, // extended
+  });
+  await prisma.application.update({
+    where: { id: APP_PATEL_ID },
+    data: { submissionDeadlineAt: new Date("2026-04-18T17:00:00Z") }, // earlier
+  });
+  log("Applied 2 per-application submission-deadline overrides (1 later, 1 earlier)");
 }
 
 // ─── Assign Applications ──────────────────────────────────────────────────────

@@ -160,17 +160,20 @@ needs it.
 - [x] §6 PR-5 (server half) — `setSubmissionDeadlineAction` + new
   `SET_SUBMISSION_DEADLINE` audit action (set/clear, ADMIN-gated, audited).
 
-**PR-B — UI slices** (next PR):
-- [ ] §6 PR-3 (UI) — round selector on admin dashboard (queue + reports already
-  accept `roundId`).
-- [ ] §6 PR-4 — "Edit/extend dates" dialog on round detail → `updateRoundAction`
-  (allowed on DRAFT + OPEN); cockpit recomputes from new `closeDate`.
-- [ ] §6 PR-5 (UI) — admin per-app deadline override control + effective-vs-
-  inherited display.
-- [ ] §6 PR-6 — invite picker filtered to live rounds (`listOpenRounds`);
-  two-option segmented control for ≤2, `Select` fallback.
-- [ ] §6 PR-7 — single parent/staff invite confirmation step.
-- [ ] §6 PR-8 — demo seed: two OPEN rounds + per-app deadline overrides.
+**PR-B — UI slices** (this PR):
+- [x] §6 PR-3 (UI) — round selector on admin dashboard (reused
+  `RoundSelector`; queue + reports already accept `roundId`).
+- [x] §6 PR-4 — "Edit/extend dates" dialog (`edit-round-dialog.tsx`) on round
+  detail → `updateRoundAction` (DRAFT + OPEN; "Extend dates" framing when OPEN);
+  cockpit recomputes from new `closeDate` (field unchanged).
+- [x] §6 PR-5 (UI) — admin per-app deadline override control
+  (`submission-deadline-card.tsx`); effective-vs-inherited display with marker.
+- [x] §6 PR-6 — invite picker filtered to live (OPEN) rounds; two-option
+  segmented control for ≤2, `Select` fallback.
+- [x] §6 PR-7 — single parent invite confirmation step (recipient + round) AND
+  staff invite confirmation (recipient + role) — both meet §10 acceptance.
+- [x] §6 PR-8 — demo seed: two concurrently-OPEN rounds + 2 per-app deadline
+  overrides (1 later, 1 earlier).
 
 > Epic 04 owns the invitation/contact-register rework; this epic leaves clear
 > seams (picker filter + confirmation only) and does not restructure the invite
@@ -218,6 +221,13 @@ Wave 2 → Wave 3 → Wave 4.
 
 ## Change log
 
+- **2026-06-05** — **Epic 03 PR-B (UI)**: dashboard round selector (concurrent
+  rounds); "Edit/extend dates" dialog on round detail → `updateRoundAction`;
+  per-application submission-deadline admin card (effective-vs-inherited);
+  invite picker filtered to live (OPEN) rounds with a two-option segmented
+  control + `Select` fallback; confirmation step on single parent + staff
+  invites; demo seed gains a second concurrently-OPEN round + 2 per-app deadline
+  overrides. Cockpit untouched. tsc/lint/build/250 tests green.
 - **2026-06-05** — **Epic 01 marked ✅** (buildable scope complete: PRs #141–#145;
   PR-6 drop-column remains ⏸ gated with prerequisites intact). **Epic 03 opened**:
   PR-A (schema + server core) — additive `submission_deadline_at` migration +

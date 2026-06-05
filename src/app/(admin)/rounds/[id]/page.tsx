@@ -197,6 +197,15 @@ export default async function RoundDetailPage({
             roundId={round.id}
             academicYear={round.academicYear}
             status={round.status}
+            // Round dates are @db.Date (UTC-midnight); slice the ISO date part
+            // for the yyyy-MM-dd date inputs in the edit-dates dialog.
+            openDate={round.openDate.toISOString().slice(0, 10)}
+            closeDate={round.closeDate.toISOString().slice(0, 10)}
+            decisionDate={
+              round.decisionDate
+                ? round.decisionDate.toISOString().slice(0, 10)
+                : ""
+            }
           />
         </div>
 
