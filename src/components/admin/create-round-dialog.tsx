@@ -8,6 +8,7 @@
  */
 
 import { useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -72,6 +73,7 @@ type FormValues = z.infer<typeof schema>;
 // ---------------------------------------------------------------------------
 
 export function CreateRoundDialog() {
+  const router = useRouter();
   const [open, setOpen] = useState(false);
   const [serverError, setServerError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
@@ -116,8 +118,15 @@ export function CreateRoundDialog() {
             });
           }
         }
+        return;
       }
-      // On success the server action redirects, so no close needed here
+
+      // Success: close the dialog (resets the form) and navigate client-side.
+      // The action no longer redirects (it threw NEXT_REDIRECT, which the
+      // client mis-rendered as an error — defect plan §2.3).
+      handleOpenChange(false);
+      router.push("/rounds");
+      router.refresh();
     });
   }
 

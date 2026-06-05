@@ -5,7 +5,6 @@
  */
 
 import { revalidatePath } from "next/cache";
-import { redirect } from "next/navigation";
 import { z } from "zod";
 import { RoundStatus } from "@prisma/client";
 import { requireRole, Role } from "@/lib/auth/roles";
@@ -108,7 +107,12 @@ export async function createRoundAction(
     return { success: false, error: message };
   }
 
-  redirect("/rounds");
+  // Return success and let the client navigate. Calling redirect() here throws
+  // a NEXT_REDIRECT control-flow error that propagates to the client as a
+  // rejected promise, which the dialog mis-renders as "An unexpected error
+  // occurred" even though the write committed (defect plan §2.3). This mirrors
+  // openRoundAction / closeRoundAction, which already return without redirecting.
+  return { success: true };
 }
 
 // ---------------------------------------------------------------------------
@@ -165,7 +169,9 @@ export async function updateRoundAction(
     return { success: false, error: message };
   }
 
-  redirect(`/rounds/${id}`);
+  // Return success and let the client navigate (same NEXT_REDIRECT pitfall as
+  // createRoundAction — see §2.3).
+  return { success: true };
 }
 
 // ---------------------------------------------------------------------------
