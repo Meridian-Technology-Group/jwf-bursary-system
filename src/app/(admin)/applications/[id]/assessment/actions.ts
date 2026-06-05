@@ -22,6 +22,7 @@ import {
   pauseAssessment,
 } from "@/lib/db/queries/assessments";
 import type { AssessmentSaveInput } from "@/lib/db/queries/assessments";
+import { startAssessmentIfNotStarted } from "@/lib/applications/status";
 import { getSecondaryContributor } from "@/lib/db/queries/contributors";
 import { createAuditLog } from "@/lib/audit/log";
 import { AUDIT_ACTIONS, AUDIT_ENTITY_TYPES } from "@/lib/audit/actions";
@@ -218,16 +219,20 @@ export async function saveAssessmentAction(
     await requireApplicationAccess(user, applicationId);
 
     await withUserContext(user.id, user.role as RlsRole, async (tx) => {
-      await saveAssessment(tx, assessmentId, {
-        ...data,
-        status: data.status ?? "NOT_STARTED",
-      });
+      // Persist the field data WITHOUT forcing a status (the previous
+      // `status: data.status ?? "NOT_STARTED"` re-pinned every save to
+      // NOT_STARTED, so an assessment never progressed). Status is owned by the
+      // service: the first save promotes NOT_STARTED → IN_PROGRESS.
+      await saveAssessment(tx, assessmentId, data);
+      const started = await startAssessmentIfNotStarted(tx, assessmentId);
       await createAuditLog(tx, {
         userId: user.id,
         action: AUDIT_ACTIONS.ASSESSMENT_SAVE,
         entityType: AUDIT_ENTITY_TYPES.Assessment,
         entityId: assessmentId,
-        context: "Assessment data saved",
+        context: started
+          ? "Assessment data saved — review started (IN_PROGRESS)"
+          : "Assessment data saved",
         metadata: { assessmentId, applicationId, fieldsUpdated: Object.keys(data) },
       });
     });

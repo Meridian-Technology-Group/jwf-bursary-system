@@ -58,16 +58,20 @@ describe("status service — form lifecycle", () => {
   });
 });
 
-describe("status service — assessment lifecycle (behaviour-preserving)", () => {
-  it("permits today's direct NOT_STARTED jumps plus the new IN_PROGRESS step", () => {
+describe("status service — assessment lifecycle (strict, PR-4)", () => {
+  it("requires the IN_PROGRESS step (first save drives NOT_STARTED → IN_PROGRESS)", () => {
     expect(isLegalAssessmentTransition("NOT_STARTED", "IN_PROGRESS")).toBe(true);
-    // direct jumps the current assessor workspace still performs
-    expect(isLegalAssessmentTransition("NOT_STARTED", "PAUSED")).toBe(true);
-    expect(isLegalAssessmentTransition("NOT_STARTED", "COMPLETED")).toBe(true);
     expect(isLegalAssessmentTransition("IN_PROGRESS", "PAUSED")).toBe(true);
     expect(isLegalAssessmentTransition("IN_PROGRESS", "COMPLETED")).toBe(true);
     expect(isLegalAssessmentTransition("PAUSED", "IN_PROGRESS")).toBe(true);
     expect(isLegalAssessmentTransition("PAUSED", "COMPLETED")).toBe(true);
+  });
+
+  it("no longer advertises the direct NOT_STARTED → {PAUSED, COMPLETED} jumps", () => {
+    // PR-4 tightened these. The row helpers still tolerate a NOT_STARTED source
+    // as a defensive fallback, but the table itself rejects them.
+    expect(isLegalAssessmentTransition("NOT_STARTED", "PAUSED")).toBe(false);
+    expect(isLegalAssessmentTransition("NOT_STARTED", "COMPLETED")).toBe(false);
   });
 
   it("treats COMPLETED as terminal", () => {

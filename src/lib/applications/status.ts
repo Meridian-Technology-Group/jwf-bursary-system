@@ -87,15 +87,17 @@ const FORM_TRANSITIONS: Record<ApplicationFormStatus, ApplicationFormStatus[]> =
  * Assessment lifecycle: NOT_STARTED → IN_PROGRESS → (PAUSED ⇄ IN_PROGRESS) →
  * COMPLETED.
  *
- * NOTE (behaviour preservation): today's assessor workspace jumps
- * NOT_STARTED → PAUSED and NOT_STARTED → COMPLETED directly — nothing writes
- * IN_PROGRESS yet (PR-1 added the value; the first-save → IN_PROGRESS wiring
- * lands in PR-4). So NOT_STARTED legally reaches PAUSED and COMPLETED here too;
- * this is additive and removing those direct edges is deferred to PR-4 once the
- * IN_PROGRESS step is actually driven.
+ * PR-4 tightens PR-3's permissive table: first assessor save now drives
+ * NOT_STARTED → IN_PROGRESS (`startAssessmentIfNotStarted`), so the normal path
+ * always passes through IN_PROGRESS. The direct NOT_STARTED → {PAUSED,COMPLETED}
+ * edges are retained ONLY as a defensive fallback for the rare case where a
+ * pause/complete is requested before any save promoted the row (the form's
+ * complete/pause handlers save first, so this should not happen in practice) —
+ * see the NOT_STARTED tolerance in `completeAssessmentRow` / `pauseAssessmentRow`.
+ * They are NOT advertised as a normal transition.
  */
 const ASSESSMENT_TRANSITIONS: Record<AssessmentStatus, AssessmentStatus[]> = {
-  NOT_STARTED: ["IN_PROGRESS", "PAUSED", "COMPLETED"],
+  NOT_STARTED: ["IN_PROGRESS"],
   IN_PROGRESS: ["PAUSED", "COMPLETED"],
   PAUSED: ["IN_PROGRESS", "COMPLETED"],
   COMPLETED: [],
@@ -219,6 +221,43 @@ export async function deriveFormStatus(
     },
   });
   return deriveFormStatusFromCounts(completeCount, applicationType);
+}
+
+/**
+ * Re-derives and persists the pre-submission `form_status` from current section
+ * completion (runtime counterpart to the PR-2 backfill). The single writer of
+ * `form_status` during the drafting phase. NEVER overwrites a SUBMITTED form —
+ * submission is terminal — so calling this after submit is a safe no-op.
+ *
+ * Loads the application's type itself so callers on the section-save path don't
+ * have to thread it through. Returns the value written (or the unchanged
+ * SUBMITTED) for logging/tests.
+ */
+export async function refreshFormStatus(
+  tx: Tx,
+  applicationId: string,
+  ownerContributorId?: string
+): Promise<ApplicationFormStatus> {
+  const app = await tx.application.findUniqueOrThrow({
+    where: { id: applicationId },
+    select: { formStatus: true, applicationType: true },
+  });
+  // Submission is terminal — never demote a submitted form back to a draft state.
+  if (app.formStatus === "SUBMITTED") return "SUBMITTED";
+
+  const derived = await deriveFormStatus(
+    tx,
+    applicationId,
+    app.applicationType,
+    ownerContributorId
+  );
+  if (derived !== app.formStatus) {
+    await tx.application.update({
+      where: { id: applicationId },
+      data: { formStatus: derived },
+    });
+  }
+  return derived;
 }
 
 // ───────────────────────────────────────────────────────────────────────────
@@ -378,13 +417,38 @@ export async function completeAssessmentRow(
   assessmentId: string,
   from: AssessmentStatus
 ): Promise<void> {
-  if (!isLegalAssessmentTransition(from, "COMPLETED")) {
+  // Tolerate a NOT_STARTED source (assessment completed before any save
+  // promoted it) — treat it as having passed through IN_PROGRESS. Preserves
+  // the pre-PR-4 ability to complete directly.
+  if (from !== "NOT_STARTED" && !isLegalAssessmentTransition(from, "COMPLETED")) {
     throw new Error(`Illegal assessment transition ${from} → COMPLETED`);
   }
   await tx.assessment.update({
     where: { id: assessmentId },
     data: { status: "COMPLETED", completedAt: new Date() },
   });
+}
+
+/**
+ * First assessor edit promotes a freshly-created assessment to IN_PROGRESS
+ * (Epic 01 PR-4 — tightens PR-3's behaviour-preserving deviation #1). No-op
+ * unless the assessment is currently NOT_STARTED, so it is safe to call on
+ * every save. Returns true when it transitioned.
+ */
+export async function startAssessmentIfNotStarted(
+  tx: Tx,
+  assessmentId: string
+): Promise<boolean> {
+  const current = await tx.assessment.findUniqueOrThrow({
+    where: { id: assessmentId },
+    select: { status: true },
+  });
+  if (current.status !== "NOT_STARTED") return false;
+  await tx.assessment.update({
+    where: { id: assessmentId },
+    data: { status: "IN_PROGRESS" },
+  });
+  return true;
 }
 
 /**
@@ -412,7 +476,8 @@ export async function pauseAssessmentRow(
   from: AssessmentStatus,
   pausedUntil: Date = defaultPausedUntil()
 ): Promise<Date> {
-  if (!isLegalAssessmentTransition(from, "PAUSED")) {
+  // Tolerate a NOT_STARTED source (paused before any save promoted it).
+  if (from !== "NOT_STARTED" && !isLegalAssessmentTransition(from, "PAUSED")) {
     throw new Error(`Illegal assessment transition ${from} → PAUSED`);
   }
   await tx.assessment.update({

@@ -20,17 +20,11 @@ import {
   resolveOwningContributorId,
 } from "@/lib/db/queries/contributors";
 import { getOrAcceptLatestInvitationForUser } from "@/lib/db/queries/invitations";
-import { StatusBadge, type ApplicationStatus } from "@/components/shared/status-badge";
+import { projectFormStatusForApplicant } from "@/components/shared/lifecycle-badges";
 import { OnboardingCard } from "@/app/(portal)/onboarding-card";
 import { ReassessmentCard } from "@/app/(portal)/reassessment-card";
 import { FileText, ArrowRight, ClipboardList, Upload } from "lucide-react";
 import Link from "next/link";
-
-/** Map Prisma ApplicationStatus to StatusBadge's display type. */
-function toBadgeStatus(status: string): ApplicationStatus {
-  if (status === "PRE_SUBMISSION") return "DRAFT";
-  return status as ApplicationStatus;
-}
 
 export const metadata = {
   title: "My Application",
@@ -243,7 +237,15 @@ export default async function PortalDashboardPage() {
                   {roundLabel}
                 </p>
                 <div className="mt-3">
-                  <StatusBadge status={toBadgeStatus(application.status)} />
+                  {/* Parent-safe label (Epic 01): never surfaces internal
+                      assessment/outcome states. Epic 05 owns the full portal
+                      status UX. */}
+                  <span className="status-badge border bg-primary-50 border-primary-200 text-primary-800">
+                    {projectFormStatusForApplicant(
+                      application.formStatus,
+                      application.applicationType
+                    )}
+                  </span>
                 </div>
               </div>
               <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-primary-50">

@@ -168,7 +168,7 @@ export default async function AdminDashboardPage() {
     {
       config: {
         label: "In Progress",
-        subLabel: "Assessment paused",
+        subLabel: "Assessment in progress or paused",
         icon: Loader2,
         iconBg: "bg-orange-50",
         iconColor: "text-orange-600",
