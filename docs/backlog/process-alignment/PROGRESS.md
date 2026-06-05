@@ -36,7 +36,7 @@ Legend: ⬜ not started · 🟡 in progress · ✅ shipped to staging · 🚫 bl
 |---|---|---|---|---|
 | — | Scaffolding (plans + this ledger) | ✅ | — | #133 (+ #140 reconcile) |
 | 0 | [12 Defect fixes](plans/12-defect-fixes.md) | ✅ | — | #134–#139 |
-| 1 | [01 Status & workflow model](plans/01-status-and-workflow-model.md) | 🟡 | — | (next) |
+| 1 | [01 Status & workflow model](plans/01-status-and-workflow-model.md) | 🟡 | — | #141 (PR-1 schema), #142 (PR-2 backfill) |
 | 1 | [03 Round management](plans/03-round-management.md) | ⬜ | 01 | — |
 | 1 | [04 Lead-applicant contacts & invitations](plans/04-lead-applicant-contacts-and-invitations.md) | ⬜ | 01 | — |
 | 2 | [02 Application form re-scope](plans/02-application-form-rescope.md) | ⏳ deps | 01, 04 (deps) · D3 ✅ · D11 artifact (build to workbook) | — |
@@ -70,6 +70,33 @@ fixes are surgical and code-verified; confirm live on the staging preview during
 Monday testing (esp. PR-A show-names and PR-C round-create).
 **Resolved same-line decision:** VIEWER name reveal — implemented ADMIN+ASSESSOR
 only; confirm with Charlotte only if VIEWER must reveal.
+
+---
+
+## Active — Epic 01 (status & workflow model)
+
+Keystone of Wave 1. Single branch lineage off `staging`; six sequential PRs
+(`additive → backfill → tighten`). Schema column `applications.status` (the old
+fused enum) is kept through PR-1→PR-5 and dropped only in **PR-6** once every
+reader is migrated.
+
+- [x] **PR-1** #141 — additive schema: new enums (`ApplicationFormStatus`,
+  `ApplicationType`), `AssessmentStatus.IN_PROGRESS`, 3-value
+  `AssessmentOutcome`; new columns `form_status`/`application_type`/`archived_at`
+  + `assessments.paused_until`; legacy `status` marked `@deprecated`. Enum DDL
+  split from column DDL across two migrations (PG `ADD VALUE`-in-txn safety).
+- [x] **PR-2** #142 — backfill: deterministic, idempotent DML mapping the legacy
+  fused `status` onto the new columns (§5.1 table + D-note). Writes only the new
+  columns; never touches `status`.
+- [ ] **PR-3** — central status service: single transition writer; migrate the
+  scattered writers; persist `pausedUntil`; drop inline pause-deadline math.
+- [ ] **PR-4** — form-status derivation from sections + typed badge components;
+  remove stale `status-badge.tsx`; fix the assessment pill.
+- [ ] **PR-5** — `submittedAt` write-once trigger migration + app invariant + test.
+- [ ] **PR-6** — ⏸ **deferred / gated**: drop the deprecated fused `status`
+  column once all readers are migrated (cut over reports/dashboard/cockpit
+  queries first; CI grep-gate clean). Gated on Brian's confirmation that no
+  external/report consumer reads the old string.
 
 ---
 
@@ -120,3 +147,7 @@ Wave 2 → Wave 3 → Wave 4.
   D8/D14/D15–17/D19 = narrow confirms. Net: nothing decision-blocked.
 - **2026-06-05** — **Wave 0 shipped**: defect PRs #134–#139 merged to staging
   (all green; behavioural verify deferred to staging preview). Next: Epic 01.
+- **2026-06-05** — **Epic 01 opened**: PR-1 **#141** (additive schema) merged +
+  applied to nonprod. PR-2 **#142** (idempotent backfill of the new lifecycle
+  columns from the legacy fused `status`) opened for review. PR-3/4/5 pending;
+  PR-6 (drop fused `status`) deferred/gated.
