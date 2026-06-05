@@ -9,7 +9,7 @@
 >
 > **Spec:** [README.md](README.md) (spine + decision register). **Owner:** Brian Wagner.
 
-**Started:** 2026-06-05 · **Current focus:** Wave 1 — Epic 03 shipped; Epic 04 (contact register) in progress.
+**Started:** 2026-06-05 · **Current focus:** **Wave 1 COMPLETE** (Epics 01/03/04 shipped; 01 PR-6 gated). Awaiting Brian's go-ahead for Wave 2 (Epic 02 now unblocked).
 
 ---
 
@@ -38,8 +38,8 @@ Legend: ⬜ not started · 🟡 in progress · ✅ shipped to staging · 🚫 bl
 | 0 | [12 Defect fixes](plans/12-defect-fixes.md) | ✅ | — | #134–#139 |
 | 1 | [01 Status & workflow model](plans/01-status-and-workflow-model.md) | ✅ | — | #141 (PR-1 schema), #142 (PR-2 backfill), #143 (PR-3 status service), #144 (PR-4 readers+badges), #145 (PR-5 submitted_at write-once); **PR-6 drop-column ⏸ gated** |
 | 1 | [03 Round management](plans/03-round-management.md) | ✅ | 01 | #146 (PR-A schema+server core), #147 (PR-B UI) |
-| 1 | [04 Lead-applicant contacts & invitations](plans/04-lead-applicant-contacts-and-invitations.md) | 🟡 | 01 | feature/04-* — PR-1 contact register (schema+CRUD+seed), PR-2 invite-from-contact + locking, PR-3 twin/DOB uniqueness |
-| 2 | [02 Application form re-scope](plans/02-application-form-rescope.md) | ⏳ deps | 01, 04 (deps) · D3 ✅ · D11 artifact (build to workbook) | — |
+| 1 | [04 Lead-applicant contacts & invitations](plans/04-lead-applicant-contacts-and-invitations.md) | ✅ | 01 | #148 (contact register), #149 (invite-from-contact + D1 lock), #150 (twin/DOB uniqueness) |
+| 2 | [02 Application form re-scope](plans/02-application-form-rescope.md) | 🟢 ready | deps met (01, 04 ✅) · D3 ✅ · D11 artifact (build to workbook) | — |
 | 2 | [05 Parent portal experience](plans/05-parent-portal-experience.md) | ⏳ deps | 01, 02, 03 (deps) · D10 ✅ | — |
 | 3 | [06 Assessor experience & UI](plans/06-assessor-experience-and-ui.md) | ⏳ deps | 02 (dep) | — |
 | 3 | [07 Calculations & fees](plans/07-assessment-calculations-and-fees.md) | ⏳ deps | 06 (dep) · D8/D14 narrow, non-blocking | — |
@@ -296,6 +296,12 @@ Wave 2 → Wave 3 → Wave 4.
 
 ## Change log
 
+- **2026-06-05** — **WAVE 1 COMPLETE.** Epic 04 fully shipped (#148 contact
+  register, #149 invite-from-contact + D1 school/entry-year lock, #150 twin/DOB
+  uniqueness). DOB-uniqueness migration validated against real nonprod data
+  (0 violations) before merge; applied cleanly. Wave 1 = Epics 01 (PRs 1–5) +
+  03 + 04 all on staging; **Epic 01 PR-6 (drop fused `status`) remains ⏸ gated**.
+  Epic 02 now unblocked. Awaiting Brian's go-ahead for Wave 2.
 - **2026-06-05** — **Epic 04 PR-3** (twin/DOB uniqueness, backfilled): migration
   `20260605210000_application_dob_unique` backfills `applications.child_dob` from
   `CHILD_DETAILS` JSONB, adds a composite `UNIQUE(round,lead,child_name,
