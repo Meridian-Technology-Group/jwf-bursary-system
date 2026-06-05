@@ -27,6 +27,7 @@ import {
 } from "@/lib/audit/actions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { formatLondonDateTime } from "@/lib/datetime";
 import { ClockIcon, UserIcon, ChevronLeftIcon, ChevronRightIcon } from "lucide-react";
 
 export const metadata: Metadata = {
@@ -50,16 +51,10 @@ const ENTITY_TYPES = [
 
 // ─── Timestamp helpers ────────────────────────────────────────────────────────
 
+// Audit timestamps are formatted in Europe/London (GMT/BST) via the shared
+// helper so they are not rendered an hour early on a UTC runtime (§2.4).
 function formatTimestamp(date: Date): string {
-  return new Intl.DateTimeFormat("en-GB", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-    hour12: false,
-  }).format(date);
+  return formatLondonDateTime(date);
 }
 
 function relativeTime(date: Date): string {
