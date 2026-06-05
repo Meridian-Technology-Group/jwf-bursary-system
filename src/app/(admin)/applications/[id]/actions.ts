@@ -828,3 +828,76 @@ export async function gdprDeleteApplicantAction(
     };
   }
 }
+
+// ─── setSubmissionDeadlineAction (Epic 03 — per-application submit-by) ──────────
+
+/**
+ * Sets or clears the per-application submission deadline override
+ * (`submission_deadline_at`). ADMIN-gated.
+ *
+ * - `deadlineIso` is an ISO 8601 instant (from a datetime-local input, converted
+ *   client-side) granting THIS applicant a later/earlier submit-by date than the
+ *   round close. Passing `null` (or empty) CLEARS the override, reverting the
+ *   application to the round-level close date.
+ * - The effective deadline is derived everywhere via
+ *   `effectiveSubmissionDeadline()` (src/lib/rounds/submission-deadline.ts);
+ *   this action only persists the raw override.
+ * - Audited as `SET_SUBMISSION_DEADLINE`. Never touches `submitted_at`,
+ *   `form_status`, or the assessment pause clock — the three clocks stay
+ *   distinct (plan §3).
+ */
+export async function setSubmissionDeadlineAction(
+  applicationId: string,
+  deadlineIso: string | null
+): Promise<ActionResult> {
+  const user = await requireRole([Role.ADMIN]);
+
+  let deadline: Date | null = null;
+  if (deadlineIso && deadlineIso.trim() !== "") {
+    const parsed = new Date(deadlineIso);
+    if (Number.isNaN(parsed.getTime())) {
+      return { success: false, error: "Invalid deadline date." };
+    }
+    deadline = parsed;
+  }
+
+  try {
+    await withUserContext(user.id, user.role as RlsRole, async (tx) => {
+      const app = await tx.application.findUnique({
+        where: { id: applicationId },
+        select: { id: true, reference: true, roundId: true },
+      });
+      if (!app) throw new Error("Application not found.");
+
+      await tx.application.update({
+        where: { id: applicationId },
+        data: { submissionDeadlineAt: deadline },
+      });
+
+      await createAuditLog(tx, {
+        userId: user.id,
+        action: AUDIT_ACTIONS.SET_SUBMISSION_DEADLINE,
+        entityType: AUDIT_ENTITY_TYPES.Application,
+        entityId: applicationId,
+        context: deadline
+          ? `Set submission deadline for ${app.reference} to ${deadline.toISOString()}`
+          : `Cleared submission deadline override for ${app.reference} (reverts to round close)`,
+        metadata: {
+          reference: app.reference,
+          roundId: app.roundId,
+          submissionDeadlineAt: deadline ? deadline.toISOString() : null,
+        },
+      });
+    });
+
+    revalidatePath(`/applications/${applicationId}`);
+    revalidatePath("/queue");
+
+    return { success: true };
+  } catch (err) {
+    const message =
+      err instanceof Error ? err.message : "Failed to set submission deadline.";
+    console.error("[setSubmissionDeadlineAction]", err);
+    return { success: false, error: message };
+  }
+}

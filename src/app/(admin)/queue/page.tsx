@@ -105,12 +105,22 @@ export default async function QueuePage({
     profile.id,
     profile.role as RlsRole,
     async (tx) => {
-      // Re-assessment-eligible filter: resolve the OPEN round, then scope the
-      // queue to the applications linked to its eligible bursary holders. No
+      // Re-assessment-eligible filter: resolve the target OPEN round, then scope
+      // the queue to the applications linked to its eligible bursary holders. No
       // open round → show nothing (empty bursaryAccountIds set).
+      //
+      // Epic 03 (concurrent rounds): when the queue is scoped to a specific
+      // round (`roundId`), resolve re-assessment eligibility against THAT round
+      // — not "the" open round (there may be several). Only fall back to the
+      // default active round when the queue is not round-scoped.
       let reassessRoundYear: string | null = null;
       if (reassessEligible) {
-        const round = await getActiveRound(tx);
+        const round = roundId
+          ? await tx.round.findUnique({
+              where: { id: roundId },
+              select: { id: true, academicYear: true, status: true },
+            })
+          : await getActiveRound(tx);
         if (round && round.status === RoundStatus.OPEN) {
           reassessRoundYear = round.academicYear;
           const holders = await getActiveBursaryHolders(tx, round.id);

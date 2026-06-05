@@ -15,6 +15,20 @@ import { createAuditLog } from "@/lib/audit/log";
 import { AUDIT_ACTIONS, AUDIT_ENTITY_TYPES } from "@/lib/audit/actions";
 
 // ---------------------------------------------------------------------------
+// Config
+// ---------------------------------------------------------------------------
+
+/**
+ * Reversible safety flag (Epic 03 / D13). Concurrent OPEN rounds are allowed by
+ * default; setting `ROUNDS_SINGLE_OPEN_ONLY` to "1"/"true" restores the old
+ * "only one OPEN round at a time" guard in {@link openRoundAction} without a
+ * code change. Read once at module load.
+ */
+const SINGLE_OPEN_ONLY =
+  process.env.ROUNDS_SINGLE_OPEN_ONLY === "1" ||
+  process.env.ROUNDS_SINGLE_OPEN_ONLY === "true";
+
+// ---------------------------------------------------------------------------
 // Validation schemas
 // ---------------------------------------------------------------------------
 
@@ -184,11 +198,16 @@ export async function updateRoundAction(
  * Guards:
  * - Admin-gated (matches createRoundAction).
  * - Refuses if the target round is not currently DRAFT.
- * - Refuses if another round is already OPEN. This invariant ("only one OPEN
- *   at a time") is enforced at the action layer via an explicit findFirst,
- *   not via a DB unique partial index. The action-layer guard is a smaller,
- *   reversible change appropriate for MVP; revisit if concurrent admin
- *   activity becomes a real concern (then promote to a DB constraint).
+ *
+ * Concurrent OPEN rounds (Epic 03, decision D13). The Foundation runs more than
+ * one intake at a time, so the old "only one OPEN round at a time" invariant is
+ * LIFTED by default — opening a second OPEN round is now allowed. The check is
+ * retained ONLY as a reversible, OFF-by-default soft guard behind the
+ * `ROUNDS_SINGLE_OPEN_ONLY` env flag (set to "1"/"true" to restore the old
+ * single-OPEN behaviour without a code change). It was never a DB constraint;
+ * the database stays permissive. Readers no longer assume a single OPEN round
+ * (getActiveRound is a *default*-only helper, listOpenRounds enumerates all,
+ * and bulk re-assessment takes an explicit roundId).
  *
  * Stamps an audit log entry (action: "ROUND_OPENED") and revalidates the
  * rounds list + detail routes.
@@ -215,15 +234,19 @@ export async function openRoundAction(
         );
       }
 
-      const existingOpen = await tx.round.findFirst({
-        where: { status: RoundStatus.OPEN, NOT: { id } },
-        select: { academicYear: true },
-      });
+      // Soft, reversible single-OPEN guard — OFF by default (D13: concurrent
+      // rounds are the norm). Only enforced when explicitly opted into via env.
+      if (SINGLE_OPEN_ONLY) {
+        const existingOpen = await tx.round.findFirst({
+          where: { status: RoundStatus.OPEN, NOT: { id } },
+          select: { academicYear: true },
+        });
 
-      if (existingOpen) {
-        throw new Error(
-          `Cannot open: round ${existingOpen.academicYear} is already OPEN. Close it first.`
-        );
+        if (existingOpen) {
+          throw new Error(
+            `Cannot open: round ${existingOpen.academicYear} is already OPEN (ROUNDS_SINGLE_OPEN_ONLY is set). Close it first.`
+          );
+        }
       }
 
       const updated = await updateRound(tx, id, {

@@ -36,8 +36,8 @@ Legend: ⬜ not started · 🟡 in progress · ✅ shipped to staging · 🚫 bl
 |---|---|---|---|---|
 | — | Scaffolding (plans + this ledger) | ✅ | — | #133 (+ #140 reconcile) |
 | 0 | [12 Defect fixes](plans/12-defect-fixes.md) | ✅ | — | #134–#139 |
-| 1 | [01 Status & workflow model](plans/01-status-and-workflow-model.md) | 🟡 | — | #141 (PR-1 schema), #142 (PR-2 backfill), #143 (PR-3 status service), #144 (PR-4 readers+badges) |
-| 1 | [03 Round management](plans/03-round-management.md) | ⬜ | 01 | — |
+| 1 | [01 Status & workflow model](plans/01-status-and-workflow-model.md) | ✅ | — | #141 (PR-1 schema), #142 (PR-2 backfill), #143 (PR-3 status service), #144 (PR-4 readers+badges), #145 (PR-5 submitted_at write-once); **PR-6 drop-column ⏸ gated** |
+| 1 | [03 Round management](plans/03-round-management.md) | 🟡 | 01 | feature/03-* — PR-A (schema+server core), PR-B (UI) |
 | 1 | [04 Lead-applicant contacts & invitations](plans/04-lead-applicant-contacts-and-invitations.md) | ⬜ | 01 | — |
 | 2 | [02 Application form re-scope](plans/02-application-form-rescope.md) | ⏳ deps | 01, 04 (deps) · D3 ✅ · D11 artifact (build to workbook) | — |
 | 2 | [05 Parent portal experience](plans/05-parent-portal-experience.md) | ⏳ deps | 01, 02, 03 (deps) · D10 ✅ | — |
@@ -137,6 +137,47 @@ reader is migrated.
 
 ---
 
+## Active — Epic 03 (round management)
+
+Wave 1, depends on Epic 01 (shipped). Plan §6 lists 8 PR-sized items; executed as
+**two cohesive PRs** off `staging` (schema+server core, then UI) — PR-A is the
+structural keystone, PR-B the UX slices. Each migration ships in the PR that
+needs it.
+
+**PR-A — schema + concurrent-rounds + per-app-deadline server core** (this PR):
+- [x] §6 PR-1 — `Application.submissionDeadlineAt DateTime?` + additive migration
+  `20260605190000_application_submission_deadline` (nullable, no default,
+  timestamptz); `effectiveSubmissionDeadline()` helper in
+  `src/lib/rounds/submission-deadline.ts` (override wins; null ⇒ round close
+  end-of-day) + 9 unit tests.
+- [x] §6 PR-2 — single-OPEN guard **softened** behind `ROUNDS_SINGLE_OPEN_ONLY`
+  (default OFF → concurrent rounds allowed, D13); `listOpenRounds()` added;
+  `getActiveRound` doc reframed as *default-only*; **bulk re-assessment** action
+  takes an explicit `targetRoundId`, validates OPEN, refuses to guess when >1
+  OPEN and none chosen.
+- [x] §6 PR-3 (server half) — `rounds/current` deterministic doc; queue
+  reassess-eligible resolves against the scoped `roundId` not "the" open round.
+- [x] §6 PR-5 (server half) — `setSubmissionDeadlineAction` + new
+  `SET_SUBMISSION_DEADLINE` audit action (set/clear, ADMIN-gated, audited).
+
+**PR-B — UI slices** (next PR):
+- [ ] §6 PR-3 (UI) — round selector on admin dashboard (queue + reports already
+  accept `roundId`).
+- [ ] §6 PR-4 — "Edit/extend dates" dialog on round detail → `updateRoundAction`
+  (allowed on DRAFT + OPEN); cockpit recomputes from new `closeDate`.
+- [ ] §6 PR-5 (UI) — admin per-app deadline override control + effective-vs-
+  inherited display.
+- [ ] §6 PR-6 — invite picker filtered to live rounds (`listOpenRounds`);
+  two-option segmented control for ≤2, `Select` fallback.
+- [ ] §6 PR-7 — single parent/staff invite confirmation step.
+- [ ] §6 PR-8 — demo seed: two OPEN rounds + per-app deadline overrides.
+
+> Epic 04 owns the invitation/contact-register rework; this epic leaves clear
+> seams (picker filter + confirmation only) and does not restructure the invite
+> data model.
+
+---
+
 ## Decision register — execution view
 
 Mirrors [README §5](README.md#5-decision-register). Reconciled 2026-06-05 against
@@ -177,6 +218,15 @@ Wave 2 → Wave 3 → Wave 4.
 
 ## Change log
 
+- **2026-06-05** — **Epic 01 marked ✅** (buildable scope complete: PRs #141–#145;
+  PR-6 drop-column remains ⏸ gated with prerequisites intact). **Epic 03 opened**:
+  PR-A (schema + server core) — additive `submission_deadline_at` migration +
+  `effectiveSubmissionDeadline()` helper (9 tests); single-OPEN guard softened to
+  the OFF-by-default `ROUNDS_SINGLE_OPEN_ONLY` flag (D13 concurrent rounds);
+  `listOpenRounds()`; bulk re-assessment now takes an explicit `targetRoundId`
+  (refuses to guess when >1 OPEN); queue reassess scope + `rounds/current`
+  reworked for concurrency; `setSubmissionDeadlineAction` +
+  `SET_SUBMISSION_DEADLINE` audit. 250 tests green. PR-B (UI) to follow.
 - **2026-06-05** — Programme execution opened. Scaffolding (12 plans +
   current-state map + this ledger) shipped via **#133**. D2/D12/D18/D20 locked.
 - **2026-06-05** — Decision register **reconciled** against the meeting (#140):
