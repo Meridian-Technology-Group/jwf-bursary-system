@@ -30,6 +30,8 @@ model Profile {
   staffInvitationsCreated StaffInvitation[]        @relation("StaffInvitationCreator")
   contributorLinks        ApplicationContributor[] @relation("ContributorProfile")
   contributorsInvited     ApplicationContributor[] @relation("ContributorInvitedBy")
+  contacts                Contact[]                @relation("ContactProfile")
+  contactsCreated         Contact[]                @relation("ContactCreator")
 
   @@map("profiles")
 }
@@ -71,6 +73,7 @@ model BursaryAccount {
   invitations          Invitation[]
   recommendations      Recommendation[]
   siblingLinks         SiblingLink[]
+  contacts             Contact[]
 
   @@index([leadApplicantId])
   @@map("bursary_accounts")
@@ -82,6 +85,7 @@ model Application {
   reference            String                   @unique
   roundId              String                   @map("round_id") @db.Uuid
   bursaryAccountId     String?                  @map("bursary_account_id") @db.Uuid
+  contactId            String?                  @map("contact_id") @db.Uuid
   leadApplicantId      String                   @map("lead_applicant_id") @db.Uuid
   school               School
   childName            String                   @map("child_name")
@@ -107,6 +111,7 @@ model Application {
   sections             ApplicationSection[]
   assignedTo           Profile?                 @relation("ApplicationAssignee", fields: [assignedToId], references: [id])
   bursaryAccount       BursaryAccount?          @relation(fields: [bursaryAccountId], references: [id])
+  contact              Contact?                 @relation(fields: [contactId], references: [id])
   leadApplicant        Profile                  @relation("ApplicationLeadApplicant", fields: [leadApplicantId], references: [id])
   round                Round                    @relation(fields: [roundId], references: [id])
   assessment           Assessment?
@@ -417,6 +422,68 @@ model CouncilTaxDefault {
   @@map("council_tax_defaults")
 }
 
+/// Admin-managed lead-applicant contact: the pre-application record of a
+/// family (parent + child + school + entry year + address). Exists
+/// independently of any Application; it is the source from which an
+/// invitation and a pre-filled, school/year-LOCKED application are seeded
+/// (Epic 04, D1). The child name + DOB form the per-child identity key so
+/// twins (same name, distinct DOB) get distinct contacts (D12).
+model Contact {
+  id String @id @default(uuid()) @db.Uuid
+
+  // Parent (lead applicant) — identity & reachability. lastName required.
+  firstName String? @map("first_name")
+  lastName  String  @map("last_name")
+  email     String  @map("email")
+  phone     String? @map("phone")
+
+  // Child — name (required) + DOB form the per-child identity key (twins).
+  childName String    @map("child_name")
+  childDob  DateTime? @map("child_dob") @db.Date
+
+  // School & year — set by admin, LOCKED for the parent (D1).
+  school         School
+  entryYear      Int             @map("entry_year")
+  entryYearGroup EntryYearGroup? @map("entry_year_group")
+
+  // Home address — structured, so the portal can show the stored address
+  // when the child is "at the same address" (Epic 02 reads it).
+  addressLine1 String? @map("address_line1")
+  addressLine2 String? @map("address_line2")
+  town         String? @map("town")
+  postcode     String? @map("postcode")
+
+  // Linkage — bound to a Profile once the family registers; to an account
+  // once they hold a bursary. Both nullable: a contact precedes both.
+  profileId        String? @map("profile_id") @db.Uuid
+  bursaryAccountId String? @map("bursary_account_id") @db.Uuid
+
+  notes      String?
+  archivedAt DateTime? @map("archived_at") @db.Timestamptz(6)
+  createdBy  String    @map("created_by") @db.Uuid
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt  DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  profile        Profile?        @relation("ContactProfile", fields: [profileId], references: [id])
+  bursaryAccount BursaryAccount? @relation(fields: [bursaryAccountId], references: [id])
+  creator        Profile         @relation("ContactCreator", fields: [createdBy], references: [id])
+  invitations    Invitation[]
+  applications   Application[]
+
+  // One contact per child per lead applicant: name + DOB disambiguates twins.
+  // NOTE: profileId is nullable (a contact precedes registration) and Postgres
+  // treats NULLs as DISTINCT in unique indexes, so this constraint does NOT
+  // dedupe two not-yet-bound contacts for the same child. The friendly
+  // "already a contact for that child" guard lives in createContactAction,
+  // scoped by creator, to catch that case at the app layer before binding.
+  @@unique([profileId, childName, childDob])
+  @@index([email])
+  @@index([profileId])
+  @@index([bursaryAccountId])
+  @@index([createdBy])
+  @@map("contacts")
+}
+
 /// Tracks invitations sent by assessors.
 model Invitation {
   id               String           @id @default(uuid()) @db.Uuid
@@ -427,8 +494,11 @@ model Invitation {
   school           School?
   roundId          String?          @map("round_id") @db.Uuid
   bursaryAccountId String?          @map("bursary_account_id") @db.Uuid
+  contactId        String?          @map("contact_id") @db.Uuid
   applicationId    String?          @map("application_id") @db.Uuid
   authUserId       String?          @map("auth_user_id") @db.Uuid
+  entryYear        Int?             @map("entry_year")
+  entryYearGroup   EntryYearGroup?  @map("entry_year_group")
   token            String           @unique
   status           InvitationStatus @default(PENDING)
   expiresAt        DateTime         @map("expires_at") @db.Timestamptz(6)
@@ -436,6 +506,7 @@ model Invitation {
   createdBy        String           @map("created_by") @db.Uuid
   createdAt        DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
   bursaryAccount   BursaryAccount?  @relation(fields: [bursaryAccountId], references: [id])
+  contact          Contact?         @relation(fields: [contactId], references: [id])
   application      Application?     @relation(fields: [applicationId], references: [id], onDelete: Cascade)
   creator          Profile          @relation("InvitationCreator", fields: [createdBy], references: [id])
   round            Round?           @relation(fields: [roundId], references: [id])
@@ -443,6 +514,7 @@ model Invitation {
   @@index([token])
   @@index([email])
   @@index([applicationId])
+  @@index([contactId])
   @@map("invitations")
 }
 
