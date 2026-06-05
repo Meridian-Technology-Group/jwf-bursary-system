@@ -25,6 +25,17 @@ staging build surfaced two things at once:
 The source documents in [`source-materials/`](source-materials/) are the ground
 truth. This programme turns them into buildable, sequenced engineering plans.
 
+> **Authoritative form spec.** The parent application form is built to match the
+> scoping workbook (`New Bursary - Application Form.xlsx`, see its
+> [markdown transcription](source-materials/application-form-scoping.md))
+> **tab-for-tab**: questions, wording, order, branch logic, field types,
+> mandatory markers, per-section document uploads, and validation behaviour. The
+> only deviations are explicit, recorded decisions: school is **set & locked at
+> the admin invite** (Q1 read-only) with entry-year admin-side and off the form
+> ([D1](#5-decision-register) — decided); year/date literals **derive from the
+> round** ([D5](#5-decision-register) — decided); and declaration wording
+> defaults to the workbook verbatim pending [D11](#5-decision-register).
+
 ---
 
 ## 2. How this folder is organised
@@ -104,17 +115,17 @@ who we need it from.
 
 | # | Question | Default if unanswered | Blocks | Owner |
 |---|---|---|---|---|
-| D1 | School + entry-year: lock at admin invite and make form Q1 read-only? (Scoping shows the parent picking school.) | Lock at invite; Q1 display-only | 02, 04 | Charlotte |
+| D1 ✅ | School + entry-year: lock at admin invite and make form Q1 read-only? (Workbook Q1 shows the parent picking school.) | **DECIDED 2026-06-05 — locked at invite: Q1 shows the school read-only (parent cannot change it); entry-year is admin-side and absent from the parent form.** | 02, 04 | Brian |
 | D2 | "Received" vs "Submitted": model one submitted state + type-based label? | Yes — single state, derived label | 01, 05 | Brian |
 | D3 | Income: replace the flat 14-line model wholesale with the scoping sub-tables? | Yes — full rebuild | 02 | Charlotte |
 | D4 | Reason codes: the current 35 are placeholders — supply the real paperwork codes. | Hold; keep placeholders until supplied | 08 | Charlotte |
-| D5 | Dynamic tax-year: confirm `Round.academicYear` is the single source for the "to April YYYY" / payslip-month wording. | Derive from round | 02 | Brian/Charlotte |
+| D5 ✅ | Dynamic tax-year: confirm `Round.academicYear` is the single source for the "to April YYYY" / payslip-month wording. | **DECIDED 2026-06-05 — yes: match the workbook wording/structure exactly, derive the year from `Round.academicYear`.** | 02 | Brian |
 | D6 | Retention policy: purge declined immediately? 6-yr for qualified-not-awarded? keep flat 7-yr? | Tiered: 6-yr q-n-a, 7-yr awarded, purge declined | 10 | Charlotte (+ DPO) |
 | D7 | Remove the assessor-side recommendation PDF? (Only reachable from the recommendation page.) | Remove | 08 | Charlotte |
 | D8 | VAT %: is VAT actually applied to bursary fees, or is the field legacy? (Engine currently **applies** it — schema default **20%** at `prisma/schema.prisma:228`, deducted on the post-bursary net fee at `payable-fees.ts:50`.) | Confirm; 20% currently applied | 07 | Charlotte |
 | D9 | Scholarship: model as a distinct £ award alongside bursary? Need the scholarship process. | Add scholarship award field | 08 | Charlotte |
 | D10 | T&Cs: is `terms-and-conditions.pdf` the final wording, and must acceptance be recorded per round? | Display + record acceptance per submission | 05 | Charlotte |
-| D11 | Declaration wording: confirm the final per-parent + closing declaration text (scoping has a version). | Use scoping-workbook text | 02 | Charlotte |
+| D11 | Declaration wording: confirm the final per-parent + closing declaration text (the workbook has a version). | Default — implement the **workbook's declaration verbatim** unless Charlotte supplies different final text | 02 | Charlotte |
 | D12 | Twins: one account per child keyed on (childName + DOB)? Two accounts, one lead? | Per-child accounts keyed incl. DOB | 04 | Brian |
 | D13 | Multiple open rounds: confirm the real cap is "two concurrent" so the UI can be a 2-option control not a dropdown. | Support N, optimise UI for 2 | 03 | Charlotte |
 | D14 | Fee year that drives the **payable monthly**, and how an award splits across a fee-uplift boundary. | Current-year ÷ 12 until confirmed | 07 | Charlotte |

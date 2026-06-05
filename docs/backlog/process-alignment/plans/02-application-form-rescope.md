@@ -31,6 +31,15 @@ mandatory**, ship the **real declaration text** with a **per-parent tick for
 both parents**, and split the identity capture into the **new-vs-rolling
 variant** (full ID for new applications, hidden for rolling-over).
 
+> **Authoritative spec.** This form matches the scoping workbook **tab-for-tab** —
+> questions, wording, order, branch logic, field types, mandatory markers,
+> per-section document uploads, and the validation summary — replacing both the
+> current build's divergences and any simplification of our own. The **only**
+> deviations are recorded decisions: **D1** (school set & locked at the admin
+> invite — Q1 read-only; entry-year admin-side, absent from the form) and **D5**
+> (year/date literals derive from `Round.academicYear`). Declaration text
+> defaults to the workbook verbatim pending **D11**.
+
 This is the parent-facing rebuild of Wave 2. It reads the lifecycle and the
 locked invite data laid down in Waves 1.
 
@@ -442,17 +451,19 @@ the one-off draft backfill in PR-2 (additive, idempotent, reversible-by-design).
 
 Linked to the [Decision register](../README.md#5-decision-register):
 
-- **D1** — School + entry-year locked at admin invite, form Q1 display-only.
-  *(default: lock at invite; Q1 display-only)* — owner Charlotte. **Lock owned by
+- **D1 ✅ DECIDED (2026-06-05)** — School + entry-year **locked at the admin
+  invite**: Q1 shows the school **read-only** (parent cannot change it);
+  entry-year is admin-side and **absent from the parent form**. **Lock owned by
   Epic 04; this epic consumes it.**
-- **D3** — Replace the flat 14-line income model wholesale with the scoping
-  sub-tables. *(default: yes — full rebuild)* — owner Charlotte. **The premise of
-  PR-2.**
-- **D5** — `Round.academicYear` is the single source for the "to April YYYY" /
-  payslip-month / SA302 wording. *(default: derive from round)* — owner
-  Brian/Charlotte. **The premise of `tax-year.ts`.**
-- **D11** — Final per-parent + closing declaration text. *(default: use
-  scoping-workbook text)* — owner Charlotte. **Blocks PR-5 copy.**
+- **D3** (open) — Replace the flat 14-line income model wholesale with the
+  workbook sub-tables. *(default: yes — full rebuild)* — owner Charlotte. **The
+  premise of PR-2.**
+- **D5 ✅ DECIDED (2026-06-05)** — Match the workbook wording/structure exactly,
+  deriving the year from `Round.academicYear` (the single source for the "to
+  April YYYY" / payslip-month / SA302 wording). **The premise of `tax-year.ts`.**
+- **D11** (open) — Final per-parent + closing declaration text. *(default:
+  implement the **workbook's declaration verbatim** unless Charlotte supplies
+  different final text)* — owner Charlotte. **Blocks PR-5 copy.**
 
 ---
 
