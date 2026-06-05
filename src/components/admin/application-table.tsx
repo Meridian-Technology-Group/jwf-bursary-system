@@ -37,7 +37,8 @@ import {
   Mail,
   RefreshCw,
 } from "lucide-react";
-import { formatDistanceToNow, format } from "date-fns";
+import { formatDistanceToNow } from "date-fns";
+import { formatLondonDate } from "@/lib/datetime";
 
 import {
   Table,
@@ -226,7 +227,10 @@ function formatSubmittedDate(date: Date | null): React.ReactNode {
   const d = new Date(date);
   return (
     <span>
-      <span className="block text-slate-700">{format(d, "d MMM yyyy")}</span>
+      {/* Absolute date in Europe/London so a just-past-midnight-London
+          submission is not rolled back a day on a UTC runtime (§2.4). The
+          relative line below is a duration (zone-agnostic). */}
+      <span className="block text-slate-700">{formatLondonDate(d)}</span>
       <span className="block text-xs text-slate-400">
         {formatDistanceToNow(d, { addSuffix: true })}
       </span>
