@@ -136,9 +136,27 @@ interface AdminNavProps {
   userRole?: string;
 }
 
+// Persona wordmark shown under the logo. The shell is shared by ADMIN /
+// ASSESSOR / VIEWER, so a hard-coded "Admin" label leaked admin-persona copy
+// into the assessor (and viewer) view (defect plan §2.6). Render the viewer's
+// actual role instead.
+function roleWordmark(userRole?: string): string {
+  switch (userRole) {
+    case "ADMIN":
+      return "Admin";
+    case "ASSESSOR":
+      return "Assessor";
+    case "VIEWER":
+      return "Viewer";
+    default:
+      return "Staff";
+  }
+}
+
 export function AdminNav({ collapsed, userName, userEmail, userRole }: AdminNavProps) {
   const pathname = usePathname();
   const isAdmin = userRole === "ADMIN";
+  const wordmark = roleWordmark(userRole);
 
   return (
     <div className="flex h-full flex-col bg-primary-800">
@@ -155,7 +173,7 @@ export function AdminNav({ collapsed, userName, userEmail, userRole }: AdminNavP
           <>
             <JwfLogo tone="light" className="h-20" />
             <span className="text-[11px] font-medium uppercase tracking-[0.22em] text-neutral-300">
-              Admin
+              {wordmark}
             </span>
           </>
         )}
@@ -164,7 +182,7 @@ export function AdminNav({ collapsed, userName, userEmail, userRole }: AdminNavP
       {/* Navigation groups */}
       <nav
         className="flex-1 overflow-y-auto px-2 py-4 space-y-6"
-        aria-label="Admin navigation"
+        aria-label="Main navigation"
       >
         {NAV_GROUPS.filter(
           (group) => isAdmin || !ADMIN_ONLY_HEADINGS.has(group.heading)
