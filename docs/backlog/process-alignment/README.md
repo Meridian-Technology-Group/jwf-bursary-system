@@ -111,12 +111,26 @@ who we need it from.
 | D5 | Dynamic tax-year: confirm `Round.academicYear` is the single source for the "to April YYYY" / payslip-month wording. | Derive from round | 02 | Brian/Charlotte |
 | D6 | Retention policy: purge declined immediately? 6-yr for qualified-not-awarded? keep flat 7-yr? | Tiered: 6-yr q-n-a, 7-yr awarded, purge declined | 10 | Charlotte (+ DPO) |
 | D7 | Remove the assessor-side recommendation PDF? (Only reachable from the recommendation page.) | Remove | 08 | Charlotte |
-| D8 | VAT %: is VAT actually applied to bursary fees, or is that field legacy? | Keep, default 0 | 07 | Charlotte |
+| D8 | VAT %: is VAT actually applied to bursary fees, or is the field legacy? (Engine currently **applies** it — schema default **20%** at `prisma/schema.prisma:228`, deducted on the post-bursary net fee at `payable-fees.ts:50`.) | Confirm; 20% currently applied | 07 | Charlotte |
 | D9 | Scholarship: model as a distinct £ award alongside bursary? Need the scholarship process. | Add scholarship award field | 08 | Charlotte |
 | D10 | T&Cs: is `terms-and-conditions.pdf` the final wording, and must acceptance be recorded per round? | Display + record acceptance per submission | 05 | Charlotte |
 | D11 | Declaration wording: confirm the final per-parent + closing declaration text (scoping has a version). | Use scoping-workbook text | 02 | Charlotte |
 | D12 | Twins: one account per child keyed on (childName + DOB)? Two accounts, one lead? | Per-child accounts keyed incl. DOB | 04 | Brian |
 | D13 | Multiple open rounds: confirm the real cap is "two concurrent" so the UI can be a 2-option control not a dropdown. | Support N, optimise UI for 2 | 03 | Charlotte |
+| D14 | Fee year that drives the **payable monthly**, and how an award splits across a fee-uplift boundary. | Current-year ÷ 12 until confirmed | 07 | Charlotte |
+| D15 | Shared custody: model 50/50 as **two lead applicants** (add `CustodyArrangement`), or keep a single lead + note? | Add `CustodyArrangement`; 50/50 ⇒ either may hold the account | 09 | Charlotte |
+| D16 | Foster/guardian: a distinct relationship-status value + mandatory guardianship evidence? | Add a guardian facet + evidence upload | 09 | Charlotte |
+| D17 | Remarried (3 incomes): reuse the two-earner + maintenance model, or build a true 3-contributor model? | Reuse two-party + maintenance; defer 3-contributor | 09 | Charlotte / Brian |
+| D18 | Portal-access revocation: a status-keyed portal/layout guard, or flip role → `DELETED`? | Layout/portal guard; reserve `DELETED` for erasure | 10 | Brian (DPO if data) |
+| D19 | Forward-schedule horizon N + the `availableOn`/`requiredBy` date policy for generated rounds. | Years-to-final-eligible; dates from the award round + Epic 03 | 10 | Charlotte |
+| D20 | Inactivity/session-timeout logout: build it, and what idle window? | Build optional idle watcher; confirm window | 11 | Brian/Charlotte |
+| D21 | Commission the Microsoft SSO build after the spike? | Spike only; no build until commissioned | 11 | Charlotte |
+
+> Household decisions D15–D17 also carry a standing validation ask: **confirm
+> every household scenario row H1–H11 in
+> [plan 09](plans/09-complex-household-and-second-parent.md) verbatim** against
+> the workbook FAQ before the rules harden into branch logic (H7 *cannot
+> support* / H9 *may defer* stay assessor-surfaced flags, never auto-decline).
 
 ---
 
