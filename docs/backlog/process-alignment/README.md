@@ -116,7 +116,7 @@ who we need it from.
 | # | Question | Default if unanswered | Blocks | Owner |
 |---|---|---|---|---|
 | D1 ✅ | School + entry-year: lock at admin invite and make form Q1 read-only? (Workbook Q1 shows the parent picking school.) | **DECIDED 2026-06-05 — locked at invite: Q1 shows the school read-only (parent cannot change it); entry-year is admin-side and absent from the parent form.** | 02, 04 | Brian |
-| D2 | "Received" vs "Submitted": model one submitted state + type-based label? | Yes — single state, derived label | 01, 05 | Brian |
+| D2 ✅ | "Received" vs "Submitted": model one submitted state + type-based label? | **DECIDED 2026-06-05 — yes: a single `SUBMITTED` form state, label derived from `applicationType` ("Received" for new, "Submitted" for rolling-over). Submission date fixed once set.** | 01, 05 | Brian |
 | D3 | Income: replace the flat 14-line model wholesale with the scoping sub-tables? | Yes — full rebuild | 02 | Charlotte |
 | D4 | Reason codes: the current 35 are placeholders — supply the real paperwork codes. | Hold; keep placeholders until supplied | 08 | Charlotte |
 | D5 ✅ | Dynamic tax-year: confirm `Round.academicYear` is the single source for the "to April YYYY" / payslip-month wording. | **DECIDED 2026-06-05 — yes: match the workbook wording/structure exactly, derive the year from `Round.academicYear`.** | 02 | Brian |
@@ -126,15 +126,15 @@ who we need it from.
 | D9 | Scholarship: model as a distinct £ award alongside bursary? Need the scholarship process. | Add scholarship award field | 08 | Charlotte |
 | D10 | T&Cs: is `terms-and-conditions.pdf` the final wording, and must acceptance be recorded per round? | Display + record acceptance per submission | 05 | Charlotte |
 | D11 | Declaration wording: confirm the final per-parent + closing declaration text (the workbook has a version). | Default — implement the **workbook's declaration verbatim** unless Charlotte supplies different final text | 02 | Charlotte |
-| D12 | Twins: one account per child keyed on (childName + DOB)? Two accounts, one lead? | Per-child accounts keyed incl. DOB | 04 | Brian |
+| D12 ✅ | Twins: one account per child keyed on (childName + DOB)? Two accounts, one lead? | **DECIDED 2026-06-05 — one account per child keyed on (childName + DOB); same-name twins resolve by DOB.** | 04 | Brian |
 | D13 | Multiple open rounds: confirm the real cap is "two concurrent" so the UI can be a 2-option control not a dropdown. | Support N, optimise UI for 2 | 03 | Charlotte |
 | D14 | Fee year that drives the **payable monthly**, and how an award splits across a fee-uplift boundary. | Current-year ÷ 12 until confirmed | 07 | Charlotte |
 | D15 | Shared custody: model 50/50 as **two lead applicants** (add `CustodyArrangement`), or keep a single lead + note? | Add `CustodyArrangement`; 50/50 ⇒ either may hold the account | 09 | Charlotte |
 | D16 | Foster/guardian: a distinct relationship-status value + mandatory guardianship evidence? | Add a guardian facet + evidence upload | 09 | Charlotte |
 | D17 | Remarried (3 incomes): reuse the two-earner + maintenance model, or build a true 3-contributor model? | Reuse two-party + maintenance; defer 3-contributor | 09 | Charlotte / Brian |
-| D18 | Portal-access revocation: a status-keyed portal/layout guard, or flip role → `DELETED`? | Layout/portal guard; reserve `DELETED` for erasure | 10 | Brian (DPO if data) |
+| D18 ✅ | Portal-access revocation: a status-keyed portal/layout guard, or flip role → `DELETED`? | **DECIDED 2026-06-05 — status-keyed portal/layout guard; reserve `role = DELETED` for true erasure only.** | 10 | Brian (DPO if data) |
 | D19 | Forward-schedule horizon N + the `availableOn`/`requiredBy` date policy for generated rounds. | Years-to-final-eligible; dates from the award round + Epic 03 | 10 | Charlotte |
-| D20 | Inactivity/session-timeout logout: build it, and what idle window? | Build optional idle watcher; confirm window | 11 | Brian/Charlotte |
+| D20 ✅ | Inactivity/session-timeout logout: build it, and what idle window? | **DECIDED 2026-06-05 — build the optional idle-timeout watcher; the exact idle window still to confirm with Charlotte (does not block the build).** | 11 | Brian/Charlotte |
 | D21 | Commission the Microsoft SSO build after the spike? | Spike only; no build until commissioned | 11 | Charlotte |
 
 > Household decisions D15–D17 also carry a standing validation ask: **confirm
