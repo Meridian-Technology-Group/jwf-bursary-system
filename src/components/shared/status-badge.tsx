@@ -3,6 +3,11 @@
  *
  * Renders a pill-shaped badge with the correct colour scheme and a
  * Lucide icon for each application status.
+ *
+ * @deprecated Uses the legacy {@link ApplicationStatus} display union, which
+ * does not match the Prisma enum. Slated for wholesale replacement by typed
+ * per-lifecycle badges in Epic 01 (plan 01 §5.3). Kept only for existing
+ * callers; do not adopt in new code.
  */
 
 import {
@@ -18,8 +23,14 @@ import { cn } from "@/lib/utils";
 // ─── Status enum ──────────────────────────────────────────────────────────────
 
 /**
- * Matches the ApplicationStatus enum in Prisma schema.
- * Defined here so this component has no Prisma dependency.
+ * @deprecated Legacy display vocabulary — does NOT match the Prisma
+ * `ApplicationStatus` enum (which has `PRE_SUBMISSION` / `NOT_STARTED` /
+ * `COMPLETED` and no `DRAFT` / `IN_REVIEW`). Live callers map their real
+ * Prisma status onto this subset before rendering. Do not wire new code to this
+ * union or to `StatusBadge`. Epic 01 (process-alignment status & workflow
+ * model, plan 01 §5.3) replaces this with typed per-lifecycle badges
+ * (`FormStatusBadge` / `AssessmentStatusBadge` / `OutcomeBadge`); this union and
+ * component are removed wholesale there.
  */
 export type ApplicationStatus =
   | "DRAFT"
