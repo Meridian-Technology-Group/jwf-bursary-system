@@ -24,9 +24,16 @@ export interface FamilyTypeConfigRow {
  * Ordered by category ascending.
  */
 export async function getFamilyTypeConfigs(tx: Tx): Promise<FamilyTypeConfigRow[]> {
-  // Fetch all configs ordered by category + effectiveFrom desc, then deduplicate
+  // Fetch all configs ordered by category + effectiveFrom desc, then deduplicate.
+  // The createdAt desc tie-break makes same-day edits deterministic: when two
+  // rows share an effectiveFrom date, the most recently inserted row wins, so a
+  // same-day edit surfaces instead of a stale version (defect plan §2.2).
   const rows = await tx.familyTypeConfig.findMany({
-    orderBy: [{ category: "asc" }, { effectiveFrom: "desc" }],
+    orderBy: [
+      { category: "asc" },
+      { effectiveFrom: "desc" },
+      { createdAt: "desc" },
+    ],
   });
 
   // Keep only the most recent per category
@@ -63,8 +70,13 @@ export interface SchoolFeesRow {
  * Returns the most recent SchoolFees per school.
  */
 export async function getSchoolFees(tx: Tx): Promise<SchoolFeesRow[]> {
+  // createdAt desc tie-break: same-day edits are deterministic — see §2.2.
   const rows = await tx.schoolFees.findMany({
-    orderBy: [{ school: "asc" }, { effectiveFrom: "desc" }],
+    orderBy: [
+      { school: "asc" },
+      { effectiveFrom: "desc" },
+      { createdAt: "desc" },
+    ],
   });
 
   const seen = new Set<School>();
@@ -97,8 +109,9 @@ export interface CouncilTaxDefaultRow {
  * Returns the most recent CouncilTaxDefault record.
  */
 export async function getCouncilTaxDefault(tx: Tx): Promise<CouncilTaxDefaultRow | null> {
+  // createdAt desc tie-break: same-day edits are deterministic — see §2.2.
   const row = await tx.councilTaxDefault.findFirst({
-    orderBy: { effectiveFrom: "desc" },
+    orderBy: [{ effectiveFrom: "desc" }, { createdAt: "desc" }],
   });
 
   if (!row) return null;
@@ -171,8 +184,13 @@ export async function getConfigsForAssessment(
  * Ordered by category asc, effectiveFrom desc so newest per category comes first.
  */
 export async function getAllFamilyTypeConfigs(tx: Tx): Promise<FamilyTypeConfigRow[]> {
+  // createdAt desc tie-break keeps newest-per-category first on same-day edits.
   const rows = await tx.familyTypeConfig.findMany({
-    orderBy: [{ category: "asc" }, { effectiveFrom: "desc" }],
+    orderBy: [
+      { category: "asc" },
+      { effectiveFrom: "desc" },
+      { createdAt: "desc" },
+    ],
   });
 
   return rows.map((row) => ({
@@ -191,8 +209,13 @@ export async function getAllFamilyTypeConfigs(tx: Tx): Promise<FamilyTypeConfigR
  * Ordered by school asc, effectiveFrom desc.
  */
 export async function getAllSchoolFees(tx: Tx): Promise<SchoolFeesRow[]> {
+  // createdAt desc tie-break keeps newest-per-school first on same-day edits.
   const rows = await tx.schoolFees.findMany({
-    orderBy: [{ school: "asc" }, { effectiveFrom: "desc" }],
+    orderBy: [
+      { school: "asc" },
+      { effectiveFrom: "desc" },
+      { createdAt: "desc" },
+    ],
   });
 
   return rows.map((row) => ({
