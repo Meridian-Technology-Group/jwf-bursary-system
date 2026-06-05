@@ -2,7 +2,9 @@
  * GET /api/applications/names
  *
  * Returns child name and lead applicant name for the requested application IDs.
- * Requires ASSESSOR role. Writes a NAME_REVEAL audit log entry.
+ * Requires ADMIN or ASSESSOR role (VIEWER is read-only / least-privilege and is
+ * not permitted to reveal names — see defect plan §2.1). Writes a NAME_REVEAL
+ * audit log entry for every permitted role.
  *
  * Query params: applicationIds[] — repeated query param, one per ID.
  */
@@ -17,14 +19,14 @@ import { createAuditLog } from "@/lib/audit/log";
 import { AUDIT_ACTIONS, AUDIT_ENTITY_TYPES } from "@/lib/audit/actions";
 
 export async function GET(request: NextRequest) {
-  // Auth check — ASSESSOR only
+  // Auth check — ADMIN or ASSESSOR (not VIEWER)
   const user = await getCurrentUser();
 
   if (!user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  if (user.role !== Role.ASSESSOR) {
+  if (user.role !== Role.ADMIN && user.role !== Role.ASSESSOR) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
