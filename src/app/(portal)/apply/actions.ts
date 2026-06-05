@@ -384,6 +384,7 @@ export async function submitApplication(applicationId: string): Promise<never> {
           submittedAt: true,
           leadApplicantId: true,
           childName: true,
+          childDob: true,
           school: true,
           entryYear: true,
           entryYearGroup: true,
@@ -468,7 +469,7 @@ export async function submitApplication(applicationId: string): Promise<never> {
   // clobber values already set (e.g. carried into a re-assessment application).
   const childDetailsData = application.sections.find(
     (s) => s.section === "CHILD_DETAILS"
-  )?.data as { entryYearGroup?: unknown } | undefined;
+  )?.data as { entryYearGroup?: unknown; dateOfBirth?: unknown } | undefined;
   const VALID_GROUPS = ["Y6", "Y7", "Y9", "Y12", "OTHER"] as const;
   const rawGroup = childDetailsData?.entryYearGroup;
   const childEntryYearGroup =
@@ -483,6 +484,18 @@ export async function submitApplication(applicationId: string): Promise<never> {
   const entryYearGroupToPersist = application.entryYearGroup ?? childEntryYearGroup;
   const entryYearToPersist =
     application.entryYear ?? (Number.isNaN(roundStartYear) ? null : roundStartYear);
+
+  // ── Promote child DOB onto the first-class column (Epic 04, D12) ──────────
+  // The DOB lives in CHILD_DETAILS JSONB as a 'YYYY-MM-DD' string. Promoting it
+  // to applications.child_dob is what lets the per-child uniqueness key
+  // disambiguate twins. Never clobber a DOB already set (e.g. carried into a
+  // re-assessment or seeded from a contact at invite).
+  const rawDob = childDetailsData?.dateOfBirth;
+  const parsedChildDob =
+    typeof rawDob === "string" && /^\d{4}-\d{2}-\d{2}$/.test(rawDob)
+      ? new Date(`${rawDob}T00:00:00.000Z`)
+      : null;
+  const childDobToPersist = application.childDob ?? parsedChildDob;
 
   // ── Mark as SUBMITTED ─────────────────────────────────────────────────────
   // The status update is committed in its own transaction so that a subsequent
@@ -499,6 +512,7 @@ export async function submitApplication(applicationId: string): Promise<never> {
         submittedAt,
         entryYearGroup: entryYearGroupToPersist,
         entryYear: entryYearToPersist,
+        childDob: childDobToPersist,
       },
     });
   });

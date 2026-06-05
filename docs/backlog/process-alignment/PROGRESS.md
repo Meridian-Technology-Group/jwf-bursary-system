@@ -232,11 +232,27 @@ PR-2 → PR-3.** Plan §6 PR-6 (round-picker filter) is ALREADY DONE by Epic 03
   prominent "invite from the contact register" recommended-path card; the quick
   form demoted/relabelled.
 
-**PR-3 — twin/DOB uniqueness (backfilled)** (§6 PR-5) — *pending*:
-- [ ] Backfill `applications.child_dob` from `CHILD_DETAILS` JSONB; add
-  `@@unique([roundId, leadApplicantId, childName, childDob])`; keep the old
-  childName-only unique transitionally, verify counts, drop it in the cutover
-  migration. READ-ONLY validation queries for nonprod precede the merge.
+**PR-3 — twin/DOB uniqueness (backfilled)** (§6 PR-5):
+- [x] Migration `20260605210000_application_dob_unique`:
+  (A) BACKFILL `applications.child_dob` from `CHILD_DETAILS` JSONB
+  (`dateOfBirth`, only where NULL, mirrors submit-time promotion);
+  (B) add composite `UNIQUE(round, lead, child_name, child_dob)` (non-NULL DOB)
+  + a raw PARTIAL `UNIQUE(round, lead, child_name) WHERE child_dob IS NULL`
+  (closes the NULL-distinctness trap so two unknown-DOB same-name rows still
+  collide); (C) drop the old childName-only unique. Cannot break existing rows
+  (the old constraint already forbade two same-name rows per round+lead).
+  **READ-ONLY nonprod validation queries are in the PR body — Brian runs them
+  before merge.**
+- [x] Submit path now promotes `child_dob` from `CHILD_DETAILS` onto the column
+  (never clobbers an existing value), so future apps populate it.
+- [x] `child-identity.ts` pure key helper (NULL coalesced to a sentinel,
+  mirroring the partial index) + 9 unit tests covering twins-don't-collide,
+  same-child-does, NULL-vs-NULL collides, known-vs-unknown doesn't.
+
+> **Note:** the D1 lock-enforcement invariant landed in PR-2 (it belongs with the
+> from-contact/onboarding create path), so PR-3 is purely the DOB-keyed
+> uniqueness + backfill. Plan §6 grouped them; splitting keeps each migration in
+> the PR that needs it.
 
 ---
 
@@ -280,6 +296,15 @@ Wave 2 → Wave 3 → Wave 4.
 
 ## Change log
 
+- **2026-06-05** — **Epic 04 PR-3** (twin/DOB uniqueness, backfilled): migration
+  `20260605210000_application_dob_unique` backfills `applications.child_dob` from
+  `CHILD_DETAILS` JSONB, adds a composite `UNIQUE(round,lead,child_name,
+  child_dob)` + a raw PARTIAL `UNIQUE … WHERE child_dob IS NULL` (closes the
+  NULL-distinctness trap), and drops the old childName-only unique — twins (same
+  name, distinct DOB) no longer collide (D12). Submit path now promotes
+  `child_dob` onto the column. `child-identity.ts` key helper + 9 tests.
+  READ-ONLY nonprod validation queries in the PR body. tsc/format/build green,
+  274 tests green (+9).
 - **2026-06-05** — **Epic 04 PR-2** (invite from contact + D1 locking +
   clarity): `sendInvitationFromContactAction` seeds a parent invite from a
   contact (OPEN-round picker + confirmation, binds `Contact.profileId`, carries
