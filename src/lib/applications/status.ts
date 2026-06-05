@@ -296,6 +296,28 @@ export function submitApplicationData(): Pick<
 }
 
 /**
+ * User-facing message thrown when a second submission would rewrite a fixed
+ * submission date. Kept as a constant so the submit path and its test agree.
+ */
+export const SUBMITTED_AT_IMMUTABLE_MESSAGE =
+  "This application has already been submitted; its submission date cannot be changed.";
+
+/**
+ * App-level invariant for the write-once `submittedAt` (Epic 01 PR-5). Throws a
+ * clean, user-facing error when an application that already has a submission
+ * date set would be re-submitted — giving a friendly message BEFORE the write
+ * reaches the durable Postgres trigger (`trg_submitted_at_immutable`).
+ *
+ * The trigger is the backstop; this guard is the nice message on the submit
+ * path. First submission (submittedAt === null) passes through untouched.
+ */
+export function assertSubmittedAtUnset(submittedAt: Date | null | undefined): void {
+  if (submittedAt != null) {
+    throw new Error(SUBMITTED_AT_IMMUTABLE_MESSAGE);
+  }
+}
+
+/**
  * Generic fused-status transition (begin-review, mark-complete, resume) on the
  * application-detail track. Validates against the legacy graph and writes
  * `applications.status`. form_status is intentionally untouched (these are all

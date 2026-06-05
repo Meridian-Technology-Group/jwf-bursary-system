@@ -10,6 +10,8 @@ import {
   deriveFormStatusFromCounts,
   defaultPausedUntil,
   PAUSE_WINDOW_DAYS,
+  assertSubmittedAtUnset,
+  SUBMITTED_AT_IMMUTABLE_MESSAGE,
 } from "../status";
 
 describe("status service — legacy application transitions", () => {
@@ -130,5 +132,30 @@ describe("status service — pause deadline", () => {
     expected.setDate(expected.getDate() + PAUSE_WINDOW_DAYS);
     expect(due.toISOString()).toBe(expected.toISOString());
     expect(PAUSE_WINDOW_DAYS).toBe(14);
+  });
+});
+
+describe("status service — write-once submitted_at invariant (PR-5)", () => {
+  it("allows a first submission (submittedAt unset)", () => {
+    // The submit path calls this BEFORE setting submittedAt; null/undefined pass.
+    expect(() => assertSubmittedAtUnset(null)).not.toThrow();
+    expect(() => assertSubmittedAtUnset(undefined)).not.toThrow();
+  });
+
+  it("rejects a second submission (submittedAt already set) with a friendly message", () => {
+    // Proves the app-level invariant: an application that already has a fixed
+    // submission date cannot be re-submitted / have submitted_at rewritten.
+    // This is the nice message ahead of the durable DB trigger backstop.
+    const alreadySubmitted = new Date("2026-06-01T09:00:00.000Z");
+    expect(() => assertSubmittedAtUnset(alreadySubmitted)).toThrowError(
+      SUBMITTED_AT_IMMUTABLE_MESSAGE
+    );
+  });
+
+  it("treats the Unix epoch (a real, truthy date) as already submitted", () => {
+    // Guard against a falsy-Date bug: new Date(0) is a valid submission instant.
+    expect(() => assertSubmittedAtUnset(new Date(0))).toThrowError(
+      SUBMITTED_AT_IMMUTABLE_MESSAGE
+    );
   });
 });

@@ -27,7 +27,11 @@ import {
 import { withUserContext, withAdminContext, type RlsRole } from "@/lib/db/prisma";
 import { sendEmail } from "@/lib/email/send";
 import { createAuditLog } from "@/lib/audit/log";
-import { submitApplicationData, refreshFormStatus } from "@/lib/applications/status";
+import {
+  submitApplicationData,
+  refreshFormStatus,
+  assertSubmittedAtUnset,
+} from "@/lib/applications/status";
 import { getSectionGapStatuses, type SectionGap } from "@/lib/portal/section-gaps";
 import { logError } from "@/lib/log";
 
@@ -377,6 +381,7 @@ export async function submitApplication(applicationId: string): Promise<never> {
           id: true,
           reference: true,
           status: true,
+          submittedAt: true,
           leadApplicantId: true,
           childName: true,
           school: true,
@@ -405,6 +410,14 @@ export async function submitApplication(applicationId: string): Promise<never> {
   if (application.status === "SUBMITTED") {
     redirect("/submitted");
   }
+
+  // ── Invariant: submitted_at is write-once (Epic 01 PR-5) ──────────────────
+  // Defence-in-depth on the immutable submission date. The status guard above
+  // handles the normal double-submit (redirects to the receipt). This explicit
+  // check covers any state where a submission date is already recorded but the
+  // fused status is not SUBMITTED — it returns a friendly message BEFORE the
+  // write reaches the durable Postgres trigger (trg_submitted_at_immutable).
+  assertSubmittedAtUnset(application.submittedAt);
 
   // ── Validate all 10 sections are complete ─────────────────────────────────
   const completionMap = new Map(
