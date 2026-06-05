@@ -119,7 +119,15 @@ model Application {
   contributors         ApplicationContributor[]
   invitations          Invitation[]
 
-  @@unique([roundId, leadApplicantId, childName])
+  // One application per child per round, keyed including DOB so twins (same
+  // first name, distinct DOB) no longer collide (Epic 04, D12). This composite
+  // unique enforces the non-NULL-DOB case. A SEPARATE raw PARTIAL unique index
+  // (applications_round_lead_child_null_dob_key, WHERE child_dob IS NULL —
+  // created in migration 20260605210000_application_dob_unique) forbids two
+  // same-name rows that BOTH have NULL DOB, so Postgres NULL-distinctness can't
+  // weaken the dedupe for legacy/unknown-DOB rows. Together they fully replace
+  // the old childName-only unique without weakening it.
+  @@unique([roundId, leadApplicantId, childName, childDob])
   @@index([roundId, status])
   @@index([leadApplicantId])
   @@index([bursaryAccountId])
