@@ -24,6 +24,10 @@ import { withUserContext, type RlsRole, type Tx } from "@/lib/db/prisma";
 import { createAuditLog } from "@/lib/audit/log";
 import { generateBursaryAccountReference } from "@/lib/bursary-accounts/reference";
 import { sendEmail } from "@/lib/email/send";
+import {
+  setApplicationOutcomeStatus,
+  lifecycleOutcomeForLegacy,
+} from "@/lib/applications/status";
 import { EmailTemplateType, type ApplicationStatus } from "@prisma/client";
 
 import { AUDIT_ACTIONS, AUDIT_ENTITY_TYPES } from "@/lib/audit/actions";
@@ -56,6 +60,8 @@ async function fetchApplicationForOutcome(tx: Tx, applicationId: string) {
       entryYearGroup: true,
       school: true,
       bursaryAccountId: true,
+      applicationType: true,
+      archivedAt: true,
       leadApplicantId: true,
       leadApplicant: {
         select: { id: true, email: true, firstName: true, lastName: true },
@@ -148,18 +154,36 @@ export async function setApplicationOutcome(
           };
         }
 
-        await tx.application.update({
-          where: { id: applicationId },
-          data: { status: outcome },
-        });
-
-        // Promote a qualifying application into an ongoing BursaryAccount.
-        // Idempotent: only create when the outcome is QUALIFIES and the
+        // Promote a qualifying application into an ongoing BursaryAccount FIRST,
+        // so account presence (the AWARDED signal) is settled before the
+        // status/outcome write. Idempotent: only create when QUALIFIES and the
         // application is not already linked to an account (re-assessments
         // already carry a bursary_account_id and are skipped here).
-        if (outcome === "QUALIFIES" && !application.bursaryAccountId) {
+        const accountCreated =
+          outcome === "QUALIFIES" && !application.bursaryAccountId;
+        if (accountCreated) {
           await createBursaryAccountForQualifies(tx, application);
         }
+
+        // An account exists for this application when it was already linked
+        // (rolling-over) or one was just created (new qualifying) — this is the
+        // AWARDED vs QUALIFIES_NOT_AWARDED discriminator (PR-2 backfill D-note).
+        const hasBursaryAccount =
+          application.bursaryAccountId != null || accountCreated;
+
+        // Central status service writes the 3-value assessments.outcome AND
+        // mirrors the legacy fused applications.status (QUALIFIES for awarded /
+        // not-awarded, DOES_NOT_QUALIFY otherwise), and archives a NEW
+        // application that does not qualify (§3).
+        await setApplicationOutcomeStatus(
+          tx,
+          applicationId,
+          lifecycleOutcomeForLegacy(outcome, hasBursaryAccount),
+          {
+            applicationType: application.applicationType,
+            alreadyArchived: application.archivedAt != null,
+          }
+        );
 
         return { success: true as const, application };
       }

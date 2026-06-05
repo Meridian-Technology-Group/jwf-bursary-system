@@ -9,6 +9,7 @@ import type { Tx } from "@/lib/db/prisma";
 import type { ApplicationSectionType, Invitation } from "@prisma/client";
 import { ApplicationContributorRole } from "@prisma/client";
 import { generateApplicationReference } from "@/lib/applications/reference";
+import { applicationCreateData } from "@/lib/applications/status";
 import { ensurePrimaryContributor } from "@/lib/db/queries/contributors";
 
 // ─── Section types that are pre-populated from the previous year ─────────────
@@ -323,7 +324,7 @@ export async function createReassessmentApplicationFromInvitation(
       childDob: account?.childDob ?? null,
       entryYear: account?.entryYear ?? null,
       isReassessment: true,
-      status: "PRE_SUBMISSION",
+      ...applicationCreateData("ROLLING_OVER"),
     },
   });
 

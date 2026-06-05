@@ -27,6 +27,7 @@ import {
 import { withUserContext, withAdminContext, type RlsRole } from "@/lib/db/prisma";
 import { sendEmail } from "@/lib/email/send";
 import { createAuditLog } from "@/lib/audit/log";
+import { submitApplicationData } from "@/lib/applications/status";
 import { getSectionGapStatuses, type SectionGap } from "@/lib/portal/section-gaps";
 import { logError } from "@/lib/log";
 
@@ -460,7 +461,7 @@ export async function submitApplication(applicationId: string): Promise<never> {
     await tx.application.update({
       where: { id: applicationId },
       data: {
-        status: "SUBMITTED",
+        ...submitApplicationData(),
         submittedAt,
         entryYearGroup: entryYearGroupToPersist,
         entryYear: entryYearToPersist,

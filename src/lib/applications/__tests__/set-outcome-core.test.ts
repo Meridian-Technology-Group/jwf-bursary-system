@@ -60,6 +60,9 @@ function makeFakeTx(application: Record<string, unknown>) {
     bursaryAccount: {
       create: vi.fn(async () => ({ id: "account-1" })),
     },
+    assessment: {
+      updateMany: vi.fn(async () => ({ count: 1 })),
+    },
     auditLog: {
       create: vi.fn(async (_args: { data: { action: string } }) => ({})),
     },
@@ -77,6 +80,8 @@ function baseApplication(overrides: Record<string, unknown> = {}) {
     entryYearGroup: "Year 7",
     school: "WHITGIFT",
     bursaryAccountId: null,
+    applicationType: "NEW",
+    archivedAt: null,
     leadApplicantId: "lead-1",
     leadApplicant: {
       id: "lead-1",
