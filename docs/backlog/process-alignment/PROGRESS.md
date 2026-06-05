@@ -9,7 +9,7 @@
 >
 > **Spec:** [README.md](README.md) (spine + decision register). **Owner:** Brian Wagner.
 
-**Started:** 2026-06-05 · **Current focus:** scaffolding PR → Wave 0 (defects).
+**Started:** 2026-06-05 · **Current focus:** Wave 0 shipped → Epic 01 (status keystone).
 
 ---
 
@@ -34,9 +34,9 @@ Legend: ⬜ not started · 🟡 in progress · ✅ shipped to staging · 🚫 bl
 
 | Wave | Epic | Status | Blocked by | Branch / PRs |
 |---|---|---|---|---|
-| — | Scaffolding (plans + this ledger) | 🟡 | — | `chore/process-alignment-scaffolding` → PR pending |
-| 0 | [12 Defect fixes](plans/12-defect-fixes.md) | ⬜ | — | — |
-| 1 | [01 Status & workflow model](plans/01-status-and-workflow-model.md) | ⬜ | — | — |
+| — | Scaffolding (plans + this ledger) | ✅ | — | #133 (+ #140 reconcile) |
+| 0 | [12 Defect fixes](plans/12-defect-fixes.md) | ✅ | — | #134–#139 |
+| 1 | [01 Status & workflow model](plans/01-status-and-workflow-model.md) | 🟡 | — | (next) |
 | 1 | [03 Round management](plans/03-round-management.md) | ⬜ | 01 | — |
 | 1 | [04 Lead-applicant contacts & invitations](plans/04-lead-applicant-contacts-and-invitations.md) | ⬜ | 01 | — |
 | 2 | [02 Application form re-scope](plans/02-application-form-rescope.md) | ⏳ deps | 01, 04 (deps) · D3 ✅ · D11 artifact (build to workbook) | — |
@@ -50,20 +50,26 @@ Legend: ⬜ not started · 🟡 in progress · ✅ shipped to staging · 🚫 bl
 
 ---
 
-## Active wave — Wave 0 (defect fixes, Epic 12)
+## Wave 0 — defect fixes (Epic 12) — ✅ SHIPPED
 
-Six independent PRs off `staging`, no schema, no migrations
-([plan §4](plans/12-defect-fixes.md#4-work-breakdown-pr-sized)).
+Six independent PRs off `staging`, no schema, no migrations. All merged with
+build/typecheck/tests green.
 
-- [ ] **PR-A** — show-names toggle: allow ADMIN(+ASSESSOR) in `names/route.ts:27`; surface error in `application-table.tsx:726`. *(critical)*
-- [ ] **PR-B** — reference-data save: `createdAt desc` tie-break in `reference-tables.ts` (`:29/:66/:100` + getAll). *(critical)*
-- [ ] **PR-C** — round-create error: return `{success:true}` + client navigate in `create-round-dialog.tsx`; mirror to `updateRoundAction`. *(high)*
-- [ ] **PR-D** — timezone: `timeZone:"Europe/London"` in `audit/page.tsx:54`; shared London formatter in `application-table.tsx:229/231`. *(high)*
-- [ ] **PR-E** — remove dead `status-badge.tsx` union; grep for live callers first. *(medium, coordinate Epic 01)*
-- [ ] **PR-F** — assessor copy: **repro first**, then gate ADMIN-only strings out of the assessor view. *(medium)*
-- [ ] **(no PR)** — user guide: send `docs/guides/JWF-Bursary-System-User-Guide.pdf` as the durable fallback. *(process)*
+- [x] **PR-A** #134 — show-names toggle: ADMIN+ASSESSOR allowed at `names/route.ts`; client `catch` surfaces error + resets state. *(critical)*
+- [x] **PR-B** #135 — reference-data save: `createdAt desc` tie-break on the 5 versioned reads in `reference-tables.ts`; no schema. *(critical)*
+- [x] **PR-C** #136 — round create/edit return `{success:true}`; dialog navigates client-side; unused `redirect` import removed. *(high)*
+- [x] **PR-D** #137 — new `lib/datetime.ts` Europe/London helper; audit page + applications-table dates use it. *(high)*
+- [x] **PR-E** #138 — stale `status-badge.tsx` union `@deprecated` (live callers remain → Epic 01 replaces). *(medium)*
+- [x] **PR-F** #139 — role-aware wordmark/aria/account label; ADMIN copy no longer shown to ASSESSOR/VIEWER. *(medium)*
+- [ ] **(no PR)** — user guide: `docs/guides/JWF-Bursary-System-User-Guide.pdf` to be sent as the durable fallback. *(process — Brian)*
 
-**Open same-line decision:** VIEWER name reveal — default ADMIN+ASSESSOR only (confirm with Charlotte if VIEWER must reveal).
+**Verification note.** All six passed lint + typecheck + 221 unit tests + build.
+**Behavioural (Playwright) verification was NOT run** — the local demo seed creates
+Profile rows only (no Supabase auth users/passwords), and nonprod is shared. The
+fixes are surgical and code-verified; confirm live on the staging preview during
+Monday testing (esp. PR-A show-names and PR-C round-create).
+**Resolved same-line decision:** VIEWER name reveal — implemented ADMIN+ASSESSOR
+only; confirm with Charlotte only if VIEWER must reveal.
 
 ---
 
@@ -108,6 +114,9 @@ Wave 2 → Wave 3 → Wave 4.
 ## Change log
 
 - **2026-06-05** — Programme execution opened. Scaffolding (12 plans +
-  current-state map) authored on `chore/process-alignment-scaffolding`. D2, D12,
-  D18, D20 locked at defaults. This ledger created. Next: push scaffolding PR,
-  then Wave 0.
+  current-state map + this ledger) shipped via **#133**. D2/D12/D18/D20 locked.
+- **2026-06-05** — Decision register **reconciled** against the meeting (#140):
+  D3/D6/D7/D9/D10/D13/D21 marked decided, D4/D11 = deliverables-with-defaults,
+  D8/D14/D15–17/D19 = narrow confirms. Net: nothing decision-blocked.
+- **2026-06-05** — **Wave 0 shipped**: defect PRs #134–#139 merged to staging
+  (all green; behavioural verify deferred to staging preview). Next: Epic 01.
