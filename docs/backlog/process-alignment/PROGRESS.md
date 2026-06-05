@@ -36,7 +36,7 @@ Legend: ⬜ not started · 🟡 in progress · ✅ shipped to staging · 🚫 bl
 |---|---|---|---|---|
 | — | Scaffolding (plans + this ledger) | ✅ | — | #133 (+ #140 reconcile) |
 | 0 | [12 Defect fixes](plans/12-defect-fixes.md) | ✅ | — | #134–#139 |
-| 1 | [01 Status & workflow model](plans/01-status-and-workflow-model.md) | 🟡 | — | #141 (PR-1 schema), #142 (PR-2 backfill) |
+| 1 | [01 Status & workflow model](plans/01-status-and-workflow-model.md) | 🟡 | — | #141 (PR-1 schema), #142 (PR-2 backfill), #143 (PR-3 status service) |
 | 1 | [03 Round management](plans/03-round-management.md) | ⬜ | 01 | — |
 | 1 | [04 Lead-applicant contacts & invitations](plans/04-lead-applicant-contacts-and-invitations.md) | ⬜ | 01 | — |
 | 2 | [02 Application form re-scope](plans/02-application-form-rescope.md) | ⏳ deps | 01, 04 (deps) · D3 ✅ · D11 artifact (build to workbook) | — |
@@ -88,8 +88,12 @@ reader is migrated.
 - [x] **PR-2** #142 — backfill: deterministic, idempotent DML mapping the legacy
   fused `status` onto the new columns (§5.1 table + D-note). Writes only the new
   columns; never touches `status`.
-- [ ] **PR-3** — central status service: single transition writer; migrate the
-  scattered writers; persist `pausedUntil`; drop inline pause-deadline math.
+- [x] **PR-3** #143 — central status service (`src/lib/applications/status.ts`):
+  single transition writer with legacy `status` dual-write; migrated every
+  scattered writer (apply/assessments/admin/portal/set-outcome-core/creates);
+  persists `paused_until` (email reads it); pause no longer touches form_status.
+  Behaviour-preserving; 13 new unit tests (234 total green). No stray status
+  writes remain (grep-clean).
 - [ ] **PR-4** — form-status derivation from sections + typed badge components;
   remove stale `status-badge.tsx`; fix the assessment pill.
 - [ ] **PR-5** — `submittedAt` write-once trigger migration + app invariant + test.
@@ -97,6 +101,14 @@ reader is migrated.
   column once all readers are migrated (cut over reports/dashboard/cockpit
   queries first; CI grep-gate clean). Gated on Brian's confirmation that no
   external/report consumer reads the old string.
+
+> **PR-6 prerequisite (enum cleanup).** Before dropping the legacy `QUALIFIES`
+> value from the `AssessmentOutcome` enum, remap any residual
+> `assessments.outcome = 'QUALIFIES'` rows (≈1 on nonprod — a COMPLETED-status
+> app whose outcome predates the 3-value lifecycle) to `AWARDED` /
+> `QUALIFIES_NOT_AWARDED` by `applications.bursary_account_id` presence, the same
+> discriminator PR-2/PR-3 use. The dual-write means new outcomes are already
+> written as the 3-value enum; this only catches pre-PR-3 rows.
 
 ---
 
@@ -151,3 +163,8 @@ Wave 2 → Wave 3 → Wave 4.
   applied to nonprod. PR-2 **#142** (idempotent backfill of the new lifecycle
   columns from the legacy fused `status`) opened for review. PR-3/4/5 pending;
   PR-6 (drop fused `status`) deferred/gated.
+- **2026-06-05** — **Epic 01 PR-2 + PR-3 landed**: backfill (#142) validated on
+  nonprod + applied. PR-3 **#143** — central status service with legacy
+  dual-write (behaviour-preserving; all writers migrated, `paused_until`
+  persisted, 234 tests green) opened. Recorded the PR-6 enum-cleanup prerequisite
+  (remap residual `QUALIFIES` outcome rows before dropping the value).
