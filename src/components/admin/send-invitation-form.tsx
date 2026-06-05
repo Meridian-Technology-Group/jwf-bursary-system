@@ -62,9 +62,12 @@ interface SendInvitationFormProps {
 const schema = z.object({
   email: z.string().email("A valid email address is required"),
   firstName: z.string().optional(),
-  lastName: z.string().optional(),
-  childName: z.string().optional(),
-  school: z.enum(["TRINITY", "WHITGIFT", "__none__"]).optional(),
+  // Epic 04: surname, child name and school are now REQUIRED on the quick-invite
+  // form (parity with the contact register) so partial invites can't slip
+  // through. The `__none__` school sentinel is gone.
+  lastName: z.string().min(1, "A surname is required"),
+  childName: z.string().min(1, "The child's name is required"),
+  school: z.enum(["TRINITY", "WHITGIFT"], { error: "A school is required" }),
   roundId: z
     .string()
     .uuid("An application round is required")
@@ -99,7 +102,7 @@ export function SendInvitationForm({
       firstName: "",
       lastName: "",
       childName: "",
-      school: "__none__",
+      school: undefined,
       roundId: defaultRoundId ?? "__none__",
     },
   });
@@ -122,8 +125,8 @@ export function SendInvitationForm({
     formData.set("email", values.email);
     if (values.firstName) formData.set("firstName", values.firstName);
     if (values.lastName) formData.set("lastName", values.lastName);
-    if (values.childName) formData.set("childName", values.childName);
-    if (values.school && values.school !== "__none__") formData.set("school", values.school);
+    formData.set("childName", values.childName);
+    formData.set("school", values.school);
     formData.set("roundId", values.roundId);
 
     startTransition(async () => {
@@ -135,7 +138,7 @@ export function SendInvitationForm({
           firstName: "",
           lastName: "",
           childName: "",
-          school: "__none__",
+          school: undefined,
           roundId: defaultRoundId ?? "__none__",
         });
         router.refresh();
@@ -157,12 +160,22 @@ export function SendInvitationForm({
         .filter(Boolean)
         .join(" ") || pendingValues.email
     : "";
+  const confirmSchool =
+    pendingValues?.school === "TRINITY"
+      ? "Trinity School"
+      : pendingValues?.school === "WHITGIFT"
+        ? "Whitgift School"
+        : "—";
 
   return (
     <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
-      <h2 className="mb-4 text-base font-semibold text-slate-800">
-        Send New Invitation
+      <h2 className="text-base font-semibold text-slate-800">
+        Quick invite a family
       </h2>
+      <p className="mb-4 mt-0.5 text-xs text-slate-500">
+        A one-off parent invite. Surname, child name and school are required —
+        the school is locked and the parent cannot change it.
+      </p>
 
       <Form {...form}>
         <form onSubmit={form.handleSubmit(onReview)} className="space-y-4">
@@ -221,10 +234,7 @@ export function SendInvitationForm({
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>
-                    Last Name{" "}
-                    <span className="text-xs font-normal text-slate-400">
-                      (optional)
-                    </span>
+                    Last Name <span className="text-red-500">*</span>
                   </FormLabel>
                   <FormControl>
                     <Input
@@ -246,10 +256,7 @@ export function SendInvitationForm({
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>
-                    Child Name{" "}
-                    <span className="text-xs font-normal text-slate-400">
-                      (optional)
-                    </span>
+                    Child Name <span className="text-red-500">*</span>
                   </FormLabel>
                   <FormControl>
                     <Input
@@ -269,10 +276,12 @@ export function SendInvitationForm({
               name="school"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>School</FormLabel>
+                  <FormLabel>
+                    School <span className="text-red-500">*</span>
+                  </FormLabel>
                   <Select
                     onValueChange={field.onChange}
-                    value={field.value ?? "__none__"}
+                    value={field.value ?? ""}
                     disabled={isPending}
                   >
                     <FormControl>
@@ -281,7 +290,6 @@ export function SendInvitationForm({
                       </SelectTrigger>
                     </FormControl>
                     <SelectContent>
-                      <SelectItem value="__none__">Any / Not specified</SelectItem>
                       <SelectItem value="TRINITY">Trinity School</SelectItem>
                       <SelectItem value="WHITGIFT">Whitgift School</SelectItem>
                     </SelectContent>
@@ -410,9 +418,19 @@ export function SendInvitationForm({
                 {pendingValues?.email && confirmRecipient !== pendingValues.email && (
                   <p className="text-xs text-slate-400">{pendingValues.email}</p>
                 )}
+                <p className="text-xs text-slate-500">
+                  Child:{" "}
+                  <span className="font-medium text-slate-700">
+                    {pendingValues?.childName || "—"}
+                  </span>{" "}
+                  · School:{" "}
+                  <span className="font-medium text-slate-700">
+                    {confirmSchool}
+                  </span>
+                </p>
                 <p className="pt-1 text-xs text-slate-400">
                   This emails the applicant a link to start their bursary
-                  application.
+                  application. The school is locked.
                 </p>
               </div>
             </DialogDescription>

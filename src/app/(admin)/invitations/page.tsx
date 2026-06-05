@@ -7,7 +7,8 @@
 
 export const dynamic = "force-dynamic";
 
-import { Mail } from "lucide-react";
+import Link from "next/link";
+import { Mail, Users, ArrowRight } from "lucide-react";
 import { requireRole, Role } from "@/lib/auth/roles";
 import { withUserContext, type RlsRole } from "@/lib/db/prisma";
 import { listInvitations } from "@/lib/db/queries/invitations";
@@ -117,15 +118,50 @@ export default async function InvitationsPage({
 
   return (
     <div className="space-y-8">
-      {/* Header */}
-      <div>
-        <h1 className="text-2xl font-semibold text-primary-900">Invitations</h1>
-        <p className="mt-1 text-sm text-slate-500">
-          Send bursary application invitations and track their status.
-        </p>
+      {/* Header — unmistakably the FAMILY (parent) invite flow. Staff invites
+          live on a separate page (/users); contact-driven invites are the
+          recommended parent path (Epic 04). */}
+      <div className="flex items-start gap-3">
+        <span className="mt-1 rounded-lg bg-primary-50 p-2 text-primary-900">
+          <Mail className="h-5 w-5" aria-hidden="true" />
+        </span>
+        <div>
+          <h1 className="text-2xl font-semibold text-primary-900">
+            Invite a family to apply
+          </h1>
+          <p className="mt-1 text-sm text-slate-500">
+            Send a parent a link to start a bursary application. To invite a
+            staff member (assessor or viewer) instead, use{" "}
+            <Link href="/users" className="font-medium text-primary-800 underline">
+              Users
+            </Link>
+            .
+          </p>
+        </div>
       </div>
 
-      {/* Send invitation form */}
+      {/* Recommended path: the contact register. The quick-invite form below is
+          the exception for one-off invites. */}
+      <Link
+        href="/contacts"
+        className="flex items-center justify-between rounded-xl border border-primary-100 bg-primary-50/60 px-5 py-4 transition-colors hover:bg-primary-50"
+      >
+        <div className="flex items-center gap-3">
+          <Users className="h-5 w-5 text-primary-800" aria-hidden="true" />
+          <div>
+            <p className="text-sm font-medium text-primary-900">
+              Invite from the contact register
+            </p>
+            <p className="text-xs text-slate-500">
+              Recommended — invite a family from their stored record, with the
+              school and entry year already locked in.
+            </p>
+          </div>
+        </div>
+        <ArrowRight className="h-4 w-4 text-primary-800" aria-hidden="true" />
+      </Link>
+
+      {/* Quick (single-send) invite form */}
       <SendInvitationForm
         rounds={roundOptions}
         defaultRoundId={defaultRoundId}

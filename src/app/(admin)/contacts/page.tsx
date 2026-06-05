@@ -13,6 +13,7 @@ import { Users } from "lucide-react";
 import { requireRole, Role } from "@/lib/auth/roles";
 import { withUserContext, type RlsRole } from "@/lib/db/prisma";
 import { listContacts } from "@/lib/db/queries/contacts";
+import { listRounds } from "@/lib/db/queries/rounds";
 import { ContactsTable } from "@/components/admin/contacts/contacts-table";
 
 export const metadata = {
@@ -22,11 +23,17 @@ export const metadata = {
 export default async function ContactsPage() {
   const user = await requireRole([Role.ADMIN]);
 
-  const contacts = await withUserContext(
+  const [contacts, rounds] = await withUserContext(
     user.id,
     user.role as RlsRole,
-    (tx) => listContacts(tx)
+    (tx) => Promise.all([listContacts(tx), listRounds(tx)])
   );
+
+  // Invite into LIVE rounds only (OPEN), newest first — consumes Epic 03's
+  // round-status model (the same filter the /invitations picker uses).
+  const liveRounds = rounds
+    .filter((r) => r.status === "OPEN")
+    .map((r) => ({ id: r.id, academicYear: r.academicYear }));
 
   return (
     <div className="space-y-8">
@@ -46,7 +53,7 @@ export default async function ContactsPage() {
         </div>
       </div>
 
-      <ContactsTable contacts={contacts} />
+      <ContactsTable contacts={contacts} liveRounds={liveRounds} />
     </div>
   );
 }

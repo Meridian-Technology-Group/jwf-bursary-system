@@ -8,6 +8,7 @@ import type { Tx } from "@/lib/db/prisma";
 import {
   InvitationStatus,
   BursaryAccountStatus,
+  type EntryYearGroup,
   type Invitation,
   type School,
 } from "@prisma/client";
@@ -115,8 +116,11 @@ export async function createInvitation(
     lastName?: string;
     childName?: string;
     school?: School;
+    entryYear?: number | null;
+    entryYearGroup?: EntryYearGroup | null;
     roundId?: string;
     bursaryAccountId?: string;
+    contactId?: string;
     applicationId?: string;
     authUserId?: string;
     token?: string;
@@ -131,8 +135,11 @@ export async function createInvitation(
       lastName: data.lastName ?? null,
       childName: data.childName ?? null,
       school: data.school ?? null,
+      entryYear: data.entryYear ?? null,
+      entryYearGroup: data.entryYearGroup ?? null,
       roundId: data.roundId ?? null,
       bursaryAccountId: data.bursaryAccountId ?? null,
+      contactId: data.contactId ?? null,
       applicationId: data.applicationId ?? null,
       authUserId: data.authUserId ?? null,
       token: data.token ?? generateInvitationToken(),
