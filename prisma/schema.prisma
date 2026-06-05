@@ -78,41 +78,41 @@ model BursaryAccount {
 
 /// One application per child per round.
 model Application {
-  id               String                   @id @default(uuid()) @db.Uuid
-  reference        String                   @unique
-  roundId          String                   @map("round_id") @db.Uuid
-  bursaryAccountId String?                  @map("bursary_account_id") @db.Uuid
-  leadApplicantId  String                   @map("lead_applicant_id") @db.Uuid
-  school           School
-  childName        String                   @map("child_name")
-  childDob         DateTime?                @map("child_dob") @db.Date
-  entryYear        Int?                     @map("entry_year")
-  entryYearGroup   EntryYearGroup?          @map("entry_year_group")
-  isReassessment   Boolean                  @default(false) @map("is_reassessment")
-  isInternal       Boolean                  @default(false) @map("is_internal")
+  id                   String                   @id @default(uuid()) @db.Uuid
+  reference            String                   @unique
+  roundId              String                   @map("round_id") @db.Uuid
+  bursaryAccountId     String?                  @map("bursary_account_id") @db.Uuid
+  leadApplicantId      String                   @map("lead_applicant_id") @db.Uuid
+  school               School
+  childName            String                   @map("child_name")
+  childDob             DateTime?                @map("child_dob") @db.Date
+  entryYear            Int?                     @map("entry_year")
+  entryYearGroup       EntryYearGroup?          @map("entry_year_group")
+  isReassessment       Boolean                  @default(false) @map("is_reassessment")
+  isInternal           Boolean                  @default(false) @map("is_internal")
   /// @deprecated — replaced by formStatus + Assessment.outcome; dropped in Epic 01 PR-6
-  status           ApplicationStatus        @default(PRE_SUBMISSION)
-  formStatus       ApplicationFormStatus    @default(CREATED) @map("form_status")
-  applicationType  ApplicationType          @default(NEW) @map("application_type")
-  archivedAt       DateTime?                @map("archived_at") @db.Timestamptz(6)
-  submittedAt      DateTime?                @map("submitted_at") @db.Timestamptz(6)
+  status               ApplicationStatus        @default(PRE_SUBMISSION)
+  formStatus           ApplicationFormStatus    @default(CREATED) @map("form_status")
+  applicationType      ApplicationType          @default(NEW) @map("application_type")
+  archivedAt           DateTime?                @map("archived_at") @db.Timestamptz(6)
+  submittedAt          DateTime?                @map("submitted_at") @db.Timestamptz(6)
   /// Per-applicant submit-by override (Epic 03). NULL ⇒ fall back to
   /// round.closeDate. Distinct from Assessment.pausedUntil (post-submission
   /// doc deadline, Epic 01) and from Round.closeDate (round-level intake
   /// window). Read via effectiveSubmissionDeadline() — never compared raw.
-  submissionDeadlineAt DateTime?            @map("submission_deadline_at") @db.Timestamptz(6)
-  createdAt        DateTime                 @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt        DateTime                 @updatedAt @map("updated_at") @db.Timestamptz(6)
-  assignedToId     String?                  @map("assigned_to_id") @db.Uuid
-  sections         ApplicationSection[]
-  assignedTo       Profile?                 @relation("ApplicationAssignee", fields: [assignedToId], references: [id])
-  bursaryAccount   BursaryAccount?          @relation(fields: [bursaryAccountId], references: [id])
-  leadApplicant    Profile                  @relation("ApplicationLeadApplicant", fields: [leadApplicantId], references: [id])
-  round            Round                    @relation(fields: [roundId], references: [id])
-  assessment       Assessment?
-  documents        Document[]
-  contributors     ApplicationContributor[]
-  invitations      Invitation[]
+  submissionDeadlineAt DateTime?                @map("submission_deadline_at") @db.Timestamptz(6)
+  createdAt            DateTime                 @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt            DateTime                 @updatedAt @map("updated_at") @db.Timestamptz(6)
+  assignedToId         String?                  @map("assigned_to_id") @db.Uuid
+  sections             ApplicationSection[]
+  assignedTo           Profile?                 @relation("ApplicationAssignee", fields: [assignedToId], references: [id])
+  bursaryAccount       BursaryAccount?          @relation(fields: [bursaryAccountId], references: [id])
+  leadApplicant        Profile                  @relation("ApplicationLeadApplicant", fields: [leadApplicantId], references: [id])
+  round                Round                    @relation(fields: [roundId], references: [id])
+  assessment           Assessment?
+  documents            Document[]
+  contributors         ApplicationContributor[]
+  invitations          Invitation[]
 
   @@unique([roundId, leadApplicantId, childName])
   @@index([roundId, status])
