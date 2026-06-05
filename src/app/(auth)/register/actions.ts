@@ -28,6 +28,7 @@ import {
   markInvitationAccepted,
 } from "@/lib/db/queries/invitations";
 import { generateApplicationReference } from "@/lib/applications/reference";
+import { applicationCreateData } from "@/lib/applications/status";
 import { createReassessmentApplicationFromInvitation } from "@/lib/db/queries/reassessment";
 import { ensurePrimaryContributor } from "@/lib/db/queries/contributors";
 import { validatePasswordStrength } from "@/lib/auth/password-policy";
@@ -327,7 +328,7 @@ export async function acceptApplicantInvitationAction(
             school: invitation.school,
             childName: invitation.childName,
             isReassessment: false,
-            status: "PRE_SUBMISSION",
+            ...applicationCreateData("NEW"),
           },
         });
 

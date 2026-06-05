@@ -43,6 +43,7 @@ import { withAdminContext } from "@/lib/db/prisma";
 import { createAuditLog } from "@/lib/audit/log";
 import { prepopulateReassessment, getPreviousYearApplication } from "@/lib/db/queries/reassessment";
 import { ensurePrimaryContributor } from "@/lib/db/queries/contributors";
+import { applicationCreateData } from "@/lib/applications/status";
 import { getActiveRound } from "@/lib/db/queries/reports";
 
 import { AUDIT_ACTIONS, AUDIT_ENTITY_TYPES } from "@/lib/audit/actions";
@@ -961,7 +962,7 @@ export async function createReassessmentApplicationAction(
           entryYear: account.entryYear,
           entryYearGroup: account.entryYearGroup,
           isReassessment: true,
-          status: "PRE_SUBMISSION",
+          ...applicationCreateData("ROLLING_OVER"),
         },
       });
 

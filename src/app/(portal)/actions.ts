@@ -20,6 +20,11 @@ import {
 import { generateApplicationReference } from "@/lib/applications/reference";
 import { createReassessmentApplicationFromInvitation } from "@/lib/db/queries/reassessment";
 import { ensurePrimaryContributor } from "@/lib/db/queries/contributors";
+import {
+  applicationCreateData,
+  transitionApplicationStatus,
+  clearPauseDeadline,
+} from "@/lib/applications/status";
 import { createAuditLog } from "@/lib/audit/log";
 import { sendEmail } from "@/lib/email/send";
 import { getAppUrl } from "@/lib/app-url";
@@ -143,7 +148,7 @@ export async function startApplicationAction(
               school,
               childName: childName.trim(),
               isReassessment: false,
-              status: "PRE_SUBMISSION",
+              ...applicationCreateData("NEW"),
             },
           });
 
@@ -322,10 +327,15 @@ export async function submitMissingDocsResponse(
           };
         }
 
-        await tx.application.update({
-          where: { id: applicationId },
-          data: { status: "NOT_STARTED" },
-        });
+        await transitionApplicationStatus(
+          tx,
+          applicationId,
+          "PAUSED",
+          "NOT_STARTED"
+        );
+        // The applicant has responded with documents — clear the persisted
+        // pause deadline alongside the resume.
+        await clearPauseDeadline(tx, applicationId);
 
         await createAuditLog(tx, {
           userId: user.id,

@@ -33,6 +33,12 @@ import {
   getSecondaryContributorForGdpr,
   decideSecondaryProfileErasure,
 } from "@/lib/db/queries/secondary-gdpr";
+import {
+  isLegalApplicationTransition,
+  transitionApplicationStatus,
+  pauseApplicationStatus,
+  clearPauseDeadline,
+} from "@/lib/applications/status";
 import type { ApplicationStatus } from "@prisma/client";
 
 import { AUDIT_ACTIONS, AUDIT_ENTITY_TYPES } from "@/lib/audit/actions";
@@ -44,23 +50,16 @@ export type ActionResult =
   | { success: false; error: string };
 
 // ─── Valid transition map ─────────────────────────────────────────────────────
-
-/**
- * Defines which target statuses are reachable from each source status.
- * PRE_SUBMISSION → SUBMITTED is handled by the applicant portal submission flow.
- */
-const VALID_TRANSITIONS: Partial<Record<ApplicationStatus, ApplicationStatus[]>> = {
-  SUBMITTED: ["NOT_STARTED"],
-  NOT_STARTED: ["PAUSED", "COMPLETED"],
-  PAUSED: ["NOT_STARTED"],
-  COMPLETED: ["QUALIFIES", "DOES_NOT_QUALIFY"],
-};
+//
+// The legal application-status graph now lives in the central status service
+// (src/lib/applications/status.ts). `isValidTransition` is a thin alias kept so
+// the call sites below read unchanged.
 
 function isValidTransition(
   from: ApplicationStatus,
   to: ApplicationStatus
 ): boolean {
-  return VALID_TRANSITIONS[from]?.includes(to) ?? false;
+  return isLegalApplicationTransition(from, to);
 }
 
 // ─── Helper: fetch application with lead applicant email ──────────────────────
@@ -125,10 +124,12 @@ export async function updateApplicationStatus(
           };
         }
 
-        await tx.application.update({
-          where: { id: applicationId },
-          data: { status: newStatus },
-        });
+        await transitionApplicationStatus(
+          tx,
+          applicationId,
+          oldStatus,
+          newStatus
+        );
 
         await createAuditLog(tx, {
           userId: user.id,
@@ -193,26 +194,30 @@ export async function pauseApplication(
           };
         }
 
-        await tx.application.update({
-          where: { id: applicationId },
-          data: { status: "PAUSED" },
-        });
+        // Status service moves the fused status → PAUSED and PERSISTS the
+        // 14-day deadline on the assessment row (previously email-only). The
+        // returned deadline is the single source the email reads below.
+        const pausedUntil = await pauseApplicationStatus(
+          tx,
+          applicationId,
+          application.status
+        );
 
-        return { success: true as const, application };
+        return { success: true as const, application, pausedUntil };
       }
     );
 
     if (!preEmail.success) return preEmail;
-    const { application } = preEmail;
+    const { application, pausedUntil } = preEmail;
 
     // Build a human-readable list of missing slots
     const slotList = missingDocumentSlots
       .map((s) => `• ${humaniseSlot(s)}`)
       .join("\n");
 
-    // Send MISSING_DOCS email — non-blocking; log failure but don't abort
-    const docDeadline = new Date();
-    docDeadline.setDate(docDeadline.getDate() + 14);
+    // Send MISSING_DOCS email — non-blocking; log failure but don't abort.
+    // Reads the persisted `paused_until` deadline instead of recomputing it.
+    const docDeadline = pausedUntil;
     const emailResult = await sendEmail(
       application.leadApplicant.email,
       "MISSING_DOCS",
@@ -289,10 +294,14 @@ export async function resumeApplication(
           };
         }
 
-        await tx.application.update({
-          where: { id: applicationId },
-          data: { status: "NOT_STARTED" },
-        });
+        await transitionApplicationStatus(
+          tx,
+          applicationId,
+          application.status,
+          "NOT_STARTED"
+        );
+        // Resuming clears the persisted pause deadline.
+        await clearPauseDeadline(tx, applicationId);
 
         await createAuditLog(tx, {
           userId: user.id,
