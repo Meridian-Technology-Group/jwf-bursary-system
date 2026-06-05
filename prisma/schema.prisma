@@ -96,6 +96,11 @@ model Application {
   applicationType  ApplicationType          @default(NEW) @map("application_type")
   archivedAt       DateTime?                @map("archived_at") @db.Timestamptz(6)
   submittedAt      DateTime?                @map("submitted_at") @db.Timestamptz(6)
+  /// Per-applicant submit-by override (Epic 03). NULL ⇒ fall back to
+  /// round.closeDate. Distinct from Assessment.pausedUntil (post-submission
+  /// doc deadline, Epic 01) and from Round.closeDate (round-level intake
+  /// window). Read via effectiveSubmissionDeadline() — never compared raw.
+  submissionDeadlineAt DateTime?            @map("submission_deadline_at") @db.Timestamptz(6)
   createdAt        DateTime                 @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt        DateTime                 @updatedAt @map("updated_at") @db.Timestamptz(6)
   assignedToId     String?                  @map("assigned_to_id") @db.Uuid

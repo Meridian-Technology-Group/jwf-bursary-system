@@ -44,7 +44,7 @@ import { createAuditLog } from "@/lib/audit/log";
 import { prepopulateReassessment, getPreviousYearApplication } from "@/lib/db/queries/reassessment";
 import { ensurePrimaryContributor } from "@/lib/db/queries/contributors";
 import { applicationCreateData } from "@/lib/applications/status";
-import { getActiveRound } from "@/lib/db/queries/reports";
+import { listOpenRounds } from "@/lib/db/queries/reports";
 
 import { AUDIT_ACTIONS, AUDIT_ENTITY_TYPES } from "@/lib/audit/actions";
 
@@ -593,7 +593,8 @@ export interface BulkReassessmentFromApplicationsResult {
  * duplicate account) contributes neither — so it falls into `skipped`.
  */
 export async function bulkReassessmentInviteFromApplicationsAction(
-  applicationIds: string[]
+  applicationIds: string[],
+  targetRoundId?: string | null
 ): Promise<BulkReassessmentFromApplicationsResult> {
   await requireRole([Role.ADMIN]);
 
@@ -619,13 +620,76 @@ export async function bulkReassessmentInviteFromApplicationsAction(
     };
   }
 
-  // 1. Resolve the OPEN round to invite into. getActiveRound falls back to the
-  //    most recent round of any status, so we explicitly require it to be OPEN.
+  // 1. Resolve the OPEN round to invite into.
+  //
+  //    Epic 03 (concurrent rounds): multiple rounds can be OPEN at once, so we
+  //    must NEVER silently fan invites into "the" open round. Resolution rules:
+  //      - An explicit `targetRoundId` (the round the queue is scoped to) is
+  //        authoritative — we validate it exists and is OPEN.
+  //      - Without one, we fall back ONLY when exactly one round is OPEN (the
+  //        unambiguous case). If two or more are OPEN and no round was chosen,
+  //        we refuse rather than guess.
   let openRound: { id: string; academicYear: string } | null = null;
   try {
-    const round = await withAdminContext((tx) => getActiveRound(tx));
-    if (round && round.status === RoundStatus.OPEN) {
-      openRound = { id: round.id, academicYear: round.academicYear };
+    const resolved = await withAdminContext(async (tx) => {
+      if (targetRoundId) {
+        const r = await tx.round.findUnique({
+          where: { id: targetRoundId },
+          select: { id: true, academicYear: true, status: true },
+        });
+        return { kind: "explicit" as const, round: r, openCount: 0 };
+      }
+      const open = await listOpenRounds(tx);
+      return {
+        kind: "fallback" as const,
+        round: open[0] ?? null,
+        openCount: open.length,
+      };
+    });
+
+    if (resolved.kind === "explicit") {
+      if (!resolved.round) {
+        return {
+          sent: 0,
+          failed: 0,
+          skipped: ids.length,
+          errors: ["Selected round not found"],
+          targetRound: null,
+        };
+      }
+      if (resolved.round.status !== RoundStatus.OPEN) {
+        return {
+          sent: 0,
+          failed: 0,
+          skipped: ids.length,
+          errors: [
+            `Round ${resolved.round.academicYear} is ${resolved.round.status}; re-assessment invites can only target an OPEN round`,
+          ],
+          targetRound: null,
+        };
+      }
+      openRound = {
+        id: resolved.round.id,
+        academicYear: resolved.round.academicYear,
+      };
+    } else {
+      if (resolved.openCount > 1) {
+        return {
+          sent: 0,
+          failed: 0,
+          skipped: ids.length,
+          errors: [
+            "More than one round is open — scope the queue to a specific round before sending re-assessment invites",
+          ],
+          targetRound: null,
+        };
+      }
+      if (resolved.round) {
+        openRound = {
+          id: resolved.round.id,
+          academicYear: resolved.round.academicYear,
+        };
+      }
     }
   } catch (err) {
     console.error(

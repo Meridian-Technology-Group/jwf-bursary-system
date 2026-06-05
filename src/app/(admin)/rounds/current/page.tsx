@@ -7,6 +7,11 @@
  * of any status) and redirects to its detail page at `/rounds/{id}`. When no
  * round exists at all, redirects to the rounds list.
  *
+ * Epic 03 (concurrent rounds): several rounds may be OPEN at once. This shortcut
+ * resolves DETERMINISTICALLY to the most-recently-opened OPEN round (a single
+ * sensible default); admins switch between concurrent rounds from the rounds
+ * list / per-page round selectors, not from this redirect.
+ *
  * Next.js resolves this static `/rounds/current` segment ahead of the dynamic
  * `/rounds/[id]` route, so there is no routing conflict.
  */

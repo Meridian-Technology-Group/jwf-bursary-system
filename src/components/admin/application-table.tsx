@@ -383,6 +383,7 @@ function ReassessmentBulkAction({
   isPending,
   run,
   targetRound,
+  targetRoundId,
   onFeedback,
   onActionComplete,
 }: {
@@ -390,6 +391,7 @@ function ReassessmentBulkAction({
   isPending: boolean;
   run: (fn: () => Promise<void>) => void;
   targetRound: string | null;
+  targetRoundId: string | null;
   onFeedback: (feedback: BulkFeedback) => void;
   onActionComplete: () => void;
 }) {
@@ -399,8 +401,10 @@ function ReassessmentBulkAction({
   const handleConfirm = () => {
     setOpen(false);
     run(async () => {
-      const result =
-        await bulkReassessmentInviteFromApplicationsAction(selectedIds);
+      const result = await bulkReassessmentInviteFromApplicationsAction(
+        selectedIds,
+        targetRoundId
+      );
       if (result.sent > 0 || result.failed === 0) {
         onFeedback({
           kind: result.failed > 0 ? "error" : "success",
@@ -475,6 +479,12 @@ interface BulkToolbarProps {
   assessors: AssessorOption[];
   /** Target round year for re-assessment invites (null = no open round). */
   reassessTargetRound: string | null;
+  /**
+   * The id of the round the queue is scoped to (Epic 03). Passed explicitly to
+   * the re-assessment invite action so it targets THIS round and never silently
+   * fans into another open round. null when the queue is not round-scoped.
+   */
+  reassessTargetRoundId: string | null;
   onClear: () => void;
   /**
    * Called after a successful action so the parent can refresh + clear the
@@ -490,6 +500,7 @@ function BulkToolbar({
   selectedIds,
   assessors,
   reassessTargetRound,
+  reassessTargetRoundId,
   onClear,
   onActionComplete,
   onFeedback,
@@ -581,6 +592,7 @@ function BulkToolbar({
           isPending={isPending}
           run={run}
           targetRound={reassessTargetRound}
+          targetRoundId={reassessTargetRoundId}
           onFeedback={onFeedback}
           onActionComplete={onActionComplete}
         />
@@ -1073,6 +1085,11 @@ export function ApplicationTable({
           selectedIds={selectedIds}
           assessors={assessors}
           reassessTargetRound={reassessTargetRound}
+          // Epic 03 (concurrent rounds): pass the round the queue is scoped to
+          // so the re-assessment invite targets it explicitly and never fans
+          // into the wrong open round. "all" ⇒ no explicit round (the server
+          // refuses when >1 round is OPEN).
+          reassessTargetRoundId={selectedRound !== "all" ? selectedRound : null}
           onClear={handleClearSelection}
           onActionComplete={handleBulkComplete}
           onFeedback={setBulkFeedback}
