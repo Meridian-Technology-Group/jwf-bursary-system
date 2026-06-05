@@ -103,7 +103,7 @@ reader is migrated.
   portal dashboard). Readers migrated: dashboard "in progress" = assessment
   IN_PROGRESS|PAUSED (was PAUSED-only bug); assessment header pill. Cockpit
   untouched. 238 tests green.
-- [ ] **PR-5** — `submittedAt` write-once trigger migration + app invariant + test.
+- [x] **PR-5** — `submittedAt` write-once trigger migration + app invariant + test.
 - [ ] **PR-6** — ⏸ **deferred / gated**: drop the deprecated fused `status`
   column once all readers are migrated (cut over reports/dashboard/cockpit
   queries first; CI grep-gate clean). Gated on Brian's confirmation that no
@@ -201,3 +201,12 @@ Wave 2 → Wave 3 → Wave 4.
   Expanded the PR-6 prerequisites with the full remaining-legacy-reader list
   (transition gating, cockpit/watchlist, Epic 05 portal, reports/queue filter).
   238 tests green.
+- **2026-06-05** — **Epic 01 PR-5**: `submitted_at` made write-once. New
+  additive migration `20260605181936_submitted_at_immutable` adds a BEFORE
+  UPDATE trigger (`trg_submitted_at_immutable`) raising only when an
+  already-set `submitted_at` changes value (first set + untouched updates pass,
+  so the status service's frequent `applications` writes are unaffected).
+  App-level invariant `assertSubmittedAtUnset` in the submit path
+  (`apply/actions.ts`) returns a friendly error ahead of the DB backstop; unit
+  tests cover the guard. 241 tests green. PR-6 (drop fused `status`) remains
+  deferred/gated with its prerequisites intact.
