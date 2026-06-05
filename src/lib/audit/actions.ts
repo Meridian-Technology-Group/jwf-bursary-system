@@ -65,6 +65,13 @@ export const AUDIT_ACTIONS = {
   CREATE_REASSESSMENT_APPLICATION: "CREATE_REASSESSMENT_APPLICATION",
   BATCH_REASSESSMENT_INVITE: "BATCH_REASSESSMENT_INVITE",
 
+  // Lead-applicant contact register (Epic 04)
+  CREATE_CONTACT: "CREATE_CONTACT",
+  UPDATE_CONTACT: "UPDATE_CONTACT",
+  ARCHIVE_CONTACT: "ARCHIVE_CONTACT",
+  INVITE_FROM_CONTACT: "INVITE_FROM_CONTACT",
+  INVITE_FROM_CONTACT_FAILED: "INVITE_FROM_CONTACT_FAILED",
+
   // Applicant invitations
   CREATE_INVITATION: "CREATE_INVITATION",
   CREATE_INVITATION_FAILED: "CREATE_INVITATION_FAILED",
@@ -122,6 +129,7 @@ export const AUDIT_ENTITY_TYPES = {
   Round: "Round",
   Invitation: "Invitation",
   StaffInvitation: "StaffInvitation",
+  Contact: "Contact",
   ApplicationContributor: "ApplicationContributor",
   FamilyTypeConfig: "FamilyTypeConfig",
   SchoolFees: "SchoolFees",

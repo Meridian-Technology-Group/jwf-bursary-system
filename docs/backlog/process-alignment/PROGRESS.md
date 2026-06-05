@@ -9,7 +9,7 @@
 >
 > **Spec:** [README.md](README.md) (spine + decision register). **Owner:** Brian Wagner.
 
-**Started:** 2026-06-05 · **Current focus:** Wave 0 shipped → Epic 01 (status keystone).
+**Started:** 2026-06-05 · **Current focus:** Wave 1 — Epic 03 shipped; Epic 04 (contact register) in progress.
 
 ---
 
@@ -37,8 +37,8 @@ Legend: ⬜ not started · 🟡 in progress · ✅ shipped to staging · 🚫 bl
 | — | Scaffolding (plans + this ledger) | ✅ | — | #133 (+ #140 reconcile) |
 | 0 | [12 Defect fixes](plans/12-defect-fixes.md) | ✅ | — | #134–#139 |
 | 1 | [01 Status & workflow model](plans/01-status-and-workflow-model.md) | ✅ | — | #141 (PR-1 schema), #142 (PR-2 backfill), #143 (PR-3 status service), #144 (PR-4 readers+badges), #145 (PR-5 submitted_at write-once); **PR-6 drop-column ⏸ gated** |
-| 1 | [03 Round management](plans/03-round-management.md) | 🟡 | 01 | feature/03-* — PR-A (schema+server core), PR-B (UI) |
-| 1 | [04 Lead-applicant contacts & invitations](plans/04-lead-applicant-contacts-and-invitations.md) | ⬜ | 01 | — |
+| 1 | [03 Round management](plans/03-round-management.md) | ✅ | 01 | #146 (PR-A schema+server core), #147 (PR-B UI) |
+| 1 | [04 Lead-applicant contacts & invitations](plans/04-lead-applicant-contacts-and-invitations.md) | 🟡 | 01 | feature/04-* — PR-1 contact register (schema+CRUD+seed), PR-2 invite-from-contact + locking, PR-3 twin/DOB uniqueness |
 | 2 | [02 Application form re-scope](plans/02-application-form-rescope.md) | ⏳ deps | 01, 04 (deps) · D3 ✅ · D11 artifact (build to workbook) | — |
 | 2 | [05 Parent portal experience](plans/05-parent-portal-experience.md) | ⏳ deps | 01, 02, 03 (deps) · D10 ✅ | — |
 | 3 | [06 Assessor experience & UI](plans/06-assessor-experience-and-ui.md) | ⏳ deps | 02 (dep) | — |
@@ -181,6 +181,53 @@ needs it.
 
 ---
 
+## Active — Epic 04 (lead-applicant contacts & invitations)
+
+Wave 1, depends on Epic 01 (shipped). Plan §6 lists 7 PR-sized items; executed as
+**three cohesive PRs** off `staging`. PR-1 is independent; PR-2 and PR-3 stack on
+PR-1's `Contact` model (both branch off PR-1's branch). **Merge order: PR-1 →
+PR-2 → PR-3.** Plan §6 PR-6 (round-picker filter) is ALREADY DONE by Epic 03
+(#147, invite picker filtered to OPEN rounds), so it is not re-implemented here.
+
+**PR-1 — contact register: schema + CRUD + seed** (§6 PR-1, PR-2, PR-7):
+- [x] §6 PR-1 — additive migration `20260605200000_contact_register`: new
+  `contacts` table (+RLS: staff-read, ADMIN-write); nullable
+  `applications.contact_id`, `invitations.contact_id` +
+  `invitations.entry_year`/`entry_year_group` (the invite now carries the locked
+  entry-year forward — D1). Zero backfill. `Contact @@unique([profileId,
+  childName, childDob])` (twins, D12); NULL-profile caveat documented + an
+  app-layer creator-scoped dupe guard covers it.
+- [x] §6 PR-2 — `/contacts` register (ADMIN nav item) + `createContactAction` /
+  `updateContactAction` / `archiveContactAction` (required lastName/email/
+  childName/school/entryYear; childDob recommended; structured address; audit
+  logs; friendly "already a contact for that child" dupe error). Searchable
+  table + create/edit dialog + archive confirm.
+- [x] §6 PR-7 — demo seed: 5 contacts across every linkage state (fresh / bound
+  to registered family / returning ACTIVE-account) incl. a **twin pair** (same
+  childName, distinct childDob) proving the D12 key.
+- [x] `missingRequiredInviteFields` / `isContactInviteReady` helpers (the D1
+  locked-school invariant lives here, reused by PR-2's from-contact action) + 9
+  unit tests.
+
+**PR-2 — invite from contact + D1 locking + clarity** (§6 PR-3, PR-4) — *pending*:
+- [ ] `sendInvitationFromContactAction` (reuses hardened invite/rollback);
+  carries `entryYear`/`entryYearGroup`; shared "create first-year application
+  from invitation" helper stamps LOCKED school/year + `Application.contactId`.
+- [ ] Lock-enforcement invariant in `startApplicationAction` /
+  `register/actions.ts` (parent school/year ignored when the contact fixes them)
+  + read-only seam for Epic 02's form.
+- [ ] Tighten single-send `InvitationSchema` (require lastName/childName/school,
+  drop `__none__` sentinel); parent-vs-staff audience copy/icons on
+  `/invitations` vs `/users`.
+
+**PR-3 — twin/DOB uniqueness (backfilled)** (§6 PR-5) — *pending*:
+- [ ] Backfill `applications.child_dob` from `CHILD_DETAILS` JSONB; add
+  `@@unique([roundId, leadApplicantId, childName, childDob])`; keep the old
+  childName-only unique transitionally, verify counts, drop it in the cutover
+  migration. READ-ONLY validation queries for nonprod precede the merge.
+
+---
+
 ## Decision register — execution view
 
 Mirrors [README §5](README.md#5-decision-register). Reconciled 2026-06-05 against
@@ -221,6 +268,16 @@ Wave 2 → Wave 3 → Wave 4.
 
 ## Change log
 
+- **2026-06-05** — **Epic 03 marked ✅** (#146 PR-A + #147 PR-B shipped to
+  staging). **Epic 04 opened**: PR-1 (contact register) — additive
+  `20260605200000_contact_register` migration (new RLS-guarded `contacts` table,
+  nullable `applications.contact_id` + `invitations.contact_id`/`entry_year`/
+  `entry_year_group`, `Contact @@unique([profileId,childName,childDob])` for the
+  D12 twin key); `/contacts` ADMIN page with create/edit/archive CRUD + dupe
+  guard; `missingRequiredInviteFields` D1 invite-readiness helper; demo seed gains
+  5 contacts incl. a twin pair. prisma format/validate/tsc/build green, 259 tests
+  green (+9). PR-2 (invite-from-contact + locking) and PR-3 (twin/DOB app
+  uniqueness, backfilled) to follow on stacked branches.
 - **2026-06-05** — **Epic 03 PR-B (UI)**: dashboard round selector (concurrent
   rounds); "Edit/extend dates" dialog on round detail → `updateRoundAction`;
   per-application submission-deadline admin card (effective-vs-inherited);

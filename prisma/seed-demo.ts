@@ -62,6 +62,7 @@ import {
   APP_PATEL_ID,
 } from "./seed-data/demo-applications";
 import { demoDocuments } from "./seed-data/demo-documents";
+import { demoContacts } from "./seed-data/demo-contacts";
 
 // The runtime DATABASE_URL points at the non-superuser `app_user` role
 // (subject to RLS). Seeding requires the superuser session pooler so it can
@@ -183,9 +184,14 @@ async function clearAll(): Promise<void> {
   const app = await prisma.application.deleteMany({});
   log(`Deleted ${app.count} applications`);
 
-  // Invitations (reference rounds + bursary accounts + profiles)
+  // Invitations (reference rounds + bursary accounts + profiles + contacts)
   const inv = await prisma.invitation.deleteMany({});
   log(`Deleted ${inv.count} invitations`);
+
+  // Contacts (reference profiles + bursary accounts; applications/invitations
+  // contact_id are SET NULL, already cleared above)
+  const co = await prisma.contact.deleteMany({});
+  log(`Deleted ${co.count} contacts`);
 
   // Bursary accounts
   const ba = await prisma.bursaryAccount.deleteMany({});
@@ -346,6 +352,19 @@ async function assignApplications(): Promise<void> {
     });
   }
   log(`Assigned ${assignedIds.length} applications to Michael Thompson`);
+}
+
+// ─── Contacts (Epic 04 — lead-applicant contact register) ─────────────────────
+
+async function seedContacts(): Promise<void> {
+  section("Seeding lead-applicant contacts");
+
+  for (const contact of demoContacts) {
+    await prisma.contact.create({ data: contact });
+  }
+  log(
+    `Created ${demoContacts.length} contacts (incl. a twin pair: same name, distinct DOB)`,
+  );
 }
 
 // ─── Application Sections ─────────────────────────────────────────────────────
@@ -573,6 +592,7 @@ async function main(): Promise<void> {
   await seedProfiles();
   await seedRound();
   await seedBursaryAccounts();
+  await seedContacts();
   await seedApplications();
   await assignApplications();
   await seedApplicationSections();

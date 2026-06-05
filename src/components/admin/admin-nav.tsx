@@ -17,6 +17,7 @@ import {
   Gauge,
   CalendarRange,
   Mail,
+  Contact as ContactIcon,
   BarChart2,
   Download,
   Clock,
@@ -57,6 +58,7 @@ const NAV_GROUPS: NavGroup[] = [
   {
     heading: "Invitations",
     items: [
+      { label: "Contacts", href: "/contacts", icon: ContactIcon },
       { label: "Send Invitations", href: "/invitations", icon: Mail },
     ],
   },
