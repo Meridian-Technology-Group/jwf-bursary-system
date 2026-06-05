@@ -17,11 +17,9 @@ import {
   getLatestAcceptedInvitationForUser,
   markInvitationAccepted,
 } from "@/lib/db/queries/invitations";
-import { generateApplicationReference } from "@/lib/applications/reference";
 import { createReassessmentApplicationFromInvitation } from "@/lib/db/queries/reassessment";
-import { ensurePrimaryContributor } from "@/lib/db/queries/contributors";
+import { createFirstYearApplicationFromSource } from "@/lib/applications/create-from-invitation";
 import {
-  applicationCreateData,
   transitionApplicationStatus,
   clearPauseDeadline,
 } from "@/lib/applications/status";
@@ -138,23 +136,22 @@ export async function startApplicationAction(
             };
           }
 
-          const reference = await generateApplicationReference(tx, school, round.academicYear);
-
-          const application = await tx.application.create({
-            data: {
-              reference,
-              roundId: invitation.roundId,
-              leadApplicantId: user.id,
-              school,
-              childName: childName.trim(),
-              isReassessment: false,
-              ...applicationCreateData("NEW"),
-            },
+          // D1 lock-enforcement: when the invitation already fixes the school
+          // (seeded from the admin's contact), it is authoritative — the
+          // parent-supplied school is IGNORED. Likewise childName + the locked
+          // entry-year come from the invitation when present. The parent's
+          // onboarding-card inputs only fill the gaps a bare invite left open.
+          // (Epic 02 removes the parent school selector entirely; this is the
+          // server-side belt-and-braces in the interim.)
+          await createFirstYearApplicationFromSource(tx, {
+            leadApplicantId: user.id,
+            roundId: invitation.roundId,
+            school: invitation.school ?? school,
+            childName: invitation.childName ?? childName.trim(),
+            entryYear: invitation.entryYear,
+            entryYearGroup: invitation.entryYearGroup,
+            contactId: invitation.contactId,
           });
-
-          // Every application must have a PRIMARY contributor from creation so
-          // the section write path can tag the owner (dual-parent foundation).
-          await ensurePrimaryContributor(tx, application.id, user.id);
         }
 
         return { error: null };

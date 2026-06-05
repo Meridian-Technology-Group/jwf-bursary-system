@@ -209,16 +209,28 @@ PR-2 → PR-3.** Plan §6 PR-6 (round-picker filter) is ALREADY DONE by Epic 03
   locked-school invariant lives here, reused by PR-2's from-contact action) + 9
   unit tests.
 
-**PR-2 — invite from contact + D1 locking + clarity** (§6 PR-3, PR-4) — *pending*:
-- [ ] `sendInvitationFromContactAction` (reuses hardened invite/rollback);
-  carries `entryYear`/`entryYearGroup`; shared "create first-year application
-  from invitation" helper stamps LOCKED school/year + `Application.contactId`.
-- [ ] Lock-enforcement invariant in `startApplicationAction` /
-  `register/actions.ts` (parent school/year ignored when the contact fixes them)
-  + read-only seam for Epic 02's form.
-- [ ] Tighten single-send `InvitationSchema` (require lastName/childName/school,
-  drop `__none__` sentinel); parent-vs-staff audience copy/icons on
-  `/invitations` vs `/users`.
+**PR-2 — invite from contact + D1 locking + clarity** (§6 PR-3, PR-4):
+- [x] `sendInvitationFromContactAction` (reuses the hardened invite/rollback:
+  auth-user-up-front, withAdminContext tx, email inside rollback boundary);
+  asserts the contact carries the required locked set; binds `Contact.profileId`
+  on first invite; carries `entryYear`/`entryYearGroup` + `contactId` on the
+  invitation. Round picker (OPEN only) + confirmation summary on `/contacts`.
+- [x] Shared `createFirstYearApplicationFromSource` helper — the ONE place a
+  first-year app is created from invitation/contact data; stamps LOCKED
+  school/entryYear/entryYearGroup + `Application.contactId`. All three callers
+  (register accept, portal onboarding card, from-contact) routed through it so
+  the lock lives in one place. 6 unit tests on the helper + lock invariant.
+- [x] Lock-enforcement in `startApplicationAction`: when the invitation fixes
+  the school (seeded from the contact) it is authoritative — the parent-supplied
+  school/childName are IGNORED (`invitation.school ?? school`). The read-only
+  seam for Epic 02's form is `invitation.entryYear`/`entryYearGroup` carried onto
+  the application; Epic 02 removes the parent selectors.
+- [x] Tightened single-send `InvitationSchema` + `send-invitation-form.tsx` —
+  lastName/childName/school now REQUIRED, `__none__` school sentinel dropped;
+  school added to the confirm summary. Parent-vs-staff clarity: `/invitations`
+  reframed "Invite a family to apply" with a link to `/users` for staff and a
+  prominent "invite from the contact register" recommended-path card; the quick
+  form demoted/relabelled.
 
 **PR-3 — twin/DOB uniqueness (backfilled)** (§6 PR-5) — *pending*:
 - [ ] Backfill `applications.child_dob` from `CHILD_DETAILS` JSONB; add
@@ -268,6 +280,17 @@ Wave 2 → Wave 3 → Wave 4.
 
 ## Change log
 
+- **2026-06-05** — **Epic 04 PR-2** (invite from contact + D1 locking +
+  clarity): `sendInvitationFromContactAction` seeds a parent invite from a
+  contact (OPEN-round picker + confirmation, binds `Contact.profileId`, carries
+  the locked entry-year). Shared `createFirstYearApplicationFromSource` helper
+  now backs all three first-year app-create paths and stamps the LOCKED
+  school/entry-year + `Application.contactId` in one place;
+  `startApplicationAction` ignores parent-supplied school when the invitation
+  fixes it (D1). Single-send invite now requires surname/child/school (`__none__`
+  sentinel gone); `/invitations` reframed as the family-invite page with a
+  recommended "invite from the contact register" card and a staff-invite pointer.
+  tsc/format/build green, 265 tests green (+6).
 - **2026-06-05** — **Epic 03 marked ✅** (#146 PR-A + #147 PR-B shipped to
   staging). **Epic 04 opened**: PR-1 (contact register) — additive
   `20260605200000_contact_register` migration (new RLS-guarded `contacts` table,

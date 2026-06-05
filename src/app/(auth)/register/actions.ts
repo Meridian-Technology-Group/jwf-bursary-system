@@ -27,10 +27,11 @@ import {
   getInvitationByToken,
   markInvitationAccepted,
 } from "@/lib/db/queries/invitations";
-import { generateApplicationReference } from "@/lib/applications/reference";
-import { applicationCreateData } from "@/lib/applications/status";
 import { createReassessmentApplicationFromInvitation } from "@/lib/db/queries/reassessment";
-import { ensurePrimaryContributor } from "@/lib/db/queries/contributors";
+import {
+  canCreateFirstYearApplication,
+  createFirstYearApplicationFromSource,
+} from "@/lib/applications/create-from-invitation";
 import { validatePasswordStrength } from "@/lib/auth/password-policy";
 import { createAuditLog } from "@/lib/audit/log";
 
@@ -306,39 +307,25 @@ export async function acceptApplicantInvitationAction(
       } else if (invitation.bursaryAccountId && invitation.roundId) {
         await createReassessmentApplicationFromInvitation(tx, invitation);
       } else if (
-        invitation.school &&
-        invitation.childName &&
-        invitation.roundId
+        canCreateFirstYearApplication({
+          leadApplicantId: invitation.authUserId!,
+          roundId: invitation.roundId,
+          school: invitation.school,
+          childName: invitation.childName,
+        })
       ) {
-        const round = await tx.round.findUnique({
-          where: { id: invitation.roundId },
-          select: { academicYear: true },
+        // Shared helper stamps the LOCKED school + entry-year (carried on the
+        // invitation, seeded from the contact — D1) and tags contactId. The
+        // parent never supplies these.
+        await createFirstYearApplicationFromSource(tx, {
+          leadApplicantId: invitation.authUserId!,
+          roundId: invitation.roundId,
+          school: invitation.school,
+          childName: invitation.childName,
+          entryYear: invitation.entryYear,
+          entryYearGroup: invitation.entryYearGroup,
+          contactId: invitation.contactId,
         });
-        const reference = await generateApplicationReference(
-          tx,
-          invitation.school,
-          round?.academicYear ?? ""
-        );
-
-        const application = await tx.application.create({
-          data: {
-            reference,
-            roundId: invitation.roundId,
-            leadApplicantId: invitation.authUserId!,
-            school: invitation.school,
-            childName: invitation.childName,
-            isReassessment: false,
-            ...applicationCreateData("NEW"),
-          },
-        });
-
-        // Every application must have a PRIMARY contributor from creation so
-        // the section write path can tag the owner (dual-parent foundation).
-        await ensurePrimaryContributor(
-          tx,
-          application.id,
-          invitation.authUserId!
-        );
       }
 
       await markInvitationAccepted(tx, invitation.id, invitation.authUserId!);

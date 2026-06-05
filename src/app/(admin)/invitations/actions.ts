@@ -52,12 +52,16 @@ import { AUDIT_ACTIONS, AUDIT_ENTITY_TYPES } from "@/lib/audit/actions";
 // Validation schema
 // ---------------------------------------------------------------------------
 
+// Epic 04 (§5.2 / acceptance): the residual single-send ("quick invite") form
+// now REQUIRES surname, child name and school — the same minimum the contact
+// register enforces — so partial invite data can no longer slip through. The
+// from-contact flow is the recommended path; this is the exception.
 const InvitationSchema = z.object({
   email: z.string().email("A valid email address is required"),
   firstName: z.string().optional(),
-  lastName: z.string().optional(),
-  childName: z.string().optional(),
-  school: z.nativeEnum(School).optional(),
+  lastName: z.string().trim().min(1, "A surname is required"),
+  childName: z.string().trim().min(1, "The child's name is required"),
+  school: z.nativeEnum(School, { error: "A school is required" }),
   roundId: z.string().uuid("An application round is required"),
 });
 

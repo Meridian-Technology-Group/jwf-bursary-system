@@ -9,7 +9,7 @@
 
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Plus, Search, Pencil, Archive } from "lucide-react";
+import { Plus, Search, Pencil, Archive, Send } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -25,8 +25,14 @@ import {
   ContactFormDialog,
   type ContactFormValues,
 } from "./contact-form-dialog";
+import { InviteFromContactDialog } from "./invite-from-contact-dialog";
 import { archiveContactAction } from "@/app/(admin)/contacts/actions";
 import type { ContactListItem } from "@/lib/db/queries/contacts";
+
+interface RoundOption {
+  id: string;
+  academicYear: string;
+}
 
 function schoolShort(school: string): string {
   return school === "TRINITY" ? "Trinity" : "Whitgift";
@@ -69,10 +75,19 @@ function toFormValues(c: ContactListItem & {
   };
 }
 
-export function ContactsTable({ contacts }: { contacts: ContactListItem[] }) {
+export function ContactsTable({
+  contacts,
+  liveRounds,
+}: {
+  contacts: ContactListItem[];
+  liveRounds: RoundOption[];
+}) {
   const [query, setQuery] = useState("");
   const [createOpen, setCreateOpen] = useState(false);
   const [editing, setEditing] = useState<ContactFormValues | null>(null);
+  const [inviteTarget, setInviteTarget] = useState<ContactListItem | null>(
+    null
+  );
   const [archiveTarget, setArchiveTarget] = useState<ContactListItem | null>(
     null
   );
@@ -199,6 +214,21 @@ export function ContactsTable({ contacts }: { contacts: ContactListItem[] }) {
                         <Button
                           size="sm"
                           variant="ghost"
+                          onClick={() => setInviteTarget(c)}
+                          className="gap-1 text-primary-800"
+                          disabled={liveRounds.length === 0}
+                          title={
+                            liveRounds.length === 0
+                              ? "No open round to invite into"
+                              : "Send a parent invite from this contact"
+                          }
+                        >
+                          <Send className="h-3.5 w-3.5" aria-hidden="true" />
+                          Invite
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
                           onClick={() => setEditing(toFormValues(c))}
                           className="gap-1"
                         >
@@ -234,6 +264,16 @@ export function ContactsTable({ contacts }: { contacts: ContactListItem[] }) {
           if (!next) setEditing(null);
         }}
         initial={editing ?? undefined}
+      />
+
+      {/* Invite from contact */}
+      <InviteFromContactDialog
+        contact={inviteTarget}
+        liveRounds={liveRounds}
+        open={inviteTarget !== null}
+        onOpenChange={(next) => {
+          if (!next) setInviteTarget(null);
+        }}
       />
 
       {/* Archive confirm */}
