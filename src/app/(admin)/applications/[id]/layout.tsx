@@ -15,31 +15,15 @@ import { getSecondaryContributor } from "@/lib/db/queries/contributors";
 import { getPriorYearSecondaryContributor } from "@/lib/db/queries/reassessment";
 import { listAssessors } from "@/lib/db/queries/profiles";
 import { withUserContext, type RlsRole } from "@/lib/db/prisma";
-import { StatusBadge } from "@/components/shared/status-badge";
+import {
+  FormStatusBadge,
+  AssessmentStatusBadge,
+  OutcomeBadge,
+} from "@/components/shared/lifecycle-badges";
 import { ApplicationActions } from "@/components/admin/application-actions";
 import { AssignAssessorSelect } from "@/components/admin/assign-assessor-select";
 import { GdprDeleteAction } from "@/components/admin/gdpr-delete-action";
 import { AddSecondParentCard } from "@/components/admin/add-second-parent-card";
-import type { ApplicationStatus as PrismaStatus } from "@prisma/client";
-
-// Map Prisma status to StatusBadge status
-function mapStatus(
-  status: PrismaStatus
-): React.ComponentProps<typeof StatusBadge>["status"] {
-  const map: Record<
-    PrismaStatus,
-    React.ComponentProps<typeof StatusBadge>["status"]
-  > = {
-    PRE_SUBMISSION: "DRAFT",
-    SUBMITTED: "SUBMITTED",
-    NOT_STARTED: "SUBMITTED",
-    PAUSED: "PAUSED",
-    COMPLETED: "IN_REVIEW",
-    QUALIFIES: "QUALIFIES",
-    DOES_NOT_QUALIFY: "DOES_NOT_QUALIFY",
-  };
-  return map[status] ?? "DRAFT";
-}
 
 function SchoolBadge({ school }: { school: "WHITGIFT" | "TRINITY" }) {
   if (school === "WHITGIFT") {
@@ -215,7 +199,18 @@ export default async function ApplicationDetailLayout({
           </div>
 
           <div className="flex flex-wrap items-center gap-3">
-            <StatusBadge status={mapStatus(application.status)} />
+            {/* Three independent lifecycles (Epic 01): form → assessment →
+                outcome. Staff see the real internal values. */}
+            <FormStatusBadge
+              status={application.formStatus}
+              applicationType={application.applicationType}
+            />
+            {application.assessment && (
+              <AssessmentStatusBadge status={application.assessment.status} />
+            )}
+            {application.assessment?.outcome && (
+              <OutcomeBadge outcome={application.assessment.outcome} />
+            )}
             {user.role === Role.ADMIN && (
               <AssignAssessorSelect
                 applicationId={application.id}

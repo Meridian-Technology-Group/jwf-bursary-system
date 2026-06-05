@@ -36,7 +36,7 @@ Legend: ⬜ not started · 🟡 in progress · ✅ shipped to staging · 🚫 bl
 |---|---|---|---|---|
 | — | Scaffolding (plans + this ledger) | ✅ | — | #133 (+ #140 reconcile) |
 | 0 | [12 Defect fixes](plans/12-defect-fixes.md) | ✅ | — | #134–#139 |
-| 1 | [01 Status & workflow model](plans/01-status-and-workflow-model.md) | 🟡 | — | #141 (PR-1 schema), #142 (PR-2 backfill), #143 (PR-3 status service) |
+| 1 | [01 Status & workflow model](plans/01-status-and-workflow-model.md) | 🟡 | — | #141 (PR-1 schema), #142 (PR-2 backfill), #143 (PR-3 status service), #144 (PR-4 readers+badges) |
 | 1 | [03 Round management](plans/03-round-management.md) | ⬜ | 01 | — |
 | 1 | [04 Lead-applicant contacts & invitations](plans/04-lead-applicant-contacts-and-invitations.md) | ⬜ | 01 | — |
 | 2 | [02 Application form re-scope](plans/02-application-form-rescope.md) | ⏳ deps | 01, 04 (deps) · D3 ✅ · D11 artifact (build to workbook) | — |
@@ -94,8 +94,15 @@ reader is migrated.
   persists `paused_until` (email reads it); pause no longer touches form_status.
   Behaviour-preserving; 13 new unit tests (234 total green). No stray status
   writes remain (grep-clean).
-- [ ] **PR-4** — form-status derivation from sections + typed badge components;
-  remove stale `status-badge.tsx`; fix the assessment pill.
+- [x] **PR-4** #144 — runtime form-status derivation (saveSection →
+  refreshFormStatus, agrees with backfill); first assessor save → real
+  IN_PROGRESS (saveAssessmentAction no longer re-pins NOT_STARTED;
+  ASSESSMENT_TRANSITIONS now strict). Typed badges (FormStatusBadge /
+  AssessmentStatusBadge / OutcomeBadge + parent-safe projection); stale
+  `status-badge.tsx` removed, its 3 callers migrated (admin layout, queue table,
+  portal dashboard). Readers migrated: dashboard "in progress" = assessment
+  IN_PROGRESS|PAUSED (was PAUSED-only bug); assessment header pill. Cockpit
+  untouched. 238 tests green.
 - [ ] **PR-5** — `submittedAt` write-once trigger migration + app invariant + test.
 - [ ] **PR-6** — ⏸ **deferred / gated**: drop the deprecated fused `status`
   column once all readers are migrated (cut over reports/dashboard/cockpit
@@ -109,6 +116,24 @@ reader is migrated.
 > `QUALIFIES_NOT_AWARDED` by `applications.bursary_account_id` presence, the same
 > discriminator PR-2/PR-3 use. The dual-write means new outcomes are already
 > written as the 3-value enum; this only catches pre-PR-3 rows.
+>
+> **PR-6 — remaining legacy `applications.status` readers (after PR-4).** PR-4
+> moved all *display* reads to the lifecycle columns. What still reads the fused
+> `status` and must be cut over before the column is dropped:
+> 1. **Transition gating** — `(admin)/applications/[id]/actions.ts` and
+>    `set-outcome-core.ts` read it as the transition *source*; `ApplicationActions`
+>    + recommendation page gate buttons on it. Switch these to read
+>    `form_status` + `assessment.status`/`outcome`.
+> 2. **Round cockpit / watchlist** — `round-cockpit.ts` `DECIDED_STATUSES` and
+>    `round-watchlist-eval.ts` `decidedStatuses` test QUALIFIES/DOES_NOT_QUALIFY;
+>    `round-watchlist.ts` surfaces `app.status`. Re-key onto `assessment.outcome`.
+> 3. **Parent portal (Epic 05)** — `(portal)/status/page.tsx` timeline and the
+>    doc-response guards in `(portal)/actions.ts` + `respond/page.tsx`
+>    (`status !== "PAUSED"`). Owned by Epic 05's portal status UX; coordinate.
+> 4. **Reports/exports/queue** — `reports.ts` outcome branches + `listApplications`
+>    status filter + `ALL_STATUSES`/`STATUS_LABELS` in `application-table.tsx`
+>    (queue filter is still fused-status-keyed by design).
+> The deprecated `ApplicationListItem.status` field is JSDoc-flagged.
 
 ---
 
@@ -168,3 +193,11 @@ Wave 2 → Wave 3 → Wave 4.
   dual-write (behaviour-preserving; all writers migrated, `paused_until`
   persisted, 234 tests green) opened. Recorded the PR-6 enum-cleanup prerequisite
   (remap residual `QUALIFIES` outcome rows before dropping the value).
+- **2026-06-05** — **Epic 01 PR-4** **#144**: reader migration + typed badges +
+  runtime form-status derivation. First assessor save now drives real
+  IN_PROGRESS (fixes the every-save-repins-NOT_STARTED bug); dashboard "in
+  progress" reads the real assessment lifecycle; stale `status-badge.tsx`
+  removed; parent dashboard no longer leaks internal states. Cockpit untouched.
+  Expanded the PR-6 prerequisites with the full remaining-legacy-reader list
+  (transition gating, cockpit/watchlist, Epic 05 portal, reports/queue filter).
+  238 tests green.

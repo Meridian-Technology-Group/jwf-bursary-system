@@ -18,8 +18,8 @@ import { deriveCurrentYearGroupNumber } from "@/lib/assessment/schooling-years";
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 export interface DashboardCounts {
-  awaitingAssessment: number; // SUBMITTED + NOT_STARTED
-  inProgress: number;         // PAUSED
+  awaitingAssessment: number; // submitted form, assessment not yet started
+  inProgress: number;         // assessment IN_PROGRESS or PAUSED
   awaitingRecommendation: number; // assessment COMPLETED but no recommendation
   qualifies: number;
   doesNotQualify: number;
@@ -172,13 +172,25 @@ export async function getDashboardCounts(
   let doesNotQualify = 0;
 
   for (const app of applications) {
+    // "In progress" now reads the REAL assessment lifecycle (Epic 01): an
+    // assessment that is actively being worked (IN_PROGRESS) OR paused for
+    // documents (PAUSED). Previously this bucket was PAUSED-only and a
+    // genuinely in-progress assessment was mis-bucketed as "awaiting" (the old
+    // fused NOT_STARTED) — see plan 01 / Epic 12 §3.
+    const asmtStatus = app.assessment?.status ?? null;
+
     if (
+      asmtStatus === AssessmentStatus.IN_PROGRESS ||
+      asmtStatus === AssessmentStatus.PAUSED
+    ) {
+      inProgress++;
+    } else if (
       app.status === ApplicationStatus.SUBMITTED ||
       app.status === ApplicationStatus.NOT_STARTED
     ) {
+      // Form submitted, review not yet meaningfully started (no assessment, or
+      // a freshly-created NOT_STARTED assessment).
       awaitingAssessment++;
-    } else if (app.status === ApplicationStatus.PAUSED) {
-      inProgress++;
     } else if (app.status === ApplicationStatus.QUALIFIES) {
       qualifies++;
     } else if (app.status === ApplicationStatus.DOES_NOT_QUALIFY) {
@@ -187,8 +199,8 @@ export async function getDashboardCounts(
 
     // Awaiting recommendation: assessment COMPLETED but no recommendation row
     if (
-      app.assessment?.status === AssessmentStatus.COMPLETED &&
-      !app.assessment.recommendation
+      asmtStatus === AssessmentStatus.COMPLETED &&
+      !app.assessment?.recommendation
     ) {
       awaitingRecommendation++;
     }

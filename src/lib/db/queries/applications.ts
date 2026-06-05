@@ -14,6 +14,10 @@ import type {
   ApplicationSectionType,
   ApplicationContributorRole,
   ApplicationContributorStatus,
+  ApplicationFormStatus,
+  ApplicationType,
+  AssessmentStatus,
+  AssessmentOutcome,
   Document,
   Assessment,
   Profile,
@@ -42,7 +46,14 @@ export interface ApplicationListItem {
   id: string;
   reference: string;
   school: School;
+  /** @deprecated legacy fused status — kept for the queue filter until PR-6. */
   status: ApplicationStatus;
+  formStatus: ApplicationFormStatus;
+  applicationType: ApplicationType;
+  /** Real assessment lifecycle status, null when no assessment exists yet. */
+  assessmentStatus: AssessmentStatus | null;
+  /** Final outcome (3-value), null until set. */
+  outcome: AssessmentOutcome | null;
   entryYear: number | null;
   submittedAt: Date | null;
   isReassessment: boolean;
@@ -136,6 +147,8 @@ export async function listApplications(
       reference: true,
       school: true,
       status: true,
+      formStatus: true,
+      applicationType: true,
       entryYear: true,
       submittedAt: true,
       isReassessment: true,
@@ -149,7 +162,11 @@ export async function listApplications(
         select: { status: true },
       },
       assessment: {
-        select: { secondaryParentOverride: true },
+        select: {
+          secondaryParentOverride: true,
+          status: true,
+          outcome: true,
+        },
       },
     },
     orderBy: { submittedAt: "desc" },
@@ -168,7 +185,12 @@ export async function listApplications(
         secondParent = "AWAITING";
       }
     }
-    return { ...rest, secondParent };
+    return {
+      ...rest,
+      assessmentStatus: assessment?.status ?? null,
+      outcome: assessment?.outcome ?? null,
+      secondParent,
+    };
   });
 }
 
@@ -244,6 +266,9 @@ export async function getApplicationWithDetails(
       isInternal: true,
       assignedToId: true,
       status: true,
+      formStatus: true,
+      applicationType: true,
+      archivedAt: true,
       submittedAt: true,
       createdAt: true,
       updatedAt: true,

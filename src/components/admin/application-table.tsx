@@ -81,7 +81,11 @@ import {
   DialogDescription,
   DialogFooter,
 } from "@/components/ui/dialog";
-import { StatusBadge } from "@/components/shared/status-badge";
+import {
+  FormStatusBadge,
+  AssessmentStatusBadge,
+  OutcomeBadge,
+} from "@/components/shared/lifecycle-badges";
 import { cn } from "@/lib/utils";
 
 import { bulkAssignApplicationsAction } from "@/app/(admin)/applications/[id]/actions";
@@ -238,23 +242,28 @@ function formatSubmittedDate(date: Date | null): React.ReactNode {
   );
 }
 
-// Map Prisma ApplicationStatus to StatusBadge's accepted values
-function mapStatus(
-  status: ApplicationStatus
-): React.ComponentProps<typeof StatusBadge>["status"] {
-  const map: Record<
-    ApplicationStatus,
-    React.ComponentProps<typeof StatusBadge>["status"]
-  > = {
-    PRE_SUBMISSION: "DRAFT",
-    SUBMITTED: "SUBMITTED",
-    NOT_STARTED: "SUBMITTED",
-    PAUSED: "PAUSED",
-    COMPLETED: "IN_REVIEW",
-    QUALIFIES: "QUALIFIES",
-    DOES_NOT_QUALIFY: "DOES_NOT_QUALIFY",
-  };
-  return map[status] ?? "DRAFT";
+/**
+ * Composite lifecycle cell for the queue (Epic 01 PR-4). Shows the real
+ * per-lifecycle values: form status, then assessment status + outcome once
+ * those exist. Replaces the old single mislabelled StatusBadge (e.g. COMPLETED
+ * was shown as "In Review"). The status FILTER below still keys off the legacy
+ * fused `status` (dual-written until PR-6) — only the DISPLAY moved.
+ */
+function ApplicationLifecycleCell({ row }: { row: ApplicationRow }) {
+  // Once an outcome is set, it is the headline; before that show the most
+  // advanced lifecycle the row has reached.
+  if (row.outcome) {
+    return <OutcomeBadge outcome={row.outcome} />;
+  }
+  if (row.assessmentStatus && row.assessmentStatus !== "NOT_STARTED") {
+    return <AssessmentStatusBadge status={row.assessmentStatus} />;
+  }
+  return (
+    <FormStatusBadge
+      status={row.formStatus}
+      applicationType={row.applicationType}
+    />
+  );
 }
 
 // ─── Status multi-select popover ──────────────────────────────────────────────
@@ -804,7 +813,7 @@ export function ApplicationTable({
       }),
       columnHelper.accessor("status", {
         header: "Status",
-        cell: (info) => <StatusBadge status={mapStatus(info.getValue())} />,
+        cell: (info) => <ApplicationLifecycleCell row={info.row.original} />,
       }),
       columnHelper.accessor("secondParent", {
         header: "2nd Parent",

@@ -27,7 +27,7 @@ import {
 import { withUserContext, withAdminContext, type RlsRole } from "@/lib/db/prisma";
 import { sendEmail } from "@/lib/email/send";
 import { createAuditLog } from "@/lib/audit/log";
-import { submitApplicationData } from "@/lib/applications/status";
+import { submitApplicationData, refreshFormStatus } from "@/lib/applications/status";
 import { getSectionGapStatuses, type SectionGap } from "@/lib/portal/section-gaps";
 import { logError } from "@/lib/log";
 
@@ -203,9 +203,20 @@ export async function saveSection(
   }
 
   try {
-    await withUserContext(ctx.user.id, ctx.user.role as RlsRole, (tx) =>
-      upsertSection(tx, ctx.appId, section, result.data, true, ctx.ownerContributorId)
-    );
+    await withUserContext(ctx.user.id, ctx.user.role as RlsRole, async (tx) => {
+      await upsertSection(
+        tx,
+        ctx.appId,
+        section,
+        result.data,
+        true,
+        ctx.ownerContributorId
+      );
+      // Re-derive form_status from section completion (IN_PROGRESS once a
+      // section is complete, FILLED_IN once all required are). Scoped to the
+      // lead applicant's PRIMARY contributor, matching the submit gate.
+      await refreshFormStatus(tx, ctx.appId, ctx.ownerContributorId);
+    });
     // Revalidate the portal layout so the sidebar progress stepper + bar
     // pick up the new completion state immediately.
     revalidatePath("/", "layout");
@@ -233,9 +244,19 @@ export async function saveSectionDraft(
   }
 
   try {
-    await withUserContext(ctx.user.id, ctx.user.role as RlsRole, (tx) =>
-      upsertSection(tx, ctx.appId, section, data, false, ctx.ownerContributorId)
-    );
+    await withUserContext(ctx.user.id, ctx.user.role as RlsRole, async (tx) => {
+      await upsertSection(
+        tx,
+        ctx.appId,
+        section,
+        data,
+        false,
+        ctx.ownerContributorId
+      );
+      // Keep form_status in lockstep with completion (no-op while still 0
+      // complete; corrects it if a section was un-completed).
+      await refreshFormStatus(tx, ctx.appId, ctx.ownerContributorId);
+    });
     return { success: true };
   } catch (err) {
     logError("saveSectionDraft", err);

@@ -775,7 +775,9 @@ export function AssessmentForm({
                 ? "Completed"
                 : assessment.status === "PAUSED"
                 ? "Paused"
-                : "In Progress"}
+                : assessment.status === "IN_PROGRESS"
+                ? "In Progress"
+                : "Not Started"}
             </span>
             {lastSaved && (
               <span className="text-xs text-slate-400">
