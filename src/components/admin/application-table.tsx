@@ -638,6 +638,7 @@ export function ApplicationTable({
   // Name reveal state
   const [namesRevealed, setNamesRevealed] = React.useState(false);
   const [namesLoading, setNamesLoading] = React.useState(false);
+  const [namesError, setNamesError] = React.useState<string | null>(null);
   const [nameMap, setNameMap] = React.useState<
     Map<string, NameData>
   >(new Map());
@@ -695,10 +696,12 @@ export function ApplicationTable({
   const handleNamesToggle = async (checked: boolean) => {
     if (!checked) {
       setNamesRevealed(false);
+      setNamesError(null);
       return;
     }
 
     setNamesLoading(true);
+    setNamesError(null);
     try {
       const ids = applications.map((a) => a.id);
       const params = new URLSearchParams();
@@ -725,6 +728,10 @@ export function ApplicationTable({
       setNamesRevealed(true);
     } catch (err) {
       console.error("Name reveal failed:", err);
+      // Surface the failure to the user and reset the toggle so it visibly
+      // fails rather than silently no-opping (see defect plan §2.1).
+      setNamesError("Could not reveal names. Please try again.");
+      setNamesRevealed(false);
     } finally {
       setNamesLoading(false);
     }
@@ -1014,6 +1021,15 @@ export function ApplicationTable({
 
         {/* Name reveal toggle */}
         <div className="flex items-center gap-2.5">
+          {namesError && (
+            <span
+              role="alert"
+              className="flex items-center gap-1 rounded-full bg-rose-50 px-2.5 py-1 text-xs font-medium text-rose-700 border border-rose-200"
+            >
+              <AlertTriangle className="h-3 w-3" aria-hidden="true" />
+              {namesError}
+            </span>
+          )}
           {namesRevealed && (
             <span className="flex items-center gap-1 rounded-full bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-700 border border-amber-200">
               <AlertTriangle className="h-3 w-3" aria-hidden="true" />
