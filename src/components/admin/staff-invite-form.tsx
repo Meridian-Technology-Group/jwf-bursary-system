@@ -30,6 +30,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { inviteStaffAction } from "@/app/(admin)/users/actions";
 
 // ---------------------------------------------------------------------------
@@ -54,6 +62,7 @@ type FormValues = z.infer<typeof schema>;
 export function StaffInviteForm() {
   const [serverError, setServerError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [pendingValues, setPendingValues] = useState<FormValues | null>(null);
   const [isPending, startTransition] = useTransition();
   const router = useRouter();
 
@@ -67,9 +76,19 @@ export function StaffInviteForm() {
     },
   });
 
-  function onSubmit(values: FormValues) {
+  // Step 1: validation passed → open the confirmation dialog (prevents
+  // accidental sends, matching the parent-invite flow).
+  function onReview(values: FormValues) {
     setServerError(null);
     setSuccessMessage(null);
+    setPendingValues(values);
+  }
+
+  // Step 2: explicit confirm → dispatch.
+  function onConfirm() {
+    const values = pendingValues;
+    if (!values) return;
+    setPendingValues(null);
 
     const formData = new FormData();
     formData.set("email", values.email);
@@ -94,6 +113,14 @@ export function StaffInviteForm() {
     });
   }
 
+  const confirmRecipient = pendingValues
+    ? [pendingValues.firstName, pendingValues.lastName]
+        .filter(Boolean)
+        .join(" ") || pendingValues.email
+    : "";
+  const confirmRole =
+    pendingValues?.role === "VIEWER" ? "Viewer (read-only)" : "Assessor";
+
   return (
     <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
       <h2 className="mb-4 text-base font-semibold text-slate-800">
@@ -101,7 +128,7 @@ export function StaffInviteForm() {
       </h2>
 
       <Form {...form}>
-        <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+        <form onSubmit={form.handleSubmit(onReview)} className="space-y-4">
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             {/* Email */}
             <FormField
@@ -219,6 +246,60 @@ export function StaffInviteForm() {
           </div>
         </form>
       </Form>
+
+      {/* Confirmation step — naming recipient + role before dispatch. */}
+      <Dialog
+        open={pendingValues !== null}
+        onOpenChange={(next) => {
+          if (!next) setPendingValues(null);
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Send this staff invite?</DialogTitle>
+            <DialogDescription asChild>
+              <div className="space-y-1 pt-1 text-sm text-slate-600">
+                <p>
+                  Invite{" "}
+                  <span className="font-medium text-slate-800">
+                    {confirmRecipient}
+                  </span>{" "}
+                  as{" "}
+                  <span className="font-medium text-slate-800">
+                    {confirmRole}
+                  </span>
+                  ?
+                </p>
+                {pendingValues?.email &&
+                  confirmRecipient !== pendingValues.email && (
+                    <p className="text-xs text-slate-400">
+                      {pendingValues.email}
+                    </p>
+                  )}
+              </div>
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setPendingValues(null)}
+              disabled={isPending}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              onClick={onConfirm}
+              disabled={isPending}
+              className="gap-2"
+            >
+              <UserPlus className="h-4 w-4" aria-hidden="true" />
+              {isPending ? "Sending..." : "Confirm & send"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

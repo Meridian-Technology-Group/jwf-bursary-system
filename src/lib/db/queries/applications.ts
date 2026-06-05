@@ -270,6 +270,7 @@ export async function getApplicationWithDetails(
       applicationType: true,
       archivedAt: true,
       submittedAt: true,
+      submissionDeadlineAt: true,
       createdAt: true,
       updatedAt: true,
       round: true,
