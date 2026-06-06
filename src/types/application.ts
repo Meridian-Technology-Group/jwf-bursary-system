@@ -445,8 +445,19 @@ export interface AdditionalInfoData {
 // ─── Section 10: Declaration ──────────────────────────────────────────────────
 
 export interface DeclarationData {
-  accepted: boolean;
-  signedOnBehalfOf: string;
+  /** Parent/Guardian 1 acceptance tick (workbook §8). */
+  acceptedParent1: boolean;
+  /** Full name of Parent/Guardian 1 accepting the declaration. */
+  signedOnBehalfOfParent1: string;
+  /** Parent/Guardian 2 acceptance tick (required unless sole parent). */
+  acceptedParent2?: boolean;
+  signedOnBehalfOfParent2?: string;
+  /**
+   * Legacy single-tick fields (pre-Epic-02 PR-5). Retained so the back-compat
+   * reader / review screen can render old submitted declarations.
+   */
+  accepted?: boolean;
+  signedOnBehalfOf?: string;
 }
 
 // ─── Union type for all section data ──────────────────────────────────────────

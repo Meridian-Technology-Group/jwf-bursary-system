@@ -201,6 +201,17 @@ export default async function SectionPage({ params }: PageProps) {
       let parent1Status: string | undefined;
       let parent2Status: string | undefined;
       let relationshipStatus: string | undefined;
+      // DECLARATION needs isSoleParent to decide whether to show the P2 tick.
+      if (sectionType === "DECLARATION") {
+        const parentSection = await getSectionData(
+          tx,
+          application.id,
+          "PARENT_DETAILS",
+          ownerContributorId
+        );
+        const parentData = parentSection?.data as { isSoleParent?: boolean } | null;
+        soleParent = parentData?.isSoleParent;
+      }
       if (sectionType === "PARENTS_INCOME") {
         const parentSection = await getSectionData(
           tx,

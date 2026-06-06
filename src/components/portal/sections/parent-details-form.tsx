@@ -189,7 +189,9 @@ function ParentContactFields({
           name={`${prefix}.mobile` as "parent1Contact.mobile"}
           render={({ field }) => (
             <FormItem>
-              <FormLabel>Mobile no.</FormLabel>
+              <FormLabel>
+                Mobile no. <span className="text-error-600">*</span>
+              </FormLabel>
               <FormControl>
                 <Input
                   type="tel"
@@ -202,28 +204,31 @@ function ParentContactFields({
           )}
         />
       </div>
+      <p className="-mt-2 text-xs text-slate-500">
+        A telephone or mobile number is required.
+      </p>
 
-      {prefix === "parent2Contact" && (
-        <FormField
-          control={control}
-          name="parent2Contact.email"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>
-                Email address <span className="text-error-600">*</span>
-              </FormLabel>
-              <FormControl>
-                <Input
-                  type="email"
-                  {...field}
-                  value={field.value ?? ""}
-                />
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-      )}
+      {/* Email — MANDATORY for every parent/guardian (captured even when the
+          family was invited by email). */}
+      <FormField
+        control={control}
+        name={`${prefix}.email` as "parent1Contact.email"}
+        render={({ field }) => (
+          <FormItem>
+            <FormLabel>
+              Email address <span className="text-error-600">*</span>
+            </FormLabel>
+            <FormControl>
+              <Input
+                type="email"
+                {...field}
+                value={field.value ?? ""}
+              />
+            </FormControl>
+            <FormMessage />
+          </FormItem>
+        )}
+      />
 
       <Separator />
 
