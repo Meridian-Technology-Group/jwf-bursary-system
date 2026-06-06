@@ -327,6 +327,75 @@ const assetsRules: DocumentRule[] = [
       return (Array.isArray(ids) && ids.length > 0) || inSlot;
     },
   },
+  // Per other-property: latest mortgage statement required when a mortgage
+  // balance is declared (workbook §6/7 Q2).
+  {
+    kind: "arrayForEach",
+    id: "OTHER_PROPERTY_MORTGAGE_STATEMENT",
+    label: "A mortgage statement is required for each mortgaged property",
+    arrayPath: "otherProperties",
+    elementDoc: {
+      docIdPath: "mortgageStatementDocumentId",
+      slotPrefix: "OTHER_PROPERTY_MORTGAGE_",
+    },
+    elementGate: (el) => Number(el.mortgageBalance ?? 0) > 0,
+    elementLabel: (i) =>
+      `A latest mortgage statement is required for other property ${i}`,
+  },
+];
+
+// ─── DEPENDENT_ELDERLY rules ─────────────────────────────────────────────────
+
+const dependentElderlyRules: DocumentRule[] = [
+  // Per in-care elder: latest care-home invoice required (workbook §4 Q13).
+  {
+    kind: "arrayForEach",
+    id: "CARE_HOME_INVOICE",
+    label: "A care-home invoice is required for each elderly dependant in care",
+    arrayPath: "elderlyInCare",
+    elementDoc: {
+      docIdPath: "careHomeInvoiceDocumentId",
+      slotPrefix: "CARE_HOME_INVOICE_",
+    },
+    elementLabel: (i, el) =>
+      `A latest care-home invoice is required for ${
+        (el.firstName as string) ?? `dependant ${i}`
+      }`,
+  },
+];
+
+// ─── OTHER_INFO rules ────────────────────────────────────────────────────────
+
+const otherInfoRules: DocumentRule[] = [
+  {
+    kind: "requiredIfTrue",
+    id: "COURT_ORDER_EVIDENCE",
+    truePath: "hasCOurtOrder",
+    label: "Evidence of the court order for school fees is required",
+    fieldRef: "courtOrderDocumentId",
+    doc: { docIdPath: "courtOrderDocumentId", slot: "COURT_ORDER" },
+  },
+  {
+    kind: "requiredIfTrue",
+    id: "INSURANCE_POLICY_EVIDENCE",
+    truePath: "hasInsurancePolicy",
+    label: "Evidence of the school-fee insurance policy is required",
+    fieldRef: "insurancePolicyDocumentId",
+    doc: { docIdPath: "insurancePolicyDocumentId", slot: "INSURANCE_POLICY" },
+  },
+  // Decree absolute required when YOU pay maintenance AND you are divorced
+  // (workbook §5 Q2).
+  {
+    kind: "requiredIfTrue",
+    id: "MAINTENANCE_DECREE_ABSOLUTE",
+    truePath: "maintenanceIsDivorced",
+    label: "A decree absolute is required",
+    fieldRef: "maintenanceDecreeAbsoluteDocumentId",
+    doc: {
+      docIdPath: "maintenanceDecreeAbsoluteDocumentId",
+      slot: "MAINTENANCE_DECREE_ABSOLUTE",
+    },
+  },
 ];
 
 // ─── CHILD_DETAILS ───────────────────────────────────────────────────────────
@@ -396,8 +465,8 @@ export const SECTION_RULES: Partial<Record<SectionType, DocumentRule[]>> = {
     ...parentDetailsRules("PARENT_2"),
   ],
   DEPENDENT_CHILDREN: dependentChildrenStructural,
-  DEPENDENT_ELDERLY: [],
-  OTHER_INFO: [],
+  DEPENDENT_ELDERLY: dependentElderlyRules,
+  OTHER_INFO: otherInfoRules,
   PARENTS_INCOME: [...incomeRules("PARENT_1"), ...incomeRules("PARENT_2")],
   ASSETS_LIABILITIES: assetsRules,
   ADDITIONAL_INFO: [],

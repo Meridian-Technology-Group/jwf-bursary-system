@@ -37,6 +37,26 @@ export const dependentElderlySchema = z
         path: ["elderlyInCareCount"],
       });
     }
+    // Per-elder care-home details (workbook §4 Q13): first/surname/care-home
+    // name/yearly fees are required for each in-care dependant entered.
+    if (data.hasElderlyInCare) {
+      data.elderlyInCare.forEach((elder, i) => {
+        if (!elder.careHomeName) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: "Please enter the care home name",
+            path: ["elderlyInCare", i, "careHomeName"],
+          });
+        }
+        if (elder.careHomeFees === undefined) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: "Please enter the yearly care home fees",
+            path: ["elderlyInCare", i, "careHomeFees"],
+          });
+        }
+      });
+    }
   });
 
 export type DependentElderlyFormValues = z.infer<typeof dependentElderlySchema>;

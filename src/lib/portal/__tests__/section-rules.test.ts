@@ -222,13 +222,78 @@ describe("ASSETS_LIABILITIES", () => {
   });
 });
 
-describe("no-op sections", () => {
-  it.each(["DEPENDENT_ELDERLY", "OTHER_INFO", "ADDITIONAL_INFO", "DECLARATION"] as const)(
-    "%s has no gaps",
+describe("no-op when nothing declared", () => {
+  it.each(["FAMILY_ID", "DEPENDENT_ELDERLY", "OTHER_INFO", "ADDITIONAL_INFO", "DECLARATION"] as const)(
+    "%s has no gaps for an empty/default blob",
     (s) => {
       expect(gapIds(s, {})).toEqual([]);
     }
   );
+});
+
+describe("DEPENDENT_ELDERLY — per in-care elder invoice (PR-3)", () => {
+  it("requires an invoice for each in-care elder", () => {
+    expect(
+      gapIds("DEPENDENT_ELDERLY", {
+        elderlyInCare: [{ firstName: "Ada" }, { firstName: "Bob" }],
+      })
+    ).toEqual([
+      "DEPENDENT_ELDERLY:CARE_HOME_INVOICE_0",
+      "DEPENDENT_ELDERLY:CARE_HOME_INVOICE_1",
+    ]);
+  });
+  it("satisfied per elder by a doc id or slot", () => {
+    expect(
+      gapIds(
+        "DEPENDENT_ELDERLY",
+        { elderlyInCare: [{ firstName: "Ada", careHomeInvoiceDocumentId: "x" }, { firstName: "Bob" }] },
+        new Set(["CARE_HOME_INVOICE_1"])
+      )
+    ).toEqual([]);
+  });
+});
+
+describe("OTHER_INFO — court / insurance / maintenance uploads (PR-3)", () => {
+  it("court-order evidence required when hasCOurtOrder", () => {
+    expect(gapIds("OTHER_INFO", { hasCOurtOrder: true })).toEqual([
+      "OTHER_INFO:COURT_ORDER_EVIDENCE",
+    ]);
+  });
+  it("insurance evidence required when hasInsurancePolicy", () => {
+    expect(gapIds("OTHER_INFO", { hasInsurancePolicy: true })).toEqual([
+      "OTHER_INFO:INSURANCE_POLICY_EVIDENCE",
+    ]);
+  });
+  it("decree absolute required when divorced maintenance payer", () => {
+    expect(
+      gapIds("OTHER_INFO", { hasChildMaintenance: true, maintenancePayer: "YOU", maintenanceIsDivorced: true })
+    ).toEqual(["OTHER_INFO:MAINTENANCE_DECREE_ABSOLUTE"]);
+  });
+  it("no maintenance doc when separated (agreement note path)", () => {
+    expect(
+      gapIds("OTHER_INFO", { hasChildMaintenance: true, maintenancePayer: "YOU", maintenanceIsDivorced: false })
+    ).toEqual([]);
+  });
+});
+
+describe("ASSETS_LIABILITIES — per other-property mortgage statement (PR-3)", () => {
+  const base = { councilTaxDocumentId: "x", parent1BankStatementDocumentIds: ["a"] };
+  it("requires a mortgage statement only for properties with a balance > 0", () => {
+    expect(
+      gapIds("ASSETS_LIABILITIES", {
+        ...base,
+        otherProperties: [{ mortgageBalance: 100000 }, { mortgageBalance: 0 }],
+      })
+    ).toEqual(["ASSETS_LIABILITIES:OTHER_PROPERTY_MORTGAGE_STATEMENT_0"]);
+  });
+  it("satisfied by the per-property statement doc", () => {
+    expect(
+      gapIds("ASSETS_LIABILITIES", {
+        ...base,
+        otherProperties: [{ mortgageBalance: 100000, mortgageStatementDocumentId: "m" }],
+      })
+    ).toEqual([]);
+  });
 });
 
 describe("FAMILY_ID — per-member identity documents (PR-4)", () => {
