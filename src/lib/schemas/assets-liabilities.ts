@@ -9,7 +9,12 @@ export const otherPropertySchema = z.object({
   id: z.string(),
   address: z.string().min(1, "Address is required"),
   postcode: z.string().min(1, "Postcode is required"),
+  /** Current market value (£). */
   value: currencyField,
+  mortgageBalance: currencyField.optional(),
+  monthlyRepayment: currencyField.optional(),
+  usedAsRental: z.boolean().optional(),
+  mortgageStatementDocumentId: z.string().optional(),
 });
 
 export const assetsLiabilitiesSchema = z

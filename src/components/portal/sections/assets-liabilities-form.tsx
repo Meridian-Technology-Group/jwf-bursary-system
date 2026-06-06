@@ -10,7 +10,10 @@
  */
 
 import * as React from "react";
-import { useFormContext, useWatch } from "react-hook-form";
+import { useFormContext, useWatch, useFieldArray } from "react-hook-form";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Plus, Trash2 } from "lucide-react";
 import {
   FormField,
   FormItem,
@@ -59,6 +62,7 @@ export function AssetsLiabilitiesForm({
 
   const hasOtherProperties = useWatch({ control, name: "hasOtherProperties" });
   const hasHirePurchase = useWatch({ control, name: "hasHirePurchase" });
+  const otherProps = useFieldArray({ control, name: "otherProperties" });
 
   // Stable initial doc ID refs so FileUpload existingDocument prop doesn't
   // change between renders and reset the component's internal state.
@@ -173,18 +177,37 @@ export function AssetsLiabilitiesForm({
         />
 
         <ConditionalField show={hasOtherProperties === true}>
-          <CurrencyInput
-            control={control}
-            name="otherPropertiesTotalValue"
-            label="Total value of any other properties owned"
-            required
-          />
-          <div className="rounded-md border border-dashed border-slate-300 bg-slate-50 p-4">
-            <p className="text-sm text-slate-500">
-              Property list table will be fully implemented in a future work
-              package.
-            </p>
+          <div className="space-y-4">
+            {otherProps.fields.map((f, index) => (
+              <OtherPropertyCard
+                key={f.id}
+                index={index}
+                applicationId={applicationId}
+                documentMap={documentMap}
+                onRemove={() => otherProps.remove(index)}
+              />
+            ))}
           </div>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() =>
+              otherProps.append({
+                id: crypto.randomUUID(),
+                address: "",
+                postcode: "",
+                value: 0,
+                mortgageBalance: 0,
+                monthlyRepayment: 0,
+                usedAsRental: false,
+              })
+            }
+            className="gap-1.5 border-dashed border-slate-300 text-slate-600 hover:border-accent-500 hover:text-accent-600"
+          >
+            <Plus className="h-4 w-4" />
+            Add property
+          </Button>
         </ConditionalField>
       </fieldset>
 
@@ -376,6 +399,103 @@ export function AssetsLiabilitiesForm({
           </FormItem>
         )}
       />
+    </div>
+  );
+}
+
+// ─── Per other-property card (workbook §6/7 Q2) ──────────────────────────────
+
+function OtherPropertyCard({
+  index,
+  applicationId,
+  documentMap,
+  onRemove,
+}: {
+  index: number;
+  applicationId: string;
+  documentMap?: Record<string, DocumentMeta>;
+  onRemove: () => void;
+}) {
+  const { control, setValue, getValues } = useFormContext<AssetsLiabilitiesFormValues>();
+  const mortgageBalance = useWatch({ control, name: `otherProperties.${index}.mortgageBalance` });
+  const initialStmtId = React.useRef(
+    getValues(`otherProperties.${index}.mortgageStatementDocumentId`) as string | undefined
+  );
+  const existingStmt = React.useMemo(
+    () => resolveDoc(initialStmtId.current, documentMap),
+    [documentMap]
+  );
+
+  return (
+    <div className="rounded-md border border-slate-200 bg-white p-4 space-y-4">
+      <div className="flex items-center justify-between">
+        <span className="text-sm font-medium text-primary-900">Property {index + 1}</span>
+        <button
+          type="button"
+          onClick={onRemove}
+          className="rounded p-1 text-slate-400 hover:bg-error-50 hover:text-error-600"
+          aria-label="Remove property"
+        >
+          <Trash2 className="h-4 w-4" />
+        </button>
+      </div>
+
+      <FormField
+        control={control}
+        name={`otherProperties.${index}.address`}
+        render={({ field }) => (
+          <FormItem>
+            <FormLabel>Address line 1 <span className="text-error-600">*</span></FormLabel>
+            <FormControl><Input {...field} value={field.value ?? ""} /></FormControl>
+            <FormMessage />
+          </FormItem>
+        )}
+      />
+      <FormField
+        control={control}
+        name={`otherProperties.${index}.postcode`}
+        render={({ field }) => (
+          <FormItem>
+            <FormLabel>Postcode <span className="text-error-600">*</span></FormLabel>
+            <FormControl><Input className="uppercase" {...field} value={field.value ?? ""} /></FormControl>
+            <FormMessage />
+          </FormItem>
+        )}
+      />
+
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+        <CurrencyInput control={control} name={`otherProperties.${index}.value`} label="Current market value" required />
+        <CurrencyInput control={control} name={`otherProperties.${index}.mortgageBalance`} label="Current mortgage balance" />
+        <CurrencyInput control={control} name={`otherProperties.${index}.monthlyRepayment`} label="Monthly mortgage repayment" />
+      </div>
+
+      <YesNoToggle
+        control={control}
+        name={`otherProperties.${index}.usedAsRental`}
+        label="Is this property used as a rental?"
+      />
+
+      <ConditionalField show={Number(mortgageBalance ?? 0) > 0}>
+        <FileUpload
+          slot={`OTHER_PROPERTY_MORTGAGE_${index}`}
+          label="Latest mortgage statement (required)"
+          hint="Required because a mortgage balance is declared for this property."
+          applicationId={applicationId}
+          existingDocument={existingStmt}
+          onUploadComplete={(doc: UploadedDocument) =>
+            setValue(`otherProperties.${index}.mortgageStatementDocumentId`, doc.id, {
+              shouldValidate: true,
+              shouldDirty: true,
+            })
+          }
+          onRemove={() =>
+            setValue(`otherProperties.${index}.mortgageStatementDocumentId`, undefined, {
+              shouldValidate: true,
+              shouldDirty: true,
+            })
+          }
+        />
+      </ConditionalField>
     </div>
   );
 }
