@@ -162,8 +162,15 @@ export default async function SectionPage({ params }: PageProps) {
   // Load existing section data, documents, and any cross-section reads needed.
   // All section reads are scoped to the lead applicant's PRIMARY contributor
   // (dual-parent foundation, PR 4a) — identical to before for a single parent.
-  const { existingSection, documentMap, childFullName, isSoleParent } =
-    await withUserContext(user.id, user.role as RlsRole, async (tx) => {
+  const {
+    existingSection,
+    documentMap,
+    childFullName,
+    isSoleParent,
+    parent1Status,
+    parent2Status,
+    relationshipStatus,
+  } = await withUserContext(user.id, user.role as RlsRole, async (tx) => {
       const [section, docs] = await Promise.all([
         getSectionData(tx, application.id, sectionType, ownerContributorId),
         getDocumentsForApplication(tx, application.id),
@@ -182,6 +189,9 @@ export default async function SectionPage({ params }: PageProps) {
       }
 
       let soleParent: boolean | undefined;
+      let parent1Status: string | undefined;
+      let parent2Status: string | undefined;
+      let relationshipStatus: string | undefined;
       if (sectionType === "PARENTS_INCOME") {
         const parentSection = await getSectionData(
           tx,
@@ -189,8 +199,16 @@ export default async function SectionPage({ params }: PageProps) {
           "PARENT_DETAILS",
           ownerContributorId
         );
-        const parentData = parentSection?.data as { isSoleParent?: boolean } | null;
+        const parentData = parentSection?.data as {
+          isSoleParent?: boolean;
+          relationshipStatus?: string;
+          parent1Employment?: { status?: string };
+          parent2Employment?: { status?: string };
+        } | null;
         soleParent = parentData?.isSoleParent;
+        relationshipStatus = parentData?.relationshipStatus;
+        parent1Status = parentData?.parent1Employment?.status;
+        parent2Status = parentData?.parent2Employment?.status;
       }
 
       return {
@@ -198,6 +216,9 @@ export default async function SectionPage({ params }: PageProps) {
         documentMap: docs,
         childFullName: childName,
         isSoleParent: soleParent,
+        parent1Status,
+        parent2Status,
+        relationshipStatus,
       };
     });
 
@@ -254,6 +275,9 @@ export default async function SectionPage({ params }: PageProps) {
       documentMap={documentMap}
       childFullName={childFullName}
       isSoleParent={isSoleParent}
+      parent1EmploymentStatus={parent1Status}
+      parent2EmploymentStatus={parent2Status}
+      relationshipStatus={relationshipStatus}
       nextLabel={nextLabel}
       backHref={backHref}
       nextHref={nextHref}

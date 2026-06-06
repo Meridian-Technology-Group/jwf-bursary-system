@@ -65,64 +65,197 @@ function parentDetailsRules(earner: Earner): DocumentRule[] {
   ];
 }
 
-// ─── PARENTS_INCOME (legacy flat model — preserved until the income rebuild) ──
+// ─── PARENTS_INCOME (status-driven sub-tables — Epic 02, D3) ──────────────────
+//
+// The workbook rule: "if a sub-section has a value other than £0, its upload is
+// mandatory — except Child Benefit." Each rule is gated on the relevant
+// sub-block existing in the saved blob (`onlyIfExistsPath`) AND on the value
+// being > 0 (`requiredIfValueGt0`) or, for the Employed P60-or-payslip pair, on
+// the salary being > 0 (`requiredOneOf` gate). Parent 2 rules carry an
+// additional `${inc}` existence gate so they never fire for a sole parent.
 
 function incomeRules(earner: Earner): DocumentRule[] {
   const { suffix, label, prefix } = earnerMeta(earner);
   const inc = `${prefix}Income`;
-  // Parent 2 income rules only apply when the Parent 2 income block exists in
-  // the saved blob (mirrors the legacy "if (data.parent2Income)" gate).
-  const onlyIfExistsPath = earner === "PARENT_2" ? inc : undefined;
+  const emp = `${inc}.employed`;
+  const se = `${inc}.selfEmployed`;
+  const ben = `${inc}.benefits`;
+  const unemp = `${inc}.unemployed`;
+  const ret = `${inc}.retired`;
+  const div = `${inc}.divorcedSeparated`;
+
   return [
+    // Employed — P60 OR March payslip required when salary > 0.
     {
-      kind: "requiredAlways",
-      id: `P60${suffix}`,
-      onlyIfExistsPath,
-      label: `P60 for ${label} is required`,
-      fieldRef: `${inc}.p60DocumentId`,
-      doc: { docIdPath: `${inc}.p60DocumentId`, slot: `P60${suffix}` },
+      kind: "requiredOneOf",
+      id: `EMPLOYED_P60_OR_PAYSLIP${suffix}`,
+      onlyIfExistsPath: emp,
+      gateValuePaths: [`${emp}.annualSalaryPaye`],
+      label: `${label}: a P60 or March payslip is required for declared employed income`,
+      fieldRef: `${emp}.p60DocumentId`,
+      docs: [
+        { docIdPath: `${emp}.p60DocumentId`, slot: `P60${suffix}` },
+        {
+          docIdPath: `${emp}.marchPayslipDocumentId`,
+          slot: `MARCH_PAYSLIP${suffix}`,
+        },
+      ],
     },
+
+    // Self-employed — SA302 required when any SE cell > 0.
     {
       kind: "requiredIfValueGt0",
-      id: `SELF_ASSESSMENT${suffix}`,
-      onlyIfExistsPath,
+      id: `SA302${suffix}`,
+      onlyIfExistsPath: se,
       valuePaths: [
-        `${inc}.allDividendIncome`,
-        `${inc}.grossRentsReceived`,
-        `${inc}.allIncomeBonds`,
+        `${se}.grossSalaried`,
+        `${se}.propertyIncome`,
+        `${se}.dividends`,
+        `${se}.otherInvestmentIncome`,
       ],
-      label: `Self-assessment tax return (SA302) for ${label} is required when dividend, rental, or bond income is declared`,
-      fieldRef: `${inc}.selfAssessmentDocumentId`,
+      label: `${label}: an SA302 tax calculation is required for declared self-employed income`,
+      fieldRef: `${se}.sa302DocumentId`,
+      doc: { docIdPath: `${se}.sa302DocumentId`, slot: `SA302${suffix}` },
+    },
+
+    // Benefits — UC statement + monthly when UC > 0.
+    {
+      kind: "requiredIfValueGt0",
+      id: `UC_STATEMENT${suffix}`,
+      onlyIfExistsPath: ben,
+      valuePaths: [`${ben}.universalCredit`],
+      label: `${label}: a Universal Credit 12-month statement is required`,
+      fieldRef: `${ben}.ucStatementDocumentId`,
       doc: {
-        docIdPath: `${inc}.selfAssessmentDocumentId`,
-        slot: `SELF_ASSESSMENT${suffix}`,
+        docIdPath: `${ben}.ucStatementDocumentId`,
+        slot: `UC_STATEMENT${suffix}`,
       },
     },
     {
       kind: "requiredIfValueGt0",
-      id: `BENEFITS_EVIDENCE${suffix}`,
-      onlyIfExistsPath,
-      valuePaths: [
-        `${inc}.workingTaxCredits`,
-        `${inc}.otherBenefitsAndCommissions`,
-      ],
-      label: `Benefits evidence for ${label} is required when tax credits or benefits income is declared`,
-      fieldRef: `${inc}.benefitsEvidenceDocumentId`,
+      id: `UC_MONTHLY${suffix}`,
+      onlyIfExistsPath: ben,
+      valuePaths: [`${ben}.universalCredit`],
+      label: `${label}: 3 monthly Universal Credit payment documents are required`,
+      fieldRef: `${ben}.ucMonthlyDocumentIds`,
       doc: {
-        docIdPath: `${inc}.benefitsEvidenceDocumentId`,
-        slot: `BENEFITS_EVIDENCE${suffix}`,
+        docIdPath: `${ben}.ucMonthlyDocumentIds`,
+        slot: `UC_MONTHLY${suffix}`,
+      },
+    },
+    // Housing Benefit — award letter when HB > 0.
+    {
+      kind: "requiredIfValueGt0",
+      id: `HOUSING_BENEFIT${suffix}`,
+      onlyIfExistsPath: ben,
+      valuePaths: [`${ben}.housingBenefit`],
+      label: `${label}: a Housing Benefit award letter is required`,
+      fieldRef: `${ben}.housingBenefitDocumentId`,
+      doc: {
+        docIdPath: `${ben}.housingBenefitDocumentId`,
+        slot: `HOUSING_BENEFIT${suffix}`,
+      },
+    },
+    // Other benefits — evidence when any non-CB benefit > 0. Child Benefit is
+    // INTENTIONALLY excluded from valuePaths (workbook: CB upload non-mandatory).
+    {
+      kind: "requiredIfValueGt0",
+      id: `OTHER_BENEFITS${suffix}`,
+      onlyIfExistsPath: ben,
+      valuePaths: [
+        `${ben}.childWorkingTaxCredit`,
+        `${ben}.esa`,
+        `${ben}.pipOrDla`,
+        `${ben}.carersAllowance`,
+        `${ben}.childcareSupport`,
+        `${ben}.other`,
+      ],
+      label: `${label}: evidence of the declared benefits (tax credits / ESA / PIP / Carer's / childcare / other) is required`,
+      fieldRef: `${ben}.otherBenefitsDocumentId`,
+      doc: {
+        docIdPath: `${ben}.otherBenefitsDocumentId`,
+        slot: `OTHER_BENEFITS${suffix}`,
+      },
+    },
+
+    // Unemployed — per-row uploads when the matching cell > 0.
+    {
+      kind: "requiredIfValueGt0",
+      id: `P45${suffix}`,
+      onlyIfExistsPath: unemp,
+      valuePaths: [`${unemp}.finalGrossPay`],
+      label: `${label}: a P45 is required for declared final gross pay`,
+      fieldRef: `${unemp}.p45DocumentId`,
+      doc: { docIdPath: `${unemp}.p45DocumentId`, slot: `P45${suffix}` },
+    },
+    {
+      kind: "requiredIfValueGt0",
+      id: `REDUNDANCY${suffix}`,
+      onlyIfExistsPath: unemp,
+      valuePaths: [`${unemp}.redundancy`],
+      label: `${label}: a redundancy / severance letter is required`,
+      fieldRef: `${unemp}.redundancyDocumentId`,
+      doc: {
+        docIdPath: `${unemp}.redundancyDocumentId`,
+        slot: `REDUNDANCY${suffix}`,
       },
     },
     {
-      kind: "requiredIfTrue",
-      id: `CAPITAL_REPAYMENTS${suffix}`,
-      truePath: `${inc}.hasCapitalRepayments`,
-      onlyIfExistsPath,
-      label: `Capital repayments evidence for ${label} is required`,
-      fieldRef: `${inc}.capitalRepaymentsDocumentId`,
+      kind: "requiredIfValueGt0",
+      id: `JSA${suffix}`,
+      onlyIfExistsPath: unemp,
+      valuePaths: [`${unemp}.jsa`],
+      label: `${label}: a Job Seeker's Allowance award letter is required`,
+      fieldRef: `${unemp}.jsaDocumentId`,
+      doc: { docIdPath: `${unemp}.jsaDocumentId`, slot: `JSA${suffix}` },
+    },
+    {
+      kind: "requiredIfValueGt0",
+      id: `GRANT_SUPPORT${suffix}`,
+      onlyIfExistsPath: unemp,
+      valuePaths: [`${unemp}.grantSupport`],
+      label: `${label}: a grant / support letter is required`,
+      fieldRef: `${unemp}.grantSupportDocumentId`,
       doc: {
-        docIdPath: `${inc}.capitalRepaymentsDocumentId`,
-        slot: `CAPITAL_REPAYMENTS${suffix}`,
+        docIdPath: `${unemp}.grantSupportDocumentId`,
+        slot: `GRANT_SUPPORT${suffix}`,
+      },
+    },
+    {
+      kind: "requiredIfValueGt0",
+      id: `LEAVE_PAY${suffix}`,
+      onlyIfExistsPath: unemp,
+      valuePaths: [`${unemp}.leavePay`],
+      label: `${label}: a status-change document for parental / adoption / sickness pay is required`,
+      fieldRef: `${unemp}.leavePayDocumentId`,
+      doc: {
+        docIdPath: `${unemp}.leavePayDocumentId`,
+        slot: `LEAVE_PAY${suffix}`,
+      },
+    },
+
+    // Retired — pension docs when any pension > 0.
+    {
+      kind: "requiredIfValueGt0",
+      id: `PENSION${suffix}`,
+      onlyIfExistsPath: ret,
+      valuePaths: [`${ret}.statePension`, `${ret}.privatePension`],
+      label: `${label}: pension documentation is required for declared pension income`,
+      fieldRef: `${ret}.pensionDocumentId`,
+      doc: { docIdPath: `${ret}.pensionDocumentId`, slot: `PENSION${suffix}` },
+    },
+
+    // Divorced / separated — maintenance letter when received > 0.
+    {
+      kind: "requiredIfValueGt0",
+      id: `MAINTENANCE${suffix}`,
+      onlyIfExistsPath: div,
+      valuePaths: [`${div}.maintenanceReceived`],
+      label: `${label}: a letter evidencing the child maintenance received is required`,
+      fieldRef: `${div}.maintenanceDocumentId`,
+      doc: {
+        docIdPath: `${div}.maintenanceDocumentId`,
+        slot: `MAINTENANCE${suffix}`,
       },
     },
   ];

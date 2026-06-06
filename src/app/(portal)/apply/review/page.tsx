@@ -33,6 +33,10 @@ import type {
   AssetsLiabilitiesData,
   AdditionalInfoData,
 } from "@/types/application";
+import {
+  parentIncomeTotal,
+  readIncomeItems,
+} from "@/lib/portal/income-model";
 
 export const metadata = {
   title: "Review Your Application",
@@ -110,24 +114,8 @@ function fmtSchool(school: string | undefined | null): string {
   return school;
 }
 
-function totalIncome(inc: ParentsIncomeData["parent1Income"]): number {
-  return (
-    (inc.salaryWagesPension ?? 0) +
-    (inc.supplementsAndBonus ?? 0) +
-    (inc.otherBenefitsAndCommissions ?? 0) +
-    (inc.amountFromPartner ?? 0) +
-    (inc.workingTaxCredits ?? 0) +
-    (inc.grossInterestReceived ?? 0) +
-    (inc.allDividendIncome ?? 0) +
-    (inc.grossRentsReceived ?? 0) +
-    (inc.allIncomeBonds ?? 0) +
-    (inc.otherGrossIncomes ?? 0) +
-    (inc.maintenanceOrEquivalents ?? 0) +
-    (inc.bursariesOrSponsorships ?? 0) +
-    (inc.otherIncomeNotIncluded ?? 0) +
-    (inc.otherIncome ?? 0)
-  );
-}
+// Income totalling handles BOTH the new status-driven shape and any legacy flat
+// draft via the back-compat reader (lib/portal/income-model.ts).
 
 function totalAssets(d: AssetsLiabilitiesData): number {
   return (
@@ -294,25 +282,12 @@ function buildIncomeSection(
   inc: ParentsIncomeData["parent1Income"],
   parentLabel: string
 ): IncomeSection {
-  const items: { label: string; value: number }[] = [
-    { label: "Salary / wages / pension", value: inc.salaryWagesPension ?? 0 },
-    { label: "Supplements & bonus", value: inc.supplementsAndBonus ?? 0 },
-    { label: "Benefits & commissions", value: inc.otherBenefitsAndCommissions ?? 0 },
-    { label: "Amount from partner", value: inc.amountFromPartner ?? 0 },
-    { label: "Working tax credits", value: inc.workingTaxCredits ?? 0 },
-    { label: "Gross interest", value: inc.grossInterestReceived ?? 0 },
-    { label: "Dividend income", value: inc.allDividendIncome ?? 0 },
-    { label: "Rental income", value: inc.grossRentsReceived ?? 0 },
-    { label: "Income bonds", value: inc.allIncomeBonds ?? 0 },
-    { label: "Other gross income", value: inc.otherGrossIncomes ?? 0 },
-    { label: "Maintenance / equivalents", value: inc.maintenanceOrEquivalents ?? 0 },
-    { label: "Bursaries / sponsorships", value: inc.bursariesOrSponsorships ?? 0 },
-    { label: "Other income", value: (inc.otherIncomeNotIncluded ?? 0) + (inc.otherIncome ?? 0) },
-  ].filter((i) => i.value > 0);
-
+  // readIncomeItems + parentIncomeTotal both accept the new status-driven shape
+  // OR a legacy flat draft (back-compat).
+  const items = readIncomeItems(inc).filter((i) => i.value > 0);
   return {
     label: parentLabel,
-    total: fmtCurrency(totalIncome(inc)),
+    total: fmtCurrency(parentIncomeTotal(inc)),
     itemised: items.map((i) => ({ label: i.label, value: fmtCurrency(i.value) })),
   };
 }

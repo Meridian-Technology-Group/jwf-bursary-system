@@ -74,20 +74,56 @@ export default async function ContributeSectionPage({ params }: PageProps) {
   if (!user) redirect("/login");
 
   // Resolve the application + the secondary's contributor from the session.
-  const { ctx, existingSection, documentMap } = await withUserContext(
-    user.id,
-    user.role as RlsRole,
-    async (tx) => {
+  const { ctx, existingSection, documentMap, academicYear, employmentStatus, relationshipStatus } =
+    await withUserContext(user.id, user.role as RlsRole, async (tx) => {
       const ctx = await getSecondaryContributorContext(tx, user.id);
-      if (!ctx) return { ctx: null, existingSection: null, documentMap: {} };
+      if (!ctx)
+        return {
+          ctx: null,
+          existingSection: null,
+          documentMap: {},
+          academicYear: null as string | null,
+          employmentStatus: undefined as string | undefined,
+          relationshipStatus: undefined as string | undefined,
+        };
 
       const [section, docs] = await Promise.all([
         getSectionData(tx, ctx.applicationId, sectionType, ctx.contributorId),
         getDocumentsForApplication(tx, ctx.applicationId),
       ]);
-      return { ctx, existingSection: section, documentMap: docs };
-    }
-  );
+
+      // For the income section, derive the sub-tables from the secondary's own
+      // declared employment status (their parent1Employment, since they fill the
+      // single-earner layout) and the household relationship status.
+      let academicYear: string | null = null;
+      let employmentStatus: string | undefined;
+      let relationshipStatus: string | undefined;
+      if (sectionType === "PARENTS_INCOME") {
+        const [app, ownDetails] = await Promise.all([
+          tx.application.findUnique({
+            where: { id: ctx.applicationId },
+            select: { round: { select: { academicYear: true } } },
+          }),
+          getSectionData(tx, ctx.applicationId, "PARENT_DETAILS", ctx.contributorId),
+        ]);
+        academicYear = app?.round?.academicYear ?? null;
+        const d = ownDetails?.data as {
+          relationshipStatus?: string;
+          parent1Employment?: { status?: string };
+        } | null;
+        employmentStatus = d?.parent1Employment?.status;
+        relationshipStatus = d?.relationshipStatus;
+      }
+
+      return {
+        ctx,
+        existingSection: section,
+        documentMap: docs,
+        academicYear,
+        employmentStatus,
+        relationshipStatus,
+      };
+    });
 
   // Not a secondary contributor → send to the portal home (which will route
   // them appropriately).
@@ -123,6 +159,9 @@ export default async function ContributeSectionPage({ params }: PageProps) {
       childName={ctx.childName}
       existingData={existingSection?.data ?? null}
       documentMap={documentMap}
+      academicYear={academicYear}
+      employmentStatus={employmentStatus}
+      relationshipStatus={relationshipStatus}
       backHref={backHref}
       nextHref={nextHref}
       nextLabel={nextLabel}

@@ -19,6 +19,10 @@ import type { DocumentMeta } from "@/lib/db/queries/applications";
 import { SectionForm } from "@/components/portal/section-form";
 // ProgressBar removed — progress is shown in the sidebar
 import { PrepopulatedSectionBanner } from "@/components/portal/form-fields/prepopulated-field";
+import {
+  isLegacyIncomeRecord,
+  normaliseLegacyIncomeRecord,
+} from "@/lib/portal/income-model";
 import { saveSection, submitApplication } from "../actions";
 
 // Section form components
@@ -65,6 +69,11 @@ interface SectionPageClientProps {
   childFullName?: string;
   /** isSoleParent flag from PARENT_DETAILS (for PARENTS_INCOME section). */
   isSoleParent?: boolean;
+  /** Declared employment statuses from PARENT_DETAILS — drive the income sub-tables. */
+  parent1EmploymentStatus?: string;
+  parent2EmploymentStatus?: string;
+  /** Relationship status from PARENT_DETAILS — drives the divorced/separated sub-table. */
+  relationshipStatus?: string;
   backHref: string;
   nextHref: string;
   /** Optional override for the primary button label (e.g. "Review and Submit"). */
@@ -90,7 +99,30 @@ function getDefaultValues(
   existingData: unknown,
   seed: DefaultValuesSeed = {}
 ) {
-  if (existingData && typeof existingData === "object") return existingData;
+  if (existingData && typeof existingData === "object") {
+    // Back-compat: an in-flight PARENTS_INCOME draft may hold the LEGACY flat
+    // shape. Normalise each parent record into the new status-driven shape so
+    // the rebuilt form can render and re-validate it (Epic 02 §5.1).
+    if (sectionType === "PARENTS_INCOME") {
+      const d = existingData as {
+        parent1Income?: unknown;
+        parent2Income?: unknown;
+      };
+      return {
+        parent1Income: isLegacyIncomeRecord(d.parent1Income)
+          ? normaliseLegacyIncomeRecord(d.parent1Income)
+          : (d.parent1Income ?? { total: 0, documentsConfirmed: false }),
+        ...(d.parent2Income !== undefined
+          ? {
+              parent2Income: isLegacyIncomeRecord(d.parent2Income)
+                ? normaliseLegacyIncomeRecord(d.parent2Income)
+                : d.parent2Income,
+            }
+          : {}),
+      };
+    }
+    return existingData;
+  }
 
   switch (sectionType) {
     case "CHILD_DETAILS":
@@ -121,15 +153,11 @@ function getDefaultValues(
     case "OTHER_INFO":
       return { hasCOurtOrder: undefined, hasInsurancePolicy: undefined, hasOutstandingFees: undefined };
     case "PARENTS_INCOME":
+      // Status-driven sub-tables (D3). The form seeds the relevant sub-blocks
+      // from the declared employment status and normalises any legacy draft on
+      // load (see parents-income-form.tsx). A minimal record here is enough.
       return {
-        parent1Income: {
-          salaryWagesPension: 0, supplementsAndBonus: 0, otherBenefitsAndCommissions: 0,
-          amountFromPartner: 0, workingTaxCredits: 0, grossInterestReceived: 0,
-          allDividendIncome: 0, grossRentsReceived: 0, allIncomeBonds: 0,
-          otherGrossIncomes: 0, maintenanceOrEquivalents: 0, bursariesOrSponsorships: 0,
-          otherIncomeNotIncluded: 0, otherIncome: 0,
-          hasCapitalRepayments: false, documentsConfirmed: false,
-        },
+        parent1Income: { total: 0, documentsConfirmed: false },
       };
     case "ASSETS_LIABILITIES":
       return {
@@ -161,6 +189,9 @@ function SectionFormContent({
   childFullName,
   isSoleParent,
   academicYear,
+  parent1EmploymentStatus,
+  parent2EmploymentStatus,
+  relationshipStatus,
 }: {
   sectionType: ApplicationSectionType;
   applicationId: string;
@@ -168,6 +199,9 @@ function SectionFormContent({
   childFullName?: string;
   isSoleParent?: boolean;
   academicYear?: string | null;
+  parent1EmploymentStatus?: string;
+  parent2EmploymentStatus?: string;
+  relationshipStatus?: string;
 }) {
   switch (sectionType) {
     case "CHILD_DETAILS": return <ChildDetailsForm applicationId={applicationId} documentMap={documentMap} />;
@@ -176,7 +210,7 @@ function SectionFormContent({
     case "DEPENDENT_CHILDREN": return <DependentChildrenForm childFullName={childFullName} />;
     case "DEPENDENT_ELDERLY": return <DependentElderlyForm />;
     case "OTHER_INFO": return <OtherInfoForm />;
-    case "PARENTS_INCOME": return <ParentsIncomeForm isSoleParent={isSoleParent} applicationId={applicationId} documentMap={documentMap} academicYear={academicYear} />;
+    case "PARENTS_INCOME": return <ParentsIncomeForm isSoleParent={isSoleParent} applicationId={applicationId} documentMap={documentMap} academicYear={academicYear} parent1EmploymentStatus={parent1EmploymentStatus} parent2EmploymentStatus={parent2EmploymentStatus} relationshipStatus={relationshipStatus} />;
     case "ASSETS_LIABILITIES": return <AssetsLiabilitiesForm isSoleParent={isSoleParent} applicationId={applicationId} documentMap={documentMap} />;
     case "ADDITIONAL_INFO": return <AdditionalInfoForm />;
     case "DECLARATION": return <DeclarationForm />;
@@ -211,6 +245,9 @@ export function SectionPageClient({
   documentMap,
   childFullName,
   isSoleParent,
+  parent1EmploymentStatus,
+  parent2EmploymentStatus,
+  relationshipStatus,
   backHref,
   nextHref,
   nextLabel,
@@ -328,6 +365,9 @@ export function SectionPageClient({
             childFullName={childFullName}
             isSoleParent={isSoleParent}
             academicYear={academicYear}
+            parent1EmploymentStatus={parent1EmploymentStatus}
+            parent2EmploymentStatus={parent2EmploymentStatus}
+            relationshipStatus={relationshipStatus}
           />
         </SectionForm>
       </div>

@@ -39,7 +39,7 @@ Legend: ⬜ not started · 🟡 in progress · ✅ shipped to staging · 🚫 bl
 | 1 | [01 Status & workflow model](plans/01-status-and-workflow-model.md) | ✅ | — | #141 (PR-1 schema), #142 (PR-2 backfill), #143 (PR-3 status service), #144 (PR-4 readers+badges), #145 (PR-5 submitted_at write-once); **PR-6 drop-column ⏸ gated** |
 | 1 | [03 Round management](plans/03-round-management.md) | ✅ | 01 | #146 (PR-A schema+server core), #147 (PR-B UI) |
 | 1 | [04 Lead-applicant contacts & invitations](plans/04-lead-applicant-contacts-and-invitations.md) | ✅ | 01 | #148 (contact register), #149 (invite-from-contact + D1 lock), #150 (twin/DOB uniqueness) |
-| 2 | [02 Application form re-scope](plans/02-application-form-rescope.md) | 🟡 | deps met (01, 04 ✅) · D3 ✅ · D11 artifact (build to workbook) | PR-1 rule-engine+tax-year (`feature/02-rule-engine-tax-year`) |
+| 2 | [02 Application form re-scope](plans/02-application-form-rescope.md) | 🟡 | deps met (01, 04 ✅) · D3 ✅ · D11 artifact (build to workbook) | PR-1 `feature/02-rule-engine-tax-year`; PR-2 `feature/02-income-subtables` (stacks on PR-1) |
 | 2 | [05 Parent portal experience](plans/05-parent-portal-experience.md) | ⏳ deps | 01, 02, 03 (deps) · D10 ✅ | — |
 | 3 | [06 Assessor experience & UI](plans/06-assessor-experience-and-ui.md) | ⏳ deps | 02 (dep) | — |
 | 3 | [07 Calculations & fees](plans/07-assessment-calculations-and-fees.md) | ⏳ deps | 06 (dep) · D8/D14 narrow, non-blocking | — |
@@ -291,15 +291,43 @@ consumes (rule engine + tax-year), and is behaviour-preserving for existing rule
   ParentsIncomeForm`; income header + intro now render the dynamic
   financial-year-ended label (removed the hard-coded "To April (actual)").
 
+**PR-2 — income rebuild (status-driven sub-tables, D3)** — `feature/02-income-subtables` (**stacks on PR-1; merge PR-1 first**):
+- [x] Reshaped `ParentIncomeRecord` + `parentsIncomeSchema` into status-keyed
+  sub-blocks (Employed / Self-employed / Benefits / Unemployed / Retired /
+  Divorced-separated / Third-party). Flat `salaryWagesPension`/`supplementsAndBonus`/
+  `amountFromPartner`/`workingTaxCredits`/`hasCapitalRepayments` etc. removed
+  from the write path (gross-pay/bonus/lumped-salary gone per meeting-findings);
+  legacy shape kept ONLY as `LegacyParentIncomeRecord` for the back-compat reader.
+- [x] Rebuilt `parents-income-form.tsx` — sub-tables shown for the parent's
+  declared `EmploymentStatus` (PAYE→employed, SELF_EMPLOYED_*→self-employed,
+  BENEFITS→benefits, UNEMPLOYED→unemployed, OLD_AGE/PAST_PENSION→retired);
+  divorced/separated shown by relationship status; third-party always offered.
+  Live per-parent TOTAL footer; conditional uploads (shown when the row > £0);
+  legibility tick. Seeds empty sub-blocks for shown statuses so the rule engine's
+  `onlyIfExistsPath` gate sees the declaration.
+- [x] Income doc rules wired into the engine: Employed **P60-or-March-payslip**
+  (`requiredOneOf`, gated on salary > 0); SA302 if any SE cell > 0; UC statement
+  + 3 monthly if UC > 0; Housing Benefit letter if HB > 0; other-benefits
+  evidence if any non-CB benefit > 0 (**Child Benefit excluded** — workbook
+  exception); P45/redundancy/JSA/grant/leave-pay per-row if > 0; pension docs if
+  pension > 0; maintenance letter if received > 0.
+- [x] `lib/portal/income-model.ts` — **back-compat reader**: `parentIncomeTotal`
+  / `readIncomeItems` accept BOTH shapes; `isLegacyIncomeRecord` discriminates;
+  `normaliseLegacyIncomeRecord` maps a legacy draft into the new shape on form
+  load (salary→employed+P60, dividends/rents→self-employed+SA302, tax-credits→
+  benefits, maintenance→divorced/separated). Review page + both section clients
+  (apply + contribute) read through it, so old drafts and immutable submitted
+  blobs still render. tax-year wording derives from the round (D5).
+- [x] Threaded declared employment + relationship status into both the apply
+  section page and the contribute (secondary-parent) page → the income form.
+- [x] 34 new tests (income-model 14, section-rules income 11, +engine);
+  tsc/build green, 344 total green.
+- [ ] **PR-2 follow-up (deferred to PR-7):** the one-off idempotent draft
+  *backfill script* for staging drafts. The runtime normaliser already maps
+  legacy drafts on load (no data loss in the UI); a batch backfill that also
+  flags `PARENTS_INCOME.isComplete=false` is a nicety, grouped with the seed PR.
+
 **Remaining (follow-up PRs, all independent off `staging` unless noted):**
-- [ ] **PR-2 — income rebuild (status-driven sub-tables).** Reshape
-  `ParentIncomeRecord` + `parentsIncomeSchema` into status-keyed sub-blocks
-  (Employed / Self-employed / Benefits / Unemployed / Retired /
-  Divorced-separated / Third-party); rebuild `parents-income-form.tsx` with live
-  TOTAL + uploads; wire income doc rules into the engine (P60-or-payslip one-of,
-  SA302/P45/benefits if-value>0, Child Benefit non-mandatory). One-off draft
-  backfill + back-compat reader for submitted blobs. **Reads PR-1's tax-year +
-  engine — stack on PR-1 or land after it merges.**
 - [ ] **PR-3 — finish the stubs.** Dependent-elderly per-elder + invoice;
   other-info court-order/insurance/maintenance/fees uploads; assets
   other-properties repeatable table + mortgage-statement upload; additional-info
@@ -359,6 +387,23 @@ Wave 2 → Wave 3 → Wave 4.
 
 ## Change log
 
+- **2026-06-06** — **Epic 02 PR-2** (income rebuild, status-driven sub-tables —
+  D3). `ParentIncomeRecord` + `parentsIncomeSchema` reshaped from the flat
+  14-line model into status-keyed sub-blocks (Employed / Self-employed /
+  Benefits / Unemployed / Retired / Divorced-separated / Third-party); gross-pay /
+  bonus / lumped-salary lines removed. `parents-income-form.tsx` rebuilt with
+  per-status sub-tables, a live per-parent TOTAL, conditional uploads, and the
+  workbook's "value > £0 ⇒ upload, except Child Benefit" rule enforced via the
+  engine (Employed P60-or-payslip `requiredOneOf`; SA302/P45/benefits/pension/
+  maintenance if-value>0; Child Benefit excluded). New `lib/portal/income-model.ts`
+  back-compat reader (`parentIncomeTotal`/`readIncomeItems` accept both shapes;
+  `normaliseLegacyIncomeRecord` maps a legacy draft on load) — review page + apply
+  + contribute clients all read through it, so old drafts and immutable submitted
+  blobs still render. Declared employment + relationship status threaded into both
+  section pages → the income form. No schema/migration (JSONB). tsc/build green,
+  344 tests green (+20 over PR-1). **Stacks on PR-1 — merge PR-1 first.** The
+  one-off draft backfill script is deferred to PR-7 (the runtime normaliser
+  already maps drafts on load).
 - **2026-06-06** — **Epic 02 opened (Wave 2).** PR-1 (required-document rule
   engine + tax-year helper) — keystone, behaviour-preserving. New
   `lib/portal/tax-year.ts` (D5 round-derived wording, lenient academic-year
