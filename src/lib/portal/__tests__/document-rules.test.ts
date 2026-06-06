@@ -135,6 +135,40 @@ describe("evaluateRules — onlyIfExistsPath gate", () => {
   });
 });
 
+describe("evaluateRules — arrayForEach", () => {
+  const rule: DocumentRule = {
+    kind: "arrayForEach",
+    id: "INVOICE",
+    label: "invoices",
+    arrayPath: "items",
+    elementDoc: { docIdPath: "docId", slotPrefix: "INVOICE_" },
+    elementGate: (el) => Number(el.amount ?? 0) > 0,
+    elementLabel: (i) => `invoice ${i} required`,
+  };
+  it("adds one gap per gated element missing its doc", () => {
+    const gaps = evaluateRules(
+      "DEPENDENT_ELDERLY",
+      [rule],
+      { items: [{ amount: 100 }, { amount: 0 }, { amount: 50, docId: "x" }] },
+      empty
+    );
+    expect(gaps.map((g) => g.id)).toEqual(["DEPENDENT_ELDERLY:INVOICE_0"]);
+  });
+  it("satisfied per element via slot index", () => {
+    const gaps = evaluateRules(
+      "DEPENDENT_ELDERLY",
+      [rule],
+      { items: [{ amount: 100 }] },
+      new Set(["INVOICE_0"])
+    );
+    expect(gaps).toEqual([]);
+  });
+  it("no gaps when the array is absent or empty", () => {
+    expect(evaluateRules("DEPENDENT_ELDERLY", [rule], {}, empty)).toEqual([]);
+    expect(evaluateRules("DEPENDENT_ELDERLY", [rule], { items: [] }, empty)).toEqual([]);
+  });
+});
+
 describe("evaluateRules — array doc presence", () => {
   const rule: DocumentRule = {
     kind: "requiredAlways",

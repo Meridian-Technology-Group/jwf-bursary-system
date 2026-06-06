@@ -203,13 +203,26 @@ export interface OtherInfoData {
   hasCOurtOrder: boolean;
   courtOrderTermAmount?: number;
   courtOrderYearAmount?: number;
+  /** Which school year the court-order amount relates to (workbook §5 Q1). */
+  courtOrderSchoolYear?: string;
   courtOrderDocumentId?: string;
   /** School/maintenance payment doc slot */
   maintenancePaymentDocumentId?: string;
+  /** Child maintenance branch (workbook §5 Q2). */
+  hasChildMaintenance?: boolean;
+  /** "You" pay maintenance to the other parent, or "EX_PARTNER" pays you. */
+  maintenancePayer?: "YOU" | "EX_PARTNER";
+  /** When YOU pay: are you divorced (→ decree absolute) or separated (→ agreement note). */
+  maintenanceIsDivorced?: boolean;
+  maintenanceDecreeAbsoluteDocumentId?: string;
+  maintenanceAgreementNote?: string;
   hasInsurancePolicy: boolean;
   insurancePolicyAmount?: number;
+  /** Which school year the insurance policy relates to (workbook §5 Q3). */
+  insurancePolicySchoolYear?: string;
   insurancePolicyStartDate?: string;
   insurancePolicyEndDate?: string;
+  insurancePolicyDocumentId?: string;
   hasOutstandingFees: boolean;
   outstandingFeesSchoolName?: string;
   outstandingFeesAmount?: number;
@@ -364,9 +377,19 @@ export type PropertyOwnership = "OWN" | "RENT";
 
 export interface OtherProperty {
   id: string;
+  /** Address line 1 (workbook §6/7 Q2). */
   address: string;
   postcode: string;
+  /** Current market value (£). Kept as `value` for back-compat with old drafts. */
   value: number;
+  /** Current mortgage balance (£). */
+  mortgageBalance?: number;
+  /** Monthly mortgage repayment (£). */
+  monthlyRepayment?: number;
+  /** Whether the property is used as a rental. */
+  usedAsRental?: boolean;
+  /** Latest mortgage statement document slot. */
+  mortgageStatementDocumentId?: string;
 }
 
 export interface AssetsLiabilitiesData {

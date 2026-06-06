@@ -115,12 +115,31 @@ export interface StructuralRule extends BaseRule {
   ) => boolean;
 }
 
+/**
+ * Iterates an array on the blob and adds one gap per element whose document is
+ * missing. Used for repeatable blocks (per in-care elder invoice, per
+ * other-property mortgage statement). The gap fires for an element only when the
+ * (optional) per-element gate predicate returns true.
+ */
+export interface ArrayForEachRule extends BaseRule {
+  kind: "arrayForEach";
+  /** Dot-path to the array on the blob. */
+  arrayPath: string;
+  /** Per-element doc location, relative to the element. */
+  elementDoc: { docIdPath: string; slotPrefix: string };
+  /** Optional gate: only require the doc for an element when this returns true. */
+  elementGate?: (element: Record<string, unknown>) => boolean;
+  /** Builds the per-element gap label (1-based index passed for messaging). */
+  elementLabel: (index: number, element: Record<string, unknown>) => string;
+}
+
 export type DocumentRule =
   | RequiredAlwaysRule
   | RequiredIfValueGt0Rule
   | RequiredIfTrueRule
   | RequiredOneOfRule
-  | StructuralRule;
+  | StructuralRule
+  | ArrayForEachRule;
 
 // ─── path / presence helpers ───────────────────────────────────────────────
 
@@ -240,6 +259,31 @@ export function evaluateRules(
       }
       case "structural": {
         if (!rule.predicate(blob, uploadedSlots)) push();
+        break;
+      }
+      case "arrayForEach": {
+        const arr = resolvePath(blob, rule.arrayPath);
+        if (!Array.isArray(arr)) break;
+        arr.forEach((el, i) => {
+          if (!el || typeof el !== "object") return;
+          const element = el as Record<string, unknown>;
+          if (rule.elementGate && !rule.elementGate(element)) return;
+          const idVal = resolvePath(element, rule.elementDoc.docIdPath);
+          const hasId =
+            (typeof idVal === "string" && idVal.length > 0) ||
+            (Array.isArray(idVal) &&
+              idVal.some((x) => typeof x === "string" && x.length > 0));
+          const inSlot = uploadedSlots.has(`${rule.elementDoc.slotPrefix}${i}`);
+          if (!hasId && !inSlot) {
+            gaps.push({
+              id: `${sectionType}:${rule.id}_${i}`,
+              sectionType,
+              label: rule.elementLabel(i + 1, element),
+              severity,
+              fieldRef: `${rule.arrayPath}.${i}.${rule.elementDoc.docIdPath}`,
+            });
+          }
+        });
         break;
       }
     }
