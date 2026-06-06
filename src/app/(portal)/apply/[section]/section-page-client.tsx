@@ -26,7 +26,10 @@ import {
 import { saveSection, submitApplication } from "../actions";
 
 // Section form components
-import { ChildDetailsForm } from "@/components/portal/sections/child-details-form";
+import {
+  ChildDetailsForm,
+  type StoredParentAddress,
+} from "@/components/portal/sections/child-details-form";
 import { FamilyIdForm } from "@/components/portal/sections/family-id-form";
 import { ParentDetailsForm } from "@/components/portal/sections/parent-details-form";
 import { DependentChildrenForm } from "@/components/portal/sections/dependent-children-form";
@@ -56,8 +59,12 @@ interface SectionPageClientProps {
   existingData: unknown;
   /** Seed for Section 1 defaults — the school captured on the Application. */
   applicationSchool?: "TRINITY" | "WHITGIFT";
+  /** The school LOCKED at the admin invite (D1) — shown read-only as Q1. */
+  lockedSchool?: "TRINITY" | "WHITGIFT" | null;
   /** Seed for Section 1 defaults — the child's name captured on the Application. */
   applicationChildName?: string;
+  /** Stored Parent 1 address — shown read-only when child shares it (D1, §3 Q7). */
+  parent1Address?: StoredParentAddress | null;
   /**
    * The round's academic-year string (e.g. "2026/27"). Drives the dynamic
    * tax-year wording on the income section (D5). Null when unavailable.
@@ -192,6 +199,8 @@ function SectionFormContent({
   parent1EmploymentStatus,
   parent2EmploymentStatus,
   relationshipStatus,
+  lockedSchool,
+  parent1Address,
 }: {
   sectionType: ApplicationSectionType;
   applicationId: string;
@@ -202,9 +211,11 @@ function SectionFormContent({
   parent1EmploymentStatus?: string;
   parent2EmploymentStatus?: string;
   relationshipStatus?: string;
+  lockedSchool?: "TRINITY" | "WHITGIFT" | null;
+  parent1Address?: StoredParentAddress | null;
 }) {
   switch (sectionType) {
-    case "CHILD_DETAILS": return <ChildDetailsForm applicationId={applicationId} documentMap={documentMap} />;
+    case "CHILD_DETAILS": return <ChildDetailsForm applicationId={applicationId} documentMap={documentMap} lockedSchool={lockedSchool} parent1Address={parent1Address} />;
     case "FAMILY_ID": return <FamilyIdForm applicationId={applicationId} documentMap={documentMap} />;
     case "PARENT_DETAILS": return <ParentDetailsForm applicationId={applicationId} documentMap={documentMap} />;
     case "DEPENDENT_CHILDREN": return <DependentChildrenForm childFullName={childFullName} />;
@@ -240,10 +251,12 @@ export function SectionPageClient({
   applicationId,
   existingData,
   applicationSchool,
+  lockedSchool,
   applicationChildName,
   academicYear,
   documentMap,
   childFullName,
+  parent1Address,
   isSoleParent,
   parent1EmploymentStatus,
   parent2EmploymentStatus,
@@ -368,6 +381,8 @@ export function SectionPageClient({
             parent1EmploymentStatus={parent1EmploymentStatus}
             parent2EmploymentStatus={parent2EmploymentStatus}
             relationshipStatus={relationshipStatus}
+            lockedSchool={lockedSchool}
+            parent1Address={parent1Address}
           />
         </SectionForm>
       </div>

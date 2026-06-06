@@ -34,24 +34,47 @@ import type { DocumentMeta } from "@/lib/db/queries/applications";
 
 const GENDERS = ["Male", "Female", "Prefer not to say", "Other"];
 
-// Year group at school entry — per §4 spec. Stored as a string code in
-// ChildDetailsData; the assessor reconciles "OTHER" by hand.
-const ENTRY_YEAR_GROUPS = [
-  { value: "Y6", label: "Year 6" },
-  { value: "Y7", label: "Year 7" },
-  { value: "Y9", label: "Year 9" },
-  { value: "Y12", label: "Year 12" },
-  { value: "OTHER", label: "Other (please contact the bursary team)" },
-];
+const SCHOOL_LABELS: Record<string, string> = {
+  TRINITY: "Trinity School",
+  WHITGIFT: "Whitgift School",
+};
+
+/** The stored Parent/Guardian 1 address, shown when the child shares it (D1). */
+export interface StoredParentAddress {
+  addressLine1?: string;
+  addressLine2?: string;
+  city?: string;
+  postcode?: string;
+  country?: string;
+}
 
 interface ChildDetailsFormProps {
   applicationId: string;
   documentMap?: Record<string, DocumentMeta>;
+  /** The school LOCKED at the admin invite (D1) — shown read-only as Q1. */
+  lockedSchool?: "TRINITY" | "WHITGIFT" | null;
+  /** Stored Parent 1 address from the contact/parent details — shown read-only
+   *  when the child lives at the same address (workbook §3 Q7). */
+  parent1Address?: StoredParentAddress | null;
 }
 
-export function ChildDetailsForm({ applicationId, documentMap }: ChildDetailsFormProps) {
+export function ChildDetailsForm({
+  applicationId,
+  documentMap,
+  lockedSchool,
+  parent1Address,
+}: ChildDetailsFormProps) {
   const form = useFormContext<ChildDetailsFormValues>();
   const { control, setValue } = form;
+
+  // Ensure the LOCKED school is always written to the form value, even though
+  // the field is display-only (Q1 read-only, D1). It is seeded from the
+  // application; pin it so the submitted blob always carries the locked value.
+  React.useEffect(() => {
+    if (lockedSchool) {
+      setValue("school", lockedSchool, { shouldValidate: true, shouldDirty: false });
+    }
+  }, [lockedSchool, setValue]);
 
   // Resolve the initial existing document from the documentMap (real DB metadata).
   const initialBirthCertDocId = React.useRef(
@@ -71,71 +94,35 @@ export function ChildDetailsForm({ applicationId, documentMap }: ChildDetailsFor
 
   return (
     <div className="space-y-8">
-      {/* Section 1.1 — School Selection */}
-      <fieldset className="space-y-5">
+      {/* Section 1.1 — School (Q1, read-only, LOCKED at the admin invite — D1) */}
+      <fieldset className="space-y-3">
         <legend className="text-base font-semibold text-primary-900">
-          School selection
+          School applying for
         </legend>
-
+        <div className="rounded-md border border-slate-200 bg-slate-50 px-4 py-3">
+          <p className="text-xs font-medium uppercase tracking-wider text-slate-500">
+            School
+          </p>
+          <p className="mt-1 text-sm font-medium text-primary-900">
+            {lockedSchool ? SCHOOL_LABELS[lockedSchool] ?? lockedSchool : "—"}
+          </p>
+          <p className="mt-2 text-xs text-slate-500">
+            The school for this application was set when you were invited and
+            cannot be changed here. If it is incorrect, please contact the
+            bursary team.
+          </p>
+        </div>
+        {/* Keep the school value in the form state (display-only field). */}
         <FormField
           control={control}
           name="school"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>
-                School you are applying for{" "}
-                <span className="text-error-600" aria-hidden="true">*</span>
-              </FormLabel>
-              <Select
-                onValueChange={field.onChange}
-                value={field.value}
-              >
-                <FormControl>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select a school..." />
-                  </SelectTrigger>
-                </FormControl>
-                <SelectContent>
-                  <SelectItem value="TRINITY">Trinity School</SelectItem>
-                  <SelectItem value="WHITGIFT">Whitgift School</SelectItem>
-                </SelectContent>
-              </Select>
+          render={() => (
+            <FormItem className="hidden" aria-hidden="true">
+              <FormControl><input type="hidden" /></FormControl>
               <FormMessage />
             </FormItem>
           )}
         />
-
-        <FormField
-          control={control}
-          name="entryYearGroup"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>
-                School year your child is applying to enter{" "}
-                <span className="text-error-600" aria-hidden="true">*</span>
-              </FormLabel>
-              <Select
-                onValueChange={field.onChange}
-                value={field.value}
-              >
-                <FormControl>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select a year group..." />
-                  </SelectTrigger>
-                </FormControl>
-                <SelectContent>
-                  {ENTRY_YEAR_GROUPS.map((g) => (
-                    <SelectItem key={g.value} value={g.value}>
-                      {g.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-
       </fieldset>
 
       <hr className="border-slate-200" />
@@ -268,6 +255,35 @@ export function ChildDetailsForm({ applicationId, documentMap }: ChildDetailsFor
           description="You will enter the parent/guardian address in the Parent Details section. If the child lives elsewhere, enter their address below."
           required
         />
+
+        {/* When the child shares Parent 1's address, show the stored address
+            read-only (workbook §3 Q7) rather than asking for free-text re-entry. */}
+        <ConditionalField show={sameAddressAsParent1 === true}>
+          <div className="rounded-md border border-slate-200 bg-slate-50 px-4 py-3">
+            <p className="text-xs font-medium uppercase tracking-wider text-slate-500">
+              Parent / Guardian 1 address
+            </p>
+            {parent1Address &&
+            (parent1Address.addressLine1 || parent1Address.postcode) ? (
+              <address className="mt-1 not-italic text-sm text-primary-900">
+                {[
+                  parent1Address.addressLine1,
+                  parent1Address.addressLine2,
+                  parent1Address.city,
+                  parent1Address.postcode,
+                  parent1Address.country,
+                ]
+                  .filter(Boolean)
+                  .join(", ")}
+              </address>
+            ) : (
+              <p className="mt-1 text-sm text-slate-500">
+                Your address will be shown here once you complete the Parent /
+                Guardian Details section. You can edit it there.
+              </p>
+            )}
+          </div>
+        </ConditionalField>
 
         <ConditionalField show={sameAddressAsParent1 === false}>
 
