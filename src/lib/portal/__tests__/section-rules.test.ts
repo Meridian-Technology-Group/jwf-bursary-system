@@ -223,10 +223,52 @@ describe("ASSETS_LIABILITIES", () => {
 });
 
 describe("no-op sections", () => {
-  it.each(["FAMILY_ID", "DEPENDENT_ELDERLY", "OTHER_INFO", "ADDITIONAL_INFO", "DECLARATION"] as const)(
+  it.each(["DEPENDENT_ELDERLY", "OTHER_INFO", "ADDITIONAL_INFO", "DECLARATION"] as const)(
     "%s has no gaps",
     (s) => {
       expect(gapIds(s, {})).toEqual([]);
     }
   );
+});
+
+describe("FAMILY_ID — per-member identity documents (PR-4)", () => {
+  it("no gaps when the section is unstarted (no members array)", () => {
+    expect(gapIds("FAMILY_ID", {})).toEqual([]);
+  });
+  it("British citizen requires a UK passport", () => {
+    expect(
+      gapIds("FAMILY_ID", { familyMembers: [{ isBritishCitizen: true }] })
+    ).toEqual(["FAMILY_ID:MEMBER_IDENTITY"]);
+    expect(
+      gapIds("FAMILY_ID", {
+        familyMembers: [{ isBritishCitizen: true, ukPassportDocumentId: "x" }],
+      })
+    ).toEqual([]);
+  });
+  it("non-British requires passport AND ILR", () => {
+    expect(
+      gapIds("FAMILY_ID", {
+        familyMembers: [{ isBritishCitizen: false, passportDocumentId: "p" }],
+      })
+    ).toEqual(["FAMILY_ID:MEMBER_IDENTITY"]);
+    expect(
+      gapIds("FAMILY_ID", {
+        familyMembers: [
+          { isBritishCitizen: false, passportDocumentId: "p", ilrDocumentId: "i" },
+        ],
+      })
+    ).toEqual([]);
+  });
+  it("is satisfied via indexed upload slots", () => {
+    expect(
+      gapIds(
+        "FAMILY_ID",
+        { familyMembers: [{ isBritishCitizen: true }] },
+        new Set(["FAMILY_ID_PASSPORT_0"])
+      )
+    ).toEqual([]);
+  });
+  it("does not block before citizenship is answered", () => {
+    expect(gapIds("FAMILY_ID", { familyMembers: [{}] })).toEqual([]);
+  });
 });
