@@ -16,10 +16,23 @@ function makeTx() {
     bursaryAccount: {
       create: vi.fn(async (_args: { data: Record<string, unknown> }) => ({
         id: "account-new",
+        entryYearGroup: "Y7",
+        firstAssessmentYear: "2025/2026",
       })),
+      findUnique: vi.fn(async () => ({
+        id: "existing",
+        entryYearGroup: "Y7",
+        firstAssessmentYear: "2025/2026",
+        status: "ACTIVE",
+      })),
+      update: vi.fn(async () => ({})),
     },
     application: {
       update: vi.fn(async () => ({})),
+    },
+    bursaryScheduleEntry: {
+      findMany: vi.fn(async () => []),
+      create: vi.fn(async () => ({})),
     },
   };
 }
@@ -31,10 +44,14 @@ function baseApp(overrides: Partial<PromotionApplication> = {}): PromotionApplic
     childName: "Child",
     childDob: new Date("2014-01-01"),
     entryYear: 2025,
-    entryYearGroup: "Year 7" as never,
+    entryYearGroup: "Y7" as never,
     bursaryAccountId: null,
     leadApplicantId: "lead-1",
-    round: { academicYear: "2025/2026" },
+    round: {
+      academicYear: "2025/2026",
+      openDate: new Date("2025-09-01"),
+      closeDate: new Date("2025-12-01"),
+    },
     assessment: { yearlyPayableFees: 12000 },
     ...overrides,
   };
@@ -61,6 +78,9 @@ describe("promoteToActiveAccount (Epic 10 seam)", () => {
     expect(createArg.data.status).toBe("ACTIVE");
     expect(createArg.data.entryYear).toBe(2025);
     expect(tx.application.update).toHaveBeenCalledTimes(1);
+    // Epic 10: a forward schedule is generated for the new account.
+    expect(tx.bursaryScheduleEntry.create).toHaveBeenCalled();
+    expect(tx.bursaryAccount.update).toHaveBeenCalled(); // scheduleYears persisted
   });
 
   it("is idempotent: continues an existing account without creating a new one", async () => {

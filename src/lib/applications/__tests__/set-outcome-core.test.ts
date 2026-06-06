@@ -63,7 +63,22 @@ function makeFakeTx(application: Record<string, unknown>) {
       update: vi.fn(async () => ({})),
     },
     bursaryAccount: {
-      create: vi.fn(async () => ({ id: "account-1" })),
+      create: vi.fn(async () => ({
+        id: "account-1",
+        entryYearGroup: "Y7",
+        firstAssessmentYear: "2025/2026",
+      })),
+      findUnique: vi.fn(async () => ({
+        id: "existing-account",
+        entryYearGroup: "Y7",
+        firstAssessmentYear: "2025/2026",
+        status: "ACTIVE",
+      })),
+      update: vi.fn(async () => ({})),
+    },
+    bursaryScheduleEntry: {
+      findMany: vi.fn(async () => []),
+      create: vi.fn(async () => ({})),
     },
     assessment: {
       updateMany: vi.fn(async () => ({ count: 1 })),
@@ -87,7 +102,7 @@ function baseApplication(overrides: Record<string, unknown> = {}) {
     childName: "Child Name",
     childDob: new Date("2014-01-01"),
     entryYear: 2025,
-    entryYearGroup: "Year 7",
+    entryYearGroup: "Y7",
     school: "WHITGIFT",
     bursaryAccountId: null,
     applicationType: "NEW",
@@ -99,7 +114,11 @@ function baseApplication(overrides: Record<string, unknown> = {}) {
       firstName: "Pat",
       lastName: "Parent",
     },
-    round: { academicYear: "2025/2026" },
+    round: {
+      academicYear: "2025/2026",
+      openDate: new Date("2025-09-01"),
+      closeDate: new Date("2025-12-01"),
+    },
     assessment: {
       id: "assess-1",
       status: "COMPLETED",
