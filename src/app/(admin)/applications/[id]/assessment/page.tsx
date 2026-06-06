@@ -22,6 +22,7 @@ import { getApplicationContributors } from "@/lib/db/queries/contributors";
 import { buildContributorLabelMap } from "@/lib/contributors/dual-view";
 import { getAssessment } from "@/lib/db/queries/assessments";
 import { getConfigsForAssessment } from "@/lib/db/queries/reference-tables";
+import { feeYearLabels } from "@/lib/assessment/fee-year";
 import { getPreviousAssessment } from "@/lib/db/queries/reassessment";
 import { getSiblingLinks } from "@/lib/db/queries/siblings";
 import { withUserContext, type RlsRole } from "@/lib/db/prisma";
@@ -240,7 +241,11 @@ export default async function AssessmentPage({ params }: Props) {
       const cfgs = await getConfigsForAssessment(
         tx,
         application.school,
-        assessment.familyTypeCategory ?? undefined
+        assessment.familyTypeCategory ?? undefined,
+        // Epic 07: the round's academic year anchors the fee-year resolution
+        // (current + next-year fees). D5 nominates Round.academicYear as the
+        // canonical year source.
+        round.academicYear
       );
 
       // Load sibling payable fees for sequential income absorption.
@@ -366,6 +371,9 @@ export default async function AssessmentPage({ params }: Props) {
       applicationEntryYearGroup={application.entryYearGroup}
       familyTypeConfigs={configs.familyTypeConfigs}
       defaultAnnualFees={configs.annualFees}
+      defaultNextYearAnnualFees={configs.nextYearAnnualFees}
+      currentFeeYearLabel={feeYearLabels(round.academicYear).current ?? undefined}
+      nextFeeYearLabel={feeYearLabels(round.academicYear).next ?? undefined}
       defaultCouncilTax={configs.councilTax}
       siblingPayableFees={siblingPayableFees}
       forceTwoEarner={forceTwoEarner}

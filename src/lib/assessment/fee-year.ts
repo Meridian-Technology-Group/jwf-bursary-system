@@ -50,6 +50,32 @@ export function academicYearStartDate(startYear: number): Date {
   return new Date(Date.UTC(startYear, ACADEMIC_YEAR_START_MONTH, 1));
 }
 
+/**
+ * Formats an academic-year label from a numeric start year, e.g. 2026 → "2026-27".
+ * Used for the current-year and next-year fee column headings in the UI.
+ */
+export function formatAcademicYearLabel(startYear: number): string {
+  const endShort = String((startYear + 1) % 100).padStart(2, '0')
+  return `${startYear}-${endShort}`
+}
+
+/**
+ * Derives the current-year and next-year academic labels from a round's
+ * `academicYear` string. Returns `null`s when the year can't be parsed (the UI
+ * then omits the labels rather than guessing).
+ */
+export function feeYearLabels(academicYear: string | null | undefined): {
+  current: string | null
+  next: string | null
+} {
+  const start = parseAcademicYearStart(academicYear)
+  if (start === null) return { current: null, next: null }
+  return {
+    current: formatAcademicYearLabel(start),
+    next: formatAcademicYearLabel(start + 1),
+  }
+}
+
 /** A versioned fee row — the minimal shape the resolver needs. */
 export interface VersionedFeeRow {
   annualFees: number;

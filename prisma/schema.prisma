@@ -258,6 +258,15 @@ model Assessment {
   vatRate                       Decimal?              @default(20.00) @map("vat_rate") @db.Decimal(5, 2)
   yearlyPayableFees             Decimal?              @map("yearly_payable_fees") @db.Decimal(10, 2)
   monthlyPayableFees            Decimal?              @map("monthly_payable_fees") @db.Decimal(10, 2)
+  /// Epic 07: next-year fee snapshot. `nextYearAnnualFees` is the resolved
+  /// following-academic-year gross fee (from the fee-year resolver); the payable
+  /// figures mirror the current-year breakdown but against the higher gross
+  /// (scholarship %/bursary held flat — D14 default). Persisted on save so the
+  /// recommendation/PDF (Epic 08) can show the uplift without recomputation.
+  /// All additive + nullable; null for rows saved before this column existed.
+  nextYearAnnualFees            Decimal?              @map("next_year_annual_fees") @db.Decimal(10, 2)
+  nextYearYearlyPayableFees     Decimal?              @map("next_year_yearly_payable_fees") @db.Decimal(10, 2)
+  nextYearMonthlyPayableFees    Decimal?              @map("next_year_monthly_payable_fees") @db.Decimal(10, 2)
   manualAdjustment              Decimal?              @default(0) @map("manual_adjustment") @db.Decimal(10, 2)
   manualAdjustmentReason        String?               @map("manual_adjustment_reason")
   /// Epic 06: single qualitative narrative for the assessment. Replaces the six

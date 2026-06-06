@@ -4,6 +4,8 @@ import {
   academicYearStartDate,
   resolveEffectiveFeeRow,
   resolveFeeYearPair,
+  formatAcademicYearLabel,
+  feeYearLabels,
   type VersionedFeeRow,
 } from '../fee-year'
 
@@ -135,5 +137,29 @@ describe('resolveFeeYearPair', () => {
     const pair = resolveFeeYearPair(rows, 2025)
     expect(pair.currentYearAnnualFees).toBeNull()
     expect(pair.nextYearAnnualFees).toBe(31752)
+  })
+})
+
+// ─── academic-year labels ───────────────────────────────────────────────────────
+
+describe('formatAcademicYearLabel', () => {
+  it('formats a start year as "YYYY-YY"', () => {
+    expect(formatAcademicYearLabel(2026)).toBe('2026-27')
+    expect(formatAcademicYearLabel(2025)).toBe('2025-26')
+  })
+
+  it('zero-pads a century rollover', () => {
+    expect(formatAcademicYearLabel(2099)).toBe('2099-00')
+  })
+})
+
+describe('feeYearLabels', () => {
+  it('derives current and next labels from a round academic year', () => {
+    expect(feeYearLabels('2026-27')).toEqual({ current: '2026-27', next: '2027-28' })
+  })
+
+  it('returns nulls when the year cannot be parsed', () => {
+    expect(feeYearLabels(null)).toEqual({ current: null, next: null })
+    expect(feeYearLabels('n/a')).toEqual({ current: null, next: null })
   })
 })

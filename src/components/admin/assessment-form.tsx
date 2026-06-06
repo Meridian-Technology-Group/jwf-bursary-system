@@ -54,6 +54,7 @@ import {
   calculateAssessment,
   calculateDerivedSavings,
 } from "@/lib/assessment/calculator";
+import { applyFamilyTypeDefaults } from "@/lib/assessment/auto-populate";
 import {
   calculateSchoolingYearsRemainingFromEntry,
   ENTRY_YEAR_GROUP_LABELS,
@@ -158,7 +159,20 @@ interface AssessmentFormProps {
   applicationEntryYearGroup: EntryYearGroupCode | null;
   familyTypeConfigs: FamilyTypeConfigRow[];
   defaultAnnualFees: number;
+  /**
+   * Epic 07: resolved next-year (following academic year) annual fee for this
+   * school, or null when no forward-dated fee row exists yet. When null the UI
+   * labels the next-year figure "not yet set" and falls back to the current-year
+   * fee so the payment-implication view still renders.
+   */
+  defaultNextYearAnnualFees: number | null;
   defaultCouncilTax: number;
+  /**
+   * Epic 07: academic-year labels for the current and next fee years, derived
+   * from Round.academicYear (e.g. "2026-27" / "2027-28"). Display-only.
+   */
+  currentFeeYearLabel?: string;
+  nextFeeYearLabel?: string;
   /** Payable fees of older siblings (priority-ordered). Used for sequential income absorption. */
   siblingPayableFees?: number[];
   /**
@@ -285,6 +299,55 @@ function CurrencyInput({
   );
 }
 
+// ─── Default / edited state badge (Epic 07 auto-populate-then-confirm) ──────────
+
+interface DefaultStateBadgeProps {
+  /** Whether the assessor has overridden the reference default for this field. */
+  overridden: boolean;
+  /** The live reference default for this field. */
+  defaultValue: number;
+  /** Reset the field back to the default. */
+  onReset: () => void;
+  disabled?: boolean;
+}
+
+/**
+ * Shows whether a reference-backed field still holds its auto-filled default or
+ * has been independently edited. When edited, offers a one-click "reset to
+ * default" — the on-screen expression of auto-populate-then-confirm: the
+ * assessor confirms by leaving the default or assesses by overriding, and the
+ * system never silently reverts either (plan 07 §5.3).
+ */
+function DefaultStateBadge({
+  overridden,
+  defaultValue,
+  onReset,
+  disabled,
+}: DefaultStateBadgeProps) {
+  if (!overridden) {
+    return (
+      <span className="text-[10px] font-medium uppercase tracking-wide text-slate-400">
+        default
+      </span>
+    );
+  }
+  return (
+    <span className="flex items-center gap-1 text-[10px] font-medium uppercase tracking-wide text-amber-600">
+      edited
+      {!disabled && (
+        <button
+          type="button"
+          onClick={onReset}
+          className="rounded text-amber-700 underline decoration-dotted underline-offset-2 hover:text-amber-900"
+          title={`Reset to default (${fmt(defaultValue)})`}
+        >
+          reset to {fmt(defaultValue)}
+        </button>
+      )}
+    </span>
+  );
+}
+
 // ─── Field Row ────────────────────────────────────────────────────────────────
 
 function FieldRow({
@@ -366,7 +429,10 @@ export function AssessmentForm({
   applicationEntryYearGroup,
   familyTypeConfigs,
   defaultAnnualFees,
+  defaultNextYearAnnualFees,
   defaultCouncilTax,
+  currentFeeYearLabel,
+  nextFeeYearLabel,
   siblingPayableFees: siblingPayableFeesFromProps = [],
   forceTwoEarner = false,
   secondaryParentOverride = false,
@@ -400,8 +466,97 @@ export function AssessmentForm({
   const [annualFees, setAnnualFees] = React.useState<number>(
     Number(assessment.annualFees ?? defaultAnnualFees)
   );
+  // Epic 07: next-year (following academic year) annual fee. Defaults to the
+  // resolved forward-dated fee; falls back to the current-year fee when no
+  // forward row exists yet (the UI labels it "not yet set"). Independently
+  // editable, like the current-year fee.
+  const nextYearFeeDefault = defaultNextYearAnnualFees ?? defaultAnnualFees;
+  const [nextYearAnnualFees, setNextYearAnnualFees] = React.useState<number>(
+    Number(nextYearFeeDefault)
+  );
   const [councilTax, setCouncilTax] = React.useState<number>(
     Number(assessment.councilTax ?? defaultCouncilTax)
+  );
+
+  // ── Auto-populate-then-confirm (Epic 07 §5.3) ──────────────────────────────
+  // Reference defaults (family-type costs, council tax) fill EMPTY inputs and
+  // are kept in step with the selected family type — but ONCE the assessor edits
+  // a field, changing the family type (or any other default source) must NOT
+  // clobber their value. We track which reference-backed fields have been
+  // independently overridden; a change handler only refreshes fields NOT in this
+  // set, and the UI offers an explicit "reset to default" per overridden field.
+  //
+  // Seeded from the persisted row: a stored value that differs from the live
+  // default is treated as already-overridden (the assessor set it last time).
+  type OverridableField =
+    | "notionalRent"
+    | "utilityCosts"
+    | "foodCosts"
+    | "councilTax";
+  const [overriddenFields, setOverriddenFields] = React.useState<
+    Set<OverridableField>
+  >(() => {
+    const initial = new Set<OverridableField>();
+    if (
+      assessment.notionalRent != null &&
+      Number(assessment.notionalRent) !== Number(activeFamilyConfig?.notionalRent ?? 0)
+    )
+      initial.add("notionalRent");
+    if (
+      assessment.utilityCosts != null &&
+      Number(assessment.utilityCosts) !== Number(activeFamilyConfig?.utilityCosts ?? 0)
+    )
+      initial.add("utilityCosts");
+    if (
+      assessment.foodCosts != null &&
+      Number(assessment.foodCosts) !== Number(activeFamilyConfig?.foodCosts ?? 0)
+    )
+      initial.add("foodCosts");
+    if (
+      assessment.councilTax != null &&
+      Number(assessment.councilTax) !== Number(defaultCouncilTax)
+    )
+      initial.add("councilTax");
+    return initial;
+  });
+
+  const markOverridden = React.useCallback((field: OverridableField) => {
+    setOverriddenFields((prev) => {
+      if (prev.has(field)) return prev;
+      const next = new Set(prev);
+      next.add(field);
+      return next;
+    });
+  }, []);
+
+  // The live default for each field given the currently-selected family type /
+  // council-tax reference. Used both for fill-empties-only and the reset control.
+  const fieldDefaults = React.useMemo(
+    () => ({
+      notionalRent: Number(activeFamilyConfig?.notionalRent ?? 0),
+      utilityCosts: Number(activeFamilyConfig?.utilityCosts ?? 0),
+      foodCosts: Number(activeFamilyConfig?.foodCosts ?? 0),
+      councilTax: Number(defaultCouncilTax),
+    }),
+    [activeFamilyConfig, defaultCouncilTax]
+  );
+
+  // Reset a single overridden field back to the live reference default.
+  const resetFieldToDefault = React.useCallback(
+    (field: OverridableField) => {
+      const value = fieldDefaults[field];
+      if (field === "notionalRent") setNotionalRent(value);
+      else if (field === "utilityCosts") setUtilityCosts(value);
+      else if (field === "foodCosts") setFoodCosts(value);
+      else if (field === "councilTax") setCouncilTax(value);
+      setOverriddenFields((prev) => {
+        if (!prev.has(field)) return prev;
+        const next = new Set(prev);
+        next.delete(field);
+        return next;
+      });
+    },
+    [fieldDefaults]
   );
   const [schoolingYearsRemaining, setSchoolingYearsRemaining] =
     React.useState<number>(
@@ -412,14 +567,28 @@ export function AssessmentForm({
     applicationEntryYear ? String(applicationEntryYear) : ""
   );
 
-  // Update family config values when category changes (if not yet manually overridden)
+  // Auto-populate-then-confirm (Epic 07 §5.3): on a family-type change, refresh
+  // the reference-backed costs ONLY for fields the assessor has not independently
+  // edited. An overridden field keeps the assessor's value (and surfaces a
+  // "reset to default" affordance) — it is never silently clobbered. This
+  // replaces the old destructive handler that unconditionally overwrote all
+  // three fields (regression-tested).
   const handleFamilyCategoryChange = (category: number) => {
     setFamilyTypeCategory(category);
     const config = familyTypeConfigs.find((c) => c.category === category);
     if (config) {
-      setNotionalRent(config.notionalRent);
-      setUtilityCosts(config.utilityCosts);
-      setFoodCosts(config.foodCosts);
+      const merged = applyFamilyTypeDefaults(
+        { notionalRent, utilityCosts, foodCosts },
+        {
+          notionalRent: config.notionalRent,
+          utilityCosts: config.utilityCosts,
+          foodCosts: config.foodCosts,
+        },
+        overriddenFields
+      );
+      setNotionalRent(merged.notionalRent);
+      setUtilityCosts(merged.utilityCosts);
+      setFoodCosts(merged.foodCosts);
     }
   };
 
@@ -547,6 +716,7 @@ export function AssessmentForm({
       utilityCosts,
       foodCosts,
       annualFees,
+      nextYearAnnualFees,
       councilTax,
       schoolingYearsRemaining,
       isMortgageFree,
@@ -567,6 +737,7 @@ export function AssessmentForm({
     utilityCosts,
     foodCosts,
     annualFees,
+    nextYearAnnualFees,
     councilTax,
     schoolingYearsRemaining,
     isMortgageFree,
@@ -614,6 +785,12 @@ export function AssessmentForm({
                 netYearlyFees: o.payableFees.netYearlyFees,
                 yearlyPayableFees: o.payableFees.adjustedYearlyPayableFees,
                 monthlyPayableFees: o.payableFees.adjustedMonthlyPayableFees,
+                // Epic 07: snapshot the next-year fee + its payable figures so
+                // the recommendation/PDF (Epic 08) can render the uplift without
+                // recomputation. Null when no next-year fee is in play.
+                nextYearAnnualFees: o.payableFees.nextYearGrossFees,
+                nextYearYearlyPayableFees: o.payableFees.nextYearYearlyPayableFees,
+                nextYearMonthlyPayableFees: o.payableFees.nextYearMonthlyPayableFees,
               };
             } catch {
               return null;
@@ -882,16 +1059,43 @@ export function AssessmentForm({
               </Select>
             </FieldRow>
 
-            {/* School fees (annual) */}
+            {/* School fees (annual) — current academic year */}
             <FieldRow
-              label="Annual School Fees"
+              label={
+                currentFeeYearLabel
+                  ? `Annual School Fees (${currentFeeYearLabel})`
+                  : "Annual School Fees"
+              }
               htmlFor="annual-fees"
-              hint="Pre-VAT annual fees for this school"
+              hint="Pre-VAT current-year fees for this school"
             >
               <CurrencyInput
                 id="annual-fees"
                 value={annualFees}
                 onChange={setAnnualFees}
+                onBlur={scheduleAutoSave}
+                disabled={isReadOnly}
+              />
+            </FieldRow>
+
+            {/* School fees (annual) — next academic year (Epic 07) */}
+            <FieldRow
+              label={
+                nextFeeYearLabel
+                  ? `Next-Year School Fees (${nextFeeYearLabel})`
+                  : "Next-Year School Fees"
+              }
+              htmlFor="next-year-annual-fees"
+              hint={
+                defaultNextYearAnnualFees == null
+                  ? "Next-year fee not yet set — defaulted to current-year fee; the payable view below shows the uplift implication once set"
+                  : "Pre-VAT following-year fees — used for the next-year payable view (fee-uplift implication)"
+              }
+            >
+              <CurrencyInput
+                id="next-year-annual-fees"
+                value={nextYearAnnualFees}
+                onChange={setNextYearAnnualFees}
                 onBlur={scheduleAutoSave}
                 disabled={isReadOnly}
               />
@@ -978,42 +1182,123 @@ export function AssessmentForm({
               htmlFor="council-tax"
               hint="Default: Band D Croydon"
             >
-              <CurrencyInput
-                id="council-tax"
-                value={councilTax}
-                onChange={setCouncilTax}
-                onBlur={scheduleAutoSave}
-                disabled={isReadOnly}
-              />
+              <div className="space-y-1">
+                <CurrencyInput
+                  id="council-tax"
+                  value={councilTax}
+                  onChange={(v) => {
+                    setCouncilTax(v);
+                    markOverridden("councilTax");
+                  }}
+                  onBlur={scheduleAutoSave}
+                  disabled={isReadOnly}
+                />
+                <div className="flex justify-end">
+                  <DefaultStateBadge
+                    overridden={overriddenFields.has("councilTax")}
+                    defaultValue={fieldDefaults.councilTax}
+                    onReset={() => {
+                      resetFieldToDefault("councilTax");
+                      scheduleAutoSave();
+                    }}
+                    disabled={isReadOnly}
+                  />
+                </div>
+              </div>
             </FieldRow>
           </div>
 
-          {/* Auto-populated family type costs */}
+          {/* Family-type costs — auto-populated from the selected family type,
+              editable, and preserved across family-type changes once edited
+              (auto-populate-then-confirm, Epic 07 §5.3). */}
           {activeFamilyConfig && (
             <div className="mt-4 grid grid-cols-3 gap-3">
-              <div className="rounded-md border border-slate-100 bg-slate-50 px-3 py-2.5">
-                <p className="text-[10px] font-medium uppercase tracking-wide text-slate-400">
+              <div>
+                <label
+                  htmlFor="notional-rent"
+                  className="text-[10px] font-medium uppercase tracking-wide text-slate-400"
+                >
                   Notional Rent
-                </p>
-                <p className="mt-0.5 font-mono text-sm font-semibold text-slate-700">
-                  {fmt(notionalRent)}
-                </p>
+                </label>
+                <CurrencyInput
+                  id="notional-rent"
+                  value={notionalRent}
+                  onChange={(v) => {
+                    setNotionalRent(v);
+                    markOverridden("notionalRent");
+                  }}
+                  onBlur={scheduleAutoSave}
+                  disabled={isReadOnly}
+                />
+                <div className="mt-1 flex justify-end">
+                  <DefaultStateBadge
+                    overridden={overriddenFields.has("notionalRent")}
+                    defaultValue={fieldDefaults.notionalRent}
+                    onReset={() => {
+                      resetFieldToDefault("notionalRent");
+                      scheduleAutoSave();
+                    }}
+                    disabled={isReadOnly}
+                  />
+                </div>
               </div>
-              <div className="rounded-md border border-slate-100 bg-slate-50 px-3 py-2.5">
-                <p className="text-[10px] font-medium uppercase tracking-wide text-slate-400">
+              <div>
+                <label
+                  htmlFor="utility-costs"
+                  className="text-[10px] font-medium uppercase tracking-wide text-slate-400"
+                >
                   Utility Costs
-                </p>
-                <p className="mt-0.5 font-mono text-sm font-semibold text-slate-700">
-                  {fmt(utilityCosts)}
-                </p>
+                </label>
+                <CurrencyInput
+                  id="utility-costs"
+                  value={utilityCosts}
+                  onChange={(v) => {
+                    setUtilityCosts(v);
+                    markOverridden("utilityCosts");
+                  }}
+                  onBlur={scheduleAutoSave}
+                  disabled={isReadOnly}
+                />
+                <div className="mt-1 flex justify-end">
+                  <DefaultStateBadge
+                    overridden={overriddenFields.has("utilityCosts")}
+                    defaultValue={fieldDefaults.utilityCosts}
+                    onReset={() => {
+                      resetFieldToDefault("utilityCosts");
+                      scheduleAutoSave();
+                    }}
+                    disabled={isReadOnly}
+                  />
+                </div>
               </div>
-              <div className="rounded-md border border-slate-100 bg-slate-50 px-3 py-2.5">
-                <p className="text-[10px] font-medium uppercase tracking-wide text-slate-400">
+              <div>
+                <label
+                  htmlFor="food-costs"
+                  className="text-[10px] font-medium uppercase tracking-wide text-slate-400"
+                >
                   Food Costs
-                </p>
-                <p className="mt-0.5 font-mono text-sm font-semibold text-slate-700">
-                  {fmt(foodCosts)}
-                </p>
+                </label>
+                <CurrencyInput
+                  id="food-costs"
+                  value={foodCosts}
+                  onChange={(v) => {
+                    setFoodCosts(v);
+                    markOverridden("foodCosts");
+                  }}
+                  onBlur={scheduleAutoSave}
+                  disabled={isReadOnly}
+                />
+                <div className="mt-1 flex justify-end">
+                  <DefaultStateBadge
+                    overridden={overriddenFields.has("foodCosts")}
+                    defaultValue={fieldDefaults.foodCosts}
+                    onReset={() => {
+                      resetFieldToDefault("foodCosts");
+                      scheduleAutoSave();
+                    }}
+                    disabled={isReadOnly}
+                  />
+                </div>
               </div>
             </div>
           )}
