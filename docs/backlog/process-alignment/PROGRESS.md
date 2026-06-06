@@ -42,7 +42,7 @@ Legend: ⬜ not started · 🟡 in progress · ✅ shipped to staging · 🚫 bl
 | 2 | [02 Application form re-scope](plans/02-application-form-rescope.md) | ✅ | deps met (01, 04 ✅) · D3 ✅ · D11 artifact (build to workbook) | #152 · #153 · #154 · #155 · #156 · #157 · #158 (all ✅) |
 | 2 | [05 Parent portal experience](plans/05-parent-portal-experience.md) | ✅ | deps met (01, 02, 03 ✅) · D2/D10 ✅ | #159 (PR-1 home guidance + chooser), #160 (PR-2 deadline/status/summary), #161 (PR-3 history + missing-doc upload) — **stacked, merge 159→160→161** |
 | 3 | [06 Assessor experience & UI](plans/06-assessor-experience-and-ui.md) | 🟡 (both PRs open) | 02 ✅ (dep) | PR-1 synopsis consolidation (`feature/06-synopsis-consolidation`); PR-2 layout + calc strip + 30+ doc nav + field-map (`feature/06-workspace-layout`, stacks on PR-1) — **merge PR-1 → PR-2**; → ✅ when PR-2 lands |
-| 3 | [07 Calculations & fees](plans/07-assessment-calculations-and-fees.md) | ⏳ deps | 06 (dep) · D8/D14 narrow, non-blocking | — |
+| 3 | [07 Calculations & fees](plans/07-assessment-calculations-and-fees.md) | 🟡 | 06 (dep) · D8/D14 narrow, non-blocking · PR-7 historical-validation gated on client data | PR-1 fee resolver + engine next-year + seed (`feature/07-fee-resolver-engine-nextyear`); PR-2 wiring + auto-populate-then-confirm UI (`feature/07-wiring-and-autopopulate`, stacks on PR-1) — **merge PR-1 → PR-2**; PR-7 (historical fixtures) FLAGGED — needs client historicals |
 | 3 | [08 Recommendation & outcome](plans/08-recommendation-and-outcome.md) | ⏳ deps | 01, 07 (deps) · D7/D9 ✅ · D4 artifact (placeholders) | — |
 | 3 | [09 Complex household / second parent](plans/09-complex-household-and-second-parent.md) | ⏳ deps | 02, 06 (deps) · D15–D17 build to workbook FAQ | — |
 | 4 | [10 Data retention & account lifecycle](plans/10-data-retention-and-account-lifecycle.md) | ⏳ deps | 01, 03 (deps) · D6 ✅ (DPO signs years) · D19 narrow | — |
@@ -530,6 +530,73 @@ PR-4, PR-5, PR-6) — `feature/06-workspace-layout` (**stacks on PR-1**):
 
 ---
 
+## Active — Epic 07 (assessment calculations & fees)
+
+Wave 3, dep 06 (the assessor surface these inputs render into). D8/D14 are narrow,
+non-blocking 🔎 confirms — built to the documented defaults (VAT 20% kept; payable
+monthly = current-year ÷ 12). Plan §6 lists seven PR-sized items; executed as
+**two cohesive PRs stacked off `staging`** to keep the pure engine/resolver/seed
+(PR-1) separate from the form/UI churn (PR-2) and minimise overlap on the shared
+assessor glue (`assessment/page.tsx`, `assessment-form.tsx`). **Merge order:
+PR-1 → PR-2.** PR-7 (historical validation) is **gated on client data** — flagged.
+
+**PR-1 — fee-year resolver + engine next-year + seed** (§6 PR-1, PR-2, PR-6) —
+`feature/07-fee-resolver-engine-nextyear` (off `staging`):
+- [x] §6 PR-1 — `lib/assessment/fee-year.ts` pure resolver: `parseAcademicYearStart`
+  (lenient "YYYY-YY"/"YYYY/YY"/"YYYY" parse, D5 anchor), `academicYearStartDate`
+  (1 Sep), `resolveEffectiveFeeRow` (latest row on/before the year start, ordered
+  `effectiveFrom desc, createdAt desc` — the **deterministic tie-break** [12]/§5.1
+  needs), `resolveFeeYearPair` (current + next). 19 unit tests (DB-free).
+- [x] §6 PR-1 — `getSchoolFeesForYear(tx, school, academicYear)` in
+  `reference-tables.ts` (queries `createdAt` for the tie-break; falls back to the
+  single most-recent row when the year can't be parsed); `getConfigsForAssessment`
+  takes an optional `academicYear` and now returns `nextYearAnnualFees` alongside
+  the back-compat `annualFees` (current-year). Legacy single-figure callers
+  unaffected (param optional; `nextYearAnnualFees` null when omitted).
+- [x] §6 PR-2 — engine threads next-year fees additively: `AssessmentInput.nextYearAnnualFees?`
+  (optional) → `calculatePayableFees(..., nextYearGrossFees?)` →
+  `PayableFeesResult.nextYear{GrossFees,NetYearlyFees,VatAmount,YearlyPayableFees,MonthlyPayableFees}`
+  (all `null` when not supplied). **D14 default**: scholarship % + bursary held
+  FLAT at the current-year figures; only the gross changes, so the next-year view
+  shows the uplift's payment implication WITHOUT altering Stage-4 bursary maths.
+  Current-year result is byte-for-byte unchanged. All call sites (form, calc
+  strip, calc display, hook, backfill script) compile unmodified.
+- [x] §6 PR-2 — **D8** made a single configurable source: `DEFAULT_VAT_RATE = 20`
+  constant in `types.ts` (current behaviour kept; flip to 0 in one place if D8
+  lands "not applied"). Tests assert both 20% and 0% paths.
+- [x] §6 PR-6 — `seed:reference` (idempotent) now seeds a **forward-dated
+  next-year** `SchoolFees` row per school (2027-09-01) alongside the current-year
+  (2026-09-01), so the resolver has both years to find. **Next-year amounts are a
+  ~5% PLACEHOLDER — flagged for Charlotte/finance to swap for the real 2027-28
+  schedule** (the shape is what matters; amounts are a swap-in). No seed-script
+  change (upsert keyed `school_effectiveFrom`).
+- [x] No Prisma migration (Option A — reuses the existing versioned `SchoolFees`
+  table; the only persistence change is seeded forward rows). prisma
+  format/validate clean; tsc/lint/build green; **445 tests** (+27).
+
+**PR-2 — wiring + auto-populate-then-confirm UI** (§6 PR-3, PR-4, PR-5) —
+`feature/07-wiring-and-autopopulate` (**stacks on PR-1**):
+- [ ] §6 PR-3 — thread `Round.academicYear` → `getConfigsForAssessment` →
+  assessment page → form; snapshot the next-year payable figures on save (additive
+  columns on `Assessment` — migration ships in THIS PR).
+- [ ] §6 PR-4 — rewrite `handleFamilyCategoryChange` + council-tax/fee-year
+  handlers to **fill-empties-only**; per-field overridden detection +
+  reset-to-default affordance (derived approach first, §5.2).
+- [ ] §6 PR-5 — render current + next-year annual & monthly fees with year labels
+  and edited/default state; calc strip shows both payable monthlies.
+
+**PR-7 — historical validation** (§6 PR-7) — **🚫 GATED on client data**:
+- [ ] Encode client-supplied historical assessments (inputs + the Foundation's own
+  computed outputs) as fixtures; reconcile to the penny; fix or document each
+  divergence; `--dry-run` the backfill before applying. **BLOCKED**: the plan
+  references real historical figures not present in the repo — Brian to supply a
+  representative set (incomes/property/savings/family type/council tax/fees/
+  scholarship/VAT/manual adj/sibling fees + the sheet's computed stage outputs).
+  The synthetic named-family fixtures (Okafor/Williams/edge cases) remain; PR-7
+  adds the real-case proof.
+
+---
+
 ## Decision register — execution view
 
 Mirrors [README §5](README.md#5-decision-register). Reconciled 2026-06-05 against
@@ -555,8 +622,8 @@ the meeting — the register was written too defensively. ✅ = decided, safe to
 | D6 | Charlotte (+DPO) | ✅ purge declined / 6-yr q-n-a / 7-yr awarded (meeting); DPO signs year values | 10 |
 | D4 | Charlotte | 📦 real reason codes — build on placeholders, swap when sent | 08 |
 | D11 | Charlotte | 📦 final declaration text — build workbook-verbatim, swap if sent | 02 |
-| D8 | Charlotte/finance | 🔎 VAT 20% applicability (not raised in meeting) — keep current, flag | 07 |
-| D14 | Charlotte | 🔎 fee-uplift boundary split rule — default current-yr/12, flag | 07 |
+| D8 | Charlotte/finance | 🔎 VAT 20% applicability — **built to default in 07 PR-1**: kept 20%, made it a single `DEFAULT_VAT_RATE` swap-point + per-assessment override; flip to 0 if "not applied". Flag stands. | 07 |
+| D14 | Charlotte | 🔎 fee-uplift boundary split rule — **built to default in 07 PR-1**: payable monthly = current-year ÷ 12; next-year view holds scholarship %/bursary flat (only gross rises), shown alongside, no Stage-4 change. Swap when the boundary rule lands. | 07 |
 | D15–D17 | Charlotte/Brian | 🔎 household scenario fine-detail — build to workbook FAQ; H7/H9 stay assessor flags | 09 |
 | D19 | Charlotte | 🔎 forward-schedule horizon + date policy — default years-to-final-eligible | 10 |
 
@@ -570,6 +637,26 @@ Wave 2 → Wave 3 → Wave 4.
 
 ## Change log
 
+- **2026-06-06** — **Epic 07 OPENED (Wave 3)** — PR-1 (fee-year resolver + engine
+  next-year fees + seed). New pure `lib/assessment/fee-year.ts` resolves the
+  current-year AND next-year annual fee for a school from the versioned
+  `SchoolFees` rows (Option A — no schema change), keyed on `Round.academicYear`
+  (D5) with the **deterministic `effectiveFrom desc, createdAt desc`** tie-break
+  the settings read path uses (avoids re-introducing defect [12]).
+  `getSchoolFeesForYear` + an `academicYear`-aware `getConfigsForAssessment`
+  expose `nextYearAnnualFees` alongside the back-compat `annualFees`. The pure
+  engine threads `AssessmentInput.nextYearAnnualFees?` → `calculatePayableFees` →
+  five additive `PayableFeesResult.nextYear*` fields (null when not supplied;
+  current-year output byte-for-byte unchanged); **D14 default** holds scholarship
+  %/bursary flat so the next-year view shows the uplift's payment implication
+  without changing Stage-4 maths. **D8** kept at 20% behind a single
+  `DEFAULT_VAT_RATE` swap-point. `seed:reference` now seeds a forward-dated
+  next-year fee row per school (placeholder ~5% uplift — **flagged for
+  finance**). No migration. prisma format/validate clean; tsc/lint/build green;
+  445 tests (+27: fee-year 19, payable-fees next-year/D8/D14, calculator
+  next-year threading). PR-2 (wiring + auto-populate-then-confirm UI + next-year
+  snapshot columns) stacks on PR-1. **PR-7 historical validation is GATED on
+  client data — flagged for Brian.** **DO NOT MERGE — merge order PR-1 → PR-2.**
 - **2026-06-06** — **Epic 06 PR-2** (`feature/06-workspace-layout`, stacks on
   PR-1): responsive assessor workspace. `AssessmentCalcStrip` moves the live
   calculation OUT of the always-on `[1fr_320px]` right rail into a collapsible

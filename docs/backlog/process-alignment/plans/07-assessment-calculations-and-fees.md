@@ -1,6 +1,6 @@
 ---
 title: Assessment calculations & fees — current+next-year fees, validation, non-destructive auto-fill
-status: planned
+status: in-progress
 severity: high
 area: assessment, calculations, schema
 wave: 3

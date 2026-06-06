@@ -114,4 +114,81 @@ describe('calculatePayableFees', () => {
     expect(result.netYearlyFees).toBe(15_000)
     expect(result.yearlyPayableFees).toBe(15_000)
   })
+
+  // ── D8 — VAT applicability (keep current 20% behaviour, configurable) ──────
+  describe('VAT (D8)', () => {
+    it('applies 20% VAT to the post-bursary net fee (current behaviour)', () => {
+      // net = 31752 - 0 - 0 = 31752; vat = 6350.40; yearly = 38102.40
+      const result = calculatePayableFees(31_752, 0, 0, 20, 0)
+      expect(result.vatAmount).toBe(6_350.40)
+      expect(result.yearlyPayableFees).toBe(38_102.40)
+    })
+
+    it('emits zero VAT when the rate is 0 (the swap-in if D8 lands "not applied")', () => {
+      const result = calculatePayableFees(31_752, 0, 0, 0, 0)
+      expect(result.vatAmount).toBe(0)
+      expect(result.yearlyPayableFees).toBe(31_752)
+    })
+  })
+
+  // ── Epic 07 — next-year payable view ────────────────────────────────────────
+  describe('next-year payable view (Epic 07)', () => {
+    it('returns null next-year fields when nextYearGrossFees is omitted', () => {
+      const result = calculatePayableFees(31_752, 0, 5_000, 20, 0)
+      expect(result.nextYearGrossFees).toBeNull()
+      expect(result.nextYearNetYearlyFees).toBeNull()
+      expect(result.nextYearVatAmount).toBeNull()
+      expect(result.nextYearYearlyPayableFees).toBeNull()
+      expect(result.nextYearMonthlyPayableFees).toBeNull()
+    })
+
+    it('current-year result is byte-for-byte unchanged when next-year supplied', () => {
+      const without = calculatePayableFees(31_752, 10, 10_000, 20, 0)
+      const withNext = calculatePayableFees(31_752, 10, 10_000, 20, 0, 33_340)
+      expect(withNext.grossFees).toBe(without.grossFees)
+      expect(withNext.netYearlyFees).toBe(without.netYearlyFees)
+      expect(withNext.vatAmount).toBe(without.vatAmount)
+      expect(withNext.yearlyPayableFees).toBe(without.yearlyPayableFees)
+      expect(withNext.monthlyPayableFees).toBe(without.monthlyPayableFees)
+      expect(withNext.adjustedYearlyPayableFees).toBe(without.adjustedYearlyPayableFees)
+    })
+
+    it('computes next-year payable holding scholarship % + bursary flat (D14 default)', () => {
+      // current gross 31752, scholarship 0, bursary 10000, vat 20
+      // next gross 33340: net = 33340 - 0 - 10000 = 23340
+      // vat = 23340 * 0.20 = 4668; yearly = 28008; monthly = 2334
+      const result = calculatePayableFees(31_752, 0, 10_000, 20, 0, 33_340)
+      expect(result.nextYearGrossFees).toBe(33_340)
+      expect(result.nextYearNetYearlyFees).toBe(23_340)
+      expect(result.nextYearVatAmount).toBe(4_668)
+      expect(result.nextYearYearlyPayableFees).toBe(28_008)
+      expect(result.nextYearMonthlyPayableFees).toBe(2_334)
+    })
+
+    it('next-year payable exceeds current-year payable when fees rise (uplift visible)', () => {
+      const result = calculatePayableFees(31_752, 0, 10_000, 20, 0, 33_340)
+      expect(result.nextYearYearlyPayableFees).toBeGreaterThan(result.yearlyPayableFees)
+    })
+
+    it('clamps next-year net to 0 when bursary covers the higher fee too', () => {
+      const result = calculatePayableFees(30_000, 0, 35_000, 20, 0, 31_000)
+      expect(result.nextYearNetYearlyFees).toBe(0)
+      expect(result.nextYearYearlyPayableFees).toBe(0)
+      expect(result.nextYearMonthlyPayableFees).toBe(0)
+    })
+
+    it('applies the manual adjustment to the next-year payable too', () => {
+      // next gross 33340, no scholarship/bursary, vat 0, adj +600
+      // net = 33340; yearly before adj = 33340; after adj = 33940
+      const result = calculatePayableFees(31_752, 0, 0, 0, 600, 33_340)
+      expect(result.nextYearYearlyPayableFees).toBe(33_940)
+    })
+
+    // ── D14 — payable monthly is current-year ÷ 12 by default ──────────────────
+    it('current-year monthly remains current-year yearly ÷ 12 regardless of next-year fee (D14 default)', () => {
+      const result = calculatePayableFees(31_752, 0, 10_000, 20, 0, 33_340)
+      const expected = Math.round((result.yearlyPayableFees / 12) * 100) / 100
+      expect(result.monthlyPayableFees).toBe(expected)
+    })
+  })
 })

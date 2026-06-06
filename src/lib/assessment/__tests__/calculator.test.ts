@@ -537,3 +537,59 @@ describe('Manual adjustment', () => {
     )
   })
 })
+
+// ─── Epic 07 — current + next-year fees through the full pipeline ────────────────
+
+describe('Next-year fees threading (Epic 07)', () => {
+  /**
+   * Partial-bursary family (Okafor-shaped) with a next-year fee uplift.
+   * Stage 4 bursary is computed against the CURRENT-year fee only (D14 default —
+   * the next-year figure does not change the bursary maths), and the next-year
+   * payable view holds the bursary flat while the gross rises.
+   */
+  const upliftInput: AssessmentInput = {
+    ...baseInput,
+    earners: [
+      makeEarner({ earnerLabel: 'PARENT_1', netPay: 28_000 }),
+      makeEarner({ earnerLabel: 'PARENT_2', netPay: 14_000 }),
+    ],
+    familyTypeCategory: 3,
+    notionalRent: 18_000,
+    utilityCosts: 2_000,
+    foodCosts: 8_500,
+    councilTax: 2_480,
+    annualFees: 31_752,
+    nextYearAnnualFees: 33_340,
+    schoolAgeChildrenCount: 2,
+    schoolingYearsRemaining: 6,
+    vatRate: 20,
+  }
+
+  it('does not change the Stage 4 bursary (computed against current-year fee, D14 default)', () => {
+    const withNext = calculateAssessment(upliftInput)
+    const withoutNext = calculateAssessment({ ...upliftInput, nextYearAnnualFees: undefined })
+    expect(withNext.stages.stage4_requiredBursary).toBe(
+      withoutNext.stages.stage4_requiredBursary,
+    )
+    // Okafor case: 31752 - 11020 = 20732
+    expect(withNext.stages.stage4_requiredBursary).toBe(20_732)
+  })
+
+  it('emits next-year payable figures alongside the current-year ones', () => {
+    const result = calculateAssessment(upliftInput)
+    // current: net = 31752 - 20732 = 11020; vat 2204; yearly 13224; monthly 1102
+    expect(result.payableFees.yearlyPayableFees).toBe(13_224)
+    expect(result.payableFees.monthlyPayableFees).toBe(1_102)
+    // next: net = 33340 - 20732 = 12608; vat 2521.60; yearly 15129.60
+    expect(result.payableFees.nextYearNetYearlyFees).toBe(12_608)
+    expect(result.payableFees.nextYearVatAmount).toBe(2_521.60)
+    expect(result.payableFees.nextYearYearlyPayableFees).toBe(15_129.60)
+    expect(result.payableFees.nextYearMonthlyPayableFees).toBe(1_260.80)
+  })
+
+  it('leaves next-year fields null when no next-year fee is supplied', () => {
+    const result = calculateAssessment({ ...upliftInput, nextYearAnnualFees: undefined })
+    expect(result.payableFees.nextYearYearlyPayableFees).toBeNull()
+    expect(result.payableFees.nextYearMonthlyPayableFees).toBeNull()
+  })
+})

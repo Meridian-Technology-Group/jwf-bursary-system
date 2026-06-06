@@ -62,13 +62,16 @@ export function calculateAssessment(input: AssessmentInput): AssessmentOutput {
   // Stage 4: Required bursary
   const stage4_requiredBursary = calculateBursaryImpact(adjustedHndi, input.annualFees)
 
-  // Payable fees breakdown
+  // Payable fees breakdown. Epic 07: pass the optional next-year gross fee so the
+  // result carries the next-year payable view alongside the current one (D14
+  // default — scholarship % + bursary held flat, only the gross changes).
   const payableFees = calculatePayableFees(
     input.annualFees,
     input.scholarshipPct,
     stage4_requiredBursary,
     input.vatRate,
     input.manualAdjustment,
+    input.nextYearAnnualFees,
   )
 
   return {
