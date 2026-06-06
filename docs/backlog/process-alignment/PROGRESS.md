@@ -9,7 +9,7 @@
 >
 > **Spec:** [README.md](README.md) (spine + decision register). **Owner:** Brian Wagner.
 
-**Started:** 2026-06-05 · **Current focus:** **🎉 PROGRAMME COMPLETE — all 12 epics shipped to `staging` (Waves 0–4).** Epic 11 (auth & access) is the final epic: MFA env-gating **verified + pinned by tests** (no code change), optional inactivity-logout watcher built (D20, default 30 min, env-configurable, optional-disable, wired into admin + portal), Microsoft-SSO **spike doc only** (D21, no implementation). Remaining work is entirely **outstanding-but-non-blocking client deliverables** (see the PROGRAMME COMPLETE note below) + the gated **Epic 01 PR-6b** column-drop. **PR-6a (reader/writer cutover off the fused `applications.status` + dual-write removal + residual `QUALIFIES` remap) is BUILT on `feature/01-pr6a-status-cutover`** (grep-gate clean; tsc/lint/build/602 tests green) — merge it, confirm live on staging, then run **PR-6b** (the actual column/enum DROP, now lower-risk).
+**Started:** 2026-06-05 · **Current focus:** **🎉 PROGRAMME COMPLETE — all 12 epics shipped to `staging` (Waves 0–4).** Epic 11 (auth & access) is the final epic: MFA env-gating **verified + pinned by tests** (no code change), optional inactivity-logout watcher built (D20, default 30 min, env-configurable, optional-disable, wired into admin + portal), Microsoft-SSO **spike doc only** (D21, no implementation). Remaining work is entirely **outstanding-but-non-blocking client deliverables** (see the PROGRAMME COMPLETE note below). **PR-6a (reader/writer cutover off the fused `applications.status` + dual-write removal + residual `QUALIFIES` remap) shipped on staging.** **Epic 01 PR-6b — the gated column/enum DROP — is now BUILT on `feature/01-pr6b-drop-fused-status`** (drops `applications.status` + the `ApplicationStatus` enum; migration `20260606230000_drop_fused_application_status`; index `(round_id, status)` → `(round_id, form_status)`; `AssessmentOutcome.QUALIFIES` left vestigial; tsc/lint/build/602 tests green) — ⏸ STOP-before-merge: Brian reviews the migration SQL + runs the nonprod dependency-check query, then merges and confirms it applies + staging stays healthy.
 
 ---
 
@@ -36,7 +36,7 @@ Legend: ⬜ not started · 🟡 in progress · ✅ shipped to staging · 🚫 bl
 |---|---|---|---|---|
 | — | Scaffolding (plans + this ledger) | ✅ | — | #133 (+ #140 reconcile) |
 | 0 | [12 Defect fixes](plans/12-defect-fixes.md) | ✅ | — | #134–#139 |
-| 1 | [01 Status & workflow model](plans/01-status-and-workflow-model.md) | ✅ | — | #141 (PR-1 schema), #142 (PR-2 backfill), #143 (PR-3 status service), #144 (PR-4 readers+badges), #145 (PR-5 submitted_at write-once); **PR-6 drop-column ⏸ gated** |
+| 1 | [01 Status & workflow model](plans/01-status-and-workflow-model.md) | ✅ | — | #141 (PR-1 schema), #142 (PR-2 backfill), #143 (PR-3 status service), #144 (PR-4 readers+badges), #145 (PR-5 submitted_at write-once); PR-6a reader/writer cutover, **PR-6b drop-column ✅** |
 | 1 | [03 Round management](plans/03-round-management.md) | ✅ | 01 | #146 (PR-A schema+server core), #147 (PR-B UI) |
 | 1 | [04 Lead-applicant contacts & invitations](plans/04-lead-applicant-contacts-and-invitations.md) | ✅ | 01 | #148 (contact register), #149 (invite-from-contact + D1 lock), #150 (twin/DOB uniqueness) |
 | 2 | [02 Application form re-scope](plans/02-application-form-rescope.md) | ✅ | deps met (01, 04 ✅) · D3 ✅ · D11 artifact (build to workbook) | #152 · #153 · #154 · #155 · #156 · #157 · #158 (all ✅) |
@@ -77,8 +77,10 @@ only; confirm with Charlotte only if VIEWER must reveal.
 
 Keystone of Wave 1. Single branch lineage off `staging`; six sequential PRs
 (`additive → backfill → tighten`). Schema column `applications.status` (the old
-fused enum) is kept through PR-1→PR-5 and dropped only in **PR-6** once every
-reader is migrated.
+fused enum) was kept through PR-1→PR-5, its readers/writers cut over in PR-6a,
+and the column + `ApplicationStatus` enum **dropped in PR-6b** (✅ — `(round_id,
+status)` index moved to `(round_id, form_status)`). The `AssessmentOutcome.QUALIFIES`
+value is left vestigial (0 rows / 0 refs; removable later via an enum swap).
 
 - [x] **PR-1** #141 — additive schema: new enums (`ApplicationFormStatus`,
   `ApplicationType`), `AssessmentStatus.IN_PROGRESS`, 3-value
@@ -127,12 +129,22 @@ reader is migrated.
   enum-*value* usages remain in `src/` (the column stays in `schema.prisma`,
   still `@deprecated`). tsc + lint + `next build` + 602 vitest tests green.
   ⏸ awaiting merge → live-on-staging confirmation before PR-6b.
-- [ ] **PR-6b** — ⏸ **deferred / gated** (now **lower risk** — every reader is
-  off the column): the column/enum **DROP** — remove `applications.status` from
-  `schema.prisma` + a DDL migration dropping the column and the now-unused
-  `QUALIFIES` value from the `AssessmentOutcome` enum (residual rows already
-  remapped by 6a). CI grep-gate stays clean. Gated on Brian confirming PR-6a is
-  live on staging + that no external/report consumer reads the old string.
+- [x] **PR-6b** — ✅ **column/enum DROP shipped** (PR #TBD, branch
+  `feature/01-pr6b-drop-fused-status`). Removed `applications.status` from
+  `schema.prisma` and the entire `ApplicationStatus` enum; DDL migration
+  `20260606230000_drop_fused_application_status` drops the column + type and
+  moves the `(round_id, status)` index → `(round_id, form_status)` (round-scoped
+  queue/cockpit access pattern follows the authoritative form lifecycle). Verified
+  read-only over nonprod that `ApplicationStatus` was used by **no** column except
+  `applications.status` (query below). Grep-gate stayed clean; one out-of-`src/`
+  reference (`scripts/backfill-income-drafts.ts`, missed by 6a's `src/`-scoped
+  gate) repointed `status = PRE_SUBMISSION` → `formStatus != SUBMITTED`. tsc +
+  lint + `next build` + 602 vitest tests green. **`AssessmentOutcome.QUALIFIES`
+  left VESTIGIAL** (decision deferred): it is now fully unused (0 rows, 0 code
+  refs) but removing a value from an in-use Postgres enum needs a risky
+  new-enum-swap, so it stays with a `///` schema comment noting it's removable
+  later. Not blocking. ⏸ STOP-before-merge: Brian reviews the migration SQL +
+  runs the dependency-check query on nonprod, then merges.
 
 > **PR-6a DONE — residual-enum remap shipped.** The residual
 > `assessments.outcome = 'QUALIFIES'` rows (≈1 on nonprod) are remapped to
@@ -145,6 +157,39 @@ reader is migrated.
 > SELECT a.id AS assessment_id, a.application_id, app.bursary_account_id, a.outcome
 > FROM assessments a JOIN applications app ON app.id = a.application_id
 > WHERE a.outcome = 'QUALIFIES';
+> ```
+>
+> **PR-6b dependency check (READ-ONLY).** Run before merging PR-6b — proves the
+> `ApplicationStatus` enum is used by exactly one column (`applications.status`),
+> so `DROP TYPE "ApplicationStatus"` after `DROP COLUMN` is safe. Expect exactly
+> one row: `applications | status`.
+> ```sql
+> SELECT c.table_schema, c.table_name, c.column_name, c.udt_name
+> FROM information_schema.columns c
+> WHERE c.udt_name = 'ApplicationStatus'
+> ORDER BY c.table_schema, c.table_name, c.column_name;
+> ```
+> Belt-and-braces over `pg_depend` (any object — column, default, function,
+> view — depending on the enum type; expect only the `applications.status`
+> column + its enum-label members of the type itself):
+> ```sql
+> SELECT DISTINCT
+>   classid::regclass AS dependent_catalog,
+>   CASE WHEN classid = 'pg_class'::regclass     THEN objid::regclass::text
+>        WHEN classid = 'pg_attrdef'::regclass   THEN (SELECT format('%s.%s default', adrelid::regclass, a.attname)
+>                                                      FROM pg_attrdef d JOIN pg_attribute a
+>                                                        ON a.attrelid = d.adrelid AND a.attnum = d.adnum
+>                                                      WHERE d.oid = objid)
+>        ELSE objid::text END AS dependent_object,
+>   deptype
+> FROM pg_depend
+> WHERE refobjid = 'public."ApplicationStatus"'::regtype
+>   AND classid <> 'pg_type'::regclass;   -- exclude the enum's own label rows
+> -- Plus the columns view, the authoritative check:
+> SELECT (SELECT count(*) FROM information_schema.columns
+>         WHERE udt_name = 'ApplicationStatus'
+>           AND NOT (table_name = 'applications' AND column_name = 'status'))
+>        AS other_columns_using_type;   -- expect 0
 > ```
 >
 > **PR-6a DONE — every fused `applications.status` reader/writer is migrated.**
@@ -1100,6 +1145,27 @@ Wave 2 → Wave 3 → Wave 4.
 
 ## Change log
 
+- **2026-06-06** — **Epic 01 PR-6b — drop the deprecated fused
+  `applications.status` column + `ApplicationStatus` enum**
+  (`feature/01-pr6b-drop-fused-status`, single PR off `staging`, **STOP — awaiting
+  Brian's review + nonprod dependency check, then merge**). The final, gated,
+  destructive step after PR-6a went live: removed the `status` field from the
+  `Application` model and the entire `ApplicationStatus` enum from
+  `schema.prisma`. Hand-authored DDL migration
+  `20260606230000_drop_fused_application_status` `DROP INDEX
+  applications_round_id_status_idx` → `DROP COLUMN "status"` → `DROP TYPE
+  "ApplicationStatus"` → `CREATE INDEX applications_round_id_form_status_idx`
+  (the round-scoped queue/cockpit index follows the authoritative form
+  lifecycle); cross-checked against `prisma migrate diff` (matches exactly),
+  transaction-safe. Verified read-only over nonprod (`information_schema.columns`
+  + `pg_depend`, query in the Epic 01 section) that `ApplicationStatus` was used
+  by no column other than `applications.status`. One out-of-`src/` straggler
+  missed by 6a's `src/`-scoped grep-gate — `scripts/backfill-income-drafts.ts` —
+  repointed from `status = PRE_SUBMISSION` to `formStatus != SUBMITTED`.
+  `AssessmentOutcome.QUALIFIES` **left vestigial** (0 rows / 0 refs; dropping an
+  in-use PG enum value needs a risky new-enum-swap, deferred with a `///`
+  comment). `prisma format`/`generate` clean; tsc + lint + `next build` + 602
+  vitest tests green.
 - **2026-06-06** — **Epic 01 PR-6a — fused-status reader/writer cutover**
   (`feature/01-pr6a-status-cutover`, single PR off `staging`, **awaiting merge**).
   The deploy-safe step before the column drop: every reader/writer is migrated off
