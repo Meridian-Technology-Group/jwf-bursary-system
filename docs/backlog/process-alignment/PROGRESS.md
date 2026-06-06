@@ -414,17 +414,39 @@ portal glue (`(portal)/page.tsx`, `(portal)/actions.ts`, this ledger).
 - [x] 10 unit tests (guidance content + terms reference). tsc/build green.
 
 **PR-2 — parent-safe status projection + deadline/countdown/lockout + submitted
-summary + submission PDF** (§6 PR-3, PR-4, PR-5) — *planned next, stacks on PR-1*:
-- [ ] `lib/portal/status-projection.ts` (single parent-safe read model); trim
-  `status/page.tsx` + dashboard to it; drop internal enum/outcome literals.
-- [ ] `lib/portal/deadline.ts` (effective deadline via
-  `effectiveSubmissionDeadline()`) + `SubmissionCountdown` banner + read-only
-  lockout + **server-side submit guard** in `apply/actions.ts`.
-- [ ] additive migration: `applications.terms_accepted_at` + `terms_version`
-  (D10 record-per-submission); stamped at submit.
-- [ ] read-only submitted-answers summary + `/api/pdf/submission/[id]` +
-  `submission-pdf.tsx`; dismissible download offer; Received/Submitted label.
-- [ ] progress-count fix (unify on the rule-engine section-completeness source).
+summary + submission PDF** (§6 PR-3, PR-4, PR-5) —
+`feature/05-deadline-status-and-summary` (**stacks on PR-1**):
+- [x] §6 PR-3 — `lib/portal/status-projection.ts` (single parent-safe read
+  model: Draft → Received/Submitted → Being assessed → Outcome; collapses
+  IN_PROGRESS/PAUSED → "Being assessed"; outcome view never leaks the enum
+  name). `status/page.tsx` rewritten to consume it (dropped the leaky
+  NOT_STARTED→"Under Review"/PAUSED→"Paused"/QUALIFIES maps + the
+  QUALIFIES/DOES_NOT_QUALIFY literals). Dashboard keeps the form-status-only
+  `projectFormStatusForApplicant` (parent-safe; assessment state not loaded
+  there). Grep-clean of leaked enum display in the portal.
+- [x] §6 PR-4 — `lib/portal/deadline.ts` (over Epic-03
+  `effectiveSubmissionDeadline()`: `getDeadlineStatus`/`isSubmittable`/
+  `formatTimeRemaining`, 72h closing-soon window); `SubmissionCountdown` client
+  banner (ticks/minute, amber closing-soon, rose deadline-passed) on the
+  dashboard + status page; dashboard hides Continue + shows a locked card past
+  deadline; wizard `apply/[section]` redirects past-deadline drafts to /status;
+  **server-side submit guard** in `apply/actions.ts` rejects late posts.
+- [x] §6 PR-5 — additive migration
+  `20260606120000_application_terms_acceptance` (`terms_accepted_at` +
+  `terms_version`, nullable, no backfill); submit stamps both (D10). Schema +
+  `lib/portal/terms.ts` version marker.
+- [x] §6 PR-5 — read-only submitted summary: `lib/portal/application-summary.ts`
+  (pure builder, shared by web + PDF), `submission-loader.ts` (RLS-scoped),
+  `SubmittedSummary` view + dismissible `SubmissionDownloadOffer`;
+  `/api/pdf/submission/[id]` + `submission-pdf.tsx` (applicant-scoped, on
+  demand). `(portal)/submitted` rewritten from a thin receipt into the
+  answers+docs+acceptance render; Received/Submitted label (D2); immutable
+  submission date.
+- [x] progress-count fix (Epic 12 §3): dashboard numerator AND denominator now
+  derive from the same active-section set (rolling-over excludes FAMILY_ID), so
+  "N of M" + the bar agree (was hard-coded /10).
+- [x] 30 unit tests (deadline 7, status-projection 8, summary 4, +PR-1 11).
+  tsc/prisma-format/build green, 403 tests pass.
 
 **PR-3 — multi-round account history + portal missing-doc upload** (§6 PR-6,
 PR-7) — *planned, stacks on PR-2*:
@@ -475,6 +497,23 @@ Wave 2 → Wave 3 → Wave 4.
 
 ## Change log
 
+- **2026-06-06** — **Epic 05 PR-2** (status projection + deadline/lockout +
+  submitted summary/PDF + terms acceptance). New `lib/portal/status-projection.ts`
+  parent-safe read model (Draft → Received/Submitted → Being assessed → Outcome;
+  IN_PROGRESS/PAUSED collapse to "Being assessed"; outcome never leaks the enum
+  name) — `status/page.tsx` rewritten onto it, dropping the leaky internal maps.
+  `lib/portal/deadline.ts` over Epic-03 `effectiveSubmissionDeadline()` +
+  `SubmissionCountdown` banner (dashboard + status) + dashboard/wizard lockout +
+  **server-side submit guard** in `apply/actions.ts`. Additive migration
+  `20260606120000_application_terms_acceptance` (`terms_accepted_at`/
+  `terms_version`, nullable, no backfill) — submit stamps both (D10). Read-only
+  submitted summary (`application-summary.ts` shared builder + `submission-loader.ts`
+  + `SubmittedSummary` view + dismissible `SubmissionDownloadOffer`) and
+  `/api/pdf/submission/[id]` + `submission-pdf.tsx` (applicant-scoped). Progress-
+  count fix: dashboard numerator+denominator both derive from the active-section
+  set (rolling-over excludes FAMILY_ID). Stacks on PR-1. tsc/prisma-format/build
+  green, 403 tests (+19). **Migration SQL + read-only nonprod validation in the
+  PR body.**
 - **2026-06-06** — **Epic 05 OPENED (Wave 2)** — PR-1 (home-page guidance +
   T&Cs + application-type chooser). New `PortalGuidanceTabs` (Section 1 — How to
   Apply / Section 2 — Checklist / Terms & Conditions) wired into

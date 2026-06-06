@@ -1,11 +1,14 @@
 /**
- * Application status page.
+ * Application status page (Epic 05 §3.6 — trimmed parent-safe view).
  *
- * Shows the applicant their:
- *   - Application reference
- *   - Current status with StatusBadge
- *   - Status timeline (Draft → Submitted → Under Review → Outcome Available)
- *   - Assessment outcome if available
+ * Every status read goes through the parent-safe projection
+ * (`projectParentStatus`) — NO internal workflow state (IN_PROGRESS, PAUSED,
+ * raw outcome enum names) is ever shown to a parent. The timeline shows only
+ * parent-meaningful steps: Application started → Received/Submitted → Being
+ * assessed → Outcome.
+ *
+ * While the application is still an editable draft, the per-application
+ * submission countdown / deadline-missed lockout is shown (Epic 03 deadline).
  */
 
 import { redirect } from "next/navigation";
@@ -23,199 +26,84 @@ import {
 import { getCurrentUser } from "@/lib/auth/roles";
 import { withUserContext, type RlsRole } from "@/lib/db/prisma";
 import { cn } from "@/lib/utils";
+import {
+  projectParentStatus,
+  parentToneBadgeClass,
+  type ParentStep,
+} from "@/lib/portal/status-projection";
+import { getDeadlineStatus } from "@/lib/portal/deadline";
+import { SubmissionCountdown } from "@/components/portal/submission-countdown";
+import { formatLondonDate } from "@/lib/datetime";
 
 export const metadata = {
   title: "Application Status",
 };
 
-// ─── Types ────────────────────────────────────────────────────────────────────
-
-type AppStatus =
-  | "PRE_SUBMISSION"
-  | "SUBMITTED"
-  | "NOT_STARTED"
-  | "PAUSED"
-  | "COMPLETED"
-  | "QUALIFIES"
-  | "DOES_NOT_QUALIFY";
-
-// ─── Status configuration ─────────────────────────────────────────────────────
-
-const STATUS_LABELS: Record<AppStatus, string> = {
-  PRE_SUBMISSION: "Draft",
-  SUBMITTED: "Submitted",
-  NOT_STARTED: "Under Review",
-  PAUSED: "Paused",
-  COMPLETED: "Completed",
-  QUALIFIES: "Qualifies",
-  DOES_NOT_QUALIFY: "Does Not Qualify",
+const STEP_ICON: Record<ParentStep, React.ElementType> = {
+  draft: FileEdit,
+  submitted: Send,
+  assessing: Search,
+  outcome: CheckCircle2,
 };
-
-const STATUS_COLOURS: Record<
-  AppStatus,
-  { container: string; icon: string; badge: string }
-> = {
-  PRE_SUBMISSION: {
-    container: "bg-neutral-100 border-neutral-300",
-    icon: "text-neutral-500",
-    badge: "bg-neutral-100 text-neutral-700 border-neutral-300",
-  },
-  SUBMITTED: {
-    container: "bg-blue-50 border-blue-300",
-    icon: "text-blue-500",
-    badge: "bg-blue-50 text-blue-700 border-blue-300",
-  },
-  NOT_STARTED: {
-    container: "bg-orange-50 border-orange-300",
-    icon: "text-orange-500",
-    badge: "bg-orange-50 text-orange-700 border-orange-300",
-  },
-  PAUSED: {
-    container: "bg-yellow-50 border-yellow-300",
-    icon: "text-yellow-600",
-    badge: "bg-yellow-50 text-yellow-700 border-yellow-300",
-  },
-  COMPLETED: {
-    container: "bg-slate-50 border-slate-300",
-    icon: "text-slate-500",
-    badge: "bg-slate-50 text-slate-700 border-slate-300",
-  },
-  QUALIFIES: {
-    container: "bg-green-50 border-green-300",
-    icon: "text-green-500",
-    badge: "bg-green-50 text-green-700 border-green-300",
-  },
-  DOES_NOT_QUALIFY: {
-    container: "bg-rose-50 border-rose-300",
-    icon: "text-rose-500",
-    badge: "bg-rose-50 text-rose-700 border-rose-300",
-  },
-};
-
-// ─── Timeline step definitions ────────────────────────────────────────────────
-
-interface TimelineStep {
-  id: string;
-  label: string;
-  description: string;
-  statuses: AppStatus[]; // Application statuses that correspond to this step being "reached"
-}
-
-const TIMELINE_STEPS: TimelineStep[] = [
-  {
-    id: "draft",
-    label: "Draft",
-    description: "Application started",
-    statuses: [
-      "PRE_SUBMISSION",
-      "SUBMITTED",
-      "NOT_STARTED",
-      "PAUSED",
-      "COMPLETED",
-      "QUALIFIES",
-      "DOES_NOT_QUALIFY",
-    ],
-  },
-  {
-    id: "submitted",
-    label: "Submitted",
-    description: "Application submitted for review",
-    statuses: [
-      "SUBMITTED",
-      "NOT_STARTED",
-      "PAUSED",
-      "COMPLETED",
-      "QUALIFIES",
-      "DOES_NOT_QUALIFY",
-    ],
-  },
-  {
-    id: "review",
-    label: "Under Review",
-    description: "Financial assessment in progress",
-    statuses: [
-      "NOT_STARTED",
-      "PAUSED",
-      "COMPLETED",
-      "QUALIFIES",
-      "DOES_NOT_QUALIFY",
-    ],
-  },
-  {
-    id: "outcome",
-    label: "Outcome Available",
-    description: "Assessment complete",
-    statuses: ["COMPLETED", "QUALIFIES", "DOES_NOT_QUALIFY"],
-  },
-];
-
-// ─── Helper ───────────────────────────────────────────────────────────────────
-
-function isStepReached(step: TimelineStep, status: AppStatus): boolean {
-  return (step.statuses as string[]).includes(status);
-}
-
-function formatDate(date: Date | null | undefined): string {
-  if (!date) return "Pending";
-  return new Date(date).toLocaleDateString("en-GB", {
-    day: "numeric",
-    month: "long",
-    year: "numeric",
-  });
-}
-
-// ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default async function StatusPage() {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
 
-  // Load the user's most recent application (any status)
   const application = await withUserContext(
     user.id,
     user.role as RlsRole,
     (tx) =>
       tx.application.findFirst({
-    where: { leadApplicantId: user.id },
-    orderBy: { updatedAt: "desc" },
-    select: {
-      id: true,
-      reference: true,
-      status: true,
-      submittedAt: true,
-      createdAt: true,
-      childName: true,
-      round: {
-        select: { academicYear: true, decisionDate: true },
-      },
-      assessment: {
+        where: { leadApplicantId: user.id },
+        orderBy: { updatedAt: "desc" },
         select: {
-          status: true,
-          outcome: true,
-          completedAt: true,
+          id: true,
+          reference: true,
+          formStatus: true,
+          applicationType: true,
+          submittedAt: true,
           createdAt: true,
+          childName: true,
+          submissionDeadlineAt: true,
+          round: {
+            select: {
+              academicYear: true,
+              decisionDate: true,
+              closeDate: true,
+            },
+          },
+          assessment: {
+            select: { status: true, outcome: true, completedAt: true },
+          },
         },
-      },
-    },
-  })
+      })
   );
 
   if (!application) redirect("/");
 
-  const appStatus = application.status as AppStatus;
-  const colours = STATUS_COLOURS[appStatus] ?? STATUS_COLOURS["PRE_SUBMISSION"];
-  const statusLabel = STATUS_LABELS[appStatus] ?? appStatus;
+  const projection = projectParentStatus({
+    formStatus: application.formStatus,
+    applicationType: application.applicationType,
+    assessmentStatus: application.assessment?.status ?? null,
+    outcome: application.assessment?.outcome ?? null,
+  });
 
-  // Determine dates for each timeline step
-  const stepDates: Record<string, Date | null | undefined> = {
+  const isDraft = application.formStatus !== "SUBMITTED";
+  const deadline = isDraft
+    ? getDeadlineStatus(
+        { submissionDeadlineAt: application.submissionDeadlineAt },
+        { closeDate: application.round.closeDate }
+      )
+    : null;
+
+  // Per-step date labels (parent-meaningful only).
+  const stepDates: Record<ParentStep, Date | null | undefined> = {
     draft: application.createdAt,
     submitted: application.submittedAt,
-    review: application.assessment?.createdAt ?? null,
+    assessing: application.submittedAt,
     outcome: application.assessment?.completedAt ?? null,
   };
-
-  const outcomeAvailable =
-    appStatus === "QUALIFIES" || appStatus === "DOES_NOT_QUALIFY";
 
   return (
     <div className="space-y-8">
@@ -229,14 +117,14 @@ export default async function StatusPage() {
         </h1>
       </div>
 
-      {/* Reference + current status card */}
-      <div
-        className={cn(
-          "rounded-xl border p-6 shadow-sm",
-          colours.container
-        )}
-      >
-        <div className="flex items-start justify-between gap-4 flex-wrap">
+      {/* Countdown / lockout (only while editable) */}
+      {deadline && (
+        <SubmissionCountdown deadlineIso={deadline.deadline.toISOString()} />
+      )}
+
+      {/* Reference + current parent-safe status card */}
+      <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+        <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
             <p className="text-xs font-medium uppercase tracking-wider text-slate-500">
               Reference
@@ -254,20 +142,21 @@ export default async function StatusPage() {
             </p>
           </div>
 
-          {/* Status badge */}
           <span
             className={cn(
               "inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-sm font-medium",
-              colours.badge
+              parentToneBadgeClass(projection.tone)
             )}
           >
-            {statusLabel}
+            {projection.label}
           </span>
         </div>
       </div>
 
-      {/* Paused — missing documents call to action */}
-      {appStatus === "PAUSED" && (
+      {/* Continue / respond CTAs — never expose internal assessment state.
+          A paused assessment surfaces to the parent only as an action to take
+          (respond), not as a "Paused" status. */}
+      {application.assessment?.status === "PAUSED" && (
         <div className="rounded-xl border border-yellow-300 bg-yellow-50 p-6 shadow-sm">
           <div className="flex items-start gap-4">
             <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-yellow-100">
@@ -278,77 +167,63 @@ export default async function StatusPage() {
                 The bursary team needs more from you
               </h2>
               <p className="mt-1 text-sm text-yellow-800">
-                Your application is paused while an assessor waits for some
-                additional documents. Upload what they&rsquo;ve asked for to
-                get your assessment moving again.
+                We&rsquo;re reviewing your application and need a few more
+                documents to continue. Uploading them keeps your submission date
+                unchanged.
               </p>
               <Link
                 href="/respond"
-                className="mt-4 inline-flex items-center gap-1.5 rounded-md bg-primary-900 px-4 py-2 text-sm font-medium text-white hover:bg-primary-800 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-600"
+                className="mt-4 inline-flex items-center gap-1.5 rounded-md bg-primary-900 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-primary-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-600"
               >
-                Respond to the request
+                Upload the requested documents
               </Link>
             </div>
           </div>
         </div>
       )}
 
-      {/* Status timeline */}
+      {/* Status timeline (parent-safe steps only) */}
       <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
         <h2 className="mb-5 text-sm font-semibold uppercase tracking-wider text-slate-400">
           Progress
         </h2>
 
         <ol className="relative space-y-0" aria-label="Application progress">
-          {TIMELINE_STEPS.map((step, idx) => {
-            const reached = isStepReached(step, appStatus);
-            const isLast = idx === TIMELINE_STEPS.length - 1;
+          {projection.timeline.map((step, idx) => {
+            const isLast = idx === projection.timeline.length - 1;
+            const Icon = STEP_ICON[step.id];
             const stepDate = stepDates[step.id];
-
             return (
               <li key={step.id} className="relative flex gap-4 pb-8 last:pb-0">
-                {/* Connector line */}
                 {!isLast && (
                   <div
                     className={cn(
                       "absolute left-4 top-8 -bottom-0 w-0.5",
-                      reached ? "bg-accent-400" : "bg-slate-200"
+                      step.reached ? "bg-accent-400" : "bg-slate-200"
                     )}
                     aria-hidden="true"
                   />
                 )}
-
-                {/* Step indicator */}
                 <div
                   className={cn(
                     "relative z-10 flex h-8 w-8 shrink-0 items-center justify-center rounded-full border-2",
-                    reached
+                    step.reached
                       ? "border-accent-400 bg-accent-50"
                       : "border-slate-200 bg-white"
                   )}
                   aria-hidden="true"
                 >
-                  {reached ? (
-                    step.id === "draft" ? (
-                      <FileEdit className="h-3.5 w-3.5 text-accent-600" />
-                    ) : step.id === "submitted" ? (
-                      <Send className="h-3.5 w-3.5 text-accent-600" />
-                    ) : step.id === "review" ? (
-                      <Search className="h-3.5 w-3.5 text-accent-600" />
-                    ) : (
-                      <CheckCircle2 className="h-3.5 w-3.5 text-accent-600" />
-                    )
+                  {step.reached ? (
+                    <Icon className="h-3.5 w-3.5 text-accent-600" />
                   ) : (
                     <Circle className="h-3.5 w-3.5 text-slate-300" />
                   )}
                 </div>
-
-                {/* Step content */}
-                <div className="flex-1 min-w-0 pt-0.5">
+                <div className="min-w-0 flex-1 pt-0.5">
                   <p
                     className={cn(
                       "text-sm font-medium",
-                      reached ? "text-slate-900" : "text-slate-400"
+                      step.reached ? "text-slate-900" : "text-slate-400"
                     )}
                   >
                     {step.label}
@@ -356,7 +231,7 @@ export default async function StatusPage() {
                   <p
                     className={cn(
                       "text-xs",
-                      reached ? "text-slate-500" : "text-slate-300"
+                      step.reached ? "text-slate-500" : "text-slate-300"
                     )}
                   >
                     {step.description}
@@ -364,10 +239,12 @@ export default async function StatusPage() {
                   <p
                     className={cn(
                       "mt-1 text-xs font-medium",
-                      reached ? "text-slate-700" : "text-slate-300"
+                      step.reached ? "text-slate-700" : "text-slate-300"
                     )}
                   >
-                    {reached ? formatDate(stepDate) : "Pending"}
+                    {step.reached && stepDate
+                      ? formatLondonDate(stepDate)
+                      : "Pending"}
                   </p>
                 </div>
               </li>
@@ -376,73 +253,63 @@ export default async function StatusPage() {
         </ol>
       </div>
 
-      {/* Outcome card (only shown when outcome is available) */}
-      {outcomeAvailable && application.assessment?.outcome && (
+      {/* Outcome card — parent-safe outcome view (no enum names) */}
+      {projection.showOutcome && projection.outcome && (
         <div
           className={cn(
             "rounded-xl border p-6 shadow-sm",
-            application.assessment.outcome === "QUALIFIES"
+            projection.outcome.awarded
               ? "border-green-200 bg-green-50"
-              : "border-rose-200 bg-rose-50"
+              : "border-slate-200 bg-slate-50"
           )}
         >
           <div className="flex items-start gap-4">
             <div
               className={cn(
                 "flex h-12 w-12 shrink-0 items-center justify-center rounded-full",
-                application.assessment.outcome === "QUALIFIES"
-                  ? "bg-green-100"
-                  : "bg-rose-100"
+                projection.outcome.awarded ? "bg-green-100" : "bg-slate-200"
               )}
             >
-              {application.assessment.outcome === "QUALIFIES" ? (
+              {projection.outcome.awarded ? (
                 <CheckCircle2
                   className="h-6 w-6 text-green-600"
                   aria-hidden="true"
                 />
               ) : (
-                <XCircle
-                  className="h-6 w-6 text-rose-600"
-                  aria-hidden="true"
-                />
+                <XCircle className="h-6 w-6 text-slate-500" aria-hidden="true" />
               )}
             </div>
             <div>
               <h2
                 className={cn(
                   "text-base font-semibold",
-                  application.assessment.outcome === "QUALIFIES"
+                  projection.outcome.awarded
                     ? "text-green-900"
-                    : "text-rose-900"
+                    : "text-slate-800"
                 )}
               >
-                {application.assessment.outcome === "QUALIFIES"
-                  ? "Your application qualifies for a bursary"
-                  : "Your application does not qualify at this time"}
+                {projection.outcome.title}
               </h2>
               <p
                 className={cn(
                   "mt-1 text-sm",
-                  application.assessment.outcome === "QUALIFIES"
+                  projection.outcome.awarded
                     ? "text-green-700"
-                    : "text-rose-700"
+                    : "text-slate-600"
                 )}
               >
-                {application.assessment.outcome === "QUALIFIES"
-                  ? "Congratulations. The John Whitgift Foundation will be in touch with further details about your bursary award."
-                  : "We regret to inform you that your application has not met the criteria for a bursary at this time. You will receive a letter with further information."}
+                {projection.outcome.body}
               </p>
-              {application.assessment.completedAt && (
+              {application.assessment?.completedAt && (
                 <p
                   className={cn(
                     "mt-2 text-xs",
-                    application.assessment.outcome === "QUALIFIES"
+                    projection.outcome.awarded
                       ? "text-green-600"
-                      : "text-rose-600"
+                      : "text-slate-500"
                   )}
                 >
-                  Assessed on{" "}
-                  {formatDate(application.assessment.completedAt)}
+                  Decided on {formatLondonDate(application.assessment.completedAt)}
                 </p>
               )}
             </div>
@@ -450,14 +317,14 @@ export default async function StatusPage() {
         </div>
       )}
 
-      {/* Decision date notice */}
-      {!outcomeAvailable && application.round.decisionDate && (
+      {/* Decision date notice (only before an outcome is available) */}
+      {!projection.showOutcome && application.round.decisionDate && (
         <div className="rounded-xl border border-blue-100 bg-blue-50 p-4">
           <p className="text-sm text-blue-800">
-            Decisions for the {application.round.academicYear} round are
-            expected by{" "}
+            Decisions for the {application.round.academicYear} round are expected
+            by{" "}
             <span className="font-semibold">
-              {formatDate(application.round.decisionDate)}
+              {formatLondonDate(application.round.decisionDate)}
             </span>
             . You will be notified by email when your outcome is available.
           </p>
@@ -467,7 +334,7 @@ export default async function StatusPage() {
       {/* Back link */}
       <Link
         href="/"
-        className="inline-flex items-center gap-1.5 text-sm font-medium text-slate-600 hover:text-primary-900 transition-colors"
+        className="inline-flex items-center gap-1.5 text-sm font-medium text-slate-600 transition-colors hover:text-primary-900"
       >
         <ArrowLeft className="h-4 w-4" aria-hidden="true" />
         Back to dashboard

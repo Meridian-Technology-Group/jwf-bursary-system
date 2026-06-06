@@ -33,6 +33,8 @@ import {
   assertSubmittedAtUnset,
 } from "@/lib/applications/status";
 import { getSectionGapStatuses, type SectionGap } from "@/lib/portal/section-gaps";
+import { isSubmissionDeadlinePassed } from "@/lib/rounds/submission-deadline";
+import { TERMS_AND_CONDITIONS_VERSION } from "@/lib/portal/terms";
 import { logError } from "@/lib/log";
 
 import { AUDIT_ACTIONS, AUDIT_ENTITY_TYPES } from "@/lib/audit/actions";
@@ -388,7 +390,8 @@ export async function submitApplication(applicationId: string): Promise<never> {
           school: true,
           entryYear: true,
           entryYearGroup: true,
-          round: { select: { academicYear: true } },
+          submissionDeadlineAt: true,
+          round: { select: { academicYear: true, closeDate: true } },
           sections: {
             where: { ownerContributorId },
             select: { section: true, isComplete: true, data: true },
@@ -419,6 +422,23 @@ export async function submitApplication(applicationId: string): Promise<never> {
   // fused status is not SUBMITTED — it returns a friendly message BEFORE the
   // write reaches the durable Postgres trigger (trg_submitted_at_immutable).
   assertSubmittedAtUnset(application.submittedAt);
+
+  // ── Deadline lockout (Epic 05 §3.2) ───────────────────────────────────────
+  // Server-side enforcement of the per-application submission deadline so a
+  // stale tab cannot post after the cut-off. The effective deadline is the ONE
+  // source of truth (Epic 03): per-app submissionDeadlineAt ?? round.closeDate
+  // end-of-day. The UI also hides the submit control + renders read-only, but
+  // this guard is authoritative.
+  if (
+    isSubmissionDeadlinePassed(
+      { submissionDeadlineAt: application.submissionDeadlineAt },
+      { closeDate: application.round.closeDate }
+    )
+  ) {
+    throw new Error(
+      "The submission deadline for this application has passed, so it can no longer be submitted. Forms submitted late cannot be assessed — please contact the Foundation if you believe this is an error."
+    );
+  }
 
   // ── Validate all 10 sections are complete ─────────────────────────────────
   const completionMap = new Map(
@@ -510,6 +530,13 @@ export async function submitApplication(applicationId: string): Promise<never> {
       data: {
         ...submitApplicationData(),
         submittedAt,
+        // Record T&Cs acceptance per submission (Epic 05, D10). The declaration
+        // section (validated complete above) carries the per-parent acceptance
+        // ticks; here we stamp WHEN it was accepted and WHICH document/version,
+        // so a later T&Cs swap never rewrites a historic acceptance. Stamped
+        // alongside submittedAt so they share the immutable submission instant.
+        termsAcceptedAt: submittedAt,
+        termsVersion: TERMS_AND_CONDITIONS_VERSION,
         entryYearGroup: entryYearGroupToPersist,
         entryYear: entryYearToPersist,
         childDob: childDobToPersist,
