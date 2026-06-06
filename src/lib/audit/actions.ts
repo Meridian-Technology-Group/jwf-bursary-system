@@ -106,8 +106,10 @@ export const AUDIT_ACTIONS = {
   SETTINGS_EMAIL_TEMPLATE_UPDATE: "SETTINGS_EMAIL_TEMPLATE_UPDATE",
   UPDATE_EMAIL_TEMPLATE_ENABLED: "UPDATE_EMAIL_TEMPLATE_ENABLED",
 
-  // GDPR
+  // GDPR / retention
   GDPR_DELETION: "GDPR_DELETION",
+  /** Automatic tiered-retention purge run by the purge-expired cron (Epic 10). */
+  RETENTION_PURGE_CRON: "RETENTION_PURGE_CRON",
 } as const;
 
 export type AuditAction = (typeof AUDIT_ACTIONS)[keyof typeof AUDIT_ACTIONS];
@@ -230,6 +232,7 @@ const ACTION_COLOUR: Partial<Record<AuditAction, string>> = {
   [AUDIT_ACTIONS.DOCUMENT_UNVERIFIED]: "bg-orange-400",
   [AUDIT_ACTIONS.APPLICATION_STATUS_CHANGED]: "bg-red-400",
   [AUDIT_ACTIONS.GDPR_DELETION]: "bg-red-400",
+  [AUDIT_ACTIONS.RETENTION_PURGE_CRON]: "bg-red-400",
   [AUDIT_ACTIONS.NAME_REVEAL]: "bg-orange-400",
 };
 

@@ -29,10 +29,11 @@ import { humaniseSlot } from "@/lib/documents/slots";
 import { deleteDocument } from "@/lib/storage/documents";
 import { createSupabaseAdminClient } from "@/lib/auth/supabase-admin";
 import { setApplicationOutcomeLegacy } from "@/lib/applications/set-outcome-core";
+import { isPurgeable, notYetPurgeableMessage } from "@/lib/retention/policy";
 import {
-  getSecondaryContributorForGdpr,
-  decideSecondaryProfileErasure,
-} from "@/lib/db/queries/secondary-gdpr";
+  purgeApplication,
+  buildPurgeAuditMetadata,
+} from "@/lib/retention/purge";
 import {
   isLegalApplicationTransition,
   transitionApplicationStatus,
@@ -523,23 +524,20 @@ export async function gdprDeleteApplicantAction(
         select: {
           id: true,
           reference: true,
-          status: true,
           submittedAt: true,
+          archivedAt: true,
           leadApplicantId: true,
           documents: { select: { id: true, storagePath: true } },
           assessment: {
             select: {
               id: true,
-              earners: { select: { id: true } },
+              outcome: true,
               property: { select: { id: true } },
-              checklists: { select: { id: true } },
-              recommendation: {
-                select: {
-                  id: true,
-                  reasonCodes: { select: { reasonCodeId: true } },
-                },
-              },
+              recommendation: { select: { id: true } },
             },
+          },
+          bursaryAccount: {
+            select: { status: true, closedAt: true },
           },
         },
       })
@@ -549,231 +547,62 @@ export async function gdprDeleteApplicantAction(
       return { success: false, error: "Application not found." };
     }
 
-    // 2. 7-year retention check — block if submitted within the last 7 years
-    if (application.submittedAt) {
-      const sevenYearsAgo = new Date();
-      sevenYearsAgo.setFullYear(sevenYearsAgo.getFullYear() - 7);
-      if (application.submittedAt > sevenYearsAgo) {
-        return {
-          success: false,
-          error:
-            "This application cannot be deleted yet. Records must be retained for 7 years from the date of submission.",
-        };
-      }
+    // 2. Tiered retention check (Epic 10, D6) — single source of truth shared
+    //    with the auto-purge cron. Replaces the old flat 7-year-from-submission
+    //    guard; the horizon now depends on the outcome (declined / qualifies-
+    //    not-awarded / awarded) and anchors from the correct date.
+    const evaluation = isPurgeable(
+      {
+        outcome: application.assessment?.outcome ?? null,
+        archivedAt: application.archivedAt,
+        submittedAt: application.submittedAt,
+      },
+      application.bursaryAccount
+        ? {
+            status: application.bursaryAccount.status,
+            closedAt: application.bursaryAccount.closedAt,
+          }
+        : null
+    );
+    if (!evaluation.purgeable) {
+      return {
+        success: false,
+        error: notYetPurgeableMessage(evaluation),
+      };
     }
 
     const leadApplicantId = application.leadApplicantId;
 
-    // 2b. Resolve the SECONDARY contributor (second parent), if any, and decide
-    //     whether their Profile + Supabase auth user may be erased. The decision
-    //     is computed here (read-only) so the mutating transaction below and the
-    //     post-transaction auth deletion both act on a single, consistent
-    //     verdict. RETAIN if the profile is lawfully linked elsewhere.
-    const secondary = await withAdminContext((tx) =>
-      getSecondaryContributorForGdpr(tx, applicationId)
+    // 3. Run the shared erasure cascade (Epic 10): Storage-first, anonymising
+    //    DB transaction (append-only audit honoured by nulling userId, never
+    //    deleting), dual-parent shared-profile guard, then Supabase auth
+    //    deletion. The manual button and the auto-purge cron call the SAME
+    //    cascade, so they can never diverge.
+    const purgeResult = await purgeApplication(
+      {
+        id: application.id,
+        reference: application.reference,
+        leadApplicantId,
+        documents: application.documents,
+        assessment: application.assessment
+          ? {
+              id: application.assessment.id,
+              property: application.assessment.property,
+              recommendation: application.assessment.recommendation,
+            }
+          : null,
+      },
+      {
+        withAdminContext,
+        deleteDocument,
+        deleteAuthUser: (uid) =>
+          createSupabaseAdminClient().auth.admin.deleteUser(uid),
+      }
     );
-    const secondaryProfileDecision = secondary
-      ? await withAdminContext((tx) =>
-          decideSecondaryProfileErasure(tx, secondary.profileId, applicationId)
-        )
-      : null;
 
-    // 3. Delete Storage files first (non-fatal: continue on partial failure).
-    //    application.documents enumerates EVERY Document row for this
-    //    application regardless of uploader, so secondary uploads under
-    //    `documents/{appId}/secondary/{slot}/...` are deleted from Storage here
-    //    too — each row carries its own storagePath.
-    const storageErrors: string[] = [];
-    for (const doc of application.documents) {
-      try {
-        await deleteDocument(doc.storagePath);
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        storageErrors.push(`${doc.id}: ${msg}`);
-        console.warn("[gdprDelete] Storage delete failed for", doc.id, msg);
-      }
-    }
-
-    // 4. Run the DB mutations in a single admin-context transaction. The
-    //    cascade must bypass RLS because policies normally forbid these
-    //    updates (e.g. AuditLog is INSERT-only for everyone except
-    //    service_role; Profile email changes; etc.).
-    await withAdminContext(async (tx) => {
-      // a. Delete assessment children
-      if (application.assessment) {
-        const assessmentId = application.assessment.id;
-
-        await tx.assessmentEarner.deleteMany({ where: { assessmentId } });
-        await tx.assessmentChecklist.deleteMany({ where: { assessmentId } });
-        if (application.assessment.property) {
-          await tx.assessmentProperty.delete({
-            where: { assessmentId },
-          });
-        }
-
-        // b. Delete recommendation + junction rows
-        if (application.assessment.recommendation) {
-          const recommendationId = application.assessment.recommendation.id;
-          await tx.recommendationReasonCode.deleteMany({
-            where: { recommendationId },
-          });
-          await tx.recommendation.delete({ where: { id: recommendationId } });
-        }
-
-        // c. Delete assessment itself
-        await tx.assessment.delete({ where: { id: assessmentId } });
-      }
-
-      // d. Delete ApplicationSection rows
-      await tx.applicationSection.deleteMany({ where: { applicationId } });
-
-      // e. Delete Document DB records
-      await tx.document.deleteMany({ where: { applicationId } });
-
-      // f. Anonymise Application
-      await tx.application.update({
-        where: { id: applicationId },
-        data: {
-          childName: "[Child Removed]",
-          childDob: null,
-        },
-      });
-
-      // g. Delete Invitation records linked to this lead applicant
-      await tx.invitation.deleteMany({ where: { createdBy: leadApplicantId } });
-      // Also invitations where the email matches (authUserId may be null)
-      const profile = await tx.profile.findUnique({
-        where: { id: leadApplicantId },
-        select: { email: true },
-      });
-      if (profile) {
-        await tx.invitation.deleteMany({ where: { email: profile.email } });
-      }
-
-      // h. Anonymise AuditLog rows (set userId → null). Runs under
-      //    withAdminContext (service_role) so the INSERT-only RLS policy
-      //    on audit_logs does not block this Article 17 erasure step.
-      await tx.auditLog.updateMany({
-        where: { userId: leadApplicantId },
-        data: { userId: null },
-      });
-
-      // i. Anonymise Profile
-      const anonymisedEmail = `[deleted-${leadApplicantId}]@removed.invalid`;
-      await tx.profile.update({
-        where: { id: leadApplicantId },
-        data: {
-          firstName: null,
-          lastName: null,
-          phone: null,
-          email: anonymisedEmail,
-          role: "DELETED",
-        },
-      });
-
-      // j. Dual-parent secondary erasure. The application is ANONYMISED (not
-      //    deleted) so the ON DELETE CASCADE on ApplicationContributor.application
-      //    never fires — delete every contributor row for this application
-      //    explicitly (both PRIMARY and SECONDARY). The PRIMARY's lead profile is
-      //    already anonymised above; the SECONDARY's profile is handled by the
-      //    shared-profile guard below.
-      await tx.applicationContributor.deleteMany({ where: { applicationId } });
-
-      if (secondary && secondaryProfileDecision) {
-        // The secondary's owned sections and Document rows were already removed
-        // by the by-applicationId deletes (steps d/e) and their Storage objects
-        // by the enumeration in step 3 — nothing extra to delete here.
-
-        if (secondaryProfileDecision.canErase) {
-          // Profile linked ONLY to this application → erase it like the lead.
-          // Delete invitations addressed to the secondary, null their audit
-          // rows, then anonymise the profile.
-          await tx.invitation.deleteMany({
-            where: { email: secondary.email },
-          });
-          await tx.auditLog.updateMany({
-            where: { userId: secondary.profileId },
-            data: { userId: null },
-          });
-          await tx.profile.update({
-            where: { id: secondary.profileId },
-            data: {
-              firstName: null,
-              lastName: null,
-              phone: null,
-              email: `[deleted-${secondary.profileId}]@removed.invalid`,
-              role: "DELETED",
-            },
-          });
-        } else {
-          // Profile lawfully linked elsewhere (lead applicant of another child,
-          // or secondary on another application, or owns a bursary account) →
-          // RETAIN it. Only this application's secondary invitation is removed
-          // so it no longer points at an erased application. The profile, its
-          // auth user and its audit trail are left untouched.
-          await tx.invitation.deleteMany({
-            where: { applicationId, email: secondary.email },
-          });
-        }
-      }
-    });
-
-    // 4b. Delete the Supabase Auth user (GDPR Art. 17). The DB Profile is
-    //     already anonymised inside the transaction; this final step ensures
-    //     the auth-provider record (email, password hash, identity links) is
-    //     also removed. Non-fatal: log & continue so DB state is not
-    //     inconsistent with the audit log if Supabase returns an error.
-    let authDeleteError: string | null = null;
-    try {
-      const admin = createSupabaseAdminClient();
-      const { error } = await admin.auth.admin.deleteUser(leadApplicantId);
-      if (error) {
-        authDeleteError = error.message;
-        console.error(
-          "[gdprDeleteApplicantAction] Supabase auth.admin.deleteUser failed:",
-          error
-        );
-      }
-    } catch (err) {
-      authDeleteError = err instanceof Error ? err.message : String(err);
-      console.error(
-        "[gdprDeleteApplicantAction] Supabase auth.admin.deleteUser threw:",
-        err
-      );
-    }
-
-    // 4c. Dual-parent: delete the SECONDARY parent's Supabase auth user — but
-    //     ONLY when the shared-profile guard cleared erasure (profile linked to
-    //     nothing else). When retained, we never touch their auth user. Their
-    //     Profile was anonymised inside the transaction above (canErase branch).
-    let secondaryAuthDeleteError: string | null = null;
-    if (secondary && secondaryProfileDecision?.canErase) {
-      try {
-        const admin = createSupabaseAdminClient();
-        const { error } = await admin.auth.admin.deleteUser(
-          secondary.profileId
-        );
-        if (error) {
-          secondaryAuthDeleteError = error.message;
-          console.error(
-            "[gdprDeleteApplicantAction] secondary auth.admin.deleteUser failed:",
-            error
-          );
-        }
-      } catch (err) {
-        secondaryAuthDeleteError =
-          err instanceof Error ? err.message : String(err);
-        console.error(
-          "[gdprDeleteApplicantAction] secondary auth.admin.deleteUser threw:",
-          err
-        );
-      }
-    }
-
-    // 5. Write the GDPR audit log entry (using a system/null user as the
-    //    lead applicant's userId was just nulled — we record the assessor).
-    //    Admin context so the audit insert succeeds independently of the
-    //    actor's current_user_id() / role.
+    // 4. Write the GDPR audit log entry (the lead's userId was just nulled, so
+    //    we record the assessor who triggered it). Admin context so the insert
+    //    succeeds independently of the actor's current_user_id() / role.
     await withAdminContext((tx) =>
       createAuditLog(tx, {
         userId: user.id,
@@ -781,38 +610,11 @@ export async function gdprDeleteApplicantAction(
         entityType: AUDIT_ENTITY_TYPES.Application,
         entityId: applicationId,
         context: `GDPR deletion performed on application ${application.reference}`,
-        metadata: {
-          reference: application.reference,
+        metadata: buildPurgeAuditMetadata(
+          application,
           leadApplicantId,
-          storageErrors: storageErrors.length > 0 ? storageErrors : undefined,
-          authDeleteError: authDeleteError ?? undefined,
-          // Dual-parent secondary-contributor handling (omitted entirely for
-          // single-parent applications so their audit shape is unchanged).
-          secondary: secondary
-            ? {
-                contributorId: secondary.contributorId,
-                profileId: secondary.profileId,
-                // RETAINED when linked elsewhere; ERASED (anonymised + auth
-                // deleted) when linked only to this application.
-                profileHandling: secondaryProfileDecision?.canErase
-                  ? "erased"
-                  : "retained",
-                links: secondaryProfileDecision
-                  ? {
-                      otherContributorLinks:
-                        secondaryProfileDecision.otherContributorLinks,
-                      leadApplicantApplications:
-                        secondaryProfileDecision.leadApplicantApplications,
-                      bursaryAccounts: secondaryProfileDecision.bursaryAccounts,
-                    }
-                  : undefined,
-                authDeleted:
-                  secondaryProfileDecision?.canErase &&
-                  !secondaryAuthDeleteError,
-                authDeleteError: secondaryAuthDeleteError ?? undefined,
-              }
-            : undefined,
-        },
+          purgeResult
+        ),
       })
     );
 
