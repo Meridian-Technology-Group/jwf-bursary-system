@@ -216,37 +216,146 @@ export interface OtherInfoData {
 }
 
 // ─── Section 7: Parents' Income ───────────────────────────────────────────────
+//
+// Status-driven sub-tables (workbook §6, decision D3). The flat 14-line model is
+// replaced with discrete sub-blocks per income type; each parent's column shows
+// the sub-blocks relevant to them. The legacy flat shape
+// (`LegacyParentIncomeRecord`) is retained for the back-compat reader so old
+// drafts and submitted applications still read (see lib/portal/income-model.ts).
 
-export interface ParentIncomeRecord {
-  salaryWagesPension: number;
-  supplementsAndBonus: number;
-  otherBenefitsAndCommissions: number;
-  amountFromPartner: number;
-  workingTaxCredits: number;
-  grossInterestReceived: number;
-  allDividendIncome: number;
-  grossRentsReceived: number;
-  allIncomeBonds: number;
-  otherGrossIncomes: number;
-  maintenanceOrEquivalents: number;
-  bursariesOrSponsorships: number;
-  otherIncomeNotIncluded: number;
-  otherIncome: number;
-  /** Regular capital repayments? */
-  hasCapitalRepayments: boolean;
-  capitalRepaymentsDocumentId?: string;
-  /** P60 document slot */
+/** Employed (PAYE) — annual salary as on P60; P60 or March payslip required. */
+export interface EmployedIncome {
+  /** Gross earned income / annual salary (PAYE, as on P60). */
+  annualSalaryPaye: number;
+  /** P60 document slot (dated April YYYY). */
   p60DocumentId?: string;
-  /** Self-assessment document slot */
-  selfAssessmentDocumentId?: string;
-  /** Benefits evidence document slot */
-  benefitsEvidenceDocumentId?: string;
+  /** March YYYY payslip document slot. (≥1 of P60 / payslip is mandatory.) */
+  marchPayslipDocumentId?: string;
+}
+
+/** Self-employed (SA302) — discrete numeric cells; SA302 required. */
+export interface SelfEmployedIncome {
+  grossSalaried: number;
+  propertyIncome: number;
+  dividends: number;
+  /** Additional other interest / investment income. */
+  otherInvestmentIncome: number;
+  sa302DocumentId?: string;
+}
+
+/** On benefits — itemised rows; uploads required if > £0 except Child Benefit. */
+export interface BenefitsIncome {
+  /** Universal Credit (excl. childcare). */
+  universalCredit: number;
+  housingBenefit: number;
+  /** Child Benefit — number only; upload is NON-mandatory. */
+  childBenefit: number;
+  childWorkingTaxCredit: number;
+  esa: number;
+  /** Disability Allowance or PIP. */
+  pipOrDla: number;
+  carersAllowance: number;
+  childcareSupport: number;
+  other: number;
+  /** UC 12-month statement. */
+  ucStatementDocumentId?: string;
+  /** 3 separate detailed monthly UC payment docs. */
+  ucMonthlyDocumentIds?: string[];
+  housingBenefitDocumentId?: string;
+  otherBenefitsDocumentId?: string;
+}
+
+/** Unemployed / in between roles in the last 12 months. */
+export interface UnemployedIncome {
+  /** Final gross pay → P45. */
+  finalGrossPay: number;
+  /** Redundancy / severance → letter. */
+  redundancy: number;
+  /** Job Seeker's Allowance → award letter. */
+  jsa: number;
+  /** Student grant / support → letter. */
+  grantSupport: number;
+  /** Parental / adoption / sickness leave pay → status-change doc. */
+  leavePay: number;
+  p45DocumentId?: string;
+  redundancyDocumentId?: string;
+  jsaDocumentId?: string;
+  grantSupportDocumentId?: string;
+  leavePayDocumentId?: string;
+}
+
+/** Retired — pensions; pension docs required. */
+export interface RetiredIncome {
+  statePension: number;
+  privatePension: number;
+  pensionDocumentId?: string;
+}
+
+/** Divorced or separated — child maintenance received + shared-custody note. */
+export interface DivorcedSeparatedIncome {
+  maintenanceReceived: number;
+  sharedCustodyNote: string;
+  maintenanceDocumentId?: string;
+}
+
+/** Third-party support (friends / family / other). */
+export interface ThirdPartyIncome {
+  incomeSupportReceived: number;
+  /** Who provides it / how regularly / how long (free text). */
+  supportNote: string;
+}
+
+/**
+ * Status-driven income record per parent. Sub-blocks are present only for the
+ * statuses the parent declared; `total` is the sum of all numeric cells across
+ * the present sub-blocks (surfaced live on the form). `documentsConfirmed` is the
+ * compulsory legibility tick.
+ */
+export interface ParentIncomeRecord {
+  employed?: EmployedIncome;
+  selfEmployed?: SelfEmployedIncome;
+  benefits?: BenefitsIncome;
+  unemployed?: UnemployedIncome;
+  retired?: RetiredIncome;
+  divorcedSeparated?: DivorcedSeparatedIncome;
+  thirdParty?: ThirdPartyIncome;
+  /** Running sum of all numeric cells, surfaced on the form. */
+  total: number;
+  /** "I confirm all documents on this page are correct and legible." */
   documentsConfirmed: boolean;
 }
 
 export interface ParentsIncomeData {
   parent1Income: ParentIncomeRecord;
   parent2Income?: ParentIncomeRecord;
+}
+
+/**
+ * The legacy flat 14-line income record (pre-Epic-02). Retained ONLY so the
+ * back-compat reader can map old drafts / submitted applications into the new
+ * shape. Do not write this shape; the form writes `ParentIncomeRecord`.
+ */
+export interface LegacyParentIncomeRecord {
+  salaryWagesPension?: number;
+  supplementsAndBonus?: number;
+  otherBenefitsAndCommissions?: number;
+  amountFromPartner?: number;
+  workingTaxCredits?: number;
+  grossInterestReceived?: number;
+  allDividendIncome?: number;
+  grossRentsReceived?: number;
+  allIncomeBonds?: number;
+  otherGrossIncomes?: number;
+  maintenanceOrEquivalents?: number;
+  bursariesOrSponsorships?: number;
+  otherIncomeNotIncluded?: number;
+  otherIncome?: number;
+  hasCapitalRepayments?: boolean;
+  capitalRepaymentsDocumentId?: string;
+  p60DocumentId?: string;
+  selfAssessmentDocumentId?: string;
+  benefitsEvidenceDocumentId?: string;
+  documentsConfirmed?: boolean;
 }
 
 // ─── Section 8: Assets & Liabilities ──────────────────────────────────────────

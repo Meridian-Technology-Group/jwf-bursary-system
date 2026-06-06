@@ -56,43 +56,114 @@ describe("PARENT_DETAILS", () => {
   });
 });
 
-describe("PARENTS_INCOME (legacy flat model preserved)", () => {
-  it("P60 always required for parent 1", () => {
-    expect(gapIds("PARENTS_INCOME", { parent1Income: {} })).toEqual([
-      "PARENTS_INCOME:P60_PARENT_1",
-    ]);
+describe("PARENTS_INCOME (status-driven sub-tables — D3)", () => {
+  it("no income rules fire when no sub-block is declared", () => {
+    expect(gapIds("PARENTS_INCOME", { parent1Income: {} })).toEqual([]);
   });
-  it("SA302 when dividend/rent/bond > 0", () => {
+
+  it("employed: P60-or-payslip required when salary > 0, not when 0", () => {
     expect(
       gapIds("PARENTS_INCOME", {
-        parent1Income: { p60DocumentId: "x", grossRentsReceived: 100 },
+        parent1Income: { employed: { annualSalaryPaye: 0 } },
       })
-    ).toEqual(["PARENTS_INCOME:SELF_ASSESSMENT_PARENT_1"]);
-  });
-  it("benefits evidence when tax credits/other benefits > 0", () => {
-    expect(
-      gapIds("PARENTS_INCOME", {
-        parent1Income: { p60DocumentId: "x", workingTaxCredits: 50 },
-      })
-    ).toEqual(["PARENTS_INCOME:BENEFITS_EVIDENCE_PARENT_1"]);
-  });
-  it("capital repayments doc when toggle true", () => {
-    expect(
-      gapIds("PARENTS_INCOME", {
-        parent1Income: { p60DocumentId: "x", hasCapitalRepayments: true },
-      })
-    ).toEqual(["PARENTS_INCOME:CAPITAL_REPAYMENTS_PARENT_1"]);
-  });
-  it("parent 2 income rules only fire when parent2Income exists", () => {
-    expect(
-      gapIds("PARENTS_INCOME", { parent1Income: { p60DocumentId: "x" } })
     ).toEqual([]);
     expect(
       gapIds("PARENTS_INCOME", {
-        parent1Income: { p60DocumentId: "x" },
-        parent2Income: {},
+        parent1Income: { employed: { annualSalaryPaye: 30000 } },
       })
-    ).toEqual(["PARENTS_INCOME:P60_PARENT_2"]);
+    ).toEqual(["PARENTS_INCOME:EMPLOYED_P60_OR_PAYSLIP_PARENT_1"]);
+  });
+
+  it("employed: satisfied by EITHER P60 or March payslip", () => {
+    expect(
+      gapIds("PARENTS_INCOME", {
+        parent1Income: { employed: { annualSalaryPaye: 30000, p60DocumentId: "x" } },
+      })
+    ).toEqual([]);
+    expect(
+      gapIds("PARENTS_INCOME", {
+        parent1Income: {
+          employed: { annualSalaryPaye: 30000, marchPayslipDocumentId: "y" },
+        },
+      })
+    ).toEqual([]);
+  });
+
+  it("self-employed: SA302 required when any SE cell > 0", () => {
+    expect(
+      gapIds("PARENTS_INCOME", {
+        parent1Income: {
+          selfEmployed: {
+            grossSalaried: 0, propertyIncome: 5000, dividends: 0, otherInvestmentIncome: 0,
+          },
+        },
+      })
+    ).toEqual(["PARENTS_INCOME:SA302_PARENT_1"]);
+  });
+
+  it("benefits: UC statement + monthly required when UC > 0", () => {
+    expect(
+      gapIds("PARENTS_INCOME", {
+        parent1Income: { benefits: { universalCredit: 1200 } },
+      })
+    ).toEqual([
+      "PARENTS_INCOME:UC_MONTHLY_PARENT_1",
+      "PARENTS_INCOME:UC_STATEMENT_PARENT_1",
+    ]);
+  });
+
+  it("benefits: Child Benefit value alone requires NO upload (workbook exception)", () => {
+    expect(
+      gapIds("PARENTS_INCOME", {
+        parent1Income: { benefits: { childBenefit: 2000 } },
+      })
+    ).toEqual([]);
+  });
+
+  it("benefits: other-benefits evidence required for non-CB benefit > 0", () => {
+    expect(
+      gapIds("PARENTS_INCOME", {
+        parent1Income: { benefits: { esa: 500 } },
+      })
+    ).toEqual(["PARENTS_INCOME:OTHER_BENEFITS_PARENT_1"]);
+  });
+
+  it("unemployed: P45 required when final gross pay > 0", () => {
+    expect(
+      gapIds("PARENTS_INCOME", {
+        parent1Income: { unemployed: { finalGrossPay: 8000 } },
+      })
+    ).toEqual(["PARENTS_INCOME:P45_PARENT_1"]);
+  });
+
+  it("retired: pension docs required when a pension > 0", () => {
+    expect(
+      gapIds("PARENTS_INCOME", {
+        parent1Income: { retired: { statePension: 9000 } },
+      })
+    ).toEqual(["PARENTS_INCOME:PENSION_PARENT_1"]);
+  });
+
+  it("divorced/separated: maintenance letter required when received > 0", () => {
+    expect(
+      gapIds("PARENTS_INCOME", {
+        parent1Income: { divorcedSeparated: { maintenanceReceived: 3000 } },
+      })
+    ).toEqual(["PARENTS_INCOME:MAINTENANCE_PARENT_1"]);
+  });
+
+  it("parent 2 rules only fire when the parent2Income block exists", () => {
+    expect(
+      gapIds("PARENTS_INCOME", {
+        parent1Income: { employed: { annualSalaryPaye: 30000, p60DocumentId: "x" } },
+      })
+    ).toEqual([]);
+    expect(
+      gapIds("PARENTS_INCOME", {
+        parent1Income: { employed: { annualSalaryPaye: 30000, p60DocumentId: "x" } },
+        parent2Income: { employed: { annualSalaryPaye: 25000 } },
+      })
+    ).toEqual(["PARENTS_INCOME:EMPLOYED_P60_OR_PAYSLIP_PARENT_2"]);
   });
 });
 
