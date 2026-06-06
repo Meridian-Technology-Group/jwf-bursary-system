@@ -661,19 +661,37 @@ PR-6, PR-8 backend) — `feature/08-award-model-and-emails` (off `staging`):
 **PR-2 — award-decision UX + scholarship/siblings/options + PDF removal +
 reason-code util** (§6 PR-3, PR-4, PR-5, PR-7) —
 `feature/08-award-ux-and-pdf-removal` (**stacks on PR-1**):
-- [ ] §6 PR-3 — three-way Award / Qualifies-not-awarded / Decline control +
-  rebuilt confirm dialog + real terminology; read-only predicate switched to the
-  Epic 01 outcome/lifecycle state (synopsis stays editable per Epic 06).
-- [ ] §6 PR-4 — scholarship-award £ input; read-only sibling-context panel
-  (`queries/siblings.ts`); options-comparison panel over the pure engine; persist
-  the chosen scenario's award figures.
-- [ ] §6 PR-5 — remove the assessor PDF (D7): delete the route + renderer +
-  Download button + `FileDown` import. **Keep `@react-pdf/renderer`** — Epic 05's
-  applicant submission PDF (`/api/pdf/submission/[id]`) is now the sole remaining
-  consumer; the dependency must stay.
-- [ ] §6 PR-7 (mechanism only) — shared `categoryForCode` util reconciling the
-  selector + settings range→category buckets, so the real codes (D4) swap in via
-  `seed:reference` cleanly. **Placeholders kept; D4 swap outstanding-but-non-blocking.**
+- [x] §6 PR-3 — three-way **Award / Qualifies — not awarded / Decline** control
+  (`AWARD_DECISIONS` metadata: label + icon + consequence copy in the Foundation's
+  terms); rebuilt `AwardDialog` per branch stating each consequence (Award →
+  email + rolling account + awards recorded; Qualifies-not-awarded → email +
+  retained; Decline → email + archived) and showing the bursary + scholarship on
+  Award. Read-only predicate switched from the fused-status string check to the
+  Epic 01 `AssessmentOutcome` (`isTerminalOutcome`, legacy QUALIFIES tolerated);
+  synopsis stays editable (Epic 06). `OutcomeBadge` consumed for the read-only
+  banner. The binary qualify/does-not-qualify wording is gone from the surface.
+- [x] §6 PR-4 — scholarship-award £ input (validated ≥ 0, optional) persisted via
+  `scholarshipAward` in `saveRecommendationAction` AND passed with the AWARDED
+  decision into `setApplicationAwardAction`; read-only **sibling-context panel**
+  (linked accounts + absorbed fees from `getSiblingLinks`, current child
+  excluded); **options-comparison panel** over the new pure
+  `lib/assessment/recommendation-options.ts` (`buildOptionScenarios` — bursary
+  only / bursary + scholarship / with-vs-without sibling absorption; one engine
+  call per scenario so the scholarship is never double-applied).
+- [x] §6 PR-5 — assessor PDF removed (D7): deleted
+  `api/pdf/recommendation/[applicationId]/route.tsx`, `lib/pdf/recommendation-pdf.tsx`,
+  the Download-PDF anchor + `FileDown` import. Grep-clean of stray refs; build
+  route list confirms only `/api/pdf/submission/[id]` remains.
+  **`@react-pdf/renderer` KEPT** — Epic 05's applicant submission PDF is now the
+  sole consumer; the dependency stays.
+- [x] §6 PR-7 (mechanism only) — shared `lib/reason-codes/category.ts`
+  (`categoryForCode` / `groupHeadingForCode` / `categoryKeyForCode` +
+  `REASON_CODE_GROUP_HEADINGS`) is now the single source for the range→category
+  buckets; the selector and the settings table both consume it, so they can never
+  drift. **Placeholders kept; the real codes (D4) swap in via the idempotent
+  `seed:reference` upsert by editing this one util — outstanding-but-non-blocking.**
+- [x] 10 new tests (reason-code category 5, recommendation-options 5);
+  tsc/prisma-format/lint/build green; 475 tests.
 
 > **D4 (real reason codes)** remains outstanding — Charlotte supplies the real
 > numbers + labels; they swap in via the idempotent `seed:reference` upsert with
@@ -723,6 +741,24 @@ Wave 2 → Wave 3 → Wave 4.
 
 ## Change log
 
+- **2026-06-06** — **Epic 08 PR-2** (`feature/08-award-ux-and-pdf-removal`,
+  stacks on PR-1): the assessor-facing award surface + PDF removal. The two
+  QUALIFIES/DNQ buttons become a **three-way Award / Qualifies — not awarded /
+  Decline** control in the Foundation's terms, with a rebuilt per-branch confirm
+  dialog stating each consequence and showing the bursary + scholarship on Award.
+  A distinct **scholarship-award £ input** (D9) is saved on the recommendation and
+  passed with the AWARDED decision. Read-only **sibling-context** + **options
+  comparison** panels surface the linked accounts/absorbed fees and the calc
+  scenarios (new pure `lib/assessment/recommendation-options.ts` — one engine call
+  per scenario, no double-deduction). Read-only predicate re-keyed onto the Epic 01
+  `AssessmentOutcome` (synopsis stays editable). **Assessor PDF removed (D7)** —
+  route + renderer + Download button + `FileDown`; `@react-pdf/renderer` KEPT
+  (Epic 05's submission PDF is the sole remaining consumer). Reason-code
+  range→category grouping consolidated into a shared `lib/reason-codes/category.ts`
+  so the selector + settings table never drift and the real codes (D4) swap in by
+  editing one util. 10 new tests; tsc/prisma-format/lint/build green; 475 tests.
+  **Epic 08 → ✅ when this lands (merge order PR-1 → PR-2). D4 reason-code data
+  swap is outstanding-but-non-blocking.** **DO NOT MERGE.**
 - **2026-06-06** — **Epic 08 OPENED (Wave 3)** — PR-1 (`feature/08-award-model-and-emails`,
   off `staging`): real award terminology + the outcome→account hinge. New
   `Recommendation.scholarshipAward Decimal?` (D9) records the merit scholarship as a

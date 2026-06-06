@@ -1,15 +1,18 @@
 /**
- * WP-12 + WP-21: Recommendation Tab Page
+ * WP-12: Recommendation Tab Page
  *
  * Server component. Fetches application, assessment, recommendation, and
  * reason codes. Renders the RecommendationForm for completed assessments.
  *
- * WP-21 addition: "Download PDF" button when a recommendation exists,
- * linking to /api/pdf/recommendation/[applicationId].
+ * Epic 08 (D7): the assessor-side recommendation PDF (route + renderer +
+ * Download button) was removed — it exposed assessor-internal figures and was
+ * unused. The applicant-facing submission PDF (Epic 05,
+ * /api/pdf/submission/[id]) is a separate, parent-safe artefact and is
+ * unaffected.
  *
  * States:
  *  1. No assessment, or assessment not COMPLETED → gate message
- *  2. Assessment COMPLETED → full recommendation form + optional PDF button
+ *  2. Assessment COMPLETED → full recommendation form
  *
  * Requires ASSESSOR or VIEWER role.
  *
@@ -18,7 +21,7 @@
  */
 
 import { notFound } from "next/navigation";
-import { ClipboardCheck, FileDown } from "lucide-react";
+import { ClipboardCheck } from "lucide-react";
 import type { Decimal } from "@prisma/client/runtime/library";
 import { requireRole, Role } from "@/lib/auth/roles";
 import { withUserContext, type RlsRole } from "@/lib/db/prisma";
@@ -28,10 +31,14 @@ import {
   getRecommendation,
   getReasonCodes,
 } from "@/lib/db/queries/recommendations";
+import { getSiblingLinks } from "@/lib/db/queries/siblings";
+import { buildOptionScenarios } from "@/lib/assessment/recommendation-options";
 import {
   RecommendationForm,
   type SerialisedRecommendation,
+  type SiblingContextRow,
 } from "@/components/admin/recommendation-form";
+import type { OptionScenario } from "@/lib/assessment/recommendation-options";
 import type { ReasonCodeOption } from "@/components/admin/reason-code-selector";
 
 export const metadata = {
@@ -92,15 +99,18 @@ export default async function RecommendationPage({ params }: Props) {
     );
   }
 
-  // ── Assessment COMPLETED — load recommendation and reason codes ────────────
+  // ── Assessment COMPLETED — load recommendation, reason codes, siblings ─────
 
-  const [recommendation, reasonCodes] = await withUserContext(
+  const [recommendation, reasonCodes, siblingLinks] = await withUserContext(
     user.id,
     user.role as RlsRole,
     (tx) =>
       Promise.all([
         getRecommendation(tx, assessment.id),
         getReasonCodes(tx),
+        application.bursaryAccountId
+          ? getSiblingLinks(tx, application.bursaryAccountId)
+          : Promise.resolve([]),
       ])
   );
 
@@ -115,6 +125,7 @@ export default async function RecommendationPage({ params }: Props) {
           incomeCategory: recommendation.incomeCategory,
           propertyCategory: recommendation.propertyCategory,
           bursaryAward: toNumber(recommendation.bursaryAward),
+          scholarshipAward: toNumber(recommendation.scholarshipAward),
           yearlyPayableFees: toNumber(recommendation.yearlyPayableFees),
           monthlyPayableFees: toNumber(recommendation.monthlyPayableFees),
           dishonestyFlag: recommendation.dishonestyFlag,
@@ -142,31 +153,48 @@ export default async function RecommendationPage({ params }: Props) {
     creditRiskFlag: assessment.creditRiskFlag,
   };
 
+  // ── Sibling context (read-only) — the linked accounts and absorbed fees the
+  // calc already consumed, surfaced at decision time (Epic 08 §5.1c). The
+  // current child's own account is excluded from the context list.
+  const siblingContext: SiblingContextRow[] = siblingLinks
+    .filter((l) => l.bursaryAccountId !== application.bursaryAccountId)
+    .map((l) => ({
+      reference: l.bursaryAccount.reference,
+      childName: l.bursaryAccount.childName,
+      school: l.bursaryAccount.school,
+      priorityOrder: l.priorityOrder,
+      absorbedPayableFees: l.bursaryAccount.latestPayableFees,
+    }));
+
+  // ── Options comparison — projected from the pure engine over the assessment's
+  // own figures (Epic 08 §5.1c). No new maths; one engine call per scenario so
+  // the scholarship is never double-applied.
+  const grossFees = toNumber(assessment.grossFees) ?? 0;
+  const optionScenarios: OptionScenario[] = buildOptionScenarios({
+    grossFees,
+    scholarshipPct: toNumber(assessment.scholarshipPct) ?? 0,
+    bursaryAward: assessmentValues.bursaryAward ?? 0,
+    vatRate: toNumber(assessment.vatRate) ?? 20,
+    manualAdjustment: toNumber(assessment.manualAdjustment) ?? 0,
+    hasSiblings: siblingContext.length > 0,
+    // The standalone (no-absorption) bursary is not separately persisted; the
+    // without-siblings row is omitted until the engine exposes it (Epic 10).
+    standaloneBursaryAward: null,
+  });
+
   return (
     <div className="space-y-4">
-      {/* ── Page header with optional PDF download button ─────────────── */}
-      {recommendation && (
-        <div className="flex items-center justify-end">
-          <a
-            href={`/api/pdf/recommendation/${params.id}`}
-            download
-            className="inline-flex items-center gap-2 rounded-md border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm transition-colors hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#B8862A] focus-visible:ring-offset-2"
-          >
-            <FileDown className="h-4 w-4" aria-hidden="true" />
-            Download PDF
-          </a>
-        </div>
-      )}
-
       {/* ── Recommendation form ───────────────────────────────────────── */}
       <RecommendationForm
         applicationId={params.id}
-        applicationStatus={application.status}
+        assessmentOutcome={assessment.outcome}
         assessmentId={assessment.id}
         synopsis={assessment.synopsis}
         assessmentValues={assessmentValues}
         recommendation={serialisedRecommendation}
         reasonCodes={serialisedReasonCodes}
+        siblingContext={siblingContext}
+        optionScenarios={optionScenarios}
       />
     </div>
   );

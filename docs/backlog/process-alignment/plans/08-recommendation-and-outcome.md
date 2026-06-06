@@ -1,6 +1,6 @@
 ---
 title: Recommendation & outcome — real award terminology
-status: planned
+status: in-progress
 severity: high
 area: recommendation, outcome, schema
 wave: 3
