@@ -28,7 +28,6 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import {
   Select,
   SelectContent,
@@ -52,6 +51,7 @@ import {
 } from "@/components/ui/dialog";
 import { ReasonCodeSelector } from "@/components/admin/reason-code-selector";
 import type { ReasonCodeOption } from "@/components/admin/reason-code-selector";
+import { AssessmentSynopsis } from "@/components/admin/assessment-synopsis";
 import {
   saveRecommendationAction,
   setApplicationOutcomeAction,
@@ -79,6 +79,10 @@ export interface SerialisedRecommendation {
 export interface RecommendationFormProps {
   applicationId: string;
   applicationStatus: string;
+  /** Assessment id — backs the single editable synopsis (Epic 06). */
+  assessmentId: string;
+  /** Current single synopsis (Epic 06), shown + editable on this screen too. */
+  synopsis: string | null;
   /** Values pre-populated from the completed assessment */
   assessmentValues: {
     bursaryAward: number | null;
@@ -236,6 +240,8 @@ function OutcomeDialog({
 export function RecommendationForm({
   applicationId,
   applicationStatus,
+  assessmentId,
+  synopsis,
   assessmentValues,
   recommendation,
   reasonCodes,
@@ -246,10 +252,9 @@ export function RecommendationForm({
     applicationStatus === "QUALIFIES" ||
     applicationStatus === "DOES_NOT_QUALIFY";
 
-  // Form state — initialise from existing recommendation or assessment values
-  const [familySynopsis, setFamilySynopsis] = React.useState(
-    recommendation?.familySynopsis ?? ""
-  );
+  // Form state — initialise from existing recommendation or assessment values.
+  // Epic 06: the free-text familySynopsis/summary boxes are removed; the single
+  // Assessment.synopsis (rendered below) is the qualitative narrative now.
   const [accommodationStatus, setAccommodationStatus] = React.useState(
     recommendation?.accommodationStatus ?? ""
   );
@@ -258,9 +263,6 @@ export function RecommendationForm({
   );
   const [propertyCategory, setPropertyCategory] = React.useState<string>(
     recommendation?.propertyCategory?.toString() ?? ""
-  );
-  const [summary, setSummary] = React.useState(
-    recommendation?.summary ?? ""
   );
   const [selectedReasonCodeIds, setSelectedReasonCodeIds] = React.useState<
     string[]
@@ -299,7 +301,10 @@ export function RecommendationForm({
     setSaveMessage(null);
 
     const result = await saveRecommendationAction(applicationId, {
-      familySynopsis: familySynopsis || null,
+      // Epic 06: the qualitative narrative moved to Assessment.synopsis. The
+      // legacy recommendation free-text columns are retained but no longer
+      // written from the UI — always persist null here.
+      familySynopsis: null,
       accommodationStatus: accommodationStatus || null,
       incomeCategory: incomeCategory || null,
       propertyCategory: propertyCategoryNum,
@@ -308,7 +313,7 @@ export function RecommendationForm({
       monthlyPayableFees,
       dishonestyFlag,
       creditRiskFlag,
-      summary: summary || null,
+      summary: null,
       reasonCodeIds: selectedReasonCodeIds,
     });
 
@@ -406,20 +411,6 @@ export function RecommendationForm({
           <CardTitle className="text-base">Recommendation Details</CardTitle>
         </CardHeader>
         <CardContent className="space-y-5">
-          {/* Family synopsis */}
-          <div className="space-y-1.5">
-            <Label htmlFor="family-synopsis">Family Synopsis</Label>
-            <Textarea
-              id="family-synopsis"
-              value={familySynopsis}
-              onChange={(e) => setFamilySynopsis(e.target.value)}
-              disabled={isReadOnly}
-              placeholder="Brief summary of the family's circumstances..."
-              rows={4}
-              className="resize-y"
-            />
-          </div>
-
           {/* Two-column: accommodation + income category */}
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div className="space-y-1.5">
@@ -468,22 +459,18 @@ export function RecommendationForm({
               </SelectContent>
             </Select>
           </div>
-
-          {/* Summary narrative */}
-          <div className="space-y-1.5">
-            <Label htmlFor="summary">Recommendation Summary</Label>
-            <Textarea
-              id="summary"
-              value={summary}
-              onChange={(e) => setSummary(e.target.value)}
-              disabled={isReadOnly}
-              placeholder="Detailed recommendation narrative for the panel..."
-              rows={6}
-              className="resize-y"
-            />
-          </div>
         </CardContent>
       </Card>
+
+      {/* ── Single assessment synopsis (Epic 06) ─────────────────────────── */}
+      {/* The qualitative narrative now lives on Assessment.synopsis and is
+          shown + EDITABLE here, independent of the recommendation lock above. */}
+      <AssessmentSynopsis
+        assessmentId={assessmentId}
+        applicationId={applicationId}
+        synopsis={synopsis}
+        assessmentCompleted
+      />
 
       {/* ── Section C: Reason Codes ──────────────────────────────────────── */}
       <Card>
