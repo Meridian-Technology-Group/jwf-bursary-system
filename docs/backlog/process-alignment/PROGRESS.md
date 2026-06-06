@@ -9,7 +9,7 @@
 >
 > **Spec:** [README.md](README.md) (spine + decision register). **Owner:** Brian Wagner.
 
-**Started:** 2026-06-05 · **Current focus:** **Epic 06 IN PROGRESS** (assessor experience & UI, keystone of Wave 3) — PR-1 synopsis consolidation (schema `Assessment.synopsis` + additive backfill migration; single editable synopsis docked in the workspace + on the recommendation screen; six checklist tabs + recommendation free-text boxes retired from the UI). PR-2 (workspace layout: calc top strip + two-pane + 30+ doc nav) stacks on PR-1. Wave 2 (02 + 05) shipped to staging; Wave 1 (01/03/04) shipped; 01 PR-6 gated.
+**Started:** 2026-06-05 · **Current focus:** **WAVES 0–3 COMPLETE on staging** (#133–#170). Wave 3 = Epics 06/07/08/09 all shipped (07 PR-7 historical-validation + D4 reason codes + H7–H10 confirmation = outstanding-but-non-blocking client deliverables). **Next: Wave 4 (10 retention, 11 auth) — awaits Brian's go-ahead.** 01 PR-6 (drop fused `status`) still gated.
 
 ---
 
@@ -41,10 +41,10 @@ Legend: ⬜ not started · 🟡 in progress · ✅ shipped to staging · 🚫 bl
 | 1 | [04 Lead-applicant contacts & invitations](plans/04-lead-applicant-contacts-and-invitations.md) | ✅ | 01 | #148 (contact register), #149 (invite-from-contact + D1 lock), #150 (twin/DOB uniqueness) |
 | 2 | [02 Application form re-scope](plans/02-application-form-rescope.md) | ✅ | deps met (01, 04 ✅) · D3 ✅ · D11 artifact (build to workbook) | #152 · #153 · #154 · #155 · #156 · #157 · #158 (all ✅) |
 | 2 | [05 Parent portal experience](plans/05-parent-portal-experience.md) | ✅ | deps met (01, 02, 03 ✅) · D2/D10 ✅ | #159 (PR-1 home guidance + chooser), #160 (PR-2 deadline/status/summary), #161 (PR-3 history + missing-doc upload) — **stacked, merge 159→160→161** |
-| 3 | [06 Assessor experience & UI](plans/06-assessor-experience-and-ui.md) | 🟡 (both PRs open) | 02 ✅ (dep) | PR-1 synopsis consolidation (`feature/06-synopsis-consolidation`); PR-2 layout + calc strip + 30+ doc nav + field-map (`feature/06-workspace-layout`, stacks on PR-1) — **merge PR-1 → PR-2**; → ✅ when PR-2 lands |
-| 3 | [07 Calculations & fees](plans/07-assessment-calculations-and-fees.md) | 🟡 | 06 (dep) · D8/D14 narrow, non-blocking · PR-7 historical-validation gated on client data | PR-1 fee resolver + engine next-year + seed (`feature/07-fee-resolver-engine-nextyear`); PR-2 wiring + auto-populate-then-confirm UI (`feature/07-wiring-and-autopopulate`, stacks on PR-1) — **merge PR-1 → PR-2**; PR-7 (historical fixtures) FLAGGED — needs client historicals |
-| 3 | [08 Recommendation & outcome](plans/08-recommendation-and-outcome.md) | 🟡 (both PRs open) | 01, 07 (deps) · D7/D9 ✅ · D4 artifact (placeholders) | PR-1 award model + outcome writer + emails (`feature/08-award-model-and-emails`); PR-2 award-decision UX + scholarship/siblings/options + PDF removal + reason-code util (`feature/08-award-ux-and-pdf-removal`, stacks on PR-1) — **merge PR-1 → PR-2**; → ✅ when PR-2 lands (D4 reason-code swap outstanding-but-non-blocking) |
-| 3 | [09 Complex household / second parent](plans/09-complex-household-and-second-parent.md) | 🟡 | 02, 06 ✅ (deps) · D15–D17 build to workbook FAQ | PR-1 rules engine + assessor decision aid + second-parent subset audit (`feature/09-household-rules-engine`); PR-2 custody schema + form branch wiring + guardian/widowed evidence + H7 notice (`feature/09-household-schema-and-form`, stacks on PR-1) — **merge PR-1 → PR-2**; → ✅ when PR-2 lands |
+| 3 | [06 Assessor experience & UI](plans/06-assessor-experience-and-ui.md) | ✅ | 02 ✅ | #162 (synopsis consolidation + backfill), #163 (workspace layout: calc top-strip, two-pane, 30+ doc nav) |
+| 3 | [07 Calculations & fees](plans/07-assessment-calculations-and-fees.md) | ✅* | 06 ✅ · D8/D14 built-to-default | #165 (fee-year resolver + engine next-year + seed), #166 (wiring + auto-populate-then-confirm). **\*PR-7 historical-validation gated** — needs Charlotte's real historical figures (non-blocking; engine tested on synthetic fixtures) |
+| 3 | [08 Recommendation & outcome](plans/08-recommendation-and-outcome.md) | ✅ | 01, 07 ✅ · D7/D9 ✅ | #167 (award model + outcome writer + emails), #168 (award-decision UX + scholarship/siblings/options + assessor-PDF removal + reason-code util). **D4 real reason codes** swap-in trivial, non-blocking |
+| 3 | [09 Complex household / second parent](plans/09-complex-household-and-second-parent.md) | ✅ | 02, 06 ✅ · D15–D17 built to workbook FAQ | #169 (household rules engine + assessor decision aid), #170 (custody schema + form branching + guardian/widowed evidence + H7/H9 flags). **H7/H8/H9/H10 need Charlotte's verbatim confirmation** (one-file swap-point, non-blocking) |
 | 4 | [10 Data retention & account lifecycle](plans/10-data-retention-and-account-lifecycle.md) | ⏳ deps | 01, 03 (deps) · D6 ✅ (DPO signs years) · D19 narrow | — |
 | 4 | [11 Auth & access](plans/11-auth-and-access.md) | ⬜ | none · D21 ✅ (SSO deferred) · D20 ✅ (idle watcher) | — |
 
@@ -827,6 +827,13 @@ Wave 2 → Wave 3 → Wave 4.
 
 ## Change log
 
+- **2026-06-06** — **WAVE 3 COMPLETE.** Epics 06 (#162/#163 assessor UI + synopsis),
+  07 (#165/#166 calc/fees — *PR-7 historical validation gated*), 08 (#167/#168
+  recommendation/outcome — *D4 reason codes swap-in pending*), 09 (#169/#170 complex
+  household — *H7–H10 confirmation pending*) all shipped to staging; all migrations
+  applied to nonprod. Stacked-PR reconciliations done with merge commits (no
+  force-push). **Waves 0–3 done (#133–#170); Wave 4 (10/11) awaits go-ahead; 01 PR-6
+  cutover still gated for Brian.**
 - **2026-06-06** — **Epic 09 PR-2** (`feature/09-household-schema-and-form`,
   stacks on PR-1): custody schema + form branch wiring + evidence + H7 notice.
   New `CustodyArrangement` enum + `Application.custodyArrangement` (additive, NOT
