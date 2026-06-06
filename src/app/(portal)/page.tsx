@@ -21,8 +21,8 @@ import {
 } from "@/lib/db/queries/contributors";
 import { getOrAcceptLatestInvitationForUser } from "@/lib/db/queries/invitations";
 import { projectFormStatusForApplicant } from "@/components/shared/lifecycle-badges";
-import { OnboardingCard } from "@/app/(portal)/onboarding-card";
-import { ReassessmentCard } from "@/app/(portal)/reassessment-card";
+import { ApplicationTypeChooser } from "@/app/(portal)/application-type-chooser";
+import { PortalGuidanceTabs } from "@/components/portal/portal-guidance-tabs";
 import { FileText, ArrowRight, ClipboardList, Upload } from "lucide-react";
 import Link from "next/link";
 
@@ -183,6 +183,13 @@ export default async function PortalDashboardPage() {
     ? `${application.round.academicYear} Assessment Round`
     : "Bursary Application";
 
+  // Whether to de-emphasise the identity-documents checklist block (it is only
+  // required on a first application). True when the live application is rolling
+  // over, or when the pending invitation is a re-assessment (active bursary).
+  const isRollingOver =
+    application?.applicationType === "ROLLING_OVER" ||
+    (!!invitation && !!invitation.bursaryAccountId);
+
   return (
     <div className="space-y-8">
       {/* Welcome heading */}
@@ -198,6 +205,11 @@ export default async function PortalDashboardPage() {
             : "Your bursary portal is ready."}
         </p>
       </div>
+
+      {/* Home-page guidance rail (feedback #2 / #3): How to Apply, Checklist and
+          the T&Cs viewer — always reachable, before/during/after an
+          application. */}
+      <PortalGuidanceTabs isRollingOver={isRollingOver} />
 
       {application ? (
         <>
@@ -335,17 +347,17 @@ export default async function PortalDashboardPage() {
           </div>
         </>
       ) : invitation ? (
-        invitation.bursaryAccountId ? (
-          /* Returning bursary holder — re-assessment "welcome back" card. */
-          <ReassessmentCard
-            defaultChildName={invitation.childName}
-            school={invitation.school}
-            academicYear={inviteRoundYear}
-          />
-        ) : (
-          /* First-year invitation, no Application yet — onboarding card. */
-          <OnboardingCard defaultChildName={invitation.childName} />
-        )
+        /* No application yet, but an invitation exists. Show BOTH application
+           types as mutually-exclusive cards (feedback #4): the type matching
+           the invitation is active, the other is disabled with a reason so a
+           parent can never start the wrong form. Eligibility is derived from
+           the invitation (re-assessment ⇒ ROLLING_OVER), never chosen here. */
+        <ApplicationTypeChooser
+          eligibleType={invitation.bursaryAccountId ? "ROLLING_OVER" : "NEW"}
+          defaultChildName={invitation.childName}
+          school={invitation.school}
+          academicYear={inviteRoundYear}
+        />
       ) : (
         /* No invitation found — neutral fallback */
         <div className="rounded-xl border border-slate-200 bg-white p-8 text-center shadow-sm">
