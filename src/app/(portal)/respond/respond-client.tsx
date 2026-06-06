@@ -123,10 +123,10 @@ export function RespondMissingDocsClient({
           Sent to the assessor
         </h2>
         <p className="mx-auto mt-2 max-w-md text-sm text-green-800">
-          Thank you. Your documents have been sent and your application has
-          returned to <span className="font-medium">Under Review</span>. There
-          is nothing more for you to do — the bursary team will pick it back up
-          and let you know the outcome.
+          Thank you. Your documents have been added to your application and the
+          bursary team has been notified — your original submission date is
+          unchanged. There is nothing more for you to do; the team will pick your
+          assessment back up and let you know the outcome.
         </p>
         <div className="mt-6">
           <Link
@@ -148,7 +148,8 @@ export function RespondMissingDocsClient({
         <p className="text-sm text-yellow-900">
           An assessor needs a little more from you before your application can
           continue. Please add each requested document below, then click{" "}
-          <span className="font-medium">Send to assessor</span>.
+          <span className="font-medium">Send to assessor</span>. Uploading these
+          documents will not change your original submission date.
         </p>
         {customMessage && (
           <div className="mt-3 flex gap-2 rounded-md border border-yellow-200 bg-white/70 p-3">

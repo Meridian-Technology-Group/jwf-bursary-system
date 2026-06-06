@@ -9,7 +9,7 @@
 >
 > **Spec:** [README.md](README.md) (spine + decision register). **Owner:** Brian Wagner.
 
-**Started:** 2026-06-05 · **Current focus:** **Epic 05 IN PROGRESS** (parent portal) — PR-1 (home guidance + T&Cs + type chooser) opened; PR-2 (deadline/status/summary) + PR-3 (history + missing-doc upload) to follow, stacked. Epic 02 COMPLETE (#152–#158). Wave 1 shipped (01/03/04; 01 PR-6 gated).
+**Started:** 2026-06-05 · **Current focus:** **Epic 05 COMPLETE** (parent portal) — PR-1 #159 (home guidance + T&Cs + chooser), PR-2 #160 (deadline/status/summary + PDF + terms columns), PR-3 #161 (history + missing-doc upload); stacked, merge 159→160→161. Wave 2 (02 + 05) shipped to staging. Next: Wave 3 (06/07/08/09). Wave 1 (01/03/04) shipped; 01 PR-6 gated.
 
 ---
 
@@ -40,7 +40,7 @@ Legend: ⬜ not started · 🟡 in progress · ✅ shipped to staging · 🚫 bl
 | 1 | [03 Round management](plans/03-round-management.md) | ✅ | 01 | #146 (PR-A schema+server core), #147 (PR-B UI) |
 | 1 | [04 Lead-applicant contacts & invitations](plans/04-lead-applicant-contacts-and-invitations.md) | ✅ | 01 | #148 (contact register), #149 (invite-from-contact + D1 lock), #150 (twin/DOB uniqueness) |
 | 2 | [02 Application form re-scope](plans/02-application-form-rescope.md) | ✅ | deps met (01, 04 ✅) · D3 ✅ · D11 artifact (build to workbook) | #152 · #153 · #154 · #155 · #156 · #157 · #158 (all ✅) |
-| 2 | [05 Parent portal experience](plans/05-parent-portal-experience.md) | 🟡 | deps met (01, 02, 03 ✅) · D2/D10 ✅ | PR-1 home guidance + chooser (this batch); PR-2 deadline/status/summary; PR-3 history + missing-doc upload |
+| 2 | [05 Parent portal experience](plans/05-parent-portal-experience.md) | ✅ | deps met (01, 02, 03 ✅) · D2/D10 ✅ | #159 (PR-1 home guidance + chooser), #160 (PR-2 deadline/status/summary), #161 (PR-3 history + missing-doc upload) — **stacked, merge 159→160→161** |
 | 3 | [06 Assessor experience & UI](plans/06-assessor-experience-and-ui.md) | ⏳ deps | 02 (dep) | — |
 | 3 | [07 Calculations & fees](plans/07-assessment-calculations-and-fees.md) | ⏳ deps | 06 (dep) · D8/D14 narrow, non-blocking | — |
 | 3 | [08 Recommendation & outcome](plans/08-recommendation-and-outcome.md) | ⏳ deps | 01, 07 (deps) · D7/D9 ✅ · D4 artifact (placeholders) | — |
@@ -449,11 +449,22 @@ summary + submission PDF** (§6 PR-3, PR-4, PR-5) —
   tsc/prisma-format/build green, 403 tests pass.
 
 **PR-3 — multi-round account history + portal missing-doc upload** (§6 PR-6,
-PR-7) — *planned, stacks on PR-2*:
-- [ ] `(portal)/history` over `BursaryAccount`; preserved read-only summaries/
-  PDFs; upcoming-rounds lineup (empty until Epic 10); portal nav entry.
-- [ ] generalise `submitMissingDocsResponse` → upload + retro-populate keeping
-  `submittedAt`/`formStatus` fixed (works while the assessment is PAUSED).
+PR-7) — `feature/05-history-and-missing-docs` (**stacks on PR-2**):
+- [x] §6 PR-6 — `(portal)/history` page over the lead applicant's applications
+  (account spine = BursaryAccount; apps keyed by leadApplicantId), newest first,
+  each with the parent-safe status + (for submitted) a preserved read-only PDF
+  download via `/api/pdf/submission/[id]` (never an editable form). Upcoming-
+  rounds lineup for ACTIVE recipients with a neutral empty state (Epic 10
+  generates the schedule). `account-history.ts` loader. Reached via a new
+  "Application History" dashboard quick-action.
+- [x] §6 PR-7 — portal missing-doc upload keeps the submission date intact: the
+  existing respond flow already attaches docs (FileUpload → /api/documents) and
+  resumes the assessment via the fused-status PAUSED→NOT_STARTED transition,
+  which by design NEVER touches `submitted_at`/`form_status` (Epic 01 lifecycle
+  split). Hardened `submitMissingDocsResponse` with a re-read invariant guard
+  (`missing-docs-invariant.ts`, pure + unit-tested) and reframed the respond copy
+  to state the submission date is unchanged. Admin-side attach path retained.
+- [x] 5 unit tests (submission-invariant). tsc/build green, 408 tests pass.
 
 ---
 
@@ -497,6 +508,21 @@ Wave 2 → Wave 3 → Wave 4.
 
 ## Change log
 
+- **2026-06-06** — **Epic 05 COMPLETE** (#161, PR-3): multi-round account
+  history + portal missing-doc upload. New `(portal)/history` lists every
+  application on the lead applicant's account (newest first) with the parent-safe
+  status + a preserved read-only submission PDF (never an editable form);
+  upcoming-rounds lineup for ACTIVE recipients with a neutral empty state (Epic 10
+  fills the schedule). `account-history.ts` loader; reached via a new dashboard
+  quick-action. Portal missing-doc upload keeps the submission date intact —
+  confirmed the existing respond flow attaches docs + resumes the assessment
+  (PAUSED→NOT_STARTED on the fused status) and by design never touches
+  `submitted_at`/`form_status` (Epic 01 split); hardened
+  `submitMissingDocsResponse` with a re-read invariant guard
+  (`missing-docs-invariant.ts`, pure + unit-tested) and reframed the copy. Admin
+  attach path retained. Stacks on PR-2; no schema. tsc/build green, 408 tests
+  (+5). **Epic 05 row → ✅; plan frontmatter `status: shipped`.** The parent
+  portal is now a guided, deadline-aware, multi-round account.
 - **2026-06-06** — **Epic 05 PR-2** (status projection + deadline/lockout +
   submitted summary/PDF + terms acceptance). New `lib/portal/status-projection.ts`
   parent-safe read model (Draft → Received/Submitted → Being assessed → Outcome;
