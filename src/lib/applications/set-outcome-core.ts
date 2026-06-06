@@ -84,7 +84,7 @@ async function fetchApplicationForOutcome(tx: Tx, applicationId: string) {
         select: { id: true, email: true, firstName: true, lastName: true },
       },
       round: {
-        select: { academicYear: true },
+        select: { academicYear: true, openDate: true, closeDate: true },
       },
       assessment: {
         select: { id: true, status: true, yearlyPayableFees: true },

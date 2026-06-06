@@ -831,9 +831,59 @@ PR-1, PR-2) — `feature/10-retention-policy-and-purge-cron` (off `staging`):
   nonprod what-would-purge query in the PR body (expected no-op on current data).
 
 **PR-2 — forward-schedule schema + generation on AWARD + close-when-complete +
-portal-access revocation** (§6 PR-3, PR-4, PR-5, PR-6) —
-`feature/10-schedule-and-portal-revocation` (**stacks on PR-1**) — *pending, see
-"Remaining" below*.
+portal-access revocation** (§6 PR-3, PR-4, PR-5, PR-6 backend) —
+`feature/10-schedule-and-portal-revocation` (**stacks on PR-1**):
+- [x] §6 PR-4 — additive `BursaryScheduleEntry` model + `ScheduleEntryType` /
+  `ScheduleEntryStatus` enums + `BursaryAccount.scheduleEntries` relation +
+  nullable `scheduleYears`. Migration `20260606210000_bursary_schedule_entries`
+  (two BRAND-NEW enums via `CREATE TYPE` — safe in one migration since the PG
+  ADD-VALUE-in-txn rule only bars adding to an EXISTING enum; nullable column;
+  new table with FKs/indexes; RLS mirroring `sibling_links` — staff read all,
+  applicant reads own-account rows, ADMIN/service_role write).
+- [x] §6 PR-5 — `lib/bursary-accounts/schedule.ts`: `resolveScheduleHorizon`
+  (D19 default = years-to-final-eligible-year from the entry year-group, clamped
+  ≤ `MAX_SCHEDULE_YEARS`), pure `planSchedule` (Year 1 = award year; academic
+  labels + availableOn/requiredBy shift forward one year/row from the award
+  round's dates; current+next year `showOnPortal`, far-future hidden), and
+  `generateSchedule` (IDEMPOTENT — only inserts missing years, never duplicates,
+  persists `scheduleYears`). Hooked into `promoteToActiveAccount` for BOTH the
+  new-account and continue-existing paths; a re-award also re-activates a
+  previously CLOSED account (access returns, D18).
+- [x] §6 PR-3 — portal-access revocation (D18): `lib/bursary-accounts/access.ts`
+  (`hasPortalAccess` — access iff ≥1 ACTIVE account OR an in-flight app; pure +
+  tested) + `loadPortalAccessState` (RLS-scoped read). Wired into the **portal
+  layout guard** (`(portal)/layout.tsx`) → redirects a revoked parent to a new
+  read-only `/portal-closed` page (outside the portal group, no redirect loop;
+  role stays APPLICANT — NOT erasure). Reversible: a re-award restores access.
+- [x] §6 PR-6 — close-when-complete + status mirroring helpers:
+  `lib/bursary-accounts/lifecycle.ts` (`isScheduleComplete` + idempotent
+  `closeAccountIfComplete` — the only AUTOMATIC writer of CLOSED, fires when
+  every schedule row is COMPLETE; `mirrorApplicationToSchedule` moves a year
+  SCHEDULED→RECEIVED→COMPLETE, never backwards). **Wiring these into the
+  submit/assessment-complete paths + the admin schedule grid (§5.5) is the
+  remaining slice** — see below.
+- [x] 29 new tests (schedule 11, access 8, lifecycle 10) + updated promotion /
+  set-outcome-core mocks for the new round dates + schedule calls. prisma
+  format/validate/tsc/lint/build green; **562 tests**. **DO NOT MERGE — merge
+  after PR-1.** Migration SQL + read-only nonprod validation in the PR body.
+
+**Remaining (returned breakdown — not in this batch):**
+- [ ] **PR-3-followup — status-mirroring + close wiring**: call
+  `mirrorApplicationToSchedule` from the submit path (→ RECEIVED) and the
+  assessment-complete path (→ COMPLETE), then `closeAccountIfComplete`; fire
+  revalidation. The helpers + tests exist; this is the call-site wiring (depends
+  on Epic 03 materialising future-year Rounds one at a time so a year's app links
+  back via `roundId`).
+- [ ] **PR-7 — admin schedule grid + Show/Hide toggle + Regenerate Schedule**
+  (§5.5): the illustration's grid on the account/recommendation view (Year /
+  Type / Status / Manually Created / Available On / Required By / Received On /
+  Action), per-row Show/Hide-on-portal toggle, future-row date edit, Regenerate
+  button (calls `generateSchedule`). Epic 05 reads `showOnPortal` for the parent
+  lineup (out of scope here).
+- [ ] **PR-8 — demo seed** (§5.6): one ACTIVE account with a populated multi-year
+  schedule (mix of RECEIVED past + SCHEDULED future, some `showOnPortal`) and one
+  CLOSED account (to exercise revocation); a declined/archived application with
+  dates set so `isPurgeable` is demonstrable.
 
 > **Cron/env flags to set (PR-1).** New Vercel cron `/api/cron/purge-expired`
 > (weekly, reuses the existing `CRON_SECRET`, already set in Production +
@@ -883,6 +933,28 @@ Wave 2 → Wave 3 → Wave 4.
 
 ## Change log
 
+- **2026-06-06** — **Epic 10 PR-2** (`feature/10-schedule-and-portal-revocation`,
+  stacks on PR-1): forward-schedule schema + generation on AWARD +
+  close-when-complete + portal-access revocation. New additive
+  `BursaryScheduleEntry` model + `ScheduleEntryType`/`ScheduleEntryStatus` enums +
+  `BursaryAccount.scheduleEntries`/`scheduleYears` (migration
+  `20260606210000_bursary_schedule_entries` — two brand-new enums via CREATE TYPE,
+  nullable column, new table + `sibling_links`-style RLS). `lib/bursary-accounts/
+  schedule.ts` generates the illustration's Year 1..N grid on AWARD (D19 horizon =
+  years-to-final-eligible-year; dates shift forward from the award round; current+
+  next year shown, far-future hidden) — IDEMPOTENT, hooked into
+  `promoteToActiveAccount` (new + continue-existing; a re-award re-activates a
+  CLOSED account). Portal-access revocation (D18): `lib/bursary-accounts/access.ts`
+  (`hasPortalAccess` — ACTIVE account OR in-flight app) wired into the portal layout
+  guard → revoked parents hit a read-only `/portal-closed` page (role stays
+  APPLICANT, NOT erasure; reversible). `lib/bursary-accounts/lifecycle.ts` adds
+  `closeAccountIfComplete` (only automatic CLOSED writer) + `mirrorApplicationToSchedule`
+  (status mirroring, never backwards). 29 new tests (schedule/access/lifecycle);
+  prisma format/validate/tsc/lint/build green; 562 tests. **Remaining: status-
+  mirroring call-site wiring (deps Epic 03 round materialisation), admin schedule
+  grid + Show/Hide + Regenerate (PR-7), demo seed (PR-8) — returned breakdown.**
+  **DO NOT MERGE — merge after PR-1.** Migration SQL + read-only nonprod validation
+  in the PR body.
 - **2026-06-06** — **Epic 10 OPENED (Wave 4)** — PR-1
   (`feature/10-retention-policy-and-purge-cron`, off `staging`): tiered retention
   policy + cascade extraction + auto-purge cron. New pure `lib/retention/policy.ts`

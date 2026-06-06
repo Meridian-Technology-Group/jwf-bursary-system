@@ -22,6 +22,7 @@
 
 import type { Tx } from "@/lib/db/prisma";
 import { generateBursaryAccountReference } from "@/lib/bursary-accounts/reference";
+import { generateSchedule } from "@/lib/bursary-accounts/schedule";
 import type { School, EntryYearGroup } from "@prisma/client";
 
 /** The bursary + scholarship awards an AWARDED outcome grants. */
@@ -42,7 +43,8 @@ export interface PromotionApplication {
   entryYearGroup: EntryYearGroup | null;
   bursaryAccountId: string | null;
   leadApplicantId: string;
-  round: { academicYear: string };
+  /** Award round — academicYear + the date anchors for the forward schedule. */
+  round: { academicYear: string; openDate: Date | null; closeDate: Date | null };
   assessment: { yearlyPayableFees: unknown } | null;
 }
 
@@ -62,15 +64,44 @@ export interface PromotionResult {
  *                               carry the bursary + scholarship awards forward.
  *
  * Epic 10 extends this behind the same signature to also generate the forward
- * round schedule; the outcome writer (set-outcome-core) is unaffected.
+ * round schedule (idempotently); the outcome writer (set-outcome-core) is
+ * unaffected.
  */
 export async function promoteToActiveAccount(
   tx: Tx,
   application: PromotionApplication,
   awards: AwardFigures
 ): Promise<PromotionResult> {
-  // Idempotent: a re-assessment already carries its rolling account — continue it.
+  const roundDates = {
+    academicYear: application.round.academicYear,
+    openDate: application.round.openDate,
+    closeDate: application.round.closeDate,
+  };
+
+  // Idempotent: a re-assessment already carries its rolling account — continue
+  // it, and (Epic 10) top-up its forward schedule. generateSchedule never
+  // duplicates existing years, so re-awarding is safe.
   if (application.bursaryAccountId != null) {
+    const account = await tx.bursaryAccount.findUnique({
+      where: { id: application.bursaryAccountId },
+      select: {
+        id: true,
+        entryYearGroup: true,
+        firstAssessmentYear: true,
+        status: true,
+      },
+    });
+    if (account) {
+      // A re-award re-activates a previously CLOSED account (D18 — access
+      // returns when the account is ACTIVE again).
+      if (account.status === "CLOSED") {
+        await tx.bursaryAccount.update({
+          where: { id: account.id },
+          data: { status: "ACTIVE", closedAt: null },
+        });
+      }
+      await generateSchedule(tx, account, roundDates);
+    }
     return { bursaryAccountId: application.bursaryAccountId, created: false };
   }
 
@@ -104,7 +135,7 @@ export async function promoteToActiveAccount(
       leadApplicantId: application.leadApplicantId,
       status: "ACTIVE",
     },
-    select: { id: true },
+    select: { id: true, entryYearGroup: true, firstAssessmentYear: true },
   });
 
   await tx.application.update({
@@ -112,10 +143,13 @@ export async function promoteToActiveAccount(
     data: { bursaryAccountId: account.id },
   });
 
-  // NOTE (Epic 10 seam): the granted bursary + scholarship awards (`awards`) are
-  // recorded on the Recommendation (Epic 08) and will be persisted onto the
-  // BursaryAccount + drive the forward schedule here once Epic 10 adds the
-  // account-side columns. Referenced now so the interface is stable.
+  // Epic 10: generate the forward multi-year schedule (Year 1..N) for the new
+  // rolling account. Idempotent — Year 1 is this award year.
+  await generateSchedule(tx, account, roundDates);
+
+  // NOTE (Epic 08 award figures): the granted bursary + scholarship awards
+  // (`awards`) are recorded on the Recommendation (Epic 08). They are not stored
+  // on the account row today; referenced here so the interface stays stable.
   void awards;
 
   return { bursaryAccountId: account.id, created: true };

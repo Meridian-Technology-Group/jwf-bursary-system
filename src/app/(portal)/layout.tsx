@@ -9,8 +9,10 @@
  */
 
 import { Suspense } from "react";
+import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth/roles";
 import { withAdminContext, withUserContext, type RlsRole } from "@/lib/db/prisma";
+import { loadPortalAccessState } from "@/lib/bursary-accounts/access";
 import { getApplicationForUser } from "@/lib/db/queries/applications";
 import { resolveOwningContributorId } from "@/lib/db/queries/contributors";
 import { getOrAcceptLatestInvitationForUser } from "@/lib/db/queries/invitations";
@@ -37,6 +39,23 @@ export default async function PortalLayout({
   children: React.ReactNode;
 }) {
   const user = await getCurrentUser();
+
+  // Epic 10 (D18) — portal-access revocation. A parent retains access iff they
+  // have an ACTIVE bursary account OR an in-flight application; otherwise their
+  // bursary relationship has concluded and they are sent to a read-only closed
+  // page. This is an access guard, NOT erasure (role stays APPLICANT). The DB
+  // read runs under the user's RLS context.
+  if (user) {
+    const { hasAccess } = await withUserContext(
+      user.id,
+      user.role as RlsRole,
+      (tx) => loadPortalAccessState(tx, user.id)
+    );
+    if (!hasAccess) {
+      redirect("/portal-closed");
+    }
+  }
+
   const displayName = user
     ? `${user.firstName ?? ""} ${user.lastName ?? ""}`.trim() || user.email
     : "Applicant";

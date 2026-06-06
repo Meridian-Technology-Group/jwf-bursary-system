@@ -54,29 +54,61 @@ model Round {
 
 /// A persistent account per child, spanning multiple assessment years.
 model BursaryAccount {
-  id                   String               @id @default(uuid()) @db.Uuid
-  reference            String               @unique
+  id                   String                 @id @default(uuid()) @db.Uuid
+  reference            String                 @unique
   school               School
-  childName            String               @map("child_name")
-  childDob             DateTime?            @map("child_dob") @db.Date
-  entryYear            Int                  @map("entry_year")
-  entryYearGroup       EntryYearGroup?      @map("entry_year_group")
-  firstAssessmentYear  String               @map("first_assessment_year")
-  benchmarkPayableFees Decimal?             @map("benchmark_payable_fees") @db.Decimal(10, 2)
-  leadApplicantId      String               @map("lead_applicant_id") @db.Uuid
-  status               BursaryAccountStatus @default(ACTIVE)
-  closedAt             DateTime?            @map("closed_at") @db.Timestamptz(6)
-  createdAt            DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt            DateTime             @updatedAt @map("updated_at") @db.Timestamptz(6)
+  childName            String                 @map("child_name")
+  childDob             DateTime?              @map("child_dob") @db.Date
+  entryYear            Int                    @map("entry_year")
+  entryYearGroup       EntryYearGroup?        @map("entry_year_group")
+  firstAssessmentYear  String                 @map("first_assessment_year")
+  /// Agreed forward-schedule horizon N (Epic 10, D19) — number of future
+  /// assessment years generated on AWARD. NULL for legacy accounts created
+  /// before the schedule landed.
+  scheduleYears        Int?                   @map("schedule_years")
+  benchmarkPayableFees Decimal?               @map("benchmark_payable_fees") @db.Decimal(10, 2)
+  leadApplicantId      String                 @map("lead_applicant_id") @db.Uuid
+  status               BursaryAccountStatus   @default(ACTIVE)
+  closedAt             DateTime?              @map("closed_at") @db.Timestamptz(6)
+  createdAt            DateTime               @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt            DateTime               @updatedAt @map("updated_at") @db.Timestamptz(6)
   applications         Application[]
-  leadApplicant        Profile              @relation(fields: [leadApplicantId], references: [id])
+  leadApplicant        Profile                @relation(fields: [leadApplicantId], references: [id])
   invitations          Invitation[]
   recommendations      Recommendation[]
   siblingLinks         SiblingLink[]
   contacts             Contact[]
+  scheduleEntries      BursaryScheduleEntry[]
 
   @@index([leadApplicantId])
   @@map("bursary_accounts")
+}
+
+/// Epic 10 — one row per future assessment year for a rolling bursary account
+/// (the application-lifecycle illustration's Year 1..N grid). Generated on
+/// AWARD; future rows materialise into Rounds one year at a time (Epic 03).
+model BursaryScheduleEntry {
+  id               String              @id @default(uuid()) @db.Uuid
+  bursaryAccountId String              @map("bursary_account_id") @db.Uuid
+  scheduleYear     Int                 @map("schedule_year")
+  academicYear     String              @map("academic_year")
+  type             ScheduleEntryType   @default(ANNUAL)
+  status           ScheduleEntryStatus @default(SCHEDULED)
+  manuallyCreated  Boolean             @default(false) @map("manually_created")
+  availableOn      DateTime?           @map("available_on") @db.Date
+  requiredBy       DateTime?           @map("required_by") @db.Date
+  receivedOn       DateTime?           @map("received_on") @db.Date
+  showOnPortal     Boolean             @default(false) @map("show_on_portal")
+  roundId          String?             @map("round_id") @db.Uuid
+  applicationId    String?             @map("application_id") @db.Uuid
+  createdAt        DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime            @updatedAt @map("updated_at") @db.Timestamptz(6)
+  bursaryAccount   BursaryAccount      @relation(fields: [bursaryAccountId], references: [id], onDelete: Cascade)
+
+  @@unique([bursaryAccountId, scheduleYear])
+  @@index([bursaryAccountId])
+  @@index([roundId])
+  @@map("bursary_schedule_entries")
 }
 
 /// One application per child per round.
@@ -783,4 +815,17 @@ enum EmailTemplateType {
 enum BursaryAccountStatus {
   ACTIVE
   CLOSED
+}
+
+/// Epic 10 — schedule-row type ("AnnualType" in the illustration). Extensible.
+enum ScheduleEntryType {
+  ANNUAL
+}
+
+/// Epic 10 — schedule-row lifecycle: SCHEDULED until the year's application is
+/// received, then RECEIVED, then COMPLETE once that year's assessment finishes.
+enum ScheduleEntryStatus {
+  SCHEDULED
+  RECEIVED
+  COMPLETE
 }
