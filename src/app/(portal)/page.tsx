@@ -30,7 +30,14 @@ import {
 } from "@/lib/rounds/submission-deadline";
 import { isRollingOverApplication } from "@/lib/db/queries/reassessment";
 import { ApplicationSectionType } from "@prisma/client";
-import { FileText, ArrowRight, ClipboardList, Upload, Lock } from "lucide-react";
+import {
+  FileText,
+  ArrowRight,
+  ClipboardList,
+  Upload,
+  Lock,
+  History,
+} from "lucide-react";
 import Link from "next/link";
 
 export const metadata = {
@@ -440,6 +447,28 @@ export default async function PortalDashboardPage() {
                   </p>
                   <p className="mt-0.5 text-sm text-slate-500">
                     Track your application progress
+                  </p>
+                </div>
+                <ArrowRight
+                  className="h-4 w-4 shrink-0 text-slate-300 group-hover:text-primary-600 transition-colors"
+                  aria-hidden="true"
+                />
+              </a>
+
+              {/* Application history (multi-round account view, Epic 05 §3.4) */}
+              <a
+                href="/history"
+                className="group flex items-center gap-4 rounded-xl border border-slate-200 bg-white p-5 shadow-sm transition-shadow hover:shadow-md focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-600"
+              >
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-600">
+                  <History className="h-5 w-5" aria-hidden="true" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="font-medium text-slate-900 group-hover:text-primary-900">
+                    Application History
+                  </p>
+                  <p className="mt-0.5 text-sm text-slate-500">
+                    View past rounds &amp; download submissions
                   </p>
                 </div>
                 <ArrowRight

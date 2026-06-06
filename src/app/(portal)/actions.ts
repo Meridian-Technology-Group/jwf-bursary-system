@@ -26,6 +26,7 @@ import {
 import { createAuditLog } from "@/lib/audit/log";
 import { sendEmail } from "@/lib/email/send";
 import { getAppUrl } from "@/lib/app-url";
+import { assertSubmissionInvariantPreserved } from "@/lib/portal/missing-docs-invariant";
 
 import { AUDIT_ACTIONS, AUDIT_ENTITY_TYPES } from "@/lib/audit/actions";
 
@@ -306,6 +307,8 @@ export async function submitMissingDocsResponse(
             id: true,
             reference: true,
             status: true,
+            formStatus: true,
+            submittedAt: true,
             childName: true,
             leadApplicantId: true,
             assignedToId: true,
@@ -324,6 +327,15 @@ export async function submitMissingDocsResponse(
           };
         }
 
+        // Capture the pre-response submission invariants. The portal missing-doc
+        // upload must keep the SUBMISSION DATE intact and the form status fixed
+        // (Epic 05 §3.5): only the assessment moves (PAUSED → resumes). The
+        // uploads themselves are attached to the application by the FileUpload
+        // mechanic (/api/documents) before this action is called, so this action
+        // just resumes the assessment — it never touches submittedAt/formStatus.
+        const submittedAtBefore = application.submittedAt;
+        const formStatusBefore = application.formStatus;
+
         await transitionApplicationStatus(
           tx,
           applicationId,
@@ -333,6 +345,21 @@ export async function submitMissingDocsResponse(
         // The applicant has responded with documents — clear the persisted
         // pause deadline alongside the resume.
         await clearPauseDeadline(tx, applicationId);
+
+        // Invariant guard (defence-in-depth): re-read and assert the submission
+        // date + form status did NOT move. The write-once submitted_at trigger
+        // (Epic 01) is the durable backstop; this catches a regression here at
+        // the app layer with a clear message.
+        const after = await tx.application.findUnique({
+          where: { id: applicationId },
+          select: { submittedAt: true, formStatus: true },
+        });
+        assertSubmissionInvariantPreserved(
+          { submittedAt: submittedAtBefore, formStatus: formStatusBefore },
+          after
+            ? { submittedAt: after.submittedAt, formStatus: after.formStatus }
+            : null
+        );
 
         await createAuditLog(tx, {
           userId: user.id,

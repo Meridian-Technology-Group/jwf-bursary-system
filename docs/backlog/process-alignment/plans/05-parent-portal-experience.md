@@ -1,6 +1,6 @@
 ---
 title: Parent portal experience — guidance, drafts, deadlines & history
-status: planned
+status: shipped
 severity: high
 area: portal
 wave: 2
