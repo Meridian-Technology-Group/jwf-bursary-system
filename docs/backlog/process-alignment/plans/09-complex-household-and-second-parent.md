@@ -1,6 +1,6 @@
 ---
 title: Complex household & second parent — encode the household rules, validate the dual-parent flow
-status: planned
+status: in-progress
 severity: medium
 area: household, assessment, forms
 wave: 3
