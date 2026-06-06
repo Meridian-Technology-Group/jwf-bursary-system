@@ -45,7 +45,7 @@ Legend: ⬜ not started · 🟡 in progress · ✅ shipped to staging · 🚫 bl
 | 3 | [07 Calculations & fees](plans/07-assessment-calculations-and-fees.md) | ✅* | 06 ✅ · D8/D14 built-to-default | #165 (fee-year resolver + engine next-year + seed), #166 (wiring + auto-populate-then-confirm). **\*PR-7 historical-validation gated** — needs Charlotte's real historical figures (non-blocking; engine tested on synthetic fixtures) |
 | 3 | [08 Recommendation & outcome](plans/08-recommendation-and-outcome.md) | ✅ | 01, 07 ✅ · D7/D9 ✅ | #167 (award model + outcome writer + emails), #168 (award-decision UX + scholarship/siblings/options + assessor-PDF removal + reason-code util). **D4 real reason codes** swap-in trivial, non-blocking |
 | 3 | [09 Complex household / second parent](plans/09-complex-household-and-second-parent.md) | ✅ | 02, 06 ✅ · D15–D17 built to workbook FAQ | #169 (household rules engine + assessor decision aid), #170 (custody schema + form branching + guardian/widowed evidence + H7/H9 flags). **H7/H8/H9/H10 need Charlotte's verbatim confirmation** (one-file swap-point, non-blocking) |
-| 4 | [10 Data retention & account lifecycle](plans/10-data-retention-and-account-lifecycle.md) | ⏳ deps | 01, 03 (deps) · D6 ✅ (DPO signs years) · D19 narrow | — |
+| 4 | [10 Data retention & account lifecycle](plans/10-data-retention-and-account-lifecycle.md) | 🟡 | 01, 03 (deps met) · D6 ✅ (DPO signs years) · D19 narrow | PR-1 retention policy + cascade extraction + auto-purge cron (`feature/10-retention-policy-and-purge-cron`); PR-2 schedule + revocation (`feature/10-schedule-and-portal-revocation`, stacks on PR-1) |
 | 4 | [11 Auth & access](plans/11-auth-and-access.md) | ⬜ | none · D21 ✅ (SSO deferred) · D20 ✅ (idle watcher) | — |
 
 ---
@@ -787,6 +787,62 @@ wiring (PR-2). **Merge order: PR-1 → PR-2.**
 
 ---
 
+## Active — Epic 10 (data retention & account lifecycle)
+
+Wave 4, deps 01 + 03 (both shipped). D6 ✅ (tiered: purge declined / 6-yr
+qualifies-not-awarded / 7-yr awarded; **DPO signs the final year values** —
+outstanding-but-non-blocking, gates only turning `RETENTION_PURGE_ENABLED` on in
+prod). D18 ✅ (status-keyed portal guard; `DELETED` reserved for erasure). D19 =
+narrow (default years-to-final-eligible + dates from the award round). Plan §6
+lists eight PR-sized items; executed as **two cohesive PRs stacked off
+`staging`** to keep the retention/purge backend (PR-1, no schema) separate from
+the schedule schema + lifecycle/revocation churn (PR-2). **Merge order: PR-1 →
+PR-2.**
+
+**PR-1 — tiered retention policy + cascade extraction + auto-purge cron** (§6
+PR-1, PR-2) — `feature/10-retention-policy-and-purge-cron` (off `staging`):
+- [x] §6 PR-1 — `src/lib/retention/policy.ts`: typed `RetentionPolicy` (declined
+  grace-days / qualifies-not-awarded 6yr / awarded 7yr, D6 defaults) **overridable
+  via env** (`RETENTION_DECLINED_GRACE_DAYS` / `RETENTION_QUALIFIES_NOT_AWARDED_YEARS`
+  / `RETENTION_AWARDED_YEARS`; malformed value → default, fail-safe-long). Pure
+  `isPurgeable(application, account, now, policy)` — strictly window-gated, anchored
+  per-tier (archivedAt→submittedAt / submittedAt / **closedAt**), never purges
+  in-flight or legacy-QUALIFIES rows, never purges an AWARDED account while ACTIVE.
+  19 unit tests incl. the no-op-on-recent-data property + boundary-inclusivity.
+- [x] §6 PR-1 — extracted the GDPR cascade into `src/lib/retention/purge.ts`
+  (`purgeApplication` + `buildPurgeAuditMetadata`), preserving every step/order:
+  Storage-first, anonymise Application (never hard-delete), delete sections/docs/
+  assessment children/recommendation, **null `AuditLog.userId` (never delete —
+  append-only)**, anonymise Profile + role→DELETED, dual-parent shared-profile
+  guard, Supabase auth deletion. DI'd (`withAdminContext`/`deleteDocument`/
+  `deleteAuthUser`) for testability. `gdprDeleteApplicantAction` is now a thin
+  caller: `isPurgeable` (replaces the flat-7y literal) + `purgeApplication`. 6
+  tests incl. a **static assertion the purge file never calls `auditLog.delete*`**.
+- [x] §6 PR-2 — `src/app/api/cron/purge-expired/route.ts` (copies the
+  `expire-invitations` shape: GET, force-dynamic, fail-closed `Bearer CRON_SECRET`,
+  withAdminContext). Selects terminal-outcome apps, window-gates via `isPurgeable`,
+  bounded `take` (100/run), per-item non-fatal. **`RETENTION_PURGE_ENABLED` dry-run
+  gate (default OFF)**: logs what it WOULD purge + per-tier counts, deletes nothing
+  unless the flag is exactly `"true"`. One summary `RETENTION_PURGE_CRON` audit row
+  only when something was purged (no no-op flood). New `RETENTION_PURGE_CRON` audit
+  action + red badge. `vercel.json` cron entry (`0 3 * * 0`, weekly).
+- [x] No schema change in PR-1. prisma format/validate + tsc + lint + build green;
+  **533 tests** (+25). **DO NOT MERGE — merge order PR-1 → PR-2.** READ-ONLY
+  nonprod what-would-purge query in the PR body (expected no-op on current data).
+
+**PR-2 — forward-schedule schema + generation on AWARD + close-when-complete +
+portal-access revocation** (§6 PR-3, PR-4, PR-5, PR-6) —
+`feature/10-schedule-and-portal-revocation` (**stacks on PR-1**) — *pending, see
+"Remaining" below*.
+
+> **Cron/env flags to set (PR-1).** New Vercel cron `/api/cron/purge-expired`
+> (weekly, reuses the existing `CRON_SECRET`, already set in Production +
+> Preview). New env `RETENTION_PURGE_ENABLED` (**leave UNSET / not "true"** so the
+> job runs report-only on nonprod + prod until DPO sign-off). Optional DPO
+> year-override envs default to D6 if unset. Flagged for Brian.
+
+---
+
 ## Decision register — execution view
 
 Mirrors [README §5](README.md#5-decision-register). Reconciled 2026-06-05 against
@@ -827,6 +883,27 @@ Wave 2 → Wave 3 → Wave 4.
 
 ## Change log
 
+- **2026-06-06** — **Epic 10 OPENED (Wave 4)** — PR-1
+  (`feature/10-retention-policy-and-purge-cron`, off `staging`): tiered retention
+  policy + cascade extraction + auto-purge cron. New pure `lib/retention/policy.ts`
+  (`isPurgeable` + env-overridable `RetentionPolicy`, D6 defaults: declined
+  grace-days / 6-yr qualifies-not-awarded / 7-yr-from-close awarded) is the SINGLE
+  source of truth for the retention horizon — strictly window-gated, awarded anchors
+  from `closedAt` (never purges while ACTIVE), in-flight/legacy-QUALIFIES never
+  purged. The proven GDPR cascade is extracted into `lib/retention/purge.ts`
+  (`purgeApplication`), preserving every step + the **append-only-audit invariant
+  (nulls userId, never deletes)**; `gdprDeleteApplicantAction` becomes a thin caller
+  (policy + shared cascade) — the flat-7y literal is gone. New
+  `api/cron/purge-expired` cron mirrors `expire-invitations`: window-gated selection,
+  bounded take, per-item non-fatal, **DRY-RUN by default** (`RETENTION_PURGE_ENABLED`
+  must be exactly `"true"` to delete — report-only otherwise), one summary
+  `RETENTION_PURGE_CRON` audit row only when something changed. `vercel.json` cron
+  (`0 3 * * 0`). 25 new tests (policy 19, purge 6 incl. the static no-audit-delete
+  assertion); prisma format/validate/tsc/lint/build green; 533 tests. PR-2 (schedule
+  schema + generation on AWARD + close-when-complete + portal-access revocation)
+  stacks on PR-1. **DPO signs the D6 year values before enabling in prod —
+  outstanding-but-non-blocking.** **DO NOT MERGE — merge order PR-1 → PR-2.**
+  READ-ONLY nonprod what-would-purge query in the PR body.
 - **2026-06-06** — **WAVE 3 COMPLETE.** Epics 06 (#162/#163 assessor UI + synopsis),
   07 (#165/#166 calc/fees — *PR-7 historical validation gated*), 08 (#167/#168
   recommendation/outcome — *D4 reason codes swap-in pending*), 09 (#169/#170 complex
