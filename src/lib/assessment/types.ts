@@ -4,6 +4,20 @@
  * No DB dependencies, no UI dependencies — pure TypeScript types.
  */
 
+/**
+ * D8 — VAT applicability on bursary fees.
+ *
+ * The engine currently APPLIES VAT to the post-bursary net fee at this default
+ * rate; the schema mirrors it (`prisma/schema.prisma` `Assessment.vatRate`
+ * `@default(20.00)`). Whether VAT genuinely applies to bursary fees is an open
+ * client/finance question (D8) — until Charlotte/finance confirm, current
+ * behaviour is preserved (20%). This constant is the SINGLE source of the
+ * default so the answer can be changed in one place (set to `0` if D8 lands as
+ * "legacy / not applied"). Per-assessment overrides still flow through the
+ * `vatRate` input.
+ */
+export const DEFAULT_VAT_RATE = 20
+
 export type EmploymentStatus =
   | 'PAYE'
   | 'BENEFITS'
@@ -52,6 +66,16 @@ export interface AssessmentInput {
   utilityCosts: number
   foodCosts: number
   annualFees: number
+  /**
+   * Epic 07 — annual fee for the FOLLOWING academic year (the fee-uplift the
+   * family will pay across the school year that spans the boundary). Optional
+   * and additive: when omitted the engine emits no next-year payable figures and
+   * every existing call site is unaffected. The current-year payable monthly is
+   * unchanged. See D14 (which fee year drives the payable monthly) — the default
+   * keeps current-year ÷ 12 and surfaces the next-year figures alongside, for
+   * the assessor and for Epic 08, without altering the bursary maths.
+   */
+  nextYearAnnualFees?: number
   /** Default: Band D Croydon = 2480 */
   councilTax: number
   schoolingYearsRemaining: number
@@ -88,6 +112,18 @@ export interface PayableFeesResult {
   /** After manual adjustment */
   adjustedYearlyPayableFees: number
   adjustedMonthlyPayableFees: number
+  /**
+   * Epic 07 — next-year payable figures. Present only when `nextYearAnnualFees`
+   * was supplied; `null` otherwise. The bursary award and scholarship £ are held
+   * flat at the current-year figures (D14 default: no re-derivation against the
+   * next-year fee until Charlotte confirms the boundary rule); only the gross
+   * fee changes, so these show the family's payment implication of the uplift.
+   */
+  nextYearGrossFees: number | null
+  nextYearNetYearlyFees: number | null
+  nextYearVatAmount: number | null
+  nextYearYearlyPayableFees: number | null
+  nextYearMonthlyPayableFees: number | null
 }
 
 export interface AssessmentOutput {

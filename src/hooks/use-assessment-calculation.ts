@@ -69,6 +69,11 @@ const EMPTY_OUTPUT: AssessmentOutput = {
     monthlyPayableFees: 0,
     adjustedYearlyPayableFees: 0,
     adjustedMonthlyPayableFees: 0,
+    nextYearGrossFees: null,
+    nextYearNetYearlyFees: null,
+    nextYearVatAmount: null,
+    nextYearYearlyPayableFees: null,
+    nextYearMonthlyPayableFees: null,
   },
 };
 
