@@ -17,7 +17,10 @@
 import { notFound } from "next/navigation";
 import type { Decimal } from "@prisma/client/runtime/library";
 import { requireRole, Role, type CurrentUser } from "@/lib/auth/roles";
-import { getApplicationWithDetails } from "@/lib/db/queries/applications";
+import {
+  getApplicationWithDetails,
+  getSectionData,
+} from "@/lib/db/queries/applications";
 import { getApplicationContributors } from "@/lib/db/queries/contributors";
 import { buildContributorLabelMap } from "@/lib/contributors/dual-view";
 import { getAssessment } from "@/lib/db/queries/assessments";
@@ -31,6 +34,8 @@ import { BenchmarkDisplay } from "@/components/admin/benchmark-display";
 import { SplitScreen } from "@/components/admin/split-screen";
 import { AssessmentForm, type SerialisedAssessment } from "@/components/admin/assessment-form";
 import { AssessmentSynopsis } from "@/components/admin/assessment-synopsis";
+import { HouseholdDecisionAid } from "@/components/admin/household-decision-aid";
+import { deriveHouseholdFromSources, type HouseholdSources } from "@/lib/household/from-sections";
 import { BeginAssessmentButton } from "@/components/admin/begin-assessment-button";
 import { SecondParentGate } from "@/components/admin/second-parent-gate";
 import { DocumentListClient } from "@/components/admin/document-list-client";
@@ -124,19 +129,56 @@ export default async function AssessmentPage({ params }: Props) {
   const user = await requireRole([Role.ADMIN, Role.ASSESSOR, Role.VIEWER]);
   const isViewer = user.role === Role.VIEWER;
 
-  const { application, assessment, contributors } = await withUserContext(
-    user.id,
-    user.role as RlsRole,
-    async (tx) => {
-      const app = await getApplicationWithDetails(tx, params.id);
-      if (!app)
-        return { application: null, assessment: null, contributors: [] };
-      const a = await getAssessment(tx, params.id);
-      const ctribs = await getApplicationContributors(tx, params.id);
-      return { application: app, assessment: a, contributors: ctribs };
-    }
-  );
+  const { application, assessment, contributors, householdSources } =
+    await withUserContext(
+      user.id,
+      user.role as RlsRole,
+      async (tx) => {
+        const app = await getApplicationWithDetails(tx, params.id);
+        if (!app)
+          return {
+            application: null,
+            assessment: null,
+            contributors: [],
+            householdSources: null as HouseholdSources | null,
+          };
+        const a = await getAssessment(tx, params.id);
+        const ctribs = await getApplicationContributors(tx, params.id);
+
+        // Epic 09: read the PRIMARY contributor's PARENT_DETAILS + OTHER_INFO
+        // JSONB so the household decision aid can derive the scenario from the
+        // same data the form branches on. Defensive — degrades to single
+        // sole-parent when the primary or a section is absent.
+        const primary = ctribs.find((c) => c.role === "PRIMARY");
+        let household: HouseholdSources | null = null;
+        if (primary) {
+          const [pd, oi] = await Promise.all([
+            getSectionData(tx, app.id, "PARENT_DETAILS", primary.id),
+            getSectionData(tx, app.id, "OTHER_INFO", primary.id),
+          ]);
+          household = {
+            parentDetails: (pd?.data ?? null) as HouseholdSources["parentDetails"],
+            otherInfo: (oi?.data ?? null) as HouseholdSources["otherInfo"],
+            applicationCustodyArrangement:
+              (app as { custodyArrangement?: string | null }).custodyArrangement ??
+              null,
+          };
+        }
+
+        return {
+          application: app,
+          assessment: a,
+          contributors: ctribs,
+          householdSources: household,
+        };
+      }
+    );
   if (!application) notFound();
+
+  // Derive the household scenario + handling (Epic 09) for the decision aid.
+  const householdHandling = householdSources
+    ? deriveHouseholdFromSources(householdSources)
+    : null;
 
   // ── Dual-parent context ────────────────────────────────────────────────────
   // The SECONDARY contributor (second parent), if any, plus the PRIMARY's id
@@ -402,6 +444,12 @@ export default async function AssessmentPage({ params }: Props) {
           academicYear={round.academicYear}
           user={user}
         />
+      )}
+
+      {/* Household decision aid (Epic 09) — derived scenario + expected
+          handling; H7/H9 surface as advisory flags, never auto-decline. */}
+      {householdHandling && (
+        <HouseholdDecisionAid handling={householdHandling} />
       )}
 
       {/* Split-screen workspace */}

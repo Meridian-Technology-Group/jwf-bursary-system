@@ -44,7 +44,7 @@ Legend: ⬜ not started · 🟡 in progress · ✅ shipped to staging · 🚫 bl
 | 3 | [06 Assessor experience & UI](plans/06-assessor-experience-and-ui.md) | 🟡 (both PRs open) | 02 ✅ (dep) | PR-1 synopsis consolidation (`feature/06-synopsis-consolidation`); PR-2 layout + calc strip + 30+ doc nav + field-map (`feature/06-workspace-layout`, stacks on PR-1) — **merge PR-1 → PR-2**; → ✅ when PR-2 lands |
 | 3 | [07 Calculations & fees](plans/07-assessment-calculations-and-fees.md) | 🟡 | 06 (dep) · D8/D14 narrow, non-blocking · PR-7 historical-validation gated on client data | PR-1 fee resolver + engine next-year + seed (`feature/07-fee-resolver-engine-nextyear`); PR-2 wiring + auto-populate-then-confirm UI (`feature/07-wiring-and-autopopulate`, stacks on PR-1) — **merge PR-1 → PR-2**; PR-7 (historical fixtures) FLAGGED — needs client historicals |
 | 3 | [08 Recommendation & outcome](plans/08-recommendation-and-outcome.md) | 🟡 (both PRs open) | 01, 07 (deps) · D7/D9 ✅ · D4 artifact (placeholders) | PR-1 award model + outcome writer + emails (`feature/08-award-model-and-emails`); PR-2 award-decision UX + scholarship/siblings/options + PDF removal + reason-code util (`feature/08-award-ux-and-pdf-removal`, stacks on PR-1) — **merge PR-1 → PR-2**; → ✅ when PR-2 lands (D4 reason-code swap outstanding-but-non-blocking) |
-| 3 | [09 Complex household / second parent](plans/09-complex-household-and-second-parent.md) | ⏳ deps | 02, 06 (deps) · D15–D17 build to workbook FAQ | — |
+| 3 | [09 Complex household / second parent](plans/09-complex-household-and-second-parent.md) | 🟡 | 02, 06 ✅ (deps) · D15–D17 build to workbook FAQ | PR-1 rules engine + assessor decision aid + second-parent subset audit (`feature/09-household-rules-engine`); PR-2 custody schema + form branch wiring + guardian/widowed evidence + H7 notice (`feature/09-household-schema-and-form`, stacks on PR-1) — **merge PR-1 → PR-2**; → ✅ when PR-2 lands |
 | 4 | [10 Data retention & account lifecycle](plans/10-data-retention-and-account-lifecycle.md) | ⏳ deps | 01, 03 (deps) · D6 ✅ (DPO signs years) · D19 narrow | — |
 | 4 | [11 Auth & access](plans/11-auth-and-access.md) | ⬜ | none · D21 ✅ (SSO deferred) · D20 ✅ (idle watcher) | — |
 
@@ -701,6 +701,63 @@ reason-code util** (§6 PR-3, PR-4, PR-5, PR-7) —
 
 ---
 
+## Active — Epic 09 (complex household / second parent)
+
+Wave 3, deps 02 + 06 ✅. A **domain-rules** epic — the dual-parent plumbing
+shipped (Epic 20/contributors), so this encodes the FAQ household policy.
+D15–D17 built to the workbook FAQ defaults; H7/H9 stay **assessor-surfaced
+flags, never auto-decline** (standing rule). Plan §6 lists seven PR-sized items;
+executed as **two cohesive PRs stacked off `staging`** to keep the pure rules
+engine + assessor aid (PR-1, no schema) separate from the schema + form-branch
+wiring (PR-2). **Merge order: PR-1 → PR-2.**
+
+**PR-1 — rules engine + assessor decision aid + second-parent subset audit**
+(§6 PR-1, PR-2, PR-3) — `feature/09-household-rules-engine` (off `staging`):
+- [x] §6 PR-1 — `src/lib/household/rules.ts` = the SINGLE SOURCE OF TRUTH:
+  pure `deriveHouseholdScenario(input) → { scenario, label, assessees, leadRule,
+  requiredEvidence[], gate, needsSecondParent, assessorNote }` encoding all of
+  H1–H11 from §3.1. No DB, no React. Deterministic + total (every relationship ×
+  facet combo resolves to one row). `gate` is only NONE / CANNOT_SUPPORT (H7) /
+  MAY_DEFER (H9) — **never an auto-decline**. 23 unit tests covering every row +
+  precedence (H7 court-order beats H9; guardian facet beats relationship; custody
+  split routes H10/H11; school-fees order only triggers H7 when DIVORCED) +
+  totality/determinism/no-auto-decline + evidence-label coverage.
+- [x] §6 PR-1 — `src/lib/household/from-sections.ts` = pure mapper from the
+  persisted PARENT_DETAILS + OTHER_INFO JSONB (+ the Application custody column)
+  → `HouseholdInput` → handling. Defensive/back-compat: legacy drafts with no
+  Epic-09 facets degrade to the H1/H3/H5/H6 rows already implied by relationship +
+  sole-parent toggle; unknown enum strings coerce to defaults (never throw). 7
+  unit tests.
+- [x] §6 PR-3 — `HouseholdDecisionAid` component (compact always-visible panel):
+  derived scenario + label + scenario code, who-is-assessed / lead / expected
+  evidence, and a prominent **advisory flag** for H7 (rose, "cannot support —
+  assessor decision required") and H9 (amber, "may decline or defer"). Wired into
+  `assessment/page.tsx` above the split-screen workspace; reads the PRIMARY
+  contributor's submitted section data via the same rules module the form uses.
+  Renders nothing when no household data is available (single-parent default).
+- [x] §6 PR-2 — second-parent subset **audited** (no code change needed): the
+  `(contribute)` route already restricts P/G2 to PARENT_DETAILS (secondaryMode) +
+  PARENTS_INCOME + ASSETS_LIABILITIES (own-only), shows the child read-only
+  name-only with confidential framing, and runs under the secondary's RLS context.
+  No household-level leakage found. Documented in
+  `plans/09-second-parent-subset-audit.md`.
+- [x] tsc / prisma-format / lint / build green; 505 tests (+30).
+
+**PR-2 — custody schema + form branch wiring + evidence + H7 notice (D15/D16/D17)**
+(§6 PR-4, PR-5, PR-6, PR-7) — `feature/09-household-schema-and-form` (**stacks on
+PR-1**): *pending — see remaining breakdown.*
+
+> **H1–H11 confirmation status.** All eleven rows are **implemented to the
+> workbook-FAQ defaults**. The four rows carrying real money/scope consequences —
+> **H7** (cannot support), **H8** (remarried → two-earner + maintenance, D17),
+> **H9** (may defer), **H10** (50/50 dual lead, D15) — need **Charlotte's verbatim
+> confirmation** against the `.xlsx` FAQ (esp. whether H7 is a hard decline vs
+> assessor-discretion, and whether H9 is decline vs pause). **Outstanding but
+> non-blocking**: until confirmed, the assessor aid is advisory copy only and the
+> rules engine is the swap-point (one file).
+
+---
+
 ## Decision register — execution view
 
 Mirrors [README §5](README.md#5-decision-register). Reconciled 2026-06-05 against
@@ -741,6 +798,25 @@ Wave 2 → Wave 3 → Wave 4.
 
 ## Change log
 
+- **2026-06-06** — **Epic 09 OPENED (Wave 3)** — PR-1
+  (`feature/09-household-rules-engine`, off `staging`): the household policy
+  engine. New pure `src/lib/household/rules.ts` (`deriveHouseholdScenario`)
+  encodes all eleven FAQ scenarios H1–H11 (§3.1) as the single source of truth —
+  who is assessed / lead / required evidence / policy gate — with H7 (cannot
+  support) and H9 (may defer) surfaced as **advisory flags, never auto-decline**.
+  `from-sections.ts` maps the persisted PARENT_DETAILS + OTHER_INFO JSONB (+ the
+  custody column) → the engine, defensively (legacy drafts degrade to today's
+  H1/H3/H5/H6 behaviour). `HouseholdDecisionAid` panel renders the derived
+  scenario + expected handling + the H7/H9 flag above the assessor workspace,
+  reading the same rules the form will branch on. Second-parent restricted view
+  **audited** — already correctly scoped to the own-only subset with confidential
+  child-name-only framing; no leakage, no code change (documented in
+  `plans/09-second-parent-subset-audit.md`). No schema/migration. 30 new tests;
+  tsc/prisma-format/lint/build green; 505 tests. PR-2 (custody schema + form
+  branch wiring + guardian/widowed evidence + H7 cannot-support notice, D15–D17)
+  stacks on PR-1. **All H1–H11 implemented to the workbook FAQ; H7/H8/H9/H10 need
+  Charlotte's verbatim confirmation — outstanding-but-non-blocking.** **DO NOT
+  MERGE — merge order PR-1 → PR-2.**
 - **2026-06-06** — **Epic 08 PR-2** (`feature/08-award-ux-and-pdf-removal`,
   stacks on PR-1): the assessor-facing award surface + PDF removal. The two
   QUALIFIES/DNQ buttons become a **three-way Award / Qualifies — not awarded /
