@@ -98,7 +98,82 @@ export const bursaryAccounts = [
     firstAssessmentYear: "2026/27",
     benchmarkPayableFees: null,
     leadApplicantId: APPLICANT_4_ID,
-    status: "ACTIVE" as const,
+    // CLOSED demo (Epic 10): a concluded account whose full schedule completed.
+    // Exercises the admin grid rendering a CLOSED account + COMPLETE schedule.
+    // (A full PORTAL-ACCESS-revocation demo needs a lead with no in-flight
+    // application; every fixed demo user currently has one, so that is a
+    // deferred seed nicety — the access guard itself is unit-tested.)
+    status: "CLOSED" as const,
+    closedAt: new Date("2026-03-01T10:00:00Z"),
+    scheduleYears: 2,
+  },
+];
+
+// ─── Forward schedule entries (Epic 10) ────────────────────────────────────────
+//
+// Okafor (ACTIVE) — a populated multi-year schedule: Year 1 RECEIVED (the award
+// year's application is in), Years 2–3 SCHEDULED future. Years 1–2 are shown on
+// the portal, Year 3 hidden — matching the illustration's Show/Hide defaults.
+// Chen (CLOSED) — a fully COMPLETE 2-year schedule, so the grid shows a
+// concluded account.
+
+export const scheduleEntries = [
+  // Okafor — ACTIVE, mixed RECEIVED past + SCHEDULED future.
+  {
+    bursaryAccountId: ACCOUNT_OKAFOR_ID,
+    scheduleYear: 1,
+    academicYear: "2026-27",
+    status: "RECEIVED" as const,
+    manuallyCreated: false,
+    availableOn: new Date("2026-09-01"),
+    requiredBy: new Date("2026-12-01"),
+    receivedOn: new Date("2026-10-15"),
+    showOnPortal: true,
+  },
+  {
+    bursaryAccountId: ACCOUNT_OKAFOR_ID,
+    scheduleYear: 2,
+    academicYear: "2027-28",
+    status: "SCHEDULED" as const,
+    manuallyCreated: false,
+    availableOn: new Date("2027-09-01"),
+    requiredBy: new Date("2027-12-01"),
+    receivedOn: null,
+    showOnPortal: true,
+  },
+  {
+    bursaryAccountId: ACCOUNT_OKAFOR_ID,
+    scheduleYear: 3,
+    academicYear: "2028-29",
+    status: "SCHEDULED" as const,
+    manuallyCreated: false,
+    availableOn: new Date("2028-09-01"),
+    requiredBy: new Date("2028-12-01"),
+    receivedOn: null,
+    showOnPortal: false,
+  },
+  // Chen — CLOSED, schedule fully complete.
+  {
+    bursaryAccountId: ACCOUNT_CHEN_ID,
+    scheduleYear: 1,
+    academicYear: "2026-27",
+    status: "COMPLETE" as const,
+    manuallyCreated: false,
+    availableOn: new Date("2026-09-01"),
+    requiredBy: new Date("2026-12-01"),
+    receivedOn: new Date("2026-10-20"),
+    showOnPortal: false,
+  },
+  {
+    bursaryAccountId: ACCOUNT_CHEN_ID,
+    scheduleYear: 2,
+    academicYear: "2027-28",
+    status: "COMPLETE" as const,
+    manuallyCreated: false,
+    availableOn: new Date("2027-09-01"),
+    requiredBy: new Date("2027-12-01"),
+    receivedOn: new Date("2027-10-18"),
+    showOnPortal: false,
   },
 ];
 

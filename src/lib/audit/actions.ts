@@ -110,6 +110,10 @@ export const AUDIT_ACTIONS = {
   GDPR_DELETION: "GDPR_DELETION",
   /** Automatic tiered-retention purge run by the purge-expired cron (Epic 10). */
   RETENTION_PURGE_CRON: "RETENTION_PURGE_CRON",
+
+  // Bursary-account forward schedule (Epic 10)
+  SCHEDULE_REGENERATED: "SCHEDULE_REGENERATED",
+  SCHEDULE_SHOW_ON_PORTAL_TOGGLED: "SCHEDULE_SHOW_ON_PORTAL_TOGGLED",
 } as const;
 
 export type AuditAction = (typeof AUDIT_ACTIONS)[keyof typeof AUDIT_ACTIONS];
@@ -139,6 +143,8 @@ export const AUDIT_ENTITY_TYPES = {
   CouncilTaxDefault: "CouncilTaxDefault",
   ReasonCode: "ReasonCode",
   EmailTemplate: "EmailTemplate",
+  BursaryAccount: "BursaryAccount",
+  BursaryScheduleEntry: "BursaryScheduleEntry",
 } as const;
 
 export type AuditEntityType =
@@ -234,6 +240,8 @@ const ACTION_COLOUR: Partial<Record<AuditAction, string>> = {
   [AUDIT_ACTIONS.GDPR_DELETION]: "bg-red-400",
   [AUDIT_ACTIONS.RETENTION_PURGE_CRON]: "bg-red-400",
   [AUDIT_ACTIONS.NAME_REVEAL]: "bg-orange-400",
+  [AUDIT_ACTIONS.SCHEDULE_REGENERATED]: "bg-blue-500",
+  [AUDIT_ACTIONS.SCHEDULE_SHOW_ON_PORTAL_TOGGLED]: "bg-blue-500",
 };
 
 /**
