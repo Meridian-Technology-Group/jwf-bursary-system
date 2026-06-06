@@ -12,6 +12,7 @@
 import { getCurrentUser } from "@/lib/auth/roles";
 import { AdminSidebarController } from "@/components/admin/admin-sidebar-controller";
 import { ErrorBoundary } from "@/components/shared/error-boundary";
+import { IdleLogoutWatcher } from "@/components/auth/idle-logout-watcher";
 
 export const metadata = {
   title: {
@@ -35,6 +36,11 @@ export default async function AdminLayout({
 
   return (
     <div className="min-h-screen bg-neutral-50">
+      {/* Epic 11 (D20) — optional inactivity logout for staff sessions. Renders
+          nothing unless an authenticated staff user is present and the feature
+          flag is enabled. */}
+      {user ? <IdleLogoutWatcher /> : null}
+
       {/* Client component controls sidebar collapse state + mobile sheet */}
       <AdminSidebarController
         userName={displayName}

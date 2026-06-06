@@ -1,6 +1,6 @@
 ---
 title: Auth & access — verify MFA gating, scope Microsoft SSO, optional inactivity logout
-status: planned
+status: shipped
 severity: low
 area: auth, access
 wave: 4

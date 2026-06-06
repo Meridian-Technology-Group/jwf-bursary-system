@@ -9,7 +9,7 @@
 >
 > **Spec:** [README.md](README.md) (spine + decision register). **Owner:** Brian Wagner.
 
-**Started:** 2026-06-05 · **Current focus:** **WAVES 0–3 COMPLETE + Epic 10 (Wave 4) COMPLETE on staging** (#133–#173 + PR-3 grid/seed/mirroring open for review). Wave 3 = Epics 06/07/08/09 (07 PR-7 historical-validation + D4 reason codes + H7–H10 confirmation = outstanding-but-non-blocking client deliverables). Epic 10 = retention cron (dry-run; DPO signs years) + rolling-account schedule + portal-access revocation. **Next: Epic 11 (auth & access) — the last Wave 4 epic.** 01 PR-6 (drop fused `status`) still gated.
+**Started:** 2026-06-05 · **Current focus:** **🎉 PROGRAMME COMPLETE — all 12 epics shipped to `staging` (Waves 0–4).** Epic 11 (auth & access) is the final epic: MFA env-gating **verified + pinned by tests** (no code change), optional inactivity-logout watcher built (D20, default 30 min, env-configurable, optional-disable, wired into admin + portal), Microsoft-SSO **spike doc only** (D21, no implementation). Remaining work is entirely **outstanding-but-non-blocking client deliverables** (see the PROGRAMME COMPLETE note below) + the gated **Epic 01 PR-6** column-drop. 01 PR-6 (drop fused `status`) still gated.
 
 ---
 
@@ -46,7 +46,7 @@ Legend: ⬜ not started · 🟡 in progress · ✅ shipped to staging · 🚫 bl
 | 3 | [08 Recommendation & outcome](plans/08-recommendation-and-outcome.md) | ✅ | 01, 07 ✅ · D7/D9 ✅ | #167 (award model + outcome writer + emails), #168 (award-decision UX + scholarship/siblings/options + assessor-PDF removal + reason-code util). **D4 real reason codes** swap-in trivial, non-blocking |
 | 3 | [09 Complex household / second parent](plans/09-complex-household-and-second-parent.md) | ✅ | 02, 06 ✅ · D15–D17 built to workbook FAQ | #169 (household rules engine + assessor decision aid), #170 (custody schema + form branching + guardian/widowed evidence + H7/H9 flags). **H7/H8/H9/H10 need Charlotte's verbatim confirmation** (one-file swap-point, non-blocking) |
 | 4 | [10 Data retention & account lifecycle](plans/10-data-retention-and-account-lifecycle.md) | ✅ | 01, 03 (deps met) · D6 ✅ (DPO signs years) · D19 narrow | #172 (PR-1 policy + cascade + cron), #173 (PR-2 schedule + revocation), PR-3 grid + seed + mirroring (`feature/10-schedule-grid-seed-mirroring`). **DPO signs D6 year values** + a *full* portal-revocation seed fixture = outstanding-but-non-blocking |
-| 4 | [11 Auth & access](plans/11-auth-and-access.md) | ⬜ | none · D21 ✅ (SSO deferred) · D20 ✅ (idle watcher) | — |
+| 4 | [11 Auth & access](plans/11-auth-and-access.md) | ✅ | none · D21 ✅ (SSO deferred) · D20 ✅ (idle watcher) | `feature/11-auth-access` (single PR: MFA verify+tests, idle watcher, SSO spike doc) |
 
 ---
 
@@ -916,6 +916,119 @@ portal-access revocation** (§6 PR-3, PR-4, PR-5, PR-6 backend) —
 
 ---
 
+## Active — Epic 11 (auth & access) — ✅ FINAL EPIC
+
+Wave 4, no dependencies. Deliberately the lightest epic — mostly verify/document
++ a spike + one small optional build. **Single PR** off `staging`
+(`feature/11-auth-access`). No Prisma migration, no reference/seed change.
+
+**1. MFA env-gating — VERIFIED (no code change to the gate):**
+- [x] Confirmed `isStaffMfaEnforced()` (`src/lib/auth/mfa-flag.ts`) already
+  delivers the client's ask: **OFF** on staging/preview/local (unset →
+  `VERCEL_ENV !== "production"`), **ON** in prod by default (can't be forgotten);
+  `STAFF_MFA_ENFORCED="true"/"1"` forces on (pre-prod smoke test), anything else
+  forces off (prod kill-switch). **No gap found — `mfa-flag.ts`/`middleware.ts`
+  untouched.**
+- [x] Pinned the contract with `src/lib/auth/__tests__/mfa-flag.test.ts` (11
+  cases: every VERCEL_ENV default + every override incl. trim/case/empty-string)
+  so a future refactor can't silently re-enable it on staging or disable it in
+  prod.
+- [x] `STAFF_MFA_ENFORCED` was **already in `.env.example`** (the plan's "missing"
+  note was stale); fixed the matching stale "**Missing from `.env.example`**" line
+  in `docs/operations/environment-variables.md` and added a **"MFA in non-prod —
+  verified posture"** runbook note (leave unset in BOTH envs; do not pin a
+  permanent value on the staging scope) so an env reset can't silently flip it.
+
+**2. Optional inactivity logout (D20) — BUILT:**
+- [x] Pure config resolver `src/lib/auth/idle-timeout.ts`
+  (`resolveIdleTimeoutConfig`) — **default 30 min idle / 60 s warning**, all
+  env-overridable (`NEXT_PUBLIC_SESSION_IDLE_MINUTES` / `_WARN_SECONDS` /
+  `_ENABLED`), clamped + fail-safe (malformed → default; warning always strictly
+  inside the idle window). 24 unit tests on the timing/parsing logic.
+- [x] Client watcher `src/components/auth/idle-logout-watcher.tsx` — throttled
+  activity listeners (mouse/key/scroll/touch/click + `visibilitychange`), a
+  warn-then-logout dialog with a live countdown ("Stay signed in" / "Sign out
+  now"), then POSTs the existing same-origin `/api/auth/logout` (no new logout
+  primitive). **Genuinely optional** — `NEXT_PUBLIC_SESSION_IDLE_ENABLED=false`
+  registers no listeners and renders nothing.
+- [x] Wired into **both** authenticated layouts — admin (`(admin)/layout.tsx`) and
+  parent portal (`(portal)/layout.tsx`) — gated on an authenticated user. (D20's
+  "does it apply to the portal too?" is answered default-yes; disable per-env or
+  drop the portal mount if Charlotte scopes it staff-only.)
+- [x] **Env to flag for Brian** (UX convenience, NOT a security control — the real
+  boundary is Supabase token expiry; if security-grade is wanted, shorten the
+  Supabase JWT TTL instead): `NEXT_PUBLIC_SESSION_IDLE_ENABLED` /
+  `NEXT_PUBLIC_SESSION_IDLE_MINUTES` / `NEXT_PUBLIC_SESSION_IDLE_WARN_SECONDS` —
+  all **optional**, all defaulted; nothing needs setting to ship. **The exact idle
+  window is D20, TBC by Charlotte** — 30 min is a placeholder.
+
+**3. Microsoft SSO (D21) — SPIKE DOC ONLY (no implementation):**
+- [x] `docs/engineering/microsoft-sso-spike.md`: feasibility note. Verdict —
+  feasible & low-code for the OAuth happy path (Supabase Azure/Entra provider; the
+  `/auth/callback` plumbing already exists), but the **real work is role-mapping**
+  (a federated user arrives with no `app_metadata.role` and would default to
+  APPLICANT). Recommends domain-allowlist → default `VIEWER` + manual elevation
+  for a first build, with group-claim mapping as a later upgrade; covers the
+  MFA-interaction sub-decision, identity linking, the Entra app-registration
+  **client-IT dependency**, and an estimate (~1–2 day PoC; hardened build
+  separately estimated). **No SSO code merged.** Feeds **D21** for the client.
+
+**Verification.** `tsc --noEmit` clean; `next build` green (eslint clean);
+**603 tests** (+35: idle-timeout 24, mfa-flag 11). No migration, no seed/reference
+change. Behavioural Playwright not run (no local auth users; shared nonprod) —
+code-level verified per the standing programme note.
+
+> **Epic 11 → ✅. PROGRAMME COMPLETE.**
+
+---
+
+## 🎉 PROGRAMME COMPLETE — all 12 epics on staging (Waves 0–4)
+
+All twelve process-alignment epics are shipped to `staging`:
+
+- **Wave 0** — 12 Defect fixes (#134–#139)
+- **Wave 1** — 01 Status & workflow model · 03 Round management · 04 Lead-applicant
+  contacts & invitations
+- **Wave 2** — 02 Application form re-scope · 05 Parent portal experience
+- **Wave 3** — 06 Assessor experience & UI · 07 Calculations & fees · 08
+  Recommendation & outcome · 09 Complex household / second parent
+- **Wave 4** — 10 Data retention & account lifecycle · **11 Auth & access (final)**
+
+### Outstanding-but-non-blocking (client deliverables / sign-offs)
+
+These do **not** block the programme; each is built to a working default with a
+documented one-place swap-point, awaiting client/DPO input:
+
+- **D4 — real reason codes** (Epic 08): swap the placeholders via the idempotent
+  `seed:reference` upsert + the shared `lib/reason-codes/category.ts` util when
+  Charlotte supplies the real numbers/labels.
+- **D11 — final declaration text** (Epic 02): declaration is built workbook-verbatim
+  (§8); swap the copy if Charlotte sends final wording.
+- **Epic 07 PR-7 — historical-figure validation**: encode client-supplied real
+  historical assessments as reconciliation fixtures (engine proven on synthetic
+  fixtures; needs Brian to supply a representative real set).
+- **Epic 09 H7–H10 confirmation**: the four money/scope household rows need
+  Charlotte's verbatim confirmation against the `.xlsx` FAQ (rules engine is the
+  single swap-point; advisory-only until confirmed).
+- **D6 — DPO retention year values** (Epic 10): DPO signs the declined-grace /
+  6-yr / 7-yr figures before `RETENTION_PURGE_ENABLED` is turned on in prod (the
+  cron runs report-only/dry-run until then).
+- **D20 — idle-timeout window** (Epic 11): 30-min default in place; Charlotte
+  confirms the real window (env-overridable, no redeploy of logic needed).
+- **D21 — Microsoft SSO** (Epic 11): spike doc delivered; client decides whether
+  to commission the build.
+
+### Gated (Brian) — Epic 01 PR-6
+
+The **drop of the deprecated fused `applications.status` column** remains ⏸
+**deferred/gated** with its prerequisites intact (see *Active — Epic 01* above):
+the enum-cleanup remap of residual `QUALIFIES` outcome rows + the full
+remaining-legacy-reader cutover list (transition gating, cockpit/watchlist, portal
+status UX, reports/queue filter). Gated on Brian's confirmation that no
+external/report consumer reads the old string.
+
+---
+
 ## Decision register — execution view
 
 Mirrors [README §5](README.md#5-decision-register). Reconciled 2026-06-05 against
@@ -956,6 +1069,29 @@ Wave 2 → Wave 3 → Wave 4.
 
 ## Change log
 
+- **2026-06-06** — **🎉 Epic 11 COMPLETE → PROGRAMME COMPLETE** (the final epic;
+  `feature/11-auth-access`, single PR off `staging`). **(1) MFA env-gating
+  VERIFIED, not rebuilt:** `isStaffMfaEnforced()` already delivers OFF-on-staging /
+  ON-in-prod with the documented override semantics — **no gap, `mfa-flag.ts`/
+  `middleware.ts` untouched**; pinned with `mfa-flag.test.ts` (11 cases) and fixed
+  the stale "Missing from `.env.example`" doc line + added a "MFA in non-prod —
+  verified posture" runbook note (leave unset in both envs). **(2) Optional
+  inactivity logout (D20) BUILT:** pure `lib/auth/idle-timeout.ts` resolver
+  (default **30 min** idle / 60 s warning, all `NEXT_PUBLIC_*`-overridable, clamped/
+  fail-safe; 24 tests) + client `idle-logout-watcher.tsx` (throttled activity
+  listeners + warn-then-logout dialog → existing same-origin `/api/auth/logout`),
+  wired into **admin + portal** layouts, **optional-disable** via
+  `NEXT_PUBLIC_SESSION_IDLE_ENABLED=false`. **(3) Microsoft SSO (D21) SPIKE DOC
+  ONLY:** `docs/engineering/microsoft-sso-spike.md` — feasible/low-code OAuth,
+  real work is role-mapping; recommends domain-allowlist→VIEWER + manual elevation;
+  ~1–2 day PoC estimate; **no SSO code**. No migration / no seed change.
+  tsc/lint/build green; **603 tests** (+35). **Env to flag for Brian** (all
+  optional, defaulted): `NEXT_PUBLIC_SESSION_IDLE_ENABLED` /
+  `NEXT_PUBLIC_SESSION_IDLE_MINUTES` / `NEXT_PUBLIC_SESSION_IDLE_WARN_SECONDS`.
+  **All 12 epics now on staging (Waves 0–4).** Outstanding-but-non-blocking: D4
+  reason codes, D11 declaration text, Epic 07 historical figures, Epic 09 H7–H10
+  confirmation, D6 DPO retention years, D20 idle window. Gated: Epic 01 PR-6
+  column-drop (Brian). **DO NOT MERGE — awaiting review.**
 - **2026-06-06** — **Epic 10 COMPLETE** (PR-3 `feature/10-schedule-grid-seed-mirroring`,
   off `staging` after #172/#173 merged + the migration applied to nonprod): the
   deferred remainder. **Admin schedule grid** on the application Applicant-Data
