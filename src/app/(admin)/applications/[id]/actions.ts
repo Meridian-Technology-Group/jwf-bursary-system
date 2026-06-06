@@ -35,12 +35,12 @@ import {
   buildPurgeAuditMetadata,
 } from "@/lib/retention/purge";
 import {
-  isLegalApplicationTransition,
-  transitionApplicationStatus,
-  pauseApplicationStatus,
-  clearPauseDeadline,
+  beginReview,
+  resumeReview,
+  markReviewComplete,
+  pauseReviewForDocs,
+  deriveReviewPhase,
 } from "@/lib/applications/status";
-import type { ApplicationStatus } from "@prisma/client";
 
 import { AUDIT_ACTIONS, AUDIT_ENTITY_TYPES } from "@/lib/audit/actions";
 
@@ -50,20 +50,12 @@ export type ActionResult =
   | { success: true }
   | { success: false; error: string };
 
-// ─── Valid transition map ─────────────────────────────────────────────────────
-//
-// The legal application-status graph now lives in the central status service
-// (src/lib/applications/status.ts). `isValidTransition` is a thin alias kept so
-// the call sites below read unchanged.
-
-function isValidTransition(
-  from: ApplicationStatus,
-  to: ApplicationStatus
-): boolean {
-  return isLegalApplicationTransition(from, to);
-}
-
 // ─── Helper: fetch application with lead applicant email ──────────────────────
+//
+// PR-6a: the application-detail review track no longer reads the deprecated fused
+// `applications.status`. The current review phase is DERIVED from the lifecycle
+// columns (`form_status` + the assessment's `status`/`outcome`) via
+// `deriveReviewPhase`, and the transitions write the assessment lifecycle.
 
 async function fetchApplicationForStatus(tx: Tx, applicationId: string) {
   return tx.application.findUnique({
@@ -71,7 +63,7 @@ async function fetchApplicationForStatus(tx: Tx, applicationId: string) {
     select: {
       id: true,
       reference: true,
-      status: true,
+      formStatus: true,
       childName: true,
       school: true,
       leadApplicant: {
@@ -80,7 +72,25 @@ async function fetchApplicationForStatus(tx: Tx, applicationId: string) {
       round: {
         select: { academicYear: true },
       },
+      assessment: {
+        select: { status: true, outcome: true },
+      },
     },
+  });
+}
+
+/** The derived review phase for a fetched application (lifecycle-column based). */
+function reviewPhaseOf(application: {
+  formStatus: import("@prisma/client").ApplicationFormStatus;
+  assessment: {
+    status: import("@prisma/client").AssessmentStatus;
+    outcome: import("@prisma/client").AssessmentOutcome | null;
+  } | null;
+}) {
+  return deriveReviewPhase({
+    formStatus: application.formStatus,
+    assessmentStatus: application.assessment?.status ?? null,
+    outcome: application.assessment?.outcome ?? null,
   });
 }
 
@@ -101,7 +111,7 @@ function revalidateApplicationPaths(applicationId: string) {
  */
 export async function updateApplicationStatus(
   applicationId: string,
-  newStatus: ApplicationStatus,
+  newStatus: "NOT_STARTED" | "COMPLETED",
   context?: string
 ): Promise<ActionResult> {
   try {
@@ -116,21 +126,26 @@ export async function updateApplicationStatus(
           return { success: false as const, error: "Application not found." };
         }
 
-        const oldStatus = application.status;
+        const oldStatus = reviewPhaseOf(application);
 
-        if (!isValidTransition(oldStatus, newStatus)) {
+        // Behaviour-preserving guard matching the old fused graph:
+        //   SUBMITTED → NOT_STARTED (begin review)
+        //   NOT_STARTED → COMPLETED (mark complete)
+        const legal =
+          (newStatus === "NOT_STARTED" && oldStatus === "SUBMITTED") ||
+          (newStatus === "COMPLETED" && oldStatus === "NOT_STARTED");
+        if (!legal) {
           return {
             success: false as const,
             error: `Cannot transition from ${oldStatus} to ${newStatus}.`,
           };
         }
 
-        await transitionApplicationStatus(
-          tx,
-          applicationId,
-          oldStatus,
-          newStatus
-        );
+        if (newStatus === "NOT_STARTED") {
+          await beginReview(tx, applicationId, user.id);
+        } else {
+          await markReviewComplete(tx, applicationId, user.id);
+        }
 
         await createAuditLog(tx, {
           userId: user.id,
@@ -188,28 +203,30 @@ export async function pauseApplication(
           return { success: false as const, error: "Application not found." };
         }
 
-        if (!isValidTransition(application.status, "PAUSED")) {
+        const phase = reviewPhaseOf(application);
+        // Old fused graph: only NOT_STARTED (review in progress) → PAUSED.
+        if (phase !== "NOT_STARTED") {
           return {
             success: false as const,
-            error: `Cannot pause application from status ${application.status}.`,
+            error: `Cannot pause application from status ${phase}.`,
           };
         }
 
-        // Status service moves the fused status → PAUSED and PERSISTS the
-        // 14-day deadline on the assessment row (previously email-only). The
-        // returned deadline is the single source the email reads below.
-        const pausedUntil = await pauseApplicationStatus(
+        // Status service moves the assessment → PAUSED and PERSISTS the 14-day
+        // deadline on the assessment row (previously email-only). The returned
+        // deadline is the single source the email reads below.
+        const pausedUntil = await pauseReviewForDocs(
           tx,
           applicationId,
-          application.status
+          user.id
         );
 
-        return { success: true as const, application, pausedUntil };
+        return { success: true as const, application, phase, pausedUntil };
       }
     );
 
     if (!preEmail.success) return preEmail;
-    const { application, pausedUntil } = preEmail;
+    const { application, phase, pausedUntil } = preEmail;
 
     // Build a human-readable list of missing slots
     const slotList = missingDocumentSlots
@@ -247,7 +264,7 @@ export async function pauseApplication(
         entityId: applicationId,
         context: "Application paused — missing documents requested",
         metadata: {
-          fromStatus: application.status,
+          fromStatus: phase,
           toStatus: "PAUSED",
           reference: application.reference,
           missingDocumentSlots,
@@ -288,21 +305,18 @@ export async function resumeApplication(
           return { success: false as const, error: "Application not found." };
         }
 
-        if (!isValidTransition(application.status, "NOT_STARTED")) {
+        const phase = reviewPhaseOf(application);
+        // Old fused graph: only PAUSED → NOT_STARTED (resume).
+        if (phase !== "PAUSED") {
           return {
             success: false as const,
-            error: `Cannot resume application from status ${application.status}.`,
+            error: `Cannot resume application from status ${phase}.`,
           };
         }
 
-        await transitionApplicationStatus(
-          tx,
-          applicationId,
-          application.status,
-          "NOT_STARTED"
-        );
-        // Resuming clears the persisted pause deadline.
-        await clearPauseDeadline(tx, applicationId);
+        // Resume moves the assessment back to IN_PROGRESS and clears the
+        // persisted pause deadline.
+        await resumeReview(tx, applicationId, user.id);
 
         await createAuditLog(tx, {
           userId: user.id,
@@ -311,7 +325,7 @@ export async function resumeApplication(
           entityId: applicationId,
           context: "Application resumed from PAUSED to NOT_STARTED",
           metadata: {
-            fromStatus: application.status,
+            fromStatus: phase,
             toStatus: "NOT_STARTED",
             reference: application.reference,
           },

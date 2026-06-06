@@ -9,7 +9,7 @@
 >
 > **Spec:** [README.md](README.md) (spine + decision register). **Owner:** Brian Wagner.
 
-**Started:** 2026-06-05 · **Current focus:** **🎉 PROGRAMME COMPLETE — all 12 epics shipped to `staging` (Waves 0–4).** Epic 11 (auth & access) is the final epic: MFA env-gating **verified + pinned by tests** (no code change), optional inactivity-logout watcher built (D20, default 30 min, env-configurable, optional-disable, wired into admin + portal), Microsoft-SSO **spike doc only** (D21, no implementation). Remaining work is entirely **outstanding-but-non-blocking client deliverables** (see the PROGRAMME COMPLETE note below) + the gated **Epic 01 PR-6** column-drop. 01 PR-6 (drop fused `status`) still gated.
+**Started:** 2026-06-05 · **Current focus:** **🎉 PROGRAMME COMPLETE — all 12 epics shipped to `staging` (Waves 0–4).** Epic 11 (auth & access) is the final epic: MFA env-gating **verified + pinned by tests** (no code change), optional inactivity-logout watcher built (D20, default 30 min, env-configurable, optional-disable, wired into admin + portal), Microsoft-SSO **spike doc only** (D21, no implementation). Remaining work is entirely **outstanding-but-non-blocking client deliverables** (see the PROGRAMME COMPLETE note below) + the gated **Epic 01 PR-6b** column-drop. **PR-6a (reader/writer cutover off the fused `applications.status` + dual-write removal + residual `QUALIFIES` remap) is BUILT on `feature/01-pr6a-status-cutover`** (grep-gate clean; tsc/lint/build/602 tests green) — merge it, confirm live on staging, then run **PR-6b** (the actual column/enum DROP, now lower-risk).
 
 ---
 
@@ -104,36 +104,65 @@ reader is migrated.
   IN_PROGRESS|PAUSED (was PAUSED-only bug); assessment header pill. Cockpit
   untouched. 238 tests green.
 - [x] **PR-5** — `submittedAt` write-once trigger migration + app invariant + test.
-- [ ] **PR-6** — ⏸ **deferred / gated**: drop the deprecated fused `status`
-  column once all readers are migrated (cut over reports/dashboard/cockpit
-  queries first; CI grep-gate clean). Gated on Brian's confirmation that no
-  external/report consumer reads the old string.
+- [x] **PR-6a** — reader/writer **cutover** off the fused `applications.status`
+  (the deploy-safe step before the drop). Status service no longer dual-writes
+  the legacy column and its `ApplicationStatus`-typed transition tables are gone;
+  the application-detail "review track" (begin/pause/resume/complete) now drives
+  the **assessment lifecycle** (lazily creating the row), with a single
+  `deriveReviewPhase()` projecting the lifecycle columns back onto the 7-value
+  vocabulary the UI/queue still speak. Migrated readers: queue filter
+  (lifecycle-column `where` via new `lib/applications/queue-filter.ts` — same
+  7-value vocab/URL params, derived from `form_status` + `assessments.status` +
+  `assessments.outcome`), application-detail transition gating + `ApplicationActions`,
+  round watchlist (`decidedStatuses` → `outcome != null`; rules 3/4/7/8 re-keyed),
+  round cockpit (`DECIDED_STATUSES` + prior-round groupBy → outcome counts),
+  `rounds.ts` `buildCounts`/`buildStatusBreakdown`, dashboard `reports.ts`,
+  `listApplications`/`undecided`/portal-draft queries, portal pages
+  (apply/review/respond/page/actions), documents APIs, reassessment + create
+  paths (`applicationCreateData` no longer writes `status`). **Residual remap**:
+  data-only migration `20260606220000_remap_residual_qualifies_outcome` maps any
+  `assessments.outcome = 'QUALIFIES'` → AWARDED (has account) / QUALIFIES_NOT_AWARDED
+  (no account), idempotent + guarded (no DDL). **Grep-gate clean**: zero
+  non-test reads/writes of `applications.status` and zero `ApplicationStatus`
+  enum-*value* usages remain in `src/` (the column stays in `schema.prisma`,
+  still `@deprecated`). tsc + lint + `next build` + 602 vitest tests green.
+  ⏸ awaiting merge → live-on-staging confirmation before PR-6b.
+- [ ] **PR-6b** — ⏸ **deferred / gated** (now **lower risk** — every reader is
+  off the column): the column/enum **DROP** — remove `applications.status` from
+  `schema.prisma` + a DDL migration dropping the column and the now-unused
+  `QUALIFIES` value from the `AssessmentOutcome` enum (residual rows already
+  remapped by 6a). CI grep-gate stays clean. Gated on Brian confirming PR-6a is
+  live on staging + that no external/report consumer reads the old string.
 
-> **PR-6 prerequisite (enum cleanup).** Before dropping the legacy `QUALIFIES`
-> value from the `AssessmentOutcome` enum, remap any residual
-> `assessments.outcome = 'QUALIFIES'` rows (≈1 on nonprod — a COMPLETED-status
-> app whose outcome predates the 3-value lifecycle) to `AWARDED` /
-> `QUALIFIES_NOT_AWARDED` by `applications.bursary_account_id` presence, the same
-> discriminator PR-2/PR-3 use. The dual-write means new outcomes are already
-> written as the 3-value enum; this only catches pre-PR-3 rows.
+> **PR-6a DONE — residual-enum remap shipped.** The residual
+> `assessments.outcome = 'QUALIFIES'` rows (≈1 on nonprod) are remapped to
+> `AWARDED` / `QUALIFIES_NOT_AWARDED` by `applications.bursary_account_id`
+> presence in migration `20260606220000_remap_residual_qualifies_outcome`
+> (data-only, idempotent). PR-6b can therefore drop the `QUALIFIES` enum value
+> safely.
+> READ-ONLY validation query (expect 0 rows after the migration applies):
+> ```sql
+> SELECT a.id AS assessment_id, a.application_id, app.bursary_account_id, a.outcome
+> FROM assessments a JOIN applications app ON app.id = a.application_id
+> WHERE a.outcome = 'QUALIFIES';
+> ```
 >
-> **PR-6 — remaining legacy `applications.status` readers (after PR-4).** PR-4
-> moved all *display* reads to the lifecycle columns. What still reads the fused
-> `status` and must be cut over before the column is dropped:
-> 1. **Transition gating** — `(admin)/applications/[id]/actions.ts` and
->    `set-outcome-core.ts` read it as the transition *source*; `ApplicationActions`
->    + recommendation page gate buttons on it. Switch these to read
->    `form_status` + `assessment.status`/`outcome`.
-> 2. **Round cockpit / watchlist** — `round-cockpit.ts` `DECIDED_STATUSES` and
->    `round-watchlist-eval.ts` `decidedStatuses` test QUALIFIES/DOES_NOT_QUALIFY;
->    `round-watchlist.ts` surfaces `app.status`. Re-key onto `assessment.outcome`.
-> 3. **Parent portal (Epic 05)** — `(portal)/status/page.tsx` timeline and the
->    doc-response guards in `(portal)/actions.ts` + `respond/page.tsx`
->    (`status !== "PAUSED"`). Owned by Epic 05's portal status UX; coordinate.
-> 4. **Reports/exports/queue** — `reports.ts` outcome branches + `listApplications`
->    status filter + `ALL_STATUSES`/`STATUS_LABELS` in `application-table.tsx`
->    (queue filter is still fused-status-keyed by design).
-> The deprecated `ApplicationListItem.status` field is JSDoc-flagged.
+> **PR-6a DONE — every fused `applications.status` reader/writer is migrated.**
+> All four categories below are now cut over to the lifecycle columns
+> (`form_status` + `assessments.status`/`outcome`), funnelled through
+> `deriveReviewPhase()` / `lib/applications/queue-filter.ts`:
+> 1. **Transition gating** — `(admin)/applications/[id]/actions.ts` +
+>    `ApplicationActions` derive the review phase and drive the assessment
+>    lifecycle; `set-outcome-core.ts` gates on `assessment.status === COMPLETED`.
+> 2. **Round cockpit / watchlist** — `DECIDED_STATUSES` / `decidedStatuses` →
+>    `outcome != null`; counts read the 3-value outcome.
+> 3. **Parent portal** — `(portal)/actions.ts` + `respond/page.tsx` read
+>    `assessment.status === PAUSED`; draft checks read `form_status`.
+> 4. **Reports/queue** — `reports.ts` outcome branches, `listApplications`
+>    review-phase filter, `ALL_STATUSES`/`STATUS_LABELS` are all lifecycle-derived.
+> The deprecated `ApplicationListItem.status` field was REMOVED; the
+> `applications.status` column remains in `schema.prisma` (`@deprecated`) for
+> PR-6b to drop. Grep-gate clean.
 
 ---
 
@@ -1018,14 +1047,16 @@ documented one-place swap-point, awaiting client/DPO input:
 - **D21 — Microsoft SSO** (Epic 11): spike doc delivered; client decides whether
   to commission the build.
 
-### Gated (Brian) — Epic 01 PR-6
+### Gated (Brian) — Epic 01 PR-6b
 
-The **drop of the deprecated fused `applications.status` column** remains ⏸
-**deferred/gated** with its prerequisites intact (see *Active — Epic 01* above):
-the enum-cleanup remap of residual `QUALIFIES` outcome rows + the full
-remaining-legacy-reader cutover list (transition gating, cockpit/watchlist, portal
-status UX, reports/queue filter). Gated on Brian's confirmation that no
-external/report consumer reads the old string.
+**PR-6a (the reader/writer cutover) is DONE** on
+`feature/01-pr6a-status-cutover` (see *Active — Epic 01* above): all readers off
+the fused column, dual-write removed, residual `QUALIFIES` outcome rows remapped.
+What remains gated is **PR-6b — the actual DROP** of the deprecated
+`applications.status` column (+ the now-unused `QUALIFIES` `AssessmentOutcome`
+enum value). Now **lower risk** because nothing reads the column anymore. Gated
+on Brian confirming PR-6a is live on staging + that no external/report consumer
+reads the old string.
 
 ---
 
@@ -1069,6 +1100,27 @@ Wave 2 → Wave 3 → Wave 4.
 
 ## Change log
 
+- **2026-06-06** — **Epic 01 PR-6a — fused-status reader/writer cutover**
+  (`feature/01-pr6a-status-cutover`, single PR off `staging`, **awaiting merge**).
+  The deploy-safe step before the column drop: every reader/writer is migrated off
+  the deprecated fused `applications.status`, and the central status service no
+  longer dual-writes it (its `ApplicationStatus`-typed transition tables are
+  removed). The application-detail **review track** (begin/pause/resume/complete)
+  now drives the **assessment lifecycle** (lazily creating the row), with one
+  `deriveReviewPhase()` projecting the lifecycle columns back onto the 7-value
+  vocabulary the UI/queue still speak; a new pure `lib/applications/queue-filter.ts`
+  translates that vocabulary to a lifecycle-column Prisma `where` (preserving the
+  filter UI + `?status=…` drill-in URLs). Migrated: queue filter + table, app-detail
+  gating + `ApplicationActions`, round watchlist (`decided` → outcome; rules
+  3/4/7/8), round cockpit + `rounds.ts` counts, dashboard `reports.ts`,
+  `listApplications`/`undecided`/portal-draft queries, portal pages
+  (apply/review/respond/page/actions), documents APIs, reassessment + create paths.
+  **Residual remap**: data-only migration
+  `20260606220000_remap_residual_qualifies_outcome` (idempotent, no DDL). The
+  `applications.status` column stays in `schema.prisma` (`@deprecated`) — **PR-6b**
+  drops it. Grep-gate clean (zero non-test fused reads/writes, zero
+  `ApplicationStatus` enum-value usages); tsc + lint + `next build` + **602** vitest
+  tests green.
 - **2026-06-06** — **🎉 Epic 11 COMPLETE → PROGRAMME COMPLETE** (the final epic;
   `feature/11-auth-access`, single PR off `staging`). **(1) MFA env-gating
   VERIFIED, not rebuilt:** `isStaffMfaEnforced()` already delivers OFF-on-staging /

@@ -43,8 +43,8 @@ export default async function RespondPage() {
         select: {
           id: true,
           reference: true,
-          status: true,
           childName: true,
+          assessment: { select: { status: true } },
           documents: {
             select: {
               id: true,
@@ -62,8 +62,9 @@ export default async function RespondPage() {
   if (!application) redirect("/");
 
   // Not paused → nothing to respond to. Send the applicant to the status page,
-  // which explains the current state.
-  if (application.status !== "PAUSED") {
+  // which explains the current state. PR-6a: "paused" is the assessment
+  // lifecycle status, not the deprecated fused `applications.status`.
+  if (application.assessment?.status !== "PAUSED") {
     redirect("/status");
   }
 

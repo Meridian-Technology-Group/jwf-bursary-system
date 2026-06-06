@@ -20,6 +20,7 @@ import {
   AssessmentStatusBadge,
   OutcomeBadge,
 } from "@/components/shared/lifecycle-badges";
+import { deriveReviewPhase } from "@/lib/applications/status";
 import { ApplicationActions } from "@/components/admin/application-actions";
 import { AssignAssessorSelect } from "@/components/admin/assign-assessor-select";
 import { GdprDeleteAction } from "@/components/admin/gdpr-delete-action";
@@ -223,10 +224,16 @@ export default async function ApplicationDetailLayout({
       </div>
 
       {/* WP-15: Primary outcome actions — the prominent decision surface.
-          Hidden for terminal statuses (handled inside the component). */}
+          Hidden for terminal statuses (handled inside the component). The review
+          phase is DERIVED from the lifecycle columns (Epic 01 PR-6a), not the
+          deprecated fused `applications.status`. */}
       <ApplicationActions
         applicationId={application.id}
-        status={application.status}
+        status={deriveReviewPhase({
+          formStatus: application.formStatus,
+          assessmentStatus: application.assessment?.status ?? null,
+          outcome: application.assessment?.outcome ?? null,
+        })}
         documents={application.documents}
       />
 

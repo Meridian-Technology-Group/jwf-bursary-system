@@ -5,7 +5,11 @@
 import type { Tx } from "@/lib/db/prisma";
 import { createAuditLog } from "@/lib/audit/log";
 import { AUDIT_ACTIONS, AUDIT_ENTITY_TYPES } from "@/lib/audit/actions";
-import { ApplicationStatus } from "@prisma/client";
+import {
+  reviewPhaseWhere,
+  undecidedWhere,
+  type ReviewPhase,
+} from "@/lib/applications/queue-filter";
 import type {
   School,
   Application,
@@ -46,8 +50,6 @@ export interface ApplicationListItem {
   id: string;
   reference: string;
   school: School;
-  /** @deprecated legacy fused status — kept for the queue filter until PR-6. */
-  status: ApplicationStatus;
   formStatus: ApplicationFormStatus;
   applicationType: ApplicationType;
   /** Real assessment lifecycle status, null when no assessment exists yet. */
@@ -64,7 +66,12 @@ export interface ApplicationListItem {
 
 export interface ListApplicationsFilters {
   roundId?: string;
-  status?: ApplicationStatus;
+  /**
+   * Review-phase filter (Epic 01 PR-6a) — the 7-value vocabulary projected from
+   * the lifecycle columns. Replaces the old fused `status` filter; translated to
+   * a lifecycle-column `where` via `reviewPhaseWhere`.
+   */
+  reviewPhases?: ReviewPhase[];
   school?: School;
   search?: string;
   assignedToId?: string;
@@ -81,8 +88,8 @@ export interface ListApplicationsFilters {
    */
   bursaryAccountIds?: string[];
   /**
-   * Undecided filter: applications whose status is NOT QUALIFIES /
-   * DOES_NOT_QUALIFY. A plain status filter, not a watchlist rule.
+   * Undecided filter: applications with no final assessment outcome yet. A plain
+   * lifecycle filter, not a watchlist rule.
    */
   undecided?: boolean;
 }
@@ -96,13 +103,17 @@ export async function listApplications(
   filters: ListApplicationsFilters = {}
 ): Promise<ApplicationListItem[]> {
   const where: Prisma.ApplicationWhereInput = {};
+  // Lifecycle-column fragments (review-phase / undecided) are combined under AND
+  // so their internal OR/relation clauses never clobber each other (Epic 01 PR-6a).
+  const and: Prisma.ApplicationWhereInput[] = [];
 
   if (filters.roundId) {
     where.roundId = filters.roundId;
   }
 
-  if (filters.status) {
-    where.status = filters.status;
+  const phaseWhere = reviewPhaseWhere(filters.reviewPhases);
+  if (phaseWhere) {
+    and.push(phaseWhere);
   }
 
   if (filters.school) {
@@ -132,12 +143,11 @@ export async function listApplications(
   }
 
   if (filters.undecided) {
-    where.status = {
-      notIn: [
-        ApplicationStatus.QUALIFIES,
-        ApplicationStatus.DOES_NOT_QUALIFY,
-      ],
-    };
+    and.push(undecidedWhere());
+  }
+
+  if (and.length > 0) {
+    where.AND = and;
   }
 
   const applications = await tx.application.findMany({
@@ -146,7 +156,6 @@ export async function listApplications(
       id: true,
       reference: true,
       school: true,
-      status: true,
       formStatus: true,
       applicationType: true,
       entryYear: true,
@@ -232,7 +241,12 @@ export async function getApplicationNames(
  * the application-detail pages must not carry names unless they have been
  * explicitly revealed via the audit-logged path (`getApplicationNamesForReveal`).
  */
-export type ApplicationWithDetails = Omit<Application, "childName"> & {
+export type ApplicationWithDetails = Omit<
+  Application,
+  // `status` (the deprecated fused enum) is intentionally NOT selected (Epic 01
+  // PR-6a) — the detail view derives the review phase from the lifecycle columns.
+  "childName" | "status"
+> & {
   round: Round;
   sections: ApplicationSection[];
   documents: Document[];
@@ -265,7 +279,6 @@ export async function getApplicationWithDetails(
       isReassessment: true,
       isInternal: true,
       assignedToId: true,
-      status: true,
       formStatus: true,
       applicationType: true,
       custodyArrangement: true,
@@ -355,18 +368,21 @@ export interface SectionStatusResult {
 }
 
 /**
- * Returns the applicant's current active application (most recently updated
- * with PRE_SUBMISSION status), or null if none exists.
+ * Returns the applicant's current active (not-yet-submitted) draft application,
+ * or null if none exists.
  *
  * Use this for the editable apply flow, which only operates on the draft.
  * For the dashboard's "current application whatever its status" need, use
  * getCurrentApplicationForUser instead.
+ *
+ * PR-6a: "draft" is `form_status` ≠ SUBMITTED (the lifecycle equivalent of the
+ * old fused PRE_SUBMISSION), not the deprecated fused `applications.status`.
  */
 export async function getApplicationForUser(tx: Tx, userId: string) {
   return tx.application.findFirst({
     where: {
       leadApplicantId: userId,
-      status: "PRE_SUBMISSION",
+      formStatus: { not: "SUBMITTED" },
     },
     orderBy: { updatedAt: "desc" },
     include: {
@@ -393,6 +409,11 @@ export async function getCurrentApplicationForUser(tx: Tx, userId: string) {
     include: {
       round: {
         select: { academicYear: true, status: true },
+      },
+      // PR-6a: the portal "awaiting documents" CTA reads the assessment
+      // lifecycle (PAUSED) instead of the deprecated fused applications.status.
+      assessment: {
+        select: { status: true },
       },
     },
   });

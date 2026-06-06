@@ -434,7 +434,7 @@ export default async function ReviewPage() {
 
   if (!application) redirect("/");
 
-  if (application.status === "SUBMITTED") {
+  if (application.formStatus === "SUBMITTED") {
     redirect("/submitted");
   }
 

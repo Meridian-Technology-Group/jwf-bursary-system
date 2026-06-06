@@ -21,7 +21,7 @@
  */
 
 import type { Tx } from "@/lib/db/prisma";
-import { ApplicationStatus, InvitationStatus, School } from "@prisma/client";
+import { InvitationStatus, School } from "@prisma/client";
 import { AUDIT_ACTIONS, AUDIT_ENTITY_TYPES } from "@/lib/audit/actions";
 import { getRound, type RoundDetail } from "./rounds";
 import { getRoundWatchlist } from "./round-watchlist";
@@ -98,10 +98,17 @@ export interface CockpitData {
 
 // ─── Fetch wrapper ───────────────────────────────────────────────────────────────
 
-const DECIDED_STATUSES: ApplicationStatus[] = [
-  ApplicationStatus.QUALIFIES,
-  ApplicationStatus.DOES_NOT_QUALIFY,
-];
+/**
+ * "Decided" now reads the 3-value assessment outcome (Epic 01 PR-6a) instead of
+ * the deprecated fused applications.status: an application is decided once its
+ * assessment carries any outcome (AWARDED / QUALIFIES_NOT_AWARDED /
+ * DOES_NOT_QUALIFY).
+ */
+function isDecidedApp(app: {
+  assessment: { outcome: import("@prisma/client").AssessmentOutcome | null } | null;
+}): boolean {
+  return app.assessment?.outcome != null;
+}
 
 /**
  * Assemble the cockpit data bundle for a round.
@@ -136,9 +143,11 @@ export async function getRoundCockpit(
         select: {
           id: true,
           school: true,
-          status: true,
           assessment: {
-            select: { recommendation: { select: { createdAt: true } } },
+            select: {
+              outcome: true,
+              recommendation: { select: { createdAt: true } },
+            },
           },
         },
       }),
@@ -184,26 +193,38 @@ export async function getRoundCockpit(
     }),
   ]);
 
-  // Prior-round qualification counts (QUALIFIES vs DOES_NOT_QUALIFY), used to
-  // compute the year-on-year qualification-rate delta. Only fetched when a prior
-  // round exists.
+  // Prior-round qualification counts, used to compute the year-on-year
+  // qualification-rate delta. Only fetched when a prior round exists. PR-6a:
+  // counts read the assessment outcome (qualifies = AWARDED | QUALIFIES_NOT_AWARDED;
+  // does-not-qualify = DOES_NOT_QUALIFY) rather than the deprecated fused status.
   const priorCounts = priorRound
-    ? await tx.application.groupBy({
-        by: ["status"],
-        where: { roundId: priorRound.id, status: { in: DECIDED_STATUSES } },
-        _count: { _all: true },
-      })
+    ? await Promise.all([
+        tx.application.count({
+          where: {
+            roundId: priorRound.id,
+            assessment: {
+              is: { outcome: { in: ["AWARDED", "QUALIFIES_NOT_AWARDED"] } },
+            },
+          },
+        }),
+        tx.application.count({
+          where: {
+            roundId: priorRound.id,
+            assessment: { is: { outcome: "DOES_NOT_QUALIFY" } },
+          },
+        }),
+      ])
     : null;
 
   // ── 3. Per-school decided + latest decision time. ───────────────────────────
   //
-  // "Decided" = QUALIFIES/DNQ AND has a recommendation (a decided application
-  // always carries one via assessment→recommendation). Latest decision time =
-  // max(recommendation.createdAt) for that school.
+  // "Decided" = has an assessment outcome AND a recommendation (a decided
+  // application always carries one via assessment→recommendation). Latest
+  // decision time = max(recommendation.createdAt) for that school.
   const decidedPerSchool = new Map<School, number>();
   const latestDecisionPerSchool = new Map<School, Date>();
   for (const app of applications) {
-    if (!DECIDED_STATUSES.includes(app.status)) continue;
+    if (!isDecidedApp(app)) continue;
     const recAt = app.assessment?.recommendation?.createdAt ?? null;
     if (recAt === null) continue;
     decidedPerSchool.set(app.school, (decidedPerSchool.get(app.school) ?? 0) + 1);
@@ -307,13 +328,8 @@ export async function getRoundCockpit(
   const priorOutcomes =
     priorRound && priorCounts
       ? {
-          qualifies:
-            priorCounts.find((c) => c.status === ApplicationStatus.QUALIFIES)
-              ?._count._all ?? 0,
-          doesNotQualify:
-            priorCounts.find(
-              (c) => c.status === ApplicationStatus.DOES_NOT_QUALIFY,
-            )?._count._all ?? 0,
+          qualifies: priorCounts[0],
+          doesNotQualify: priorCounts[1],
         }
       : null;
 

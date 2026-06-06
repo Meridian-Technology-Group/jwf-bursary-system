@@ -24,7 +24,6 @@
  */
 
 import type { Tx } from "@/lib/db/prisma";
-import { ApplicationStatus } from "@prisma/client";
 import { AUDIT_ACTIONS, AUDIT_ENTITY_TYPES } from "@/lib/audit/actions";
 import { getSectionGapStatuses } from "@/lib/portal/section-gaps";
 import {
@@ -84,11 +83,12 @@ export async function getRoundWatchlist(
       select: {
         id: true,
         school: true,
-        status: true,
+        formStatus: true,
         assessment: {
           select: {
             id: true,
             status: true,
+            outcome: true,
             recommendation: { select: { createdAt: true } },
           },
         },
@@ -194,8 +194,16 @@ export async function getRoundWatchlist(
   // far smaller SUBMITTED subset this stays well within the request budget under
   // `force-dynamic`; revisit with a set-wise doc-slot query only if it shows up
   // slow in practice.
+  // "Submitted, awaiting review" (rule 3 scope) = form SUBMITTED, not decided,
+  // assessment ∅/NOT_STARTED — the lifecycle equivalent of the old fused
+  // SUBMITTED (Epic 01 PR-6a).
   const submittedIds = applications
-    .filter((a) => a.status === ApplicationStatus.SUBMITTED)
+    .filter(
+      (a) =>
+        a.formStatus === "SUBMITTED" &&
+        a.assessment?.outcome == null &&
+        (a.assessment == null || a.assessment.status === "NOT_STARTED"),
+    )
     .map((a) => a.id);
 
   const missingDocsSet = new Set<string>();
@@ -239,7 +247,8 @@ export async function getRoundWatchlist(
       return {
         id: app.id,
         school: app.school,
-        status: app.status,
+        formStatus: app.formStatus,
+        outcome: app.assessment?.outcome ?? null,
         assessmentId,
         assessmentStatus: app.assessment?.status ?? null,
         recommendationCreatedAt:
@@ -251,13 +260,17 @@ export async function getRoundWatchlist(
     },
   );
 
-  // Round counts (mirror rounds.ts / getDashboardCounts conventions).
+  // Round counts (mirror rounds.ts / getDashboardCounts conventions). PR-6a:
+  // qualifies = AWARDED | QUALIFIES_NOT_AWARDED; dnq = DOES_NOT_QUALIFY — read
+  // from the assessment outcome, not the deprecated fused status.
   const total = applications.length;
   const qualifies = applications.filter(
-    (a) => a.status === ApplicationStatus.QUALIFIES,
+    (a) =>
+      a.assessment?.outcome === "AWARDED" ||
+      a.assessment?.outcome === "QUALIFIES_NOT_AWARDED",
   ).length;
   const doesNotQualify = applications.filter(
-    (a) => a.status === ApplicationStatus.DOES_NOT_QUALIFY,
+    (a) => a.assessment?.outcome === "DOES_NOT_QUALIFY",
   ).length;
 
   const exports: WatchlistInputExport[] = exportRows.map((row) => {

@@ -1,10 +1,9 @@
 /**
- * Central status service — Epic 01 PR-3.
+ * Central status service — Epic 01 PR-3 / PR-6a.
  *
  * THE single writer of application/assessment lifecycle status. Owns the legal
  * transition tables for the three lifecycles introduced in Epic 01 (form /
  * assessment / outcome) and is the only place that mutates:
- *   - applications.status        (legacy fused enum — mirrored, retired in PR-6)
  *   - applications.form_status
  *   - applications.application_type   (set at creation only)
  *   - applications.archived_at
@@ -13,36 +12,39 @@
  *   - assessments.paused_until
  *
  * ──────────────────────────────────────────────────────────────────────────
- * DUAL-WRITE (critical until Epic 01 PR-6)
+ * PR-6a — fused-status cutover (legacy mirror removed)
  * ──────────────────────────────────────────────────────────────────────────
- * Most of the app still READS the legacy fused `applications.status` enum
- * (dashboard tiles, reports, queue, round cockpit, watchlist, parent status
- * page). Those readers are migrated in PR-4 and the column is dropped in PR-6.
- * Until then every transition here ALSO mirrors `applications.status` to exactly
- * the value it takes today, so staging behaviour is unchanged. This service is
- * a behaviour-preserving refactor: same observable states, one writer
- * maintaining both the new columns and the legacy mirror.
+ * The deprecated fused `applications.status` enum is no longer written or read
+ * by this service. PR-3 mirrored it (dual-write) so legacy readers kept working;
+ * PR-6a migrates every reader/writer onto the three lifecycle columns, so the
+ * dual-write is gone. The `applications.status` COLUMN still exists in the
+ * schema (`@deprecated`, kept defaulted) — Epic 01 PR-6b drops it. This service
+ * never touches it; the column simply holds its DB default and is unused.
  *
  * ──────────────────────────────────────────────────────────────────────────
- * TWO PARALLEL TRACKS (preserved from today's code, deliberately not fused)
+ * REVIEW PHASE (the application-detail "review track")
  * ──────────────────────────────────────────────────────────────────────────
- * Today the application-detail flow drives the fused `applications.status`
- * (begin-review/complete/pause/resume/outcome) WITHOUT an assessment row in
- * scope, while the assessor workspace separately drives `assessments.status`
- * (begin/complete/pause) WITHOUT touching the application. PR-3 keeps both
- * tracks but routes every write through this service:
- *   - `application*` helpers own the fused `applications.status` (+ form_status
- *     + archive + outcome mirror).
- *   - `assessment*` helpers own `assessments.status` / outcome / paused_until.
- * Joining the two tracks into one transition is deferred (PR-4/Epic 03/06);
- * doing it here would change observable behaviour.
+ * Before PR-6a the application-detail flow (begin-review / complete / pause /
+ * resume / outcome) drove the fused `applications.status` directly, while the
+ * assessor workspace separately drove `assessments.status`. PR-6a unifies these:
+ * the review track now operates on the SAME assessment row (creating it lazily
+ * when none exists), so the assessment lifecycle is the single source of truth
+ * for "where is this application in review". `deriveReviewPhase` re-projects the
+ * lifecycle columns back onto the historical 7-value vocabulary the UI/queue
+ * still speak (SUBMITTED → review NOT_STARTED → PAUSED → COMPLETED → outcome),
+ * so the observable behaviour is unchanged.
+ *
+ *   - `review*` helpers own the application-detail review track (assessment
+ *     status, lazily creating the row).
+ *   - `assessment*` helpers own the assessor-workspace track (`assessments.status`
+ *     / outcome / paused_until).
+ *   - the outcome writer owns `assessments.outcome` (+ archive).
  *
  * These primitives do NOT authorise callers or write audit logs — the calling
  * server action keeps owning those (unchanged), so this stays a pure refactor.
  */
 
 import type {
-  ApplicationStatus,
   ApplicationFormStatus,
   ApplicationType,
   AssessmentStatus,
@@ -52,23 +54,76 @@ import type {
 import type { Tx } from "@/lib/db/prisma";
 
 // ───────────────────────────────────────────────────────────────────────────
-// Legal transition tables
+// Review phase — the application-detail review-track vocabulary
 // ───────────────────────────────────────────────────────────────────────────
 
 /**
- * Legacy fused `applications.status` graph — copied verbatim from the previous
- * home of the transition map (src/app/(admin)/applications/[id]/actions.ts) so
- * the validation behaviour is byte-for-byte preserved. PRE_SUBMISSION →
- * SUBMITTED is owned by the applicant submit path (markSubmitted).
+ * The 7-value "where is this application in review" vocabulary the admin UI and
+ * the queue filter still speak. It is NO LONGER a stored column — it is DERIVED
+ * from the three lifecycle columns by `deriveReviewPhase`. The value names match
+ * the old fused `ApplicationStatus` enum verbatim so existing UI labels,
+ * drill-in URLs (`?status=SUBMITTED`, `?status=PAUSED`) and gating read
+ * unchanged.
+ *
+ *   PRE_SUBMISSION   form not yet submitted
+ *   SUBMITTED        submitted, review not started (no assessment / NOT_STARTED)
+ *   NOT_STARTED      review in progress (assessment IN_PROGRESS)
+ *   PAUSED           assessment paused for missing documents
+ *   COMPLETED        assessment completed, no outcome yet
+ *   QUALIFIES        outcome AWARDED or QUALIFIES_NOT_AWARDED
+ *   DOES_NOT_QUALIFY outcome DOES_NOT_QUALIFY
  */
-const APPLICATION_TRANSITIONS: Partial<
-  Record<ApplicationStatus, ApplicationStatus[]>
-> = {
-  SUBMITTED: ["NOT_STARTED"],
-  NOT_STARTED: ["PAUSED", "COMPLETED"],
-  PAUSED: ["NOT_STARTED"],
-  COMPLETED: ["QUALIFIES", "DOES_NOT_QUALIFY"],
-};
+export type ReviewPhase =
+  | "PRE_SUBMISSION"
+  | "SUBMITTED"
+  | "NOT_STARTED"
+  | "PAUSED"
+  | "COMPLETED"
+  | "QUALIFIES"
+  | "DOES_NOT_QUALIFY";
+
+/** The lifecycle facts `deriveReviewPhase` reasons over. */
+export interface LifecycleStatusInput {
+  formStatus: ApplicationFormStatus;
+  assessmentStatus: AssessmentStatus | null;
+  outcome: AssessmentOutcome | null;
+}
+
+/**
+ * Re-projects the three lifecycle columns onto the historical 7-value review
+ * phase. This is the single mapping every fused-status reader (queue filter,
+ * application-detail gating, round counts, reports) now funnels through, so the
+ * intent of the old fused enum is preserved in one place.
+ *
+ * Mirrors the PR-2 backfill table exactly:
+ *   outcome set                        → QUALIFIES / DOES_NOT_QUALIFY
+ *   assessment COMPLETED               → COMPLETED
+ *   assessment PAUSED                  → PAUSED
+ *   assessment IN_PROGRESS             → NOT_STARTED (review in progress)
+ *   form SUBMITTED, asmt NOT_STARTED/∅ → SUBMITTED (awaiting review)
+ *   form not SUBMITTED                 → PRE_SUBMISSION
+ */
+export function deriveReviewPhase(input: LifecycleStatusInput): ReviewPhase {
+  const { formStatus, assessmentStatus, outcome } = input;
+
+  if (outcome != null) {
+    return outcome === "DOES_NOT_QUALIFY" ? "DOES_NOT_QUALIFY" : "QUALIFIES";
+  }
+  if (assessmentStatus === "COMPLETED") return "COMPLETED";
+  if (assessmentStatus === "PAUSED") return "PAUSED";
+  if (assessmentStatus === "IN_PROGRESS") return "NOT_STARTED";
+  if (formStatus === "SUBMITTED") return "SUBMITTED";
+  return "PRE_SUBMISSION";
+}
+
+/** True when the application has a final outcome (decided). */
+export function isDecided(outcome: AssessmentOutcome | null): boolean {
+  return outcome != null;
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// Legal transition tables
+// ───────────────────────────────────────────────────────────────────────────
 
 /**
  * Form lifecycle: CREATED → NOT_STARTED → IN_PROGRESS → FILLED_IN → SUBMITTED.
@@ -103,13 +158,6 @@ const ASSESSMENT_TRANSITIONS: Record<AssessmentStatus, AssessmentStatus[]> = {
   COMPLETED: [],
 };
 
-export function isLegalApplicationTransition(
-  from: ApplicationStatus,
-  to: ApplicationStatus
-): boolean {
-  return APPLICATION_TRANSITIONS[from]?.includes(to) ?? false;
-}
-
 export function isLegalFormTransition(
   from: ApplicationFormStatus,
   to: ApplicationFormStatus
@@ -126,13 +174,13 @@ export function isLegalAssessmentTransition(
   return ASSESSMENT_TRANSITIONS[from]?.includes(to) ?? false;
 }
 
-/** Outcome may only be set from a COMPLETED assessment (legacy: COMPLETED app). */
-export function canSetOutcome(from: ApplicationStatus): boolean {
-  return from === "COMPLETED";
+/** Outcome may only be set from a COMPLETED assessment. */
+export function canSetOutcome(assessmentStatus: AssessmentStatus | null): boolean {
+  return assessmentStatus === "COMPLETED";
 }
 
 // ───────────────────────────────────────────────────────────────────────────
-// Outcome ↔ legacy fused status mirror
+// Outcome lifecycle
 // ───────────────────────────────────────────────────────────────────────────
 
 /** The 3-value outcome lifecycle written to assessments.outcome (Epic 01). */
@@ -140,17 +188,6 @@ export type LifecycleOutcome =
   | "AWARDED"
   | "QUALIFIES_NOT_AWARDED"
   | "DOES_NOT_QUALIFY";
-
-/**
- * Legacy mirror for an outcome. AWARDED and QUALIFIES_NOT_AWARDED both map to
- * the old fused `QUALIFIES` (the legacy enum has no "qualifies but not awarded"
- * concept); DOES_NOT_QUALIFY maps to itself. Retired in PR-6.
- */
-export function legacyStatusForOutcome(
-  outcome: LifecycleOutcome
-): ApplicationStatus {
-  return outcome === "DOES_NOT_QUALIFY" ? "DOES_NOT_QUALIFY" : "QUALIFIES";
-}
 
 /**
  * Maps the legacy binary outcome the UI still passes ("QUALIFIES" |
@@ -261,38 +298,37 @@ export async function refreshFormStatus(
 }
 
 // ───────────────────────────────────────────────────────────────────────────
-// Application-status writers (legacy fused enum + form_status / archive)
+// Application writers (form_status / archive)
 // ───────────────────────────────────────────────────────────────────────────
 
 /**
- * Initial state for a freshly created application. Mirrors today's
- * `status: "PRE_SUBMISSION"` create writes and sets the new `form_status`
- * (CREATED) and `application_type` explicitly. Spread into an
- * `application.create({ data })`.
+ * Initial state for a freshly created application. Sets `form_status` (CREATED)
+ * and `application_type` explicitly. The deprecated fused `status` column is no
+ * longer written (PR-6a) — it falls back to its `@default(PRE_SUBMISSION)` and
+ * is unused until PR-6b drops it. Spread into an `application.create({ data })`.
  */
 export function applicationCreateData(
   applicationType: ApplicationType
 ): Pick<
   Prisma.ApplicationUncheckedCreateInput,
-  "status" | "formStatus" | "applicationType"
+  "formStatus" | "applicationType"
 > {
   return {
-    status: "PRE_SUBMISSION",
     formStatus: "CREATED",
     applicationType,
   };
 }
 
 /**
- * Submit transition data: legacy status → SUBMITTED, form_status → SUBMITTED.
- * Returned as a patch so the caller can merge submittedAt + other fields and
- * keep its existing "status update in its own transaction" ordering.
+ * Submit transition data: form_status → SUBMITTED. The deprecated fused `status`
+ * column is no longer written (PR-6a). Returned as a patch so the caller can
+ * merge submittedAt + other fields and keep its existing ordering.
  */
 export function submitApplicationData(): Pick<
   Prisma.ApplicationUncheckedUpdateInput,
-  "status" | "formStatus"
+  "formStatus"
 > {
-  return { status: "SUBMITTED", formStatus: "SUBMITTED" };
+  return { formStatus: "SUBMITTED" };
 }
 
 /**
@@ -317,68 +353,131 @@ export function assertSubmittedAtUnset(submittedAt: Date | null | undefined): vo
   }
 }
 
+// ───────────────────────────────────────────────────────────────────────────
+// Review-track writers (application-detail flow over the assessment row)
+// ───────────────────────────────────────────────────────────────────────────
+
 /**
- * Generic fused-status transition (begin-review, mark-complete, resume) on the
- * application-detail track. Validates against the legacy graph and writes
- * `applications.status`. form_status is intentionally untouched (these are all
- * post-submission moves, so it stays SUBMITTED). Throws on an illegal move,
- * matching the previous action's guard.
+ * Returns the id + status of the application's 1:1 assessment row, creating it
+ * (NOT_STARTED) if none exists. The review-track actions (begin / pause /
+ * resume / complete) previously drove the fused `applications.status` WITHOUT an
+ * assessment in scope; PR-6a unifies them onto the assessment lifecycle, so they
+ * need the row to exist. `assessorId` is the staff member performing the action
+ * (used only when creating). Idempotent — never overwrites an existing row.
  */
-export async function transitionApplicationStatus(
+async function ensureAssessmentRow(
   tx: Tx,
   applicationId: string,
-  from: ApplicationStatus,
-  to: ApplicationStatus
-): Promise<void> {
-  if (!isLegalApplicationTransition(from, to)) {
-    throw new Error(`Illegal application transition ${from} → ${to}`);
-  }
-  await tx.application.update({
-    where: { id: applicationId },
-    data: { status: to },
+  assessorId: string
+): Promise<{ id: string; status: AssessmentStatus }> {
+  const existing = await tx.assessment.findUnique({
+    where: { applicationId },
+    select: { id: true, status: true },
   });
+  if (existing) return existing;
+
+  const created = await tx.assessment.create({
+    data: {
+      applicationId,
+      assessorId,
+      status: ASSESSMENT_INITIAL_STATUS,
+      scholarshipPct: 0,
+      vatRate: 20,
+      manualAdjustment: 0,
+    },
+    select: { id: true, status: true },
+  });
+  return created;
 }
 
 /**
- * Pause the application for missing documents (application-detail track).
- * Legacy fused status → PAUSED. form_status is NOT touched — a paused
- * application stays visibly SUBMITTED/Received (the lifecycle-separation
- * payoff). Returns the persisted deadline so the MISSING_DOCS email reads the
- * same value instead of recomputing it inline.
- *
- * Note: the application-detail track has no assessment row in scope, so the
- * deadline is persisted on the assessment by the assessor-track pause
- * (`pauseAssessmentRow`). Here we only move the fused status and compute the
- * canonical deadline; persistence of `paused_until` happens wherever the
- * assessment row is available.
+ * Begin review on the application-detail track: assessment → IN_PROGRESS
+ * (creating the row if needed). Equivalent to the old fused SUBMITTED →
+ * NOT_STARTED ("review in progress") move. `form_status` is untouched (the form
+ * stays SUBMITTED). Returns the assessment id for audit metadata.
  */
-export async function pauseApplicationStatus(
+export async function beginReview(
   tx: Tx,
   applicationId: string,
-  from: ApplicationStatus,
+  assessorId: string
+): Promise<string> {
+  const assessment = await ensureAssessmentRow(tx, applicationId, assessorId);
+  if (assessment.status !== "IN_PROGRESS") {
+    if (!isLegalAssessmentTransition(assessment.status, "IN_PROGRESS")) {
+      throw new Error(
+        `Illegal assessment transition ${assessment.status} → IN_PROGRESS`
+      );
+    }
+    await tx.assessment.update({
+      where: { id: assessment.id },
+      data: { status: "IN_PROGRESS" },
+    });
+  }
+  return assessment.id;
+}
+
+/**
+ * Resume review after a pause: assessment PAUSED → IN_PROGRESS and clear the
+ * persisted deadline. Equivalent to the old fused PAUSED → NOT_STARTED move.
+ */
+export async function resumeReview(
+  tx: Tx,
+  applicationId: string,
+  assessorId: string
+): Promise<string> {
+  const assessment = await ensureAssessmentRow(tx, applicationId, assessorId);
+  if (
+    assessment.status !== "IN_PROGRESS" &&
+    !isLegalAssessmentTransition(assessment.status, "IN_PROGRESS")
+  ) {
+    throw new Error(
+      `Illegal assessment transition ${assessment.status} → IN_PROGRESS`
+    );
+  }
+  await tx.assessment.update({
+    where: { id: assessment.id },
+    data: { status: "IN_PROGRESS", pausedUntil: null },
+  });
+  return assessment.id;
+}
+
+/**
+ * Mark the review complete on the application-detail track: assessment →
+ * COMPLETED + completedAt. Equivalent to the old fused NOT_STARTED → COMPLETED
+ * move. Tolerates a NOT_STARTED source (treated as having passed through
+ * IN_PROGRESS), preserving the historical "mark complete" reachability.
+ */
+export async function markReviewComplete(
+  tx: Tx,
+  applicationId: string,
+  assessorId: string
+): Promise<string> {
+  const assessment = await ensureAssessmentRow(tx, applicationId, assessorId);
+  await completeAssessmentRow(tx, assessment.id, assessment.status);
+  return assessment.id;
+}
+
+/**
+ * Pause the review for missing documents (application-detail track): assessment
+ * → PAUSED and persist the 14-day deadline (previously email-only). `form_status`
+ * is NOT touched — a paused application stays visibly SUBMITTED/Received (the
+ * lifecycle-separation payoff). Returns the persisted deadline so the
+ * MISSING_DOCS email reads the same value instead of recomputing it inline.
+ */
+export async function pauseReviewForDocs(
+  tx: Tx,
+  applicationId: string,
+  assessorId: string,
   pausedUntil: Date = defaultPausedUntil()
 ): Promise<Date> {
-  if (!isLegalApplicationTransition(from, "PAUSED")) {
-    throw new Error(`Illegal application transition ${from} → PAUSED`);
-  }
-  await tx.application.update({
-    where: { id: applicationId },
-    data: { status: "PAUSED" },
-  });
-  // Best-effort: persist the deadline on the 1:1 assessment if one exists, so
-  // the portal countdown / re-send can read a real column (email-only before).
-  await tx.assessment.updateMany({
-    where: { applicationId },
-    data: { pausedUntil },
-  });
-  return pausedUntil;
+  const assessment = await ensureAssessmentRow(tx, applicationId, assessorId);
+  return pauseAssessmentRow(tx, assessment.id, assessment.status, pausedUntil);
 }
 
 /**
- * Persist a final outcome (application-detail track). Writes the 3-value
- * assessments.outcome (when an assessment row exists) AND mirrors the legacy
- * fused applications.status. For a NEW application that does not qualify, sets
- * archived_at (§3) when not already archived.
+ * Persist a final outcome. Writes the 3-value `assessments.outcome`. For a NEW
+ * application that does not qualify, sets `archived_at` (§3) when not already
+ * archived. The fused `applications.status` is no longer mirrored (PR-6a).
  *
  * The AWARDED account/schedule side effect stays with the CALLER
  * (set-outcome-core's idempotent BursaryAccount creation) behind its own
@@ -391,8 +490,6 @@ export async function setApplicationOutcomeStatus(
   outcome: LifecycleOutcome,
   opts: { applicationType: ApplicationType; alreadyArchived: boolean }
 ): Promise<void> {
-  const legacy = legacyStatusForOutcome(outcome);
-
   await tx.assessment.updateMany({
     where: { applicationId },
     data: { outcome: outcome as AssessmentOutcome },
@@ -403,13 +500,12 @@ export async function setApplicationOutcomeStatus(
     opts.applicationType === "NEW" &&
     !opts.alreadyArchived;
 
-  await tx.application.update({
-    where: { id: applicationId },
-    data: {
-      status: legacy,
-      ...(archive ? { archivedAt: new Date() } : {}),
-    },
-  });
+  if (archive) {
+    await tx.application.update({
+      where: { id: applicationId },
+      data: { archivedAt: new Date() },
+    });
+  }
 }
 
 // ───────────────────────────────────────────────────────────────────────────
@@ -431,8 +527,8 @@ export const ASSESSMENT_INITIAL_STATUS: AssessmentStatus = "NOT_STARTED";
 
 /**
  * Complete an assessment row: status → COMPLETED + completedAt. Validates the
- * transition. (Assessor-workspace track — the application-detail "mark
- * complete" mirrors the fused status separately via transitionApplicationStatus.)
+ * transition. Used by both the assessor-workspace track and the
+ * application-detail review track (`markReviewComplete`).
  */
 export async function completeAssessmentRow(
   tx: Tx,

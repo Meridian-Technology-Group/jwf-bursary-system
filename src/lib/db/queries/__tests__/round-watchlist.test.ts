@@ -1,6 +1,5 @@
 import { describe, it, expect } from "vitest";
 import {
-  ApplicationStatus,
   AssessmentStatus,
   InvitationStatus,
   RoundStatus,
@@ -29,19 +28,85 @@ function ahead(ms: number): Date {
 
 // ─── Builders ─────────────────────────────────────────────────────────────────
 
+/**
+ * Test-only review-phase shorthand (Epic 01 PR-6a). The watchlist input now
+ * carries the lifecycle columns (`formStatus` / `outcome` / `assessmentStatus`)
+ * rather than the dropped fused status. To keep the existing fixtures readable,
+ * `makeApp` accepts a `status` shorthand naming the old 7-value phase and
+ * expands it to the equivalent lifecycle facts (mirrors `deriveReviewPhase`).
+ * Explicit lifecycle overrides still win.
+ */
+type ReviewPhaseShorthand =
+  | "PRE_SUBMISSION"
+  | "SUBMITTED"
+  | "NOT_STARTED"
+  | "PAUSED"
+  | "COMPLETED"
+  | "QUALIFIES"
+  | "DOES_NOT_QUALIFY";
+
+function lifecycleForPhase(phase: ReviewPhaseShorthand): {
+  formStatus: WatchlistInputApplication["formStatus"];
+  assessmentStatus: AssessmentStatus | null;
+  outcome: WatchlistInputApplication["outcome"];
+} {
+  switch (phase) {
+    case "PRE_SUBMISSION":
+      return { formStatus: "IN_PROGRESS", assessmentStatus: null, outcome: null };
+    case "SUBMITTED":
+      return { formStatus: "SUBMITTED", assessmentStatus: null, outcome: null };
+    case "NOT_STARTED":
+      return {
+        formStatus: "SUBMITTED",
+        assessmentStatus: AssessmentStatus.IN_PROGRESS,
+        outcome: null,
+      };
+    case "PAUSED":
+      return {
+        formStatus: "SUBMITTED",
+        assessmentStatus: AssessmentStatus.PAUSED,
+        outcome: null,
+      };
+    case "COMPLETED":
+      return {
+        formStatus: "SUBMITTED",
+        assessmentStatus: AssessmentStatus.COMPLETED,
+        outcome: null,
+      };
+    case "QUALIFIES":
+      return {
+        formStatus: "SUBMITTED",
+        assessmentStatus: AssessmentStatus.COMPLETED,
+        outcome: "AWARDED",
+      };
+    case "DOES_NOT_QUALIFY":
+      return {
+        formStatus: "SUBMITTED",
+        assessmentStatus: AssessmentStatus.COMPLETED,
+        outcome: "DOES_NOT_QUALIFY",
+      };
+  }
+}
+
 function makeApp(
-  overrides: Partial<WatchlistInputApplication> = {},
+  overrides: Partial<Omit<WatchlistInputApplication, "outcome">> & {
+    status?: ReviewPhaseShorthand;
+    outcome?: WatchlistInputApplication["outcome"];
+  } = {},
 ): WatchlistInputApplication {
+  const { status, ...rest } = overrides;
+  const phase = lifecycleForPhase(status ?? "SUBMITTED");
   return {
-    id: overrides.id ?? "app-1",
-    school: overrides.school ?? School.TRINITY,
-    status: overrides.status ?? ApplicationStatus.SUBMITTED,
-    assessmentId: overrides.assessmentId ?? null,
-    assessmentStatus: overrides.assessmentStatus ?? null,
-    recommendationCreatedAt: overrides.recommendationCreatedAt ?? null,
-    hasMissingDocs: overrides.hasMissingDocs ?? false,
-    latestPauseAt: overrides.latestPauseAt ?? null,
-    latestAnyAuditAt: overrides.latestAnyAuditAt ?? null,
+    id: rest.id ?? "app-1",
+    school: rest.school ?? School.TRINITY,
+    formStatus: rest.formStatus ?? phase.formStatus,
+    outcome: rest.outcome ?? phase.outcome,
+    assessmentId: rest.assessmentId ?? null,
+    assessmentStatus: rest.assessmentStatus ?? phase.assessmentStatus,
+    recommendationCreatedAt: rest.recommendationCreatedAt ?? null,
+    hasMissingDocs: rest.hasMissingDocs ?? false,
+    latestPauseAt: rest.latestPauseAt ?? null,
+    latestAnyAuditAt: rest.latestAnyAuditAt ?? null,
   };
 }
 
@@ -167,7 +232,7 @@ describe("rule 3 — submitted, missing required docs", () => {
     const input = makeInput({
       applications: [
         makeApp({
-          status: ApplicationStatus.SUBMITTED,
+          status: "SUBMITTED",
           hasMissingDocs: true,
         }),
       ],
@@ -179,7 +244,7 @@ describe("rule 3 — submitted, missing required docs", () => {
   it("does NOT fire for a SUBMITTED app with complete docs", () => {
     const input = makeInput({
       applications: [
-        makeApp({ status: ApplicationStatus.SUBMITTED, hasMissingDocs: false }),
+        makeApp({ status: "SUBMITTED", hasMissingDocs: false }),
       ],
     });
     const res = evaluateWatchlist(input, NOW);
@@ -189,7 +254,7 @@ describe("rule 3 — submitted, missing required docs", () => {
   it("does NOT fire for a non-SUBMITTED app even with missing docs", () => {
     const input = makeInput({
       applications: [
-        makeApp({ status: ApplicationStatus.NOT_STARTED, hasMissingDocs: true }),
+        makeApp({ status: "NOT_STARTED", hasMissingDocs: true }),
       ],
     });
     const res = evaluateWatchlist(input, NOW);
@@ -204,7 +269,7 @@ describe("rule 4 — assessment paused >7d", () => {
     const input = makeInput({
       applications: [
         makeApp({
-          status: ApplicationStatus.PAUSED,
+          status: "PAUSED",
           assessmentId: "ass-1",
           assessmentStatus: AssessmentStatus.PAUSED,
           latestPauseAt: ago(T.paused - 1000),
@@ -219,7 +284,7 @@ describe("rule 4 — assessment paused >7d", () => {
     const input = makeInput({
       applications: [
         makeApp({
-          status: ApplicationStatus.PAUSED,
+          status: "PAUSED",
           assessmentId: "ass-1",
           assessmentStatus: AssessmentStatus.PAUSED,
           latestPauseAt: ago(T.paused + 1000),
@@ -234,7 +299,7 @@ describe("rule 4 — assessment paused >7d", () => {
     const input = makeInput({
       applications: [
         makeApp({
-          status: ApplicationStatus.NOT_STARTED,
+          status: "NOT_STARTED",
           assessmentId: "ass-1",
           assessmentStatus: AssessmentStatus.NOT_STARTED,
           latestPauseAt: ago(T.paused + 1000),
@@ -255,7 +320,7 @@ describe("rule 5 — assessment stalled", () => {
     const input = makeInput({
       applications: [
         makeApp({
-          status: ApplicationStatus.NOT_STARTED,
+          status: "NOT_STARTED",
           assessmentId: "ass-1",
           assessmentStatus: AssessmentStatus.NOT_STARTED,
           latestAnyAuditAt: ago(T.stalled - 1000),
@@ -270,7 +335,7 @@ describe("rule 5 — assessment stalled", () => {
     const input = makeInput({
       applications: [
         makeApp({
-          status: ApplicationStatus.NOT_STARTED,
+          status: "NOT_STARTED",
           assessmentId: "ass-1",
           assessmentStatus: AssessmentStatus.NOT_STARTED,
           latestAnyAuditAt: ago(T.stalled + 1000),
@@ -285,7 +350,7 @@ describe("rule 5 — assessment stalled", () => {
     const input = makeInput({
       applications: [
         makeApp({
-          status: ApplicationStatus.NOT_STARTED,
+          status: "NOT_STARTED",
           assessmentId: "ass-1",
           assessmentStatus: AssessmentStatus.NOT_STARTED,
           latestAnyAuditAt: null,
@@ -300,7 +365,7 @@ describe("rule 5 — assessment stalled", () => {
     const input = makeInput({
       applications: [
         makeApp({
-          status: ApplicationStatus.SUBMITTED,
+          status: "SUBMITTED",
           assessmentId: null,
           latestAnyAuditAt: null,
         }),
@@ -314,7 +379,7 @@ describe("rule 5 — assessment stalled", () => {
     const input = makeInput({
       applications: [
         makeApp({
-          status: ApplicationStatus.COMPLETED,
+          status: "COMPLETED",
           assessmentId: "ass-1",
           assessmentStatus: AssessmentStatus.COMPLETED,
           latestAnyAuditAt: ago(T.stalled + 1000),
@@ -333,7 +398,7 @@ describe("rule 6 — recommendation awaiting outcome >3d", () => {
     const input = makeInput({
       applications: [
         makeApp({
-          status: ApplicationStatus.COMPLETED,
+          status: "COMPLETED",
           assessmentId: "ass-1",
           assessmentStatus: AssessmentStatus.COMPLETED,
           recommendationCreatedAt: ago(T.awaitingOutcome - 1000),
@@ -349,7 +414,7 @@ describe("rule 6 — recommendation awaiting outcome >3d", () => {
     const input = makeInput({
       applications: [
         makeApp({
-          status: ApplicationStatus.COMPLETED,
+          status: "COMPLETED",
           assessmentId: "ass-1",
           assessmentStatus: AssessmentStatus.COMPLETED,
           recommendationCreatedAt: ago(T.awaitingOutcome + 1000),
@@ -373,7 +438,7 @@ describe("rule 6 — recommendation awaiting outcome >3d", () => {
       },
       applications: [
         makeApp({
-          status: ApplicationStatus.QUALIFIES,
+          status: "QUALIFIES",
           assessmentId: "ass-1",
           assessmentStatus: AssessmentStatus.COMPLETED,
           recommendationCreatedAt: ago(T.awaitingOutcome + 1000),
@@ -397,7 +462,7 @@ describe("rule 7 — ready but not exported", () => {
     return makeApp({
       id: `app-${school}`,
       school,
-      status: ApplicationStatus.QUALIFIES,
+      status: "QUALIFIES",
       assessmentId: `ass-${school}`,
       assessmentStatus: AssessmentStatus.COMPLETED,
       recommendationCreatedAt: decisionAt,
@@ -473,7 +538,7 @@ describe("rule 8 — close approaching with undecided", () => {
     const apps: WatchlistInputApplication[] = [];
     for (let i = 0; i < undecided; i++) {
       apps.push(
-        makeApp({ id: `u-${i}`, status: ApplicationStatus.SUBMITTED }),
+        makeApp({ id: `u-${i}`, status: "SUBMITTED" }),
       );
     }
     return makeInput({
@@ -530,7 +595,7 @@ describe("precedence / dedupe across per-application rules", () => {
       applications: [
         makeApp({
           id: "x",
-          status: ApplicationStatus.SUBMITTED,
+          status: "SUBMITTED",
           hasMissingDocs: true,
           assessmentId: "ass-x",
           assessmentStatus: AssessmentStatus.NOT_STARTED,
@@ -559,7 +624,7 @@ describe("precedence / dedupe across per-application rules", () => {
         // The awaiting-outcome app.
         makeApp({
           id: "rec-app",
-          status: ApplicationStatus.COMPLETED,
+          status: "COMPLETED",
           assessmentId: "ass-rec",
           assessmentStatus: AssessmentStatus.COMPLETED,
           recommendationCreatedAt: ago(T.awaitingOutcome + 1000),
@@ -567,7 +632,7 @@ describe("precedence / dedupe across per-application rules", () => {
         }),
         // 10 more plain undecided apps to push undecided count to 11.
         ...Array.from({ length: 10 }, (_, i) =>
-          makeApp({ id: `u-${i}`, status: ApplicationStatus.SUBMITTED }),
+          makeApp({ id: `u-${i}`, status: "SUBMITTED" }),
         ),
       ],
     });
@@ -585,7 +650,7 @@ describe("precedence / dedupe across per-application rules", () => {
       applications: [
         makeApp({
           id: "app-docs",
-          status: ApplicationStatus.SUBMITTED,
+          status: "SUBMITTED",
           hasMissingDocs: true,
         }),
       ],
@@ -601,7 +666,7 @@ describe("precedence / dedupe across per-application rules", () => {
       applications: [
         makeApp({
           id: "app-docs",
-          status: ApplicationStatus.SUBMITTED,
+          status: "SUBMITTED",
           hasMissingDocs: true,
         }), // blocker
       ],
@@ -631,14 +696,14 @@ describe("all clear", () => {
       applications: [
         makeApp({
           id: "ok-1",
-          status: ApplicationStatus.QUALIFIES,
+          status: "QUALIFIES",
           assessmentId: "ass-1",
           assessmentStatus: AssessmentStatus.COMPLETED,
           recommendationCreatedAt: ago(2000),
         }),
         makeApp({
           id: "ok-2",
-          status: ApplicationStatus.DOES_NOT_QUALIFY,
+          status: "DOES_NOT_QUALIFY",
           assessmentId: "ass-2",
           assessmentStatus: AssessmentStatus.COMPLETED,
           recommendationCreatedAt: ago(2000),

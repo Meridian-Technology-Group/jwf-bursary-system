@@ -7,7 +7,6 @@
 
 import type { Tx } from "@/lib/db/prisma";
 import {
-  ApplicationStatus,
   AssessmentStatus,
   BursaryAccountStatus,
   RoundStatus,
@@ -171,16 +170,18 @@ export async function getDashboardCounts(
     select: { id: true, academicYear: true, closeDate: true, status: true },
   });
 
-  // Fetch all application statuses for the round in one query
+  // Fetch all application lifecycle statuses for the round in one query
+  // (PR-6a: lifecycle columns, not the deprecated fused applications.status).
   const applications = await tx.application.findMany({
     where: { roundId },
     select: {
       id: true,
-      status: true,
+      formStatus: true,
       assessment: {
         select: {
           id: true,
           status: true,
+          outcome: true,
           recommendation: { select: { id: true } },
         },
       },
@@ -194,29 +195,26 @@ export async function getDashboardCounts(
   let doesNotQualify = 0;
 
   for (const app of applications) {
-    // "In progress" now reads the REAL assessment lifecycle (Epic 01): an
-    // assessment that is actively being worked (IN_PROGRESS) OR paused for
-    // documents (PAUSED). Previously this bucket was PAUSED-only and a
-    // genuinely in-progress assessment was mis-bucketed as "awaiting" (the old
-    // fused NOT_STARTED) — see plan 01 / Epic 12 §3.
+    // "In progress" reads the REAL assessment lifecycle (Epic 01): an assessment
+    // that is actively being worked (IN_PROGRESS) OR paused for documents
+    // (PAUSED). Previously this bucket was PAUSED-only and a genuinely
+    // in-progress assessment was mis-bucketed as "awaiting" — see plan 01.
     const asmtStatus = app.assessment?.status ?? null;
+    const outcome = app.assessment?.outcome ?? null;
 
     if (
       asmtStatus === AssessmentStatus.IN_PROGRESS ||
       asmtStatus === AssessmentStatus.PAUSED
     ) {
       inProgress++;
-    } else if (
-      app.status === ApplicationStatus.SUBMITTED ||
-      app.status === ApplicationStatus.NOT_STARTED
-    ) {
-      // Form submitted, review not yet meaningfully started (no assessment, or
-      // a freshly-created NOT_STARTED assessment).
-      awaitingAssessment++;
-    } else if (app.status === ApplicationStatus.QUALIFIES) {
+    } else if (outcome === "AWARDED" || outcome === "QUALIFIES_NOT_AWARDED") {
       qualifies++;
-    } else if (app.status === ApplicationStatus.DOES_NOT_QUALIFY) {
+    } else if (outcome === "DOES_NOT_QUALIFY") {
       doesNotQualify++;
+    } else if (app.formStatus === "SUBMITTED") {
+      // Form submitted, review not yet meaningfully started (no assessment, or
+      // a freshly-created NOT_STARTED assessment) and not yet decided.
+      awaitingAssessment++;
     }
 
     // Awaiting recommendation: assessment COMPLETED but no recommendation row

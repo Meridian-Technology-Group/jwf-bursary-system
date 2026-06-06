@@ -16,7 +16,7 @@
  * Responsibilities (single source of truth):
  *   1. transition validation (assessment COMPLETED → an outcome)
  *   2. outcome + lifecycle persistence via the central status service
- *      (writes assessments.outcome + mirrors the legacy fused status until 01 PR-6)
+ *      (writes assessments.outcome; PR-6a removed the legacy fused-status mirror)
  *   3. AWARDED → idempotent account promotion behind the Epic 10 interface
  *      (continue an existing rolling account, never double-create)
  *   4. persist the scholarship award (£) onto the recommendation (D9)
@@ -54,11 +54,9 @@ export type Outcome = "QUALIFIES" | "DOES_NOT_QUALIFY";
 export type AwardDecision = LifecycleOutcome; // AWARDED | QUALIFIES_NOT_AWARDED | DOES_NOT_QUALIFY
 
 /**
- * Outcome may only be set from a COMPLETED assessment. (Epic 01 PR-6 will cut
- * the gate over to the assessment status entirely; until then the assessment
- * row's COMPLETED status is the authoritative signal — the recommendation page
- * already gates on it, and the application-detail flow mirrors it onto the fused
- * status as COMPLETED.)
+ * Outcome may only be set from a COMPLETED assessment. (Epic 01 PR-6a: the gate
+ * reads the assessment's COMPLETED status — the single authoritative signal —
+ * not the deprecated fused `applications.status`.)
  */
 function isValidOutcomeSource(assessmentStatus: string | null): boolean {
   return assessmentStatus === "COMPLETED";
@@ -70,7 +68,7 @@ async function fetchApplicationForOutcome(tx: Tx, applicationId: string) {
     select: {
       id: true,
       reference: true,
-      status: true,
+      formStatus: true,
       childName: true,
       childDob: true,
       entryYear: true,
@@ -87,7 +85,7 @@ async function fetchApplicationForOutcome(tx: Tx, applicationId: string) {
         select: { academicYear: true, openDate: true, closeDate: true },
       },
       assessment: {
-        select: { id: true, status: true, yearlyPayableFees: true },
+        select: { id: true, status: true, outcome: true, yearlyPayableFees: true },
       },
     },
   });
@@ -171,9 +169,9 @@ export async function setApplicationOutcome(
           await promoteToActiveAccount(tx, application, awards);
         }
 
-        // Central status service writes the 3-value assessments.outcome AND
-        // mirrors the legacy fused applications.status; archives a NEW
-        // application that does not qualify (§3).
+        // Central status service writes the 3-value assessments.outcome and
+        // archives a NEW application that does not qualify (§3). (PR-6a: no
+        // longer mirrors the deprecated fused applications.status.)
         await setApplicationOutcomeStatus(tx, applicationId, outcome, {
           applicationType: application.applicationType,
           alreadyArchived: application.archivedAt != null,
@@ -228,7 +226,10 @@ export async function setApplicationOutcome(
         entityId: applicationId,
         context: `Outcome set to ${outcome}`,
         metadata: {
-          fromStatus: application.status,
+          // Outcome can only be set from a COMPLETED assessment (gated above),
+          // so the pre-decision review phase is always COMPLETED. (PR-6a: no
+          // longer read from the deprecated fused `applications.status`.)
+          fromStatus: "COMPLETED",
           outcome,
           bursaryAward: awards.bursaryAward,
           scholarshipAward: awards.scholarshipAward,

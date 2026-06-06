@@ -21,7 +21,11 @@ import { listAssessors } from "@/lib/db/queries/profiles";
 import type { WatchlistRuleId } from "@/lib/db/queries/round-watchlist";
 import { ApplicationTable } from "@/components/admin/application-table";
 import { InternalRequestDialog } from "@/components/admin/internal-request-dialog";
-import { ApplicationStatus, School } from "@prisma/client";
+import { School } from "@prisma/client";
+import {
+  ALL_REVIEW_PHASES,
+  type ReviewPhase,
+} from "@/lib/applications/queue-filter";
 
 export const metadata = {
   title: "Applications",
@@ -40,16 +44,17 @@ function isTruthyFlag(value: string | string[] | undefined): boolean {
   return firstValue(value) === "1";
 }
 
-const APPLICATION_STATUSES = new Set<string>(Object.values(ApplicationStatus));
+// The status URL param carries a review-phase value (Epic 01 PR-6a) — the same
+// 7-value vocabulary the old fused enum used, so existing drill-in links
+// (`?status=SUBMITTED`, `?status=PAUSED`) keep working.
+const REVIEW_PHASES = new Set<string>(ALL_REVIEW_PHASES);
 const SCHOOLS = new Set<string>(Object.values(School));
 
 function parseStatus(
   value: string | string[] | undefined
-): ApplicationStatus | undefined {
+): ReviewPhase | undefined {
   const raw = firstValue(value);
-  return raw && APPLICATION_STATUSES.has(raw)
-    ? (raw as ApplicationStatus)
-    : undefined;
+  return raw && REVIEW_PHASES.has(raw) ? (raw as ReviewPhase) : undefined;
 }
 
 function parseSchool(
@@ -96,7 +101,7 @@ export default async function QueuePage({
     profile.role === Role.ASSESSOR ? { assignedToId: profile.id } : {};
 
   if (roundId) applicationFilters.roundId = roundId;
-  if (status) applicationFilters.status = status;
+  if (status) applicationFilters.reviewPhases = [status];
   if (school) applicationFilters.school = school;
   if (undecided) applicationFilters.undecided = true;
 
@@ -228,7 +233,7 @@ const DERIVED_LABELS: Record<string, string> = {
   awaitingOutcome: "Awaiting outcome",
 };
 
-const STATUS_LABELS: Record<ApplicationStatus, string> = {
+const STATUS_LABELS: Record<ReviewPhase, string> = {
   PRE_SUBMISSION: "Pre-submission",
   SUBMITTED: "Submitted",
   NOT_STARTED: "Not started",
@@ -252,7 +257,7 @@ function describeActiveFilter({
   rounds,
 }: {
   roundId: string | undefined;
-  status: ApplicationStatus | undefined;
+  status: ReviewPhase | undefined;
   school: School | undefined;
   undecided: boolean;
   activeDerivedFlags: string[];

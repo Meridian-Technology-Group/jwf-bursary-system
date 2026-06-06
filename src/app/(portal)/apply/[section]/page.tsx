@@ -130,7 +130,7 @@ export default async function SectionPage({ params }: PageProps) {
   // Once submitted, the form is read-only. Server-side enforcement —
   // the action layer also blocks writes via withUserContext + status checks,
   // but redirecting here prevents the form from rendering at all.
-  if (application.status === "SUBMITTED") {
+  if (application.formStatus === "SUBMITTED") {
     redirect("/submitted");
   }
 
