@@ -9,7 +9,7 @@
 >
 > **Spec:** [README.md](README.md) (spine + decision register). **Owner:** Brian Wagner.
 
-**Started:** 2026-06-05 · **Current focus:** **Epic 02 COMPLETE** (#152–#158 — 8-section parent form rebuilt to the workbook). Wave 1 shipped (01/03/04; 01 PR-6 gated). Next: Epic 05 (parent portal) — deps 01/02/03 met.
+**Started:** 2026-06-05 · **Current focus:** **Epic 05 IN PROGRESS** (parent portal) — PR-1 (home guidance + T&Cs + type chooser) opened; PR-2 (deadline/status/summary) + PR-3 (history + missing-doc upload) to follow, stacked. Epic 02 COMPLETE (#152–#158). Wave 1 shipped (01/03/04; 01 PR-6 gated).
 
 ---
 
@@ -40,7 +40,7 @@ Legend: ⬜ not started · 🟡 in progress · ✅ shipped to staging · 🚫 bl
 | 1 | [03 Round management](plans/03-round-management.md) | ✅ | 01 | #146 (PR-A schema+server core), #147 (PR-B UI) |
 | 1 | [04 Lead-applicant contacts & invitations](plans/04-lead-applicant-contacts-and-invitations.md) | ✅ | 01 | #148 (contact register), #149 (invite-from-contact + D1 lock), #150 (twin/DOB uniqueness) |
 | 2 | [02 Application form re-scope](plans/02-application-form-rescope.md) | ✅ | deps met (01, 04 ✅) · D3 ✅ · D11 artifact (build to workbook) | #152 · #153 · #154 · #155 · #156 · #157 · #158 (all ✅) |
-| 2 | [05 Parent portal experience](plans/05-parent-portal-experience.md) | ⏳ deps | 01, 02, 03 (deps) · D10 ✅ | — |
+| 2 | [05 Parent portal experience](plans/05-parent-portal-experience.md) | 🟡 | deps met (01, 02, 03 ✅) · D2/D10 ✅ | PR-1 home guidance + chooser (this batch); PR-2 deadline/status/summary; PR-3 history + missing-doc upload |
 | 3 | [06 Assessor experience & UI](plans/06-assessor-experience-and-ui.md) | ⏳ deps | 02 (dep) | — |
 | 3 | [07 Calculations & fees](plans/07-assessment-calculations-and-fees.md) | ⏳ deps | 06 (dep) · D8/D14 narrow, non-blocking | — |
 | 3 | [08 Recommendation & outcome](plans/08-recommendation-and-outcome.md) | ⏳ deps | 01, 07 (deps) · D7/D9 ✅ · D4 artifact (placeholders) | — |
@@ -387,6 +387,54 @@ consumes (rule engine + tax-year), and is behaviour-preserving for existing rule
 
 ---
 
+## Active — Epic 05 (parent portal experience)
+
+Wave 2, deps met (01, 02, 03 ✅). Plan §6 lists 7 PR-sized items; executed as
+**three cohesive PRs stacked off `staging`** to avoid union-merges on the shared
+portal glue (`(portal)/page.tsx`, `(portal)/actions.ts`, this ledger).
+**Merge order: PR-1 → PR-2 → PR-3.**
+
+**PR-1 — home-page guidance + T&Cs + application-type chooser** (§6 PR-1, PR-2) —
+`feature/05-home-guidance-and-chooser` (off `staging`):
+- [x] §6 PR-1 — `PortalGuidanceTabs` (Section 1 — How to Apply / Section 2 —
+  Checklist / Terms & Conditions) wired into `(portal)/page.tsx`, always present
+  before/during/after an application. Static workbook copy in
+  `lib/portal/guidance-content.ts`; identity-docs checklist block flagged
+  "first application only" and de-emphasised for rolling-over accounts.
+- [x] §6 PR-1 — T&Cs viewer (D10 *display* half): `terms-and-conditions.pdf`
+  copied to `public/legal/`, rendered inline (`<object>` + Open/Download) from
+  the Terms tab. `lib/portal/terms.ts` = single source of the served path +
+  version marker (the *record-per-submission* half lands in PR-2 with the
+  schema columns).
+- [x] §6 PR-2 — `ApplicationTypeChooser` shows BOTH cards (New / Rolling-over);
+  the eligible one (derived from invitation type: re-assessment ⇒ ROLLING_OVER)
+  is active (reuses `OnboardingCard` / `ReassessmentCard`), the other is a muted
+  disabled shell with a reason + contact link (feedback #4). Replaces the
+  implicit onboarding-xor-reassessment branch.
+- [x] 10 unit tests (guidance content + terms reference). tsc/build green.
+
+**PR-2 — parent-safe status projection + deadline/countdown/lockout + submitted
+summary + submission PDF** (§6 PR-3, PR-4, PR-5) — *planned next, stacks on PR-1*:
+- [ ] `lib/portal/status-projection.ts` (single parent-safe read model); trim
+  `status/page.tsx` + dashboard to it; drop internal enum/outcome literals.
+- [ ] `lib/portal/deadline.ts` (effective deadline via
+  `effectiveSubmissionDeadline()`) + `SubmissionCountdown` banner + read-only
+  lockout + **server-side submit guard** in `apply/actions.ts`.
+- [ ] additive migration: `applications.terms_accepted_at` + `terms_version`
+  (D10 record-per-submission); stamped at submit.
+- [ ] read-only submitted-answers summary + `/api/pdf/submission/[id]` +
+  `submission-pdf.tsx`; dismissible download offer; Received/Submitted label.
+- [ ] progress-count fix (unify on the rule-engine section-completeness source).
+
+**PR-3 — multi-round account history + portal missing-doc upload** (§6 PR-6,
+PR-7) — *planned, stacks on PR-2*:
+- [ ] `(portal)/history` over `BursaryAccount`; preserved read-only summaries/
+  PDFs; upcoming-rounds lineup (empty until Epic 10); portal nav entry.
+- [ ] generalise `submitMissingDocsResponse` → upload + retro-populate keeping
+  `submittedAt`/`formStatus` fixed (works while the assessment is PAUSED).
+
+---
+
 ## Decision register — execution view
 
 Mirrors [README §5](README.md#5-decision-register). Reconciled 2026-06-05 against
@@ -427,6 +475,19 @@ Wave 2 → Wave 3 → Wave 4.
 
 ## Change log
 
+- **2026-06-06** — **Epic 05 OPENED (Wave 2)** — PR-1 (home-page guidance +
+  T&Cs + application-type chooser). New `PortalGuidanceTabs` (Section 1 — How to
+  Apply / Section 2 — Checklist / Terms & Conditions) wired into
+  `(portal)/page.tsx`, always present; static workbook copy in
+  `lib/portal/guidance-content.ts` with the identity-docs block flagged
+  first-application-only. T&Cs PDF served from `public/legal/` and rendered
+  inline (D10 *display* half); `lib/portal/terms.ts` is the single source of the
+  served path + version marker. `ApplicationTypeChooser` shows BOTH application
+  types with the non-eligible one disabled + reason (feedback #4), reusing the
+  onboarding/reassessment bodies. No schema. 10 unit tests; tsc/build green.
+  Epic 05 row → 🟡. PR-2 (status projection + deadline/lockout + submitted
+  summary/PDF + acceptance columns) and PR-3 (history + portal missing-doc
+  upload) to follow, stacked (merge order PR-1 → PR-2 → PR-3).
 - **2026-06-06** — **Epic 02 COMPLETE** (#158, PR-7): seed:demo income fixtures →
   status-driven shape across statuses; Review reframed as the workbook Validation
   summary; OFF-by-default idempotent income-draft backfill script. Epic 02 row → ✅;
