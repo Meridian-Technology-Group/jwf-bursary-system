@@ -9,7 +9,7 @@
  * disambiguates twins (D12).
  */
 
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -126,6 +126,24 @@ export function ContactFormDialog({
         (initial?.entryYearGroup as Values["entryYearGroup"]) || undefined,
     },
   });
+
+  // Both the create and edit dialogs are mounted permanently by the parent
+  // table, so `useForm`'s `defaultValues` are only captured once (when `initial`
+  // is still undefined) and never re-applied. Re-seed the form each time the
+  // dialog opens so editing presents the record's current values rather than a
+  // blank form. The school / entryYearGroup empty-string → undefined coercion
+  // mirrors the initial `defaultValues` so the Select placeholders behave.
+  const { reset } = form;
+  useEffect(() => {
+    if (!open) return;
+    reset({
+      ...(initial ?? EMPTY),
+      school: (initial?.school as Values["school"]) || undefined,
+      entryYearGroup:
+        (initial?.entryYearGroup as Values["entryYearGroup"]) || undefined,
+    });
+    setServerError(null);
+  }, [open, initial, reset]);
 
   function onSubmit(values: Values) {
     setServerError(null);

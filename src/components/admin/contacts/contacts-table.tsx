@@ -64,14 +64,14 @@ function toFormValues(c: ContactListItem & {
     entryYear: String(c.entryYear),
     entryYearGroup:
       (c.entryYearGroup as ContactFormValues["entryYearGroup"]) ?? "",
-    // Address fields are not loaded into the list item; the edit dialog still
-    // lets the admin re-enter / amend them. (Kept lean to avoid over-fetching
-    // the register list.)
-    addressLine1: "",
-    addressLine2: "",
-    town: "",
-    postcode: "",
-    notes: "",
+    // Address + notes must round-trip through the edit form: the update action
+    // writes a full record (unsubmitted fields become null), so presenting them
+    // blank would silently wipe the stored address on every edit.
+    addressLine1: c.addressLine1 ?? "",
+    addressLine2: c.addressLine2 ?? "",
+    town: c.town ?? "",
+    postcode: c.postcode ?? "",
+    notes: c.notes ?? "",
   };
 }
 
