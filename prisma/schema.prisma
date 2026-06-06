@@ -126,8 +126,6 @@ model Application {
   entryYearGroup       EntryYearGroup?          @map("entry_year_group")
   isReassessment       Boolean                  @default(false) @map("is_reassessment")
   isInternal           Boolean                  @default(false) @map("is_internal")
-  /// @deprecated — replaced by formStatus + Assessment.outcome; dropped in Epic 01 PR-6
-  status               ApplicationStatus        @default(PRE_SUBMISSION)
   formStatus           ApplicationFormStatus    @default(CREATED) @map("form_status")
   applicationType      ApplicationType          @default(NEW) @map("application_type")
   /// Shared-custody arrangement (Epic 09, Decision D15). SOLE is the default
@@ -176,7 +174,11 @@ model Application {
   // weaken the dedupe for legacy/unknown-DOB rows. Together they fully replace
   // the old childName-only unique without weakening it.
   @@unique([roundId, leadApplicantId, childName, childDob])
-  @@index([roundId, status])
+  // Replaces the old (round_id, status) index (Epic 01 PR-6b): the deprecated
+  // fused `status` column is dropped; the round queue/cockpit now filters on the
+  // authoritative form lifecycle, so the index follows it to keep the same
+  // round-scoped access pattern.
+  @@index([roundId, formStatus])
   @@index([leadApplicantId])
   @@index([bursaryAccountId])
   @@index([assignedToId])
@@ -683,19 +685,6 @@ enum RoundStatus {
   CLOSED
 }
 
-/// @deprecated — replaced by ApplicationFormStatus (form lifecycle) +
-/// AssessmentStatus (assessment lifecycle) + AssessmentOutcome (outcome
-/// lifecycle). Retained through Epic 01 PR-1→PR-5; dropped in Epic 01 PR-6.
-enum ApplicationStatus {
-  PRE_SUBMISSION
-  SUBMITTED
-  NOT_STARTED
-  PAUSED
-  COMPLETED
-  QUALIFIES
-  DOES_NOT_QUALIFY
-}
-
 /// Form lifecycle for an Application (Epic 01).
 /// CREATED → NOT_STARTED → IN_PROGRESS → FILLED_IN → SUBMITTED.
 enum ApplicationFormStatus {
@@ -735,6 +724,11 @@ enum AssessmentStatus {
 }
 
 enum AssessmentOutcome {
+  /// VESTIGIAL (Epic 01 PR-6b): the legacy binary `QUALIFIES` value is fully
+  /// unused — 0 rows on nonprod (residuals remapped to AWARDED /
+  /// QUALIFIES_NOT_AWARDED in PR-6a) and no code references. Removing a value
+  /// from an in-use Postgres enum requires a risky new-enum-swap, so it is left
+  /// in place. Safe to drop later via an enum swap once confidence is high.
   QUALIFIES
   DOES_NOT_QUALIFY
   QUALIFIES_NOT_AWARDED

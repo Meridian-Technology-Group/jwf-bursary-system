@@ -55,8 +55,11 @@ async function main() {
   const rows = await prisma.applicationSection.findMany({
     where: {
       section: "PARENTS_INCOME",
-      // Drafts only — never rewrite submitted (immutable) applications.
-      application: { status: "PRE_SUBMISSION" },
+      // Drafts only — never rewrite submitted (immutable) applications. The
+      // deprecated fused `application.status` (= PRE_SUBMISSION) was dropped in
+      // Epic 01 PR-6b; "not yet submitted" is now the authoritative form
+      // lifecycle being anything other than SUBMITTED.
+      application: { formStatus: { not: "SUBMITTED" } },
     },
     select: {
       id: true,
