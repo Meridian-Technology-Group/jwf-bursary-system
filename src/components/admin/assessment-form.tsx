@@ -43,7 +43,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { EarnerForm, type EarnerFormValues } from "@/components/admin/earner-form";
-import { CalculationDisplay } from "@/components/admin/calculation-display";
+import { AssessmentCalcStrip } from "@/components/admin/assessment-calc-strip";
 import {
   saveAssessmentAction,
   completeAssessmentAction,
@@ -746,8 +746,18 @@ export function AssessmentForm({
   // ── Render ─────────────────────────────────────────────────────────────────
 
   return (
-    <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_320px]">
-      {/* Left: form sections */}
+    // Epic 06: single-column data pane. The calculation moved OUT of the old
+    // [1fr_320px] right rail into a collapsible top strip, so the laptop view is
+    // two columns (documents | data) instead of three.
+    <div className="space-y-4">
+      {/* Calculation — collapsible persistent strip at the top */}
+      <AssessmentCalcStrip
+        input={assessmentInput}
+        dishonestyFlag={dishonestyFlag}
+        creditRiskFlag={creditRiskFlag}
+      />
+
+      {/* Form sections */}
       <div className="space-y-4">
         {/* Status bar */}
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-200 bg-white px-5 py-3 shadow-sm">
@@ -1369,26 +1379,6 @@ export function AssessmentForm({
             </label>
           </div>
         </FormSection>
-      </div>
-
-      {/* Right: sticky calculation display */}
-      <div className="hidden lg:block">
-        <div className="sticky top-6">
-          <CalculationDisplay
-            input={assessmentInput}
-            dishonestyFlag={dishonestyFlag}
-            creditRiskFlag={creditRiskFlag}
-          />
-        </div>
-      </div>
-
-      {/* Mobile calculation display — shown at bottom */}
-      <div className="lg:hidden">
-        <CalculationDisplay
-          input={assessmentInput}
-          dishonestyFlag={dishonestyFlag}
-          creditRiskFlag={creditRiskFlag}
-        />
       </div>
     </div>
   );
