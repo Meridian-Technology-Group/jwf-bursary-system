@@ -39,7 +39,7 @@ Legend: ⬜ not started · 🟡 in progress · ✅ shipped to staging · 🚫 bl
 | 1 | [01 Status & workflow model](plans/01-status-and-workflow-model.md) | ✅ | — | #141 (PR-1 schema), #142 (PR-2 backfill), #143 (PR-3 status service), #144 (PR-4 readers+badges), #145 (PR-5 submitted_at write-once); **PR-6 drop-column ⏸ gated** |
 | 1 | [03 Round management](plans/03-round-management.md) | ✅ | 01 | #146 (PR-A schema+server core), #147 (PR-B UI) |
 | 1 | [04 Lead-applicant contacts & invitations](plans/04-lead-applicant-contacts-and-invitations.md) | ✅ | 01 | #148 (contact register), #149 (invite-from-contact + D1 lock), #150 (twin/DOB uniqueness) |
-| 2 | [02 Application form re-scope](plans/02-application-form-rescope.md) | 🟡 | deps met (01, 04 ✅) · D3 ✅ · D11 artifact (build to workbook) | PR-1 #152 ✅ · PR-2 #153 ✅ · PR-3 `feature/02-finish-stubs` |
+| 2 | [02 Application form re-scope](plans/02-application-form-rescope.md) | 🟡 | deps met (01, 04 ✅) · D3 ✅ · D11 artifact (build to workbook) | PR-1 #152 ✅ · PR-2 #153 ✅ · PR-3 #154 ✅ · PR-4 #155 (this) · PR-5/6/7 open |
 | 2 | [05 Parent portal experience](plans/05-parent-portal-experience.md) | ⏳ deps | 01, 02, 03 (deps) · D10 ✅ | — |
 | 3 | [06 Assessor experience & UI](plans/06-assessor-experience-and-ui.md) | ⏳ deps | 02 (dep) | — |
 | 3 | [07 Calculations & fees](plans/07-assessment-calculations-and-fees.md) | ⏳ deps | 06 (dep) · D8/D14 narrow, non-blocking | — |
@@ -349,10 +349,16 @@ consumes (rule engine + tax-year), and is behaviour-preserving for existing rule
   11 new tests; tsc/build green, 355 total green.
 
 **Remaining (follow-up PRs, all independent off `staging` unless noted):**
-- [ ] **PR-4 — identity variant + nesting.** Re-key ID visibility on Epic 01
-  `applicationType` (replace `isReassessment` in `apply/[section]/page.tsx` +
-  `reassessment.ts`); present FAMILY_ID under Details of Child for NEW, hidden for
-  ROLLING_OVER; encode the per-family-member passport/ILR doc rules.
+- [x] **PR-3 — finish the stubs** (#154). Dependent-elderly per-elder + invoice;
+  other-info court-order/insurance/maintenance/fees uploads; assets
+  other-properties repeatable table + mortgage-statement upload; additional-info
+  mandatory narrative + uploads. New `arrayForEach` rule kind; each wired into the
+  rule engine.
+- [x] **PR-4 — identity variant + nesting** (#155). `isRollingOverApplication()`
+  keys ID-section visibility on Epic 01 `applicationType` (ROLLING_OVER hides
+  FAMILY_ID, NEW shows it), `isReassessment` fallback for pre-backfill rows;
+  `apply/[section]/page.tsx` re-keyed. FAMILY_ID re-titled "Details of Child —
+  Identification"; per-member passport/ILR rule replacing the `FAMILY_ID: []` no-op.
 - [ ] **PR-5 — declaration + contact mandatories.** Workbook-verbatim closing
   declaration with P1 **and** P2 ticks; per-parent declaration wording; phone +
   email required (schema + UI). (D11 swap-in.)
@@ -404,6 +410,16 @@ Wave 2 → Wave 3 → Wave 4.
 
 ## Change log
 
+- **2026-06-06** — **Epic 02 PR-4** (identity new/rolling variant + nesting).
+  New `isRollingOverApplication()` (reassessment.ts) keys FAMILY_ID visibility on
+  Epic 01 `applicationType` — ROLLING_OVER hides the ID section, NEW shows it —
+  with an `isReassessment` fallback for pre-backfill rows. `apply/[section]/page.tsx`
+  re-keyed off this helper (skip/redirect + active section order). FAMILY_ID
+  re-titled "Details of Child — Identification" (workbook §3 Q10 nesting). The
+  `FAMILY_ID: []` no-op replaced by a structural rule encoding the per-member
+  passport/ILR requirement (British → UK passport; otherwise passport + ILR),
+  satisfied by per-member doc ids or indexed upload slots. No schema/migration.
+  Independent off `staging`. tsc/build green, 352 tests green (+8).
 - **2026-06-06** — **Epic 02 PR-3** (finish the four live stubs). Dependent-elderly
   per in-care elder repeatable details + required invoice upload; other-info
   court-order (school year + evidence), child-maintenance branch (payer →

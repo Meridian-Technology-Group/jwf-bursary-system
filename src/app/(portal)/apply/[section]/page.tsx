@@ -27,7 +27,11 @@ import {
   resolveOwningContributorId,
 } from "@/lib/db/queries/contributors";
 import { SectionPageClient } from "./section-page-client";
-import { HIDDEN_REASSESSMENT_SECTIONS, PREPOPULATED_SECTIONS } from "@/lib/db/queries/reassessment";
+import {
+  HIDDEN_REASSESSMENT_SECTIONS,
+  PREPOPULATED_SECTIONS,
+  isRollingOverApplication,
+} from "@/lib/db/queries/reassessment";
 
 // ─── Slug → ApplicationSectionType map ───────────────────────────────────────
 
@@ -77,7 +81,7 @@ const REASSESSMENT_SECTION_ORDER: ApplicationSectionType[] = SECTION_ORDER.filte
 
 const SECTION_TITLES: Record<ApplicationSectionType, string> = {
   CHILD_DETAILS: "Details of Child",
-  FAMILY_ID: "Family Identification",
+  FAMILY_ID: "Details of Child — Identification",
   PARENT_DETAILS: "Parent / Guardian Details",
   DEPENDENT_CHILDREN: "Dependent Children",
   DEPENDENT_ELDERLY: "Dependent Elderly",
@@ -130,9 +134,14 @@ export default async function SectionPage({ params }: PageProps) {
   }
 
   const isReassessment = application.isReassessment;
+  // ID-section visibility is keyed on Epic 01's explicit applicationType (D-PR4):
+  // NEW shows FAMILY_ID; ROLLING_OVER hides it. Falls back to isReassessment for
+  // any pre-backfill row.
+  const isRollingOver = isRollingOverApplication(application);
 
-  // For re-assessments, FAMILY_ID is completely hidden — skip to next section
-  if (isReassessment && HIDDEN_REASSESSMENT_SECTIONS.includes(sectionType)) {
+  // For a rolling-over application, FAMILY_ID is completely hidden — skip to next
+  // section (identity documents are already on file from the first application).
+  if (isRollingOver && HIDDEN_REASSESSMENT_SECTIONS.includes(sectionType)) {
     // Find the next visible section
     const sectionOrder = REASSESSMENT_SECTION_ORDER;
     const firstSection = sectionOrder[0];
@@ -140,7 +149,7 @@ export default async function SectionPage({ params }: PageProps) {
   }
 
   // Determine the visible section order based on application type
-  const activeSectionOrder = isReassessment
+  const activeSectionOrder = isRollingOver
     ? REASSESSMENT_SECTION_ORDER
     : SECTION_ORDER;
 
