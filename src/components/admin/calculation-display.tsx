@@ -287,6 +287,18 @@ export function CalculationDisplay({
                 {fmt(output.payableFees.adjustedMonthlyPayableFees)}
               </span>
             </div>
+            {/* Epic 07: next-year payable monthly (fee-uplift implication). Only
+                shown when a next-year fee is in play. */}
+            {output.payableFees.nextYearMonthlyPayableFees != null && (
+              <div className="flex items-baseline justify-between border-t border-primary-100 pt-1">
+                <span className="text-xs font-medium text-primary-600">
+                  Next-Year Monthly
+                </span>
+                <span className="font-mono text-sm font-semibold text-primary-700">
+                  {fmt(output.payableFees.nextYearMonthlyPayableFees)}
+                </span>
+              </div>
+            )}
           </div>
 
           {/* Bursary indicator */}

@@ -80,7 +80,7 @@ export function AssessmentCalcStrip({
   // "meaningful output" gate (annualFees > 0); otherwise show dashes.
   const digest = React.useMemo(() => {
     if (!input.annualFees || input.annualFees <= 0) {
-      return { monthly: null, yearly: null, bursary: null };
+      return { monthly: null, yearly: null, bursary: null, nextYearMonthly: null };
     }
     try {
       const o = calculateAssessment(input);
@@ -88,9 +88,11 @@ export function AssessmentCalcStrip({
         monthly: o.payableFees.adjustedMonthlyPayableFees,
         yearly: o.payableFees.adjustedYearlyPayableFees,
         bursary: o.payableFees.bursaryAward,
+        // Epic 07: next-year payable monthly (fee-uplift implication).
+        nextYearMonthly: o.payableFees.nextYearMonthlyPayableFees,
       };
     } catch {
-      return { monthly: null, yearly: null, bursary: null };
+      return { monthly: null, yearly: null, bursary: null, nextYearMonthly: null };
     }
   }, [input]);
 
@@ -143,6 +145,14 @@ export function AssessmentCalcStrip({
                 {fmt(digest.bursary)}
               </span>
             </span>
+            {digest.nextYearMonthly != null && (
+              <span className="whitespace-nowrap">
+                Next-Yr Monthly{" "}
+                <span className="font-mono font-semibold tabular-nums text-slate-700">
+                  {fmt(digest.nextYearMonthly)}
+                </span>
+              </span>
+            )}
           </span>
         </div>
         <span className="flex shrink-0 items-center gap-1 text-xs text-slate-400">

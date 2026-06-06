@@ -576,14 +576,29 @@ PR-1 → PR-2.** PR-7 (historical validation) is **gated on client data** — fl
 
 **PR-2 — wiring + auto-populate-then-confirm UI** (§6 PR-3, PR-4, PR-5) —
 `feature/07-wiring-and-autopopulate` (**stacks on PR-1**):
-- [ ] §6 PR-3 — thread `Round.academicYear` → `getConfigsForAssessment` →
-  assessment page → form; snapshot the next-year payable figures on save (additive
-  columns on `Assessment` — migration ships in THIS PR).
-- [ ] §6 PR-4 — rewrite `handleFamilyCategoryChange` + council-tax/fee-year
-  handlers to **fill-empties-only**; per-field overridden detection +
-  reset-to-default affordance (derived approach first, §5.2).
-- [ ] §6 PR-5 — render current + next-year annual & monthly fees with year labels
-  and edited/default state; calc strip shows both payable monthlies.
+- [x] §6 PR-3 — `Round.academicYear` threaded `assessment/page.tsx →
+  getConfigsForAssessment → AssessmentForm`; additive migration
+  `20260606160000_assessment_next_year_fees` adds three nullable
+  `assessments.next_year_*` columns (no default, no backfill); the form snapshots
+  the next-year fee + its yearly/monthly payable on save (via the extended
+  `AssessmentSaveInput`/`saveAssessment`). `feeYearLabels` derives the year
+  headings.
+- [x] §6 PR-4 — `handleFamilyCategoryChange` rewritten to **fill-empties-only**
+  via the pure `lib/assessment/auto-populate.ts` (`applyFamilyTypeDefaults` /
+  `deriveOverriddenFields`); per-field overridden tracking (seeded from the
+  persisted row: stored-≠-default = already overridden); council-tax + the three
+  family-cost fields each carry a `DefaultStateBadge` ("default" / "edited ·
+  reset to £X"). Edits are never silently clobbered (regression-tested against
+  the old `:415` behaviour).
+- [x] §6 PR-5 — Reference Data now shows current-year AND next-year annual fees
+  (labelled with their academic years, e.g. "2026-27" / "2027-28"), both
+  independently editable; the family-cost cards became editable inputs (were
+  read-only). `CalculationDisplay` + `AssessmentCalcStrip` show the **next-year
+  payable monthly** alongside the current one. Next-year figures only render when
+  a next-year fee is in play.
+- [x] No regression to the deterministic fee ordering ([12]); D8/D14 built to
+  default (PR-1). prisma format/validate clean; tsc/lint/build green; **456
+  tests** (+11: auto-populate 8, fee-year labels 3).
 
 **PR-7 — historical validation** (§6 PR-7) — **🚫 GATED on client data**:
 - [ ] Encode client-supplied historical assessments (inputs + the Foundation's own
@@ -637,6 +652,23 @@ Wave 2 → Wave 3 → Wave 4.
 
 ## Change log
 
+- **2026-06-06** — **Epic 07 PR-2** (`feature/07-wiring-and-autopopulate`, stacks
+  on PR-1): wiring + auto-populate-then-confirm UI. `Round.academicYear` threaded
+  into `getConfigsForAssessment` so the assessor form receives the current-year
+  AND next-year annual fee (labelled with their academic years) — both
+  independently editable; the family-cost cards became editable inputs. Additive
+  migration `20260606160000_assessment_next_year_fees` (three nullable
+  `assessments.next_year_*` snapshot columns, no backfill); the form snapshots the
+  next-year fee + payable on save. **Auto-populate-then-confirm**: new pure
+  `lib/assessment/auto-populate.ts` (`applyFamilyTypeDefaults` fills empties only;
+  `deriveOverriddenFields` seeds overrides from the persisted row) drives a
+  rewritten `handleFamilyCategoryChange` that NEVER clobbers an assessor edit;
+  council tax + the three family costs each show a "default"/"edited · reset to
+  £X" badge. `CalculationDisplay` + `AssessmentCalcStrip` show the next-year
+  payable monthly alongside the current one (only when a next-year fee is in
+  play). prisma format/validate/tsc/lint/build green; 456 tests (+11). **DO NOT
+  MERGE — merge after PR-1.** Migration SQL + read-only nonprod validation in the
+  PR body.
 - **2026-06-06** — **Epic 07 OPENED (Wave 3)** — PR-1 (fee-year resolver + engine
   next-year fees + seed). New pure `lib/assessment/fee-year.ts` resolves the
   current-year AND next-year annual fee for a school from the versioned

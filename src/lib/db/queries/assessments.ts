@@ -81,6 +81,11 @@ export interface AssessmentSaveInput {
   yearlyPayableFees?: number;
   monthlyPayableFees?: number;
 
+  // Epic 07 — next-year fee snapshot (null when no next-year fee is in play)
+  nextYearAnnualFees?: number | null;
+  nextYearYearlyPayableFees?: number | null;
+  nextYearMonthlyPayableFees?: number | null;
+
   // Status
   status?: AssessmentStatus;
 
@@ -195,6 +200,13 @@ export async function saveAssessment(
     updateData.yearlyPayableFees = assessmentFields.yearlyPayableFees;
   if (assessmentFields.monthlyPayableFees !== undefined)
     updateData.monthlyPayableFees = assessmentFields.monthlyPayableFees;
+  // Epic 07 — next-year fee snapshot (explicit null is a valid "clear" write).
+  if (assessmentFields.nextYearAnnualFees !== undefined)
+    updateData.nextYearAnnualFees = assessmentFields.nextYearAnnualFees;
+  if (assessmentFields.nextYearYearlyPayableFees !== undefined)
+    updateData.nextYearYearlyPayableFees = assessmentFields.nextYearYearlyPayableFees;
+  if (assessmentFields.nextYearMonthlyPayableFees !== undefined)
+    updateData.nextYearMonthlyPayableFees = assessmentFields.nextYearMonthlyPayableFees;
   if (assessmentFields.status !== undefined)
     updateData.status = assessmentFields.status;
 
