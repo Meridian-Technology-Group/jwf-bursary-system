@@ -23,14 +23,36 @@ import { getOrAcceptLatestInvitationForUser } from "@/lib/db/queries/invitations
 import { projectFormStatusForApplicant } from "@/components/shared/lifecycle-badges";
 import { ApplicationTypeChooser } from "@/app/(portal)/application-type-chooser";
 import { PortalGuidanceTabs } from "@/components/portal/portal-guidance-tabs";
-import { FileText, ArrowRight, ClipboardList, Upload } from "lucide-react";
+import { SubmissionCountdown } from "@/components/portal/submission-countdown";
+import {
+  effectiveSubmissionDeadline,
+  isSubmissionDeadlinePassed,
+} from "@/lib/rounds/submission-deadline";
+import { isRollingOverApplication } from "@/lib/db/queries/reassessment";
+import { ApplicationSectionType } from "@prisma/client";
+import { FileText, ArrowRight, ClipboardList, Upload, Lock } from "lucide-react";
 import Link from "next/link";
 
 export const metadata = {
   title: "My Application",
 };
 
-const TOTAL_SECTIONS = 10;
+// All form sections in workbook order. The active set for a given application
+// excludes FAMILY_ID for a rolling-over re-assessment (Epic 02); the dashboard
+// progress count + denominator both derive from this so they always agree.
+const ALL_SECTION_TYPES: ApplicationSectionType[] = [
+  "CHILD_DETAILS",
+  "FAMILY_ID",
+  "PARENT_DETAILS",
+  "DEPENDENT_CHILDREN",
+  "DEPENDENT_ELDERLY",
+  "OTHER_INFO",
+  "PARENTS_INCOME",
+  "ASSETS_LIABILITIES",
+  "ADDITIONAL_INFO",
+  "DECLARATION",
+];
+const TOTAL_SECTIONS = ALL_SECTION_TYPES.length;
 
 export default async function PortalDashboardPage() {
   const user = await getCurrentUser();
@@ -65,7 +87,15 @@ export default async function PortalDashboardPage() {
     }
   }
 
-  const { application, completedSections, invitation, inviteRoundYear } = user
+  const {
+    application,
+    completedSections,
+    totalSections,
+    deadlinePast,
+    deadlineIso,
+    invitation,
+    inviteRoundYear,
+  } = user
     ? await (async () => {
         const userScope = await withUserContext(
           user.id,
@@ -73,7 +103,21 @@ export default async function PortalDashboardPage() {
           async (tx) => {
             const app = await getCurrentApplicationForUser(tx, user.id);
             let completed = 0;
+            let totalSections = TOTAL_SECTIONS;
+            let deadlinePast = false;
+            let deadlineIso: string | null = null;
             if (app) {
+              // The active section set excludes the ID section for a rolling-over
+              // application (Epic 02). The progress DENOMINATOR must match — the
+              // old hard-coded "of 10" mismatched the 9 active sections and the
+              // completed count, which is the Epic-12 §3 progress-count bug. Both
+              // numerator and denominator now read the same active-section set.
+              const rollingOver = isRollingOverApplication(app);
+              const activeSections = rollingOver
+                ? ALL_SECTION_TYPES.filter((s) => s !== "FAMILY_ID")
+                : ALL_SECTION_TYPES;
+              totalSections = activeSections.length;
+
               // Scope the progress count to the lead applicant's PRIMARY
               // contributor (dual-parent foundation). Resolve with a SELECT —
               // never upsert under applicant RLS (admin-only write policy). The
@@ -92,10 +136,35 @@ export default async function PortalDashboardPage() {
                   app.id,
                   ownerContributorId
                 );
-                completed = statuses.filter((s) => s.isComplete).length;
+                const activeSet = new Set<string>(activeSections);
+                completed = statuses.filter(
+                  (s) => s.isComplete && activeSet.has(s.section)
+                ).length;
+              }
+
+              // Resolve the effective submission deadline (Epic 03) for the
+              // countdown / lockout. Only meaningful while still an editable
+              // draft. Needs the round close date, which the shared query does
+              // not select — fetch it narrowly here.
+              if (app.status === "PRE_SUBMISSION") {
+                const round = await tx.round.findUnique({
+                  where: { id: app.roundId },
+                  select: { closeDate: true },
+                });
+                if (round) {
+                  const { deadline } = effectiveSubmissionDeadline(
+                    { submissionDeadlineAt: app.submissionDeadlineAt },
+                    { closeDate: round.closeDate }
+                  );
+                  deadlineIso = deadline.toISOString();
+                  deadlinePast = isSubmissionDeadlinePassed(
+                    { submissionDeadlineAt: app.submissionDeadlineAt },
+                    { closeDate: round.closeDate }
+                  );
+                }
               }
             }
-            return { app, completed };
+            return { app, completed, totalSections, deadlinePast, deadlineIso };
           }
         );
 
@@ -162,6 +231,9 @@ export default async function PortalDashboardPage() {
           // prior-year application so the dashboard falls through to the card.
           application: showReassessment ? null : userScope.app,
           completedSections: userScope.completed,
+          totalSections: userScope.totalSections,
+          deadlinePast: userScope.deadlinePast,
+          deadlineIso: userScope.deadlineIso,
           invitation: showReassessment || !userScope.app ? inv : null,
           inviteRoundYear: roundYear,
         };
@@ -169,14 +241,19 @@ export default async function PortalDashboardPage() {
     : {
         application: null,
         completedSections: 0,
+        totalSections: TOTAL_SECTIONS,
+        deadlinePast: false,
+        deadlineIso: null,
         invitation: null,
         inviteRoundYear: null,
       };
 
   const isDraft = application?.status === "PRE_SUBMISSION";
+  // Past-deadline lockout (Epic 05 §3.2): only meaningful while still drafting.
+  const isLockedOut = isDraft && deadlinePast;
 
   const progressPercent = application
-    ? Math.round((completedSections / TOTAL_SECTIONS) * 100)
+    ? Math.round((completedSections / totalSections) * 100)
     : 0;
 
   const roundLabel = application?.round?.academicYear
@@ -213,6 +290,13 @@ export default async function PortalDashboardPage() {
 
       {application ? (
         <>
+          {/* Submission countdown / deadline-missed lockout (Epic 05 §3.2).
+              Only while the form is still an editable draft; keyed on the
+              effective per-application deadline (Epic 03). */}
+          {isDraft && deadlineIso && (
+            <SubmissionCountdown deadlineIso={deadlineIso} />
+          )}
+
           {/* Paused — missing documents call to action */}
           {application.status === "PAUSED" && (
             <Link
@@ -274,7 +358,7 @@ export default async function PortalDashboardPage() {
                 <div className="flex items-center justify-between text-sm">
                   <span className="text-slate-500">Sections complete</span>
                   <span className="font-medium text-primary-900">
-                    {completedSections} of {TOTAL_SECTIONS}
+                    {completedSections} of {totalSections}
                   </span>
                 </div>
                 <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-slate-100">
@@ -298,8 +382,11 @@ export default async function PortalDashboardPage() {
               Quick actions
             </h2>
             <div className="grid gap-4 sm:grid-cols-2">
-              {/* Continue application — only while the draft is still editable */}
-              {isDraft && (
+              {/* Continue application — only while editable AND before the
+                  deadline. Past the deadline the action is removed and a locked
+                  card is shown instead (presentation; the server submit guard is
+                  authoritative). */}
+              {isDraft && !isLockedOut && (
                 <a
                   href="/apply/child-details"
                   className="group flex items-center gap-4 rounded-xl border border-slate-200 bg-white p-5 shadow-sm transition-shadow hover:shadow-md focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-600"
@@ -320,6 +407,23 @@ export default async function PortalDashboardPage() {
                     aria-hidden="true"
                   />
                 </a>
+              )}
+
+              {isDraft && isLockedOut && (
+                <div className="flex items-center gap-4 rounded-xl border border-dashed border-rose-200 bg-rose-50 p-5">
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-rose-100 text-rose-600">
+                    <Lock className="h-5 w-5" aria-hidden="true" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="font-medium text-rose-900">
+                      Submission closed
+                    </p>
+                    <p className="mt-0.5 text-sm text-rose-700">
+                      The deadline has passed — this application can no longer be
+                      edited or submitted.
+                    </p>
+                  </div>
+                </div>
               )}
 
               {/* View status */}

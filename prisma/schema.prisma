@@ -100,6 +100,14 @@ model Application {
   applicationType      ApplicationType          @default(NEW) @map("application_type")
   archivedAt           DateTime?                @map("archived_at") @db.Timestamptz(6)
   submittedAt          DateTime?                @map("submitted_at") @db.Timestamptz(6)
+  /// When the parent accepted the Terms & Conditions for THIS submission
+  /// (Epic 05, Decision D10). NULL until submitted. Stamped at submit and
+  /// rendered into the submitted summary + submission PDF. Additive/nullable.
+  termsAcceptedAt      DateTime?                @map("terms_accepted_at") @db.Timestamptz(6)
+  /// Which T&Cs document/version the parent accepted at submission (D10), so a
+  /// later document swap never rewrites a historic acceptance. See
+  /// lib/portal/terms.ts (TERMS_AND_CONDITIONS_VERSION).
+  termsVersion         String?                  @map("terms_version")
   /// Per-applicant submit-by override (Epic 03). NULL ⇒ fall back to
   /// round.closeDate. Distinct from Assessment.pausedUntil (post-submission
   /// doc deadline, Epic 01) and from Round.closeDate (round-level intake

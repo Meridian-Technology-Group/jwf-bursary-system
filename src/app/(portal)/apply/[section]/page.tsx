@@ -32,6 +32,7 @@ import {
   PREPOPULATED_SECTIONS,
   isRollingOverApplication,
 } from "@/lib/db/queries/reassessment";
+import { isSubmissionDeadlinePassed } from "@/lib/rounds/submission-deadline";
 
 // ─── Slug → ApplicationSectionType map ───────────────────────────────────────
 
@@ -131,6 +132,29 @@ export default async function SectionPage({ params }: PageProps) {
   // but redirecting here prevents the form from rendering at all.
   if (application.status === "SUBMITTED") {
     redirect("/submitted");
+  }
+
+  // Deadline-missed lockout (Epic 05 §3.2). Past the per-application deadline an
+  // unsubmitted draft is read-only — bounce to /status, which shows the clear
+  // "submission deadline passed" banner. The submit action also rejects late
+  // posts server-side, so a stale tab cannot bypass this.
+  const deadlineRound = await withUserContext(
+    user.id,
+    user.role as RlsRole,
+    (tx) =>
+      tx.round.findUnique({
+        where: { id: application.roundId },
+        select: { closeDate: true },
+      })
+  );
+  if (
+    deadlineRound &&
+    isSubmissionDeadlinePassed(
+      { submissionDeadlineAt: application.submissionDeadlineAt },
+      { closeDate: deadlineRound.closeDate }
+    )
+  ) {
+    redirect("/status");
   }
 
   const isReassessment = application.isReassessment;
