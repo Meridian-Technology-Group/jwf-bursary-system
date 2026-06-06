@@ -1,10 +1,10 @@
 import { describe, it, expect } from "vitest";
 import {
-  isLegalApplicationTransition,
   isLegalFormTransition,
   isLegalAssessmentTransition,
   canSetOutcome,
-  legacyStatusForOutcome,
+  deriveReviewPhase,
+  isDecided,
   lifecycleOutcomeForLegacy,
   requiredSectionCount,
   deriveFormStatusFromCounts,
@@ -14,31 +14,91 @@ import {
   SUBMITTED_AT_IMMUTABLE_MESSAGE,
 } from "../status";
 
-describe("status service — legacy application transitions", () => {
-  it("preserves the pre-PR-3 graph exactly", () => {
-    expect(isLegalApplicationTransition("SUBMITTED", "NOT_STARTED")).toBe(true);
-    expect(isLegalApplicationTransition("NOT_STARTED", "PAUSED")).toBe(true);
-    expect(isLegalApplicationTransition("NOT_STARTED", "COMPLETED")).toBe(true);
-    expect(isLegalApplicationTransition("PAUSED", "NOT_STARTED")).toBe(true);
-    expect(isLegalApplicationTransition("COMPLETED", "QUALIFIES")).toBe(true);
-    expect(isLegalApplicationTransition("COMPLETED", "DOES_NOT_QUALIFY")).toBe(
-      true
-    );
+describe("status service — review-phase derivation (PR-6a)", () => {
+  it("projects the lifecycle columns onto the 7-value review phase (backfill table)", () => {
+    // form not submitted → PRE_SUBMISSION
+    expect(
+      deriveReviewPhase({
+        formStatus: "IN_PROGRESS",
+        assessmentStatus: null,
+        outcome: null,
+      })
+    ).toBe("PRE_SUBMISSION");
+    // submitted, no assessment / NOT_STARTED → SUBMITTED (awaiting review)
+    expect(
+      deriveReviewPhase({
+        formStatus: "SUBMITTED",
+        assessmentStatus: null,
+        outcome: null,
+      })
+    ).toBe("SUBMITTED");
+    expect(
+      deriveReviewPhase({
+        formStatus: "SUBMITTED",
+        assessmentStatus: "NOT_STARTED",
+        outcome: null,
+      })
+    ).toBe("SUBMITTED");
+    // assessment IN_PROGRESS → NOT_STARTED (review in progress)
+    expect(
+      deriveReviewPhase({
+        formStatus: "SUBMITTED",
+        assessmentStatus: "IN_PROGRESS",
+        outcome: null,
+      })
+    ).toBe("NOT_STARTED");
+    // assessment PAUSED → PAUSED
+    expect(
+      deriveReviewPhase({
+        formStatus: "SUBMITTED",
+        assessmentStatus: "PAUSED",
+        outcome: null,
+      })
+    ).toBe("PAUSED");
+    // assessment COMPLETED, no outcome → COMPLETED
+    expect(
+      deriveReviewPhase({
+        formStatus: "SUBMITTED",
+        assessmentStatus: "COMPLETED",
+        outcome: null,
+      })
+    ).toBe("COMPLETED");
+    // outcomes → QUALIFIES / DOES_NOT_QUALIFY
+    expect(
+      deriveReviewPhase({
+        formStatus: "SUBMITTED",
+        assessmentStatus: "COMPLETED",
+        outcome: "AWARDED",
+      })
+    ).toBe("QUALIFIES");
+    expect(
+      deriveReviewPhase({
+        formStatus: "SUBMITTED",
+        assessmentStatus: "COMPLETED",
+        outcome: "QUALIFIES_NOT_AWARDED",
+      })
+    ).toBe("QUALIFIES");
+    expect(
+      deriveReviewPhase({
+        formStatus: "SUBMITTED",
+        assessmentStatus: "COMPLETED",
+        outcome: "DOES_NOT_QUALIFY",
+      })
+    ).toBe("DOES_NOT_QUALIFY");
   });
 
-  it("rejects moves outside the graph", () => {
-    expect(isLegalApplicationTransition("SUBMITTED", "COMPLETED")).toBe(false);
-    expect(isLegalApplicationTransition("PRE_SUBMISSION", "SUBMITTED")).toBe(
-      false // owned by the applicant submit path, not this graph
-    );
-    expect(isLegalApplicationTransition("COMPLETED", "PAUSED")).toBe(false);
-    expect(isLegalApplicationTransition("QUALIFIES", "COMPLETED")).toBe(false);
+  it("isDecided is true exactly when an outcome is present", () => {
+    expect(isDecided(null)).toBe(false);
+    expect(isDecided("AWARDED")).toBe(true);
+    expect(isDecided("QUALIFIES_NOT_AWARDED")).toBe(true);
+    expect(isDecided("DOES_NOT_QUALIFY")).toBe(true);
   });
 
-  it("canSetOutcome only from COMPLETED", () => {
+  it("canSetOutcome only from a COMPLETED assessment", () => {
     expect(canSetOutcome("COMPLETED")).toBe(true);
-    expect(canSetOutcome("NOT_STARTED")).toBe(false);
+    expect(canSetOutcome("IN_PROGRESS")).toBe(false);
     expect(canSetOutcome("PAUSED")).toBe(false);
+    expect(canSetOutcome(null)).toBe(false);
   });
 });
 
@@ -82,13 +142,7 @@ describe("status service — assessment lifecycle (strict, PR-4)", () => {
   });
 });
 
-describe("status service — outcome ↔ legacy mirror", () => {
-  it("maps the 3-value outcome back onto the legacy fused status", () => {
-    expect(legacyStatusForOutcome("AWARDED")).toBe("QUALIFIES");
-    expect(legacyStatusForOutcome("QUALIFIES_NOT_AWARDED")).toBe("QUALIFIES");
-    expect(legacyStatusForOutcome("DOES_NOT_QUALIFY")).toBe("DOES_NOT_QUALIFY");
-  });
-
+describe("status service — legacy outcome shim", () => {
   it("derives the lifecycle outcome from account presence (PR-2 D-note)", () => {
     expect(lifecycleOutcomeForLegacy("QUALIFIES", true)).toBe("AWARDED");
     expect(lifecycleOutcomeForLegacy("QUALIFIES", false)).toBe(

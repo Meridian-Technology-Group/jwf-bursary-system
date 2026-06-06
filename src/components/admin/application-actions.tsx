@@ -43,21 +43,18 @@ import {
   setOutcome,
 } from "@/app/(admin)/applications/[id]/actions";
 import type { Document } from "@prisma/client";
+import type { ReviewPhase } from "@/lib/applications/status";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type PrismaStatus =
-  | "PRE_SUBMISSION"
-  | "SUBMITTED"
-  | "NOT_STARTED"
-  | "PAUSED"
-  | "COMPLETED"
-  | "QUALIFIES"
-  | "DOES_NOT_QUALIFY";
-
 interface ApplicationActionsProps {
   applicationId: string;
-  status: PrismaStatus;
+  /**
+   * The derived review phase (Epic 01 PR-6a) — the 7-value vocabulary projected
+   * from the lifecycle columns by `deriveReviewPhase`. Replaces the deprecated
+   * fused `applications.status` the component used to read.
+   */
+  status: ReviewPhase;
   /** Documents needed by MissingDocsDialog to pre-select unverified slots */
   documents: Document[];
 }
@@ -350,7 +347,7 @@ export function ApplicationActions({
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-const STATUS_LABEL: Record<PrismaStatus, string> = {
+const STATUS_LABEL: Record<ReviewPhase, string> = {
   PRE_SUBMISSION: "Pre-submission",
   SUBMITTED: "Awaiting review",
   NOT_STARTED: "Review in progress",

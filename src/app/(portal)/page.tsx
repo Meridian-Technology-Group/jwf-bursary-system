@@ -153,7 +153,7 @@ export default async function PortalDashboardPage() {
               // countdown / lockout. Only meaningful while still an editable
               // draft. Needs the round close date, which the shared query does
               // not select — fetch it narrowly here.
-              if (app.status === "PRE_SUBMISSION") {
+              if (app.formStatus !== "SUBMITTED") {
                 const round = await tx.round.findUnique({
                   where: { id: app.roundId },
                   select: { closeDate: true },
@@ -255,7 +255,8 @@ export default async function PortalDashboardPage() {
         inviteRoundYear: null,
       };
 
-  const isDraft = application?.status === "PRE_SUBMISSION";
+  const isDraft =
+    application != null && application.formStatus !== "SUBMITTED";
   // Past-deadline lockout (Epic 05 §3.2): only meaningful while still drafting.
   const isLockedOut = isDraft && deadlinePast;
 
@@ -305,7 +306,7 @@ export default async function PortalDashboardPage() {
           )}
 
           {/* Paused — missing documents call to action */}
-          {application.status === "PAUSED" && (
+          {application.assessment?.status === "PAUSED" && (
             <Link
               href="/respond"
               className="group flex items-start gap-4 rounded-xl border border-yellow-300 bg-yellow-50 p-6 shadow-sm transition-shadow hover:shadow-md focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-600"

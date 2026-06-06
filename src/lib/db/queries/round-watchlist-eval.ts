@@ -14,11 +14,14 @@
  */
 
 import {
-  ApplicationStatus,
   AssessmentStatus,
   InvitationStatus,
   RoundStatus,
   School,
+} from "@prisma/client";
+import type {
+  ApplicationFormStatus,
+  AssessmentOutcome,
 } from "@prisma/client";
 
 // ─── Thresholds (hardcoded per locked decision 5) ──────────────────────────────
@@ -107,7 +110,13 @@ export interface WatchlistInputInvitation {
 export interface WatchlistInputApplication {
   id: string;
   school: School;
-  status: ApplicationStatus;
+  /**
+   * Lifecycle columns (Epic 01 PR-6a) — replace the deprecated fused
+   * applications.status the rules used to read. "Submitted" / "paused" /
+   * "decided" are derived from these.
+   */
+  formStatus: ApplicationFormStatus;
+  outcome: AssessmentOutcome | null;
   /** Assessment id (null when no assessment row exists yet). */
   assessmentId: string | null;
   assessmentStatus: AssessmentStatus | null;
@@ -213,25 +222,28 @@ export function evaluateWatchlist(
 
   // ── Per-application candidate sets (pre-dedupe) ─────────────────────────────
 
-  const decidedStatuses: ApplicationStatus[] = [
-    ApplicationStatus.QUALIFIES,
-    ApplicationStatus.DOES_NOT_QUALIFY,
-  ];
+  // PR-6a: "decided" is the presence of an assessment outcome (any of AWARDED /
+  // QUALIFIES_NOT_AWARDED / DOES_NOT_QUALIFY), not the fused QUALIFIES/DNQ status.
+  const isDecided = (app: WatchlistInputApplication) => app.outcome != null;
 
-  // Rule 3 — submitted, missing required docs (blocker)
+  // Rule 3 — submitted (awaiting review), missing required docs (blocker).
+  // "Submitted, awaiting review" = form SUBMITTED, not decided, no assessment
+  // beyond NOT_STARTED — the lifecycle equivalent of the old fused SUBMITTED.
   const rule3Candidates = input.applications
     .filter(
       (app) =>
-        app.status === ApplicationStatus.SUBMITTED && app.hasMissingDocs,
+        app.formStatus === "SUBMITTED" &&
+        !isDecided(app) &&
+        (app.assessmentStatus === null ||
+          app.assessmentStatus === AssessmentStatus.NOT_STARTED) &&
+        app.hasMissingDocs,
     )
     .map((app) => app.id);
 
   // Rule 4 — assessment paused >7d (warning)
   const rule4Candidates = input.applications
     .filter((app) => {
-      const isPaused =
-        app.assessmentStatus === AssessmentStatus.PAUSED ||
-        app.status === ApplicationStatus.PAUSED;
+      const isPaused = app.assessmentStatus === AssessmentStatus.PAUSED;
       return (
         isPaused &&
         app.latestPauseAt !== null &&
@@ -260,14 +272,14 @@ export function evaluateWatchlist(
         app.recommendationCreatedAt !== null &&
         app.recommendationCreatedAt.getTime() <
           nowMs - thresholds.awaitingOutcome &&
-        !decidedStatuses.includes(app.status),
+        !isDecided(app),
     )
     .map((app) => app.id);
 
   // Rule 8 — close approaching with undecided (blocker). Trigger is round-scoped;
   // the claimed set is the undecided applications (so it can dedupe).
   const undecidedAppIds = input.applications
-    .filter((app) => !decidedStatuses.includes(app.status))
+    .filter((app) => !isDecided(app))
     .map((app) => app.id);
   const closeMs = input.round.closeDate.getTime();
   const undecidedCount =
@@ -291,7 +303,7 @@ export function evaluateWatchlist(
   // decision does not "cover" the newer decision, so the school re-flags.
   const latestDecisionPerSchool = new Map<School, number>();
   for (const app of input.applications) {
-    if (!decidedStatuses.includes(app.status)) continue;
+    if (!isDecided(app)) continue;
     if (app.recommendationCreatedAt === null) continue;
     const t = app.recommendationCreatedAt.getTime();
     const prev = latestDecisionPerSchool.get(app.school);

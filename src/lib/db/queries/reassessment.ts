@@ -100,9 +100,10 @@ export async function getPreviousYearApplication(
     where: {
       bursaryAccountId,
       roundId: { not: currentRoundId },
-      status: {
-        in: ["SUBMITTED", "COMPLETED", "QUALIFIES", "DOES_NOT_QUALIFY"],
-      },
+      // PR-6a: "reached submission" is form_status SUBMITTED (the lifecycle
+      // equivalent of the old fused SUBMITTED/COMPLETED/QUALIFIES/DNQ set), not
+      // the deprecated fused applications.status.
+      formStatus: "SUBMITTED",
     },
     orderBy: { submittedAt: "desc" },
     select: {
@@ -300,7 +301,7 @@ export async function createReassessmentApplicationFromInvitation(
     where: {
       leadApplicantId: authUserId,
       roundId,
-      status: "PRE_SUBMISSION",
+      formStatus: { not: "SUBMITTED" },
     },
     select: { id: true },
   });

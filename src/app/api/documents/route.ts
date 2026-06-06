@@ -111,7 +111,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     (tx) =>
       tx.application.findUnique({
         where: { id: applicationId },
-        select: { id: true, leadApplicantId: true, status: true },
+        select: { id: true, leadApplicantId: true, formStatus: true },
       })
   );
 
@@ -121,7 +121,9 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       { status: 404 }
     );
   }
-  if (application.status === "SUBMITTED") {
+  // PR-6a: the submission guard reads form_status, not the deprecated fused
+  // applications.status.
+  if (application.formStatus === "SUBMITTED") {
     return NextResponse.json(
       { error: "Cannot upload documents to a submitted application" },
       { status: 409 }

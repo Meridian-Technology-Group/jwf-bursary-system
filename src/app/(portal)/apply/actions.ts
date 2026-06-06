@@ -103,7 +103,7 @@ async function getOwnedApplicationId(): Promise<string | null> {
     user.role as RlsRole,
     (tx) =>
       tx.application.findFirst({
-        where: { leadApplicantId: user.id, status: "PRE_SUBMISSION" },
+        where: { leadApplicantId: user.id, formStatus: { not: "SUBMITTED" } },
         select: { id: true },
       })
   );
@@ -144,7 +144,7 @@ async function getOwnedApplicationContext(): Promise<{
     user.role as RlsRole,
     async (tx) => {
       const application = await tx.application.findFirst({
-        where: { leadApplicantId: user.id, status: "PRE_SUBMISSION" },
+        where: { leadApplicantId: user.id, formStatus: { not: "SUBMITTED" } },
         select: { id: true },
       });
       if (!application) return null;
@@ -383,7 +383,7 @@ export async function submitApplication(applicationId: string): Promise<never> {
         select: {
           id: true,
           reference: true,
-          status: true,
+          formStatus: true,
           submittedAt: true,
           leadApplicantId: true,
           childName: true,
@@ -414,15 +414,15 @@ export async function submitApplication(applicationId: string): Promise<never> {
   }
 
   // ── Guard: already submitted ───────────────────────────────────────────────
-  if (application.status === "SUBMITTED") {
+  if (application.formStatus === "SUBMITTED") {
     redirect("/submitted");
   }
 
   // ── Invariant: submitted_at is write-once (Epic 01 PR-5) ──────────────────
-  // Defence-in-depth on the immutable submission date. The status guard above
-  // handles the normal double-submit (redirects to the receipt). This explicit
-  // check covers any state where a submission date is already recorded but the
-  // fused status is not SUBMITTED — it returns a friendly message BEFORE the
+  // Defence-in-depth on the immutable submission date. The form-status guard
+  // above handles the normal double-submit (redirects to the receipt). This
+  // explicit check covers any state where a submission date is already recorded
+  // but form_status is not SUBMITTED — it returns a friendly message BEFORE the
   // write reaches the durable Postgres trigger (trg_submitted_at_immutable).
   assertSubmittedAtUnset(application.submittedAt);
 

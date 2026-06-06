@@ -19,10 +19,7 @@ import {
 } from "@/lib/db/queries/invitations";
 import { createReassessmentApplicationFromInvitation } from "@/lib/db/queries/reassessment";
 import { createFirstYearApplicationFromSource } from "@/lib/applications/create-from-invitation";
-import {
-  transitionApplicationStatus,
-  clearPauseDeadline,
-} from "@/lib/applications/status";
+import { resumeReview } from "@/lib/applications/status";
 import { createAuditLog } from "@/lib/audit/log";
 import { sendEmail } from "@/lib/email/send";
 import { getAppUrl } from "@/lib/app-url";
@@ -306,12 +303,14 @@ export async function submitMissingDocsResponse(
           select: {
             id: true,
             reference: true,
-            status: true,
             formStatus: true,
             submittedAt: true,
             childName: true,
             leadApplicantId: true,
             assignedToId: true,
+            assessment: {
+              select: { id: true, status: true, assessorId: true },
+            },
           },
         });
 
@@ -319,7 +318,9 @@ export async function submitMissingDocsResponse(
           return { success: false as const, error: "Application not found." };
         }
 
-        if (application.status !== "PAUSED") {
+        // PR-6a: "awaiting documents" reads the assessment lifecycle (PAUSED)
+        // rather than the deprecated fused `applications.status`.
+        if (application.assessment?.status !== "PAUSED") {
           return {
             success: false as const,
             error:
@@ -336,15 +337,11 @@ export async function submitMissingDocsResponse(
         const submittedAtBefore = application.submittedAt;
         const formStatusBefore = application.formStatus;
 
-        await transitionApplicationStatus(
-          tx,
-          applicationId,
-          "PAUSED",
-          "NOT_STARTED"
-        );
-        // The applicant has responded with documents — clear the persisted
-        // pause deadline alongside the resume.
-        await clearPauseDeadline(tx, applicationId);
+        // A PAUSED assessment always exists with its original assessor; resume it
+        // (assessment PAUSED → IN_PROGRESS) and clear the persisted pause
+        // deadline. The applicant is not the assessor, so we resume the existing
+        // row rather than creating one.
+        await resumeReview(tx, applicationId, application.assessment.assessorId);
 
         // Invariant guard (defence-in-depth): re-read and assert the submission
         // date + form status did NOT move. The write-once submitted_at trigger

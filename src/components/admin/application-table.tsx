@@ -95,7 +95,12 @@ import type {
   ApplicationListItem,
   SecondParentIndicator,
 } from "@/lib/db/queries/applications";
-import type { ApplicationStatus, School, Role } from "@prisma/client";
+import type { School, Role } from "@prisma/client";
+import {
+  ALL_REVIEW_PHASES,
+  matchesReviewPhase,
+  type ReviewPhase,
+} from "@/lib/applications/queue-filter";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -134,7 +139,7 @@ interface ApplicationTableProps {
   /** Seed the school dropdown from a drill-in URL (defaults to "all"). */
   initialSchool?: string;
   /** Seed the status multi-select from a drill-in URL (defaults to none). */
-  initialStatuses?: ApplicationStatus[];
+  initialStatuses?: ReviewPhase[];
   /**
    * When present, render a dismissible banner above the table describing the
    * server-side filter applied via the URL, with a "Clear filters" link.
@@ -268,17 +273,11 @@ function ApplicationLifecycleCell({ row }: { row: ApplicationRow }) {
 
 // ─── Status multi-select popover ──────────────────────────────────────────────
 
-const ALL_STATUSES: ApplicationStatus[] = [
-  "PRE_SUBMISSION",
-  "SUBMITTED",
-  "NOT_STARTED",
-  "PAUSED",
-  "COMPLETED",
-  "QUALIFIES",
-  "DOES_NOT_QUALIFY",
-];
+// The status multi-select speaks the 7-value review-phase vocabulary (Epic 01
+// PR-6a) — derived from the lifecycle columns, not the deprecated fused enum.
+const ALL_STATUSES: ReviewPhase[] = ALL_REVIEW_PHASES;
 
-const STATUS_LABELS: Record<ApplicationStatus, string> = {
+const STATUS_LABELS: Record<ReviewPhase, string> = {
   PRE_SUBMISSION: "Pre-Submission",
   SUBMITTED: "Submitted",
   NOT_STARTED: "Not Started",
@@ -289,12 +288,12 @@ const STATUS_LABELS: Record<ApplicationStatus, string> = {
 };
 
 interface StatusFilterProps {
-  selected: ApplicationStatus[];
-  onChange: (statuses: ApplicationStatus[]) => void;
+  selected: ReviewPhase[];
+  onChange: (statuses: ReviewPhase[]) => void;
 }
 
 function StatusFilter({ selected, onChange }: StatusFilterProps) {
-  const toggle = (status: ApplicationStatus) => {
+  const toggle = (status: ReviewPhase) => {
     if (selected.includes(status)) {
       onChange(selected.filter((s) => s !== status));
     } else {
@@ -656,7 +655,7 @@ export function ApplicationTable({
     initialSchool ?? "all"
   );
   const [selectedStatuses, setSelectedStatuses] = React.useState<
-    ApplicationStatus[]
+    ReviewPhase[]
   >(initialStatuses ?? []);
   const [searchText, setSearchText] = React.useState("");
 
@@ -699,9 +698,21 @@ export function ApplicationTable({
         return false;
       if (selectedSchool !== "all" && row.school !== selectedSchool)
         return false;
+      // Match the row's lifecycle state against any selected review phase
+      // (Epic 01 PR-6a) — derived from form_status + assessment status/outcome,
+      // not the dropped fused status.
       if (
         selectedStatuses.length > 0 &&
-        !selectedStatuses.includes(row.status)
+        !selectedStatuses.some((phase) =>
+          matchesReviewPhase(
+            {
+              formStatus: row.formStatus,
+              assessmentStatus: row.assessmentStatus,
+              outcome: row.outcome,
+            },
+            phase
+          )
+        )
       )
         return false;
       if (searchText) {
@@ -823,7 +834,11 @@ export function ApplicationTable({
           return dateA - dateB;
         },
       }),
-      columnHelper.accessor("status", {
+      // Status is a DERIVED lifecycle projection (Epic 01 PR-6a), not a single
+      // stored column — render it as a display column (sorting on a fused string
+      // was never meaningful).
+      columnHelper.display({
+        id: "status",
         header: "Status",
         cell: (info) => <ApplicationLifecycleCell row={info.row.original} />,
       }),
