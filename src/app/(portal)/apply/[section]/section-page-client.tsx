@@ -54,6 +54,11 @@ interface SectionPageClientProps {
   applicationSchool?: "TRINITY" | "WHITGIFT";
   /** Seed for Section 1 defaults — the child's name captured on the Application. */
   applicationChildName?: string;
+  /**
+   * The round's academic-year string (e.g. "2026/27"). Drives the dynamic
+   * tax-year wording on the income section (D5). Null when unavailable.
+   */
+  academicYear?: string | null;
   /** Map of document ID → metadata for showing previously uploaded files. */
   documentMap?: Record<string, DocumentMeta>;
   /** Child's full name from CHILD_DETAILS (for DEPENDENT_CHILDREN section). */
@@ -155,12 +160,14 @@ function SectionFormContent({
   documentMap,
   childFullName,
   isSoleParent,
+  academicYear,
 }: {
   sectionType: ApplicationSectionType;
   applicationId: string;
   documentMap?: Record<string, DocumentMeta>;
   childFullName?: string;
   isSoleParent?: boolean;
+  academicYear?: string | null;
 }) {
   switch (sectionType) {
     case "CHILD_DETAILS": return <ChildDetailsForm applicationId={applicationId} documentMap={documentMap} />;
@@ -169,7 +176,7 @@ function SectionFormContent({
     case "DEPENDENT_CHILDREN": return <DependentChildrenForm childFullName={childFullName} />;
     case "DEPENDENT_ELDERLY": return <DependentElderlyForm />;
     case "OTHER_INFO": return <OtherInfoForm />;
-    case "PARENTS_INCOME": return <ParentsIncomeForm isSoleParent={isSoleParent} applicationId={applicationId} documentMap={documentMap} />;
+    case "PARENTS_INCOME": return <ParentsIncomeForm isSoleParent={isSoleParent} applicationId={applicationId} documentMap={documentMap} academicYear={academicYear} />;
     case "ASSETS_LIABILITIES": return <AssetsLiabilitiesForm isSoleParent={isSoleParent} applicationId={applicationId} documentMap={documentMap} />;
     case "ADDITIONAL_INFO": return <AdditionalInfoForm />;
     case "DECLARATION": return <DeclarationForm />;
@@ -200,6 +207,7 @@ export function SectionPageClient({
   existingData,
   applicationSchool,
   applicationChildName,
+  academicYear,
   documentMap,
   childFullName,
   isSoleParent,
@@ -319,6 +327,7 @@ export function SectionPageClient({
             documentMap={documentMap}
             childFullName={childFullName}
             isSoleParent={isSoleParent}
+            academicYear={academicYear}
           />
         </SectionForm>
       </div>

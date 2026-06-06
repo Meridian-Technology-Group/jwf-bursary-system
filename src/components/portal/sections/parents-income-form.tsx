@@ -27,6 +27,7 @@ import { FileUpload } from "@/components/portal/file-upload";
 import type { ParentsIncomeFormValues } from "@/lib/schemas/parents-income";
 import type { UploadedDocument } from "@/components/portal/file-upload";
 import type { DocumentMeta } from "@/lib/db/queries/applications";
+import { getTaxYearLabels } from "@/lib/portal/tax-year";
 
 const INCOME_FIELDS: { key: keyof ParentsIncomeFormValues["parent1Income"]; label: string }[] = [
   { key: "salaryWagesPension", label: "Salary / wages, state or private pension(s)" },
@@ -52,6 +53,8 @@ interface ParentIncomeSectionProps {
   slotSuffix: "_PARENT_1" | "_PARENT_2";
   applicationId: string;
   documentMap?: Record<string, DocumentMeta>;
+  /** The round's academic year — drives the dynamic tax-year column header (D5). */
+  academicYear?: string | null;
 }
 
 function resolveDoc(
@@ -69,8 +72,10 @@ function ParentIncomeSection({
   slotSuffix,
   applicationId,
   documentMap,
+  academicYear,
 }: ParentIncomeSectionProps) {
   const { control, setValue, getValues } = useFormContext<ParentsIncomeFormValues>();
+  const taxYear = getTaxYearLabels(academicYear);
 
   // Capture initial doc IDs once (stable refs so the existing-document prop
   // doesn't change on every render and reset the FileUpload state).
@@ -119,15 +124,15 @@ function ParentIncomeSection({
         {parentLabel} — Income
       </h3>
       <p className="text-xs text-slate-500">
-        Please enter GROSS income before tax deductions. Enter 0 where not
-        applicable.
+        Please enter GROSS income (before tax) from all sources for the{" "}
+        {taxYear.financialYearEndedLabel}. Enter 0 where not applicable.
       </p>
 
       <div className="overflow-hidden rounded-md border border-slate-200">
         <div className="bg-slate-50 px-4 py-2.5">
           <div className="grid grid-cols-3 text-xs font-medium uppercase tracking-wider text-slate-500">
             <span className="col-span-2">Income source</span>
-            <span className="text-right">To April (actual)</span>
+            <span className="text-right">To {taxYear.financialYearEndDateLabel}</span>
           </div>
         </div>
         <div className="divide-y divide-slate-100">
@@ -327,20 +332,24 @@ interface ParentsIncomeFormProps {
   isSoleParent?: boolean;
   applicationId: string;
   documentMap?: Record<string, DocumentMeta>;
+  /** The round's academic year — drives dynamic tax-year wording (D5). */
+  academicYear?: string | null;
 }
 
 export function ParentsIncomeForm({
   isSoleParent,
   applicationId,
   documentMap,
+  academicYear,
 }: ParentsIncomeFormProps) {
+  const taxYear = getTaxYearLabels(academicYear);
   return (
     <div className="space-y-10">
       <div className="rounded-md bg-primary-50 border border-primary-200 p-4">
         <p className="text-sm text-primary-800">
-          Please complete the table below showing GROSS INCOME before deduction
-          of tax from all sources of income. Where a source is not applicable to
-          you, please enter 0.
+          Please complete the table below showing GROSS INCOME (before tax) from
+          all sources for the {taxYear.financialYearEndedLabel}. Where a source
+          is not applicable to you, please enter 0.
         </p>
       </div>
 
@@ -350,6 +359,7 @@ export function ParentsIncomeForm({
         slotSuffix="_PARENT_1"
         applicationId={applicationId}
         documentMap={documentMap}
+        academicYear={academicYear}
       />
 
       {!isSoleParent && (
@@ -361,6 +371,7 @@ export function ParentsIncomeForm({
             slotSuffix="_PARENT_2"
             applicationId={applicationId}
             documentMap={documentMap}
+            academicYear={academicYear}
           />
         </>
       )}

@@ -250,6 +250,7 @@ export default async function SectionPage({ params }: PageProps) {
       existingData={existingSection?.data ?? null}
       applicationSchool={application.school}
       applicationChildName={application.childName}
+      academicYear={application.round?.academicYear ?? null}
       documentMap={documentMap}
       childFullName={childFullName}
       isSoleParent={isSoleParent}

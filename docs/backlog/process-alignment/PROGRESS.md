@@ -39,7 +39,7 @@ Legend: ⬜ not started · 🟡 in progress · ✅ shipped to staging · 🚫 bl
 | 1 | [01 Status & workflow model](plans/01-status-and-workflow-model.md) | ✅ | — | #141 (PR-1 schema), #142 (PR-2 backfill), #143 (PR-3 status service), #144 (PR-4 readers+badges), #145 (PR-5 submitted_at write-once); **PR-6 drop-column ⏸ gated** |
 | 1 | [03 Round management](plans/03-round-management.md) | ✅ | 01 | #146 (PR-A schema+server core), #147 (PR-B UI) |
 | 1 | [04 Lead-applicant contacts & invitations](plans/04-lead-applicant-contacts-and-invitations.md) | ✅ | 01 | #148 (contact register), #149 (invite-from-contact + D1 lock), #150 (twin/DOB uniqueness) |
-| 2 | [02 Application form re-scope](plans/02-application-form-rescope.md) | 🟢 ready | deps met (01, 04 ✅) · D3 ✅ · D11 artifact (build to workbook) | — |
+| 2 | [02 Application form re-scope](plans/02-application-form-rescope.md) | 🟡 | deps met (01, 04 ✅) · D3 ✅ · D11 artifact (build to workbook) | PR-1 rule-engine+tax-year (`feature/02-rule-engine-tax-year`) |
 | 2 | [05 Parent portal experience](plans/05-parent-portal-experience.md) | ⏳ deps | 01, 02, 03 (deps) · D10 ✅ | — |
 | 3 | [06 Assessor experience & UI](plans/06-assessor-experience-and-ui.md) | ⏳ deps | 02 (dep) | — |
 | 3 | [07 Calculations & fees](plans/07-assessment-calculations-and-fees.md) | ⏳ deps | 06 (dep) · D8/D14 narrow, non-blocking | — |
@@ -256,6 +256,69 @@ PR-2 → PR-3.** Plan §6 PR-6 (round-picker filter) is ALREADY DONE by Epic 03
 
 ---
 
+## Active — Epic 02 (application form re-scope)
+
+Wave 2, deps met (01, 04 ✅). Plan §6 lists 7 PR-sized items. **No Prisma
+migration** — form data is JSONB `ApplicationSection.data`, so this is app code +
+Zod + TypeScript types only. Executed as **independent branches off `staging`**
+(prefer over deep stacks). PR-1 is the keystone every later section build
+consumes (rule engine + tax-year), and is behaviour-preserving for existing rules
+(proven by before/after gap tests).
+
+**PR-1 — required-document rule engine + tax-year helper** (§6 PR-1) — `feature/02-rule-engine-tax-year`:
+- [x] `lib/portal/tax-year.ts` — round-derived wording from `Round.academicYear`
+  (D5): financial-year-ended / 4-April-date / P60-date / March-payslip / SA302
+  tax-year / "left employment since April" labels. Lenient parse (handles
+  "2026/27", "2025/2026", "2024-25", "2024"); current-year fallback. 9 tests.
+- [x] `lib/portal/document-rules.ts` — declarative rule engine + generic
+  evaluator. Rule kinds: `requiredAlways`, `requiredIfValueGt0` (the workbook's
+  £0 rule), `requiredIfTrue`, `requiredOneOf` (P60-or-payslip; with optional
+  value/true gate), `structural`. `onlyIfExistsPath` gate for per-parent scoping;
+  array-doc presence (bank statements); `applicableRuleCount`/`sectionItemTotal`
+  for the progress denominator. 22 tests.
+- [x] `lib/portal/section-rules.ts` — the per-section rule registry reproducing
+  the legacy `SECTION_EVALUATORS` behaviour exactly (CHILD_DETAILS birth cert;
+  PARENT_DETAILS left-SE/scholarship; PARENTS_INCOME P60-always +
+  SA302/benefits-if-value>0 + capital-if-true; DEPENDENT_CHILDREN structural;
+  ASSETS_LIABILITIES council-tax + bank-stmt). Earner builders re-exported for
+  the income rebuild. 19 behaviour-preservation tests.
+- [x] `section-gaps.ts` refactored to a thin adapter over the engine;
+  `SECTION_EVALUATORS` + the `SECTION_ITEM_TOTALS` magic table **deleted** —
+  progress now derives from the enumerable rule list. Public types/exports
+  (`getSectionGapStatuses`, `SectionGap`, `SectionGapStatus`) unchanged; all 8
+  importers compile unmodified.
+- [x] `round.academicYear` threaded `page.tsx → SectionPageClient →
+  ParentsIncomeForm`; income header + intro now render the dynamic
+  financial-year-ended label (removed the hard-coded "To April (actual)").
+
+**Remaining (follow-up PRs, all independent off `staging` unless noted):**
+- [ ] **PR-2 — income rebuild (status-driven sub-tables).** Reshape
+  `ParentIncomeRecord` + `parentsIncomeSchema` into status-keyed sub-blocks
+  (Employed / Self-employed / Benefits / Unemployed / Retired /
+  Divorced-separated / Third-party); rebuild `parents-income-form.tsx` with live
+  TOTAL + uploads; wire income doc rules into the engine (P60-or-payslip one-of,
+  SA302/P45/benefits if-value>0, Child Benefit non-mandatory). One-off draft
+  backfill + back-compat reader for submitted blobs. **Reads PR-1's tax-year +
+  engine — stack on PR-1 or land after it merges.**
+- [ ] **PR-3 — finish the stubs.** Dependent-elderly per-elder + invoice;
+  other-info court-order/insurance/maintenance/fees uploads; assets
+  other-properties repeatable table + mortgage-statement upload; additional-info
+  mandatory narrative + uploads. Each wired into the rule engine.
+- [ ] **PR-4 — identity variant + nesting.** Re-key ID visibility on Epic 01
+  `applicationType` (replace `isReassessment` in `apply/[section]/page.tsx` +
+  `reassessment.ts`); present FAMILY_ID under Details of Child for NEW, hidden for
+  ROLLING_OVER; encode the per-family-member passport/ILR doc rules.
+- [ ] **PR-5 — declaration + contact mandatories.** Workbook-verbatim closing
+  declaration with P1 **and** P2 ticks; per-parent declaration wording; phone +
+  email required (schema + UI). (D11 swap-in.)
+- [ ] **PR-6 — locked school/entry-year + stored address.** Remove parent
+  school/entry-year pickers; render display-only from the application; show
+  stored Parent 1 address on "same address". (D1; lock owned by Epic 04.)
+- [ ] **PR-7 — seed + validation-summary copy.** `seed:demo` to the new income
+  shape across statuses; Review/Validation-Summary phrasing to the workbook.
+
+---
+
 ## Decision register — execution view
 
 Mirrors [README §5](README.md#5-decision-register). Reconciled 2026-06-05 against
@@ -296,6 +359,21 @@ Wave 2 → Wave 3 → Wave 4.
 
 ## Change log
 
+- **2026-06-06** — **Epic 02 opened (Wave 2).** PR-1 (required-document rule
+  engine + tax-year helper) — keystone, behaviour-preserving. New
+  `lib/portal/tax-year.ts` (D5 round-derived wording, lenient academic-year
+  parse), `lib/portal/document-rules.ts` (declarative engine: requiredAlways /
+  requiredIfValueGt0 / requiredIfTrue / requiredOneOf / structural +
+  onlyIfExistsPath gate + array-doc presence), and `lib/portal/section-rules.ts`
+  (per-section registry reproducing the legacy `SECTION_EVALUATORS` exactly).
+  `section-gaps.ts` is now a thin adapter — `SECTION_EVALUATORS` and the
+  `SECTION_ITEM_TOTALS` magic table deleted; progress derives from the
+  enumerable rule list. `round.academicYear` threaded into the income form;
+  hard-coded "To April (actual)" replaced with the dynamic financial-year label.
+  No schema/migration (form data is JSONB). tsc clean, build green, 324 tests
+  green (+50). PR-2..PR-7 (income rebuild, stubs, ID variant, declaration,
+  locked school, seed) are the remaining breakdown in the Active — Epic 02
+  section.
 - **2026-06-05** — **WAVE 1 COMPLETE.** Epic 04 fully shipped (#148 contact
   register, #149 invite-from-contact + D1 school/entry-year lock, #150 twin/DOB
   uniqueness). DOB-uniqueness migration validated against real nonprod data
