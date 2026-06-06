@@ -9,7 +9,7 @@
 >
 > **Spec:** [README.md](README.md) (spine + decision register). **Owner:** Brian Wagner.
 
-**Started:** 2026-06-05 · **Current focus:** **Epic 05 COMPLETE** (parent portal) — PR-1 #159 (home guidance + T&Cs + chooser), PR-2 #160 (deadline/status/summary + PDF + terms columns), PR-3 #161 (history + missing-doc upload); stacked, merge 159→160→161. Wave 2 (02 + 05) shipped to staging. Next: Wave 3 (06/07/08/09). Wave 1 (01/03/04) shipped; 01 PR-6 gated.
+**Started:** 2026-06-05 · **Current focus:** **Epic 06 IN PROGRESS** (assessor experience & UI, keystone of Wave 3) — PR-1 synopsis consolidation (schema `Assessment.synopsis` + additive backfill migration; single editable synopsis docked in the workspace + on the recommendation screen; six checklist tabs + recommendation free-text boxes retired from the UI). PR-2 (workspace layout: calc top strip + two-pane + 30+ doc nav) stacks on PR-1. Wave 2 (02 + 05) shipped to staging; Wave 1 (01/03/04) shipped; 01 PR-6 gated.
 
 ---
 
@@ -41,7 +41,7 @@ Legend: ⬜ not started · 🟡 in progress · ✅ shipped to staging · 🚫 bl
 | 1 | [04 Lead-applicant contacts & invitations](plans/04-lead-applicant-contacts-and-invitations.md) | ✅ | 01 | #148 (contact register), #149 (invite-from-contact + D1 lock), #150 (twin/DOB uniqueness) |
 | 2 | [02 Application form re-scope](plans/02-application-form-rescope.md) | ✅ | deps met (01, 04 ✅) · D3 ✅ · D11 artifact (build to workbook) | #152 · #153 · #154 · #155 · #156 · #157 · #158 (all ✅) |
 | 2 | [05 Parent portal experience](plans/05-parent-portal-experience.md) | ✅ | deps met (01, 02, 03 ✅) · D2/D10 ✅ | #159 (PR-1 home guidance + chooser), #160 (PR-2 deadline/status/summary), #161 (PR-3 history + missing-doc upload) — **stacked, merge 159→160→161** |
-| 3 | [06 Assessor experience & UI](plans/06-assessor-experience-and-ui.md) | ⏳ deps | 02 (dep) | — |
+| 3 | [06 Assessor experience & UI](plans/06-assessor-experience-and-ui.md) | 🟡 | 02 ✅ (dep) | PR-1 synopsis consolidation (`feature/06-synopsis-consolidation`); PR-2 workspace layout + doc nav (`feature/06-workspace-layout`, stacks on PR-1) — **merge PR-1 → PR-2** |
 | 3 | [07 Calculations & fees](plans/07-assessment-calculations-and-fees.md) | ⏳ deps | 06 (dep) · D8/D14 narrow, non-blocking | — |
 | 3 | [08 Recommendation & outcome](plans/08-recommendation-and-outcome.md) | ⏳ deps | 01, 07 (deps) · D7/D9 ✅ · D4 artifact (placeholders) | — |
 | 3 | [09 Complex household / second parent](plans/09-complex-household-and-second-parent.md) | ⏳ deps | 02, 06 (deps) · D15–D17 build to workbook FAQ | — |
@@ -468,6 +468,57 @@ PR-7) — `feature/05-history-and-missing-docs` (**stacks on PR-2**):
 
 ---
 
+## Active — Epic 06 (assessor experience & UI)
+
+Wave 3 keystone, dep 02 ✅. No hard decision blockers (plan §7). Plan §6 lists
+six PR-sized items; executed as **two cohesive PRs stacked off `staging`** to
+keep the schema/synopsis move separate from the layout churn and minimise
+overlap on the shared assessor glue (`assessment/page.tsx`, `assessment-form.tsx`).
+**Merge order: PR-1 → PR-2.**
+
+**PR-1 — single synopsis: schema + backfill + consolidation** (§6 PR-1, PR-2) —
+`feature/06-synopsis-consolidation` (off `staging`):
+- [x] §6 PR-1 — additive migration `20260606140000_assessment_synopsis`: adds
+  `assessments.synopsis` (nullable, no default) and **backfills** it by
+  concatenating the six `AssessmentChecklist` tabs (canonical order, `##`
+  labelled headings) + `Recommendation.familySynopsis` + `Recommendation.summary`
+  (de-duped). Idempotent (`synopsis IS NULL` guard), deterministic. Legacy
+  columns + the `AssessmentChecklist` table / `ChecklistTab` enum **retained**
+  (read-only) until the 08 cutover. `prisma format --check` clean.
+- [x] §6 PR-1 — `lib/assessment/synopsis.ts` = pure TS mirror of the backfill
+  SQL (`consolidateSynopsis`), so the consolidation rules are unit-tested
+  without a DB. 10 tests (ordering, no-loss, blank-skip, dedupe, null result).
+- [x] §6 PR-2 — `AssessmentSynopsis` component (single auto-saving textarea) +
+  `saveSynopsis` action (no status guard → **editable after COMPLETED**) +
+  `ASSESSMENT_SYNOPSIS_SAVE` audit action. Docked below the workspace on the
+  assessment screen AND rendered on the recommendation screen. The six-tab
+  `AssessmentChecklist` component is **deleted** (dead after consolidation);
+  `saveChecklistNotes` retained one release per §5.2.
+- [x] §6 PR-2 — removed the recommendation `familySynopsis`/`summary` textareas;
+  the form now persists `null` for those legacy columns. PDF + XLSX export read
+  the legacy column for historical rows and **fall back to `Assessment.synopsis`**
+  for new ones (no narrative lost; PDF/exports otherwise owned by 08).
+- [x] §6 PR-1 — seed: all three assessment fixtures carry `synopsis`; the two
+  COMPLETED fixtures (Okafor, Williams-M) demonstrate the post-completion
+  editable synopsis. Legacy checklist fixtures kept (table retained).
+- [x] tsc/lint/build green; 418 tests pass (+10 new).
+
+**PR-2 — workspace layout: calc top strip + two-pane + 30+ doc nav** (§6 PR-3,
+PR-4, PR-6) — `feature/06-workspace-layout` (**stacks on PR-1**): *(pending)*
+- [ ] §6 PR-3 — `AssessmentCalcStrip` (collapsible, persisted); lift
+  `CalculationDisplay` out of the form's `lg:grid-cols-[1fr_320px]`; form → single
+  column; delete the right rail + `lg:hidden` duplicate.
+- [ ] §6 PR-4 — collapsible document **list panel** + slot/filename filter +
+  "verified only" toggle; keep Prev/Next + `[`/`]`; delete dead
+  `assessment-doc-panel.tsx`.
+- [ ] §6 PR-5 — scoping-workbook → form field-map; land unambiguous UI-presence
+  additions; route calc/outcome fields to 07/08. *(tracked; may slip to a 07/08
+  coordination note — field-map is the seam.)*
+- [ ] §6 PR-6 — responsive/QA pass: `< md` tab switcher with the strip + synopsis
+  dock; tune `SplitScreen` defaults for 13" laptops; a11y for new controls.
+
+---
+
 ## Decision register — execution view
 
 Mirrors [README §5](README.md#5-decision-register). Reconciled 2026-06-05 against
@@ -508,6 +559,17 @@ Wave 2 → Wave 3 → Wave 4.
 
 ## Change log
 
+- **2026-06-06** — **Epic 06 PR-1** (`feature/06-synopsis-consolidation`):
+  collapsed the EIGHT scattered qualitative boxes (six `AssessmentChecklist`
+  tabs + recommendation `familySynopsis`/`summary`) into ONE editable
+  `Assessment.synopsis`. Additive migration `20260606140000_assessment_synopsis`
+  adds the column and backfills it by labelled concatenation (idempotent,
+  deterministic, legacy columns retained). New `AssessmentSynopsis` component +
+  `saveSynopsis` action stay editable AFTER `COMPLETED` (no status guard) and
+  render on both the assessment and recommendation screens. PDF/XLSX fall back to
+  the synopsis for new recommendations. `consolidateSynopsis` pure helper mirrors
+  the SQL; 10 new tests. 418 tests / tsc / lint / build green. **DO NOT MERGE —
+  awaiting Brian's read-only nonprod backfill validation.**
 - **2026-06-06** — **Epic 05 COMPLETE** (#161, PR-3): multi-round account
   history + portal missing-doc upload. New `(portal)/history` lists every
   application on the lead applicant's account (newest first) with the parent-safe

@@ -162,6 +162,8 @@ export default async function RecommendationPage({ params }: Props) {
       <RecommendationForm
         applicationId={params.id}
         applicationStatus={application.status}
+        assessmentId={assessment.id}
+        synopsis={assessment.synopsis}
         assessmentValues={assessmentValues}
         recommendation={serialisedRecommendation}
         reasonCodes={serialisedReasonCodes}

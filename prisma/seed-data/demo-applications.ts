@@ -992,6 +992,10 @@ export const assessments = [
     // Flags
     dishonestyFlag: false,
     creditRiskFlag: false,
+    // Single qualitative synopsis (Epic 06). COMPLETED assessment — demonstrates
+    // the post-completion editable synopsis alongside an otherwise-locked form.
+    synopsis:
+      "## Bursary Assessment Details\nNew application, Year 7 entry. Both parents PAYE, NHS and teaching. Renting in Croydon. Cat 3 family. No previous bursary. Straightforward application.\n\n## Living Conditions / Other JWF Children\nFamily renting at £1,850/month in Croydon. Notional rent applies (Cat 3: £18,000). No property ownership. Rent confirmed against bank statements.\n\n## Debt Situation\nCar loan outstanding £6,500 at £280/month. No other significant debts. Credit checks satisfactory.\n\n## Other Fees with the Foundation\nNo other independent school fees. Younger sibling at state primary.\n\n## Staff Situation\nNo connection to school staff or Foundation trustees identified.\n\n## Financial Profile Impact\nP60s verified for both parents. Bank statements reviewed for 3 months. Income consistent with declared figures. Savings in line with stated amounts. No anomalies detected.",
     // Status
     status: "COMPLETED" as const,
     outcome: "QUALIFIES" as const,
@@ -1028,6 +1032,9 @@ export const assessments = [
     propertyExceedsThreshold: false,
     dishonestyFlag: false,
     creditRiskFlag: false,
+    // Single qualitative synopsis (Epic 06) — partial, assessment paused.
+    synopsis:
+      "## Bursary Assessment Details\nRe-assessment Year 9. Director income requires company accounts verification. Awaiting certified accounts for Patel IT Solutions Ltd.\n\n## Living Conditions / Other JWF Children\nOwner-occupier, mortgaged. Property value £580k, outstanding mortgage £240k.\n\n## Debt Situation\nBusiness loan £18,000. No personal debts.",
     status: "PAUSED" as const,
     outcome: null,
     completedAt: null,
@@ -1061,6 +1068,9 @@ export const assessments = [
     propertyExceedsThreshold: false,
     dishonestyFlag: false,
     creditRiskFlag: false,
+    // Single qualitative synopsis (Epic 06) — completed re-assessment.
+    synopsis:
+      "## Bursary Assessment Details\nRe-assessment Year 9. Sole parent household, no change in circumstances from 2025/26 assessment. Sibling Amara now applying for Trinity (TS-2601). Sibling income absorption modelled.\n\n## Living Conditions / Other JWF Children\nRenting at £1,350/month, Cat 1 notional rent £13,000 applies. No property assets.\n\n## Debt Situation\nNo debts. Clean credit profile.\n\n## Other Fees with the Foundation\nAmara's Trinity application (TS-2601) being assessed separately. Sibling link created.\n\n## Staff Situation\nNo connections identified.\n\n## Financial Profile Impact\nSingle P60 verified. Bank statements show consistent income. Child Tax Credit and Child Benefit confirmed. Low savings are consistent with sole parent income level. No concerns.",
     status: "COMPLETED" as const,
     outcome: "QUALIFIES" as const,
     completedAt: new Date("2026-02-25T11:30:00Z"),

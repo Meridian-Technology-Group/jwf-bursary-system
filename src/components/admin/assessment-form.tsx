@@ -130,6 +130,7 @@ export interface SerialisedAssessment {
   monthlyPayableFees: number | null;
   manualAdjustment: number | null;
   manualAdjustmentReason: string | null;
+  synopsis: string | null;
   propertyCategory: number | null;
   propertyExceedsThreshold: boolean;
   dishonestyFlag: boolean;

@@ -29,7 +29,7 @@ import { YearComparison } from "@/components/admin/year-comparison";
 import { BenchmarkDisplay } from "@/components/admin/benchmark-display";
 import { SplitScreen } from "@/components/admin/split-screen";
 import { AssessmentForm, type SerialisedAssessment } from "@/components/admin/assessment-form";
-import { AssessmentChecklist } from "@/components/admin/assessment-checklist";
+import { AssessmentSynopsis } from "@/components/admin/assessment-synopsis";
 import { BeginAssessmentButton } from "@/components/admin/begin-assessment-button";
 import { SecondParentGate } from "@/components/admin/second-parent-gate";
 import { DocumentListClient } from "@/components/admin/document-list-client";
@@ -293,6 +293,7 @@ export default async function AssessmentPage({ params }: Props) {
     monthlyPayableFees: toNumber(assessment.monthlyPayableFees),
     manualAdjustment: toNumber(assessment.manualAdjustment),
     manualAdjustmentReason: assessment.manualAdjustmentReason,
+    synopsis: assessment.synopsis,
     propertyCategory: assessment.propertyCategory,
     propertyExceedsThreshold: assessment.propertyExceedsThreshold,
     dishonestyFlag: assessment.dishonestyFlag,
@@ -403,12 +404,13 @@ export default async function AssessmentPage({ params }: Props) {
         />
       </div>
 
-      {/* Qualitative checklist — separate section below the workspace */}
-      <AssessmentChecklist
+      {/* Single qualitative synopsis — docked below the workspace, always
+          visible, and editable even after the assessment is COMPLETED. */}
+      <AssessmentSynopsis
         assessmentId={serialisedAssessment.id}
         applicationId={params.id}
-        checklists={serialisedAssessment.checklists}
-        readOnly={serialisedAssessment.status === "COMPLETED"}
+        synopsis={serialisedAssessment.synopsis}
+        assessmentCompleted={serialisedAssessment.status === "COMPLETED"}
       />
     </div>
   );

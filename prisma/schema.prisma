@@ -260,6 +260,14 @@ model Assessment {
   monthlyPayableFees            Decimal?              @map("monthly_payable_fees") @db.Decimal(10, 2)
   manualAdjustment              Decimal?              @default(0) @map("manual_adjustment") @db.Decimal(10, 2)
   manualAdjustmentReason        String?               @map("manual_adjustment_reason")
+  /// Epic 06: single qualitative narrative for the assessment. Replaces the six
+  /// AssessmentChecklist tabs and the Recommendation family_synopsis/summary as
+  /// the editable surface. Visible during assessment and on the completed /
+  /// recommendation screens; remains editable AFTER the assessment is COMPLETED
+  /// (its read-only rule is relaxed in the UI; the server action is always
+  /// permissive). Backfilled from the eight legacy boxes (those columns are
+  /// retained, read-only, until the 08 cutover). Additive + nullable.
+  synopsis                      String?               @map("synopsis")
   propertyCategory              Int?                  @map("property_category")
   propertyExceedsThreshold      Boolean               @default(false) @map("property_exceeds_threshold")
   dishonestyFlag                Boolean               @default(false) @map("dishonesty_flag")

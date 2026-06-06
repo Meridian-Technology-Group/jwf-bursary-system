@@ -68,6 +68,7 @@ export async function GET(
       assessment: {
         select: {
           id: true,
+          synopsis: true,
           familyTypeCategory: true,
           totalHouseholdNetIncome: true,
           netAssetsYearlyValuation: true,
@@ -161,7 +162,10 @@ export async function GET(
     // Family Assessment
     familyTypeCategory: assessment.familyTypeCategory,
     accommodationStatus: recommendation.accommodationStatus,
-    familySynopsis: recommendation.familySynopsis,
+    // Epic 06: qualitative narrative lives on Assessment.synopsis. Prefer the
+    // legacy recommendation field for historical rows; fall back to the single
+    // synopsis for recommendations created after the consolidation.
+    familySynopsis: recommendation.familySynopsis ?? assessment.synopsis,
 
     // Financial Summary
     totalHouseholdNetIncome: toNum(assessment.totalHouseholdNetIncome),
@@ -179,8 +183,8 @@ export async function GET(
     // Reason codes
     reasonCodes,
 
-    // Narrative
-    summary: recommendation.summary,
+    // Narrative — legacy summary for historical rows; fall back to synopsis.
+    summary: recommendation.summary ?? assessment.synopsis,
 
     // Outcome
     incomeCategory: recommendation.incomeCategory,
