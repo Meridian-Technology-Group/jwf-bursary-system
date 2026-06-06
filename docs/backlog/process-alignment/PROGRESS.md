@@ -41,7 +41,7 @@ Legend: ⬜ not started · 🟡 in progress · ✅ shipped to staging · 🚫 bl
 | 1 | [04 Lead-applicant contacts & invitations](plans/04-lead-applicant-contacts-and-invitations.md) | ✅ | 01 | #148 (contact register), #149 (invite-from-contact + D1 lock), #150 (twin/DOB uniqueness) |
 | 2 | [02 Application form re-scope](plans/02-application-form-rescope.md) | ✅ | deps met (01, 04 ✅) · D3 ✅ · D11 artifact (build to workbook) | #152 · #153 · #154 · #155 · #156 · #157 · #158 (all ✅) |
 | 2 | [05 Parent portal experience](plans/05-parent-portal-experience.md) | ✅ | deps met (01, 02, 03 ✅) · D2/D10 ✅ | #159 (PR-1 home guidance + chooser), #160 (PR-2 deadline/status/summary), #161 (PR-3 history + missing-doc upload) — **stacked, merge 159→160→161** |
-| 3 | [06 Assessor experience & UI](plans/06-assessor-experience-and-ui.md) | 🟡 | 02 ✅ (dep) | PR-1 synopsis consolidation (`feature/06-synopsis-consolidation`); PR-2 workspace layout + doc nav (`feature/06-workspace-layout`, stacks on PR-1) — **merge PR-1 → PR-2** |
+| 3 | [06 Assessor experience & UI](plans/06-assessor-experience-and-ui.md) | 🟡 (both PRs open) | 02 ✅ (dep) | PR-1 synopsis consolidation (`feature/06-synopsis-consolidation`); PR-2 layout + calc strip + 30+ doc nav + field-map (`feature/06-workspace-layout`, stacks on PR-1) — **merge PR-1 → PR-2**; → ✅ when PR-2 lands |
 | 3 | [07 Calculations & fees](plans/07-assessment-calculations-and-fees.md) | ⏳ deps | 06 (dep) · D8/D14 narrow, non-blocking | — |
 | 3 | [08 Recommendation & outcome](plans/08-recommendation-and-outcome.md) | ⏳ deps | 01, 07 (deps) · D7/D9 ✅ · D4 artifact (placeholders) | — |
 | 3 | [09 Complex household / second parent](plans/09-complex-household-and-second-parent.md) | ⏳ deps | 02, 06 (deps) · D15–D17 build to workbook FAQ | — |
@@ -504,18 +504,29 @@ overlap on the shared assessor glue (`assessment/page.tsx`, `assessment-form.tsx
 - [x] tsc/lint/build green; 418 tests pass (+10 new).
 
 **PR-2 — workspace layout: calc top strip + two-pane + 30+ doc nav** (§6 PR-3,
-PR-4, PR-6) — `feature/06-workspace-layout` (**stacks on PR-1**): *(pending)*
-- [ ] §6 PR-3 — `AssessmentCalcStrip` (collapsible, persisted); lift
+PR-4, PR-5, PR-6) — `feature/06-workspace-layout` (**stacks on PR-1**):
+- [x] §6 PR-3 — `AssessmentCalcStrip` (collapsible, persisted, collapsed by
+  default with a one-line monthly/yearly/bursary digest); lifted
   `CalculationDisplay` out of the form's `lg:grid-cols-[1fr_320px]`; form → single
-  column; delete the right rail + `lg:hidden` duplicate.
-- [ ] §6 PR-4 — collapsible document **list panel** + slot/filename filter +
-  "verified only" toggle; keep Prev/Next + `[`/`]`; delete dead
-  `assessment-doc-panel.tsx`.
-- [ ] §6 PR-5 — scoping-workbook → form field-map; land unambiguous UI-presence
-  additions; route calc/outcome fields to 07/08. *(tracked; may slip to a 07/08
-  coordination note — field-map is the seam.)*
-- [ ] §6 PR-6 — responsive/QA pass: `< md` tab switcher with the strip + synopsis
-  dock; tune `SplitScreen` defaults for 13" laptops; a11y for new controls.
+  column; deleted the right rail + `lg:hidden` duplicate. Laptop view is now two
+  columns (documents | data). Pure layout — no calc value change.
+- [x] §6 PR-4 — collapsible document **list panel** in the left pane: text
+  filter (type/filename/contributor) + "verified only" toggle + click-to-jump
+  with the current item highlighted; auto-opens past 12 docs. Dropdown +
+  Prev/Next + `[`/`]` kept as compact controls. Deleted dead
+  `assessment-doc-panel.tsx` (zero importers).
+- [x] §6 PR-5 — `plans/06-field-map.md`: scoping-workbook → form field-map.
+  Outcome: every "missing field" Charlotte named carries calc (next-year fees →
+  07) or outcome (scholarship £ / siblings → 08) semantics, so 06 lands NO bare
+  inputs (would double-implement, §8 risk); the layout gives them a home and the
+  seam is documented + routed to 07/08.
+- [x] §6 PR-6 — responsive/QA: `SplitScreen` floor 380→320 + default ratio
+  0.5→0.45 (data pane wider) for 13" laptops; `< md` tab switcher unchanged and
+  still carries the (now single-column) form incl. the calc strip; synopsis docks
+  below the workspace on both breakpoints; a11y on the new strip toggle
+  (`aria-expanded`/`aria-controls`), list toggle (`aria-pressed`), filter
+  (labelled), and list items (`aria-current`). Behavioural Playwright not run
+  (no local auth users) — verified at the code level.
 
 ---
 
@@ -559,6 +570,18 @@ Wave 2 → Wave 3 → Wave 4.
 
 ## Change log
 
+- **2026-06-06** — **Epic 06 PR-2** (`feature/06-workspace-layout`, stacks on
+  PR-1): responsive assessor workspace. `AssessmentCalcStrip` moves the live
+  calculation OUT of the always-on `[1fr_320px]` right rail into a collapsible
+  persistent top strip (collapsed by default, one-line monthly/yearly/bursary
+  digest, state persisted) — laptop view drops from three columns to two
+  (documents | data); form is now single-column. Document list panel for 30+
+  docs: filterable (type/filename/contributor) collapsible list + "verified
+  only" toggle + click-to-jump, keeping the dropdown/Prev-Next/`[`-`]`. Deleted
+  dead `assessment-doc-panel.tsx`. `SplitScreen` tuned for 13" laptops (floor
+  380→320, ratio 0.5→0.45). `plans/06-field-map.md` routes the "missing fields"
+  to 07/08 (all carry calc/outcome semantics; 06 lands no bare inputs). 418
+  tests / tsc / lint / build green. **DO NOT MERGE — merge after PR-1.**
 - **2026-06-06** — **Epic 06 PR-1** (`feature/06-synopsis-consolidation`):
   collapsed the EIGHT scattered qualitative boxes (six `AssessmentChecklist`
   tabs + recommendation `familySynopsis`/`summary`) into ONE editable

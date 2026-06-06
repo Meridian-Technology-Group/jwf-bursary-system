@@ -13,8 +13,12 @@ import * as React from "react";
 import { cn } from "@/lib/utils";
 
 const STORAGE_KEY = "jwf:split-screen-ratio";
-const MIN_WIDTH = 380; // px — minimum width per panel
-const DEFAULT_RATIO = 0.5;
+// Epic 06: lower the per-pane floor (380 → 320) so a 13" laptop fits two panes
+// comfortably now the calculation no longer needs a third column, and default
+// the documents (left) pane a touch narrower so the data pane (right) — the
+// primary work surface — gets more room.
+const MIN_WIDTH = 320; // px — minimum width per panel
+const DEFAULT_RATIO = 0.45;
 
 interface SplitScreenProps {
   leftPanel: React.ReactNode;

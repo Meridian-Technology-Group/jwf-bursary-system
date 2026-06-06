@@ -23,8 +23,13 @@ import {
   ChevronRight,
   Circle,
   FileText,
+  ListFilter,
+  Search,
+  X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Switch } from "@/components/ui/switch";
 import {
   Select,
   SelectContent,
@@ -34,6 +39,7 @@ import {
 } from "@/components/ui/select";
 import { DocumentViewer } from "@/components/admin/document-viewer";
 import { humaniseSlot } from "@/lib/documents/slots";
+import { cn } from "@/lib/utils";
 import type { Document } from "@prisma/client";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -103,6 +109,30 @@ export function DocumentListClient({
     ? sortedDocs.findIndex((d) => d.id === selectedId)
     : -1;
   const selectedDoc = selectedIndex >= 0 ? sortedDocs[selectedIndex] : null;
+
+  // ── List panel (Epic 06): collapsible, filterable list for 30+ documents ──
+  // Open the list automatically when there are many documents (the dropdown
+  // alone becomes unwieldy past ~12 entries); collapsed otherwise.
+  const [listOpen, setListOpen] = React.useState(sortedDocs.length > 12);
+  const [filterText, setFilterText] = React.useState("");
+  const [verifiedOnly, setVerifiedOnly] = React.useState(false);
+
+  const filteredDocs = React.useMemo(() => {
+    const q = filterText.trim().toLowerCase();
+    return sortedDocs.filter((doc) => {
+      if (verifiedOnly && !doc.isVerified) return false;
+      if (!q) return true;
+      const haystack = [
+        humaniseSlot(doc.slot),
+        doc.slot,
+        doc.filename,
+        labelForDoc(doc) ?? "",
+      ]
+        .join(" ")
+        .toLowerCase();
+      return haystack.includes(q);
+    });
+  }, [sortedDocs, filterText, verifiedOnly, labelForDoc]);
 
   // ── Fetch presigned URL on selection change (cached) ─────────────────────
   React.useEffect(() => {
@@ -271,6 +301,17 @@ export function DocumentListClient({
           <Button
             variant="ghost"
             size="sm"
+            className={cn("h-7 w-7 p-0", listOpen && "bg-slate-200")}
+            onClick={() => setListOpen((o) => !o)}
+            aria-label={listOpen ? "Hide document list" : "Show document list"}
+            aria-pressed={listOpen}
+            title="Toggle document list"
+          >
+            <ListFilter className="h-4 w-4" aria-hidden="true" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
             className="h-7 w-7 p-0"
             onClick={goPrev}
             disabled={selectedIndex <= 0}
@@ -300,6 +341,114 @@ export function DocumentListClient({
           </Button>
         </div>
       </div>
+
+      {/* Collapsible list panel (Epic 06) — filterable list for 30+ documents.
+          Click-to-jump; current item highlighted. Keeps the dropdown +
+          Prev/Next + [ / ] as the compact controls above. */}
+      {listOpen && (
+        <div className="flex max-h-[45%] shrink-0 flex-col border-b border-neutral-200 bg-white">
+          {/* Filter row */}
+          <div className="flex items-center gap-2 border-b border-neutral-100 px-3 py-2">
+            <div className="relative min-w-0 flex-1">
+              <Search
+                className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-300"
+                aria-hidden="true"
+              />
+              <Input
+                value={filterText}
+                onChange={(e) => setFilterText(e.target.value)}
+                placeholder="Filter by type or file name…"
+                aria-label="Filter documents"
+                className="h-8 pl-7 pr-7 text-xs"
+              />
+              {filterText && (
+                <button
+                  type="button"
+                  onClick={() => setFilterText("")}
+                  aria-label="Clear filter"
+                  className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded p-0.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+                >
+                  <X className="h-3.5 w-3.5" aria-hidden="true" />
+                </button>
+              )}
+            </div>
+            <label className="flex shrink-0 items-center gap-1.5 text-xs text-slate-500">
+              <Switch
+                checked={verifiedOnly}
+                onCheckedChange={setVerifiedOnly}
+                aria-label="Show verified documents only"
+                className="scale-90"
+              />
+              Verified only
+            </label>
+          </div>
+
+          {/* Scrollable list */}
+          <div className="min-h-0 flex-1 overflow-auto">
+            {filteredDocs.length === 0 ? (
+              <p className="px-3 py-4 text-center text-xs text-slate-400">
+                No documents match the filter.
+              </p>
+            ) : (
+              <ul className="divide-y divide-neutral-50">
+                {filteredDocs.map((doc) => {
+                  const isActive = doc.id === selectedId;
+                  return (
+                    <li key={doc.id}>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedId(doc.id)}
+                        aria-current={isActive ? "true" : undefined}
+                        className={cn(
+                          "flex w-full items-center gap-2 px-3 py-2 text-left text-xs transition-colors",
+                          isActive
+                            ? "bg-primary-50 text-primary-900"
+                            : "text-slate-600 hover:bg-slate-50"
+                        )}
+                      >
+                        {doc.isVerified ? (
+                          <CheckCircle2
+                            className="h-3.5 w-3.5 shrink-0 text-green-500"
+                            aria-label="Verified"
+                          />
+                        ) : (
+                          <Circle
+                            className="h-3.5 w-3.5 shrink-0 text-slate-300"
+                            aria-hidden="true"
+                          />
+                        )}
+                        <span
+                          className={cn(
+                            "shrink-0 font-medium",
+                            isActive ? "text-primary-900" : "text-slate-700"
+                          )}
+                        >
+                          {humaniseSlot(doc.slot)}
+                        </span>
+                        {labelForDoc(doc) && (
+                          <span className="shrink-0 rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-500">
+                            {labelForDoc(doc)}
+                          </span>
+                        )}
+                        <span className="truncate text-slate-400">
+                          · {doc.filename}
+                        </span>
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </div>
+
+          {/* Count footer */}
+          <div className="border-t border-neutral-100 px-3 py-1.5 text-[11px] text-slate-400">
+            {filteredDocs.length === sortedDocs.length
+              ? `${sortedDocs.length} document${sortedDocs.length === 1 ? "" : "s"}`
+              : `${filteredDocs.length} of ${sortedDocs.length} documents`}
+          </div>
+        </div>
+      )}
 
       {/* Inline viewer */}
       <div className="flex min-h-0 flex-1">
