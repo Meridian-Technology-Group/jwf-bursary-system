@@ -19,7 +19,6 @@ import { createAuditLog } from "@/lib/audit/log";
 import { AUDIT_ACTIONS, AUDIT_ENTITY_TYPES } from "@/lib/audit/actions";
 import {
   setApplicationOutcome,
-  setApplicationOutcomeLegacy,
   type AwardDecision,
 } from "@/lib/applications/set-outcome-core";
 import type { AwardFigures } from "@/lib/applications/account-promotion";
@@ -122,23 +121,6 @@ export async function setApplicationAwardAction(
   awards?: AwardFigures
 ): Promise<{ success: true } | { success: false; error: string }> {
   const result = await setApplicationOutcome(applicationId, outcome, awards);
-  if (result.success) {
-    revalidatePath(`/applications/${applicationId}/recommendation`);
-    revalidatePath(`/applications/${applicationId}`);
-  }
-  return result;
-}
-
-/**
- * @deprecated Legacy binary outcome entry point. Retained for back-compat; new
- * UI uses {@link setApplicationAwardAction} with the explicit 3-value decision.
- * Maps QUALIFIES → AWARDED / DOES_NOT_QUALIFY → itself.
- */
-export async function setApplicationOutcomeAction(
-  applicationId: string,
-  outcome: "QUALIFIES" | "DOES_NOT_QUALIFY"
-): Promise<{ success: true } | { success: false; error: string }> {
-  const result = await setApplicationOutcomeLegacy(applicationId, outcome);
   if (result.success) {
     revalidatePath(`/applications/${applicationId}/recommendation`);
     revalidatePath(`/applications/${applicationId}`);
