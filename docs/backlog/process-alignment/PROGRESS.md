@@ -9,7 +9,7 @@
 >
 > **Spec:** [README.md](README.md) (spine + decision register). **Owner:** Brian Wagner.
 
-**Started:** 2026-06-05 · **Current focus:** **WAVES 0–3 COMPLETE on staging** (#133–#170). Wave 3 = Epics 06/07/08/09 all shipped (07 PR-7 historical-validation + D4 reason codes + H7–H10 confirmation = outstanding-but-non-blocking client deliverables). **Next: Wave 4 (10 retention, 11 auth) — awaits Brian's go-ahead.** 01 PR-6 (drop fused `status`) still gated.
+**Started:** 2026-06-05 · **Current focus:** **WAVES 0–3 COMPLETE + Epic 10 (Wave 4) COMPLETE on staging** (#133–#173 + PR-3 grid/seed/mirroring open for review). Wave 3 = Epics 06/07/08/09 (07 PR-7 historical-validation + D4 reason codes + H7–H10 confirmation = outstanding-but-non-blocking client deliverables). Epic 10 = retention cron (dry-run; DPO signs years) + rolling-account schedule + portal-access revocation. **Next: Epic 11 (auth & access) — the last Wave 4 epic.** 01 PR-6 (drop fused `status`) still gated.
 
 ---
 
@@ -45,7 +45,7 @@ Legend: ⬜ not started · 🟡 in progress · ✅ shipped to staging · 🚫 bl
 | 3 | [07 Calculations & fees](plans/07-assessment-calculations-and-fees.md) | ✅* | 06 ✅ · D8/D14 built-to-default | #165 (fee-year resolver + engine next-year + seed), #166 (wiring + auto-populate-then-confirm). **\*PR-7 historical-validation gated** — needs Charlotte's real historical figures (non-blocking; engine tested on synthetic fixtures) |
 | 3 | [08 Recommendation & outcome](plans/08-recommendation-and-outcome.md) | ✅ | 01, 07 ✅ · D7/D9 ✅ | #167 (award model + outcome writer + emails), #168 (award-decision UX + scholarship/siblings/options + assessor-PDF removal + reason-code util). **D4 real reason codes** swap-in trivial, non-blocking |
 | 3 | [09 Complex household / second parent](plans/09-complex-household-and-second-parent.md) | ✅ | 02, 06 ✅ · D15–D17 built to workbook FAQ | #169 (household rules engine + assessor decision aid), #170 (custody schema + form branching + guardian/widowed evidence + H7/H9 flags). **H7/H8/H9/H10 need Charlotte's verbatim confirmation** (one-file swap-point, non-blocking) |
-| 4 | [10 Data retention & account lifecycle](plans/10-data-retention-and-account-lifecycle.md) | 🟡 | 01, 03 (deps met) · D6 ✅ (DPO signs years) · D19 narrow | PR-1 retention policy + cascade extraction + auto-purge cron (`feature/10-retention-policy-and-purge-cron`); PR-2 schedule + revocation (`feature/10-schedule-and-portal-revocation`, stacks on PR-1) |
+| 4 | [10 Data retention & account lifecycle](plans/10-data-retention-and-account-lifecycle.md) | ✅ | 01, 03 (deps met) · D6 ✅ (DPO signs years) · D19 narrow | #172 (PR-1 policy + cascade + cron), #173 (PR-2 schedule + revocation), PR-3 grid + seed + mirroring (`feature/10-schedule-grid-seed-mirroring`). **DPO signs D6 year values** + a *full* portal-revocation seed fixture = outstanding-but-non-blocking |
 | 4 | [11 Auth & access](plans/11-auth-and-access.md) | ⬜ | none · D21 ✅ (SSO deferred) · D20 ✅ (idle watcher) | — |
 
 ---
@@ -867,23 +867,46 @@ portal-access revocation** (§6 PR-3, PR-4, PR-5, PR-6 backend) —
   format/validate/tsc/lint/build green; **562 tests**. **DO NOT MERGE — merge
   after PR-1.** Migration SQL + read-only nonprod validation in the PR body.
 
-**Remaining (returned breakdown — not in this batch):**
-- [ ] **PR-3-followup — status-mirroring + close wiring**: call
-  `mirrorApplicationToSchedule` from the submit path (→ RECEIVED) and the
-  assessment-complete path (→ COMPLETE), then `closeAccountIfComplete`; fire
-  revalidation. The helpers + tests exist; this is the call-site wiring (depends
-  on Epic 03 materialising future-year Rounds one at a time so a year's app links
-  back via `roundId`).
-- [ ] **PR-7 — admin schedule grid + Show/Hide toggle + Regenerate Schedule**
-  (§5.5): the illustration's grid on the account/recommendation view (Year /
-  Type / Status / Manually Created / Available On / Required By / Received On /
-  Action), per-row Show/Hide-on-portal toggle, future-row date edit, Regenerate
-  button (calls `generateSchedule`). Epic 05 reads `showOnPortal` for the parent
-  lineup (out of scope here).
-- [ ] **PR-8 — demo seed** (§5.6): one ACTIVE account with a populated multi-year
-  schedule (mix of RECEIVED past + SCHEDULED future, some `showOnPortal`) and one
-  CLOSED account (to exercise revocation); a declined/archived application with
-  dates set so `isPurgeable` is demonstrable.
+**PR-3 — admin schedule grid + demo seed + status-mirroring wiring** (§5.5,
+§5.6, §5.4 mirroring) — `feature/10-schedule-grid-seed-mirroring` (off
+`staging`, after #172/#173 merged):
+- [x] §6 PR-7 — **admin schedule grid** on the application Applicant-Data view
+  (rendered when the app has a rolling account). `getScheduleForAccount` loader +
+  `ScheduleGrid` client component rendering the illustration's columns (Year ·
+  Academic Year · Type · Status · Manually Created · Available On · Required By ·
+  Received On · Show on Portal). Per-row **Show/Hide-on-portal** toggle (Switch)
+  + **Regenerate Schedule** button (ADMIN only; VIEWER/ASSESSOR see a read-only
+  grid). Server actions `regenerateScheduleAction` (idempotent — reuses
+  `generateSchedule`; resolves award-round dates from `firstAssessmentYear`) +
+  `toggleScheduleShowOnPortalAction` (account-ownership guarded), both audited
+  (`SCHEDULE_REGENERATED` / `SCHEDULE_SHOW_ON_PORTAL_TOGGLED` + blue badges) and
+  revalidating. (Future-row date edit deferred — the Regenerate path + Epic 03's
+  round-date model own date changes; not load-bearing for the grid.)
+- [x] §6 PR-8 — **demo seed**: Okafor (ACTIVE) gains a populated 3-year schedule
+  (Year 1 RECEIVED, Years 2–3 SCHEDULED; Years 1–2 `showOnPortal`, Year 3 hidden
+  — the illustration's Show/Hide defaults). Chen flipped to **CLOSED** (`closedAt`
+  + `scheduleYears`) with a fully **COMPLETE** 2-year schedule, so the grid
+  demonstrates a concluded account. `seed-demo` seeds + deletes + counts the
+  entries; `seed:reference` untouched (no reference change), `seed:demo` stays
+  destructive-gated. *(A full PORTAL-ACCESS-revocation demo needs a lead with no
+  in-flight application; all four fixed demo users have one, so that is a
+  deferred seed nicety — the access guard itself is unit-tested.)*
+- [x] **status-mirroring wiring DONE** (no Epic 03 dependency after all): a
+  re-assessment is submitted/assessed against a REAL existing `Round`, so
+  `roundId`/`academicYear` already exist — no future-round materialisation is
+  needed to link the schedule row. Wired `mirrorApplicationToSchedule` into the
+  **submit path** (`apply/actions.ts` → RECEIVED + receivedOn, under
+  `withAdminContext` since the table is ADMIN-write and the submitter is an
+  APPLICANT) and the **assessment-complete path** (`assessment/actions.ts` →
+  COMPLETE, then `closeAccountIfComplete` which flips the account CLOSED + revokes
+  portal access when the whole schedule is terminal). Both non-blocking + no-op
+  when there is no account/matching row.
+- [x] 6 new tests (regenerate idempotency/delegation + missing-account/missing-
+  round + toggle ownership guard). tsc / `next build` / vitest green; **568 tests**.
+
+> **Epic 10 → ✅ when this lands.** Outstanding-but-non-blocking: (1) **DPO signs
+> the D6 year values** before `RETENTION_PURGE_ENABLED` is set in prod; (2) a full
+> portal-revocation demo fixture (lead with no in-flight app).
 
 > **Cron/env flags to set (PR-1).** New Vercel cron `/api/cron/purge-expired`
 > (weekly, reuses the existing `CRON_SECRET`, already set in Production +
@@ -933,6 +956,25 @@ Wave 2 → Wave 3 → Wave 4.
 
 ## Change log
 
+- **2026-06-06** — **Epic 10 COMPLETE** (PR-3 `feature/10-schedule-grid-seed-mirroring`,
+  off `staging` after #172/#173 merged + the migration applied to nonprod): the
+  deferred remainder. **Admin schedule grid** on the application Applicant-Data
+  view (`getScheduleForAccount` + `ScheduleGrid`) rendering the illustration's
+  columns with a per-row Show/Hide-on-portal Switch + a Regenerate Schedule button
+  (ADMIN; read-only for VIEWER/ASSESSOR); server actions `regenerateScheduleAction`
+  (idempotent, reuses `generateSchedule`) + `toggleScheduleShowOnPortalAction`
+  (ownership-guarded), both audited (`SCHEDULE_REGENERATED` /
+  `SCHEDULE_SHOW_ON_PORTAL_TOGGLED`). **Demo seed**: Okafor ACTIVE gains a 3-year
+  schedule (RECEIVED + SCHEDULED mix, Show/Hide defaults); Chen flipped CLOSED with
+  a COMPLETE 2-year schedule. **Status-mirroring WIRED** (no Epic 03 dep — a
+  re-assessment uses a real existing Round, so `roundId`/`academicYear` already
+  exist): `mirrorApplicationToSchedule` on submit (→ RECEIVED) + assessment-complete
+  (→ COMPLETE) then `closeAccountIfComplete` (CLOSED + access revocation when the
+  schedule is fully terminal), both under `withAdminContext`, non-blocking. 6 new
+  tests; tsc/build/vitest green, 568 tests. **Epic 10 row → ✅.** Outstanding-but-
+  non-blocking: DPO signs the D6 year values before enabling the purge cron in prod;
+  a full portal-revocation demo fixture (lead with no in-flight app). No schema
+  change in PR-3. **DO NOT MERGE — awaiting review.**
 - **2026-06-06** — **Epic 10 PR-2** (`feature/10-schedule-and-portal-revocation`,
   stacks on PR-1): forward-schedule schema + generation on AWARD +
   close-when-complete + portal-access revocation. New additive

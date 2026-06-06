@@ -14,7 +14,16 @@
 
 import { revalidatePath } from "next/cache";
 import { requireRole, requireApplicationAccess, Role } from "@/lib/auth/roles";
-import { withUserContext, type RlsRole, type Tx } from "@/lib/db/prisma";
+import {
+  withUserContext,
+  withAdminContext,
+  type RlsRole,
+  type Tx,
+} from "@/lib/db/prisma";
+import {
+  mirrorApplicationToSchedule,
+  closeAccountIfComplete,
+} from "@/lib/bursary-accounts/lifecycle";
 import {
   createAssessment,
   saveAssessment,
@@ -267,6 +276,39 @@ export async function completeAssessmentAction(
         metadata: { assessmentId, applicationId },
       });
     });
+
+    // ── Mirror onto the forward schedule + close-when-complete (Epic 10) ──────
+    // Mark the matching schedule year COMPLETE, then close the account if the
+    // whole schedule is now terminal (the close revokes portal access via the
+    // status-keyed guard). Runs under withAdminContext because the schedule
+    // table is ADMIN-write and the actor may be an ASSESSOR. Non-blocking and a
+    // no-op when the application has no account or no matching schedule row.
+    try {
+      await withAdminContext(async (tx) => {
+        const app = await tx.application.findUnique({
+          where: { id: applicationId },
+          select: {
+            bursaryAccountId: true,
+            roundId: true,
+            round: { select: { academicYear: true } },
+          },
+        });
+        if (!app?.bursaryAccountId) return;
+        await mirrorApplicationToSchedule(tx, {
+          bursaryAccountId: app.bursaryAccountId,
+          academicYear: app.round.academicYear,
+          applicationId,
+          roundId: app.roundId,
+          status: "COMPLETE",
+        });
+        await closeAccountIfComplete(tx, app.bursaryAccountId);
+      });
+    } catch (err) {
+      console.error(
+        "[completeAssessmentAction] schedule mirror/close failed",
+        err
+      );
+    }
 
     revalidatePath(`/applications/${applicationId}/assessment`);
 

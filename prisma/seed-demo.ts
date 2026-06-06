@@ -54,6 +54,7 @@ import {
   recommendations,
   recommendationReasonCodes,
   siblingLinks,
+  scheduleEntries,
   ACCOUNT_OKAFOR_ID,
   ACCOUNT_PATEL_ID,
   ACCOUNT_WILLIAMS_M_ID,
@@ -193,6 +194,11 @@ async function clearAll(): Promise<void> {
   const co = await prisma.contact.deleteMany({});
   log(`Deleted ${co.count} contacts`);
 
+  // Schedule entries (FK → bursary accounts; deleted explicitly before the
+  // accounts even though ON DELETE CASCADE would also clear them).
+  const se = await prisma.bursaryScheduleEntry.deleteMany({});
+  log(`Deleted ${se.count} schedule entries`);
+
   // Bursary accounts
   const ba = await prisma.bursaryAccount.deleteMany({});
   log(`Deleted ${ba.count} bursary accounts`);
@@ -302,6 +308,14 @@ async function seedBursaryAccounts(): Promise<void> {
     await prisma.bursaryAccount.create({ data: account });
   }
   log(`Created ${bursaryAccounts.length} bursary accounts`);
+
+  // Forward-schedule entries (Epic 10) — created after the accounts they belong
+  // to. Okafor = ACTIVE with a mixed RECEIVED/SCHEDULED grid; Chen = CLOSED with
+  // a fully COMPLETE grid.
+  for (const entry of scheduleEntries) {
+    await prisma.bursaryScheduleEntry.create({ data: entry });
+  }
+  log(`Created ${scheduleEntries.length} schedule entries`);
 }
 
 // ─── Applications ─────────────────────────────────────────────────────────────
@@ -557,6 +571,7 @@ async function printSummary(): Promise<void> {
     ["Profiles",                     await prisma.profile.count()],
     ["Rounds",                       await prisma.round.count()],
     ["Bursary accounts",             await prisma.bursaryAccount.count()],
+    ["Schedule entries",             await prisma.bursaryScheduleEntry.count()],
     ["Applications",                 await prisma.application.count()],
     ["Application sections",         await prisma.applicationSection.count()],
     ["Documents",                    await prisma.document.count()],

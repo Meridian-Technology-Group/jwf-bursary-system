@@ -16,6 +16,8 @@ import {
 import { getApplicationContributors } from "@/lib/db/queries/contributors";
 import { contributorRoleLabel, isParentOwnedSection } from "@/lib/contributors/dual-view";
 import { getSiblingLinks } from "@/lib/db/queries/siblings";
+import { getScheduleForAccount, type ScheduleEntryRow } from "@/lib/db/queries/schedule";
+import { ScheduleGrid } from "@/components/admin/schedule-grid";
 import {
   Card,
   CardContent,
@@ -192,7 +194,7 @@ export default async function ApplicantDataPage({ params }: Props) {
   const user = await requireRole([Role.ADMIN, Role.ASSESSOR, Role.VIEWER]);
   const isAssessor = user.role === Role.ADMIN || user.role === Role.ASSESSOR;
 
-  const { application, siblingLinks, names, contributors } =
+  const { application, siblingLinks, names, contributors, scheduleEntries } =
     await withUserContext(user.id, user.role as RlsRole, async (tx) => {
       const app = await getApplicationWithDetails(tx, params.id);
       if (!app)
@@ -201,9 +203,13 @@ export default async function ApplicantDataPage({ params }: Props) {
           siblingLinks: [],
           names: null,
           contributors: [],
+          scheduleEntries: [] as ScheduleEntryRow[],
         };
       const siblings = app.bursaryAccountId
         ? await getSiblingLinks(tx, app.bursaryAccountId)
+        : [];
+      const schedule = app.bursaryAccountId
+        ? await getScheduleForAccount(tx, app.bursaryAccountId)
         : [];
       const revealed = await getApplicationNamesForReveal(tx, app.id, user.id);
       const ctribs = await getApplicationContributors(tx, params.id);
@@ -212,6 +218,7 @@ export default async function ApplicantDataPage({ params }: Props) {
         siblingLinks: siblings,
         names: revealed,
         contributors: ctribs,
+        scheduleEntries: schedule,
       };
     });
 
@@ -271,6 +278,15 @@ export default async function ApplicantDataPage({ params }: Props) {
             No application sections have been submitted yet.
           </p>
         </div>
+
+        {/* Forward schedule — shown when the account is linked (Epic 10) */}
+        {bursaryAccountId && (
+          <ScheduleGrid
+            applicationId={application.id}
+            entries={scheduleEntries}
+            canManage={user.role === Role.ADMIN}
+          />
+        )}
 
         {/* Sibling Links — shown even when no sections exist if account is linked */}
         {bursaryAccountId && (
@@ -360,6 +376,15 @@ export default async function ApplicantDataPage({ params }: Props) {
           </Card>
         );
       })}
+
+      {/* Forward schedule — only when the application has a bursary account (Epic 10) */}
+      {bursaryAccountId && (
+        <ScheduleGrid
+          applicationId={application.id}
+          entries={scheduleEntries}
+          canManage={user.role === Role.ADMIN}
+        />
+      )}
 
       {/* Sibling Links section — only when application has a bursary account */}
       {bursaryAccountId && (

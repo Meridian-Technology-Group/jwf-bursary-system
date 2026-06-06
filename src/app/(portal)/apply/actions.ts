@@ -34,6 +34,7 @@ import {
 } from "@/lib/applications/status";
 import { getSectionGapStatuses, type SectionGap } from "@/lib/portal/section-gaps";
 import { isSubmissionDeadlinePassed } from "@/lib/rounds/submission-deadline";
+import { mirrorApplicationToSchedule } from "@/lib/bursary-accounts/lifecycle";
 import { TERMS_AND_CONDITIONS_VERSION } from "@/lib/portal/terms";
 import { logError } from "@/lib/log";
 
@@ -391,6 +392,8 @@ export async function submitApplication(applicationId: string): Promise<never> {
           entryYear: true,
           entryYearGroup: true,
           submissionDeadlineAt: true,
+          bursaryAccountId: true,
+          roundId: true,
           round: { select: { academicYear: true, closeDate: true } },
           sections: {
             where: { ownerContributorId },
@@ -581,6 +584,30 @@ export async function submitApplication(applicationId: string): Promise<never> {
       },
     });
   });
+
+  // ── Mirror onto the forward schedule (Epic 10) ────────────────────────────
+  // For a rolling account, mark the matching schedule year RECEIVED + link this
+  // application/round. The re-assessment was created against a REAL round, so
+  // roundId/academicYear already exist — no future-round materialisation needed.
+  // Runs under withAdminContext because bursary_schedule_entries is ADMIN-write
+  // (the submitter is an APPLICANT). Non-blocking — a no-op when the application
+  // has no account or no matching schedule row (e.g. a first-year/new app).
+  if (application.bursaryAccountId) {
+    try {
+      await withAdminContext((tx) =>
+        mirrorApplicationToSchedule(tx, {
+          bursaryAccountId: application.bursaryAccountId!,
+          academicYear: application.round.academicYear,
+          applicationId,
+          roundId: application.roundId,
+          status: "RECEIVED",
+          receivedOn: submittedAt,
+        })
+      );
+    } catch (err) {
+      logError("[submit] schedule mirror (RECEIVED) failed", err);
+    }
+  }
 
   // ── Send confirmation email (non-blocking on failure) ─────────────────────
   const schoolLabel = application.school === "TRINITY" ? "Trinity School" : "Whitgift School";
