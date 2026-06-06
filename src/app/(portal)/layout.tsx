@@ -25,6 +25,7 @@ import {
   type SidebarSection,
 } from "@/components/portal/portal-sidebar-sections";
 import { PageLoader } from "@/components/shared/loading";
+import { IdleLogoutWatcher } from "@/components/auth/idle-logout-watcher";
 
 export const metadata = {
   title: {
@@ -118,6 +119,12 @@ export default async function PortalLayout({
 
   return (
     <div className="flex min-h-screen bg-canvas-50">
+      {/* Epic 11 (D20) — optional inactivity logout, applied to the parent
+          portal as well as staff (the D20 scope question; default-on, env
+          flag/window-overridable, disabled per-deployment if desired). Renders
+          nothing without an authenticated user or when the flag is off. */}
+      {user ? <IdleLogoutWatcher /> : null}
+
       {/* ── Desktop sidebar (hidden on mobile) ─────────────────────────── */}
       <aside className="hidden md:flex md:flex-col md:w-[280px] md:shrink-0 md:fixed md:inset-y-0 md:left-0 md:z-30 bg-white border-r border-slate-200 shadow-xs">
         <PortalDesktopSidebar

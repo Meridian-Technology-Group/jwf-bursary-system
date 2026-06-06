@@ -121,7 +121,41 @@ What to verify instead of an env var:
 
 | Variable | Scope | Where the value comes from | Production value | Preview value | Notes |
 |---|---|---|---|---|---|
-| `STAFF_MFA_ENFORCED` | Server | Set manually only to override the default | unset (defaults **on** in prod) | unset (defaults **off** in preview) | Forces staff (ADMIN/ASSESSOR/VIEWER) through the aal2 TOTP gate. `aal2` = "Authenticator Assurance Level 2", i.e. a second factor has been verified. Logic in `src/lib/auth/mfa-flag.ts`: when unset, enforced iff `VERCEL_ENV === "production"`; `"true"`/`"1"` forces on, anything else forces off (a prod kill-switch). **Missing from `.env.example`.** |
+| `STAFF_MFA_ENFORCED` | Server | Set manually only to override the default | unset (defaults **on** in prod) | unset (defaults **off** in preview) | Forces staff (ADMIN/ASSESSOR/VIEWER) through the aal2 TOTP gate. `aal2` = "Authenticator Assurance Level 2", i.e. a second factor has been verified. Logic in `src/lib/auth/mfa-flag.ts`: when unset, enforced iff `VERCEL_ENV === "production"`; `"true"`/`"1"` forces on, anything else forces off (a prod kill-switch). Present in `.env.example`; behaviour pinned by `src/lib/auth/__tests__/mfa-flag.test.ts`. |
+
+**MFA in non-prod — verified posture (Epic 11, D-confirm).** The client asked to
+"disable MFA in staging/test, keep it on in prod". This is **already the default
+behaviour** and requires no per-environment value:
+
+- **Staging / preview / local:** leave `STAFF_MFA_ENFORCED` **unset**. With
+  `VERCEL_ENV === "preview"` (or no `VERCEL_ENV` locally), `isStaffMfaEnforced()`
+  returns `false`, so staff sign-in reaches `/admin` **without** an aal2
+  challenge. Testing is never blocked. To run a one-off pre-prod MFA smoke test on
+  staging, set `STAFF_MFA_ENFORCED=true` **temporarily** (and unset it after).
+- **Production:** leave it **unset** too — `VERCEL_ENV === "production"` makes the
+  gate **on** by default so it can never be forgotten. `STAFF_MFA_ENFORCED=false`
+  is the documented incident kill-switch (see `incident-response.md`).
+
+> **Do not** set `STAFF_MFA_ENFORCED` on the staging Vercel scope as a permanent
+> value — a stale `=true` there would silently re-enable the gate and re-break
+> testing; a stale `=false` carried to prod would disable it. The unset default
+> is the safe configuration in both environments. The eight cases in
+> `mfa-flag.test.ts` lock this contract so a refactor can't drift it.
+
+### Inactivity / session-timeout logout (Epic 11, D20)
+
+Optional client-side idle watcher (`src/components/auth/idle-logout-watcher.tsx`)
+mounted in the admin and portal layouts. After the idle window it shows a warning
+countdown then POSTs to `/api/auth/logout`. **UX convenience only — not a
+security control**; the authoritative session boundary remains Supabase token
+expiry. Config resolver: `src/lib/auth/idle-timeout.ts`. All `NEXT_PUBLIC_*` (the
+watcher runs in the browser) and all optional — sensible defaults apply when unset.
+
+| Variable | Scope | Where the value comes from | Production value | Preview value | Notes |
+|---|---|---|---|---|---|
+| `NEXT_PUBLIC_SESSION_IDLE_ENABLED` | Public | Set manually only to disable | unset (enabled) | unset (enabled) | `"false"`/`"0"`/`"off"`/`"no"` disables the whole feature (no listeners, renders nothing). Any other value (or unset) → enabled. |
+| `NEXT_PUBLIC_SESSION_IDLE_MINUTES` | Public | Set manually to override the window | unset (30 min) | unset (30 min) | Whole minutes of inactivity before sign-out. Clamped to `[1, 720]`; malformed → 30. **The exact window is D20 — Charlotte to confirm; 30 min is a placeholder default.** |
+| `NEXT_PUBLIC_SESSION_IDLE_WARN_SECONDS` | Public | Set manually to override the warning length | unset (60 s) | unset (60 s) | Warning-countdown length shown before the forced sign-out. Clamped to `[5, idleMs − 1s]`; malformed → 60. |
 
 ### Sentry (error monitoring)
 
