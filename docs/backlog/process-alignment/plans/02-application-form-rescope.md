@@ -1,6 +1,6 @@
 ---
 title: Application form re-scope — rebuild the 8 sections to the scoping workbook
-status: planned
+status: shipped
 severity: high
 area: portal, forms, schema
 wave: 2

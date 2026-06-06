@@ -9,7 +9,7 @@
 >
 > **Spec:** [README.md](README.md) (spine + decision register). **Owner:** Brian Wagner.
 
-**Started:** 2026-06-05 · **Current focus:** **Wave 1 COMPLETE** (Epics 01/03/04 shipped; 01 PR-6 gated). Awaiting Brian's go-ahead for Wave 2 (Epic 02 now unblocked).
+**Started:** 2026-06-05 · **Current focus:** **Epic 02 COMPLETE** (#152–#158 — 8-section parent form rebuilt to the workbook). Wave 1 shipped (01/03/04; 01 PR-6 gated). Next: Epic 05 (parent portal) — deps 01/02/03 met.
 
 ---
 
@@ -39,7 +39,7 @@ Legend: ⬜ not started · 🟡 in progress · ✅ shipped to staging · 🚫 bl
 | 1 | [01 Status & workflow model](plans/01-status-and-workflow-model.md) | ✅ | — | #141 (PR-1 schema), #142 (PR-2 backfill), #143 (PR-3 status service), #144 (PR-4 readers+badges), #145 (PR-5 submitted_at write-once); **PR-6 drop-column ⏸ gated** |
 | 1 | [03 Round management](plans/03-round-management.md) | ✅ | 01 | #146 (PR-A schema+server core), #147 (PR-B UI) |
 | 1 | [04 Lead-applicant contacts & invitations](plans/04-lead-applicant-contacts-and-invitations.md) | ✅ | 01 | #148 (contact register), #149 (invite-from-contact + D1 lock), #150 (twin/DOB uniqueness) |
-| 2 | [02 Application form re-scope](plans/02-application-form-rescope.md) | 🟡 | deps met (01, 04 ✅) · D3 ✅ · D11 artifact (build to workbook) | PR-1 #152 ✅ · PR-2 #153 ✅ · PR-3 #154 ✅ · PR-4 #155 ✅ · PR-5 #156 ✅ · PR-6 #157 (this) · PR-7 open |
+| 2 | [02 Application form re-scope](plans/02-application-form-rescope.md) | ✅ | deps met (01, 04 ✅) · D3 ✅ · D11 artifact (build to workbook) | #152 · #153 · #154 · #155 · #156 · #157 · #158 (all ✅) |
 | 2 | [05 Parent portal experience](plans/05-parent-portal-experience.md) | ⏳ deps | 01, 02, 03 (deps) · D10 ✅ | — |
 | 3 | [06 Assessor experience & UI](plans/06-assessor-experience-and-ui.md) | ⏳ deps | 02 (dep) | — |
 | 3 | [07 Calculations & fees](plans/07-assessment-calculations-and-fees.md) | ⏳ deps | 06 (dep) · D8/D14 narrow, non-blocking | — |
@@ -372,8 +372,18 @@ consumes (rule engine + tax-year), and is behaviour-preserving for existing rule
   picker is removed** (`entryYearGroup` optional; submit promotes the admin value);
   the **stored Parent 1 address** is shown read-only on "same address" (workbook
   §3 Q7). Onboarding-card picker left intact. 3 new tests; 347 green.
-- [ ] **PR-7 — seed + validation-summary copy.** `seed:demo` to the new income
-  shape across statuses; Review/Validation-Summary phrasing to the workbook.
+- [x] **PR-7 — seed + validation-summary + draft backfill** (#158). All 5
+  `seed:demo` PARENTS_INCOME fixtures rewritten to the status-driven shape across
+  statuses; Review "issues" panel reframed as the workbook **Validation summary**;
+  OFF-by-default idempotent `scripts/backfill-income-drafts.ts` (dry-run unless
+  `--apply`; PRE_SUBMISSION drafts only). 344 tests green.
+
+> **Epic 02 COMPLETE (#152–#158).** PRs 1–7 cover the full §6 work breakdown: rule
+> engine + tax-year, status-driven income sub-tables, the four stubs, the
+> new/rolling ID variant, per-parent declaration + mandatory phone/email, locked
+> school + entry-year removal + stored address, seed/validation/backfill. No Prisma
+> migration anywhere (form data is JSONB). Back-compat reader covers legacy income +
+> declaration drafts and immutable submitted blobs.
 
 ---
 
@@ -417,6 +427,12 @@ Wave 2 → Wave 3 → Wave 4.
 
 ## Change log
 
+- **2026-06-06** — **Epic 02 COMPLETE** (#158, PR-7): seed:demo income fixtures →
+  status-driven shape across statuses; Review reframed as the workbook Validation
+  summary; OFF-by-default idempotent income-draft backfill script. Epic 02 row → ✅;
+  plan frontmatter `status: shipped`. The 8-section parent form is rebuilt to the
+  workbook (income sub-tables, stubs, ID variant, declaration, mandatory contacts,
+  locked school). No migration (JSONB). **Next: Epic 05 (parent portal).**
 - **2026-06-06** — **Epic 02 PR-6** (locked school + entry-year removal + stored
   address). CHILD_DETAILS Q1 school is display-only (read-only card from the
   locked `application.school`, pinned via a hidden field; D1). Parent entry-year

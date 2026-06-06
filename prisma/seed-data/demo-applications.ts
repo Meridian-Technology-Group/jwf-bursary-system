@@ -295,24 +295,18 @@ const okaforSections: SectionDef[] = [
     applicationId: APP_OKAFOR_ID,
     section: "PARENTS_INCOME",
     isComplete: true,
+    // Status-driven income shape (Epic 02 D3): both parents Employed.
     data: {
       parent1Income: {
-        employmentStatus: "PAYE",
-        grossSalary: 68000,
-        netAnnualPay: 47200,
-        pensionContribution: 4000,
-        taxCode: "1257L",
-        niNumber: "AB123456C",
+        employed: { annualSalaryPaye: 68000 },
+        total: 68000,
+        documentsConfirmed: true,
       },
       parent2Income: {
-        employmentStatus: "PAYE",
-        grossSalary: 42000,
-        netAnnualPay: 31500,
-        pensionContribution: 2100,
-        taxCode: "1257L",
-        niNumber: "CD789012A",
+        employed: { annualSalaryPaye: 42000 },
+        total: 42000,
+        documentsConfirmed: true,
       },
-      totalHouseholdGross: 110000,
     },
   },
   {
@@ -455,25 +449,23 @@ const patelSections: SectionDef[] = [
     applicationId: APP_PATEL_ID,
     section: "PARENTS_INCOME",
     isComplete: true,
+    // P1 Employed, P2 Self-employed (SA302 sub-table).
     data: {
       parent1Income: {
-        employmentStatus: "PAYE",
-        grossSalary: 52000,
-        netAnnualPay: 37800,
-        pensionContribution: 2600,
-        taxCode: "1257L",
+        employed: { annualSalaryPaye: 52000 },
+        total: 52000,
+        documentsConfirmed: true,
       },
       parent2Income: {
-        employmentStatus: "SELF_EMPLOYED_DIRECTOR",
-        directorSalary: 12570,
-        dividendsGross: 38000,
-        netDividends: 35000,
-        netDirectorPay: 10500,
-        companyAccountingYear: "April",
-        latestAccountsTurnover: 210000,
-        latestAccountsProfit: 55000,
+        selfEmployed: {
+          grossSalaried: 12570,
+          propertyIncome: 0,
+          dividends: 38000,
+          otherInvestmentIncome: 0,
+        },
+        total: 50570,
+        documentsConfirmed: true,
       },
-      totalHouseholdGross: 102570,
     },
   },
   {
@@ -607,15 +599,24 @@ const williamsMSections: SectionDef[] = [
     applicationId: APP_WILLIAMS_M_ID,
     section: "PARENTS_INCOME",
     isComplete: true,
+    // Sole parent On benefits (exercises the benefits sub-table; Child Benefit
+    // declared with no upload — the workbook exception).
     data: {
       parent1Income: {
-        employmentStatus: "PAYE",
-        grossSalary: 36000,
-        netAnnualPay: 27900,
-        pensionContribution: 3240,
-        taxCode: "1257L",
+        benefits: {
+          universalCredit: 9600,
+          housingBenefit: 0,
+          childBenefit: 1820,
+          childWorkingTaxCredit: 0,
+          esa: 0,
+          pipOrDla: 0,
+          carersAllowance: 0,
+          childcareSupport: 0,
+          other: 0,
+        },
+        total: 11420,
+        documentsConfirmed: true,
       },
-      totalHouseholdGross: 36000,
     },
   },
   {
@@ -748,15 +749,13 @@ const williamsASections: SectionDef[] = [
     applicationId: APP_WILLIAMS_A_ID,
     section: "PARENTS_INCOME",
     isComplete: true,
+    // Sole parent Retired (exercises the retired pension sub-table).
     data: {
       parent1Income: {
-        employmentStatus: "PAYE",
-        grossSalary: 36000,
-        netAnnualPay: 27900,
-        pensionContribution: 3240,
-        taxCode: "1257L",
+        retired: { statePension: 11500, privatePension: 14000 },
+        total: 25500,
+        documentsConfirmed: true,
       },
-      totalHouseholdGross: 36000,
     },
   },
   {
@@ -887,21 +886,23 @@ const chenSections: SectionDef[] = [
     applicationId: APP_CHEN_ID,
     section: "PARENTS_INCOME",
     isComplete: true,
+    // P1 Employed, P2 Self-employed (sole trader) — exercises both sub-tables.
     data: {
       parent1Income: {
-        employmentStatus: "PAYE",
-        grossSalary: 78000,
-        netAnnualPay: 52400,
-        pensionContribution: 5850,
-        taxCode: "1257L",
+        employed: { annualSalaryPaye: 78000 },
+        total: 78000,
+        documentsConfirmed: true,
       },
       parent2Income: {
-        employmentStatus: "SELF_EMPLOYED_SOLE",
-        grossSelfEmployedProfit: 8400,
-        netSelfEmployedProfit: 7560,
-        taxReturnYear: "2024/25",
+        selfEmployed: {
+          grossSalaried: 8400,
+          propertyIncome: 0,
+          dividends: 0,
+          otherInvestmentIncome: 0,
+        },
+        total: 8400,
+        documentsConfirmed: true,
       },
-      totalHouseholdGross: 86400,
     },
   },
   {
