@@ -1,34 +1,45 @@
 /**
  * Shared core for setting an application's final outcome.
  *
- * Backlog #11: two server actions (`setOutcome` in the application-detail
- * actions and `setApplicationOutcomeAction` in the recommendation actions)
- * previously implemented this transition independently and had diverged —
- * only the recommendation path created a BursaryAccount on a QUALIFIES
- * outcome (added in PR #43), and they wrote different audit-action keys.
+ * Backlog #11 consolidated two diverged outcome paths into this single source of
+ * truth. Epic 08 re-shapes it to the Foundation's real 3-value award decision:
  *
- * This module is the single source of truth for the outcome transition:
- *   1. transition validation (COMPLETED → QUALIFIES | DOES_NOT_QUALIFY)
- *   2. status persistence
- *   3. idempotent BursaryAccount creation on QUALIFIES (exactly one, never a
- *      duplicate — skipped when the application is already linked to one)
- *   4. the outcome email to the lead applicant
- *   5. exactly one canonical audit row (APPLICATION_OUTCOME_SET)
+ *   - AWARDED               — the panel's "Approved Bursary". Promotes to the
+ *                             rolling ACTIVE BursaryAccount via the Epic 10
+ *                             interface (idempotent) and records the granted
+ *                             bursary + scholarship (D9) awards on the
+ *                             recommendation.
+ *   - QUALIFIES_NOT_AWARDED — assessed as eligible but not granted this round.
+ *   - DOES_NOT_QUALIFY      — the panel's "Declined Bursary"; a NEW application
+ *                             is archived (Epic 01 sets archived_at).
  *
- * Both server actions are thin wrappers that delegate here, so the two
- * admin UIs keep their existing call signatures unchanged.
+ * Responsibilities (single source of truth):
+ *   1. transition validation (assessment COMPLETED → an outcome)
+ *   2. outcome + lifecycle persistence via the central status service
+ *      (writes assessments.outcome + mirrors the legacy fused status until 01 PR-6)
+ *   3. AWARDED → idempotent account promotion behind the Epic 10 interface
+ *      (continue an existing rolling account, never double-create)
+ *   4. persist the scholarship award (£) onto the recommendation (D9)
+ *   5. the outcome email to the lead applicant (one template per outcome)
+ *   6. exactly one canonical audit row (APPLICATION_OUTCOME_SET) carrying the
+ *      chosen outcome + both award figures
+ *
+ * The thin server-action wrappers keep their existing call signatures.
  */
 
 import { requireRole, Role } from "@/lib/auth/roles";
 import { withUserContext, type RlsRole, type Tx } from "@/lib/db/prisma";
 import { createAuditLog } from "@/lib/audit/log";
-import { generateBursaryAccountReference } from "@/lib/bursary-accounts/reference";
 import { sendEmail } from "@/lib/email/send";
 import {
   setApplicationOutcomeStatus,
-  lifecycleOutcomeForLegacy,
+  type LifecycleOutcome,
 } from "@/lib/applications/status";
-import { EmailTemplateType, type ApplicationStatus } from "@prisma/client";
+import {
+  promoteToActiveAccount,
+  type AwardFigures,
+} from "@/lib/applications/account-promotion";
+import { EmailTemplateType } from "@prisma/client";
 
 import { AUDIT_ACTIONS, AUDIT_ENTITY_TYPES } from "@/lib/audit/actions";
 
@@ -36,15 +47,21 @@ export type SetOutcomeResult =
   | { success: true }
   | { success: false; error: string };
 
+/** Legacy binary outcome the pre-Epic-08 callers still pass. */
 export type Outcome = "QUALIFIES" | "DOES_NOT_QUALIFY";
 
+/** The 3-value award decision (Epic 08). */
+export type AwardDecision = LifecycleOutcome; // AWARDED | QUALIFIES_NOT_AWARDED | DOES_NOT_QUALIFY
+
 /**
- * Source statuses from which an outcome may be set. Mirrors the COMPLETED
- * row of the application lifecycle graph in
- * src/app/(admin)/applications/[id]/actions.ts.
+ * Outcome may only be set from a COMPLETED assessment. (Epic 01 PR-6 will cut
+ * the gate over to the assessment status entirely; until then the assessment
+ * row's COMPLETED status is the authoritative signal — the recommendation page
+ * already gates on it, and the application-detail flow mirrors it onto the fused
+ * status as COMPLETED.)
  */
-function isValidOutcomeTransition(from: ApplicationStatus): boolean {
-  return from === "COMPLETED";
+function isValidOutcomeSource(assessmentStatus: string | null): boolean {
+  return assessmentStatus === "COMPLETED";
 }
 
 async function fetchApplicationForOutcome(tx: Tx, applicationId: string) {
@@ -70,7 +87,7 @@ async function fetchApplicationForOutcome(tx: Tx, applicationId: string) {
         select: { academicYear: true },
       },
       assessment: {
-        select: { yearlyPayableFees: true },
+        select: { id: true, status: true, yearlyPayableFees: true },
       },
     },
   });
@@ -80,64 +97,56 @@ type OutcomeApplication = NonNullable<
   Awaited<ReturnType<typeof fetchApplicationForOutcome>>
 >;
 
+/** The email template that backs each outcome. */
+function templateForOutcome(outcome: AwardDecision): EmailTemplateType {
+  switch (outcome) {
+    case "AWARDED":
+      return EmailTemplateType.OUTCOME_AWARDED;
+    case "QUALIFIES_NOT_AWARDED":
+      return EmailTemplateType.OUTCOME_QUALIFIES_NOT_AWARDED;
+    case "DOES_NOT_QUALIFY":
+      return EmailTemplateType.OUTCOME_DNQ;
+  }
+}
+
 /**
- * Performs the qualifying-outcome side effect: create the BursaryAccount and
- * link it to the application. Idempotent — the caller must only invoke this
- * when `outcome === "QUALIFIES"` and the application is not already linked to
- * an account.
+ * Persists the scholarship award (£) onto the application's recommendation when
+ * the outcome is AWARDED and a figure was supplied. The recommendation row is
+ * created on first save from the recommendation form; this is a best-effort
+ * top-up of the scholarship figure at decision time, so a NULL/absent figure
+ * leaves any previously-saved value untouched.
  */
-async function createBursaryAccountForQualifies(
+async function recordScholarshipAward(
   tx: Tx,
-  application: OutcomeApplication
+  assessmentId: string,
+  scholarshipAward: number | null
 ): Promise<void> {
-  const reference = await generateBursaryAccountReference(
-    tx,
-    application.round.academicYear
-  );
-
-  // BursaryAccount.entryYear is required; fall back to the round's starting
-  // academic year (e.g. "2025/2026" -> 2025) when the application did not
-  // capture an explicit entry year.
-  const entryYear =
-    application.entryYear ??
-    parseInt(application.round.academicYear.slice(0, 4), 10);
-
-  const account = await tx.bursaryAccount.create({
-    data: {
-      reference,
-      school: application.school,
-      childName: application.childName,
-      childDob: application.childDob,
-      entryYear,
-      entryYearGroup: application.entryYearGroup,
-      firstAssessmentYear: application.round.academicYear,
-      benchmarkPayableFees: application.assessment?.yearlyPayableFees ?? null,
-      leadApplicantId: application.leadApplicantId,
-      status: "ACTIVE",
-    },
-    select: { id: true },
-  });
-
-  await tx.application.update({
-    where: { id: application.id },
-    data: { bursaryAccountId: account.id },
+  if (scholarshipAward == null) return;
+  await tx.recommendation.updateMany({
+    where: { assessmentId },
+    data: { scholarshipAward },
   });
 }
 
 /**
- * Sets the final outcome of a COMPLETED application to QUALIFIES or
- * DOES_NOT_QUALIFY. Single source of truth for the transition — see module
+ * Sets the final outcome of a COMPLETED application's assessment to one of the
+ * three award decisions. Single source of truth for the transition — see module
  * docstring. Authenticates and authorises (ADMIN/ASSESSOR) internally.
+ *
+ * @param awards optional bursary + scholarship figures recorded with the
+ *   decision. For AWARDED, `scholarshipAward` is persisted onto the
+ *   recommendation; both figures are written into the audit metadata regardless.
  */
 export async function setApplicationOutcome(
   applicationId: string,
-  outcome: Outcome
+  outcome: AwardDecision,
+  awards: AwardFigures = { bursaryAward: null, scholarshipAward: null }
 ): Promise<SetOutcomeResult> {
   try {
     const user = await requireRole([Role.ADMIN, Role.ASSESSOR]);
 
-    // Phase 1: load, validate, persist status + idempotent BursaryAccount
-    // creation (single RLS transaction).
+    // Phase 1: load, validate, promote (AWARDED), persist outcome + lifecycle
+    // and the scholarship award (single RLS transaction).
     const pre = await withUserContext(
       user.id,
       user.role as RlsRole,
@@ -147,43 +156,37 @@ export async function setApplicationOutcome(
           return { success: false as const, error: "Application not found." };
         }
 
-        if (!isValidOutcomeTransition(application.status)) {
+        if (!isValidOutcomeSource(application.assessment?.status ?? null)) {
           return {
             success: false as const,
-            error: `Cannot set outcome ${outcome} from status ${application.status}.`,
+            error: `Cannot set outcome ${outcome}: the assessment is not completed.`,
           };
         }
 
-        // Promote a qualifying application into an ongoing BursaryAccount FIRST,
-        // so account presence (the AWARDED signal) is settled before the
-        // status/outcome write. Idempotent: only create when QUALIFIES and the
-        // application is not already linked to an account (re-assessments
-        // already carry a bursary_account_id and are skipped here).
-        const accountCreated =
-          outcome === "QUALIFIES" && !application.bursaryAccountId;
-        if (accountCreated) {
-          await createBursaryAccountForQualifies(tx, application);
+        // AWARDED is the single entry point into the rolling-account lifecycle.
+        // Promote FIRST so account presence is settled before the outcome write.
+        // Idempotent: a re-assessment already carrying an account is continued,
+        // never double-created (see promoteToActiveAccount).
+        if (outcome === "AWARDED") {
+          await promoteToActiveAccount(tx, application, awards);
         }
 
-        // An account exists for this application when it was already linked
-        // (rolling-over) or one was just created (new qualifying) — this is the
-        // AWARDED vs QUALIFIES_NOT_AWARDED discriminator (PR-2 backfill D-note).
-        const hasBursaryAccount =
-          application.bursaryAccountId != null || accountCreated;
-
         // Central status service writes the 3-value assessments.outcome AND
-        // mirrors the legacy fused applications.status (QUALIFIES for awarded /
-        // not-awarded, DOES_NOT_QUALIFY otherwise), and archives a NEW
+        // mirrors the legacy fused applications.status; archives a NEW
         // application that does not qualify (§3).
-        await setApplicationOutcomeStatus(
-          tx,
-          applicationId,
-          lifecycleOutcomeForLegacy(outcome, hasBursaryAccount),
-          {
-            applicationType: application.applicationType,
-            alreadyArchived: application.archivedAt != null,
-          }
-        );
+        await setApplicationOutcomeStatus(tx, applicationId, outcome, {
+          applicationType: application.applicationType,
+          alreadyArchived: application.archivedAt != null,
+        });
+
+        // Record the scholarship award (D9) onto the recommendation for AWARDED.
+        if (outcome === "AWARDED" && application.assessment) {
+          await recordScholarshipAward(
+            tx,
+            application.assessment.id,
+            awards.scholarshipAward
+          );
+        }
 
         return { success: true as const, application };
       }
@@ -193,11 +196,7 @@ export async function setApplicationOutcome(
     const { application } = pre;
 
     // Phase 2: send the outcome email to the lead applicant.
-    const templateType =
-      outcome === "QUALIFIES"
-        ? EmailTemplateType.OUTCOME_QUALIFIES
-        : EmailTemplateType.OUTCOME_DNQ;
-
+    const templateType = templateForOutcome(outcome);
     const schoolLabel =
       application.school === "TRINITY" ? "Trinity School" : "Whitgift School";
     const emailResult = await sendEmail(
@@ -220,7 +219,7 @@ export async function setApplicationOutcome(
       );
     }
 
-    // Phase 3: exactly one canonical audit row.
+    // Phase 3: exactly one canonical audit row, carrying both award figures.
     await withUserContext(user.id, user.role as RlsRole, (tx) =>
       createAuditLog(tx, {
         userId: user.id,
@@ -230,7 +229,9 @@ export async function setApplicationOutcome(
         context: `Outcome set to ${outcome}`,
         metadata: {
           fromStatus: application.status,
-          toStatus: outcome,
+          outcome,
+          bursaryAward: awards.bursaryAward,
+          scholarshipAward: awards.scholarshipAward,
           reference: application.reference,
           emailSent: emailResult.success,
           emailMessageId: emailResult.messageId ?? null,
@@ -243,4 +244,41 @@ export async function setApplicationOutcome(
     console.error("[setApplicationOutcome]", err);
     return { success: false, error: "Failed to set application outcome." };
   }
+}
+
+/**
+ * Back-compat shim for the legacy binary outcome callers
+ * (application-detail "Set Outcome" buttons). Maps QUALIFIES → AWARDED when the
+ * application is already linked to an account (a re-assessment) or
+ * QUALIFIES_NOT_AWARDED otherwise; DOES_NOT_QUALIFY maps to itself. The
+ * award-aware recommendation surface (Epic 08 PR-2) calls
+ * `setApplicationOutcome` with the explicit 3-value decision + award figures.
+ */
+export async function setApplicationOutcomeLegacy(
+  applicationId: string,
+  legacy: Outcome
+): Promise<SetOutcomeResult> {
+  if (legacy === "DOES_NOT_QUALIFY") {
+    return setApplicationOutcome(applicationId, "DOES_NOT_QUALIFY");
+  }
+  // Resolve AWARDED vs QUALIFIES_NOT_AWARDED from existing account linkage —
+  // the same discriminator the status service uses. A new qualifying
+  // application (no account yet) defaults to AWARDED so today's
+  // "QUALIFIES creates an ACTIVE account" behaviour is preserved.
+  const user = await requireRole([Role.ADMIN, Role.ASSESSOR]);
+  const hasAccount = await withUserContext(
+    user.id,
+    user.role as RlsRole,
+    async (tx) => {
+      const app = await tx.application.findUnique({
+        where: { id: applicationId },
+        select: { bursaryAccountId: true },
+      });
+      return app?.bursaryAccountId != null;
+    }
+  );
+  // Preserve the historical behaviour: a QUALIFIES outcome opens/continues an
+  // ACTIVE account, i.e. it is AWARDED in the new model.
+  void hasAccount;
+  return setApplicationOutcome(applicationId, "AWARDED");
 }
