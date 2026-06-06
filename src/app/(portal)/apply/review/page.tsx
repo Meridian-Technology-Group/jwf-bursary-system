@@ -530,10 +530,13 @@ export default async function ReviewPage() {
                 id="issues-heading"
                 className="text-base font-semibold text-red-800"
               >
-                {allErrorGaps.length} issue{allErrorGaps.length === 1 ? "" : "s"} to resolve before you can submit
+                Validation summary — {allErrorGaps.length} item
+                {allErrorGaps.length === 1 ? "" : "s"} still need
+                {allErrorGaps.length === 1 ? "s" : ""} completing
               </h2>
               <p className="mt-1 text-sm text-red-700">
-                Please fix the following before submitting your application.
+                Please complete the outstanding mandatory items below, then return
+                here to submit your application.
               </p>
               <ul className="mt-3 space-y-2">
                 {allErrorGaps.map((gap) => {
