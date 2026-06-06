@@ -28,6 +28,11 @@ export interface ContactListItem {
   school: School;
   entryYear: number;
   entryYearGroup: EntryYearGroup | null;
+  addressLine1: string | null;
+  addressLine2: string | null;
+  town: string | null;
+  postcode: string | null;
+  notes: string | null;
   profileId: string | null;
   bursaryAccountId: string | null;
   archivedAt: Date | null;
@@ -86,6 +91,11 @@ export async function listContacts(
     school: c.school,
     entryYear: c.entryYear,
     entryYearGroup: c.entryYearGroup,
+    addressLine1: c.addressLine1,
+    addressLine2: c.addressLine2,
+    town: c.town,
+    postcode: c.postcode,
+    notes: c.notes,
     profileId: c.profileId,
     bursaryAccountId: c.bursaryAccountId,
     archivedAt: c.archivedAt,
