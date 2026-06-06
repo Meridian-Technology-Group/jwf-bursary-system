@@ -9,7 +9,7 @@
 >
 > **Spec:** [README.md](README.md) (spine + decision register). **Owner:** Brian Wagner.
 
-**Started:** 2026-06-05 · **Current focus:** **🎉 PROGRAMME COMPLETE — all 12 epics shipped to `staging` (Waves 0–4).** Epic 11 (auth & access) is the final epic: MFA env-gating **verified + pinned by tests** (no code change), optional inactivity-logout watcher built (D20, default 30 min, env-configurable, optional-disable, wired into admin + portal), Microsoft-SSO **spike doc only** (D21, no implementation). Remaining work is entirely **outstanding-but-non-blocking client deliverables** (see the PROGRAMME COMPLETE note below). **PR-6a (reader/writer cutover off the fused `applications.status` + dual-write removal + residual `QUALIFIES` remap) shipped on staging.** **Epic 01 PR-6b — the gated column/enum DROP — is now BUILT on `feature/01-pr6b-drop-fused-status`** (drops `applications.status` + the `ApplicationStatus` enum; migration `20260606230000_drop_fused_application_status`; index `(round_id, status)` → `(round_id, form_status)`; `AssessmentOutcome.QUALIFIES` left vestigial; tsc/lint/build/602 tests green) — ⏸ STOP-before-merge: Brian reviews the migration SQL + runs the nonprod dependency-check query, then merges and confirms it applies + staging stays healthy.
+**Started:** 2026-06-05 · **Current focus:** **🎉 PROGRAMME COMPLETE — all 12 epics shipped to `staging` (Waves 0–4).** Epic 11 (auth & access) is the final epic: MFA env-gating **verified + pinned by tests** (no code change), optional inactivity-logout watcher built (D20, default 30 min, env-configurable, optional-disable, wired into admin + portal), Microsoft-SSO **spike doc only** (D21, no implementation). Remaining work is entirely **outstanding-but-non-blocking client deliverables** (see the PROGRAMME COMPLETE note below). **Epic 01 PR-6 cutover COMPLETE (the last gated item):** PR-6a (#176) cut every reader/writer off the fused `applications.status` + removed the dual-write + remapped the residual `QUALIFIES`; PR-6b (#177) **dropped the `applications.status` column + the `ApplicationStatus` enum** (migration `20260606230000_drop_fused_application_status`; index `(round_id, status)` → `(round_id, form_status)`; `AssessmentOutcome.QUALIFIES` left vestigial/unused). Both shipped to staging and **applied to nonprod**; verified post-drop: column + type gone, 28 applications intact, system fully on the 3-lifecycle model. **The entire programme + the gated cutover are done.** No outstanding *engineering* work — only client deliverables (reason codes D4, declaration D11, Epic 07 historical figures, Epic 09 H7–H10, D6 DPO retention years) and `staging→main` promotion (Brian's call) remain.
 
 ---
 
@@ -128,8 +128,8 @@ value is left vestigial (0 rows / 0 refs; removable later via an enum swap).
   non-test reads/writes of `applications.status` and zero `ApplicationStatus`
   enum-*value* usages remain in `src/` (the column stays in `schema.prisma`,
   still `@deprecated`). tsc + lint + `next build` + 602 vitest tests green.
-  ⏸ awaiting merge → live-on-staging confirmation before PR-6b.
-- [x] **PR-6b** — ✅ **column/enum DROP shipped** (PR #TBD, branch
+  Shipped (#176), confirmed live on staging before PR-6b ran.
+- [x] **PR-6b** — ✅ **column/enum DROP shipped & applied to nonprod** (#177, branch
   `feature/01-pr6b-drop-fused-status`). Removed `applications.status` from
   `schema.prisma` and the entire `ApplicationStatus` enum; DDL migration
   `20260606230000_drop_fused_application_status` drops the column + type and
