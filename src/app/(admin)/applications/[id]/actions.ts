@@ -28,7 +28,7 @@ import { sendEmail } from "@/lib/email/send";
 import { humaniseSlot } from "@/lib/documents/slots";
 import { deleteDocument } from "@/lib/storage/documents";
 import { createSupabaseAdminClient } from "@/lib/auth/supabase-admin";
-import { setApplicationOutcome } from "@/lib/applications/set-outcome-core";
+import { setApplicationOutcomeLegacy } from "@/lib/applications/set-outcome-core";
 import {
   getSecondaryContributorForGdpr,
   decideSecondaryProfileErasure,
@@ -347,7 +347,7 @@ export async function setOutcome(
   applicationId: string,
   outcome: "QUALIFIES" | "DOES_NOT_QUALIFY"
 ): Promise<ActionResult> {
-  const result = await setApplicationOutcome(applicationId, outcome);
+  const result = await setApplicationOutcomeLegacy(applicationId, outcome);
   if (result.success) {
     revalidateApplicationPaths(applicationId);
   }

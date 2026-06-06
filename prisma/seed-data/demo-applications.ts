@@ -996,9 +996,9 @@ export const assessments = [
     // the post-completion editable synopsis alongside an otherwise-locked form.
     synopsis:
       "## Bursary Assessment Details\nNew application, Year 7 entry. Both parents PAYE, NHS and teaching. Renting in Croydon. Cat 3 family. No previous bursary. Straightforward application.\n\n## Living Conditions / Other JWF Children\nFamily renting at £1,850/month in Croydon. Notional rent applies (Cat 3: £18,000). No property ownership. Rent confirmed against bank statements.\n\n## Debt Situation\nCar loan outstanding £6,500 at £280/month. No other significant debts. Credit checks satisfactory.\n\n## Other Fees with the Foundation\nNo other independent school fees. Younger sibling at state primary.\n\n## Staff Situation\nNo connection to school staff or Foundation trustees identified.\n\n## Financial Profile Impact\nP60s verified for both parents. Bank statements reviewed for 3 months. Income consistent with declared figures. Savings in line with stated amounts. No anomalies detected.",
-    // Status
+    // Status — Epic 08: AWARDED is the panel's "Approved Bursary" outcome.
     status: "COMPLETED" as const,
-    outcome: "QUALIFIES" as const,
+    outcome: "AWARDED" as const,
     completedAt: new Date("2026-02-28T16:00:00Z"),
   },
   // Patel — PAUSED (in progress)
@@ -1072,7 +1072,7 @@ export const assessments = [
     synopsis:
       "## Bursary Assessment Details\nRe-assessment Year 9. Sole parent household, no change in circumstances from 2025/26 assessment. Sibling Amara now applying for Trinity (TS-2601). Sibling income absorption modelled.\n\n## Living Conditions / Other JWF Children\nRenting at £1,350/month, Cat 1 notional rent £13,000 applies. No property assets.\n\n## Debt Situation\nNo debts. Clean credit profile.\n\n## Other Fees with the Foundation\nAmara's Trinity application (TS-2601) being assessed separately. Sibling link created.\n\n## Staff Situation\nNo connections identified.\n\n## Financial Profile Impact\nSingle P60 verified. Bank statements show consistent income. Child Tax Credit and Child Benefit confirmed. Low savings are consistent with sole parent income level. No concerns.",
     status: "COMPLETED" as const,
-    outcome: "QUALIFIES" as const,
+    outcome: "AWARDED" as const,
     completedAt: new Date("2026-02-25T11:30:00Z"),
   },
 ];
@@ -1298,12 +1298,15 @@ export const recommendations = [
     incomeCategory: "Middle income — combined net £78,700",
     propertyCategory: 1,
     bursaryAward: 22456,
+    // Epic 08 / D9 — distinct merit scholarship award (£) recorded alongside the
+    // means-tested bursary. Demonstrates a non-null scholarshipAward fixture.
+    scholarshipAward: 3000,
     yearlyPayableFees: 11155,
     monthlyPayableFees: 929.58,
     dishonestyFlag: false,
     creditRiskFlag: false,
     summary:
-      "Recommend bursary award of £22,456 (70.7% of gross fees). Family demonstrates genuine need and the application is fully supported by documentary evidence. No concerns identified.",
+      "Recommend bursary award of £22,456 (70.7% of gross fees) plus a £3,000 merit scholarship. Family demonstrates genuine need and the application is fully supported by documentary evidence. No concerns identified.",
   },
   {
     id: REC_WILLIAMS_M_ID,
@@ -1315,6 +1318,8 @@ export const recommendations = [
     incomeCategory: "Low income — net £27,900 (sole parent)",
     propertyCategory: 1,
     bursaryAward: 29532,
+    // No scholarship element on this re-assessment (Epic 08 / D9).
+    scholarshipAward: null,
     yearlyPayableFees: 2664,
     monthlyPayableFees: 222,
     dishonestyFlag: false,

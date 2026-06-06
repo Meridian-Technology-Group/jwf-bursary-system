@@ -43,7 +43,7 @@ Legend: ⬜ not started · 🟡 in progress · ✅ shipped to staging · 🚫 bl
 | 2 | [05 Parent portal experience](plans/05-parent-portal-experience.md) | ✅ | deps met (01, 02, 03 ✅) · D2/D10 ✅ | #159 (PR-1 home guidance + chooser), #160 (PR-2 deadline/status/summary), #161 (PR-3 history + missing-doc upload) — **stacked, merge 159→160→161** |
 | 3 | [06 Assessor experience & UI](plans/06-assessor-experience-and-ui.md) | 🟡 (both PRs open) | 02 ✅ (dep) | PR-1 synopsis consolidation (`feature/06-synopsis-consolidation`); PR-2 layout + calc strip + 30+ doc nav + field-map (`feature/06-workspace-layout`, stacks on PR-1) — **merge PR-1 → PR-2**; → ✅ when PR-2 lands |
 | 3 | [07 Calculations & fees](plans/07-assessment-calculations-and-fees.md) | 🟡 | 06 (dep) · D8/D14 narrow, non-blocking · PR-7 historical-validation gated on client data | PR-1 fee resolver + engine next-year + seed (`feature/07-fee-resolver-engine-nextyear`); PR-2 wiring + auto-populate-then-confirm UI (`feature/07-wiring-and-autopopulate`, stacks on PR-1) — **merge PR-1 → PR-2**; PR-7 (historical fixtures) FLAGGED — needs client historicals |
-| 3 | [08 Recommendation & outcome](plans/08-recommendation-and-outcome.md) | ⏳ deps | 01, 07 (deps) · D7/D9 ✅ · D4 artifact (placeholders) | — |
+| 3 | [08 Recommendation & outcome](plans/08-recommendation-and-outcome.md) | 🟡 (both PRs open) | 01, 07 (deps) · D7/D9 ✅ · D4 artifact (placeholders) | PR-1 award model + outcome writer + emails (`feature/08-award-model-and-emails`); PR-2 award-decision UX + scholarship/siblings/options + PDF removal + reason-code util (`feature/08-award-ux-and-pdf-removal`, stacks on PR-1) — **merge PR-1 → PR-2**; → ✅ when PR-2 lands (D4 reason-code swap outstanding-but-non-blocking) |
 | 3 | [09 Complex household / second parent](plans/09-complex-household-and-second-parent.md) | ⏳ deps | 02, 06 (deps) · D15–D17 build to workbook FAQ | — |
 | 4 | [10 Data retention & account lifecycle](plans/10-data-retention-and-account-lifecycle.md) | ⏳ deps | 01, 03 (deps) · D6 ✅ (DPO signs years) · D19 narrow | — |
 | 4 | [11 Auth & access](plans/11-auth-and-access.md) | ⬜ | none · D21 ✅ (SSO deferred) · D20 ✅ (idle watcher) | — |
@@ -612,6 +612,77 @@ PR-1 → PR-2.** PR-7 (historical validation) is **gated on client data** — fl
 
 ---
 
+## Active — Epic 08 (recommendation & outcome)
+
+Wave 3, deps 01 + 07. D7/D9 ✅ (meeting). D4 (real reason codes) is a swap-in
+artifact — built on the existing placeholders, non-blocking. Plan §6 lists eight
+PR-sized items; executed as **two cohesive PRs stacked off `staging`** to keep the
+schema/server/email/seed backend (PR-1) separate from the assessor-facing UI churn
++ PDF removal (PR-2) and minimise overlap on the shared recommendation glue.
+**Merge order: PR-1 → PR-2.**
+
+**PR-1 — award model + outcome writer + outcome emails + seed** (§6 PR-1, PR-2,
+PR-6, PR-8 backend) — `feature/08-award-model-and-emails` (off `staging`):
+- [x] §6 PR-1 — `Recommendation.scholarshipAward Decimal?` (D9) + additive
+  migration `20260606180000_recommendation_scholarship_award` (nullable, no
+  backfill); threaded through `UpsertRecommendationInput`,
+  `saveRecommendationAction` (new `scholarshipAward` field), and
+  `upsertRecommendation` (create + update).
+- [x] §6 PR-2 — re-pointed `set-outcome-core.ts` to the **3-value award
+  decision** (AWARDED | QUALIFIES_NOT_AWARDED | DOES_NOT_QUALIFY); writes
+  `assessments.outcome` via the central status service (Epic 01); the gate now
+  reads the **assessment COMPLETED** status (not the fused `applications.status`).
+  AWARDED hands off to the new **Epic 10 interface**
+  `promoteToActiveAccount` (`lib/applications/account-promotion.ts`) — idempotent
+  (continues an existing rolling account, never double-creates), default impl
+  preserves today's "create ACTIVE account, no schedule" behaviour; the schedule
+  is Epic 10's. Scholarship award (£) persisted onto the recommendation on
+  AWARDED; audit metadata carries the chosen outcome + both award figures. Legacy
+  binary callers (application-detail + recommendation actions) routed through a
+  `setApplicationOutcomeLegacy` shim (QUALIFIES → AWARDED) so nothing breaks
+  pre-PR-2; new `setApplicationAwardAction` exposes the 3-value path for PR-2.
+- [x] §6 PR-6 — outcome emails for the 3-value lifecycle: new
+  `EmailTemplateType.OUTCOME_AWARDED` + `OUTCOME_QUALIFIES_NOT_AWARDED` (enum-add
+  migration `20260606180100_outcome_email_enums`, split from the seed per PG
+  ADD VALUE rules); idempotent template seed migration
+  `20260606180200_seed_outcome_email_templates` (single source of truth, kept in
+  sync with `seed-data/email-templates.ts`); `templateForOutcome` maps each
+  outcome → its letter. Legacy `OUTCOME_QUALIFIES`/`OUTCOME_DNQ` rows retained.
+  Editor labels + merge-test fixtures updated.
+- [x] §6 PR-8 (backend) — demo seed: both COMPLETED assessments → `AWARDED`;
+  Okafor recommendation carries a non-null `scholarshipAward` (£3,000), Williams-M
+  none. (QUALIFIES_NOT_AWARDED / DECLINED demo fixtures need a third COMPLETED
+  assessment without an account — deferred to avoid restructuring the seed's
+  account/sibling invariants; the 3-value model + recording are fully unit-tested.)
+- [x] 12 new/rewritten tests (set-outcome-core 6 across all outcomes +
+  scholarship recording + idempotency + gate; account-promotion 3; merge fixtures
+  2 + 1). prisma format/validate/tsc/lint/build green; 465 tests.
+
+**PR-2 — award-decision UX + scholarship/siblings/options + PDF removal +
+reason-code util** (§6 PR-3, PR-4, PR-5, PR-7) —
+`feature/08-award-ux-and-pdf-removal` (**stacks on PR-1**):
+- [ ] §6 PR-3 — three-way Award / Qualifies-not-awarded / Decline control +
+  rebuilt confirm dialog + real terminology; read-only predicate switched to the
+  Epic 01 outcome/lifecycle state (synopsis stays editable per Epic 06).
+- [ ] §6 PR-4 — scholarship-award £ input; read-only sibling-context panel
+  (`queries/siblings.ts`); options-comparison panel over the pure engine; persist
+  the chosen scenario's award figures.
+- [ ] §6 PR-5 — remove the assessor PDF (D7): delete the route + renderer +
+  Download button + `FileDown` import. **Keep `@react-pdf/renderer`** — Epic 05's
+  applicant submission PDF (`/api/pdf/submission/[id]`) is now the sole remaining
+  consumer; the dependency must stay.
+- [ ] §6 PR-7 (mechanism only) — shared `categoryForCode` util reconciling the
+  selector + settings range→category buckets, so the real codes (D4) swap in via
+  `seed:reference` cleanly. **Placeholders kept; D4 swap outstanding-but-non-blocking.**
+
+> **D4 (real reason codes)** remains outstanding — Charlotte supplies the real
+> numbers + labels; they swap in via the idempotent `seed:reference` upsert with
+> the placeholders deprecated (not deleted, so historical links survive). The
+> selection/recording mechanism + shared `categoryForCode` util are built; only
+> the data swap is pending. **Non-blocking.**
+
+---
+
 ## Decision register — execution view
 
 Mirrors [README §5](README.md#5-decision-register). Reconciled 2026-06-05 against
@@ -652,6 +723,31 @@ Wave 2 → Wave 3 → Wave 4.
 
 ## Change log
 
+- **2026-06-06** — **Epic 08 OPENED (Wave 3)** — PR-1 (`feature/08-award-model-and-emails`,
+  off `staging`): real award terminology + the outcome→account hinge. New
+  `Recommendation.scholarshipAward Decimal?` (D9) records the merit scholarship as a
+  distinct £ award alongside the means-tested bursary (additive migration
+  `20260606180000_recommendation_scholarship_award`, nullable, no backfill;
+  `Assessment.scholarshipPct` kept as the fee-calc lever). `set-outcome-core.ts`
+  re-pointed to the **3-value award decision** (AWARDED | QUALIFIES_NOT_AWARDED |
+  DOES_NOT_QUALIFY), writing `assessments.outcome` via the Epic 01 status service and
+  gating on the **assessment COMPLETED** status. AWARDED hands off to the new Epic 10
+  seam `promoteToActiveAccount` (`lib/applications/account-promotion.ts`) — idempotent
+  (continues an existing rolling account, never double-creates), default impl preserves
+  today's "create ACTIVE account, no schedule"; Epic 10 adds the schedule behind the
+  same signature. Scholarship £ persisted onto the recommendation on AWARDED; audit
+  metadata now carries the outcome + both award figures. Outcome emails extended to the
+  3 outcomes: new `EmailTemplateType.OUTCOME_AWARDED` + `OUTCOME_QUALIFIES_NOT_AWARDED`
+  (enum-add migration `20260606180100_outcome_email_enums` split from the idempotent
+  template seed `20260606180200_seed_outcome_email_templates` per PG ADD VALUE rules;
+  legacy QUALIFIES/DNQ rows retained). Legacy binary callers routed through a
+  `setApplicationOutcomeLegacy` shim so nothing breaks before PR-2's UI. Demo seed:
+  both COMPLETED assessments → AWARDED, Okafor carries a £3,000 scholarship. 12
+  new/rewritten tests; prisma format/validate/tsc/lint/build green; 465 tests. PR-2
+  (award-decision UX + scholarship/siblings/options panels + assessor-PDF removal +
+  shared reason-code `categoryForCode` util) stacks on PR-1. **D4 reason-code data swap
+  is outstanding-but-non-blocking.** **DO NOT MERGE — merge order PR-1 → PR-2.**
+  Migration SQL + read-only nonprod validation in the PR body.
 - **2026-06-06** — **Epic 07 PR-2** (`feature/07-wiring-and-autopopulate`, stacks
   on PR-1): wiring + auto-populate-then-confirm UI. `Round.academicYear` threaded
   into `getConfigsForAssessment` so the assessor form receives the current-year

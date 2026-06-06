@@ -364,6 +364,12 @@ model Recommendation {
   incomeCategory      String?                    @map("income_category")
   propertyCategory    Int?                       @map("property_category")
   bursaryAward        Decimal?                   @map("bursary_award") @db.Decimal(10, 2)
+  /// Distinct merit/academic scholarship award (£), recorded alongside the
+  /// means-tested bursary award (Epic 08, Decision D9). Additive/nullable —
+  /// NULL means no scholarship award was recorded for this recommendation.
+  /// The 0–100 Assessment.scholarshipPct remains the fee-calculation lever; this
+  /// is the recorded £ figure the rolling account carries forward (Epic 10).
+  scholarshipAward    Decimal?                   @map("scholarship_award") @db.Decimal(10, 2)
   yearlyPayableFees   Decimal?                   @map("yearly_payable_fees") @db.Decimal(10, 2)
   monthlyPayableFees  Decimal?                   @map("monthly_payable_fees") @db.Decimal(10, 2)
   dishonestyFlag      Boolean                    @default(false) @map("dishonesty_flag")
@@ -742,6 +748,8 @@ enum EmailTemplateType {
   MISSING_DOCS
   OUTCOME_QUALIFIES
   OUTCOME_DNQ
+  OUTCOME_AWARDED
+  OUTCOME_QUALIFIES_NOT_AWARDED
   REASSESSMENT
   REMINDER
   INVITE_STAFF
