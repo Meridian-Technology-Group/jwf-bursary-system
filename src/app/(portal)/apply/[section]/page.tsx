@@ -27,7 +27,11 @@ import {
   resolveOwningContributorId,
 } from "@/lib/db/queries/contributors";
 import { SectionPageClient } from "./section-page-client";
-import { HIDDEN_REASSESSMENT_SECTIONS, PREPOPULATED_SECTIONS } from "@/lib/db/queries/reassessment";
+import {
+  HIDDEN_REASSESSMENT_SECTIONS,
+  PREPOPULATED_SECTIONS,
+  isRollingOverApplication,
+} from "@/lib/db/queries/reassessment";
 
 // ─── Slug → ApplicationSectionType map ───────────────────────────────────────
 
@@ -77,7 +81,7 @@ const REASSESSMENT_SECTION_ORDER: ApplicationSectionType[] = SECTION_ORDER.filte
 
 const SECTION_TITLES: Record<ApplicationSectionType, string> = {
   CHILD_DETAILS: "Details of Child",
-  FAMILY_ID: "Family Identification",
+  FAMILY_ID: "Details of Child — Identification",
   PARENT_DETAILS: "Parent / Guardian Details",
   DEPENDENT_CHILDREN: "Dependent Children",
   DEPENDENT_ELDERLY: "Dependent Elderly",
@@ -130,9 +134,14 @@ export default async function SectionPage({ params }: PageProps) {
   }
 
   const isReassessment = application.isReassessment;
+  // ID-section visibility is keyed on Epic 01's explicit applicationType (D-PR4):
+  // NEW shows FAMILY_ID; ROLLING_OVER hides it. Falls back to isReassessment for
+  // any pre-backfill row.
+  const isRollingOver = isRollingOverApplication(application);
 
-  // For re-assessments, FAMILY_ID is completely hidden — skip to next section
-  if (isReassessment && HIDDEN_REASSESSMENT_SECTIONS.includes(sectionType)) {
+  // For a rolling-over application, FAMILY_ID is completely hidden — skip to next
+  // section (identity documents are already on file from the first application).
+  if (isRollingOver && HIDDEN_REASSESSMENT_SECTIONS.includes(sectionType)) {
     // Find the next visible section
     const sectionOrder = REASSESSMENT_SECTION_ORDER;
     const firstSection = sectionOrder[0];
@@ -140,7 +149,7 @@ export default async function SectionPage({ params }: PageProps) {
   }
 
   // Determine the visible section order based on application type
-  const activeSectionOrder = isReassessment
+  const activeSectionOrder = isRollingOver
     ? REASSESSMENT_SECTION_ORDER
     : SECTION_ORDER;
 
@@ -170,6 +179,7 @@ export default async function SectionPage({ params }: PageProps) {
     parent1Status,
     parent2Status,
     relationshipStatus,
+    parent1Address,
   } = await withUserContext(user.id, user.role as RlsRole, async (tx) => {
       const [section, docs] = await Promise.all([
         getSectionData(tx, application.id, sectionType, ownerContributorId),
@@ -188,10 +198,51 @@ export default async function SectionPage({ params }: PageProps) {
         childName = childData?.childFullName ?? undefined;
       }
 
+      // CHILD_DETAILS shows the stored Parent 1 address read-only when the child
+      // shares it (D1, workbook §3 Q7). Read it from PARENT_DETAILS.
+      let parent1Address:
+        | {
+            addressLine1?: string;
+            addressLine2?: string;
+            city?: string;
+            postcode?: string;
+            country?: string;
+          }
+        | undefined;
+      if (sectionType === "CHILD_DETAILS") {
+        const parentSection = await getSectionData(
+          tx,
+          application.id,
+          "PARENT_DETAILS",
+          ownerContributorId
+        );
+        const parentData = parentSection?.data as {
+          parent1Contact?: {
+            addressLine1?: string;
+            addressLine2?: string;
+            city?: string;
+            postcode?: string;
+            country?: string;
+          };
+        } | null;
+        parent1Address = parentData?.parent1Contact;
+      }
+
       let soleParent: boolean | undefined;
       let parent1Status: string | undefined;
       let parent2Status: string | undefined;
       let relationshipStatus: string | undefined;
+      // DECLARATION needs isSoleParent to decide whether to show the P2 tick.
+      if (sectionType === "DECLARATION") {
+        const parentSection = await getSectionData(
+          tx,
+          application.id,
+          "PARENT_DETAILS",
+          ownerContributorId
+        );
+        const parentData = parentSection?.data as { isSoleParent?: boolean } | null;
+        soleParent = parentData?.isSoleParent;
+      }
       if (sectionType === "PARENTS_INCOME") {
         const parentSection = await getSectionData(
           tx,
@@ -219,6 +270,7 @@ export default async function SectionPage({ params }: PageProps) {
         parent1Status,
         parent2Status,
         relationshipStatus,
+        parent1Address,
       };
     });
 
@@ -270,10 +322,12 @@ export default async function SectionPage({ params }: PageProps) {
       applicationId={application.id}
       existingData={existingSection?.data ?? null}
       applicationSchool={application.school}
+      lockedSchool={application.school}
       applicationChildName={application.childName}
       academicYear={application.round?.academicYear ?? null}
       documentMap={documentMap}
       childFullName={childFullName}
+      parent1Address={parent1Address}
       isSoleParent={isSoleParent}
       parent1EmploymentStatus={parent1Status}
       parent2EmploymentStatus={parent2Status}

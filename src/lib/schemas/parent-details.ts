@@ -45,20 +45,40 @@ const WORKING_STATUSES = [
 
 const UK_POSTCODE_RE = /^[A-Z]{1,2}\d[A-Z\d]?\s?\d[A-Z]{2}$/i;
 
-export const parentContactSchema = z.object({
-  title: parentTitleSchema,
-  firstName: z.string().min(1, "First name is required"),
-  lastName: z.string().min(1, "Last name is required"),
-  telephone: z.string().optional(),
-  telephone2: z.string().optional(),
-  mobile: z.string().optional(),
-  email: z.string().optional(),
-  addressLine1: z.string().min(1, "Address line 1 is required"),
-  addressLine2: z.string().optional(),
-  city: z.string().min(1, "City or town is required"),
-  postcode: z.string().min(1, "Postcode is required"),
-  country: z.string().min(1, "Country is required"),
-});
+export const parentContactSchema = z
+  .object({
+    title: parentTitleSchema,
+    firstName: z.string().min(1, "First name is required"),
+    lastName: z.string().min(1, "Last name is required"),
+    telephone: z.string().optional(),
+    telephone2: z.string().optional(),
+    mobile: z.string().optional(),
+    // Email is MANDATORY (meeting-findings) — captured explicitly even when the
+    // family was invited by email.
+    email: z
+      .string()
+      .min(1, "Email address is required")
+      .email("Enter a valid email address"),
+    addressLine1: z.string().min(1, "Address line 1 is required"),
+    addressLine2: z.string().optional(),
+    city: z.string().min(1, "City or town is required"),
+    postcode: z.string().min(1, "Postcode is required"),
+    country: z.string().min(1, "Country is required"),
+  })
+  .superRefine((data, ctx) => {
+    // A contact telephone is MANDATORY (meeting-findings). At least one of
+    // mobile / telephone must be provided.
+    const hasPhone =
+      (data.mobile && data.mobile.trim().length > 0) ||
+      (data.telephone && data.telephone.trim().length > 0);
+    if (!hasPhone) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "A contact telephone or mobile number is required",
+        path: ["mobile"],
+      });
+    }
+  });
 
 export const parentEmploymentSchema = z
   .object({
