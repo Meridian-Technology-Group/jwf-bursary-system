@@ -65,6 +65,44 @@ function parentDetailsRules(earner: Earner): DocumentRule[] {
   ];
 }
 
+// ─── PARENT_DETAILS household evidence (Epic 09) ─────────────────────────────
+//
+// Household-level (not per-earner) evidence asks driven by the relationship
+// status / guardian facet. Death certificate (H3 widowed) is an equality gate
+// → a structural predicate; guardianship evidence (H4, D16) is a boolean gate
+// on `isGuardian`. Both are error-severity gaps that block submit until the
+// document is provided, mirroring the left-self-employment / scholarship asks.
+
+function householdEvidenceRules(): DocumentRule[] {
+  return [
+    {
+      kind: "structural",
+      id: "DEATH_CERTIFICATE",
+      label: "A death certificate is required for a widowed parent/guardian",
+      fieldRef: "deathCertificateDocumentId",
+      predicate: (blob, uploadedSlots) => {
+        if (blob.relationshipStatus !== "WIDOWED") return true; // not applicable
+        const id = blob.deathCertificateDocumentId;
+        return (
+          (typeof id === "string" && id.length > 0) ||
+          uploadedSlots.has("DEATH_CERTIFICATE")
+        );
+      },
+    },
+    {
+      kind: "requiredIfTrue",
+      id: "GUARDIANSHIP_EVIDENCE",
+      truePath: "isGuardian",
+      label: "Evidence of guardianship / foster status is required",
+      fieldRef: "guardianshipDocumentId",
+      doc: {
+        docIdPath: "guardianshipDocumentId",
+        slot: "GUARDIANSHIP_EVIDENCE",
+      },
+    },
+  ];
+}
+
 // ─── PARENTS_INCOME (status-driven sub-tables — Epic 02, D3) ──────────────────
 //
 // The workbook rule: "if a sub-section has a value other than £0, its upload is
@@ -463,6 +501,7 @@ export const SECTION_RULES: Partial<Record<SectionType, DocumentRule[]>> = {
   PARENT_DETAILS: [
     ...parentDetailsRules("PARENT_1"),
     ...parentDetailsRules("PARENT_2"),
+    ...householdEvidenceRules(),
   ],
   DEPENDENT_CHILDREN: dependentChildrenStructural,
   DEPENDENT_ELDERLY: dependentElderlyRules,
@@ -475,4 +514,4 @@ export const SECTION_RULES: Partial<Record<SectionType, DocumentRule[]>> = {
 
 // Re-export the earner rule builders so the income rebuild PR can compose the
 // status-driven sub-table rules without re-deriving the suffix/label/prefix.
-export { earnerMeta, parentDetailsRules, incomeRules };
+export { earnerMeta, parentDetailsRules, incomeRules, householdEvidenceRules };

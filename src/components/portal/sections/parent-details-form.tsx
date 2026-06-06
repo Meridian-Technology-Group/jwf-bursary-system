@@ -38,6 +38,12 @@ import { CountryCombobox } from "@/components/portal/form-fields/country-combobo
 import { FileUpload, type UploadedDocument } from "@/components/portal/file-upload";
 import type { ParentDetailsFormValues } from "@/lib/schemas/parent-details";
 import type { DocumentMeta } from "@/lib/db/queries/applications";
+import {
+  deriveHouseholdScenario,
+  EVIDENCE_LABELS,
+  type RelationshipStatus,
+} from "@/lib/household/rules";
+import { AlertTriangle, ShieldAlert } from "lucide-react";
 
 /** Resolve a stored document id to the FileUpload `existingDocument` shape. */
 function resolveDoc(
@@ -697,6 +703,62 @@ function ParentEmploymentFields({
   );
 }
 
+// ─── Household evidence upload (Epic 09: death cert / guardianship) ───────────
+
+interface HouseholdEvidenceUploadProps {
+  field: "deathCertificateDocumentId" | "guardianshipDocumentId";
+  slot: string;
+  label: string;
+  applicationId: string;
+  documentMap?: Record<string, DocumentMeta>;
+}
+
+function HouseholdEvidenceUpload({
+  field,
+  slot,
+  label,
+  applicationId,
+  documentMap,
+}: HouseholdEvidenceUploadProps) {
+  const { control, setValue, getValues } =
+    useFormContext<ParentDetailsFormValues>();
+  const initialDocId = React.useRef(getValues(field));
+  const existing = React.useMemo(
+    () => resolveDoc(initialDocId.current, documentMap),
+    [documentMap]
+  );
+
+  return (
+    <>
+      <FileUpload
+        slot={slot}
+        label={label}
+        hint="You can upload this now, or any time before you submit the application."
+        applicationId={applicationId}
+        existingDocument={existing}
+        onUploadComplete={(doc: UploadedDocument) =>
+          setValue(field, doc.id, { shouldValidate: true, shouldDirty: true })
+        }
+        onRemove={() =>
+          setValue(field, undefined, { shouldValidate: true, shouldDirty: true })
+        }
+      />
+      <FormField
+        control={control}
+        name={field}
+        render={() => (
+          <FormItem className="hidden" aria-hidden="true">
+            <FormControl>
+              <input type="hidden" />
+            </FormControl>
+            <FormMessage />
+          </FormItem>
+        )}
+      />
+    </>
+  );
+}
+
 // ─── Main component ───────────────────────────────────────────────────────────
 
 interface ParentDetailsFormProps {
@@ -720,6 +782,52 @@ export function ParentDetailsForm({
   const { control } = useFormContext<ParentDetailsFormValues>();
 
   const isSoleParent = useWatch({ control, name: "isSoleParent" });
+  const relationshipStatus = useWatch({ control, name: "relationshipStatus" });
+  const isGuardian = useWatch({ control, name: "isGuardian" });
+  const custodyArrangement = useWatch({ control, name: "custodyArrangement" });
+  const hasSchoolFeesCourtOrder = useWatch({
+    control,
+    name: "hasSchoolFeesCourtOrder",
+  });
+  const isRemarriedSoleParent = useWatch({
+    control,
+    name: "isRemarriedSoleParent",
+  });
+  const financesNotDisentangled = useWatch({
+    control,
+    name: "financesNotDisentangled",
+  });
+
+  // Epic 09: derive the live household scenario from the watched values so the
+  // form reveals exactly the right question subset (D15/D16/D17) and the H7
+  // cannot-support notice — using the SAME rules module the assessor reads.
+  // Suppressed entirely in secondaryMode (the second parent never answers the
+  // household-level questions).
+  const handling = React.useMemo(
+    () =>
+      deriveHouseholdScenario({
+        relationshipStatus: (relationshipStatus ??
+          "SINGLE") as RelationshipStatus,
+        isSoleParent: isSoleParent === true,
+        isGuardian: isGuardian === true,
+        custodyArrangement: custodyArrangement ?? "SOLE",
+        hasSchoolFeesCourtOrder: hasSchoolFeesCourtOrder === true,
+        isRemarriedSoleParent: isRemarriedSoleParent === true,
+        financesNotDisentangled: financesNotDisentangled === true,
+      }),
+    [
+      relationshipStatus,
+      isSoleParent,
+      isGuardian,
+      custodyArrangement,
+      hasSchoolFeesCourtOrder,
+      isRemarriedSoleParent,
+      financesNotDisentangled,
+    ]
+  );
+
+  const isSeparatedOrDivorced =
+    relationshipStatus === "SEPARATED" || relationshipStatus === "DIVORCED";
 
   return (
     <div className="space-y-8">
@@ -775,6 +883,158 @@ export function ParentDetailsForm({
           </FormItem>
         )}
       />
+
+      {/* ── Epic 09 household questions — suppressed for the second parent
+          (they answer only their own subset). Each reveal is driven by the
+          relationship status / facets so we ask only the right question set. ── */}
+      {!secondaryMode && (
+        <div className="space-y-6 rounded-md border border-slate-200 bg-slate-50 p-4">
+          {/* D16 — foster carer / legal guardian facet */}
+          <YesNoToggle
+            control={control}
+            name="isGuardian"
+            label="Are you applying as a foster carer or legal guardian?"
+            description="If you are the child's guardian rather than a natural parent, we will ask for evidence of guardianship."
+          />
+
+          {/* Separated / divorced — school-fees court order (H7 discriminator)
+              and the finances-in-flux (H9) facet. */}
+          <ConditionalField show={isSeparatedOrDivorced}>
+            <YesNoToggle
+              control={control}
+              name="financesNotDisentangled"
+              label="Are your finances still being separated (for example, mid-divorce)?"
+              description="This helps the assessor understand whether the household income is settled."
+            />
+          </ConditionalField>
+
+          {/* H7 — divorced + school-fees court order question */}
+          <ConditionalField show={relationshipStatus === "DIVORCED"}>
+            <YesNoToggle
+              control={control}
+              name="hasSchoolFeesCourtOrder"
+              label="Is there a court order specifically for the payment of school fees?"
+              description="A court order that already covers the school fees affects whether a bursary can be considered."
+            />
+          </ConditionalField>
+
+          {/* H7 cannot-support notice — inline, NON-blocking. The applicant may
+              still submit; it explains the likely outcome (mirrors the FAQ). */}
+          {handling.gate === "CANNOT_SUPPORT" && (
+            <div
+              className="flex items-start gap-2 rounded-md border border-rose-200 bg-rose-50 px-3 py-2.5 text-sm text-rose-800"
+              role="status"
+            >
+              <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+              <div>
+                <p className="font-semibold">
+                  This may preclude support for a bursary
+                </p>
+                <p className="mt-1 leading-relaxed">
+                  Because the school fees are already covered by a court order,
+                  they are an existing legal liability. The Foundation will still
+                  review your application, but a discretionary bursary cannot
+                  usually be awarded where a court order for school fees is in
+                  place. You may continue and submit if you wish.
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* D17 — remarried sole parent (three incomes via two-earner +
+              maintenance). Offered when the parent is in a couple (not sole). */}
+          <ConditionalField show={isSoleParent === false}>
+            <YesNoToggle
+              control={control}
+              name="isRemarriedSoleParent"
+              label="Have you remarried or formed a new partnership since the child's other natural parent?"
+              description="If so, we assess your current household together and capture the absent natural parent's contribution as maintenance."
+            />
+          </ConditionalField>
+
+          {/* D15 — shared custody split. Offered when there is a non-resident
+              natural parent (separated/divorced, not sole). */}
+          <ConditionalField show={isSeparatedOrDivorced && isSoleParent === false}>
+            <FormField
+              control={control}
+              name="custodyArrangement"
+              render={({ field }) => (
+                <FormItem className="space-y-2">
+                  <FormLabel>How is the child&apos;s custody arranged?</FormLabel>
+                  <FormControl>
+                    <RadioGroup
+                      onValueChange={field.onChange}
+                      value={field.value ?? "SOLE"}
+                      className="space-y-2"
+                    >
+                      <div className="flex items-center gap-2">
+                        <RadioGroupItem value="SOLE" id="custody-sole" />
+                        <Label htmlFor="custody-sole" className="font-normal">
+                          The child lives mainly with one parent
+                        </Label>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <RadioGroupItem value="SHARED_MAIN_LIMITED" id="custody-main" />
+                        <Label htmlFor="custody-main" className="font-normal">
+                          Shared — one parent has the main day-to-day care
+                        </Label>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <RadioGroupItem value="SHARED_5050" id="custody-5050" />
+                        <Label htmlFor="custody-5050" className="font-normal">
+                          Shared equally (50/50)
+                        </Label>
+                      </div>
+                    </RadioGroup>
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+          </ConditionalField>
+
+          {/* H3 — death certificate (widowed) */}
+          <ConditionalField show={relationshipStatus === "WIDOWED"}>
+            <HouseholdEvidenceUpload
+              field="deathCertificateDocumentId"
+              slot="DEATH_CERTIFICATE"
+              label="Death certificate of the child's other parent (required)"
+              applicationId={applicationId}
+              documentMap={documentMap}
+            />
+          </ConditionalField>
+
+          {/* H4 — guardianship / foster evidence (D16) */}
+          <ConditionalField show={isGuardian === true}>
+            <HouseholdEvidenceUpload
+              field="guardianshipDocumentId"
+              slot="GUARDIANSHIP_EVIDENCE"
+              label="Evidence of guardianship / foster status (required)"
+              applicationId={applicationId}
+              documentMap={documentMap}
+            />
+          </ConditionalField>
+
+          {/* Evidence prompt — surfaces the scenario's expected evidence so the
+              applicant knows what to gather (the actual uploads live on the
+              relevant sections, wired into the rule engine). */}
+          {handling.requiredEvidence.length > 0 && (
+            <div className="flex items-start gap-2 rounded-md border border-info-200 bg-info-50 px-3 py-2 text-xs text-info-700">
+              <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+              <div>
+                <p className="font-medium">For your situation we will ask for:</p>
+                <ul className="mt-1 list-disc space-y-0.5 pl-4">
+                  {handling.requiredEvidence
+                    .filter((e) => e !== "SECOND_PARENT_INCOME")
+                    .map((e) => (
+                      <li key={e}>{EVIDENCE_LABELS[e]}</li>
+                    ))}
+                </ul>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       <hr className="border-slate-200" />
 

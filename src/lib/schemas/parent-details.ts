@@ -176,10 +176,39 @@ function isPopulatedObject(val: unknown): val is Record<string, unknown> {
  * empty objects ({}) from react-hook-form don't cause parse failures.
  * They are validated manually in superRefine only when isSoleParent is false.
  */
+/** Shared-custody arrangement (Epic 09, D15). Mirrors the Prisma enum. */
+export const custodyArrangementSchema = z.enum(
+  ["SOLE", "SHARED_5050", "SHARED_MAIN_LIMITED"] as const,
+  { message: "Please select the custody arrangement" }
+);
+
 export const parentDetailsSchema = z
   .object({
     isSoleParent: z.boolean(),
     relationshipStatus: relationshipStatusSchema,
+    // ── Epic 09 household facets (D15/D16/D17). All optional + additive so
+    // existing drafts and immutable submitted blobs validate unchanged; the
+    // rules engine treats absent facets as their defaults (SOLE / not guardian /
+    // not remarried / finances stable). ─────────────────────────────────────
+    /** D16 — foster carer / legal guardian facet. Drives the guardianship ask. */
+    isGuardian: z.boolean().optional(),
+    /** D15 — shared-custody split (only meaningful for shared care). */
+    custodyArrangement: custodyArrangementSchema.optional(),
+    /** D17 — remarried sole parent (resident household + absent natural parent). */
+    isRemarriedSoleParent: z.boolean().optional(),
+    /** H9 — mid-divorce, finances not yet disentangled (assessor may-defer flag). */
+    financesNotDisentangled: z.boolean().optional(),
+    /**
+     * H7 discriminator — "Is there a court order specifically for school fees?"
+     * Only asked (and the cannot-support notice only shown) when DIVORCED. The
+     * authoritative store remains OTHER_INFO.hasCOurtOrder; this mirror lets the
+     * notice render live on the parent-details step. Optional/back-compat.
+     */
+    hasSchoolFeesCourtOrder: z.boolean().optional(),
+    /** H3 — death certificate of the deceased parent (widowed). */
+    deathCertificateDocumentId: z.string().optional(),
+    /** H4 — evidence of guardianship / foster status (D16). */
+    guardianshipDocumentId: z.string().optional(),
     parent1Contact: parentContactSchema,
     parent1Employment: parentEmploymentSchema,
     parent2Contact: z.any().optional(),

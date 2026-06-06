@@ -744,8 +744,37 @@ wiring (PR-2). **Merge order: PR-1 → PR-2.**
 - [x] tsc / prisma-format / lint / build green; 505 tests (+30).
 
 **PR-2 — custody schema + form branch wiring + evidence + H7 notice (D15/D16/D17)**
-(§6 PR-4, PR-5, PR-6, PR-7) — `feature/09-household-schema-and-form` (**stacks on
-PR-1**): *pending — see remaining breakdown.*
+(§6 PR-4, PR-5) — `feature/09-household-schema-and-form` (**stacks on PR-1**):
+- [x] §6 PR-5 — `CustodyArrangement` enum (SOLE / SHARED_5050 /
+  SHARED_MAIN_LIMITED) + `Application.custodyArrangement` (additive, NOT NULL,
+  `@default(SOLE)`). Migration `20260606200000_application_custody_arrangement`
+  (`CREATE TYPE` + `ADD COLUMN … DEFAULT 'SOLE'`, metadata-only on PG 11+; the
+  CREATE-TYPE-in-same-migration is safe because the PG ADD-VALUE-in-txn rule only
+  bars adding values to an *existing* enum). One-account-per-child unique NOT
+  widened (D15 "either may hold the account" is policy in the rules module, not a
+  second lead FK). Submit promotes the split from PARENT_DETAILS JSONB → the
+  column (defaults SOLE). `getApplicationWithDetails` selects it.
+- [x] §6 PR-4 — parent-details form household block (suppressed in
+  `secondaryMode`): the D16 **guardian facet**, the H9 **finances-not-disentangled**
+  facet (separated/divorced), the H7 **school-fees court-order** question
+  (divorced) with the inline **cannot-support notice** (non-blocking — the
+  applicant may still submit), the D17 **remarried** facet (in a couple), and the
+  D15 **custody split** radio (separated/divorced, not sole). All reveals driven
+  by `deriveHouseholdScenario` — the SAME rules the assessor reads. Plus an
+  evidence prompt listing the scenario's expected documents.
+- [x] §6 PR-4 — **H3 death-certificate** (widowed) + **H4 guardianship-evidence**
+  (D16) uploads on parent-details, wired into the Epic 02 document-rule engine
+  (`householdEvidenceRules`: a structural equality gate for widowed, a
+  `requiredIfTrue` on `isGuardian`) so they block submit until provided. Schema +
+  `from-sections` extended additively (new facets + `hasSchoolFeesCourtOrder`
+  mirror, with OTHER_INFO.hasCOurtOrder still authoritative).
+- [x] 3 new section-rules tests (death-cert required/uploaded/not-applicable;
+  guardianship); tsc/prisma-format/lint/build green; 508 tests.
+- [ ] §6 PR-7 (seed) — **deferred** (non-blocking): the demo PARENT_DETAILS blobs
+  use a legacy display shape (no `relationshipStatus`), so per-handling-shape
+  fixtures would require restructuring the destructive seed (same risk that
+  deferred Epic 08's third-outcome fixture). The rules engine + form + assessor
+  aid are fully unit-tested; the demo-fixture proof is the only outstanding item.
 
 > **H1–H11 confirmation status.** All eleven rows are **implemented to the
 > workbook-FAQ defaults**. The four rows carrying real money/scope consequences —
@@ -798,6 +827,24 @@ Wave 2 → Wave 3 → Wave 4.
 
 ## Change log
 
+- **2026-06-06** — **Epic 09 PR-2** (`feature/09-household-schema-and-form`,
+  stacks on PR-1): custody schema + form branch wiring + evidence + H7 notice.
+  New `CustodyArrangement` enum + `Application.custodyArrangement` (additive, NOT
+  NULL `@default(SOLE)`; migration `20260606200000_application_custody_arrangement`,
+  CREATE TYPE + ADD COLUMN, metadata-only). One-account-per-child unique NOT
+  widened — 50/50 "either may hold the account" stays policy in the rules module
+  (D15). Submit promotes the split from PARENT_DETAILS JSONB → the column. The
+  parent-details form gains a household block (suppressed for the second parent):
+  D16 guardian facet, H9 finances-in-flux facet, the H7 school-fees court-order
+  question + inline **non-blocking cannot-support notice**, D17 remarried facet,
+  D15 custody-split radio — every reveal driven by `deriveHouseholdScenario`.
+  Widowed **death-certificate** (H3) + **guardianship-evidence** (H4, D16) uploads
+  wired into the Epic 02 document-rule engine (block submit until provided).
+  Schema/`from-sections` extended additively + back-compat (legacy drafts +
+  immutable submitted blobs read unchanged). 3 new tests; tsc/prisma-format/lint/
+  build green; 508 tests. **Demo per-handling-shape seed fixtures deferred
+  (non-blocking — legacy blob shape).** **DO NOT MERGE — merge after PR-1.**
+  Migration SQL + read-only nonprod validation in the PR body.
 - **2026-06-06** — **Epic 09 OPENED (Wave 3)** — PR-1
   (`feature/09-household-rules-engine`, off `staging`): the household policy
   engine. New pure `src/lib/household/rules.ts` (`deriveHouseholdScenario`)

@@ -32,6 +32,12 @@ export interface ParentDetailsBlob {
   isRemarriedSoleParent?: boolean;
   /** H9 finances-in-flux facet (Epic 09). */
   financesNotDisentangled?: boolean;
+  /**
+   * H7 discriminator mirrored onto parent-details so the in-form notice can
+   * render on that step. The authoritative store is OTHER_INFO.hasCOurtOrder;
+   * this is the fallback/mirror.
+   */
+  hasSchoolFeesCourtOrder?: boolean;
 }
 
 /** Loosely-typed view of the OTHER_INFO JSONB blob (Epic 02). */
@@ -94,7 +100,10 @@ export function householdInputFromSources(
     relationshipStatus: asRelationship(pd.relationshipStatus),
     isSoleParent: pd.isSoleParent === true,
     isGuardian: pd.isGuardian === true,
-    hasSchoolFeesCourtOrder: oi.hasCOurtOrder === true,
+    // Either store satisfies the H7 discriminator: OTHER_INFO is authoritative,
+    // the parent-details mirror lets the in-form notice render on that step.
+    hasSchoolFeesCourtOrder:
+      oi.hasCOurtOrder === true || pd.hasSchoolFeesCourtOrder === true,
     custodyArrangement: custody,
     isRemarriedSoleParent: pd.isRemarriedSoleParent === true,
     financesNotDisentangled: pd.financesNotDisentangled === true,

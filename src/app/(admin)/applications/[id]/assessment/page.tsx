@@ -159,9 +159,7 @@ export default async function AssessmentPage({ params }: Props) {
           household = {
             parentDetails: (pd?.data ?? null) as HouseholdSources["parentDetails"],
             otherInfo: (oi?.data ?? null) as HouseholdSources["otherInfo"],
-            applicationCustodyArrangement:
-              (app as { custodyArrangement?: string | null }).custodyArrangement ??
-              null,
+            applicationCustodyArrangement: app.custodyArrangement ?? null,
           };
         }
 
