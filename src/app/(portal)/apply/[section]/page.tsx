@@ -179,6 +179,7 @@ export default async function SectionPage({ params }: PageProps) {
     parent1Status,
     parent2Status,
     relationshipStatus,
+    parent1Address,
   } = await withUserContext(user.id, user.role as RlsRole, async (tx) => {
       const [section, docs] = await Promise.all([
         getSectionData(tx, application.id, sectionType, ownerContributorId),
@@ -195,6 +196,36 @@ export default async function SectionPage({ params }: PageProps) {
         );
         const childData = childSection?.data as { childFullName?: string } | null;
         childName = childData?.childFullName ?? undefined;
+      }
+
+      // CHILD_DETAILS shows the stored Parent 1 address read-only when the child
+      // shares it (D1, workbook §3 Q7). Read it from PARENT_DETAILS.
+      let parent1Address:
+        | {
+            addressLine1?: string;
+            addressLine2?: string;
+            city?: string;
+            postcode?: string;
+            country?: string;
+          }
+        | undefined;
+      if (sectionType === "CHILD_DETAILS") {
+        const parentSection = await getSectionData(
+          tx,
+          application.id,
+          "PARENT_DETAILS",
+          ownerContributorId
+        );
+        const parentData = parentSection?.data as {
+          parent1Contact?: {
+            addressLine1?: string;
+            addressLine2?: string;
+            city?: string;
+            postcode?: string;
+            country?: string;
+          };
+        } | null;
+        parent1Address = parentData?.parent1Contact;
       }
 
       let soleParent: boolean | undefined;
@@ -239,6 +270,7 @@ export default async function SectionPage({ params }: PageProps) {
         parent1Status,
         parent2Status,
         relationshipStatus,
+        parent1Address,
       };
     });
 
@@ -290,10 +322,12 @@ export default async function SectionPage({ params }: PageProps) {
       applicationId={application.id}
       existingData={existingSection?.data ?? null}
       applicationSchool={application.school}
+      lockedSchool={application.school}
       applicationChildName={application.childName}
       academicYear={application.round?.academicYear ?? null}
       documentMap={documentMap}
       childFullName={childFullName}
+      parent1Address={parent1Address}
       isSoleParent={isSoleParent}
       parent1EmploymentStatus={parent1Status}
       parent2EmploymentStatus={parent2Status}

@@ -37,7 +37,10 @@ export const childDetailsSchema = z
     school: z.enum(["TRINITY", "WHITGIFT"] as const, {
       message: "Please select a school",
     }),
-    entryYearGroup: entryYearGroupSchema,
+    // Entry-year is set & LOCKED admin-side at the invite (D1) — it is no longer
+    // captured on the parent form, so it is optional here. Any value carried in a
+    // legacy draft is preserved on read.
+    entryYearGroup: entryYearGroupSchema.optional(),
     childFullName: z.preprocess(
       (v) => (v == null ? "" : v),
       z.string().min(2, "Child's full name is required").max(120, "Name is too long")

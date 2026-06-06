@@ -39,7 +39,7 @@ Legend: ⬜ not started · 🟡 in progress · ✅ shipped to staging · 🚫 bl
 | 1 | [01 Status & workflow model](plans/01-status-and-workflow-model.md) | ✅ | — | #141 (PR-1 schema), #142 (PR-2 backfill), #143 (PR-3 status service), #144 (PR-4 readers+badges), #145 (PR-5 submitted_at write-once); **PR-6 drop-column ⏸ gated** |
 | 1 | [03 Round management](plans/03-round-management.md) | ✅ | 01 | #146 (PR-A schema+server core), #147 (PR-B UI) |
 | 1 | [04 Lead-applicant contacts & invitations](plans/04-lead-applicant-contacts-and-invitations.md) | ✅ | 01 | #148 (contact register), #149 (invite-from-contact + D1 lock), #150 (twin/DOB uniqueness) |
-| 2 | [02 Application form re-scope](plans/02-application-form-rescope.md) | 🟡 | deps met (01, 04 ✅) · D3 ✅ · D11 artifact (build to workbook) | PR-1 #152 ✅ · PR-2 #153 ✅ · PR-3 #154 ✅ · PR-4 #155 ✅ · PR-5 #156 (this) · PR-6/7 open |
+| 2 | [02 Application form re-scope](plans/02-application-form-rescope.md) | 🟡 | deps met (01, 04 ✅) · D3 ✅ · D11 artifact (build to workbook) | PR-1 #152 ✅ · PR-2 #153 ✅ · PR-3 #154 ✅ · PR-4 #155 ✅ · PR-5 #156 ✅ · PR-6 #157 (this) · PR-7 open |
 | 2 | [05 Parent portal experience](plans/05-parent-portal-experience.md) | ⏳ deps | 01, 02, 03 (deps) · D10 ✅ | — |
 | 3 | [06 Assessor experience & UI](plans/06-assessor-experience-and-ui.md) | ⏳ deps | 02 (dep) | — |
 | 3 | [07 Calculations & fees](plans/07-assessment-calculations-and-fees.md) | ⏳ deps | 06 (dep) · D8/D14 narrow, non-blocking | — |
@@ -366,9 +366,12 @@ consumes (rule engine + tax-year), and is behaviour-preserving for existing rule
   `signedOnBehalfOfParent1/2`); legacy single-tick fields kept + normalised on load.
   **Mobile/telephone + email mandatory** on every parent block (email now rendered
   for both parents — was P2-only). 10 new tests; tsc/build green, 354 total green.
-- [ ] **PR-6 — locked school/entry-year + stored address.** Remove parent
-  school/entry-year pickers; render display-only from the application; show
-  stored Parent 1 address on "same address". (D1; lock owned by Epic 04.)
+- [x] **PR-6 — locked school + entry-year removal + stored address** (#157).
+  CHILD_DETAILS Q1 school is **display-only** (read-only card from the locked
+  `application.school`, pinned via a hidden field — D1); the **parent entry-year
+  picker is removed** (`entryYearGroup` optional; submit promotes the admin value);
+  the **stored Parent 1 address** is shown read-only on "same address" (workbook
+  §3 Q7). Onboarding-card picker left intact. 3 new tests; 347 green.
 - [ ] **PR-7 — seed + validation-summary copy.** `seed:demo` to the new income
   shape across statuses; Review/Validation-Summary phrasing to the workbook.
 
@@ -414,6 +417,14 @@ Wave 2 → Wave 3 → Wave 4.
 
 ## Change log
 
+- **2026-06-06** — **Epic 02 PR-6** (locked school + entry-year removal + stored
+  address). CHILD_DETAILS Q1 school is display-only (read-only card from the
+  locked `application.school`, pinned via a hidden field; D1). Parent entry-year
+  picker removed (`entryYearGroup` optional in the schema; submit promotes the
+  admin-set value). "Child same address as Parent 1" shows the stored Parent 1
+  address read-only (workbook §3 Q7). Onboarding-card school picker left intact
+  (no-invite create path). No schema/migration (JSONB). Independent off
+  `staging`. tsc/build green, 347 tests green (+3).
 - **2026-06-06** — **Epic 02 PR-5** (declaration + contact mandatories).
   Declaration rebuilt to workbook §8 (intro + six numbered terms, D11 swappable)
   with separate P1 AND P2 acceptance ticks + signatures (P2 hidden when sole
