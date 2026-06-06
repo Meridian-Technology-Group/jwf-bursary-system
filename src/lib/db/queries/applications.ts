@@ -268,6 +268,7 @@ export async function getApplicationWithDetails(
       status: true,
       formStatus: true,
       applicationType: true,
+      custodyArrangement: true,
       archivedAt: true,
       submittedAt: true,
       submissionDeadlineAt: true,

@@ -98,6 +98,14 @@ model Application {
   status               ApplicationStatus        @default(PRE_SUBMISSION)
   formStatus           ApplicationFormStatus    @default(CREATED) @map("form_status")
   applicationType      ApplicationType          @default(NEW) @map("application_type")
+  /// Shared-custody arrangement (Epic 09, Decision D15). SOLE is the default
+  /// (single resident parent/guardian, or a two-resident-parent household).
+  /// SHARED_5050 ⇒ both natural parents are lead applicants (either may hold
+  /// the account); SHARED_MAIN_LIMITED ⇒ the main-custody parent is the lead.
+  /// Additive/non-null with a SOLE default so existing rows are unaffected; the
+  /// "either may hold the account" rule is policy (see lib/household/rules.ts),
+  /// not a second lead FK — the one-account-per-child unique is NOT widened.
+  custodyArrangement   CustodyArrangement       @default(SOLE) @map("custody_arrangement")
   archivedAt           DateTime?                @map("archived_at") @db.Timestamptz(6)
   submittedAt          DateTime?                @map("submitted_at") @db.Timestamptz(6)
   /// When the parent accepted the Terms & Conditions for THIS submission
@@ -672,6 +680,19 @@ enum ApplicationFormStatus {
 enum ApplicationType {
   NEW
   ROLLING_OVER
+}
+
+/// Shared-custody arrangement for an Application (Epic 09, Decision D15).
+///   SOLE                — single resident parent/guardian, or a single
+///                         two-resident-parent household (the default).
+///   SHARED_5050         — 50/50 shared custody; both natural parents are lead
+///                         applicants (either may hold the account).
+///   SHARED_MAIN_LIMITED — main + limited custody; the main-custody parent is
+///                         the lead, both natural parents are assessed.
+enum CustodyArrangement {
+  SOLE
+  SHARED_5050
+  SHARED_MAIN_LIMITED
 }
 
 enum AssessmentStatus {

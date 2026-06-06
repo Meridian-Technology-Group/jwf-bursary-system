@@ -517,6 +517,23 @@ export async function submitApplication(applicationId: string): Promise<never> {
       : null;
   const childDobToPersist = application.childDob ?? parsedChildDob;
 
+  // ── Promote custody arrangement onto the first-class column (Epic 09, D15) ─
+  // The shared-custody split lives in PARENT_DETAILS JSONB; promote it to
+  // applications.custody_arrangement so the assessor decision aid + lifecycle
+  // read it from the column. Defaults to SOLE when absent (a sole / single
+  // two-resident-parent household). Only the PRIMARY's parent-details carry the
+  // household-level answer (the secondary fills their own subset).
+  const parentDetailsData = application.sections.find(
+    (s) => s.section === "PARENT_DETAILS"
+  )?.data as { custodyArrangement?: unknown } | undefined;
+  const VALID_CUSTODY = ["SOLE", "SHARED_5050", "SHARED_MAIN_LIMITED"] as const;
+  const rawCustody = parentDetailsData?.custodyArrangement;
+  const custodyToPersist =
+    typeof rawCustody === "string" &&
+    (VALID_CUSTODY as readonly string[]).includes(rawCustody)
+      ? (rawCustody as (typeof VALID_CUSTODY)[number])
+      : "SOLE";
+
   // ── Mark as SUBMITTED ─────────────────────────────────────────────────────
   // The status update is committed in its own transaction so that a subsequent
   // audit-log failure can never roll it back. (The audit INSERT runs inside a
@@ -540,6 +557,7 @@ export async function submitApplication(applicationId: string): Promise<never> {
         entryYearGroup: entryYearGroupToPersist,
         entryYear: entryYearToPersist,
         childDob: childDobToPersist,
+        custodyArrangement: custodyToPersist,
       },
     });
   });

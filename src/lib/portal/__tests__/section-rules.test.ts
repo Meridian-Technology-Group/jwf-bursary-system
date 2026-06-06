@@ -54,6 +54,43 @@ describe("PARENT_DETAILS", () => {
       })
     ).toEqual(["PARENT_DETAILS:SCHOLARSHIP_PARENT_2"]);
   });
+
+  // ── Epic 09 household evidence ──────────────────────────────────────────────
+  it("widowed → death certificate required until uploaded", () => {
+    expect(
+      gapIds("PARENT_DETAILS", { relationshipStatus: "WIDOWED" })
+    ).toEqual(["PARENT_DETAILS:DEATH_CERTIFICATE"]);
+    expect(
+      gapIds("PARENT_DETAILS", {
+        relationshipStatus: "WIDOWED",
+        deathCertificateDocumentId: "doc-1",
+      })
+    ).toEqual([]);
+    expect(
+      gapIds(
+        "PARENT_DETAILS",
+        { relationshipStatus: "WIDOWED" },
+        new Set(["DEATH_CERTIFICATE"])
+      )
+    ).toEqual([]);
+  });
+
+  it("death certificate NOT required for a non-widowed parent", () => {
+    expect(gapIds("PARENT_DETAILS", { relationshipStatus: "SINGLE" })).toEqual([]);
+    expect(gapIds("PARENT_DETAILS", { relationshipStatus: "DIVORCED" })).toEqual([]);
+  });
+
+  it("guardian facet → guardianship evidence required until uploaded", () => {
+    expect(gapIds("PARENT_DETAILS", { isGuardian: true })).toEqual([
+      "PARENT_DETAILS:GUARDIANSHIP_EVIDENCE",
+    ]);
+    expect(
+      gapIds("PARENT_DETAILS", { isGuardian: true, guardianshipDocumentId: "g-1" })
+    ).toEqual([]);
+    expect(
+      gapIds("PARENT_DETAILS", { isGuardian: false })
+    ).toEqual([]);
+  });
 });
 
 describe("PARENTS_INCOME (status-driven sub-tables — D3)", () => {
