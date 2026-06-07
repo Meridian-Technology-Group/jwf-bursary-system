@@ -181,56 +181,59 @@ function ChildDialog({
             />
           </div>
 
-          {/* Bursary amount */}
-          <div className="space-y-1.5">
-            <Label htmlFor="child-bursary">Amount of bursary (£)</Label>
-            <div className="relative flex items-center">
-              <span className="inline-flex h-9 items-center rounded-l-md border border-r-0 border-slate-300 bg-slate-50 px-3 text-sm text-slate-500">
-                £
-              </span>
-              <input
-                id="child-bursary"
-                type="text"
-                inputMode="decimal"
-                value={bursaryAmount}
-                onChange={(e) => setBursaryAmount(e.target.value)}
-                className="block flex-1 rounded-r-md border border-slate-300 bg-white py-2 pr-3 text-right text-sm tabular-nums focus:outline-none focus:ring-2 focus:ring-accent-200 focus:border-accent-500"
-              />
+          {/* Bursary amount + unearned income — paired two-up (single column on mobile) */}
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            {/* Bursary amount */}
+            <div className="space-y-1.5">
+              <Label htmlFor="child-bursary">Amount of bursary (£)</Label>
+              <div className="relative flex items-center">
+                <span className="inline-flex h-9 items-center rounded-l-md border border-r-0 border-slate-300 bg-slate-50 px-3 text-sm text-slate-500">
+                  £
+                </span>
+                <input
+                  id="child-bursary"
+                  type="text"
+                  inputMode="decimal"
+                  value={bursaryAmount}
+                  onChange={(e) => setBursaryAmount(e.target.value)}
+                  className="block w-full flex-1 rounded-r-md border border-slate-300 bg-white py-2 pr-3 text-right text-sm tabular-nums focus:outline-none focus:ring-2 focus:ring-accent-200 focus:border-accent-500"
+                />
+              </div>
             </div>
-          </div>
 
-          {/* Unearned income */}
-          <div className="space-y-1.5">
-            <Label htmlFor="child-unearned">
-              Children&rsquo;s unearned income (£){" "}
-              <span className="text-error-600" aria-hidden="true">*</span>
-            </Label>
-            <p className="text-xs text-slate-500">
-              Where a value is not applicable, please enter 0.
-            </p>
-            <div className="relative flex items-center">
-              <span className="inline-flex h-9 items-center rounded-l-md border border-r-0 border-slate-300 bg-slate-50 px-3 text-sm text-slate-500">
-                £
-              </span>
-              <input
-                id="child-unearned"
-                type="text"
-                inputMode="decimal"
-                value={unearnedIncome}
-                onChange={(e) => setUnearnedIncome(e.target.value)}
-                className={cn(
-                  "block flex-1 rounded-r-md border bg-white py-2 pr-3 text-right text-sm tabular-nums",
-                  "focus:outline-none focus:ring-2",
-                  errors.unearnedIncome
-                    ? "border-error-600 focus:ring-error-300"
-                    : "border-slate-300 focus:ring-accent-200 focus:border-accent-500"
-                )}
-              />
+            {/* Unearned income */}
+            <div className="space-y-1.5">
+              <Label htmlFor="child-unearned">
+                Children&rsquo;s unearned income (£){" "}
+                <span className="text-error-600" aria-hidden="true">*</span>
+              </Label>
+              <div className="relative flex items-center">
+                <span className="inline-flex h-9 items-center rounded-l-md border border-r-0 border-slate-300 bg-slate-50 px-3 text-sm text-slate-500">
+                  £
+                </span>
+                <input
+                  id="child-unearned"
+                  type="text"
+                  inputMode="decimal"
+                  value={unearnedIncome}
+                  onChange={(e) => setUnearnedIncome(e.target.value)}
+                  className={cn(
+                    "block w-full flex-1 rounded-r-md border bg-white py-2 pr-3 text-right text-sm tabular-nums",
+                    "focus:outline-none focus:ring-2",
+                    errors.unearnedIncome
+                      ? "border-error-600 focus:ring-error-300"
+                      : "border-slate-300 focus:ring-accent-200 focus:border-accent-500"
+                  )}
+                />
+              </div>
+              {errors.unearnedIncome && (
+                <p className="text-xs text-error-600">{errors.unearnedIncome}</p>
+              )}
             </div>
-            {errors.unearnedIncome && (
-              <p className="text-xs text-error-600">{errors.unearnedIncome}</p>
-            )}
           </div>
+          <p className="text-xs text-slate-500">
+            For unearned income, where a value is not applicable, please enter 0.
+          </p>
         </div>
 
         <DialogFooter>

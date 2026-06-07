@@ -187,7 +187,8 @@ function ElderCard({
   );
 
   return (
-    <div className="rounded-md border border-slate-200 bg-white p-4 space-y-4">
+    <fieldset className="rounded-md border border-slate-200 bg-white p-3 space-y-4 sm:p-4">
+      <legend className="sr-only">Elderly dependant {index + 1}</legend>
       <div className="flex items-center justify-between">
         <span className="text-sm font-medium text-primary-900">
           Elderly dependant {index + 1}
@@ -202,7 +203,7 @@ function ElderCard({
         </button>
       </div>
 
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <FormField
           control={control}
           name={`elderlyInCare.${index}.firstName`}
@@ -225,28 +226,25 @@ function ElderCard({
             </FormItem>
           )}
         />
+        <DateInput control={control} name={`elderlyInCare.${index}.dateOfBirth`} label="Date of birth" />
+        <FormField
+          control={control}
+          name={`elderlyInCare.${index}.careHomeName`}
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>Care home name <span className="text-error-600">*</span></FormLabel>
+              <FormControl><Input {...field} value={field.value ?? ""} /></FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+        <CurrencyInput
+          control={control}
+          name={`elderlyInCare.${index}.careHomeFees`}
+          label="Yearly care home fees"
+          required
+        />
       </div>
-
-      <DateInput control={control} name={`elderlyInCare.${index}.dateOfBirth`} label="Date of birth" />
-
-      <FormField
-        control={control}
-        name={`elderlyInCare.${index}.careHomeName`}
-        render={({ field }) => (
-          <FormItem>
-            <FormLabel>Care home name <span className="text-error-600">*</span></FormLabel>
-            <FormControl><Input {...field} value={field.value ?? ""} /></FormControl>
-            <FormMessage />
-          </FormItem>
-        )}
-      />
-
-      <CurrencyInput
-        control={control}
-        name={`elderlyInCare.${index}.careHomeFees`}
-        label="Yearly care home fees"
-        required
-      />
 
       <FileUpload
         slot={`CARE_HOME_INVOICE_${index}`}
@@ -267,6 +265,6 @@ function ElderCard({
           })
         }
       />
-    </div>
+    </fieldset>
   );
 }
