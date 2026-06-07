@@ -9,7 +9,7 @@
  */
 
 import * as React from "react";
-import { useFormContext, useWatch } from "react-hook-form";
+import { useFormContext, useWatch, Controller } from "react-hook-form";
 import {
   FormField,
   FormItem,
@@ -17,13 +17,14 @@ import {
   FormControl,
   FormMessage,
 } from "@/components/ui/form";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Textarea } from "@/components/ui/textarea";
-import { YesNoToggle } from "@/components/portal/form-fields/yes-no-toggle";
 import { ConditionalField } from "@/components/portal/form-fields/conditional-field";
 import { FileUpload } from "@/components/portal/file-upload";
 import type { UploadedDocument } from "@/components/portal/file-upload";
 import type { DocumentMeta } from "@/lib/db/queries/applications";
 import type { AdditionalInfoFormValues } from "@/lib/schemas/additional-info";
+import { cn } from "@/lib/utils";
 
 type CircumstanceKey = keyof Pick<
   AdditionalInfoFormValues,
@@ -66,11 +67,41 @@ function CircumstanceRow({
   const applies = useWatch({ control, name: `${item.key}.applies` });
   const initialDocId = React.useRef(getValues(`${item.key}.documentId`));
   const existing = React.useMemo(() => resolveDoc(initialDocId.current, documentMap), [documentMap]);
+  const checkboxId = `circumstance-${item.key}`;
 
   return (
-    <div className="rounded-md border border-slate-200 bg-white p-4 space-y-4">
-      <YesNoToggle control={control} name={`${item.key}.applies`} label={item.label} />
-      <ConditionalField show={applies === true}>
+    <div
+      className={cn(
+        "rounded-md border bg-white transition-colors",
+        applies === true ? "border-slate-300" : "border-slate-200"
+      )}
+    >
+      {/* Compact checklist row — the checkbox drives `${item.key}.applies`
+          (unchanged RHF path); ticking it reveals the upload inline below. */}
+      <Controller
+        control={control}
+        name={`${item.key}.applies`}
+        render={({ field }) => (
+          <label
+            htmlFor={checkboxId}
+            className="flex cursor-pointer items-center gap-3 px-4 py-3 text-sm text-slate-700"
+          >
+            <Checkbox
+              id={checkboxId}
+              checked={field.value === true}
+              onCheckedChange={(checked) => field.onChange(checked === true)}
+              onBlur={field.onBlur}
+              ref={field.ref}
+            />
+            <span>{item.label}</span>
+          </label>
+        )}
+      />
+      {/* Reveal binding unchanged: detail/upload shows when applies === true.
+          A circumstance that already has data (applies === true on load) is
+          therefore rendered REVEALED, keeping its upload visible and the field
+          deep-linkable from the Review page. */}
+      <ConditionalField show={applies === true} className="px-4 pb-4">
         <FileUpload
           slot={item.slot}
           label={`Supporting document for "${item.label}"`}
@@ -118,7 +149,7 @@ export function AdditionalInfoForm({ applicationId, documentMap }: AdditionalInf
           Please use this form to tell us if, in a current or previous application, any of
           the following apply:
         </p>
-        <div className="space-y-3">
+        <div className="space-y-2">
           {CIRCUMSTANCES.map((item) => (
             <CircumstanceRow
               key={item.key}
@@ -151,7 +182,7 @@ export function AdditionalInfoForm({ applicationId, documentMap }: AdditionalInf
               </FormLabel>
               <FormControl>
                 <Textarea
-                  rows={8}
+                  rows={4}
                   placeholder="Provide any additional context relevant to your application (or N/A)..."
                   {...field}
                   value={field.value ?? ""}
