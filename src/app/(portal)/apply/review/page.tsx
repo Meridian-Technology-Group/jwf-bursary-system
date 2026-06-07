@@ -481,7 +481,7 @@ export default async function ReviewPage() {
       {/* Page header */}
       <div>
         <div className="mb-1 text-xs font-medium uppercase tracking-wider text-slate-400">
-          Step 10 of 11 — Review
+          Review — final check before you submit
         </div>
         <h1 className="text-2xl font-semibold text-primary-900">
           Review Your Application

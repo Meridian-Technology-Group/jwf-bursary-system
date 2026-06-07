@@ -131,6 +131,7 @@ export default async function PortalLayout({
           userName={displayName}
           sections={sidebarSections}
           roundName={roundName}
+          countSynthetic={false}
         />
       </aside>
 
@@ -140,6 +141,7 @@ export default async function PortalLayout({
           userName={displayName}
           sections={sidebarSections}
           roundName={roundName}
+          countSynthetic={false}
         />
       </div>
 
