@@ -352,6 +352,15 @@ export function SectionPageClient({
         document.querySelector<HTMLElement>(`[name^="${escaped}"]`) ??
         document.getElementById(hash);
       if (!target) return false;
+      // PR-10: the Income section collapses empty sub-tables into <details>
+      // disclosures. A deep-link may target a field inside a closed one, which
+      // is display:none and cannot be scrolled-to/focused — open every ancestor
+      // <details> first so the target becomes visible and focusable.
+      let node: HTMLElement | null = target;
+      while (node) {
+        if (node instanceof HTMLDetailsElement) node.open = true;
+        node = node.parentElement;
+      }
       target.scrollIntoView({ behavior: "smooth", block: "center" });
       const focusable =
         target.tagName === "INPUT" ||
