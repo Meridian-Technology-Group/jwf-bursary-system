@@ -18,6 +18,7 @@ import {
   SheetTrigger,
 } from "@/components/ui/sheet";
 import { PortalSidebarContent, type SidebarSection } from "./portal-sidebar";
+import { PortalAccountFooter } from "./portal-account-footer";
 import { cn } from "@/lib/utils";
 import { JwfLogo } from "@/components/brand/jwf-logo";
 
@@ -100,15 +101,8 @@ export function PortalMobileHeader({
                 basePath={basePath}
                 countSynthetic={countSynthetic}
               />
-              {/* User at bottom */}
-              <div className="border-t border-slate-200 bg-slate-50 px-6 py-3">
-                <p className="truncate text-xs text-slate-500">
-                  Signed in as
-                </p>
-                <p className="truncate text-sm font-medium text-primary-900">
-                  {userName}
-                </p>
-              </div>
+              {/* Account footer (signed-in-as + sign out) at the bottom of the sheet. */}
+              <PortalAccountFooter userName={userName} variant="sheet" />
             </div>
           </SheetContent>
         </Sheet>
