@@ -1,43 +1,45 @@
 /**
- * Portal layout — applicant-facing shell.
+ * Portal layout — applicant-facing shell (PR-7: unified rail).
  *
- * Desktop (≥768 px): fixed 280 px left sidebar + scrollable main content.
- * Mobile (<768 px):  sticky progress header + bottom sheet to reveal all sections.
+ * This layout owns the PORTAL-WIDE concerns only:
+ *  - the access guard (Epic 10 / D18 portal-access revocation),
+ *  - the `IdleLogoutWatcher` (Epic 11 / D20),
+ *  - the ONE persistent left rail.
  *
- * The sticky bottom navigation bar ("Back" / "Save and Continue") is rendered
- * inside the main scrollable area so it stays above the fold on all viewports.
+ * The section stepper is NO LONGER fetched or rendered here. It now arrives as
+ * the `stepper` parallel-route slot (`@stepper/`), which fetches its gap data
+ * only on `/apply/*` and renders nothing (`@stepper/default.tsx` → null)
+ * elsewhere. The layout simply places the slot inside the rail. The wizard's
+ * one sticky footer lives in the `apply/` content segment, not here.
+ *
+ * Desktop (≥768 px): fixed 280 px left rail + scrollable main content.
+ * Mobile (<768 px):  sticky header with a nav Sheet + an "All sections" Sheet.
  */
 
 import { Suspense } from "react";
 import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth/roles";
-import { withAdminContext, withUserContext, type RlsRole } from "@/lib/db/prisma";
+import { withUserContext, type RlsRole } from "@/lib/db/prisma";
 import { loadPortalAccessState } from "@/lib/bursary-accounts/access";
-import { getApplicationForUser } from "@/lib/db/queries/applications";
-import { resolveOwningContributorId } from "@/lib/db/queries/contributors";
-import { getOrAcceptLatestInvitationForUser } from "@/lib/db/queries/invitations";
-import { getSectionGapStatuses } from "@/lib/portal/section-gaps";
-import { PortalMobileHeader } from "@/components/portal/portal-mobile-header";
-import { PortalDesktopSidebar } from "@/components/portal/portal-desktop-sidebar";
-import { PortalBottomNav } from "@/components/portal/portal-bottom-nav";
-import {
-  buildSidebarSections,
-  type SidebarSection,
-} from "@/components/portal/portal-sidebar-sections";
+import { PortalNav } from "@/components/portal/portal-nav";
+import { PortalNavMobileHeader } from "@/components/portal/portal-nav-mobile-header";
 import { PageLoader } from "@/components/shared/loading";
 import { IdleLogoutWatcher } from "@/components/auth/idle-logout-watcher";
 
 export const metadata = {
   title: {
     template: "%s | JWF Bursary System",
-    default: "My Application | JWF Bursary System",
+    default: "Bursary Portal | JWF Bursary System",
   },
 };
 
 export default async function PortalLayout({
   children,
+  stepper,
 }: {
   children: React.ReactNode;
+  /** The `@stepper` parallel slot — the section stepper (null off /apply/*). */
+  stepper: React.ReactNode;
 }) {
   const user = await getCurrentUser();
 
@@ -61,88 +63,24 @@ export default async function PortalLayout({
     ? `${user.firstName ?? ""} ${user.lastName ?? ""}`.trim() || user.email
     : "Applicant";
 
-  // Load real section-completion state so the sidebar progress bar reflects
-  // the user's actual progress (not a hardcoded placeholder).
-  let sidebarSections: SidebarSection[] | undefined;
-  let roundName: string | undefined;
-  if (user) {
-    const resolved = await withUserContext(
-      user.id,
-      user.role as RlsRole,
-      async (tx) => {
-        const application = await getApplicationForUser(tx, user.id);
-        if (!application) return { application: null, ownerContributorId: null };
-        // Scope the sidebar progress to the lead applicant's PRIMARY
-        // contributor (dual-parent, PR 4b) — a SELECT, never an upsert under
-        // applicant RLS. For a single parent this is every section, so the
-        // sidebar is unchanged. The secondary uses a separate /contribute shell
-        // and never renders this layout's wizard sidebar.
-        const ownerContributorId = await resolveOwningContributorId(
-          tx,
-          application.id,
-          user.id
-        );
-        return { application, ownerContributorId };
-      }
-    );
-    const application = resolved.application;
-    if (application) {
-      const gapStatuses = resolved.ownerContributorId
-        ? await getSectionGapStatuses(application.id, resolved.ownerContributorId)
-        : await getSectionGapStatuses(application.id);
-      sidebarSections = buildSidebarSections(gapStatuses, {
-        isReassessment: application.isReassessment,
-      });
-      roundName = application.round?.academicYear
-        ? `${application.round.academicYear} Assessment Round`
-        : undefined;
-    } else {
-      // No application yet — sidebar still shows the academic year derived
-      // from the user's invitation so the label is correct on the
-      // onboarding card / pre-section pages.
-      const invitation = await withAdminContext((tx) =>
-        getOrAcceptLatestInvitationForUser(tx, user.id)
-      );
-      if (invitation?.roundId) {
-        const round = await withAdminContext((tx) =>
-          tx.round.findUnique({
-            where: { id: invitation.roundId! },
-            select: { academicYear: true },
-          })
-        );
-        roundName = round?.academicYear
-          ? `${round.academicYear} Assessment Round`
-          : undefined;
-      }
-    }
-  }
-
   return (
     <div className="flex min-h-screen bg-canvas-50">
       {/* Epic 11 (D20) — optional inactivity logout, applied to the parent
-          portal as well as staff (the D20 scope question; default-on, env
-          flag/window-overridable, disabled per-deployment if desired). Renders
-          nothing without an authenticated user or when the flag is off. */}
+          portal as well as staff. Renders nothing without an authenticated
+          user or when the flag is off. */}
       {user ? <IdleLogoutWatcher /> : null}
 
-      {/* ── Desktop sidebar (hidden on mobile) ─────────────────────────── */}
+      {/* ── Desktop persistent rail (hidden on mobile) ─────────────────────
+          The ONE rail: PortalNav (Home / My Application / Documents / History /
+          Help + account/sign-out footer) with the @stepper slot nested under
+          "My Application" (null off /apply/*). */}
       <aside className="hidden md:flex md:flex-col md:w-[280px] md:shrink-0 md:fixed md:inset-y-0 md:left-0 md:z-30 bg-white border-r border-slate-200 shadow-xs">
-        <PortalDesktopSidebar
-          userName={displayName}
-          sections={sidebarSections}
-          roundName={roundName}
-          countSynthetic={false}
-        />
+        <PortalNav userName={displayName}>{stepper}</PortalNav>
       </aside>
 
       {/* ── Mobile sticky header (visible only on mobile) ───────────────── */}
       <div className="md:hidden sticky top-0 z-30 w-full bg-white border-b border-slate-200 shadow-xs">
-        <PortalMobileHeader
-          userName={displayName}
-          sections={sidebarSections}
-          roundName={roundName}
-          countSynthetic={false}
-        />
+        <PortalNavMobileHeader userName={displayName} stepper={stepper} />
       </div>
 
       {/* ── Main content column ─────────────────────────────────────────── */}
@@ -156,11 +94,7 @@ export default async function PortalLayout({
             <Suspense fallback={<PageLoader />}>{children}</Suspense>
           </div>
         </main>
-
-        {/* ── Sticky bottom navigation ────────────────────────────────── */}
-        <div className="sticky bottom-0 z-20 border-t border-slate-200 bg-white shadow-md">
-          <PortalBottomNav />
-        </div>
+        {/* NO footer here — the apply content segment owns the sticky footer. */}
       </div>
     </div>
   );

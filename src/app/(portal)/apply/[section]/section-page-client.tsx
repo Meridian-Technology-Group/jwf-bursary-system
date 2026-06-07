@@ -403,6 +403,7 @@ export function SectionPageClient({
           backHref={backHref}
           nextHref={nextHref}
           nextLabel={nextLabel}
+          hideInlineNav
         >
           <SectionFormContent
             sectionType={sectionType}
