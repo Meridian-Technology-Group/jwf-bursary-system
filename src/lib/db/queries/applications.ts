@@ -420,6 +420,45 @@ export async function getCurrentApplicationForUser(tx: Tx, userId: string) {
 }
 
 /**
+ * Narrow nav-state read for the persistent portal rail (PR-9).
+ *
+ * Runs on EVERY portal page (it backs the root `(portal)/layout.tsx`), so it is
+ * deliberately the smallest possible read: just the lifecycle bits the nav needs
+ * to badge Documents (paused → outstanding document request) and to point the
+ * "My Application" item at the right target (wizard while drafting, `/status`
+ * after submit). NO round read (Decision 5 — the round label stays out of the
+ * global nav), NO section/gap computation, NO full-application include.
+ *
+ * Returns null when the user has no application yet (invited-not-started, or no
+ * invitation) — the nav then falls back to its static defaults.
+ */
+export interface PortalNavState {
+  /** Drives the adaptive "My Application" target (SUBMITTED → /status). */
+  formStatus: ApplicationFormStatus;
+  /** PAUSED → an assessor has requested documents → badge the Documents item. */
+  isPaused: boolean;
+}
+
+export async function getPortalNavState(
+  tx: Tx,
+  userId: string
+): Promise<PortalNavState | null> {
+  const app = await tx.application.findFirst({
+    where: { leadApplicantId: userId },
+    orderBy: { updatedAt: "desc" },
+    select: {
+      formStatus: true,
+      assessment: { select: { status: true } },
+    },
+  });
+  if (!app) return null;
+  return {
+    formStatus: app.formStatus,
+    isPaused: app.assessment?.status === "PAUSED",
+  };
+}
+
+/**
  * Returns completion status for all sections of an application OWNED BY a
  * specific contributor.
  *
