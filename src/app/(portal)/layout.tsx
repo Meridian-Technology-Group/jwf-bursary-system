@@ -21,7 +21,8 @@ import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth/roles";
 import { withUserContext, type RlsRole } from "@/lib/db/prisma";
 import { loadPortalAccessState } from "@/lib/bursary-accounts/access";
-import { PortalAccountFooter } from "@/components/portal/portal-account-footer";
+import { PortalNav } from "@/components/portal/portal-nav";
+import { PortalNavMobileHeader } from "@/components/portal/portal-nav-mobile-header";
 import { PageLoader } from "@/components/shared/loading";
 import { IdleLogoutWatcher } from "@/components/auth/idle-logout-watcher";
 
@@ -70,14 +71,17 @@ export default async function PortalLayout({
       {user ? <IdleLogoutWatcher /> : null}
 
       {/* ── Desktop persistent rail (hidden on mobile) ─────────────────────
-          7a: temporary nav-less rail hosting the @stepper slot + account
-          footer. The PortalNav persistent nav replaces this in 7b. */}
+          The ONE rail: PortalNav (Home / My Application / Documents / History /
+          Help + account/sign-out footer) with the @stepper slot nested under
+          "My Application" (null off /apply/*). */}
       <aside className="hidden md:flex md:flex-col md:w-[280px] md:shrink-0 md:fixed md:inset-y-0 md:left-0 md:z-30 bg-white border-r border-slate-200 shadow-xs">
-        <div className="flex h-full flex-col">
-          <div className="flex-1 overflow-y-auto">{stepper}</div>
-          <PortalAccountFooter userName={displayName} variant="rail" />
-        </div>
+        <PortalNav userName={displayName}>{stepper}</PortalNav>
       </aside>
+
+      {/* ── Mobile sticky header (visible only on mobile) ───────────────── */}
+      <div className="md:hidden sticky top-0 z-30 w-full bg-white border-b border-slate-200 shadow-xs">
+        <PortalNavMobileHeader userName={displayName} stepper={stepper} />
+      </div>
 
       {/* ── Main content column ─────────────────────────────────────────── */}
       <div className="flex flex-1 flex-col md:ml-[280px]">

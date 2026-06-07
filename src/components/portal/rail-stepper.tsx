@@ -40,6 +40,7 @@ export function RailStepper({ sections, roundName }: RailStepperProps) {
       roundName={roundName}
       basePath="/apply"
       countSynthetic={false}
+      chrome="bare"
     />
   );
 }
