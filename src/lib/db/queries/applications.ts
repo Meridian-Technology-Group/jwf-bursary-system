@@ -540,3 +540,46 @@ export async function getDocumentsForApplication(
   }
   return map;
 }
+
+/**
+ * Serialisable, ORDERED list of an application's documents — the first-class
+ * `/documents` portal area (PR-8). Sibling to `getDocumentsForApplication`
+ * (the keyed-map variant above): same `DocumentMeta` shape, but returns an
+ * array ordered for display (slot ascending, then newest-first within a slot)
+ * so the page can group by humanised slot without re-sorting client-side.
+ *
+ * Contributor scoping (dual-parent, data-leak guard): when `ownerContributorId`
+ * is supplied the query filters on `uploadedByContributorId` so the lead
+ * applicant (their PRIMARY contributor) NEVER sees the secondary parent's
+ * uploads — exactly as the review page scopes its document include
+ * (`apply/review/page.tsx:396-399`: `documents: { where: { uploadedByContributorId } }`)
+ * and as the signed-URL route enforces per-document
+ * (`api/documents/[id]/url/route.ts:87-103`). This filter is defence-in-depth
+ * ON TOP of RLS — callers MUST still run it under `withUserContext`, never
+ * admin context. Omit `ownerContributorId` only for a caller that legitimately
+ * wants every contributor's documents (e.g. an admin view under RLS).
+ */
+export async function getAllDocumentsForApplication(
+  tx: Tx,
+  applicationId: string,
+  ownerContributorId?: string
+): Promise<DocumentMeta[]> {
+  const rows = await tx.document.findMany({
+    where: {
+      applicationId,
+      ...(ownerContributorId
+        ? { uploadedByContributorId: ownerContributorId }
+        : {}),
+    },
+    select: { id: true, slot: true, filename: true, fileSize: true, uploadedAt: true },
+    orderBy: [{ slot: "asc" }, { uploadedAt: "desc" }],
+  });
+
+  return rows.map((row) => ({
+    id: row.id,
+    slot: row.slot,
+    filename: row.filename,
+    fileSize: row.fileSize,
+    uploadedAt: row.uploadedAt.toISOString(),
+  }));
+}
