@@ -72,19 +72,25 @@ function resolveDoc(
 
 // ─── reusable bits ───────────────────────────────────────────────────────────
 
-function Row({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+/**
+ * Density wrapper (PR-10): lays related currency fields two-up. Single column on
+ * mobile, two columns from `sm:` upward, so the combined-income view stays short
+ * without sub-stepping (Decision 8). RHF field `name`s are unchanged — this only
+ * changes how the existing MoneyRow cells are arranged.
+ */
+function MoneyGrid({ children }: { children: React.ReactNode }) {
   return (
-    <div className="grid grid-cols-3 items-center gap-4 px-4 py-3">
+    <div className="grid grid-cols-1 gap-4 px-4 py-4 sm:grid-cols-2">
       {children}
     </div>
   );
 }
 
-/** A single currency row inside a sub-table. */
+/**
+ * A single currency cell inside a {@link MoneyGrid}. The label now renders above
+ * the input (CurrencyInput's own label), which is what lets two fields sit
+ * side-by-side. The RHF path (`${prefix}.${path}`) is identical to before.
+ */
 function MoneyRow({
   prefix,
   path,
@@ -96,11 +102,8 @@ function MoneyRow({
 }) {
   const { control } = useFormContext<ParentsIncomeFormValues>();
   return (
-    <Row>
-      <span className="col-span-2 text-sm text-slate-700">{label}</span>
-      {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
-      <CurrencyInput control={control as any} name={`${prefix}.${path}` as any} label="" className="col-span-1" />
-    </Row>
+    /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
+    <CurrencyInput control={control as any} name={`${prefix}.${path}` as any} label={label} />
   );
 }
 
@@ -168,14 +171,53 @@ function DocUpload({
   );
 }
 
-function SubTable({ title, children }: { title: string; children: React.ReactNode }) {
+/**
+ * A collapsible sub-card (PR-10). Keeps the bordered fieldset shape the section
+ * already used; the win is progressive disclosure: a sub-table with no declared
+ * figures renders COLLAPSED (saves vertical space), while one that already holds
+ * a value renders OPEN so existing data stays visible.
+ *
+ * Deep-link safety: this is a native `<details>` and `defaultOpen` only seeds the
+ * initial `open` state. A field inside a closed disclosure is still in the DOM,
+ * so the Review "Go fix this" focus effect (section-page-client.tsx) can — and
+ * does — force every ancestor `<details>` open before scrolling/focusing.
+ */
+function SubTable({
+  title,
+  defaultOpen,
+  children,
+}: {
+  title: string;
+  defaultOpen: boolean;
+  children: React.ReactNode;
+}) {
   return (
-    <div className="space-y-3">
-      <h4 className="text-sm font-semibold text-primary-700">{title}</h4>
-      <div className="overflow-hidden rounded-md border border-slate-200 divide-y divide-slate-100">
+    <details
+      open={defaultOpen}
+      className="group overflow-hidden rounded-md border border-slate-200 [&_summary::-webkit-details-marker]:hidden"
+    >
+      <summary className="flex cursor-pointer list-none items-center justify-between gap-2 bg-slate-50 px-4 py-3 text-sm font-semibold text-primary-700 hover:bg-slate-100">
+        <span>{title}</span>
+        <span className="flex items-center gap-2 text-xs font-normal text-slate-500">
+          <span className="group-open:hidden">Add details</span>
+          <svg
+            className="h-4 w-4 transition-transform group-open:rotate-180"
+            viewBox="0 0 20 20"
+            fill="currentColor"
+            aria-hidden="true"
+          >
+            <path
+              fillRule="evenodd"
+              d="M5.23 7.21a.75.75 0 011.06.02L10 11.17l3.71-3.94a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z"
+              clipRule="evenodd"
+            />
+          </svg>
+        </span>
+      </summary>
+      <div className="divide-y divide-slate-100 border-t border-slate-200">
         {children}
       </div>
-    </div>
+    </details>
   );
 }
 
@@ -261,6 +303,22 @@ function ParentIncomeColumn({
   const subGt0 = (block: string, field: string) =>
     Number(sub[block]?.[field] ?? 0) > 0;
 
+  // Progressive disclosure (PR-10): a sub-table renders OPEN when it ALREADY
+  // held a declared figure on load (so saved data stays visible) and COLLAPSED
+  // when every numeric cell was 0/empty. This is a one-time, mount-time snapshot
+  // so the <details> stays uncontrolled after mount — the user can toggle it
+  // freely, and typing into / zeroing a cell never yanks it open or shut. Doc-id
+  // paths are ignored here — a value > 0 is what surfaces the upload, and the
+  // deep-link focus effect re-opens a closed disclosure if Review links to a doc
+  // field inside it.
+  const initialRecord = React.useRef(
+    (getValues(prefix) ?? {}) as Record<string, Record<string, unknown> | undefined>
+  );
+  const blockHadValue = (block: string, fields: readonly string[]) =>
+    fields.some((f) => Number(initialRecord.current[block]?.[f] ?? 0) > 0);
+  const blockHadText = (block: string, field: string) =>
+    Boolean(initialRecord.current[block]?.[field]);
+
   return (
     <div className="space-y-6">
       <div>
@@ -272,8 +330,13 @@ function ParentIncomeColumn({
       </div>
 
       {show.employed && (
-        <SubTable title="Employed (PAYE)">
-          <MoneyRow prefix={prefix} path="employed.annualSalaryPaye" label="Gross earned income / annual salary (PAYE, as on P60)" />
+        <SubTable
+          title="Employed (PAYE)"
+          defaultOpen={blockHadValue("employed", ["annualSalaryPaye"])}
+        >
+          <MoneyGrid>
+            <MoneyRow prefix={prefix} path="employed.annualSalaryPaye" label="Gross earned income / annual salary (PAYE, as on P60)" />
+          </MoneyGrid>
           <div className="space-y-4 px-4 py-3">
             <DocUpload
               prefix={prefix}
@@ -300,11 +363,21 @@ function ParentIncomeColumn({
       )}
 
       {show.selfEmployed && (
-        <SubTable title="Self-employed (SA302)">
-          <MoneyRow prefix={prefix} path="selfEmployed.grossSalaried" label="Gross salaried income" />
-          <MoneyRow prefix={prefix} path="selfEmployed.propertyIncome" label="Property income" />
-          <MoneyRow prefix={prefix} path="selfEmployed.dividends" label="Dividends" />
-          <MoneyRow prefix={prefix} path="selfEmployed.otherInvestmentIncome" label="Additional other interest / investment income" />
+        <SubTable
+          title="Self-employed (SA302)"
+          defaultOpen={blockHadValue("selfEmployed", [
+            "grossSalaried",
+            "propertyIncome",
+            "dividends",
+            "otherInvestmentIncome",
+          ])}
+        >
+          <MoneyGrid>
+            <MoneyRow prefix={prefix} path="selfEmployed.grossSalaried" label="Gross salaried income" />
+            <MoneyRow prefix={prefix} path="selfEmployed.propertyIncome" label="Property income" />
+            <MoneyRow prefix={prefix} path="selfEmployed.dividends" label="Dividends" />
+            <MoneyRow prefix={prefix} path="selfEmployed.otherInvestmentIncome" label="Additional other interest / investment income" />
+          </MoneyGrid>
           <div className="px-4 py-3">
             <DocUpload
               prefix={prefix}
@@ -326,8 +399,23 @@ function ParentIncomeColumn({
       )}
 
       {show.benefits && (
-        <SubTable title="On benefits (totals April–March)">
-          <MoneyRow prefix={prefix} path="benefits.universalCredit" label="Universal Credit (excl. childcare)" />
+        <SubTable
+          title="On benefits (totals April–March)"
+          defaultOpen={blockHadValue("benefits", [
+            "universalCredit",
+            "housingBenefit",
+            "childBenefit",
+            "childWorkingTaxCredit",
+            "esa",
+            "pipOrDla",
+            "carersAllowance",
+            "childcareSupport",
+            "other",
+          ])}
+        >
+          <MoneyGrid>
+            <MoneyRow prefix={prefix} path="benefits.universalCredit" label="Universal Credit (excl. childcare)" />
+          </MoneyGrid>
           <div className="px-4 py-3">
             <DocUpload
               prefix={prefix}
@@ -349,7 +437,9 @@ function ParentIncomeColumn({
               show={subGt0("benefits", "universalCredit")}
             />
           </div>
-          <MoneyRow prefix={prefix} path="benefits.housingBenefit" label="Housing Benefit (if not in Universal Credit)" />
+          <MoneyGrid>
+            <MoneyRow prefix={prefix} path="benefits.housingBenefit" label="Housing Benefit (if not in Universal Credit)" />
+          </MoneyGrid>
           <div className="px-4 py-3">
             <DocUpload
               prefix={prefix}
@@ -361,13 +451,15 @@ function ParentIncomeColumn({
               show={subGt0("benefits", "housingBenefit")}
             />
           </div>
-          <MoneyRow prefix={prefix} path="benefits.childBenefit" label="Child Benefit (number only — upload not required)" />
-          <MoneyRow prefix={prefix} path="benefits.childWorkingTaxCredit" label="Child / Working Tax Credit" />
-          <MoneyRow prefix={prefix} path="benefits.esa" label="Employment & Support Allowance (ESA)" />
-          <MoneyRow prefix={prefix} path="benefits.pipOrDla" label="Disability Allowance or PIP" />
-          <MoneyRow prefix={prefix} path="benefits.carersAllowance" label="Carer's Allowance" />
-          <MoneyRow prefix={prefix} path="benefits.childcareSupport" label="Childcare Support" />
-          <MoneyRow prefix={prefix} path="benefits.other" label="Other benefits" />
+          <MoneyGrid>
+            <MoneyRow prefix={prefix} path="benefits.childBenefit" label="Child Benefit (number only — upload not required)" />
+            <MoneyRow prefix={prefix} path="benefits.childWorkingTaxCredit" label="Child / Working Tax Credit" />
+            <MoneyRow prefix={prefix} path="benefits.esa" label="Employment & Support Allowance (ESA)" />
+            <MoneyRow prefix={prefix} path="benefits.pipOrDla" label="Disability Allowance or PIP" />
+            <MoneyRow prefix={prefix} path="benefits.carersAllowance" label="Carer's Allowance" />
+            <MoneyRow prefix={prefix} path="benefits.childcareSupport" label="Childcare Support" />
+            <MoneyRow prefix={prefix} path="benefits.other" label="Other benefits" />
+          </MoneyGrid>
           <div className="px-4 py-3">
             <DocUpload
               prefix={prefix}
@@ -391,24 +483,43 @@ function ParentIncomeColumn({
       )}
 
       {show.unemployed && (
-        <SubTable title="Unemployed / in between roles (last 12 months)">
-          <MoneyRow prefix={prefix} path="unemployed.finalGrossPay" label="Final gross pay" />
+        <SubTable
+          title="Unemployed / in between roles (last 12 months)"
+          defaultOpen={blockHadValue("unemployed", [
+            "finalGrossPay",
+            "redundancy",
+            "jsa",
+            "grantSupport",
+            "leavePay",
+          ])}
+        >
+          <MoneyGrid>
+            <MoneyRow prefix={prefix} path="unemployed.finalGrossPay" label="Final gross pay" />
+          </MoneyGrid>
           <div className="px-4 py-3">
             <DocUpload prefix={prefix} docIdPath="unemployed.p45DocumentId" slot={`P45${slotSuffix}`} label="P45" applicationId={applicationId} documentMap={documentMap} show={subGt0("unemployed", "finalGrossPay")} />
           </div>
-          <MoneyRow prefix={prefix} path="unemployed.redundancy" label="Redundancy / severance" />
+          <MoneyGrid>
+            <MoneyRow prefix={prefix} path="unemployed.redundancy" label="Redundancy / severance" />
+          </MoneyGrid>
           <div className="px-4 py-3">
             <DocUpload prefix={prefix} docIdPath="unemployed.redundancyDocumentId" slot={`REDUNDANCY${slotSuffix}`} label="Redundancy / severance letter" applicationId={applicationId} documentMap={documentMap} show={subGt0("unemployed", "redundancy")} />
           </div>
-          <MoneyRow prefix={prefix} path="unemployed.jsa" label="Job Seeker's Allowance (JSA)" />
+          <MoneyGrid>
+            <MoneyRow prefix={prefix} path="unemployed.jsa" label="Job Seeker's Allowance (JSA)" />
+          </MoneyGrid>
           <div className="px-4 py-3">
             <DocUpload prefix={prefix} docIdPath="unemployed.jsaDocumentId" slot={`JSA${slotSuffix}`} label="JSA award letter" applicationId={applicationId} documentMap={documentMap} show={subGt0("unemployed", "jsa")} />
           </div>
-          <MoneyRow prefix={prefix} path="unemployed.grantSupport" label="Student grant / support" />
+          <MoneyGrid>
+            <MoneyRow prefix={prefix} path="unemployed.grantSupport" label="Student grant / support" />
+          </MoneyGrid>
           <div className="px-4 py-3">
             <DocUpload prefix={prefix} docIdPath="unemployed.grantSupportDocumentId" slot={`GRANT_SUPPORT${slotSuffix}`} label="Grant / support letter" applicationId={applicationId} documentMap={documentMap} show={subGt0("unemployed", "grantSupport")} />
           </div>
-          <MoneyRow prefix={prefix} path="unemployed.leavePay" label="Parental / adoption / sickness leave pay" />
+          <MoneyGrid>
+            <MoneyRow prefix={prefix} path="unemployed.leavePay" label="Parental / adoption / sickness leave pay" />
+          </MoneyGrid>
           <div className="px-4 py-3">
             <DocUpload prefix={prefix} docIdPath="unemployed.leavePayDocumentId" slot={`LEAVE_PAY${slotSuffix}`} label="Status-change document" applicationId={applicationId} documentMap={documentMap} show={subGt0("unemployed", "leavePay")} />
           </div>
@@ -416,9 +527,14 @@ function ParentIncomeColumn({
       )}
 
       {show.retired && (
-        <SubTable title="Retired">
-          <MoneyRow prefix={prefix} path="retired.statePension" label="State Pension" />
-          <MoneyRow prefix={prefix} path="retired.privatePension" label="Private Pension & other plan" />
+        <SubTable
+          title="Retired"
+          defaultOpen={blockHadValue("retired", ["statePension", "privatePension"])}
+        >
+          <MoneyGrid>
+            <MoneyRow prefix={prefix} path="retired.statePension" label="State Pension" />
+            <MoneyRow prefix={prefix} path="retired.privatePension" label="Private Pension & other plan" />
+          </MoneyGrid>
           <div className="px-4 py-3">
             <DocUpload
               prefix={prefix}
@@ -434,8 +550,16 @@ function ParentIncomeColumn({
       )}
 
       {showDivorcedSeparated && (
-        <SubTable title="Divorced or separated">
-          <MoneyRow prefix={prefix} path="divorcedSeparated.maintenanceReceived" label="Child Maintenance Allowance received" />
+        <SubTable
+          title="Divorced or separated"
+          defaultOpen={
+            blockHadValue("divorcedSeparated", ["maintenanceReceived"]) ||
+            blockHadText("divorcedSeparated", "sharedCustodyNote")
+          }
+        >
+          <MoneyGrid>
+            <MoneyRow prefix={prefix} path="divorcedSeparated.maintenanceReceived" label="Child Maintenance Allowance received" />
+          </MoneyGrid>
           <div className="space-y-4 px-4 py-3">
             <DocUpload
               prefix={prefix}
@@ -464,8 +588,16 @@ function ParentIncomeColumn({
       )}
 
       {/* Third-party support — always offered. */}
-      <SubTable title="Third-party support (friends / family / other)">
-        <MoneyRow prefix={prefix} path="thirdParty.incomeSupportReceived" label="Additional Income Support received" />
+      <SubTable
+        title="Third-party support (friends / family / other)"
+        defaultOpen={
+          blockHadValue("thirdParty", ["incomeSupportReceived"]) ||
+          blockHadText("thirdParty", "supportNote")
+        }
+      >
+        <MoneyGrid>
+          <MoneyRow prefix={prefix} path="thirdParty.incomeSupportReceived" label="Additional Income Support received" />
+        </MoneyGrid>
         <div className="px-4 py-3">
           <FormField
             control={control}
@@ -544,7 +676,14 @@ export function ParentsIncomeForm({
 }: ParentsIncomeFormProps) {
   const showDivSep = isDivorcedSeparated(relationshipStatus);
   return (
-    <div className="space-y-10">
+    // PR-10: the grid-heavy Income section is widened to max-w-4xl, SCOPED here
+    // only (not the layout, so prose/declaration keep max-w-3xl). The portal
+    // layout caps content at max-w-3xl (48rem); from lg: this breaks out
+    // symmetrically by 4rem each side (-mx-16 + w-[calc(100%+8rem)]) and the
+    // inner wrapper re-centers within the resulting max-w-4xl (56rem) box. Below
+    // lg the parent isn't at its cap, so there is nothing to break out of.
+    <div className="lg:-mx-16 lg:w-[calc(100%+8rem)]">
+      <div className="mx-auto max-w-4xl space-y-10">
       <div className="rounded-md bg-primary-50 border border-primary-200 p-4">
         <p className="text-sm text-primary-800">
           The sections shown below match the employment status you entered for
@@ -580,6 +719,7 @@ export function ParentsIncomeForm({
           />
         </>
       )}
+      </div>
     </div>
   );
 }
