@@ -12,6 +12,7 @@
  */
 
 import { redirect } from "next/navigation";
+import type { ApplicationSectionType } from "@prisma/client";
 import { getCurrentUser } from "@/lib/auth/roles";
 import { withAdminContext, withUserContext, type RlsRole } from "@/lib/db/prisma";
 import { getCurrentApplicationForUser, getSectionStatusList } from "@/lib/db/queries/applications";
@@ -22,14 +23,17 @@ import {
 import { getOrAcceptLatestInvitationForUser } from "@/lib/db/queries/invitations";
 import { projectFormStatusForApplicant } from "@/components/shared/lifecycle-badges";
 import { ApplicationTypeChooser } from "@/app/(portal)/application-type-chooser";
-import { PortalGuidanceTabs } from "@/components/portal/portal-guidance-tabs";
 import { SubmissionCountdown } from "@/components/portal/submission-countdown";
 import {
   effectiveSubmissionDeadline,
   isSubmissionDeadlinePassed,
 } from "@/lib/rounds/submission-deadline";
 import { isRollingOverApplication } from "@/lib/db/queries/reassessment";
-import { SECTION_ORDER } from "@/lib/portal/sections";
+import {
+  SECTION_ORDER,
+  SECTION_TO_SLUG,
+  SECTION_TITLES,
+} from "@/lib/portal/sections";
 import {
   FileText,
   ArrowRight,
@@ -37,6 +41,7 @@ import {
   Upload,
   Lock,
   History,
+  HelpCircle,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -89,6 +94,7 @@ export default async function PortalDashboardPage() {
     totalSections,
     deadlinePast,
     deadlineIso,
+    nextSection,
     invitation,
     inviteRoundYear,
   } = user
@@ -102,6 +108,11 @@ export default async function PortalDashboardPage() {
             let totalSections = TOTAL_SECTIONS;
             let deadlinePast = false;
             let deadlineIso: string | null = null;
+            // First section (in active order) the applicant still has to finish.
+            // Drives the "Continue where you left off — Next: {section}" deep
+            // link on the draft dashboard. Null once every active section is
+            // complete (then the Continue card falls back to the first section).
+            let nextSection: ApplicationSectionType | null = null;
             if (app) {
               // The active section set excludes the ID section for a rolling-over
               // application (Epic 02). The progress DENOMINATOR must match — the
@@ -136,6 +147,15 @@ export default async function PortalDashboardPage() {
                 completed = statuses.filter(
                   (s) => s.isComplete && activeSet.has(s.section)
                 ).length;
+
+                // First incomplete active section, in workbook order — the
+                // deep-link target for "Continue where you left off". A section
+                // with no status row yet counts as incomplete.
+                const completeSet = new Set<string>(
+                  statuses.filter((s) => s.isComplete).map((s) => s.section)
+                );
+                nextSection =
+                  activeSections.find((s) => !completeSet.has(s)) ?? null;
               }
 
               // Resolve the effective submission deadline (Epic 03) for the
@@ -160,7 +180,14 @@ export default async function PortalDashboardPage() {
                 }
               }
             }
-            return { app, completed, totalSections, deadlinePast, deadlineIso };
+            return {
+              app,
+              completed,
+              totalSections,
+              deadlinePast,
+              deadlineIso,
+              nextSection,
+            };
           }
         );
 
@@ -230,6 +257,7 @@ export default async function PortalDashboardPage() {
           totalSections: userScope.totalSections,
           deadlinePast: userScope.deadlinePast,
           deadlineIso: userScope.deadlineIso,
+          nextSection: showReassessment ? null : userScope.nextSection,
           invitation: showReassessment || !userScope.app ? inv : null,
           inviteRoundYear: roundYear,
         };
@@ -240,6 +268,7 @@ export default async function PortalDashboardPage() {
         totalSections: TOTAL_SECTIONS,
         deadlinePast: false,
         deadlineIso: null,
+        nextSection: null,
         invitation: null,
         inviteRoundYear: null,
       };
@@ -257,12 +286,30 @@ export default async function PortalDashboardPage() {
     ? `${application.round.academicYear} Assessment Round`
     : "Bursary Application";
 
-  // Whether to de-emphasise the identity-documents checklist block (it is only
-  // required on a first application). True when the live application is rolling
-  // over, or when the pending invitation is a re-assessment (active bursary).
-  const isRollingOver =
-    application?.applicationType === "ROLLING_OVER" ||
-    (!!invitation && !!invitation.bursaryAccountId);
+  // Deep-link + label for the "Continue where you left off" primary card. Point
+  // at the first incomplete active section when known; otherwise fall back to
+  // the first section (existing behaviour). Mirrors proposal §2.6.
+  const continueSlug = nextSection
+    ? SECTION_TO_SLUG[nextSection]
+    : "child-details";
+  const continueHref = `/apply/${continueSlug}`;
+  const nextSectionTitle = nextSection ? SECTION_TITLES[nextSection] : null;
+
+  // Tiered help (Decision 7): a quiet "Need help?" link row used in every state
+  // EXCEPT "invited, not started", where the help affordance is elevated for
+  // first-timers (the bordered card under the chooser, below). All point at the
+  // single guidance page that PR-4 stood up.
+  const quietHelpLink = (
+    <div className="rounded-xl border border-slate-200 bg-white p-4 text-sm shadow-sm">
+      <span className="text-slate-500">Need help? </span>
+      <Link
+        href="/help"
+        className="font-medium text-accent-700 underline underline-offset-2 hover:text-accent-800"
+      >
+        How to apply &middot; Checklist &middot; Terms &amp; Conditions
+      </Link>
+    </div>
+  );
 
   return (
     <div className="space-y-8">
@@ -279,11 +326,6 @@ export default async function PortalDashboardPage() {
             : "Your bursary portal is ready."}
         </p>
       </div>
-
-      {/* Home-page guidance rail (feedback #2 / #3): How to Apply, Checklist and
-          the T&Cs viewer — always reachable, before/during/after an
-          application. */}
-      <PortalGuidanceTabs isRollingOver={isRollingOver} />
 
       {application ? (
         <>
@@ -319,6 +361,55 @@ export default async function PortalDashboardPage() {
             </Link>
           )}
 
+          {/* Continue where you left off — the state primary for an editable
+              draft (proposal §2.3/§2.6). Lifted above the status card so the
+              next action is the first thing a returning parent sees; reuses the
+              section count already in scope and deep-links to the first
+              incomplete section. Hidden once the deadline passes (the locked
+              card in Quick actions takes over). */}
+          {isDraft && !isLockedOut && (
+            <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+              <div className="flex flex-wrap items-start justify-between gap-4">
+                <div className="min-w-0">
+                  <p className="text-xs font-medium uppercase tracking-wider text-slate-400">
+                    Continue where you left off
+                  </p>
+                  <p className="mt-1 text-lg font-semibold text-primary-900">
+                    {completedSections} of {totalSections} sections complete
+                  </p>
+                  {nextSectionTitle && (
+                    <p className="mt-1 text-sm text-slate-500">
+                      Next: {nextSectionTitle}
+                    </p>
+                  )}
+                </div>
+                <a
+                  href={continueHref}
+                  className="group inline-flex shrink-0 items-center gap-2 rounded-lg bg-primary-900 px-4 py-2.5 text-sm font-medium text-white shadow-sm transition-colors hover:bg-primary-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-600"
+                >
+                  Continue
+                  <ArrowRight
+                    className="h-4 w-4 shrink-0 transition-transform group-hover:translate-x-0.5"
+                    aria-hidden="true"
+                  />
+                </a>
+              </div>
+              <div className="mt-5">
+                <div className="h-2 w-full overflow-hidden rounded-full bg-slate-100">
+                  <div
+                    className="h-full rounded-full bg-accent-600 transition-all"
+                    style={{ width: `${progressPercent}%` }}
+                    role="progressbar"
+                    aria-valuenow={progressPercent}
+                    aria-valuemin={0}
+                    aria-valuemax={100}
+                    aria-label={`${progressPercent}% complete`}
+                  />
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Application status card */}
           <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
             <div className="flex items-start justify-between gap-4">
@@ -348,29 +439,6 @@ export default async function PortalDashboardPage() {
                 />
               </div>
             </div>
-
-            {/* Progress summary — only meaningful while the draft is editable */}
-            {isDraft && (
-              <div className="mt-6 border-t border-slate-100 pt-5">
-                <div className="flex items-center justify-between text-sm">
-                  <span className="text-slate-500">Sections complete</span>
-                  <span className="font-medium text-primary-900">
-                    {completedSections} of {totalSections}
-                  </span>
-                </div>
-                <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-slate-100">
-                  <div
-                    className="h-full rounded-full bg-accent-600 transition-all"
-                    style={{ width: `${progressPercent}%` }}
-                    role="progressbar"
-                    aria-valuenow={progressPercent}
-                    aria-valuemin={0}
-                    aria-valuemax={100}
-                    aria-label={`${progressPercent}% complete`}
-                  />
-                </div>
-              </div>
-            )}
           </div>
 
           {/* Quick actions */}
@@ -379,33 +447,10 @@ export default async function PortalDashboardPage() {
               Quick actions
             </h2>
             <div className="grid gap-4 sm:grid-cols-2">
-              {/* Continue application — only while editable AND before the
-                  deadline. Past the deadline the action is removed and a locked
-                  card is shown instead (presentation; the server submit guard is
-                  authoritative). */}
-              {isDraft && !isLockedOut && (
-                <a
-                  href="/apply/child-details"
-                  className="group flex items-center gap-4 rounded-xl border border-slate-200 bg-white p-5 shadow-sm transition-shadow hover:shadow-md focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-600"
-                >
-                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary-900 text-white">
-                    <FileText className="h-5 w-5" aria-hidden="true" />
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <p className="font-medium text-slate-900 group-hover:text-primary-900">
-                      Continue Application
-                    </p>
-                    <p className="mt-0.5 text-sm text-slate-500">
-                      Pick up where you left off
-                    </p>
-                  </div>
-                  <ArrowRight
-                    className="h-4 w-4 shrink-0 text-slate-300 group-hover:text-primary-600 transition-colors"
-                    aria-hidden="true"
-                  />
-                </a>
-              )}
-
+              {/* The draft "Continue" primary now lives in the lead card above
+                  (proposal §2.6). Past the deadline the action is removed and a
+                  locked card is shown here instead (presentation; the server
+                  submit guard is authoritative). */}
               {isDraft && isLockedOut && (
                 <div className="flex items-center gap-4 rounded-xl border border-dashed border-rose-200 bg-rose-50 p-5">
                   <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-rose-100 text-rose-600">
@@ -468,33 +513,75 @@ export default async function PortalDashboardPage() {
               </a>
             </div>
           </div>
+
+          {/* Quiet help link — demoted off the fold (Decision 7). */}
+          {quietHelpLink}
         </>
       ) : invitation ? (
-        /* No application yet, but an invitation exists. Show BOTH application
-           types as mutually-exclusive cards (feedback #4): the type matching
-           the invitation is active, the other is disabled with a reason so a
-           parent can never start the wrong form. Eligibility is derived from
-           the invitation (re-assessment ⇒ ROLLING_OVER), never chosen here. */
-        <ApplicationTypeChooser
-          eligibleType={invitation.bursaryAccountId ? "ROLLING_OVER" : "NEW"}
-          defaultChildName={invitation.childName}
-          school={invitation.school}
-          academicYear={inviteRoundYear}
-        />
+        /* No application yet, but an invitation exists ("invited, not started").
+           Show BOTH application types as mutually-exclusive cards (feedback #4):
+           the type matching the invitation is active, the other is disabled with
+           a reason so a parent can never start the wrong form. Eligibility is
+           derived from the invitation (re-assessment ⇒ ROLLING_OVER), never
+           chosen here. The chooser stays front-and-centre; the help affordance
+           below is the one ELEVATED tier (Decision 7) — first-timers benefit
+           most from the guidance before they start. */
+        <>
+          <ApplicationTypeChooser
+            eligibleType={invitation.bursaryAccountId ? "ROLLING_OVER" : "NEW"}
+            defaultChildName={invitation.childName}
+            school={invitation.school}
+            academicYear={inviteRoundYear}
+          />
+
+          {/* Elevated help card (Decision 7) — same destination as the quiet
+              link, more prominence for first-timers. NOTE: this is currently
+              shown for ALL invited-not-started parents, including re-assessment
+              (ROLLING_OVER) invitations who have done this before. Product may
+              later want to gate elevation to NEW applicants only. */}
+          <div className="rounded-xl border border-accent-400 bg-accent-50 p-6 shadow-sm">
+            <div className="flex items-start gap-4">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-accent-100 text-accent-700">
+                <HelpCircle className="h-5 w-5" aria-hidden="true" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="font-semibold text-primary-900">
+                  New to bursary applications?
+                </p>
+                <p className="mt-1 text-sm text-slate-600">
+                  Read how to apply, the document checklist, and the bursary
+                  terms &amp; conditions before you begin.
+                </p>
+                <Link
+                  href="/help"
+                  className="mt-3 inline-flex items-center gap-2 rounded-lg border border-accent-400 bg-white px-3.5 py-2 text-sm font-medium text-accent-700 shadow-sm transition-colors hover:bg-accent-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-600"
+                >
+                  Read the guidance
+                  <ArrowRight className="h-4 w-4 shrink-0" aria-hidden="true" />
+                </Link>
+              </div>
+            </div>
+          </div>
+        </>
       ) : (
         /* No invitation found — neutral fallback */
-        <div className="rounded-xl border border-slate-200 bg-white p-8 text-center shadow-sm">
-          <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-slate-100">
-            <FileText className="h-6 w-6 text-slate-400" aria-hidden="true" />
+        <>
+          <div className="rounded-xl border border-slate-200 bg-white p-8 text-center shadow-sm">
+            <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-slate-100">
+              <FileText className="h-6 w-6 text-slate-400" aria-hidden="true" />
+            </div>
+            <h2 className="mt-4 text-lg font-semibold text-slate-800">
+              No invitation found
+            </h2>
+            <p className="mt-2 text-sm text-slate-500">
+              We can&rsquo;t find an invitation linked to your account. Please
+              contact the Foundation if you believe this is an error.
+            </p>
           </div>
-          <h2 className="mt-4 text-lg font-semibold text-slate-800">
-            No invitation found
-          </h2>
-          <p className="mt-2 text-sm text-slate-500">
-            We can&rsquo;t find an invitation linked to your account. Please
-            contact the Foundation if you believe this is an error.
-          </p>
-        </div>
+
+          {/* Quiet help link — guidance is still reachable here (Decision 7). */}
+          {quietHelpLink}
+        </>
       )}
     </div>
   );
