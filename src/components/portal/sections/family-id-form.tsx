@@ -178,7 +178,8 @@ function FamilyMemberCard({
   }, [documentMap, index]);
 
   return (
-    <div className="rounded-md border border-slate-200 bg-white p-4 space-y-4">
+    <fieldset className="rounded-md border border-slate-200 bg-white p-3 space-y-4 sm:p-4">
+      <legend className="sr-only">{familyMemberName}</legend>
       <div className="flex items-center justify-between">
         <span className="font-medium text-sm text-primary-900">
           {familyMemberName}
@@ -263,6 +264,6 @@ function FamilyMemberCard({
           />
         </div>
       </ConditionalField>
-    </div>
+    </fieldset>
   );
 }
