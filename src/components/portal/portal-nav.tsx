@@ -125,11 +125,15 @@ function PortalNavLink({
         aria-hidden="true"
       />
       <span className="flex-1 truncate">{item.label}</span>
-      {/* Dot badge — wired in PR-9 (e.g. paused → Documents). */}
+      {/* Dot badge (PR-9) — e.g. paused → Documents. An accessible, labelled
+          status indicator (not a bare decorative dot): `role="status"` so screen
+          readers announce the outstanding request, with a self-describing label.
+          Gold accent to match the navy/gold design system. */}
       {item.badge && (
         <span
-          className="h-2 w-2 shrink-0 rounded-full bg-amber-500"
-          aria-label="Action needed"
+          role="status"
+          aria-label={`${item.label}: action needed`}
+          className="h-2 w-2 shrink-0 rounded-full bg-accent-600"
         />
       )}
     </Link>
