@@ -33,64 +33,31 @@ import {
   isRollingOverApplication,
 } from "@/lib/db/queries/reassessment";
 import { isSubmissionDeadlinePassed } from "@/lib/rounds/submission-deadline";
+import {
+  SECTION_ORDER,
+  SECTION_TO_SLUG,
+  SLUG_TO_SECTION,
+  SECTION_TITLES as CANONICAL_SECTION_TITLES,
+} from "@/lib/portal/sections";
 
-// ─── Slug → ApplicationSectionType map ───────────────────────────────────────
-
-const SLUG_TO_SECTION: Record<string, ApplicationSectionType> = {
-  "child-details": "CHILD_DETAILS",
-  "family-id": "FAMILY_ID",
-  "parent-details": "PARENT_DETAILS",
-  "dependent-children": "DEPENDENT_CHILDREN",
-  "dependent-elderly": "DEPENDENT_ELDERLY",
-  "other-info": "OTHER_INFO",
-  "parents-income": "PARENTS_INCOME",
-  "assets-liabilities": "ASSETS_LIABILITIES",
-  "additional-info": "ADDITIONAL_INFO",
-  declaration: "DECLARATION",
-};
-
-const SECTION_TO_SLUG: Record<ApplicationSectionType, string> = {
-  CHILD_DETAILS: "child-details",
-  FAMILY_ID: "family-id",
-  PARENT_DETAILS: "parent-details",
-  DEPENDENT_CHILDREN: "dependent-children",
-  DEPENDENT_ELDERLY: "dependent-elderly",
-  OTHER_INFO: "other-info",
-  PARENTS_INCOME: "parents-income",
-  ASSETS_LIABILITIES: "assets-liabilities",
-  ADDITIONAL_INFO: "additional-info",
-  DECLARATION: "declaration",
-};
-
-const SECTION_ORDER: ApplicationSectionType[] = [
-  "CHILD_DETAILS",
-  "FAMILY_ID",
-  "PARENT_DETAILS",
-  "DEPENDENT_CHILDREN",
-  "DEPENDENT_ELDERLY",
-  "OTHER_INFO",
-  "PARENTS_INCOME",
-  "ASSETS_LIABILITIES",
-  "ADDITIONAL_INFO",
-  "DECLARATION",
-];
+// ─── Section metadata ─────────────────────────────────────────────────────────
+// Order / slug maps come from the canonical `@/lib/portal/sections` (single
+// source of truth). The hidden-set for re-assessments still derives from
+// `HIDDEN_REASSESSMENT_SECTIONS` (the reassessment module remains its single
+// source) so this file does not introduce a second hidden-set.
 
 /** Section order with FAMILY_ID removed — used for re-assessments. */
 const REASSESSMENT_SECTION_ORDER: ApplicationSectionType[] = SECTION_ORDER.filter(
   (s) => !HIDDEN_REASSESSMENT_SECTIONS.includes(s)
 );
 
+// Wizard page-header titles. Identical to the canonical (review) titles EXCEPT
+// for FAMILY_ID, which the wizard renders as "Details of Child — Identification"
+// (vs "Family Identification" on review). This one-key divergence is a copy
+// decision for product to reconcile — see PR-5; it is NOT merged silently here.
 const SECTION_TITLES: Record<ApplicationSectionType, string> = {
-  CHILD_DETAILS: "Details of Child",
+  ...CANONICAL_SECTION_TITLES,
   FAMILY_ID: "Details of Child — Identification",
-  PARENT_DETAILS: "Parent / Guardian Details",
-  DEPENDENT_CHILDREN: "Dependent Children",
-  DEPENDENT_ELDERLY: "Dependent Elderly",
-  OTHER_INFO: "Other Information Required",
-  PARENTS_INCOME: "Parents' Income",
-  ASSETS_LIABILITIES: "Parents' Assets & Liabilities",
-  ADDITIONAL_INFO: "Additional Information",
-  DECLARATION: "Declaration",
 };
 
 // ─── Page ─────────────────────────────────────────────────────────────────────

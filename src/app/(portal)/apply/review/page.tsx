@@ -20,6 +20,11 @@ import {
   resolveOwningContributorId,
 } from "@/lib/db/queries/contributors";
 import { getSectionGapStatuses } from "@/lib/portal/section-gaps";
+import {
+  SECTION_ORDER,
+  SECTION_TITLES,
+  SECTION_TO_SLUG as SECTION_SLUGS,
+} from "@/lib/portal/sections";
 import { ENTRY_YEAR_GROUP_LABELS } from "@/lib/assessment/schooling-years";
 import { cn } from "@/lib/utils";
 import type {
@@ -43,50 +48,14 @@ export const metadata = {
 };
 
 // ─── Section metadata ─────────────────────────────────────────────────────────
-
-const SECTION_ORDER: ApplicationSectionType[] = [
-  "CHILD_DETAILS",
-  "FAMILY_ID",
-  "PARENT_DETAILS",
-  "DEPENDENT_CHILDREN",
-  "DEPENDENT_ELDERLY",
-  "OTHER_INFO",
-  "PARENTS_INCOME",
-  "ASSETS_LIABILITIES",
-  "ADDITIONAL_INFO",
-  "DECLARATION",
-];
+// Order / titles / slugs come from the canonical `@/lib/portal/sections` (single
+// source of truth). The review page's titles ARE the canonical set; the wizard
+// keeps a one-key override for FAMILY_ID (see PR-5 / sections.ts).
 
 // DECLARATION is excluded from summary cards (that's where submit lives)
 const SUMMARY_SECTIONS: ApplicationSectionType[] = SECTION_ORDER.filter(
   (s) => s !== "DECLARATION"
 );
-
-const SECTION_TITLES: Record<ApplicationSectionType, string> = {
-  CHILD_DETAILS: "Details of Child",
-  FAMILY_ID: "Family Identification",
-  PARENT_DETAILS: "Parent / Guardian Details",
-  DEPENDENT_CHILDREN: "Dependent Children",
-  DEPENDENT_ELDERLY: "Dependent Elderly",
-  OTHER_INFO: "Other Information Required",
-  PARENTS_INCOME: "Parents' Income",
-  ASSETS_LIABILITIES: "Parents' Assets & Liabilities",
-  ADDITIONAL_INFO: "Additional Information",
-  DECLARATION: "Declaration",
-};
-
-const SECTION_SLUGS: Record<ApplicationSectionType, string> = {
-  CHILD_DETAILS: "child-details",
-  FAMILY_ID: "family-id",
-  PARENT_DETAILS: "parent-details",
-  DEPENDENT_CHILDREN: "dependent-children",
-  DEPENDENT_ELDERLY: "dependent-elderly",
-  OTHER_INFO: "other-info",
-  PARENTS_INCOME: "parents-income",
-  ASSETS_LIABILITIES: "assets-liabilities",
-  ADDITIONAL_INFO: "additional-info",
-  DECLARATION: "declaration",
-};
 
 // ─── Formatting helpers ───────────────────────────────────────────────────────
 

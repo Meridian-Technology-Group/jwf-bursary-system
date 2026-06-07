@@ -33,6 +33,7 @@ import {
   assertSubmittedAtUnset,
 } from "@/lib/applications/status";
 import { getSectionGapStatuses, type SectionGap } from "@/lib/portal/section-gaps";
+import { SECTION_ORDER } from "@/lib/portal/sections";
 import { isSubmissionDeadlinePassed } from "@/lib/rounds/submission-deadline";
 import { mirrorApplicationToSchedule } from "@/lib/bursary-accounts/lifecycle";
 import { TERMS_AND_CONDITIONS_VERSION } from "@/lib/portal/terms";
@@ -322,18 +323,9 @@ export async function getSectionStatus(
 
 // ─── Submit Application ───────────────────────────────────────────────────────
 
-const ALL_SECTIONS: ApplicationSectionType[] = [
-  "CHILD_DETAILS",
-  "FAMILY_ID",
-  "PARENT_DETAILS",
-  "DEPENDENT_CHILDREN",
-  "DEPENDENT_ELDERLY",
-  "OTHER_INFO",
-  "PARENTS_INCOME",
-  "ASSETS_LIABILITIES",
-  "ADDITIONAL_INFO",
-  "DECLARATION",
-];
+// Canonical full section list (single source of truth, shared with the wizard
+// / review / dashboard / sidebar / gap engine).
+const ALL_SECTIONS: ApplicationSectionType[] = SECTION_ORDER;
 
 /**
  * Submits the applicant's application.

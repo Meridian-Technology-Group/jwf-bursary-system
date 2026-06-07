@@ -27,6 +27,7 @@ import {
   type GapSeverity,
 } from "@/lib/portal/document-rules";
 import { SECTION_RULES } from "@/lib/portal/section-rules";
+import { SECTION_ORDER } from "@/lib/portal/sections";
 
 // ─── Public types ─────────────────────────────────────────────────────────────
 
@@ -122,20 +123,8 @@ export async function getSectionGapStatuses(
     rowMap.set(row.section, { data: row.data, isComplete: row.isComplete });
   }
 
-  // Canonical section order (matches portal stepper)
-  const SECTION_ORDER: SectionType[] = [
-    "CHILD_DETAILS",
-    "FAMILY_ID",
-    "PARENT_DETAILS",
-    "DEPENDENT_CHILDREN",
-    "DEPENDENT_ELDERLY",
-    "OTHER_INFO",
-    "PARENTS_INCOME",
-    "ASSETS_LIABILITIES",
-    "ADDITIONAL_INFO",
-    "DECLARATION",
-  ];
-
+  // Canonical section order comes from `@/lib/portal/sections` (single source
+  // of truth, shared with the wizard / review / dashboard / sidebar).
   return SECTION_ORDER.map((sectionType) => {
     const row = rowMap.get(sectionType);
     const isStarted = row !== undefined;

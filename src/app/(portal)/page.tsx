@@ -29,7 +29,7 @@ import {
   isSubmissionDeadlinePassed,
 } from "@/lib/rounds/submission-deadline";
 import { isRollingOverApplication } from "@/lib/db/queries/reassessment";
-import { ApplicationSectionType } from "@prisma/client";
+import { SECTION_ORDER } from "@/lib/portal/sections";
 import {
   FileText,
   ArrowRight,
@@ -44,22 +44,11 @@ export const metadata = {
   title: "My Application",
 };
 
-// All form sections in workbook order. The active set for a given application
-// excludes FAMILY_ID for a rolling-over re-assessment (Epic 02); the dashboard
-// progress count + denominator both derive from this so they always agree.
-const ALL_SECTION_TYPES: ApplicationSectionType[] = [
-  "CHILD_DETAILS",
-  "FAMILY_ID",
-  "PARENT_DETAILS",
-  "DEPENDENT_CHILDREN",
-  "DEPENDENT_ELDERLY",
-  "OTHER_INFO",
-  "PARENTS_INCOME",
-  "ASSETS_LIABILITIES",
-  "ADDITIONAL_INFO",
-  "DECLARATION",
-];
-const TOTAL_SECTIONS = ALL_SECTION_TYPES.length;
+// All form sections in workbook order come from the canonical SECTION_ORDER
+// (single source of truth). The active set for a given application excludes
+// FAMILY_ID for a rolling-over re-assessment (Epic 02); the dashboard progress
+// count + denominator both derive from this so they always agree.
+const TOTAL_SECTIONS = SECTION_ORDER.length;
 
 export default async function PortalDashboardPage() {
   const user = await getCurrentUser();
@@ -121,8 +110,8 @@ export default async function PortalDashboardPage() {
               // numerator and denominator now read the same active-section set.
               const rollingOver = isRollingOverApplication(app);
               const activeSections = rollingOver
-                ? ALL_SECTION_TYPES.filter((s) => s !== "FAMILY_ID")
-                : ALL_SECTION_TYPES;
+                ? SECTION_ORDER.filter((s) => s !== "FAMILY_ID")
+                : SECTION_ORDER;
               totalSections = activeSections.length;
 
               // Scope the progress count to the lead applicant's PRIMARY
