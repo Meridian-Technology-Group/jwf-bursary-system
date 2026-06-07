@@ -25,6 +25,33 @@ import type { Resolver } from "react-hook-form";
 import { AlertCircle, CheckCircle2, ChevronLeft, ChevronRight, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
+/**
+ * Minimal slice of Next's `AppRouterInstance` that the post-save navigation
+ * needs. Declared locally so the side-effect can be unit-tested with a plain
+ * mock (no jsdom / RTL in this repo).
+ */
+type NavRouter = {
+  refresh: () => void;
+  push: (href: string) => void;
+};
+
+/**
+ * After a successful section save, re-run the server layout subtree so the
+ * stepper/progress rail picks up the already-revalidated gap data
+ * (`revalidatePath` in `saveSection`), then soft-navigate to the next section.
+ *
+ * Order matters: `refresh()` MUST be called before `push()`. `refresh()` does
+ * not block navigation; the push proceeds and the refreshed tree resolves for
+ * the destination route (same layout + slot chain). Fixes defects #5 (frozen
+ * "0 of 11, 0%") and #4 (tri-state section icons feeding off stale data).
+ */
+export function navigateAfterSave(router: NavRouter, nextHref?: string): void {
+  router.refresh();
+  if (nextHref) {
+    router.push(nextHref);
+  }
+}
+
 interface SectionFormProps<T extends FieldValues> {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   schema: ZodType<T, any, any>;
@@ -97,9 +124,7 @@ export function SectionForm<T extends FieldValues>({
 
       if (result.success) {
         setSaveState("saved");
-        if (nextHref) {
-          router.push(nextHref);
-        }
+        navigateAfterSave(router, nextHref);
       } else {
         setSaveState("error");
         setServerErrors(result.errors ?? ["An unexpected error occurred."]);
