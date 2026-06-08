@@ -22,6 +22,7 @@ import { getCurrentUser } from "@/lib/auth/roles";
 import type { RlsRole } from "@/lib/db/prisma";
 import { loadAccountHistory } from "@/lib/portal/account-history";
 import { parentToneBadgeClass } from "@/lib/portal/status-projection";
+import { PortalPage } from "@/components/portal/portal-page";
 import { formatLondonDate } from "@/lib/datetime";
 import { cn } from "@/lib/utils";
 
@@ -39,7 +40,7 @@ export default async function HistoryPage() {
   });
 
   return (
-    <div className="space-y-8">
+    <PortalPage className="space-y-8">
       <div>
         <div className="mb-1 text-xs font-medium uppercase tracking-wider text-slate-400">
           Your account
@@ -174,6 +175,6 @@ export default async function HistoryPage() {
         <ArrowLeft className="h-4 w-4" aria-hidden="true" />
         Back to dashboard
       </Link>
-    </div>
+    </PortalPage>
   );
 }

@@ -17,6 +17,7 @@ import { withUserContext, type RlsRole } from "@/lib/db/prisma";
 import { loadSubmittedApplication } from "@/lib/portal/submission-loader";
 import { submittedLabel } from "@/lib/portal/status-projection";
 import { SubmittedSummary } from "@/components/portal/submitted-summary";
+import { PortalPage } from "@/components/portal/portal-page";
 import { formatLondonDate } from "@/lib/datetime";
 
 export const metadata = {
@@ -54,7 +55,7 @@ export default async function SubmittedPage() {
     : "—";
 
   return (
-    <div className="space-y-8">
+    <PortalPage className="space-y-8">
       {/* Success banner */}
       <div className="rounded-xl border border-green-200 bg-green-50 p-6">
         <div className="flex items-start gap-4">
@@ -114,6 +115,6 @@ export default async function SubmittedPage() {
           View application status
         </Link>
       </div>
-    </div>
+    </PortalPage>
   );
 }
