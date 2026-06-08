@@ -56,7 +56,7 @@ export function ApplyFooter() {
     // area (the -mx bleed cancels <main>'s padding). The INNER row is centred and
     // capped to the current section's card width, so the buttons align with the
     // card's left/right edges per-section instead of the wider 4xl envelope edges.
-    <div className="sticky bottom-0 z-20 -mx-4 mt-8 border-t border-slate-200 bg-white px-4 py-3 shadow-md md:-mx-8 md:px-8">
+    <div className="sticky bottom-0 z-20 -mx-4 -mb-6 mt-8 border-t border-slate-200 bg-white px-4 py-3 shadow-md md:-mx-8 md:-mb-10 md:px-8">
       <div
         className={cn(
           "mx-auto flex w-full items-center justify-between",
