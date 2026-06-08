@@ -676,14 +676,13 @@ export function ParentsIncomeForm({
 }: ParentsIncomeFormProps) {
   const showDivSep = isDivorcedSeparated(relationshipStatus);
   return (
-    // PR-10: the grid-heavy Income section is widened to max-w-4xl, SCOPED here
-    // only (not the layout, so prose/declaration keep max-w-3xl). The portal
-    // layout caps content at max-w-3xl (48rem); from lg: this breaks out
-    // symmetrically by 4rem each side (-mx-16 + w-[calc(100%+8rem)]) and the
-    // inner wrapper re-centers within the resulting max-w-4xl (56rem) box. Below
-    // lg the parent isn't at its cap, so there is nothing to break out of.
-    <div className="lg:-mx-16 lg:w-[calc(100%+8rem)]">
-      <div className="mx-auto max-w-4xl space-y-10">
+    // The grid-heavy Income section runs at max-w-4xl. That width now lives on
+    // the section CARD itself (section-page-client.tsx caps PARENTS_INCOME to
+    // max-w-4xl while every other section stays max-w-3xl), so this form just
+    // fills its card and lays its blocks out vertically. The previous fixed
+    // `-mx-16 + w-[calc(100%+8rem)]` content breakout is gone: it pushed content
+    // past the card border and overflowed the viewport at the lg breakpoint.
+    <div className="space-y-10">
       <div className="rounded-md bg-primary-50 border border-primary-200 p-4">
         <p className="text-sm text-primary-800">
           The sections shown below match the employment status you entered for
@@ -719,7 +718,6 @@ export function ParentsIncomeForm({
           />
         </>
       )}
-      </div>
     </div>
   );
 }

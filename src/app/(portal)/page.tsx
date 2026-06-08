@@ -23,6 +23,7 @@ import {
 import { getOrAcceptLatestInvitationForUser } from "@/lib/db/queries/invitations";
 import { projectFormStatusForApplicant } from "@/components/shared/lifecycle-badges";
 import { ApplicationTypeChooser } from "@/app/(portal)/application-type-chooser";
+import { PortalPage } from "@/components/portal/portal-page";
 import { SubmissionCountdown } from "@/components/portal/submission-countdown";
 import {
   effectiveSubmissionDeadline,
@@ -312,7 +313,7 @@ export default async function PortalDashboardPage() {
   );
 
   return (
-    <div className="space-y-8">
+    <PortalPage className="space-y-8">
       {/* Welcome heading */}
       <div>
         <h1 className="text-2xl font-semibold text-primary-900 md:text-3xl">
@@ -583,6 +584,6 @@ export default async function PortalDashboardPage() {
           {quietHelpLink}
         </>
       )}
-    </div>
+    </PortalPage>
   );
 }

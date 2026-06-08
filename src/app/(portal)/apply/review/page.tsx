@@ -26,6 +26,7 @@ import {
   SECTION_TO_SLUG as SECTION_SLUGS,
 } from "@/lib/portal/sections";
 import { ENTRY_YEAR_GROUP_LABELS } from "@/lib/assessment/schooling-years";
+import { PortalPage } from "@/components/portal/portal-page";
 import { cn } from "@/lib/utils";
 import type {
   ChildDetailsData,
@@ -446,7 +447,7 @@ export default async function ReviewPage() {
       : 0;
 
   return (
-    <div className="space-y-8">
+    <PortalPage className="space-y-8">
       {/* Page header */}
       <div>
         <div className="mb-1 text-xs font-medium uppercase tracking-wider text-slate-400">
@@ -683,7 +684,7 @@ export default async function ReviewPage() {
           </div>
         </div>
       </section>
-    </div>
+    </PortalPage>
   );
 }
 

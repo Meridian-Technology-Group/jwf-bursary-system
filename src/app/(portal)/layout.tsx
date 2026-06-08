@@ -127,8 +127,28 @@ export default async function PortalLayout({
             id="main-content"
             className="flex-1 px-4 py-6 md:px-8 md:py-10 pb-24"
           >
-            {/* Content constrained to readable width */}
-            <div className="mx-auto max-w-3xl">
+            {/*
+              Content envelope. This is the WIDEST the portal goes — max-w-4xl
+              (56rem), the width the grid-heavy Parents' Income section needs.
+              It is deliberately NOT a per-page cap: it replaces PR-10's fixed
+              `+8rem` content breakout (which overflowed the viewport at the lg
+              breakpoint) by letting the Income CARD itself be the wide element,
+              bounded by the available width rather than forced wider than it.
+
+              Because the root no longer caps at 48rem, each consumer
+              re-establishes its own readable width below this:
+                • non-apply pages (Home / Status / History / Help / Documents /
+                  Submitted / Respond) wrap their content in <PortalPage>
+                  (max-w-3xl) so they stay exactly as narrow as before;
+                • the apply wizard's section CARD re-caps itself — Income to the
+                  full max-w-4xl, every other section back to max-w-3xl.
+
+              The envelope is `mx-auto w-full` inside the padded <main>, so its
+              rendered width is min(56rem, viewport − 280px rail − padding): it
+              can never induce horizontal scroll at any breakpoint, and it
+              collapses to a single column on mobile.
+            */}
+            <div className="mx-auto w-full max-w-4xl">
               <Suspense fallback={<PageLoader />}>{children}</Suspense>
             </div>
           </main>

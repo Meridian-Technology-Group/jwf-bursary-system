@@ -387,7 +387,21 @@ export function SectionPageClient({
   }, [sectionType]);
 
   return (
-    <div className="space-y-6">
+    // Per-section width cap. The portal root no longer hard-caps content at
+    // max-w-3xl, so each apply section sets its own readable width HERE, on the
+    // wrapper that holds BOTH the section header and the card — so the heading
+    // stays aligned with the card it labels at every breakpoint. The grid-heavy
+    // PARENTS_INCOME section opens to the full max-w-4xl (56rem); every other
+    // section stays at the historical max-w-3xl (48rem). The cap is
+    // `mx-auto w-full max-w-Nxl` inside the layout's padded <main>, so the
+    // rendered width is min(cap, viewport − 280px rail − padding): bounded by
+    // the available width (never a fixed +rem), so no horizontal scroll at any
+    // breakpoint, and a single column on mobile.
+    <div
+      className={`mx-auto w-full space-y-6 ${
+        sectionType === "PARENTS_INCOME" ? "max-w-4xl" : "max-w-3xl"
+      }`}
+    >
       <div>
         <div className="mb-1 text-xs font-medium uppercase tracking-wider text-slate-400">
           Section {stepNumber} of {totalSteps}
@@ -403,6 +417,9 @@ export function SectionPageClient({
       {/* Pre-populated banner — shown for personal sections copied from last year */}
       {isPrepopulated && <PrepopulatedSectionBanner />}
 
+      {/* The card fills the (already width-capped) wrapper, so its border is the
+          section's visible width boundary and the form content lives inside its
+          padding — content can never spill past the border. */}
       <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
         {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
         <SectionForm

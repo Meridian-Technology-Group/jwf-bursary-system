@@ -46,6 +46,7 @@ import {
 import { humaniseSlot } from "@/lib/documents/slots";
 import { EmptyState } from "@/components/shared/empty-state";
 import { DocumentsList } from "@/components/portal/documents-list";
+import { PortalPage } from "@/components/portal/portal-page";
 
 export const metadata = { title: "Documents" };
 
@@ -72,7 +73,7 @@ function groupBySlot(
 
 function PageShell({ children }: { children: React.ReactNode }) {
   return (
-    <div className="space-y-6">
+    <PortalPage className="space-y-6">
       <div>
         <h1 className="text-2xl font-semibold text-primary-900">Documents</h1>
         <p className="mt-1 text-sm text-slate-500">
@@ -80,7 +81,7 @@ function PageShell({ children }: { children: React.ReactNode }) {
         </p>
       </div>
       {children}
-    </div>
+    </PortalPage>
   );
 }
 

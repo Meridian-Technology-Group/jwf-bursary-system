@@ -33,6 +33,7 @@ import {
 } from "@/lib/portal/status-projection";
 import { getDeadlineStatus } from "@/lib/portal/deadline";
 import { SubmissionCountdown } from "@/components/portal/submission-countdown";
+import { PortalPage } from "@/components/portal/portal-page";
 import { formatLondonDate } from "@/lib/datetime";
 
 export const metadata = {
@@ -106,7 +107,7 @@ export default async function StatusPage() {
   };
 
   return (
-    <div className="space-y-8">
+    <PortalPage className="space-y-8">
       {/* Page header */}
       <div>
         <div className="mb-1 text-xs font-medium uppercase tracking-wider text-slate-400">
@@ -339,6 +340,6 @@ export default async function StatusPage() {
         <ArrowLeft className="h-4 w-4" aria-hidden="true" />
         Back to dashboard
       </Link>
-    </div>
+    </PortalPage>
   );
 }
