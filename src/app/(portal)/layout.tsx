@@ -86,7 +86,12 @@ export default async function PortalLayout({
     navState?.formStatus === "SUBMITTED" ? "/status" : "/apply/child-details";
 
   return (
-    <div className="flex min-h-screen bg-canvas-50">
+    // flex-col on mobile so the md:hidden mobile header stacks ABOVE the content
+    // (otherwise it sits as a flex-row sibling and squishes the content into the
+    // right half on phones). md:flex-row restores the desktop rail+content row —
+    // the desktop aside is md:fixed (out of flow) and the mobile header is
+    // md:hidden, so the row layout is unchanged at md+.
+    <div className="flex flex-col md:flex-row min-h-screen bg-canvas-50">
       {/* Epic 11 (D20) — optional inactivity logout, applied to the parent
           portal as well as staff. Renders nothing without an authenticated
           user or when the flag is off. */}
