@@ -54,7 +54,10 @@ export default async function ApplyContentLayout({
         sections={stepperData?.sections ?? null}
         roundName={stepperData?.roundName}
       />
-      <div className="flex min-h-[60vh] flex-col">
+      {/* Fill the available height (flex-1) so the sticky footer is pushed to
+          the bottom of the viewport on short forms instead of floating mid-page.
+          min-h-0 lets this flex child shrink correctly inside the column. */}
+      <div className="flex min-h-0 flex-1 flex-col">
         <div className="flex-1">{children}</div>
         {/* The one sticky footer — scoped to the apply segment. It owns its own
             sticky chrome and renders nothing on /apply/review, so no empty bar

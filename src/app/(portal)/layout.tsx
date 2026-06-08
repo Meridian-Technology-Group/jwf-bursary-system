@@ -130,7 +130,12 @@ export default async function PortalLayout({
         <div className="flex flex-1 flex-col md:ml-[280px]">
           <main
             id="main-content"
-            className="flex-1 px-4 py-6 md:px-8 md:py-10 pb-24"
+            // flex column that fills the available height so the apply wizard's
+            // content area can grow (flex-1) and push its sticky footer to the
+            // bottom of the viewport even on SHORT forms (otherwise the footer
+            // floated mid-page). Symmetric py padding (no extra pb-24): the
+            // apply footer breaks out of the bottom padding to sit flush.
+            className="flex flex-1 flex-col px-4 py-6 md:px-8 md:py-10"
           >
             {/*
               The content column is full-width here; width capping lives with
@@ -149,7 +154,7 @@ export default async function PortalLayout({
               Each consumer cap is ≤ the available width, so nothing can induce
               horizontal scroll, and everything collapses to one column on mobile.
             */}
-            <div className="w-full">
+            <div className="flex w-full flex-1 flex-col">
               <Suspense fallback={<PageLoader />}>{children}</Suspense>
             </div>
           </main>
