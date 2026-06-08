@@ -456,7 +456,14 @@ export async function submitApplication(applicationId: string): Promise<never> {
   // that isComplete alone does not capture. Scoped to the lead applicant's
   // PRIMARY contributor (dual-parent, PR 4b) so the secondary's owned section
   // rows and uploaded documents can never affect the primary's submit gate.
-  const gapStatuses = await getSectionGapStatuses(applicationId, ownerContributorId);
+  // Runs under the lead applicant's RLS context — getSectionGapStatuses reads
+  // RLS-protected tables; off the global client it returns zero rows, which
+  // would silently let an incomplete application through this gate.
+  const gapStatuses = await withUserContext(
+    user.id,
+    user.role as RlsRole,
+    (tx) => getSectionGapStatuses(tx, applicationId, ownerContributorId)
+  );
   const errorGaps: SectionGap[] = gapStatuses.flatMap((gs) =>
     gs.gaps.filter((g) => g.severity === "error")
   );

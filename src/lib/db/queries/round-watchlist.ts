@@ -23,7 +23,7 @@
  * block (staff RLS sees the whole round).
  */
 
-import type { Tx } from "@/lib/db/prisma";
+import { withAdminContext, type Tx } from "@/lib/db/prisma";
 import { AUDIT_ACTIONS, AUDIT_ENTITY_TYPES } from "@/lib/audit/actions";
 import { getSectionGapStatuses } from "@/lib/portal/section-gaps";
 import {
@@ -206,17 +206,24 @@ export async function getRoundWatchlist(
     )
     .map((a) => a.id);
 
+  // getSectionGapStatuses reads RLS-protected tables (application_sections /
+  // documents). This admin/assessor watchlist legitimately scans ALL submitted
+  // apps, so each chunk runs under a single shared service_role transaction
+  // (withAdminContext). No ownerContributorId scope here — the rule fires on the
+  // whole application's document completeness, not a single contributor's.
   const missingDocsSet = new Set<string>();
   for (let i = 0; i < submittedIds.length; i += RULE3_DOC_CHECK_CHUNK) {
     const chunk = submittedIds.slice(i, i + RULE3_DOC_CHECK_CHUNK);
-    const results = await Promise.all(
-      chunk.map(async (appId) => {
-        const statuses = await getSectionGapStatuses(appId);
-        const hasError = statuses.some((s) =>
-          s.gaps.some((g) => g.severity === "error"),
-        );
-        return { appId, hasError };
-      }),
+    const results = await withAdminContext((adminTx) =>
+      Promise.all(
+        chunk.map(async (appId) => {
+          const statuses = await getSectionGapStatuses(adminTx, appId);
+          const hasError = statuses.some((s) =>
+            s.gaps.some((g) => g.severity === "error"),
+          );
+          return { appId, hasError };
+        }),
+      ),
     );
     for (const r of results) {
       if (r.hasError) missingDocsSet.add(r.appId);
