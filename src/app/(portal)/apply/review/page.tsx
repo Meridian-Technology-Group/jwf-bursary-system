@@ -409,7 +409,15 @@ export default async function ReviewPage() {
   }
 
   // ── Gap analysis ───────────────────────────────────────────────────────────
-  const gapStatuses = await getSectionGapStatuses(application.id, ownerContributorId);
+  // Runs under the lead applicant's RLS context: getSectionGapStatuses reads
+  // application_sections/documents (both RLS-protected), so it must share the
+  // applicant context or it sees zero rows. ownerContributorId keeps the read
+  // scoped to the PRIMARY (dual-parent isolation, PR 4b).
+  const gapStatuses = await withUserContext(
+    user.id,
+    user.role as RlsRole,
+    (tx) => getSectionGapStatuses(tx, application.id, ownerContributorId)
+  );
 
   const allErrorGaps = gapStatuses.flatMap((gs) =>
     gs.gaps.filter((g) => g.severity === "error")

@@ -52,18 +52,27 @@ export default async function ContributeReviewPage() {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
 
-  const { ctx, statuses } = await withUserContext(
+  // One transaction under the secondary's RLS context: resolve the contributor
+  // context, the section status list, AND the owner-scoped gap analysis. All
+  // three read RLS-protected tables, so getSectionGapStatuses must share this
+  // context (off the global client it returns zero rows).
+  const { ctx, statuses, gapStatuses } = await withUserContext(
     user.id,
     user.role as RlsRole,
     async (tx) => {
       const ctx = await getSecondaryContributorContext(tx, user.id);
-      if (!ctx) return { ctx: null, statuses: [] };
+      if (!ctx) return { ctx: null, statuses: [], gapStatuses: [] };
       const statuses = await getSectionStatusList(
         tx,
         ctx.applicationId,
         ctx.contributorId
       );
-      return { ctx, statuses };
+      const gapStatuses = await getSectionGapStatuses(
+        tx,
+        ctx.applicationId,
+        ctx.contributorId
+      );
+      return { ctx, statuses, gapStatuses };
     }
   );
 
@@ -75,7 +84,6 @@ export default async function ContributeReviewPage() {
   const c: SecondaryContributorContext = ctx;
 
   // Owner-scoped gap analysis (the secondary's owned sections + own documents).
-  const gapStatuses = await getSectionGapStatuses(c.applicationId, c.contributorId);
   const relevantGapStatuses = gapStatuses.filter((gs) =>
     SECONDARY_SECTIONS.includes(gs.sectionType)
   );

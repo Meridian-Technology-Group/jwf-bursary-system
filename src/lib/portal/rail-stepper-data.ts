@@ -51,6 +51,10 @@ export async function loadRailStepper(): Promise<RailStepperData | null> {
   const user = await getCurrentUser();
   if (!user) return null;
 
+  // One transaction under the lead applicant's RLS context: resolve the app +
+  // owning contributor AND compute the gap statuses. getSectionGapStatuses
+  // reads RLS-protected tables, so it MUST share this context — running it off
+  // the global client returns zero rows (the "0 of 10 / all grey" defect).
   const resolved = await withUserContext(
     user.id,
     user.role as RlsRole,
@@ -62,17 +66,16 @@ export async function loadRailStepper(): Promise<RailStepperData | null> {
         application.id,
         user.id
       );
-      return { application, ownerContributorId };
+      const gapStatuses = ownerContributorId
+        ? await getSectionGapStatuses(tx, application.id, ownerContributorId)
+        : await getSectionGapStatuses(tx, application.id);
+      return { application, gapStatuses };
     }
   );
 
   if (!resolved?.application) return null;
 
-  const { application, ownerContributorId } = resolved;
-
-  const gapStatuses = ownerContributorId
-    ? await getSectionGapStatuses(application.id, ownerContributorId)
-    : await getSectionGapStatuses(application.id);
+  const { application, gapStatuses } = resolved;
 
   const sections = buildSidebarSections(gapStatuses, {
     isReassessment: application.isReassessment,

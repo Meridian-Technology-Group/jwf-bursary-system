@@ -18,7 +18,7 @@
 
 import "server-only";
 
-import { prisma } from "@/lib/db/prisma";
+import type { Tx } from "@/lib/db/prisma";
 import { ApplicationSectionType } from "@prisma/client";
 import {
   evaluateRules,
@@ -67,12 +67,18 @@ export interface SectionGapStatus {
  * contributor's own uploads (dual-parent, PR 4b): the primary's submit gate
  * must not count the secondary's documents and vice-versa. When omitted the
  * legacy behaviour (all of the application's documents) is preserved.
+ *
+ * `tx` MUST be an RLS-scoped transaction client (from `withUserContext` /
+ * `withAdminContext`). The personal-data tables (`documents`,
+ * `application_sections`) are under Row Level Security and the global Prisma
+ * client carries NO `request.jwt.claims`, so a query off it returns ZERO rows.
  */
 async function getUploadedSlots(
+  tx: Tx,
   applicationId: string,
   ownerContributorId?: string
 ): Promise<Set<string>> {
-  const rows = await prisma.document.findMany({
+  const rows = await tx.document.findMany({
     where: {
       applicationId,
       ...(ownerContributorId
@@ -100,22 +106,31 @@ function asBlob(data: unknown): Record<string, unknown> | null {
  *   1. Load all ApplicationSection rows for the application (data + isComplete).
  *   2. Load all Document rows (slot only) to build the uploaded-slots set.
  *
+ * `tx` MUST be an RLS-scoped transaction client (from `withUserContext` for the
+ * applicant/secondary, or `withAdminContext` for the admin/assessor watchlist
+ * scan). The reads target `application_sections` / `documents`, both under Row
+ * Level Security; the global Prisma client has no `request.jwt.claims` and
+ * would return ZERO rows — silently making every section look not-started.
+ *
  * `ownerContributorId` (dual-parent, PR 4b) scopes BOTH reads to a single
- * contributor's owned sections + uploaded documents.
+ * contributor's owned sections + uploaded documents. This filter is independent
+ * of RLS and is what keeps the primary's submit gate isolated from the
+ * secondary's rows (and vice-versa).
  */
 export async function getSectionGapStatuses(
+  tx: Tx,
   applicationId: string,
   ownerContributorId?: string
 ): Promise<SectionGapStatus[]> {
   const [sectionRows, uploadedSlots] = await Promise.all([
-    prisma.applicationSection.findMany({
+    tx.applicationSection.findMany({
       where: {
         applicationId,
         ...(ownerContributorId ? { ownerContributorId } : {}),
       },
       select: { section: true, data: true, isComplete: true },
     }),
-    getUploadedSlots(applicationId, ownerContributorId),
+    getUploadedSlots(tx, applicationId, ownerContributorId),
   ]);
 
   const rowMap = new Map<SectionType, { data: unknown; isComplete: boolean }>();

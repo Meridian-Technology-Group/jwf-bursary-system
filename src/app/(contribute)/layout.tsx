@@ -59,21 +59,30 @@ export default async function ContributeLayout({
   let roundName: string | undefined;
 
   if (user) {
-    const ctx = await withUserContext(
+    // One transaction under the secondary's RLS context: resolve the
+    // contributor context AND compute the owner-scoped gap analysis.
+    // getSectionGapStatuses reads RLS-protected tables, so it must share this
+    // context or it sees zero rows (the secondary stepper showed all grey).
+    const resolved = await withUserContext(
       user.id,
       user.role as RlsRole,
-      (tx) => getSecondaryContributorContext(tx, user.id)
+      async (tx) => {
+        const ctx = await getSecondaryContributorContext(tx, user.id);
+        if (!ctx) return null;
+        // Owner-scoped gap analysis — only the secondary's owned sections +
+        // their own documents (a SELECT under applicant RLS, never an upsert).
+        const gapStatuses = await getSectionGapStatuses(
+          tx,
+          ctx.applicationId,
+          ctx.contributorId
+        );
+        return { ctx, gapStatuses };
+      }
     );
-    if (ctx) {
-      // Owner-scoped gap analysis — only the secondary's owned sections + their
-      // own documents (a SELECT under applicant RLS, never an upsert).
-      const gapStatuses = await getSectionGapStatuses(
-        ctx.applicationId,
-        ctx.contributorId
-      );
-      sidebarSections = buildContributeSidebarSections(gapStatuses);
-      roundName = ctx.roundYear
-        ? `${ctx.roundYear} Assessment Round`
+    if (resolved) {
+      sidebarSections = buildContributeSidebarSections(resolved.gapStatuses);
+      roundName = resolved.ctx.roundYear
+        ? `${resolved.ctx.roundYear} Assessment Round`
         : undefined;
     }
   }
