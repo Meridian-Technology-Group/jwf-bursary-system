@@ -43,8 +43,11 @@ type NavRouter = {
  *
  * Order matters: `refresh()` MUST be called before `push()`. `refresh()` does
  * not block navigation; the push proceeds and the refreshed tree resolves for
- * the destination route (same layout + slot chain). Fixes defects #5 (frozen
- * "0 of 11, 0%") and #4 (tri-state section icons feeding off stale data).
+ * the destination route. `refresh()` re-runs `apply/layout.tsx` (a normal
+ * layout in the children tree), which re-fetches the gap data and republishes
+ * it to the rail via the stepper-data store — so the stepper/progress goes
+ * live. Fixes the frozen "0 of N" progress and the tri-state section icons
+ * feeding off stale data.
  */
 export function navigateAfterSave(router: NavRouter, nextHref?: string): void {
   router.refresh();

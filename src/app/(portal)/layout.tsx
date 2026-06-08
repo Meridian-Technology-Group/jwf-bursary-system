@@ -6,11 +6,15 @@
  *  - the `IdleLogoutWatcher` (Epic 11 / D20),
  *  - the ONE persistent left rail.
  *
- * The section stepper is NO LONGER fetched or rendered here. It now arrives as
- * the `stepper` parallel-route slot (`@stepper/`), which fetches its gap data
- * only on `/apply/*` and renders nothing (`@stepper/default.tsx` → null)
- * elsewhere. The layout simply places the slot inside the rail. The wizard's
- * one sticky footer lives in the `apply/` content segment, not here.
+ * The section stepper is NO LONGER fetched here. It is fed by the client
+ * `StepperDataProvider` (mounted below, wrapping BOTH the rail and the content
+ * column): the apply content subtree (`apply/layout.tsx`) fetches the gap data
+ * and writes it into the store, and the rail's `RailStepper` reads it. The
+ * Provider must sit ABOVE both the rail and `{children}` (their common
+ * ancestor) so the write from the content branch reaches the reader in the rail
+ * branch. This replaces the former `@stepper` parallel-route slot, which neither
+ * re-ran on `router.refresh()` nor cleared on soft-nav (defects #2/#3/#4). The
+ * wizard's one sticky footer lives in the `apply/` content segment, not here.
  *
  * Desktop (≥768 px): fixed 280 px left rail + scrollable main content.
  * Mobile (<768 px):  sticky header with a nav Sheet + an "All sections" Sheet.
@@ -24,6 +28,7 @@ import { loadPortalAccessState } from "@/lib/bursary-accounts/access";
 import { getPortalNavState } from "@/lib/db/queries/applications";
 import { PortalNav } from "@/components/portal/portal-nav";
 import { PortalNavMobileHeader } from "@/components/portal/portal-nav-mobile-header";
+import { StepperDataProvider } from "@/components/portal/stepper-data-context";
 import { PageLoader } from "@/components/shared/loading";
 import { IdleLogoutWatcher } from "@/components/auth/idle-logout-watcher";
 
@@ -36,11 +41,8 @@ export const metadata = {
 
 export default async function PortalLayout({
   children,
-  stepper,
 }: {
   children: React.ReactNode;
-  /** The `@stepper` parallel slot — the section stepper (null off /apply/*). */
-  stepper: React.ReactNode;
 }) {
   const user = await getCurrentUser();
 
@@ -90,43 +92,49 @@ export default async function PortalLayout({
           user or when the flag is off. */}
       {user ? <IdleLogoutWatcher /> : null}
 
-      {/* ── Desktop persistent rail (hidden on mobile) ─────────────────────
-          The ONE rail: PortalNav (Home / My Application / Documents / History /
-          Help + account/sign-out footer) with the @stepper slot nested under
-          "My Application" (null off /apply/*). */}
-      <aside className="hidden md:flex md:flex-col md:w-[280px] md:shrink-0 md:fixed md:inset-y-0 md:left-0 md:z-30 bg-white border-r border-slate-200 shadow-xs">
-        <PortalNav
-          userName={displayName}
-          applicationHref={applicationHref}
-          needsDocs={needsDocs}
-        >
-          {stepper}
-        </PortalNav>
-      </aside>
+      {/* The stepper-data bridge (replaces the `@stepper` slot). It MUST wrap
+          BOTH the rail (the reader, via RailStepper) and {children} (which
+          contains apply/layout.tsx, the writer) so the gap data written from the
+          content branch reaches the reader in the rail branch — they are
+          ancestor-side siblings, so a Provider lower in either branch could not
+          bridge them. The store is the only data path from content → rail. */}
+      <StepperDataProvider>
+        {/* ── Desktop persistent rail (hidden on mobile) ─────────────────────
+            The ONE rail: PortalNav (Home / My Application / Documents / History
+            / Help + account/sign-out footer). PortalNav renders the RailStepper
+            internally under "My Application"; the stepper reads the bridge store
+            and is pathname-gated to /apply/*. */}
+        <aside className="hidden md:flex md:flex-col md:w-[280px] md:shrink-0 md:fixed md:inset-y-0 md:left-0 md:z-30 bg-white border-r border-slate-200 shadow-xs">
+          <PortalNav
+            userName={displayName}
+            applicationHref={applicationHref}
+            needsDocs={needsDocs}
+          />
+        </aside>
 
-      {/* ── Mobile sticky header (visible only on mobile) ───────────────── */}
-      <div className="md:hidden sticky top-0 z-30 w-full bg-white border-b border-slate-200 shadow-xs">
-        <PortalNavMobileHeader
-          userName={displayName}
-          applicationHref={applicationHref}
-          needsDocs={needsDocs}
-          stepper={stepper}
-        />
-      </div>
+        {/* ── Mobile sticky header (visible only on mobile) ───────────────── */}
+        <div className="md:hidden sticky top-0 z-30 w-full bg-white border-b border-slate-200 shadow-xs">
+          <PortalNavMobileHeader
+            userName={displayName}
+            applicationHref={applicationHref}
+            needsDocs={needsDocs}
+          />
+        </div>
 
-      {/* ── Main content column ─────────────────────────────────────────── */}
-      <div className="flex flex-1 flex-col md:ml-[280px]">
-        <main
-          id="main-content"
-          className="flex-1 px-4 py-6 md:px-8 md:py-10 pb-24"
-        >
-          {/* Content constrained to readable width */}
-          <div className="mx-auto max-w-3xl">
-            <Suspense fallback={<PageLoader />}>{children}</Suspense>
-          </div>
-        </main>
-        {/* NO footer here — the apply content segment owns the sticky footer. */}
-      </div>
+        {/* ── Main content column ─────────────────────────────────────────── */}
+        <div className="flex flex-1 flex-col md:ml-[280px]">
+          <main
+            id="main-content"
+            className="flex-1 px-4 py-6 md:px-8 md:py-10 pb-24"
+          >
+            {/* Content constrained to readable width */}
+            <div className="mx-auto max-w-3xl">
+              <Suspense fallback={<PageLoader />}>{children}</Suspense>
+            </div>
+          </main>
+          {/* NO footer here — the apply content segment owns the sticky footer. */}
+        </div>
+      </StepperDataProvider>
     </div>
   );
 }

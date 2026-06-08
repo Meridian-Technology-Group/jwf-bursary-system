@@ -1,13 +1,14 @@
 /**
  * rail-stepper-data.ts — the section-stepper data fetch for the unified rail.
  *
- * After the PR-7 shell split, the section stepper renders inside the persistent
- * portal rail (owned by `(portal)/layout.tsx`) via a parallel-route `@stepper`
- * slot — but its data must still be fetched ONLY on `/apply/*`. This helper is a
- * verbatim lift of the gap-status fetch that used to live in
- * `(portal)/layout.tsx` (the lead-applicant branch), now called by both
- * `@stepper/apply/[section]/page.tsx` and `@stepper/apply/review/page.tsx` so
- * they share a single source.
+ * The section stepper renders inside the persistent portal rail (owned by
+ * `(portal)/layout.tsx`), but its gap data is fetched in the apply CONTENT
+ * subtree and bridged to the rail via a client store (see
+ * `stepper-data-context.tsx`). This helper is the single fetch source, called by
+ * `apply/layout.tsx` — a normal server layout in the `children` tree, so
+ * `router.refresh()` re-runs it after a save and the rail stays live. It
+ * replaces the former `@stepper` parallel slot, which neither re-ran on
+ * `router.refresh()` nor cleared on soft-nav (defects #2/#3/#4).
  *
  * Scoping is identical to the old layout: the gap analysis is scoped to the
  * lead applicant's PRIMARY contributor (dual-parent, PR 4b) — a SELECT under
@@ -15,9 +16,9 @@
  * the rail is unchanged. The secondary parent uses the separate `/contribute`
  * shell and never renders this slot.
  *
- * The fetch is naturally scoped to the wizard because it only runs from the
- * slot's `apply/` pages; every other portal route resolves the slot to
- * `@stepper/default.tsx` → null and never calls this helper.
+ * The fetch is naturally scoped to the wizard because it only runs from
+ * `apply/layout.tsx`; every other portal route never mounts that layout and so
+ * never calls this helper.
  */
 
 import "server-only";

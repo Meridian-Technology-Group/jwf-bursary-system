@@ -8,10 +8,11 @@
  * `/contribute`-shared stepper shell (`PortalDesktopSidebar` /
  * `PortalMobileHeader`) — do NOT parameterise one to do both (Decision 6).
  *
- * The section stepper is NOT owned here. It arrives as `children` (the
- * `@stepper` parallel-route slot node) and is rendered nested under the
- * "My Application" item — but only on `/apply/*`, because off the wizard the
- * slot resolves to null and nothing renders there. The rail is then nav-only.
+ * The section stepper is rendered nested under the "My Application" item via the
+ * `RailStepper` component. `RailStepper` reads the shared stepper-data store
+ * (written from the apply content subtree) and is pathname-gated to `/apply/*`,
+ * so off the wizard it renders null and the rail stays nav-only. This replaces
+ * the former `@stepper` parallel-route slot that used to arrive as `children`.
  *
  * The account / sign-out footer is `PortalAccountFooter` (PR-3).
  */
@@ -28,6 +29,7 @@ import {
 import { cn } from "@/lib/utils";
 import { JwfLogo } from "@/components/brand/jwf-logo";
 import { PortalAccountFooter } from "./portal-account-footer";
+import { RailStepper } from "./rail-stepper";
 
 // ─── Nav model (the single source of nav membership) ──────────────────────────
 
@@ -152,18 +154,12 @@ interface PortalNavProps {
   applicationHref?: string;
   /** Whether a paused document request exists (badges Documents). Wired PR-9. */
   needsDocs?: boolean;
-  /**
-   * The `@stepper` slot node — rendered nested under "My Application". Null off
-   * `/apply/*`, so nothing renders there and the rail stays nav-only.
-   */
-  children?: React.ReactNode;
 }
 
 export function PortalNav({
   userName,
   applicationHref = "/apply/child-details",
   needsDocs = false,
-  children,
 }: PortalNavProps) {
   const pathname = usePathname() ?? "/";
   const items = buildPortalNav(applicationHref);
@@ -193,12 +189,13 @@ export function PortalNav({
             return (
               <li key={item.href}>
                 <PortalNavLink item={withBadge} isActive={active} />
-                {/* The stepper slot renders nested under "My Application" — only
-                    on /apply/* (it is null elsewhere), so this is empty off the
-                    wizard. */}
-                {item.label === "My Application" && children ? (
-                  <div className="mt-1 border-l border-slate-100 pl-2">
-                    {children}
+                {/* The stepper renders nested under "My Application". RailStepper
+                    reads the shared store and is pathname-gated to /apply/*, so
+                    it is null off the wizard and the wrapper collapses to empty
+                    (border/padding on an empty div is invisible). */}
+                {item.label === "My Application" ? (
+                  <div className="mt-1 border-l border-slate-100 pl-2 empty:mt-0 empty:border-0 empty:pl-0">
+                    <RailStepper />
                   </div>
                 ) : null}
               </li>

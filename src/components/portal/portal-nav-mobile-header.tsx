@@ -9,13 +9,15 @@
  *
  *   1. a hamburger → PORTAL NAV Sheet (Home / My Application / Documents /
  *      History / Help + the account/sign-out footer), and
- *   2. an "All sections" → STEPPER Sheet fed the `@stepper` slot node. The
- *      stepper node is null off `/apply/*`, so the trigger is hidden there.
+ *   2. an "All sections" → STEPPER Sheet rendering the same context-driven
+ *      `RailStepper` as the desktop rail. The trigger is shown only on
+ *      `/apply/*` (pathname gate), matching where the stepper has data.
  *
  * Each Sheet keeps its own `open` state so they never collide.
  */
 
 import { useState } from "react";
+import { usePathname } from "next/navigation";
 import { Menu, LayoutList } from "lucide-react";
 import {
   Sheet,
@@ -27,6 +29,7 @@ import {
 import { cn } from "@/lib/utils";
 import { JwfLogo } from "@/components/brand/jwf-logo";
 import { PortalNav } from "./portal-nav";
+import { RailStepper, isApplyRoute } from "./rail-stepper";
 
 interface PortalNavMobileHeaderProps {
   userName: string;
@@ -34,21 +37,21 @@ interface PortalNavMobileHeaderProps {
   applicationHref?: string;
   /** Whether a paused document request exists (badges Documents). PR-9. */
   needsDocs?: boolean;
-  /**
-   * The `@stepper` slot node. Non-null only on `/apply/*`; when present, the
-   * "All sections" trigger is shown and opens a Sheet that renders it.
-   */
-  stepper?: React.ReactNode;
 }
 
 export function PortalNavMobileHeader({
   userName,
   applicationHref,
   needsDocs,
-  stepper,
 }: PortalNavMobileHeaderProps) {
+  const pathname = usePathname();
   const [navOpen, setNavOpen] = useState(false);
   const [stepperOpen, setStepperOpen] = useState(false);
+
+  // Same gate as the desktop rail: the "All sections" stepper Sheet belongs to
+  // the wizard only. RailStepper is itself pathname-gated, but hiding the
+  // trigger off /apply/* avoids an empty Sheet entirely.
+  const showStepper = isApplyRoute(pathname);
 
   return (
     <div className="flex items-center justify-between gap-3 px-4 py-3">
@@ -85,8 +88,10 @@ export function PortalNavMobileHeader({
       {/* Brand wordmark */}
       <JwfLogo compact className="h-9" />
 
-      {/* "All sections" → stepper Sheet (only on /apply/*, where stepper exists) */}
-      {stepper ? (
+      {/* "All sections" → stepper Sheet (only on /apply/*, where the stepper has
+          data). The Sheet renders the same context-driven RailStepper as the
+          desktop rail. */}
+      {showStepper ? (
         <Sheet open={stepperOpen} onOpenChange={setStepperOpen}>
           <SheetTrigger asChild>
             <button
@@ -105,7 +110,9 @@ export function PortalNavMobileHeader({
             <SheetHeader className="sr-only">
               <SheetTitle>Application sections</SheetTitle>
             </SheetHeader>
-            <div className="px-3 py-4">{stepper}</div>
+            <div className="px-3 py-4">
+              <RailStepper />
+            </div>
           </SheetContent>
         </Sheet>
       ) : (
