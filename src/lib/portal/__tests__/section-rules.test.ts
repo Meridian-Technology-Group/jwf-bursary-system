@@ -31,28 +31,42 @@ describe("CHILD_DETAILS", () => {
 });
 
 describe("PARENT_DETAILS", () => {
-  it("left-self-employment + scholarship per parent 1", () => {
+  it("P45 required when they left employment in the last 12 months", () => {
     expect(
       gapIds("PARENT_DETAILS", {
-        parent1Employment: { leftSelfEmployment: true, receivesScholarship: true },
+        parent1Employment: { leftEmployment: true },
       })
-    ).toEqual([
-      "PARENT_DETAILS:LEFT_SELF_EMPLOYMENT_PARENT_1",
-      "PARENT_DETAILS:SCHOLARSHIP_PARENT_1",
-    ]);
+    ).toEqual(["PARENT_DETAILS:EMPLOYMENT_P45_PARENT_1"]);
+    expect(
+      gapIds("PARENT_DETAILS", {
+        parent1Employment: { leftEmployment: true, p45DocumentId: "x" },
+      })
+    ).toEqual([]);
+  });
+  it("redundancy evidence required when a redundancy package was received", () => {
+    expect(
+      gapIds("PARENT_DETAILS", {
+        parent1Employment: { receivedRedundancy: true },
+      })
+    ).toEqual(["PARENT_DETAILS:EMPLOYMENT_REDUNDANCY_PARENT_1"]);
+    expect(
+      gapIds("PARENT_DETAILS", {
+        parent1Employment: { receivedRedundancy: true, redundancyDocumentId: "x" },
+      })
+    ).toEqual([]);
   });
   it("parent 2 rules only fire when the parent2Employment block exists", () => {
     // No parent2Employment key — no P2 gaps even if flags would have fired.
     expect(
-      gapIds("PARENT_DETAILS", { parent1Employment: { leftSelfEmployment: false } })
+      gapIds("PARENT_DETAILS", { parent1Employment: { leftEmployment: false } })
     ).toEqual([]);
     // parent2Employment present with a flag → P2 gap.
     expect(
       gapIds("PARENT_DETAILS", {
         parent1Employment: {},
-        parent2Employment: { receivesScholarship: true },
+        parent2Employment: { leftEmployment: true },
       })
-    ).toEqual(["PARENT_DETAILS:SCHOLARSHIP_PARENT_2"]);
+    ).toEqual(["PARENT_DETAILS:EMPLOYMENT_P45_PARENT_2"]);
   });
 
   // ── Epic 09 household evidence ──────────────────────────────────────────────
@@ -80,16 +94,12 @@ describe("PARENT_DETAILS", () => {
     expect(gapIds("PARENT_DETAILS", { relationshipStatus: "DIVORCED" })).toEqual([]);
   });
 
-  it("guardian facet → guardianship evidence required until uploaded", () => {
-    expect(gapIds("PARENT_DETAILS", { isGuardian: true })).toEqual([
-      "PARENT_DETAILS:GUARDIANSHIP_EVIDENCE",
-    ]);
-    expect(
-      gapIds("PARENT_DETAILS", { isGuardian: true, guardianshipDocumentId: "g-1" })
-    ).toEqual([]);
-    expect(
-      gapIds("PARENT_DETAILS", { isGuardian: false })
-    ).toEqual([]);
+  it("guardian facet no longer produces a guardianship-evidence gap", () => {
+    // The foster carer / legal guardian question and its evidence upload were
+    // removed from the Parent/Guardian Details page; no gap should fire even if
+    // a legacy blob still carries the facet.
+    expect(gapIds("PARENT_DETAILS", { isGuardian: true })).toEqual([]);
+    expect(gapIds("PARENT_DETAILS", { isGuardian: false })).toEqual([]);
   });
 });
 

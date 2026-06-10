@@ -37,29 +37,32 @@ function parentDetailsRules(earner: Earner): DocumentRule[] {
   // Parent 2 rules only apply when the Parent 2 employment block exists in the
   // saved blob (mirrors the legacy "if (data.parent2Employment)" gate).
   const onlyIfExistsPath = earner === "PARENT_2" ? empPath : undefined;
+  // Rule IDs are EMPLOYMENT_* to be distinct from the income section's
+  // P45/REDUNDANCY rule ids, but the SLOT is the shared P45/REDUNDANCY — one
+  // upload (in either section) satisfies both gaps.
   return [
     {
       kind: "requiredIfTrue",
-      id: `LEFT_SELF_EMPLOYMENT${suffix}`,
-      truePath: `${empPath}.leftSelfEmployment`,
+      id: `EMPLOYMENT_P45${suffix}`,
+      truePath: `${empPath}.leftEmployment`,
       onlyIfExistsPath,
-      label: `Evidence of previous self-employment for ${label} is required`,
-      fieldRef: `${empPath}.leftSelfEmploymentDocumentId`,
+      label: `Evidence (P45) for ${label} is required because they left employment in the last 12 months`,
+      fieldRef: `${empPath}.p45DocumentId`,
       doc: {
-        docIdPath: `${empPath}.leftSelfEmploymentDocumentId`,
-        slot: `LEFT_SELF_EMPLOYMENT${suffix}`,
+        docIdPath: `${empPath}.p45DocumentId`,
+        slot: `P45${suffix}`,
       },
     },
     {
       kind: "requiredIfTrue",
-      id: `SCHOLARSHIP${suffix}`,
-      truePath: `${empPath}.receivesScholarship`,
+      id: `EMPLOYMENT_REDUNDANCY${suffix}`,
+      truePath: `${empPath}.receivedRedundancy`,
       onlyIfExistsPath,
-      label: `Scholarship / maintenance evidence for ${label} is required`,
-      fieldRef: `${empPath}.scholarshipDocumentId`,
+      label: `Evidence of redundancy / severance package for ${label} is required`,
+      fieldRef: `${empPath}.redundancyDocumentId`,
       doc: {
-        docIdPath: `${empPath}.scholarshipDocumentId`,
-        slot: `SCHOLARSHIP${suffix}`,
+        docIdPath: `${empPath}.redundancyDocumentId`,
+        slot: `REDUNDANCY${suffix}`,
       },
     },
   ];
@@ -68,10 +71,13 @@ function parentDetailsRules(earner: Earner): DocumentRule[] {
 // ─── PARENT_DETAILS household evidence (Epic 09) ─────────────────────────────
 //
 // Household-level (not per-earner) evidence asks driven by the relationship
-// status / guardian facet. Death certificate (H3 widowed) is an equality gate
-// → a structural predicate; guardianship evidence (H4, D16) is a boolean gate
-// on `isGuardian`. Both are error-severity gaps that block submit until the
-// document is provided, mirroring the left-self-employment / scholarship asks.
+// status. Death certificate (H3 widowed) is an equality gate → a structural
+// predicate, an error-severity gap that blocks submit until the document is
+// provided, mirroring the left-self-employment / scholarship asks.
+//
+// The guardianship-evidence gate (H4, D16) was removed alongside the foster
+// carer / legal guardian question on the Parent/Guardian Details page; the
+// engine's `isGuardian` facet is retained only for back-compat.
 
 function householdEvidenceRules(): DocumentRule[] {
   return [
@@ -87,17 +93,6 @@ function householdEvidenceRules(): DocumentRule[] {
           (typeof id === "string" && id.length > 0) ||
           uploadedSlots.has("DEATH_CERTIFICATE")
         );
-      },
-    },
-    {
-      kind: "requiredIfTrue",
-      id: "GUARDIANSHIP_EVIDENCE",
-      truePath: "isGuardian",
-      label: "Evidence of guardianship / foster status is required",
-      fieldRef: "guardianshipDocumentId",
-      doc: {
-        docIdPath: "guardianshipDocumentId",
-        slot: "GUARDIANSHIP_EVIDENCE",
       },
     },
   ];

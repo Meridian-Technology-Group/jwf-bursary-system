@@ -72,20 +72,19 @@ export type RelationshipStatus =
   | "COHABITING";
 
 /**
- * Portal-side employment status — reconciled with the assessor-side
- * Prisma EmploymentStatus enum (assessment_earners.employment_status)
- * so that the value an applicant picks can be carried through into
- * Stage 1 income without a manual translation step on the assessor's
- * side. See B11 in docs/PRODUCTION_READINESS.md.
+ * Portal-side employment status — a 3-way classifier the applicant picks on the
+ * Parent/Guardian Details page. The granular income breakdown (PAYE, benefits,
+ * self-employed, pensions, JSA, …) is captured in the Income section; the
+ * assessor sets the per-earner `EmploymentStatus` (assessment_earners) enum
+ * independently, so these two are intentionally decoupled.
  */
 export type EmploymentStatus =
-  | "PAYE"
-  | "BENEFITS"
-  | "SELF_EMPLOYED_DIRECTOR"
-  | "SELF_EMPLOYED_SOLE"
-  | "OLD_AGE_PENSION"
-  | "PAST_PENSION"
-  | "UNEMPLOYED";
+  | "UNEMPLOYED_OR_RETIRED"
+  | "EMPLOYED"
+  | "SELF_EMPLOYED";
+
+/** Self-employment position (when status === "SELF_EMPLOYED"). */
+export type SelfEmploymentPosition = "DIRECTOR" | "PARTNER" | "SOLE_TRADER";
 
 /**
  * The school year-group the child enters at. Mandated by §4 of the
@@ -115,29 +114,24 @@ export interface ParentEmploymentDetails {
   status: EmploymentStatus;
   /** Profession/business/trade (for employed / self-employed) */
   profession?: string;
-  /** Employer name and address */
+  /** Employer name and address (EMPLOYED) */
   employerAddress?: string;
-  /** Account year-end date */
-  bookYearEndDate?: string;
+  /** Director of the employing company? (EMPLOYED) */
   isDirector?: boolean;
-  /** Shareholding percentage (when director) */
+  /** Shareholding percentage (when director, EMPLOYED) */
   sharePercentage?: string;
-  /** Document slot: certified accounts (when director) */
-  certifiedAccountsDocumentId?: string;
-  /** Document slot: balance sheet (when director) */
-  balanceSheetDocumentId?: string;
-  /** Left self-employment since April? */
-  leftSelfEmployment?: boolean;
-  /** Document slot: evidence of left self-employment */
-  leftSelfEmploymentDocumentId?: string;
-  /** Gross pay (for employed/self-employed) */
-  grossPay?: number;
-  /** Receives scholarship/maintenance? */
-  receivesScholarship?: boolean;
-  /** Document slot: scholarship evidence */
-  scholarshipDocumentId?: string;
-  /** Details if unemployed */
-  unemployedDetails?: string;
+  /** Self-employment company name (SELF_EMPLOYED) */
+  selfEmploymentCompanyName?: string;
+  /** Self-employment position (SELF_EMPLOYED) */
+  selfEmploymentPosition?: SelfEmploymentPosition;
+  /** Left employment in the last 12 months? (all statuses) */
+  leftEmployment?: boolean;
+  /** Document slot: P45 (when leftEmployment) — shared with the Income section */
+  p45DocumentId?: string;
+  /** Received a redundancy / severance package? (when leftEmployment) */
+  receivedRedundancy?: boolean;
+  /** Document slot: redundancy evidence — shared with the Income section */
+  redundancyDocumentId?: string;
   /** Declaration accepted */
   declarationAccepted?: boolean;
 }
@@ -159,10 +153,8 @@ export interface DependentChild {
   /** ISO date string */
   dependentStatusDate?: string;
   surnameOtherParent?: string;
-  bursaryAmount?: number;
   school?: string;
-  /** Unearned income for tax year */
-  unearnedIncome?: number;
+  schoolAddress?: string;
   isNamedChild?: boolean;
 }
 

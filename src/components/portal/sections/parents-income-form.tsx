@@ -32,34 +32,22 @@ import type { UploadedDocument } from "@/components/portal/file-upload";
 import type { DocumentMeta } from "@/lib/db/queries/applications";
 import { getTaxYearLabels } from "@/lib/portal/tax-year";
 import { newIncomeTotal } from "@/lib/portal/income-model";
+import { AlertTriangle } from "lucide-react";
 
 // ─── status → sub-table mapping ──────────────────────────────────────────────
 
 type Prefix = "parent1Income" | "parent2Income";
 type SlotSuffix = "_PARENT_1" | "_PARENT_2";
 
-/**
- * Which sub-tables to show for a declared portal EmploymentStatus. Divorced/
- * separated and third-party are not employment statuses — they are layered in by
- * the parent component based on relationship status (divorced/separated) and are
- * always offered (third-party).
- */
-function subTablesForStatus(status: string | undefined): {
-  employed: boolean;
-  selfEmployed: boolean;
-  benefits: boolean;
-  unemployed: boolean;
-  retired: boolean;
-} {
-  return {
-    employed: status === "PAYE",
-    selfEmployed:
-      status === "SELF_EMPLOYED_DIRECTOR" || status === "SELF_EMPLOYED_SOLE",
-    benefits: status === "BENEFITS",
-    unemployed: status === "UNEMPLOYED",
-    retired: status === "OLD_AGE_PENSION" || status === "PAST_PENSION",
-  };
-}
+// EVERY income sub-table (Employed, Self-employed, On benefits, Unemployed,
+// Retired, Divorced/separated, Third-party) is ALWAYS displayed — regardless of
+// the employment / relationship status the applicant picked in Parent Details.
+// Circumstances change across the 12-month window (e.g. employed → unemployed →
+// self-employed), so the applicant enters the relevant total in each relevant
+// section and 0 where it doesn't apply. Matches the "(all sections are displayed,
+// regardless of status picked on previous tab)" rule in the application-form
+// workbook (PARENTS' INCOME tab, R5). Per-section uploads stay value-gated: a
+// figure > £0 makes that section's document mandatory (except Child Benefit).
 
 function resolveDoc(
   docId: string | undefined,
@@ -68,6 +56,33 @@ function resolveDoc(
   if (!docId || !documentMap?.[docId]) return undefined;
   const doc = documentMap[docId];
   return { id: doc.id, filename: doc.filename, fileSize: doc.fileSize, uploadedAt: doc.uploadedAt };
+}
+
+/**
+ * Resolve a document by SLOT (newest DocumentMeta whose `.slot === slot`).
+ *
+ * Used for the P45/REDUNDANCY uploads, which share their slots
+ * (`P45_PARENT_*` / `REDUNDANCY_PARENT_*`) with the Parent/Guardian Details
+ * page. Resolving by slot (rather than by this section's stored blob field id)
+ * means a single upload made in either section shows in both.
+ */
+function resolveDocBySlot(
+  slot: string,
+  documentMap: Record<string, DocumentMeta> | undefined
+): { id: string; filename: string; fileSize: number; uploadedAt: string } | undefined {
+  if (!documentMap) return undefined;
+  let newest: DocumentMeta | undefined;
+  for (const doc of Object.values(documentMap)) {
+    if (doc.slot !== slot) continue;
+    if (!newest || doc.uploadedAt > newest.uploadedAt) newest = doc;
+  }
+  if (!newest) return undefined;
+  return {
+    id: newest.id,
+    filename: newest.filename,
+    fileSize: newest.fileSize,
+    uploadedAt: newest.uploadedAt,
+  };
 }
 
 // ─── reusable bits ───────────────────────────────────────────────────────────
@@ -117,6 +132,7 @@ function DocUpload({
   applicationId,
   documentMap,
   show,
+  resolveBySlot,
 }: {
   prefix: Prefix;
   docIdPath: string;
@@ -126,14 +142,24 @@ function DocUpload({
   applicationId: string;
   documentMap?: Record<string, DocumentMeta>;
   show: boolean;
+  /**
+   * When true, resolve `existingDocument` by SLOT (newest doc with this slot)
+   * rather than by the stored blob field id. Used for the P45/REDUNDANCY
+   * uploads, whose slots are shared with the Parent/Guardian Details page so a
+   * single upload appears in both sections.
+   */
+  resolveBySlot?: boolean;
 }) {
   const { control, setValue, getValues } = useFormContext<ParentsIncomeFormValues>();
   const initial = React.useRef(
     getValues(`${prefix}.${docIdPath}` as never) as unknown as string | undefined
   );
   const existing = React.useMemo(
-    () => resolveDoc(initial.current, documentMap),
-    [documentMap]
+    () =>
+      resolveBySlot
+        ? resolveDocBySlot(slot, documentMap)
+        : resolveDoc(initial.current, documentMap),
+    [documentMap, resolveBySlot, slot]
   );
   return (
     <ConditionalField show={show}>
@@ -230,8 +256,6 @@ interface ParentIncomeColumnProps {
   applicationId: string;
   documentMap?: Record<string, DocumentMeta>;
   academicYear?: string | null;
-  employmentStatus?: string;
-  showDivorcedSeparated: boolean;
 }
 
 function ParentIncomeColumn({
@@ -241,17 +265,14 @@ function ParentIncomeColumn({
   applicationId,
   documentMap,
   academicYear,
-  employmentStatus,
-  showDivorcedSeparated,
 }: ParentIncomeColumnProps) {
   const { control, setValue, getValues } = useFormContext<ParentsIncomeFormValues>();
   const taxYear = getTaxYearLabels(academicYear);
-  const show = subTablesForStatus(employmentStatus);
 
-  // Seed the empty sub-blocks for the sub-tables we render, so (a) the
+  // Seed EVERY sub-block (all sections are always shown), so (a) the
   // CurrencyInput fields bind to a real path and (b) the saved blob carries the
   // sub-block keys the rule engine gates on (`onlyIfExistsPath`). Runs once per
-  // shown-set change; never overwrites a sub-block that already has data.
+  // mount; never overwrites a sub-block that already has data.
   React.useEffect(() => {
     const cur = (getValues(prefix) ?? {}) as Record<string, unknown>;
     const ensure = (key: string, seed: Record<string, unknown>) => {
@@ -259,35 +280,23 @@ function ParentIncomeColumn({
         setValue(`${prefix}.${key}` as never, seed as never, { shouldDirty: false });
       }
     };
-    if (show.employed) ensure("employed", { annualSalaryPaye: 0 });
-    if (show.selfEmployed)
-      ensure("selfEmployed", {
-        grossSalaried: 0, propertyIncome: 0, dividends: 0, otherInvestmentIncome: 0,
-      });
-    if (show.benefits)
-      ensure("benefits", {
-        universalCredit: 0, housingBenefit: 0, childBenefit: 0,
-        childWorkingTaxCredit: 0, esa: 0, pipOrDla: 0, carersAllowance: 0,
-        childcareSupport: 0, other: 0,
-      });
-    if (show.unemployed)
-      ensure("unemployed", {
-        finalGrossPay: 0, redundancy: 0, jsa: 0, grantSupport: 0, leavePay: 0,
-      });
-    if (show.retired) ensure("retired", { statePension: 0, privatePension: 0 });
-    if (showDivorcedSeparated)
-      ensure("divorcedSeparated", { maintenanceReceived: 0, sharedCustodyNote: "" });
+    ensure("employed", { annualSalaryPaye: 0 });
+    ensure("selfEmployed", {
+      grossSalaried: 0, propertyIncome: 0, dividends: 0, otherInvestmentIncome: 0,
+    });
+    ensure("benefits", {
+      universalCredit: 0, housingBenefit: 0, childBenefit: 0,
+      childWorkingTaxCredit: 0, esa: 0, pipOrDla: 0, carersAllowance: 0,
+      childcareSupport: 0, other: 0,
+    });
+    ensure("unemployed", {
+      finalGrossPay: 0, redundancy: 0, jsa: 0, grantSupport: 0, leavePay: 0,
+    });
+    ensure("retired", { statePension: 0, privatePension: 0 });
+    ensure("divorcedSeparated", { maintenanceReceived: 0, sharedCustodyNote: "" });
     ensure("thirdParty", { incomeSupportReceived: 0, supportNote: "" });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [
-    prefix,
-    show.employed,
-    show.selfEmployed,
-    show.benefits,
-    show.unemployed,
-    show.retired,
-    showDivorcedSeparated,
-  ]);
+  }, [prefix]);
 
   // Live total — recomputed whenever any numeric cell in this column changes.
   const record = useWatch({ control, name: prefix });
@@ -329,7 +338,6 @@ function ParentIncomeColumn({
         </p>
       </div>
 
-      {show.employed && (
         <SubTable
           title="Employed (PAYE)"
           defaultOpen={blockHadValue("employed", ["annualSalaryPaye"])}
@@ -360,9 +368,7 @@ function ParentIncomeColumn({
             />
           </div>
         </SubTable>
-      )}
 
-      {show.selfEmployed && (
         <SubTable
           title="Self-employed (SA302)"
           defaultOpen={blockHadValue("selfEmployed", [
@@ -396,9 +402,7 @@ function ParentIncomeColumn({
             />
           </div>
         </SubTable>
-      )}
 
-      {show.benefits && (
         <SubTable
           title="On benefits (totals April–March)"
           defaultOpen={blockHadValue("benefits", [
@@ -480,9 +484,7 @@ function ParentIncomeColumn({
             />
           </div>
         </SubTable>
-      )}
 
-      {show.unemployed && (
         <SubTable
           title="Unemployed / in between roles (last 12 months)"
           defaultOpen={blockHadValue("unemployed", [
@@ -497,13 +499,13 @@ function ParentIncomeColumn({
             <MoneyRow prefix={prefix} path="unemployed.finalGrossPay" label="Final gross pay" />
           </MoneyGrid>
           <div className="px-4 py-3">
-            <DocUpload prefix={prefix} docIdPath="unemployed.p45DocumentId" slot={`P45${slotSuffix}`} label="P45" applicationId={applicationId} documentMap={documentMap} show={subGt0("unemployed", "finalGrossPay")} />
+            <DocUpload prefix={prefix} docIdPath="unemployed.p45DocumentId" slot={`P45${slotSuffix}`} label="P45" applicationId={applicationId} documentMap={documentMap} show={subGt0("unemployed", "finalGrossPay")} resolveBySlot />
           </div>
           <MoneyGrid>
             <MoneyRow prefix={prefix} path="unemployed.redundancy" label="Redundancy / severance" />
           </MoneyGrid>
           <div className="px-4 py-3">
-            <DocUpload prefix={prefix} docIdPath="unemployed.redundancyDocumentId" slot={`REDUNDANCY${slotSuffix}`} label="Redundancy / severance letter" applicationId={applicationId} documentMap={documentMap} show={subGt0("unemployed", "redundancy")} />
+            <DocUpload prefix={prefix} docIdPath="unemployed.redundancyDocumentId" slot={`REDUNDANCY${slotSuffix}`} label="Redundancy / severance letter" applicationId={applicationId} documentMap={documentMap} show={subGt0("unemployed", "redundancy")} resolveBySlot />
           </div>
           <MoneyGrid>
             <MoneyRow prefix={prefix} path="unemployed.jsa" label="Job Seeker's Allowance (JSA)" />
@@ -524,9 +526,7 @@ function ParentIncomeColumn({
             <DocUpload prefix={prefix} docIdPath="unemployed.leavePayDocumentId" slot={`LEAVE_PAY${slotSuffix}`} label="Status-change document" applicationId={applicationId} documentMap={documentMap} show={subGt0("unemployed", "leavePay")} />
           </div>
         </SubTable>
-      )}
 
-      {show.retired && (
         <SubTable
           title="Retired"
           defaultOpen={blockHadValue("retired", ["statePension", "privatePension"])}
@@ -547,9 +547,7 @@ function ParentIncomeColumn({
             />
           </div>
         </SubTable>
-      )}
 
-      {showDivorcedSeparated && (
         <SubTable
           title="Divorced or separated"
           defaultOpen={
@@ -585,7 +583,6 @@ function ParentIncomeColumn({
             />
           </div>
         </SubTable>
-      )}
 
       {/* Third-party support — always offered. */}
       <SubTable
@@ -623,6 +620,46 @@ function ParentIncomeColumn({
         </span>
       </div>
 
+      {/* £0 prompter — when the parent's total income is £0, force an explicit
+          acknowledgment that they genuinely had no income / benefit support. */}
+      {total === 0 && (
+        <FormField
+          control={control}
+          name={`${prefix}.noIncomeConfirmed` as never}
+          render={({ field }) => (
+            <FormItem>
+              <div className="flex items-start gap-3 rounded-md border border-warning-200 bg-warning-50 p-4">
+                <AlertTriangle
+                  className="mt-0.5 h-5 w-5 shrink-0 text-warning-600"
+                  aria-hidden="true"
+                />
+                <div className="space-y-2">
+                  <p className="text-sm font-medium text-warning-600">
+                    You have entered £0 total income for {parentLabel}.
+                  </p>
+                  <div className="flex items-start gap-3">
+                    <FormControl>
+                      <Checkbox
+                        checked={field.value as boolean}
+                        onCheckedChange={field.onChange}
+                        className="mt-0.5"
+                      />
+                    </FormControl>
+                    <FormLabel className="cursor-pointer font-normal text-slate-700">
+                      I confirm that {parentLabel} received no income or benefit
+                      support of any kind during the{" "}
+                      {taxYear.financialYearEndedLabel}.{" "}
+                      <span className="text-error-600" aria-hidden="true">*</span>
+                    </FormLabel>
+                  </div>
+                </div>
+              </div>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+      )}
+
       {/* Legibility tick */}
       <FormField
         control={control}
@@ -656,13 +693,16 @@ interface ParentsIncomeFormProps {
   applicationId: string;
   documentMap?: Record<string, DocumentMeta>;
   academicYear?: string | null;
+  /**
+   * @deprecated No longer used — every income sub-table is now displayed for
+   * every applicant regardless of employment / relationship status. These props
+   * remain on the interface only so existing call sites keep type-checking; the
+   * upstream plumbing (section-page / contribute / page.tsx) can be removed in a
+   * dedicated cleanup.
+   */
   parent1EmploymentStatus?: string;
   parent2EmploymentStatus?: string;
   relationshipStatus?: string;
-}
-
-function isDivorcedSeparated(relationshipStatus?: string): boolean {
-  return relationshipStatus === "DIVORCED" || relationshipStatus === "SEPARATED";
 }
 
 export function ParentsIncomeForm({
@@ -670,11 +710,7 @@ export function ParentsIncomeForm({
   applicationId,
   documentMap,
   academicYear,
-  parent1EmploymentStatus,
-  parent2EmploymentStatus,
-  relationshipStatus,
 }: ParentsIncomeFormProps) {
-  const showDivSep = isDivorcedSeparated(relationshipStatus);
   return (
     // The grid-heavy Income section runs at max-w-4xl. That width now lives on
     // the section CARD itself (section-page-client.tsx caps PARENTS_INCOME to
@@ -685,10 +721,11 @@ export function ParentsIncomeForm({
     <div className="space-y-10">
       <div className="rounded-md bg-primary-50 border border-primary-200 p-4">
         <p className="text-sm text-primary-800">
-          The sections shown below match the employment status you entered for
-          each parent/guardian. Enter GROSS income (before tax). Where a value is
-          required but not relevant, enter 0. If a row has a value other than £0,
-          its supporting document is required — except Child Benefit.
+          All income sections are shown below — your circumstances may have
+          changed over the year, so complete every section that applies to you
+          and enter 0 in the sections that do not. Enter GROSS income (before
+          tax). If a section has a value other than £0, its supporting document
+          is required — except Child Benefit.
         </p>
       </div>
 
@@ -699,8 +736,6 @@ export function ParentsIncomeForm({
         applicationId={applicationId}
         documentMap={documentMap}
         academicYear={academicYear}
-        employmentStatus={parent1EmploymentStatus}
-        showDivorcedSeparated={showDivSep}
       />
 
       {!isSoleParent && (
@@ -713,8 +748,6 @@ export function ParentsIncomeForm({
             applicationId={applicationId}
             documentMap={documentMap}
             academicYear={academicYear}
-            employmentStatus={parent2EmploymentStatus}
-            showDivorcedSeparated={showDivSep}
           />
         </>
       )}

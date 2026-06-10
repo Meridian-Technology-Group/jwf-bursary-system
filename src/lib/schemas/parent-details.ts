@@ -19,29 +19,21 @@ export const relationshipStatusSchema = z.enum(
 );
 
 /**
- * Portal-side employment status. Reconciled with the assessor-side
- * Prisma EmploymentStatus enum so values can flow straight into Stage 1
- * without a translation step. See B11 in docs/PRODUCTION_READINESS.md.
+ * Parent-facing employment status — a 3-way classifier only. It does NOT map
+ * to the assessor-side Prisma EmploymentStatus enum; the assessor sets the
+ * granular earner status independently, and the detailed income breakdown is
+ * captured in the Income section.
  */
 export const employmentStatusSchema = z.enum(
-  [
-    "PAYE",
-    "BENEFITS",
-    "SELF_EMPLOYED_DIRECTOR",
-    "SELF_EMPLOYED_SOLE",
-    "OLD_AGE_PENSION",
-    "PAST_PENSION",
-    "UNEMPLOYED",
-  ] as const,
+  ["UNEMPLOYED_OR_RETIRED", "EMPLOYED", "SELF_EMPLOYED"] as const,
   { message: "Please select an employment status" }
 );
 
-/** Statuses that should reveal the profession/employer/director fields. */
-const WORKING_STATUSES = [
-  "PAYE",
-  "SELF_EMPLOYED_DIRECTOR",
-  "SELF_EMPLOYED_SOLE",
-] as const;
+/** Self-employment "Position" within the self-employment details sub-panel. */
+export const selfEmploymentPositionSchema = z.enum(
+  ["DIRECTOR", "PARTNER", "SOLE_TRADER"] as const,
+  { message: "Please select your position" }
+);
 
 const UK_POSTCODE_RE = /^[A-Z]{1,2}\d[A-Z\d]?\s?\d[A-Z]{2}$/i;
 
@@ -85,23 +77,18 @@ export const parentEmploymentSchema = z
     status: employmentStatusSchema,
     profession: z.string().optional(),
     employerAddress: z.string().optional(),
-    bookYearEndDate: z.string().optional(),
     isDirector: z.boolean().optional(),
     sharePercentage: z.string().optional(),
-    certifiedAccountsDocumentId: z.string().optional(),
-    balanceSheetDocumentId: z.string().optional(),
-    leftSelfEmployment: z.boolean().optional(),
-    leftSelfEmploymentDocumentId: z.string().optional(),
-    grossPay: z.coerce.number().nonnegative("Gross pay must be 0 or more").optional(),
-    receivesScholarship: z.boolean().optional(),
-    scholarshipDocumentId: z.string().optional(),
-    unemployedDetails: z.string().optional(),
+    selfEmploymentCompanyName: z.string().optional(),
+    selfEmploymentPosition: selfEmploymentPositionSchema.optional(),
+    leftEmployment: z.boolean().optional(),
+    p45DocumentId: z.string().optional(),
+    receivedRedundancy: z.boolean().optional(),
+    redundancyDocumentId: z.string().optional(),
     declarationAccepted: z.boolean().optional(),
   })
   .superRefine((data, ctx) => {
-    const isWorking = (WORKING_STATUSES as readonly string[]).includes(data.status);
-
-    if (isWorking) {
+    if (data.status === "EMPLOYED") {
       if (!data.profession) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
@@ -116,18 +103,14 @@ export const parentEmploymentSchema = z
           path: ["employerAddress"],
         });
       }
-    }
-
-    if (data.status === "UNEMPLOYED" && !data.unemployedDetails) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: "Please provide details about your circumstances",
-        path: ["unemployedDetails"],
-      });
-    }
-
-    if (data.isDirector) {
-      if (!data.sharePercentage) {
+      if (data.isDirector === undefined) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "Please tell us whether you are a director",
+          path: ["isDirector"],
+        });
+      }
+      if (data.isDirector === true && !data.sharePercentage) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
           message: "Share percentage is required for directors",
@@ -136,12 +119,53 @@ export const parentEmploymentSchema = z
       }
     }
 
-    // NOTE: left-self-employment and scholarship evidence documents are NOT
-    // required at the per-section level — the applicant can move on without
-    // them. They are enforced as error-severity gaps in section-gaps.ts, which
-    // block the final submitApplication until the document is provided (the
-    // uploader is rendered in parent-details-form.tsx). See backlog
-    // parent-details-required-doc-upload-not-rendered.
+    if (data.status === "SELF_EMPLOYED") {
+      if (!data.profession) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "Profession or trade is required",
+          path: ["profession"],
+        });
+      }
+      if (!data.selfEmploymentCompanyName) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "Company name is required",
+          path: ["selfEmploymentCompanyName"],
+        });
+      }
+      if (!data.selfEmploymentPosition) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "Please select your position",
+          path: ["selfEmploymentPosition"],
+        });
+      }
+    }
+
+    // Shared "left employment" sub-branch — asked for ALL statuses.
+    if (data.leftEmployment === undefined) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message:
+          "Please tell us whether you have left employment in the last 12 months",
+        path: ["leftEmployment"],
+      });
+    }
+
+    if (data.leftEmployment === true && data.receivedRedundancy === undefined) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message:
+          "Please tell us whether you received a redundancy / severance package",
+        path: ["receivedRedundancy"],
+      });
+    }
+
+    // NOTE: the P45 and redundancy-evidence DOCUMENTS are NOT required at the
+    // per-section level — they are enforced as error-severity gaps in
+    // section-rules.ts (EMPLOYMENT_P45 / EMPLOYMENT_REDUNDANCY), which block the
+    // final submitApplication until the document is provided.
   });
 
 /** Validate UK postcode on a contact object. */

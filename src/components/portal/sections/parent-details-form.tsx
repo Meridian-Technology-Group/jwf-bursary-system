@@ -31,8 +31,6 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { YesNoToggle } from "@/components/portal/form-fields/yes-no-toggle";
-import { CurrencyInput } from "@/components/portal/form-fields/currency-input";
-import { DateInput } from "@/components/portal/form-fields/date-input";
 import { ConditionalField } from "@/components/portal/form-fields/conditional-field";
 import { CountryCombobox } from "@/components/portal/form-fields/country-combobox";
 import { FileUpload, type UploadedDocument } from "@/components/portal/file-upload";
@@ -55,6 +53,31 @@ function resolveDoc(
   return { id: doc.id, filename: doc.filename, fileSize: doc.fileSize, uploadedAt: doc.uploadedAt };
 }
 
+/**
+ * Resolve the newest document with the given slot to the FileUpload
+ * `existingDocument` shape. Used for the P45 / redundancy uploads, which share
+ * a slot with the Income section's unemployed sub-table — so a single upload in
+ * either section shows in both. Newest wins (compares `uploadedAt` strings).
+ */
+function resolveDocBySlot(
+  slot: string,
+  documentMap: Record<string, DocumentMeta> | undefined
+): { id: string; filename: string; fileSize: number; uploadedAt: string } | undefined {
+  if (!documentMap) return undefined;
+  let newest: DocumentMeta | undefined;
+  for (const doc of Object.values(documentMap)) {
+    if (doc.slot !== slot) continue;
+    if (!newest || doc.uploadedAt > newest.uploadedAt) newest = doc;
+  }
+  if (!newest) return undefined;
+  return {
+    id: newest.id,
+    filename: newest.filename,
+    fileSize: newest.fileSize,
+    uploadedAt: newest.uploadedAt,
+  };
+}
+
 const TITLES = [
   { value: "MR", label: "Mr" },
   { value: "MRS", label: "Mrs" },
@@ -75,17 +98,18 @@ const RELATIONSHIP_STATUSES = [
   { value: "COHABITING", label: "Cohabiting" },
 ];
 
-// Values mirror the assessor-side EmploymentStatus enum (assessment_earners
-// table). Labels are applicant-facing — slightly more verbose than the
-// internal enum names. See B11.
+// Parent-facing 3-way employment classifier. The granular income breakdown is
+// captured in the Income section; the assessor sets earner status independently.
 const EMPLOYMENT_STATUSES = [
-  { value: "PAYE", label: "Employed (PAYE)" },
-  { value: "BENEFITS", label: "Receiving benefits only (not working)" },
-  { value: "SELF_EMPLOYED_DIRECTOR", label: "Self-employed — company director" },
-  { value: "SELF_EMPLOYED_SOLE", label: "Self-employed — sole trader" },
-  { value: "OLD_AGE_PENSION", label: "Receiving state / old-age pension" },
-  { value: "PAST_PENSION", label: "Receiving private or occupational pension" },
-  { value: "UNEMPLOYED", label: "Unemployed" },
+  { value: "UNEMPLOYED_OR_RETIRED", label: "Unemployed or Retired" },
+  { value: "EMPLOYED", label: "Employed" },
+  { value: "SELF_EMPLOYED", label: "Self-employed" },
+];
+
+const SELF_EMPLOYMENT_POSITIONS = [
+  { value: "DIRECTOR", label: "Director" },
+  { value: "PARTNER", label: "Partner" },
+  { value: "SOLE_TRADER", label: "Sole Trader" },
 ];
 
 // ─── Parent Contact fields sub-component ─────────────────────────────────────
@@ -336,30 +360,19 @@ function ParentEmploymentFields({
   applicationId,
   documentMap,
 }: ParentEmploymentFieldsProps) {
-  const { control, setValue, getValues } = useFormContext<ParentDetailsFormValues>();
+  const { control, setValue } = useFormContext<ParentDetailsFormValues>();
 
-  // Capture initial doc IDs once (stable refs so existingDocument doesn't
-  // change on every render and reset the FileUpload state).
-  const initialCertifiedAccountsDocId = React.useRef(getValues(`${prefix}.certifiedAccountsDocumentId`));
-  const initialBalanceSheetDocId = React.useRef(getValues(`${prefix}.balanceSheetDocumentId`));
-  const initialLeftSelfEmploymentDocId = React.useRef(getValues(`${prefix}.leftSelfEmploymentDocumentId`));
-  const initialScholarshipDocId = React.useRef(getValues(`${prefix}.scholarshipDocumentId`));
-
-  const existingCertifiedAccounts = React.useMemo(
-    () => resolveDoc(initialCertifiedAccountsDocId.current, documentMap),
-    [documentMap]
+  // P45 + redundancy uploads are SHARED with the Income section (unemployed
+  // sub-table) via the same slots, so resolve `existingDocument` BY SLOT
+  // (newest doc) rather than by the per-section stored blob id. This makes a
+  // single upload appear in both sections.
+  const existingP45 = React.useMemo(
+    () => resolveDocBySlot(`P45${slotSuffix}`, documentMap),
+    [slotSuffix, documentMap]
   );
-  const existingBalanceSheet = React.useMemo(
-    () => resolveDoc(initialBalanceSheetDocId.current, documentMap),
-    [documentMap]
-  );
-  const existingLeftSelfEmployment = React.useMemo(
-    () => resolveDoc(initialLeftSelfEmploymentDocId.current, documentMap),
-    [documentMap]
-  );
-  const existingScholarship = React.useMemo(
-    () => resolveDoc(initialScholarshipDocId.current, documentMap),
-    [documentMap]
+  const existingRedundancy = React.useMemo(
+    () => resolveDocBySlot(`REDUNDANCY${slotSuffix}`, documentMap),
+    [slotSuffix, documentMap]
   );
 
   const status = useWatch({
@@ -372,23 +385,97 @@ function ParentEmploymentFields({
     name: `${prefix}.isDirector` as "parent1Employment.isDirector",
   });
 
-  const leftSelfEmployment = useWatch({
+  const leftEmployment = useWatch({
     control,
-    name: `${prefix}.leftSelfEmployment` as "parent1Employment.leftSelfEmployment",
+    name: `${prefix}.leftEmployment` as "parent1Employment.leftEmployment",
   });
 
-  const receivesScholarship = useWatch({
+  const receivedRedundancy = useWatch({
     control,
-    name: `${prefix}.receivesScholarship` as "parent1Employment.receivesScholarship",
+    name: `${prefix}.receivedRedundancy` as "parent1Employment.receivedRedundancy",
   });
 
-  // Statuses that reveal profession/employer/director fields. Mirrors
-  // WORKING_STATUSES in src/lib/schemas/parent-details.ts.
-  const isWorking = status
-    ? ["PAYE", "SELF_EMPLOYED_DIRECTOR", "SELF_EMPLOYED_SOLE"].includes(status)
-    : false;
+  // Shared "left employment" sub-branch — rendered identically across all three
+  // status paths; only the toggle label differs (passed in).
+  const leftEmploymentBranch = (leftEmploymentLabel: string) => (
+    <>
+      <YesNoToggle
+        control={control}
+        name={`${prefix}.leftEmployment` as "parent1Employment.leftEmployment"}
+        label={leftEmploymentLabel}
+      />
 
-  const isUnemployed = status === "UNEMPLOYED";
+      <ConditionalField show={leftEmployment === true}>
+        <FileUpload
+          slot={`P45${slotSuffix}`}
+          label="Upload P45"
+          hint="You can upload this now, or any time before you submit the application."
+          applicationId={applicationId}
+          existingDocument={existingP45}
+          onUploadComplete={(doc: UploadedDocument) => {
+            setValue(`${prefix}.p45DocumentId`, doc.id, {
+              shouldValidate: true,
+              shouldDirty: true,
+            });
+          }}
+          onRemove={() => {
+            setValue(`${prefix}.p45DocumentId`, undefined, {
+              shouldValidate: true,
+              shouldDirty: true,
+            });
+          }}
+        />
+        <FormField
+          control={control}
+          name={`${prefix}.p45DocumentId` as "parent1Employment.p45DocumentId"}
+          render={() => (
+            <FormItem className="hidden" aria-hidden="true">
+              <FormControl><input type="hidden" /></FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+
+        <YesNoToggle
+          control={control}
+          name={`${prefix}.receivedRedundancy` as "parent1Employment.receivedRedundancy"}
+          label="Did you receive a redundancy / severance package?"
+        />
+
+        <ConditionalField show={receivedRedundancy === true}>
+          <FileUpload
+            slot={`REDUNDANCY${slotSuffix}`}
+            label="Upload evidence of your redundancy / severance package"
+            hint="You can upload this now, or any time before you submit the application."
+            applicationId={applicationId}
+            existingDocument={existingRedundancy}
+            onUploadComplete={(doc: UploadedDocument) => {
+              setValue(`${prefix}.redundancyDocumentId`, doc.id, {
+                shouldValidate: true,
+                shouldDirty: true,
+              });
+            }}
+            onRemove={() => {
+              setValue(`${prefix}.redundancyDocumentId`, undefined, {
+                shouldValidate: true,
+                shouldDirty: true,
+              });
+            }}
+          />
+          <FormField
+            control={control}
+            name={`${prefix}.redundancyDocumentId` as "parent1Employment.redundancyDocumentId"}
+            render={() => (
+              <FormItem className="hidden" aria-hidden="true">
+                <FormControl><input type="hidden" /></FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+        </ConditionalField>
+      </ConditionalField>
+    </>
+  );
 
   return (
     <div className="space-y-5">
@@ -426,15 +513,15 @@ function ParentEmploymentFields({
         )}
       />
 
-      {/* Conditional: employed/self-employed fields */}
-      <ConditionalField show={isWorking}>
+      {/* EMPLOYED */}
+      <ConditionalField show={status === "EMPLOYED"}>
         <FormField
           control={control}
           name={`${prefix}.profession` as "parent1Employment.profession"}
           render={({ field }) => (
             <FormItem>
               <FormLabel>
-                Profession, business or trade <span className="text-error-600">*</span>
+                Your profession, business or trade <span className="text-error-600">*</span>
               </FormLabel>
               <FormControl>
                 <Input {...field} value={field.value ?? ""} />
@@ -459,15 +546,10 @@ function ParentEmploymentFields({
                   value={field.value ?? ""}
                 />
               </FormControl>
+              <FormDescription>Maximum 1000 words.</FormDescription>
               <FormMessage />
             </FormItem>
           )}
-        />
-
-        <DateInput
-          control={control}
-          name={`${prefix}.bookYearEndDate` as "parent1Employment.bookYearEndDate"}
-          label="Book / Account year end date"
         />
 
         <YesNoToggle
@@ -483,7 +565,8 @@ function ParentEmploymentFields({
             render={({ field }) => (
               <FormItem>
                 <FormLabel>
-                  Proportion or exact value of shares / stake (%) <span className="text-error-600">*</span>
+                  Please state the proportion of each class of shares you hold (%){" "}
+                  <span className="text-error-600">*</span>
                 </FormLabel>
                 <FormControl>
                   <Input
@@ -496,174 +579,92 @@ function ParentEmploymentFields({
               </FormItem>
             )}
           />
-
-          <FileUpload
-            slot={`CERTIFIED_ACCOUNTS${slotSuffix}`}
-            label="Copy of latest certified/audited accounts"
-            applicationId={applicationId}
-            existingDocument={existingCertifiedAccounts}
-            onUploadComplete={(doc: UploadedDocument) => {
-              setValue(`${prefix}.certifiedAccountsDocumentId`, doc.id, {
-                shouldValidate: true,
-                shouldDirty: true,
-              });
-            }}
-            onRemove={() => {
-              setValue(`${prefix}.certifiedAccountsDocumentId`, undefined, {
-                shouldValidate: true,
-                shouldDirty: true,
-              });
-            }}
-          />
-          <FormField
-            control={control}
-            name={`${prefix}.certifiedAccountsDocumentId` as "parent1Employment.certifiedAccountsDocumentId"}
-            render={() => (
-              <FormItem className="hidden" aria-hidden="true">
-                <FormControl><input type="hidden" /></FormControl>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
-
-          <FileUpload
-            slot={`BALANCE_SHEET${slotSuffix}`}
-            label="Copy of latest balance sheet"
-            applicationId={applicationId}
-            existingDocument={existingBalanceSheet}
-            onUploadComplete={(doc: UploadedDocument) => {
-              setValue(`${prefix}.balanceSheetDocumentId`, doc.id, {
-                shouldValidate: true,
-                shouldDirty: true,
-              });
-            }}
-            onRemove={() => {
-              setValue(`${prefix}.balanceSheetDocumentId`, undefined, {
-                shouldValidate: true,
-                shouldDirty: true,
-              });
-            }}
-          />
-          <FormField
-            control={control}
-            name={`${prefix}.balanceSheetDocumentId` as "parent1Employment.balanceSheetDocumentId"}
-            render={() => (
-              <FormItem className="hidden" aria-hidden="true">
-                <FormControl><input type="hidden" /></FormControl>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
-        </ConditionalField>
-
-        <YesNoToggle
-          control={control}
-          name={`${prefix}.leftSelfEmployment` as "parent1Employment.leftSelfEmployment"}
-          label="Have you left self-employment since April?"
-        />
-
-        <ConditionalField show={leftSelfEmployment === true}>
-          <FileUpload
-            slot={`LEFT_SELF_EMPLOYMENT${slotSuffix}`}
-            label="Evidence of previous self-employment"
-            hint="You can upload this now, or any time before you submit the application."
-            applicationId={applicationId}
-            existingDocument={existingLeftSelfEmployment}
-            onUploadComplete={(doc: UploadedDocument) => {
-              setValue(`${prefix}.leftSelfEmploymentDocumentId`, doc.id, {
-                shouldValidate: true,
-                shouldDirty: true,
-              });
-            }}
-            onRemove={() => {
-              setValue(`${prefix}.leftSelfEmploymentDocumentId`, undefined, {
-                shouldValidate: true,
-                shouldDirty: true,
-              });
-            }}
-          />
-          <FormField
-            control={control}
-            name={`${prefix}.leftSelfEmploymentDocumentId` as "parent1Employment.leftSelfEmploymentDocumentId"}
-            render={() => (
-              <FormItem className="hidden" aria-hidden="true">
-                <FormControl><input type="hidden" /></FormControl>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
-        </ConditionalField>
-
-        <CurrencyInput
-          control={control}
-          name={`${prefix}.grossPay` as "parent1Employment.grossPay"}
-          label="Gross pay"
-          required
-        />
-
-        <YesNoToggle
-          control={control}
-          name={`${prefix}.receivesScholarship` as "parent1Employment.receivesScholarship"}
-          label="Do you receive a scholarship / maintenance?"
-        />
-
-        <ConditionalField show={receivesScholarship === true}>
-          <FileUpload
-            slot={`SCHOLARSHIP${slotSuffix}`}
-            label="Evidence of scholarship / maintenance"
-            hint="You can upload this now, or any time before you submit the application."
-            applicationId={applicationId}
-            existingDocument={existingScholarship}
-            onUploadComplete={(doc: UploadedDocument) => {
-              setValue(`${prefix}.scholarshipDocumentId`, doc.id, {
-                shouldValidate: true,
-                shouldDirty: true,
-              });
-            }}
-            onRemove={() => {
-              setValue(`${prefix}.scholarshipDocumentId`, undefined, {
-                shouldValidate: true,
-                shouldDirty: true,
-              });
-            }}
-          />
-          <FormField
-            control={control}
-            name={`${prefix}.scholarshipDocumentId` as "parent1Employment.scholarshipDocumentId"}
-            render={() => (
-              <FormItem className="hidden" aria-hidden="true">
-                <FormControl><input type="hidden" /></FormControl>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
         </ConditionalField>
       </ConditionalField>
 
-      {/* Conditional: unemployed */}
-      <ConditionalField show={isUnemployed}>
+      {/* SELF_EMPLOYED */}
+      <ConditionalField show={status === "SELF_EMPLOYED"}>
         <FormField
           control={control}
-          name={`${prefix}.unemployedDetails` as "parent1Employment.unemployedDetails"}
+          name={`${prefix}.profession` as "parent1Employment.profession"}
           render={({ field }) => (
             <FormItem>
               <FormLabel>
-                Please provide details <span className="text-error-600">*</span>
+                Your profession, business or trade <span className="text-error-600">*</span>
               </FormLabel>
-              <FormDescription>
-                Describe your current circumstances.
-              </FormDescription>
               <FormControl>
-                <Textarea
-                  rows={4}
-                  {...field}
-                  value={field.value ?? ""}
-                />
+                <Input {...field} value={field.value ?? ""} />
               </FormControl>
               <FormMessage />
             </FormItem>
           )}
         />
+
+        {/* Self-employment details sub-panel (spec: "opens new window" — inline). */}
+        <div className="space-y-4 rounded-md border border-slate-200 bg-slate-50 p-4">
+          <FormField
+            control={control}
+            name={`${prefix}.selfEmploymentCompanyName` as "parent1Employment.selfEmploymentCompanyName"}
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>
+                  Company Name <span className="text-error-600">*</span>
+                </FormLabel>
+                <FormControl>
+                  <Input {...field} value={field.value ?? ""} />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+
+          <FormField
+            control={control}
+            name={`${prefix}.selfEmploymentPosition` as "parent1Employment.selfEmploymentPosition"}
+            render={({ field }) => (
+              <FormItem className="space-y-3">
+                <FormLabel>
+                  Position <span className="text-error-600">*</span>
+                </FormLabel>
+                <FormControl>
+                  <RadioGroup
+                    onValueChange={field.onChange}
+                    value={field.value}
+                    className="space-y-2"
+                  >
+                    {SELF_EMPLOYMENT_POSITIONS.map((sp) => (
+                      <div key={sp.value} className="flex items-center gap-2">
+                        <RadioGroupItem
+                          value={sp.value}
+                          id={`${prefix}-pos-${sp.value}`}
+                        />
+                        <Label
+                          htmlFor={`${prefix}-pos-${sp.value}`}
+                          className="font-normal"
+                        >
+                          {sp.label}
+                        </Label>
+                      </div>
+                    ))}
+                  </RadioGroup>
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+        </div>
+
+      </ConditionalField>
+
+      {/* Shared "left employment in the last 12 months" branch — appears for all
+          three statuses (self-employed gets the longer wording). Rendered ONCE
+          (not per-path) so the single shared P45/redundancy slot is mounted once. */}
+      <ConditionalField show={!!status}>
+        {leftEmploymentBranch(
+          status === "SELF_EMPLOYED"
+            ? "Have you left employment in the last 12 months and set up a new business (or became a director) in the last 12 months?"
+            : "Have you left employment in the last 12 months?"
+        )}
       </ConditionalField>
 
       {/* Declaration */}
@@ -703,10 +704,10 @@ function ParentEmploymentFields({
   );
 }
 
-// ─── Household evidence upload (Epic 09: death cert / guardianship) ───────────
+// ─── Household evidence upload (Epic 09: death cert) ─────────────────────────
 
 interface HouseholdEvidenceUploadProps {
-  field: "deathCertificateDocumentId" | "guardianshipDocumentId";
+  field: "deathCertificateDocumentId";
   slot: string;
   label: string;
   applicationId: string;
@@ -783,7 +784,6 @@ export function ParentDetailsForm({
 
   const isSoleParent = useWatch({ control, name: "isSoleParent" });
   const relationshipStatus = useWatch({ control, name: "relationshipStatus" });
-  const isGuardian = useWatch({ control, name: "isGuardian" });
   const custodyArrangement = useWatch({ control, name: "custodyArrangement" });
   const hasSchoolFeesCourtOrder = useWatch({
     control,
@@ -809,7 +809,10 @@ export function ParentDetailsForm({
         relationshipStatus: (relationshipStatus ??
           "SINGLE") as RelationshipStatus,
         isSoleParent: isSoleParent === true,
-        isGuardian: isGuardian === true,
+        // Guardianship facet (D16) removed from the parent form — never enters
+        // guardian-only handling from this flow. Engine support retained for
+        // back-compat with any historical data.
+        isGuardian: false,
         custodyArrangement: custodyArrangement ?? "SOLE",
         hasSchoolFeesCourtOrder: hasSchoolFeesCourtOrder === true,
         isRemarriedSoleParent: isRemarriedSoleParent === true,
@@ -818,7 +821,6 @@ export function ParentDetailsForm({
     [
       relationshipStatus,
       isSoleParent,
-      isGuardian,
       custodyArrangement,
       hasSchoolFeesCourtOrder,
       isRemarriedSoleParent,
@@ -889,14 +891,6 @@ export function ParentDetailsForm({
           relationship status / facets so we ask only the right question set. ── */}
       {!secondaryMode && (
         <div className="space-y-6 rounded-md border border-slate-200 bg-slate-50 p-4">
-          {/* D16 — foster carer / legal guardian facet */}
-          <YesNoToggle
-            control={control}
-            name="isGuardian"
-            label="Are you applying as a foster carer or legal guardian?"
-            description="If you are the child's guardian rather than a natural parent, we will ask for evidence of guardianship."
-          />
-
           {/* Separated / divorced — school-fees court order (H7 discriminator)
               and the finances-in-flux (H9) facet. */}
           <ConditionalField show={isSeparatedOrDivorced}>
@@ -999,17 +993,6 @@ export function ParentDetailsForm({
               field="deathCertificateDocumentId"
               slot="DEATH_CERTIFICATE"
               label="Death certificate of the child's other parent (required)"
-              applicationId={applicationId}
-              documentMap={documentMap}
-            />
-          </ConditionalField>
-
-          {/* H4 — guardianship / foster evidence (D16) */}
-          <ConditionalField show={isGuardian === true}>
-            <HouseholdEvidenceUpload
-              field="guardianshipDocumentId"
-              slot="GUARDIANSHIP_EVIDENCE"
-              label="Evidence of guardianship / foster status (required)"
               applicationId={applicationId}
               documentMap={documentMap}
             />
