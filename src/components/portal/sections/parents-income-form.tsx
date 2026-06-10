@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * ParentsIncomeForm — Section 6: Parents' Income (status-driven sub-tables).
+ * ParentsIncomeForm — Section 6: Parents' Income (spreadsheet layout).
  *
  * Epic 02 (D3): the flat 14-line model is replaced with sub-tables keyed by the
  * parent's declared employment status (from PARENT_DETAILS). Each sub-table has
@@ -9,6 +9,14 @@
  * and a compulsory legibility tick. The workbook's "value > £0 ⇒ upload, except
  * Child Benefit" rule is enforced by the rule engine (section-rules.ts); here we
  * surface the matching upload control when the value is non-zero.
+ *
+ * Layout (income redesign): every group is ALWAYS open — there are no
+ * collapsible disclosures. Each group renders as a dense `Source | Amount (£) |
+ * Evidence` grid (one line per income source). Required uploads render inline in
+ * the Evidence column as a one-line "⬆ Upload …" button that becomes a
+ * "✓ file [view][x]" chip once uploaded, so evidence consumes no extra vertical
+ * space. On mobile each row reflows to a stacked card (label, then £ input, then
+ * the evidence chip) — no horizontal scroll.
  *
  * Tax-year wording derives from the round (D5) via getTaxYearLabels.
  */
@@ -24,7 +32,6 @@ import {
 } from "@/components/ui/form";
 import { Checkbox } from "@/components/ui/checkbox";
 import { CurrencyInput } from "@/components/portal/form-fields/currency-input";
-import { ConditionalField } from "@/components/portal/form-fields/conditional-field";
 import { FileUpload } from "@/components/portal/file-upload";
 import { Textarea } from "@/components/ui/textarea";
 import type { ParentsIncomeFormValues } from "@/lib/schemas/parents-income";
@@ -58,44 +65,108 @@ function resolveDoc(
   return { id: doc.id, filename: doc.filename, fileSize: doc.fileSize, uploadedAt: doc.uploadedAt };
 }
 
-// ─── reusable bits ───────────────────────────────────────────────────────────
+// ─── spreadsheet grid primitives ─────────────────────────────────────────────
+
+// Shared 3-column template: Source | Amount (£) | Evidence. Single column on
+// mobile (each row reflows to a stacked card); three columns from `sm:` upward.
+const GRID_COLS =
+  "grid grid-cols-1 gap-x-4 gap-y-1.5 sm:grid-cols-[minmax(0,1fr)_168px_minmax(190px,1.2fr)] sm:items-center";
 
 /**
- * Density wrapper (PR-10): lays related currency fields two-up. Single column on
- * mobile, two columns from `sm:` upward, so the combined-income view stays short
- * without sub-stepping (Decision 8). RHF field `name`s are unchanged — this only
- * changes how the existing MoneyRow cells are arranged.
+ * A static, always-open income group. Replaces the previous collapsible
+ * `<details>` sub-table: nothing here toggles, everything is visible at once.
+ * Renders a header bar, a (desktop-only) column-header row, then its rows.
  */
-function MoneyGrid({ children }: { children: React.ReactNode }) {
+function IncomeGroup({
+  title,
+  children,
+}: {
+  title: string;
+  children: React.ReactNode;
+}) {
   return (
-    <div className="grid grid-cols-1 gap-4 px-4 py-4 sm:grid-cols-2">
-      {children}
+    <div className="overflow-hidden rounded-md border border-slate-200">
+      <div className="border-b border-slate-200 bg-slate-50 px-4 py-2.5 text-sm font-semibold text-primary-700">
+        {title}
+      </div>
+      <div
+        className={`${GRID_COLS} hidden border-b border-slate-200 bg-slate-50/60 px-4 py-1.5 text-[11px] font-medium uppercase tracking-wider text-slate-400 sm:grid`}
+        aria-hidden="true"
+      >
+        <span>Income source</span>
+        <span>Amount</span>
+        <span>Evidence</span>
+      </div>
+      <div className="divide-y divide-slate-100">{children}</div>
     </div>
   );
 }
 
 /**
- * A single currency cell inside a {@link MoneyGrid}. The label now renders above
- * the input (CurrencyInput's own label), which is what lets two fields sit
- * side-by-side. The RHF path (`${prefix}.${path}`) is identical to before.
+ * One income line: a visible label cell, the £ input, and the evidence cell.
+ * `evidence` is the inline upload control when the figure requires a document;
+ * pass `undefined` for "no value yet" (renders a muted dash) or an explicit node
+ * (e.g. "not required") to override.
  */
-function MoneyRow({
+function IncomeRow({
   prefix,
   path,
   label,
+  evidence,
 }: {
   prefix: Prefix;
   path: string;
   label: string;
+  evidence?: React.ReactNode;
 }) {
   const { control } = useFormContext<ParentsIncomeFormValues>();
   return (
-    /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
-    <CurrencyInput control={control as any} name={`${prefix}.${path}` as any} label={label} />
+    <div className={`${GRID_COLS} px-4 py-2.5`}>
+      <div className="text-sm text-slate-700">{label}</div>
+      <div>
+        {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+        <CurrencyInput control={control as any} name={`${prefix}.${path}` as any} label={label} hideLabel />
+      </div>
+      <div className="min-w-0">
+        {evidence ?? <span className="text-xs text-slate-400">—</span>}
+      </div>
+    </div>
   );
 }
 
-/** A conditional upload tied to a doc-id path; shown when `show` is true. */
+/**
+ * A group-level evidence row (e.g. one SA302 covering all self-employed lines).
+ * Spans the same grid but leaves the Amount cell empty; the caller renders it
+ * only when the group's gating condition is met.
+ */
+function GroupEvidenceRow({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className={`${GRID_COLS} bg-slate-50/40 px-4 py-2.5`}>
+      <div className="text-xs text-slate-500">{label}</div>
+      <div className="hidden sm:block" aria-hidden="true" />
+      <div className="min-w-0">{children}</div>
+    </div>
+  );
+}
+
+/** A full-width row for free-text notes that don't fit the money grid. */
+function NoteRow({ children }: { children: React.ReactNode }) {
+  return <div className="px-4 py-3">{children}</div>;
+}
+
+/**
+ * An inline (one-line) document upload bound to a doc-id path. Renders the
+ * compact FileUpload chip plus a hidden FormField mirror so the doc-id
+ * participates in validation. Visibility is decided by the caller (it is only
+ * mounted when the matching figure is > £0), so when not mounted the row's
+ * evidence cell falls back to a muted dash.
+ */
 function DocUpload({
   prefix,
   docIdPath,
@@ -104,7 +175,6 @@ function DocUpload({
   hint,
   applicationId,
   documentMap,
-  show,
 }: {
   prefix: Prefix;
   docIdPath: string;
@@ -113,7 +183,6 @@ function DocUpload({
   hint?: string;
   applicationId: string;
   documentMap?: Record<string, DocumentMeta>;
-  show: boolean;
 }) {
   const { control, setValue, getValues } = useFormContext<ParentsIncomeFormValues>();
   const initial = React.useRef(
@@ -124,8 +193,9 @@ function DocUpload({
     [documentMap]
   );
   return (
-    <ConditionalField show={show}>
+    <>
       <FileUpload
+        variant="inline"
         slot={slot}
         label={label}
         hint={hint}
@@ -155,57 +225,7 @@ function DocUpload({
           </FormItem>
         )}
       />
-    </ConditionalField>
-  );
-}
-
-/**
- * A collapsible sub-card (PR-10). Keeps the bordered fieldset shape the section
- * already used; the win is progressive disclosure: a sub-table with no declared
- * figures renders COLLAPSED (saves vertical space), while one that already holds
- * a value renders OPEN so existing data stays visible.
- *
- * Deep-link safety: this is a native `<details>` and `defaultOpen` only seeds the
- * initial `open` state. A field inside a closed disclosure is still in the DOM,
- * so the Review "Go fix this" focus effect (section-page-client.tsx) can — and
- * does — force every ancestor `<details>` open before scrolling/focusing.
- */
-function SubTable({
-  title,
-  defaultOpen,
-  children,
-}: {
-  title: string;
-  defaultOpen: boolean;
-  children: React.ReactNode;
-}) {
-  return (
-    <details
-      open={defaultOpen}
-      className="group overflow-hidden rounded-md border border-slate-200 [&_summary::-webkit-details-marker]:hidden"
-    >
-      <summary className="flex cursor-pointer list-none items-center justify-between gap-2 bg-slate-50 px-4 py-3 text-sm font-semibold text-primary-700 hover:bg-slate-100">
-        <span>{title}</span>
-        <span className="flex items-center gap-2 text-xs font-normal text-slate-500">
-          <span className="group-open:hidden">Add details</span>
-          <svg
-            className="h-4 w-4 transition-transform group-open:rotate-180"
-            viewBox="0 0 20 20"
-            fill="currentColor"
-            aria-hidden="true"
-          >
-            <path
-              fillRule="evenodd"
-              d="M5.23 7.21a.75.75 0 011.06.02L10 11.17l3.71-3.94a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z"
-              clipRule="evenodd"
-            />
-          </svg>
-        </span>
-      </summary>
-      <div className="divide-y divide-slate-100 border-t border-slate-200">
-        {children}
-      </div>
-    </details>
+    </>
   );
 }
 
@@ -274,21 +294,34 @@ function ParentIncomeColumn({
   const subGt0 = (block: string, field: string) =>
     Number(sub[block]?.[field] ?? 0) > 0;
 
-  // Progressive disclosure (PR-10): a sub-table renders OPEN when it ALREADY
-  // held a declared figure on load (so saved data stays visible) and COLLAPSED
-  // when every numeric cell was 0/empty. This is a one-time, mount-time snapshot
-  // so the <details> stays uncontrolled after mount — the user can toggle it
-  // freely, and typing into / zeroing a cell never yanks it open or shut. Doc-id
-  // paths are ignored here — a value > 0 is what surfaces the upload, and the
-  // deep-link focus effect re-opens a closed disclosure if Review links to a doc
-  // field inside it.
-  const initialRecord = React.useRef(
-    (getValues(prefix) ?? {}) as Record<string, Record<string, unknown> | undefined>
+  // Convenience: build an inline upload node for a given doc-id path.
+  const doc = (docIdPath: string, slot: string, label: string, hint?: string) => (
+    <DocUpload
+      prefix={prefix}
+      docIdPath={docIdPath}
+      slot={`${slot}${slotSuffix}`}
+      label={label}
+      hint={hint}
+      applicationId={applicationId}
+      documentMap={documentMap}
+    />
   );
-  const blockHadValue = (block: string, fields: readonly string[]) =>
-    fields.some((f) => Number(initialRecord.current[block]?.[f] ?? 0) > 0);
-  const blockHadText = (block: string, field: string) =>
-    Boolean(initialRecord.current[block]?.[field]);
+
+  const employedHasValue = subGt0("employed", "annualSalaryPaye");
+  const selfEmployedHasValue =
+    subGt0("selfEmployed", "grossSalaried") ||
+    subGt0("selfEmployed", "propertyIncome") ||
+    subGt0("selfEmployed", "dividends") ||
+    subGt0("selfEmployed", "otherInvestmentIncome");
+  const otherBenefitsHasValue =
+    subGt0("benefits", "childWorkingTaxCredit") ||
+    subGt0("benefits", "esa") ||
+    subGt0("benefits", "pipOrDla") ||
+    subGt0("benefits", "carersAllowance") ||
+    subGt0("benefits", "childcareSupport") ||
+    subGt0("benefits", "other");
+  const retiredHasValue =
+    subGt0("retired", "statePension") || subGt0("retired", "privatePension");
 
   return (
     <div className="space-y-6">
@@ -300,264 +333,175 @@ function ParentIncomeColumn({
         </p>
       </div>
 
-        <SubTable
-          title="Employed (PAYE)"
-          defaultOpen={blockHadValue("employed", ["annualSalaryPaye"])}
-        >
-          <MoneyGrid>
-            <MoneyRow prefix={prefix} path="employed.annualSalaryPaye" label="Gross earned income / annual salary (PAYE, as on P60)" />
-          </MoneyGrid>
-          <div className="space-y-4 px-4 py-3">
-            <DocUpload
-              prefix={prefix}
-              docIdPath="employed.p60DocumentId"
-              slot={`P60${slotSuffix}`}
-              label={`P60 (dated ${taxYear.p60DateLabel})`}
-              hint="Upload your P60, or the March payslip below — at least one is required."
-              applicationId={applicationId}
-              documentMap={documentMap}
-              show={subGt0("employed", "annualSalaryPaye")}
-            />
-            <DocUpload
-              prefix={prefix}
-              docIdPath="employed.marchPayslipDocumentId"
-              slot={`MARCH_PAYSLIP${slotSuffix}`}
-              label={taxYear.marchPayslipLabel}
-              hint="Upload your most recent March payslip, or the P60 above — at least one is required."
-              applicationId={applicationId}
-              documentMap={documentMap}
-              show={subGt0("employed", "annualSalaryPaye")}
-            />
-          </div>
-        </SubTable>
-
-        <SubTable
-          title="Self-employed (SA302)"
-          defaultOpen={blockHadValue("selfEmployed", [
-            "grossSalaried",
-            "propertyIncome",
-            "dividends",
-            "otherInvestmentIncome",
-          ])}
-        >
-          <MoneyGrid>
-            <MoneyRow prefix={prefix} path="selfEmployed.grossSalaried" label="Gross salaried income" />
-            <MoneyRow prefix={prefix} path="selfEmployed.propertyIncome" label="Property income" />
-            <MoneyRow prefix={prefix} path="selfEmployed.dividends" label="Dividends" />
-            <MoneyRow prefix={prefix} path="selfEmployed.otherInvestmentIncome" label="Additional other interest / investment income" />
-          </MoneyGrid>
-          <div className="px-4 py-3">
-            <DocUpload
-              prefix={prefix}
-              docIdPath="selfEmployed.sa302DocumentId"
-              slot={`SA302${slotSuffix}`}
-              label={`SA302 (tax year ${taxYear.sa302TaxYearLabel})`}
-              hint="Required when self-employed income is declared."
-              applicationId={applicationId}
-              documentMap={documentMap}
-              show={
-                subGt0("selfEmployed", "grossSalaried") ||
-                subGt0("selfEmployed", "propertyIncome") ||
-                subGt0("selfEmployed", "dividends") ||
-                subGt0("selfEmployed", "otherInvestmentIncome")
-              }
-            />
-          </div>
-        </SubTable>
-
-        <SubTable
-          title="On benefits (totals April–March)"
-          defaultOpen={blockHadValue("benefits", [
-            "universalCredit",
-            "housingBenefit",
-            "childBenefit",
-            "childWorkingTaxCredit",
-            "esa",
-            "pipOrDla",
-            "carersAllowance",
-            "childcareSupport",
-            "other",
-          ])}
-        >
-          <MoneyGrid>
-            <MoneyRow prefix={prefix} path="benefits.universalCredit" label="Universal Credit (excl. childcare)" />
-          </MoneyGrid>
-          <div className="px-4 py-3">
-            <DocUpload
-              prefix={prefix}
-              docIdPath="benefits.ucStatementDocumentId"
-              slot={`UC_STATEMENT${slotSuffix}`}
-              label="Universal Credit 12-month statement"
-              applicationId={applicationId}
-              documentMap={documentMap}
-              show={subGt0("benefits", "universalCredit")}
-            />
-            <DocUpload
-              prefix={prefix}
-              docIdPath="benefits.ucMonthlyDocumentIds.0"
-              slot={`UC_MONTHLY${slotSuffix}`}
-              label="3 monthly Universal Credit payment documents"
-              hint="Upload your three most recent monthly UC payment statements."
-              applicationId={applicationId}
-              documentMap={documentMap}
-              show={subGt0("benefits", "universalCredit")}
-            />
-          </div>
-          <MoneyGrid>
-            <MoneyRow prefix={prefix} path="benefits.housingBenefit" label="Housing Benefit (if not in Universal Credit)" />
-          </MoneyGrid>
-          <div className="px-4 py-3">
-            <DocUpload
-              prefix={prefix}
-              docIdPath="benefits.housingBenefitDocumentId"
-              slot={`HOUSING_BENEFIT${slotSuffix}`}
-              label="Housing Benefit award letter"
-              applicationId={applicationId}
-              documentMap={documentMap}
-              show={subGt0("benefits", "housingBenefit")}
-            />
-          </div>
-          <MoneyGrid>
-            <MoneyRow prefix={prefix} path="benefits.childBenefit" label="Child Benefit (number only — upload not required)" />
-            <MoneyRow prefix={prefix} path="benefits.childWorkingTaxCredit" label="Child / Working Tax Credit" />
-            <MoneyRow prefix={prefix} path="benefits.esa" label="Employment & Support Allowance (ESA)" />
-            <MoneyRow prefix={prefix} path="benefits.pipOrDla" label="Disability Allowance or PIP" />
-            <MoneyRow prefix={prefix} path="benefits.carersAllowance" label="Carer's Allowance" />
-            <MoneyRow prefix={prefix} path="benefits.childcareSupport" label="Childcare Support" />
-            <MoneyRow prefix={prefix} path="benefits.other" label="Other benefits" />
-          </MoneyGrid>
-          <div className="px-4 py-3">
-            <DocUpload
-              prefix={prefix}
-              docIdPath="benefits.otherBenefitsDocumentId"
-              slot={`OTHER_BENEFITS${slotSuffix}`}
-              label="Evidence of declared benefits"
-              hint="Required for declared tax credits / ESA / PIP / Carer's / childcare / other benefits (not Child Benefit)."
-              applicationId={applicationId}
-              documentMap={documentMap}
-              show={
-                subGt0("benefits", "childWorkingTaxCredit") ||
-                subGt0("benefits", "esa") ||
-                subGt0("benefits", "pipOrDla") ||
-                subGt0("benefits", "carersAllowance") ||
-                subGt0("benefits", "childcareSupport") ||
-                subGt0("benefits", "other")
-              }
-            />
-          </div>
-        </SubTable>
-
-        <SubTable
-          title="Unemployed / in between roles (last 12 months)"
-          defaultOpen={blockHadValue("unemployed", [
-            "finalGrossPay",
-            "redundancy",
-            "jsa",
-            "grantSupport",
-            "leavePay",
-          ])}
-        >
-          <MoneyGrid>
-            <MoneyRow prefix={prefix} path="unemployed.finalGrossPay" label="Final gross pay" />
-          </MoneyGrid>
-          <div className="px-4 py-3">
-            <DocUpload prefix={prefix} docIdPath="unemployed.p45DocumentId" slot={`P45${slotSuffix}`} label="P45" applicationId={applicationId} documentMap={documentMap} show={subGt0("unemployed", "finalGrossPay")} />
-          </div>
-          <MoneyGrid>
-            <MoneyRow prefix={prefix} path="unemployed.redundancy" label="Redundancy / severance" />
-          </MoneyGrid>
-          <div className="px-4 py-3">
-            <DocUpload prefix={prefix} docIdPath="unemployed.redundancyDocumentId" slot={`REDUNDANCY${slotSuffix}`} label="Redundancy / severance letter" applicationId={applicationId} documentMap={documentMap} show={subGt0("unemployed", "redundancy")} />
-          </div>
-          <MoneyGrid>
-            <MoneyRow prefix={prefix} path="unemployed.jsa" label="Job Seeker's Allowance (JSA)" />
-          </MoneyGrid>
-          <div className="px-4 py-3">
-            <DocUpload prefix={prefix} docIdPath="unemployed.jsaDocumentId" slot={`JSA${slotSuffix}`} label="JSA award letter" applicationId={applicationId} documentMap={documentMap} show={subGt0("unemployed", "jsa")} />
-          </div>
-          <MoneyGrid>
-            <MoneyRow prefix={prefix} path="unemployed.grantSupport" label="Student grant / support" />
-          </MoneyGrid>
-          <div className="px-4 py-3">
-            <DocUpload prefix={prefix} docIdPath="unemployed.grantSupportDocumentId" slot={`GRANT_SUPPORT${slotSuffix}`} label="Grant / support letter" applicationId={applicationId} documentMap={documentMap} show={subGt0("unemployed", "grantSupport")} />
-          </div>
-          <MoneyGrid>
-            <MoneyRow prefix={prefix} path="unemployed.leavePay" label="Parental / adoption / sickness leave pay" />
-          </MoneyGrid>
-          <div className="px-4 py-3">
-            <DocUpload prefix={prefix} docIdPath="unemployed.leavePayDocumentId" slot={`LEAVE_PAY${slotSuffix}`} label="Status-change document" applicationId={applicationId} documentMap={documentMap} show={subGt0("unemployed", "leavePay")} />
-          </div>
-        </SubTable>
-
-        <SubTable
-          title="Retired"
-          defaultOpen={blockHadValue("retired", ["statePension", "privatePension"])}
-        >
-          <MoneyGrid>
-            <MoneyRow prefix={prefix} path="retired.statePension" label="State Pension" />
-            <MoneyRow prefix={prefix} path="retired.privatePension" label="Private Pension & other plan" />
-          </MoneyGrid>
-          <div className="px-4 py-3">
-            <DocUpload
-              prefix={prefix}
-              docIdPath="retired.pensionDocumentId"
-              slot={`PENSION${slotSuffix}`}
-              label="Pension documentation"
-              applicationId={applicationId}
-              documentMap={documentMap}
-              show={subGt0("retired", "statePension") || subGt0("retired", "privatePension")}
-            />
-          </div>
-        </SubTable>
-
-        <SubTable
-          title="Divorced or separated"
-          defaultOpen={
-            blockHadValue("divorcedSeparated", ["maintenanceReceived"]) ||
-            blockHadText("divorcedSeparated", "sharedCustodyNote")
+      <IncomeGroup title="Employed (PAYE)">
+        <IncomeRow
+          prefix={prefix}
+          path="employed.annualSalaryPaye"
+          label="Gross earned income / annual salary (PAYE, as on P60)"
+          evidence={
+            employedHasValue ? (
+              <div className="space-y-1.5">
+                {doc(
+                  "employed.p60DocumentId",
+                  "P60",
+                  `P60 (dated ${taxYear.p60DateLabel})`,
+                  "Upload your P60, or the March payslip below — at least one is required."
+                )}
+                {doc(
+                  "employed.marchPayslipDocumentId",
+                  "MARCH_PAYSLIP",
+                  taxYear.marchPayslipLabel,
+                  "Upload your most recent March payslip, or the P60 above — at least one is required."
+                )}
+              </div>
+            ) : undefined
           }
-        >
-          <MoneyGrid>
-            <MoneyRow prefix={prefix} path="divorcedSeparated.maintenanceReceived" label="Child Maintenance Allowance received" />
-          </MoneyGrid>
-          <div className="space-y-4 px-4 py-3">
-            <DocUpload
-              prefix={prefix}
-              docIdPath="divorcedSeparated.maintenanceDocumentId"
-              slot={`MAINTENANCE${slotSuffix}`}
-              label="Letter evidencing maintenance received"
-              applicationId={applicationId}
-              documentMap={documentMap}
-              show={subGt0("divorcedSeparated", "maintenanceReceived")}
-            />
-            <FormField
-              control={control}
-              name={`${prefix}.divorcedSeparated.sharedCustodyNote` as never}
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Shared-custody arrangement (if any)</FormLabel>
-                  <FormControl>
-                    <Textarea {...field} value={(field.value as string) ?? ""} rows={3} />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-          </div>
-        </SubTable>
+        />
+      </IncomeGroup>
 
-      {/* Third-party support — always offered. */}
-      <SubTable
-        title="Third-party support (friends / family / other)"
-        defaultOpen={
-          blockHadValue("thirdParty", ["incomeSupportReceived"]) ||
-          blockHadText("thirdParty", "supportNote")
-        }
-      >
-        <MoneyGrid>
-          <MoneyRow prefix={prefix} path="thirdParty.incomeSupportReceived" label="Additional Income Support received" />
-        </MoneyGrid>
-        <div className="px-4 py-3">
+      <IncomeGroup title="Self-employed (SA302)">
+        <IncomeRow prefix={prefix} path="selfEmployed.grossSalaried" label="Gross salaried income" />
+        <IncomeRow prefix={prefix} path="selfEmployed.propertyIncome" label="Property income" />
+        <IncomeRow prefix={prefix} path="selfEmployed.dividends" label="Dividends" />
+        <IncomeRow prefix={prefix} path="selfEmployed.otherInvestmentIncome" label="Additional other interest / investment income" />
+        {selfEmployedHasValue && (
+          <GroupEvidenceRow label="Supporting document — covers all self-employed income above">
+            {doc(
+              "selfEmployed.sa302DocumentId",
+              "SA302",
+              `SA302 (tax year ${taxYear.sa302TaxYearLabel})`,
+              "Required when self-employed income is declared."
+            )}
+          </GroupEvidenceRow>
+        )}
+      </IncomeGroup>
+
+      <IncomeGroup title="On benefits (totals April–March)">
+        <IncomeRow
+          prefix={prefix}
+          path="benefits.universalCredit"
+          label="Universal Credit (excl. childcare)"
+          evidence={
+            subGt0("benefits", "universalCredit") ? (
+              <div className="space-y-1.5">
+                {doc("benefits.ucStatementDocumentId", "UC_STATEMENT", "Universal Credit 12-month statement")}
+                {doc(
+                  "benefits.ucMonthlyDocumentIds.0",
+                  "UC_MONTHLY",
+                  "3 monthly UC payment documents",
+                  "Upload your three most recent monthly UC payment statements."
+                )}
+              </div>
+            ) : undefined
+          }
+        />
+        <IncomeRow
+          prefix={prefix}
+          path="benefits.housingBenefit"
+          label="Housing Benefit (if not in Universal Credit)"
+          evidence={
+            subGt0("benefits", "housingBenefit")
+              ? doc("benefits.housingBenefitDocumentId", "HOUSING_BENEFIT", "Housing Benefit award letter")
+              : undefined
+          }
+        />
+        <IncomeRow
+          prefix={prefix}
+          path="benefits.childBenefit"
+          label="Child Benefit (number only)"
+          evidence={<span className="text-xs text-slate-400">not required</span>}
+        />
+        <IncomeRow prefix={prefix} path="benefits.childWorkingTaxCredit" label="Child / Working Tax Credit" />
+        <IncomeRow prefix={prefix} path="benefits.esa" label="Employment & Support Allowance (ESA)" />
+        <IncomeRow prefix={prefix} path="benefits.pipOrDla" label="Disability Allowance or PIP" />
+        <IncomeRow prefix={prefix} path="benefits.carersAllowance" label="Carer's Allowance" />
+        <IncomeRow prefix={prefix} path="benefits.childcareSupport" label="Childcare Support" />
+        <IncomeRow prefix={prefix} path="benefits.other" label="Other benefits" />
+        {otherBenefitsHasValue && (
+          <GroupEvidenceRow label="Evidence of declared benefits — tax credits / ESA / PIP / Carer's / childcare / other (not Child Benefit)">
+            {doc("benefits.otherBenefitsDocumentId", "OTHER_BENEFITS", "Evidence of declared benefits")}
+          </GroupEvidenceRow>
+        )}
+      </IncomeGroup>
+
+      <IncomeGroup title="Unemployed / in between roles (last 12 months)">
+        <IncomeRow
+          prefix={prefix}
+          path="unemployed.finalGrossPay"
+          label="Final gross pay"
+          evidence={subGt0("unemployed", "finalGrossPay") ? doc("unemployed.p45DocumentId", "P45", "P45") : undefined}
+        />
+        <IncomeRow
+          prefix={prefix}
+          path="unemployed.redundancy"
+          label="Redundancy / severance"
+          evidence={subGt0("unemployed", "redundancy") ? doc("unemployed.redundancyDocumentId", "REDUNDANCY", "Redundancy / severance letter") : undefined}
+        />
+        <IncomeRow
+          prefix={prefix}
+          path="unemployed.jsa"
+          label="Job Seeker's Allowance (JSA)"
+          evidence={subGt0("unemployed", "jsa") ? doc("unemployed.jsaDocumentId", "JSA", "JSA award letter") : undefined}
+        />
+        <IncomeRow
+          prefix={prefix}
+          path="unemployed.grantSupport"
+          label="Student grant / support"
+          evidence={subGt0("unemployed", "grantSupport") ? doc("unemployed.grantSupportDocumentId", "GRANT_SUPPORT", "Grant / support letter") : undefined}
+        />
+        <IncomeRow
+          prefix={prefix}
+          path="unemployed.leavePay"
+          label="Parental / adoption / sickness leave pay"
+          evidence={subGt0("unemployed", "leavePay") ? doc("unemployed.leavePayDocumentId", "LEAVE_PAY", "Status-change document") : undefined}
+        />
+      </IncomeGroup>
+
+      <IncomeGroup title="Retired">
+        <IncomeRow prefix={prefix} path="retired.statePension" label="State Pension" />
+        <IncomeRow prefix={prefix} path="retired.privatePension" label="Private Pension & other plan" />
+        {retiredHasValue && (
+          <GroupEvidenceRow label="Supporting document — covers pension income above">
+            {doc("retired.pensionDocumentId", "PENSION", "Pension documentation")}
+          </GroupEvidenceRow>
+        )}
+      </IncomeGroup>
+
+      <IncomeGroup title="Divorced or separated">
+        <IncomeRow
+          prefix={prefix}
+          path="divorcedSeparated.maintenanceReceived"
+          label="Child Maintenance Allowance received"
+          evidence={
+            subGt0("divorcedSeparated", "maintenanceReceived")
+              ? doc("divorcedSeparated.maintenanceDocumentId", "MAINTENANCE", "Letter evidencing maintenance received")
+              : undefined
+          }
+        />
+        <NoteRow>
+          <FormField
+            control={control}
+            name={`${prefix}.divorcedSeparated.sharedCustodyNote` as never}
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Shared-custody arrangement (if any)</FormLabel>
+                <FormControl>
+                  <Textarea {...field} value={(field.value as string) ?? ""} rows={3} />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+        </NoteRow>
+      </IncomeGroup>
+
+      <IncomeGroup title="Third-party support (friends / family / other)">
+        <IncomeRow
+          prefix={prefix}
+          path="thirdParty.incomeSupportReceived"
+          label="Additional Income Support received"
+        />
+        <NoteRow>
           <FormField
             control={control}
             name={`${prefix}.thirdParty.supportNote` as never}
@@ -571,8 +515,8 @@ function ParentIncomeColumn({
               </FormItem>
             )}
           />
-        </div>
-      </SubTable>
+        </NoteRow>
+      </IncomeGroup>
 
       {/* Per-parent TOTAL */}
       <div className="flex items-center justify-between rounded-md bg-primary-50 border border-primary-200 px-4 py-3">
@@ -677,9 +621,7 @@ export function ParentsIncomeForm({
     // The grid-heavy Income section runs at max-w-4xl. That width now lives on
     // the section CARD itself (section-page-client.tsx caps PARENTS_INCOME to
     // max-w-4xl while every other section stays max-w-3xl), so this form just
-    // fills its card and lays its blocks out vertically. The previous fixed
-    // `-mx-16 + w-[calc(100%+8rem)]` content breakout is gone: it pushed content
-    // past the card border and overflowed the viewport at the lg breakpoint.
+    // fills its card and lays its blocks out vertically.
     <div className="space-y-10">
       <div className="rounded-md bg-primary-50 border border-primary-200 p-4">
         <p className="text-sm text-primary-800">

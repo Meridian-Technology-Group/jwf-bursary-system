@@ -28,6 +28,11 @@ interface CurrencyInputProps<
   disabled?: boolean;
   className?: string;
   required?: boolean;
+  /**
+   * Visually hide the label (kept for screen readers). Used when the field sits
+   * in a spreadsheet-style grid whose row already carries a visible label cell.
+   */
+  hideLabel?: boolean;
 }
 
 export function CurrencyInput<
@@ -42,6 +47,7 @@ export function CurrencyInput<
   disabled = false,
   className,
   required = false,
+  hideLabel = false,
 }: CurrencyInputProps<TFieldValues, TName>) {
   return (
     <Controller
@@ -55,7 +61,7 @@ export function CurrencyInput<
             <label
               htmlFor={`currency-${String(name)}`}
               className={cn(
-                "block text-sm font-medium",
+                hideLabel ? "sr-only" : "block text-sm font-medium",
                 hasError ? "text-error-600" : "text-slate-700"
               )}
             >
