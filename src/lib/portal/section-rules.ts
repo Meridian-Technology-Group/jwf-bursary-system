@@ -37,9 +37,9 @@ function parentDetailsRules(earner: Earner): DocumentRule[] {
   // Parent 2 rules only apply when the Parent 2 employment block exists in the
   // saved blob (mirrors the legacy "if (data.parent2Employment)" gate).
   const onlyIfExistsPath = earner === "PARENT_2" ? empPath : undefined;
-  // Rule IDs are EMPLOYMENT_* to be distinct from the income section's
-  // P45/REDUNDANCY rule ids, but the SLOT is the shared P45/REDUNDANCY — one
-  // upload (in either section) satisfies both gaps.
+  // This page's P45 / redundancy uploads use their OWN dedicated slots
+  // (EMPLOYMENT_P45 / EMPLOYMENT_REDUNDANCY), separate from the income section's
+  // P45 / REDUNDANCY slots — the applicant uploads in each section independently.
   return [
     {
       kind: "requiredIfTrue",
@@ -50,7 +50,7 @@ function parentDetailsRules(earner: Earner): DocumentRule[] {
       fieldRef: `${empPath}.p45DocumentId`,
       doc: {
         docIdPath: `${empPath}.p45DocumentId`,
-        slot: `P45${suffix}`,
+        slot: `EMPLOYMENT_P45${suffix}`,
       },
     },
     {
@@ -62,7 +62,7 @@ function parentDetailsRules(earner: Earner): DocumentRule[] {
       fieldRef: `${empPath}.redundancyDocumentId`,
       doc: {
         docIdPath: `${empPath}.redundancyDocumentId`,
-        slot: `REDUNDANCY${suffix}`,
+        slot: `EMPLOYMENT_REDUNDANCY${suffix}`,
       },
     },
   ];

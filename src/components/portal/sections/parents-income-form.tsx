@@ -58,33 +58,6 @@ function resolveDoc(
   return { id: doc.id, filename: doc.filename, fileSize: doc.fileSize, uploadedAt: doc.uploadedAt };
 }
 
-/**
- * Resolve a document by SLOT (newest DocumentMeta whose `.slot === slot`).
- *
- * Used for the P45/REDUNDANCY uploads, which share their slots
- * (`P45_PARENT_*` / `REDUNDANCY_PARENT_*`) with the Parent/Guardian Details
- * page. Resolving by slot (rather than by this section's stored blob field id)
- * means a single upload made in either section shows in both.
- */
-function resolveDocBySlot(
-  slot: string,
-  documentMap: Record<string, DocumentMeta> | undefined
-): { id: string; filename: string; fileSize: number; uploadedAt: string } | undefined {
-  if (!documentMap) return undefined;
-  let newest: DocumentMeta | undefined;
-  for (const doc of Object.values(documentMap)) {
-    if (doc.slot !== slot) continue;
-    if (!newest || doc.uploadedAt > newest.uploadedAt) newest = doc;
-  }
-  if (!newest) return undefined;
-  return {
-    id: newest.id,
-    filename: newest.filename,
-    fileSize: newest.fileSize,
-    uploadedAt: newest.uploadedAt,
-  };
-}
-
 // ─── reusable bits ───────────────────────────────────────────────────────────
 
 /**
@@ -132,7 +105,6 @@ function DocUpload({
   applicationId,
   documentMap,
   show,
-  resolveBySlot,
 }: {
   prefix: Prefix;
   docIdPath: string;
@@ -142,24 +114,14 @@ function DocUpload({
   applicationId: string;
   documentMap?: Record<string, DocumentMeta>;
   show: boolean;
-  /**
-   * When true, resolve `existingDocument` by SLOT (newest doc with this slot)
-   * rather than by the stored blob field id. Used for the P45/REDUNDANCY
-   * uploads, whose slots are shared with the Parent/Guardian Details page so a
-   * single upload appears in both sections.
-   */
-  resolveBySlot?: boolean;
 }) {
   const { control, setValue, getValues } = useFormContext<ParentsIncomeFormValues>();
   const initial = React.useRef(
     getValues(`${prefix}.${docIdPath}` as never) as unknown as string | undefined
   );
   const existing = React.useMemo(
-    () =>
-      resolveBySlot
-        ? resolveDocBySlot(slot, documentMap)
-        : resolveDoc(initial.current, documentMap),
-    [documentMap, resolveBySlot, slot]
+    () => resolveDoc(initial.current, documentMap),
+    [documentMap]
   );
   return (
     <ConditionalField show={show}>
@@ -499,13 +461,13 @@ function ParentIncomeColumn({
             <MoneyRow prefix={prefix} path="unemployed.finalGrossPay" label="Final gross pay" />
           </MoneyGrid>
           <div className="px-4 py-3">
-            <DocUpload prefix={prefix} docIdPath="unemployed.p45DocumentId" slot={`P45${slotSuffix}`} label="P45" applicationId={applicationId} documentMap={documentMap} show={subGt0("unemployed", "finalGrossPay")} resolveBySlot />
+            <DocUpload prefix={prefix} docIdPath="unemployed.p45DocumentId" slot={`P45${slotSuffix}`} label="P45" applicationId={applicationId} documentMap={documentMap} show={subGt0("unemployed", "finalGrossPay")} />
           </div>
           <MoneyGrid>
             <MoneyRow prefix={prefix} path="unemployed.redundancy" label="Redundancy / severance" />
           </MoneyGrid>
           <div className="px-4 py-3">
-            <DocUpload prefix={prefix} docIdPath="unemployed.redundancyDocumentId" slot={`REDUNDANCY${slotSuffix}`} label="Redundancy / severance letter" applicationId={applicationId} documentMap={documentMap} show={subGt0("unemployed", "redundancy")} resolveBySlot />
+            <DocUpload prefix={prefix} docIdPath="unemployed.redundancyDocumentId" slot={`REDUNDANCY${slotSuffix}`} label="Redundancy / severance letter" applicationId={applicationId} documentMap={documentMap} show={subGt0("unemployed", "redundancy")} />
           </div>
           <MoneyGrid>
             <MoneyRow prefix={prefix} path="unemployed.jsa" label="Job Seeker's Allowance (JSA)" />
