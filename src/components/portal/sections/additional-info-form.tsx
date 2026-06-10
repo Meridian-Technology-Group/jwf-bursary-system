@@ -1,15 +1,15 @@
 "use client";
 
 /**
- * AdditionalInfoForm — Section 7 (workbook §7): Additional Information.
+ * AdditionalInfoForm — Additional Information.
  *
- * Circumstances checklist (each with a supporting-document upload when it
- * applies), a MANDATORY free-text narrative (≥1 char — enforced by the schema),
- * and a general upload area for documents not covered by the checklist.
+ * A free-form section: an OPTIONAL narrative where the applicant can share any
+ * contextual information relevant to their bursary application, plus an upload
+ * area for any supporting documents not covered by the checklist elsewhere.
  */
 
 import * as React from "react";
-import { useFormContext, useWatch, Controller } from "react-hook-form";
+import { useFormContext, useWatch } from "react-hook-form";
 import {
   FormField,
   FormItem,
@@ -17,33 +17,11 @@ import {
   FormControl,
   FormMessage,
 } from "@/components/ui/form";
-import { Checkbox } from "@/components/ui/checkbox";
 import { Textarea } from "@/components/ui/textarea";
-import { ConditionalField } from "@/components/portal/form-fields/conditional-field";
 import { FileUpload } from "@/components/portal/file-upload";
 import type { UploadedDocument } from "@/components/portal/file-upload";
 import type { DocumentMeta } from "@/lib/db/queries/applications";
 import type { AdditionalInfoFormValues } from "@/lib/schemas/additional-info";
-import { cn } from "@/lib/utils";
-
-type CircumstanceKey = keyof Pick<
-  AdditionalInfoFormValues,
-  | "divorced"
-  | "separated"
-  | "sickUnableToWork"
-  | "rent"
-  | "madeRedundant"
-  | "receivingBenefits"
->;
-
-const CIRCUMSTANCES: { key: CircumstanceKey; label: string; slot: string }[] = [
-  { key: "divorced", label: "Divorced (if applicable)", slot: "CIRCUMSTANCE_DIVORCED" },
-  { key: "separated", label: "Separated (if applicable)", slot: "CIRCUMSTANCE_SEPARATED" },
-  { key: "sickUnableToWork", label: "Sick / unable to work", slot: "CIRCUMSTANCE_SICK" },
-  { key: "rent", label: "Paying rent (current statement or lease)", slot: "CIRCUMSTANCE_RENT" },
-  { key: "madeRedundant", label: "Been made redundant or lost employment", slot: "CIRCUMSTANCE_REDUNDANT" },
-  { key: "receivingBenefits", label: "Receiving benefits", slot: "CIRCUMSTANCE_BENEFITS" },
-];
 
 function resolveDoc(
   docId: string | undefined,
@@ -52,72 +30,6 @@ function resolveDoc(
   if (!docId || !documentMap?.[docId]) return undefined;
   const doc = documentMap[docId];
   return { id: doc.id, filename: doc.filename, fileSize: doc.fileSize, uploadedAt: doc.uploadedAt };
-}
-
-function CircumstanceRow({
-  item,
-  applicationId,
-  documentMap,
-}: {
-  item: (typeof CIRCUMSTANCES)[0];
-  applicationId: string;
-  documentMap?: Record<string, DocumentMeta>;
-}) {
-  const { control, setValue, getValues } = useFormContext<AdditionalInfoFormValues>();
-  const applies = useWatch({ control, name: `${item.key}.applies` });
-  const initialDocId = React.useRef(getValues(`${item.key}.documentId`));
-  const existing = React.useMemo(() => resolveDoc(initialDocId.current, documentMap), [documentMap]);
-  const checkboxId = `circumstance-${item.key}`;
-
-  return (
-    <div
-      className={cn(
-        "rounded-md border bg-white transition-colors",
-        applies === true ? "border-slate-300" : "border-slate-200"
-      )}
-    >
-      {/* Compact checklist row — the checkbox drives `${item.key}.applies`
-          (unchanged RHF path); ticking it reveals the upload inline below. */}
-      <Controller
-        control={control}
-        name={`${item.key}.applies`}
-        render={({ field }) => (
-          <label
-            htmlFor={checkboxId}
-            className="flex cursor-pointer items-center gap-3 px-4 py-3 text-sm text-slate-700"
-          >
-            <Checkbox
-              id={checkboxId}
-              checked={field.value === true}
-              onCheckedChange={(checked) => field.onChange(checked === true)}
-              onBlur={field.onBlur}
-              ref={field.ref}
-            />
-            <span>{item.label}</span>
-          </label>
-        )}
-      />
-      {/* Reveal binding unchanged: detail/upload shows when applies === true.
-          A circumstance that already has data (applies === true on load) is
-          therefore rendered REVEALED, keeping its upload visible and the field
-          deep-linkable from the Review page. */}
-      <ConditionalField show={applies === true} className="px-4 pb-4">
-        <FileUpload
-          slot={item.slot}
-          label={`Supporting document for "${item.label}"`}
-          hint="Optional — upload any evidence that supports this circumstance."
-          applicationId={applicationId}
-          existingDocument={existing}
-          onUploadComplete={(doc: UploadedDocument) =>
-            setValue(`${item.key}.documentId`, doc.id, { shouldValidate: true, shouldDirty: true })
-          }
-          onRemove={() =>
-            setValue(`${item.key}.documentId`, undefined, { shouldValidate: true, shouldDirty: true })
-          }
-        />
-      </ConditionalField>
-    </div>
-  );
 }
 
 interface AdditionalInfoFormProps {
@@ -142,92 +54,57 @@ export function AdditionalInfoForm({ applicationId, documentMap }: AdditionalInf
 
   return (
     <div className="space-y-6">
-      {/* Circumstances checklist */}
-      <div>
-        <h3 className="text-base font-semibold text-primary-900 mb-2">Circumstances checklist</h3>
-        <p className="text-sm text-slate-500 mb-4">
-          Please use this form to tell us if, in a current or previous application, any of
-          the following apply:
-        </p>
-        <div className="space-y-2">
-          {CIRCUMSTANCES.map((item) => (
-            <CircumstanceRow
-              key={item.key}
-              item={item}
-              applicationId={applicationId}
-              documentMap={documentMap}
-            />
-          ))}
-        </div>
-      </div>
+      <p className="text-sm text-slate-600">
+        If you would like to share with us some additional contextual information
+        which you think may be relevant to us when assessing your bursary
+        application, please use the field below to add your comments and use the
+        uploading section below the text box to attach to your form any documents
+        which do not show in our checklist.
+      </p>
 
-      <hr className="border-slate-200" />
+      <FormField
+        control={control}
+        name="additionalNarrative"
+        render={({ field }) => (
+          <FormItem>
+            <FormLabel>Your comments</FormLabel>
+            <FormControl>
+              <Textarea
+                rows={6}
+                placeholder="Add any additional context relevant to your application..."
+                {...field}
+                value={field.value ?? ""}
+              />
+            </FormControl>
+            <div className="flex justify-end">
+              <span className={narrative.length > maxChars * 0.9 ? "text-xs text-warning-600" : "text-xs text-slate-400"}>
+                {narrative.length} / {maxChars} characters
+              </span>
+            </div>
+            <FormMessage />
+          </FormItem>
+        )}
+      />
 
-      {/* Mandatory narrative */}
-      <div className="space-y-3">
-        <h3 className="text-base font-semibold text-primary-900">Additional information</h3>
-        <p className="text-sm text-slate-500">
-          Please help us identify any difficulties which you think we may consider to be
-          factors in assessing need for this award. The bursary committee is unable to
-          consider any information that is not included in your application. If there is
-          nothing further to add, please enter &ldquo;N/A&rdquo;.
-        </p>
-        <FormField
-          control={control}
-          name="additionalNarrative"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>
-                Additional narrative <span className="text-error-600">*</span>
-              </FormLabel>
-              <FormControl>
-                <Textarea
-                  rows={4}
-                  placeholder="Provide any additional context relevant to your application (or N/A)..."
-                  {...field}
-                  value={field.value ?? ""}
-                />
-              </FormControl>
-              <div className="flex justify-end">
-                <span className={narrative.length > maxChars * 0.9 ? "text-xs text-warning-600" : "text-xs text-slate-400"}>
-                  {narrative.length} / {maxChars} characters
-                </span>
-              </div>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-      </div>
-
-      <hr className="border-slate-200" />
-
-      {/* General supporting documents not covered by the checklist */}
-      <div className="space-y-3">
-        <h3 className="text-base font-semibold text-primary-900">Other supporting documents</h3>
-        <p className="text-sm text-slate-500">
-          Upload any documents relevant to your application that are not covered elsewhere
-          (e.g. health, separation, or other pastoral context).
-        </p>
-        <FileUpload
-          multiple
-          slot="ADDITIONAL_DOCUMENT"
-          label="Additional documents"
-          applicationId={applicationId}
-          existingDocuments={existingAdditional}
-          onUploadComplete={(doc: UploadedDocument) =>
-            setValue("additionalDocumentIds", [...additionalIds.filter((id) => id !== doc.id), doc.id], {
-              shouldValidate: true,
-              shouldDirty: true,
-            })
-          }
-          onRemove={(docId: string) =>
-            setValue("additionalDocumentIds", additionalIds.filter((id) => id !== docId), {
-              shouldValidate: true,
-              shouldDirty: true,
-            })
-          }
-        />
-      </div>
+      <FileUpload
+        multiple
+        slot="ADDITIONAL_DOCUMENT"
+        label="Additional documents"
+        applicationId={applicationId}
+        existingDocuments={existingAdditional}
+        onUploadComplete={(doc: UploadedDocument) =>
+          setValue("additionalDocumentIds", [...additionalIds.filter((id) => id !== doc.id), doc.id], {
+            shouldValidate: true,
+            shouldDirty: true,
+          })
+        }
+        onRemove={(docId: string) =>
+          setValue("additionalDocumentIds", additionalIds.filter((id) => id !== docId), {
+            shouldValidate: true,
+            shouldDirty: true,
+          })
+        }
+      />
     </div>
   );
 }

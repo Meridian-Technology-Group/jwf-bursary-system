@@ -201,12 +201,7 @@ function getDefaultValues(
         otherDebtDocumentIds: [], documentsConfirmed: false,
       };
     case "ADDITIONAL_INFO":
-      return {
-        divorced: { applies: false }, separated: { applies: false },
-        sickUnableToWork: { applies: false }, rent: { applies: false },
-        madeRedundant: { applies: false }, receivingBenefits: { applies: false },
-        additionalNarrative: "", additionalDocumentIds: [],
-      };
+      return { additionalNarrative: "", additionalDocumentIds: [] };
     case "DECLARATION":
       // Per-parent ticks (Epic 02 PR-5). Seed the P2 fields only for a
       // dual-parent application so a sole parent's declaration is not blocked by
