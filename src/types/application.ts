@@ -153,10 +153,8 @@ export interface DependentChild {
   /** ISO date string */
   dependentStatusDate?: string;
   surnameOtherParent?: string;
-  bursaryAmount?: number;
   school?: string;
-  /** Unearned income for tax year */
-  unearnedIncome?: number;
+  schoolAddress?: string;
   isNamedChild?: boolean;
 }
 

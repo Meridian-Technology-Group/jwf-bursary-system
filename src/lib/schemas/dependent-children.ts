@@ -5,12 +5,8 @@ export const dependentChildSchema = z.object({
   name: z.string().min(1, "Child name is required"),
   dependentStatusDate: z.string().optional(),
   surnameOtherParent: z.string().optional(),
-  bursaryAmount: z.coerce.number().nonnegative().optional(),
   school: z.string().optional(),
-  unearnedIncome: z.coerce
-    .number()
-    .nonnegative("Enter 0 if not applicable")
-    .default(0),
+  schoolAddress: z.string().optional(),
   isNamedChild: z.boolean().optional(),
 });
 
