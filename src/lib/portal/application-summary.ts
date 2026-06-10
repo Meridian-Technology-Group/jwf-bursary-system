@@ -328,20 +328,26 @@ function parentsIncome(raw: unknown): {
 function assetsRows(raw: unknown): SummaryRow[] {
   const d = parseSafe<AssetsLiabilitiesData>(raw);
   if (!d) return [];
+  const otherProperties = Array.isArray(d.otherProperties)
+    ? d.otherProperties
+    : [];
   const assets =
     (d.residenceValue ?? 0) +
     (d.carValue ?? 0) +
     (d.otherPossessionsValue ?? 0) +
-    (d.stocksAndSharesValue ?? 0) +
+    (d.otherNonFinancialAssetsValue ?? 0) +
+    (d.totalCashBalance ?? 0) +
     (d.investmentsValue ?? 0) +
-    (d.otherAssetsValue ?? 0) +
-    (d.otherPropertiesTotalValue ?? 0);
+    otherProperties.reduce((sum, p) => sum + (p.value ?? 0), 0);
   const liabilities =
-    (d.outstandingMainMortgage ?? 0) +
-    (d.totalOtherMortgages ?? 0) +
-    (d.currentOverdraft ?? 0) +
-    (d.hirePurchaseBalance ?? 0) +
-    (d.otherMortgageBalance ?? 0);
+    (d.mortgageBalance ?? 0) +
+    otherProperties.reduce((sum, p) => sum + (p.mortgageBalance ?? 0), 0) +
+    (d.chargingOrderValue ?? 0) +
+    (d.creditCardBalance ?? 0) +
+    (d.bankOverdraft ?? 0) +
+    (d.loansToAgencies ?? 0) +
+    (d.loansToFriendsFamily ?? 0) +
+    (d.schoolFeesOwed ?? 0);
   const rows: SummaryRow[] = [
     {
       label: "Property",
@@ -419,8 +425,20 @@ const SECTION_DOC_SLOTS: Record<string, string[]> = {
   ],
   ASSETS_LIABILITIES: [
     "COUNCIL_TAX",
-    "BANK_STATEMENT_PARENT_1",
-    "BANK_STATEMENT_PARENT_2",
+    "MAIN_MORTGAGE_STATEMENT",
+    "TENANCY_AGREEMENT",
+    "HOUSING_BENEFIT_LETTER",
+    "RELATIVE_LETTER",
+    "BANK_STATEMENT_CURRENT_PARENT_1",
+    "BANK_STATEMENT_CURRENT_PARENT_2",
+    "BANK_STATEMENT_SAVINGS_PARENT_1",
+    "BANK_STATEMENT_SAVINGS_PARENT_2",
+    "INVESTMENT_PARENT_1",
+    "INVESTMENT_PARENT_2",
+    "CREDIT_CARD_STATEMENT",
+    "LOAN_STATEMENT",
+    "OTHER_DEBT_DOCUMENT",
+    "CAR_LEASE_AGREEMENT",
   ],
 };
 

@@ -384,35 +384,64 @@ export interface OtherProperty {
   mortgageStatementDocumentId?: string;
 }
 
+export type RentAgreementType =
+  | "PRIVATE"
+  | "COUNCIL"
+  | "COUNCIL_NO_RENT"
+  | "RELATIVES";
+
+export type CarOwnership = "OWN" | "LEASE";
+
 export interface AssetsLiabilitiesData {
+  // Property
   propertyOwnership: PropertyOwnership;
   residenceValue: number;
-  carValue: number;
-  otherPossessionsValue: number;
-  stocksAndSharesValue: number;
-  investmentsValue: number;
-  otherAssetsValue: number;
+  hasMortgage?: boolean;
+  mortgageBalance?: number;
+  monthlyMortgageRepayment?: number;
+  mortgageStatementDocumentId?: string;
+  rentAgreementType?: RentAgreementType;
+  monthlyRent?: number;
+  tenancyAgreementDocumentId?: string;
+  housingBenefitLetterDocumentId?: string;
+  relativeLetterDocumentId?: string;
   hasOtherProperties: boolean;
-  otherPropertiesTotalValue?: number;
-  hasRentalProperty?: boolean;
-  rentalPropertyValue?: number;
-  otherMortgageBalance: number;
-  /** Document slot: council tax bill */
-  councilTaxDocumentId?: string;
-  /** Document slots: Parent 1 bank statements */
-  parent1BankStatementDocumentIds: string[];
-  /** Document slots: Parent 2 bank statements */
-  parent2BankStatementDocumentIds?: string[];
   otherProperties: OtherProperty[];
-  outstandingMainMortgage: number;
-  totalOtherMortgages: number;
-  currentOverdraft: number;
-  hasHirePurchase: boolean;
-  hirePurchaseBalance?: number;
-  /** Document slots: liability agreements */
-  liabilitiesAgreementsDocumentId?: string;
-  liabilitiesStatementDocumentId?: string;
-  hasLiabilityChanges: boolean;
+  hasChargingOrder: boolean;
+  chargingOrderAddress?: string;
+  chargingOrderPostcode?: string;
+  chargingOrderValue?: number;
+  /** Document slot: council tax letter */
+  councilTaxDocumentId?: string;
+  // Car & home contents
+  carOwnership: CarOwnership;
+  carValue?: number;
+  carMonthlyLease?: number;
+  carLeaseAgreementDocumentId?: string;
+  usesPublicTransport: boolean;
+  publicTransportMonthly?: number;
+  otherPossessionsValue: number;
+  otherNonFinancialAssetsValue: number;
+  // Financial assets & debt
+  totalCashBalance: number;
+  investmentsValue: number;
+  parent1CurrentAccountDocumentIds: string[];
+  parent1SavingsAccountDocumentIds: string[];
+  parent1OwnsInvestments?: boolean;
+  parent1InvestmentDocumentIds: string[];
+  parent2CurrentAccountDocumentIds?: string[];
+  parent2SavingsAccountDocumentIds?: string[];
+  parent2OwnsInvestments?: boolean;
+  parent2InvestmentDocumentIds?: string[];
+  hasPersonalDebt: boolean;
+  creditCardBalance?: number;
+  creditCardStatementDocumentIds: string[];
+  bankOverdraft?: number;
+  loansToAgencies?: number;
+  loanStatementDocumentIds: string[];
+  loansToFriendsFamily?: number;
+  schoolFeesOwed?: number;
+  otherDebtDocumentIds: string[];
   documentsConfirmed: boolean;
 }
 

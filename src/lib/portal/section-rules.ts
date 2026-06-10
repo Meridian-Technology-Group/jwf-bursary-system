@@ -326,6 +326,7 @@ const dependentChildrenStructural: StructuralRule[] = [
 // ─── ASSETS_LIABILITIES rules ────────────────────────────────────────────────
 
 const assetsRules: DocumentRule[] = [
+  // Council tax letter — always required once the section is started (workbook Q4).
   {
     kind: "requiredAlways",
     id: "COUNCIL_TAX",
@@ -333,31 +334,63 @@ const assetsRules: DocumentRule[] = [
     fieldRef: "councilTaxDocumentId",
     doc: { docIdPath: "councilTaxDocumentId", slot: "COUNCIL_TAX" },
   },
+  // OWN branch — latest main mortgage statement when a mortgage is declared.
   {
-    kind: "structural",
-    id: "BANK_STATEMENT_PARENT_1",
-    label: "At least one bank statement for Parent/Guardian 1 is required",
-    fieldRef: "parent1BankStatementDocumentIds",
-    predicate: (blob, uploadedSlots) => {
-      const ids = blob.parent1BankStatementDocumentIds;
-      if (Array.isArray(ids) && ids.length > 0) return true;
-      return uploadedSlots.has("BANK_STATEMENT_PARENT_1");
+    kind: "requiredIfTrue",
+    id: "MAIN_MORTGAGE_STATEMENT",
+    truePath: "hasMortgage",
+    label: "Your latest mortgage statement is required",
+    fieldRef: "mortgageStatementDocumentId",
+    doc: {
+      docIdPath: "mortgageStatementDocumentId",
+      slot: "MAIN_MORTGAGE_STATEMENT",
     },
   },
+  // RENT branch — tenancy agreement when renting privately or from the council.
   {
     kind: "structural",
-    id: "BANK_STATEMENT_PARENT_2",
-    label: "At least one bank statement for Parent/Guardian 2 is required",
-    fieldRef: "parent2BankStatementDocumentIds",
+    id: "TENANCY_AGREEMENT",
+    label: "A tenancy agreement is required for your rent arrangement",
+    fieldRef: "tenancyAgreementDocumentId",
     predicate: (blob, uploadedSlots) => {
-      const ids = blob.parent2BankStatementDocumentIds;
-      const inSlot = uploadedSlots.has("BANK_STATEMENT_PARENT_2");
-      // Only enforced when the Parent 2 block was shown (its key is present in
-      // the saved blob, OR a P2 statement slot exists). Mirrors the legacy
-      // "p2WasShown" gate exactly.
-      const wasShown = Array.isArray(ids) || inSlot;
-      if (!wasShown) return true;
-      return (Array.isArray(ids) && ids.length > 0) || inSlot;
+      const type = blob.rentAgreementType;
+      if (type !== "PRIVATE" && type !== "COUNCIL") return true; // not applicable
+      const id = blob.tenancyAgreementDocumentId;
+      return (
+        (typeof id === "string" && id.length > 0) ||
+        uploadedSlots.has("TENANCY_AGREEMENT")
+      );
+    },
+  },
+  // RENT branch — housing benefit letter when renting from the council, no rent.
+  {
+    kind: "structural",
+    id: "HOUSING_BENEFIT_LETTER",
+    label: "A housing benefit letter is required for your rent arrangement",
+    fieldRef: "housingBenefitLetterDocumentId",
+    predicate: (blob, uploadedSlots) => {
+      if (blob.rentAgreementType !== "COUNCIL_NO_RENT") return true; // not applicable
+      const id = blob.housingBenefitLetterDocumentId;
+      return (
+        (typeof id === "string" && id.length > 0) ||
+        uploadedSlots.has("HOUSING_BENEFIT_LETTER")
+      );
+    },
+  },
+  // RENT branch — relative letter when living with relatives.
+  {
+    kind: "structural",
+    id: "RELATIVE_LETTER",
+    label:
+      "A letter from your relative is required for your living arrangement",
+    fieldRef: "relativeLetterDocumentId",
+    predicate: (blob, uploadedSlots) => {
+      if (blob.rentAgreementType !== "RELATIVES") return true; // not applicable
+      const id = blob.relativeLetterDocumentId;
+      return (
+        (typeof id === "string" && id.length > 0) ||
+        uploadedSlots.has("RELATIVE_LETTER")
+      );
     },
   },
   // Per other-property: latest mortgage statement required when a mortgage
@@ -374,6 +407,76 @@ const assetsRules: DocumentRule[] = [
     elementGate: (el) => Number(el.mortgageBalance ?? 0) > 0,
     elementLabel: (i) =>
       `A latest mortgage statement is required for other property ${i}`,
+  },
+  // Current-account bank statements — Parent/Guardian 1 always (≥1).
+  {
+    kind: "structural",
+    id: "BANK_STATEMENT_CURRENT_PARENT_1",
+    label:
+      "At least one current-account statement for Parent/Guardian 1 is required",
+    fieldRef: "parent1CurrentAccountDocumentIds",
+    predicate: (blob, uploadedSlots) => {
+      const ids = blob.parent1CurrentAccountDocumentIds;
+      if (Array.isArray(ids) && ids.length > 0) return true;
+      return uploadedSlots.has("BANK_STATEMENT_CURRENT_PARENT_1");
+    },
+  },
+  // Current-account bank statements — Parent/Guardian 2, only when the P2 block
+  // was shown (its array key is present in the saved blob, OR a P2 slot exists).
+  // Mirrors the legacy "p2WasShown" gate exactly.
+  {
+    kind: "structural",
+    id: "BANK_STATEMENT_CURRENT_PARENT_2",
+    label:
+      "At least one current-account statement for Parent/Guardian 2 is required",
+    fieldRef: "parent2CurrentAccountDocumentIds",
+    predicate: (blob, uploadedSlots) => {
+      const ids = blob.parent2CurrentAccountDocumentIds;
+      const inSlot = uploadedSlots.has("BANK_STATEMENT_CURRENT_PARENT_2");
+      const wasShown = Array.isArray(ids) || inSlot;
+      if (!wasShown) return true;
+      return (Array.isArray(ids) && ids.length > 0) || inSlot;
+    },
+  },
+  // Investment documents — Parent/Guardian 1 when they own investments.
+  {
+    kind: "structural",
+    id: "INVESTMENT_PARENT_1",
+    label: "Investment / portfolio documents for Parent/Guardian 1 are required",
+    fieldRef: "parent1InvestmentDocumentIds",
+    predicate: (blob, uploadedSlots) => {
+      if (blob.parent1OwnsInvestments !== true) return true; // not applicable
+      const ids = blob.parent1InvestmentDocumentIds;
+      if (Array.isArray(ids) && ids.length > 0) return true;
+      return uploadedSlots.has("INVESTMENT_PARENT_1");
+    },
+  },
+  // Investment documents — Parent/Guardian 2 when they own investments.
+  {
+    kind: "structural",
+    id: "INVESTMENT_PARENT_2",
+    label: "Investment / portfolio documents for Parent/Guardian 2 are required",
+    fieldRef: "parent2InvestmentDocumentIds",
+    predicate: (blob, uploadedSlots) => {
+      if (blob.parent2OwnsInvestments !== true) return true; // not applicable
+      const ids = blob.parent2InvestmentDocumentIds;
+      if (Array.isArray(ids) && ids.length > 0) return true;
+      return uploadedSlots.has("INVESTMENT_PARENT_2");
+    },
+  },
+  // Credit card statement — when personal debt is declared AND a balance > 0.
+  {
+    kind: "structural",
+    id: "CREDIT_CARD_STATEMENT",
+    label: "A credit card statement is required for the declared balance",
+    fieldRef: "creditCardStatementDocumentIds",
+    predicate: (blob, uploadedSlots) => {
+      if (blob.hasPersonalDebt !== true) return true; // not applicable
+      if (Number(blob.creditCardBalance ?? 0) <= 0) return true; // no balance
+      const ids = blob.creditCardStatementDocumentIds;
+      if (Array.isArray(ids) && ids.length > 0) return true;
+      return uploadedSlots.has("CREDIT_CARD_STATEMENT");
+    },
   },
 ];
 
