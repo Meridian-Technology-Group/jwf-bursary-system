@@ -55,9 +55,10 @@ function resolveDoc(
 
 /**
  * Resolve the newest document with the given slot to the FileUpload
- * `existingDocument` shape. Used for the P45 / redundancy uploads, which share
- * a slot with the Income section's unemployed sub-table — so a single upload in
- * either section shows in both. Newest wins (compares `uploadedAt` strings).
+ * `existingDocument` shape. Used for this page's P45 / redundancy uploads, which
+ * use their own dedicated slots (EMPLOYMENT_P45 / EMPLOYMENT_REDUNDANCY) —
+ * separate from the Income section's P45 / redundancy uploads, so the applicant
+ * uploads in each place independently. Newest wins (compares `uploadedAt`).
  */
 function resolveDocBySlot(
   slot: string,
@@ -362,16 +363,16 @@ function ParentEmploymentFields({
 }: ParentEmploymentFieldsProps) {
   const { control, setValue } = useFormContext<ParentDetailsFormValues>();
 
-  // P45 + redundancy uploads are SHARED with the Income section (unemployed
-  // sub-table) via the same slots, so resolve `existingDocument` BY SLOT
-  // (newest doc) rather than by the per-section stored blob id. This makes a
-  // single upload appear in both sections.
+  // P45 + redundancy uploads use this page's OWN dedicated slots
+  // (EMPLOYMENT_P45 / EMPLOYMENT_REDUNDANCY), kept separate from the Income
+  // section's P45 / redundancy uploads — the applicant uploads in each place
+  // independently. Resolve `existingDocument` by this page's slot.
   const existingP45 = React.useMemo(
-    () => resolveDocBySlot(`P45${slotSuffix}`, documentMap),
+    () => resolveDocBySlot(`EMPLOYMENT_P45${slotSuffix}`, documentMap),
     [slotSuffix, documentMap]
   );
   const existingRedundancy = React.useMemo(
-    () => resolveDocBySlot(`REDUNDANCY${slotSuffix}`, documentMap),
+    () => resolveDocBySlot(`EMPLOYMENT_REDUNDANCY${slotSuffix}`, documentMap),
     [slotSuffix, documentMap]
   );
 
@@ -407,7 +408,7 @@ function ParentEmploymentFields({
 
       <ConditionalField show={leftEmployment === true}>
         <FileUpload
-          slot={`P45${slotSuffix}`}
+          slot={`EMPLOYMENT_P45${slotSuffix}`}
           label="Upload P45"
           hint="You can upload this now, or any time before you submit the application."
           applicationId={applicationId}
@@ -444,7 +445,7 @@ function ParentEmploymentFields({
 
         <ConditionalField show={receivedRedundancy === true}>
           <FileUpload
-            slot={`REDUNDANCY${slotSuffix}`}
+            slot={`EMPLOYMENT_REDUNDANCY${slotSuffix}`}
             label="Upload evidence of your redundancy / severance package"
             hint="You can upload this now, or any time before you submit the application."
             applicationId={applicationId}
