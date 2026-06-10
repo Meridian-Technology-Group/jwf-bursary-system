@@ -236,36 +236,61 @@ describe("DEPENDENT_CHILDREN structural rules", () => {
 });
 
 describe("ASSETS_LIABILITIES", () => {
-  it("council tax + bank statement P1 always required", () => {
+  // Council tax + the Parent 1 current-account statement are the always-on gates.
+  const base = { councilTaxDocumentId: "x", parent1CurrentAccountDocumentIds: ["a"] };
+
+  it("council tax + current-account statement (P1) always required", () => {
     expect(gapIds("ASSETS_LIABILITIES", {})).toEqual([
-      "ASSETS_LIABILITIES:BANK_STATEMENT_PARENT_1",
+      "ASSETS_LIABILITIES:BANK_STATEMENT_CURRENT_PARENT_1",
       "ASSETS_LIABILITIES:COUNCIL_TAX",
     ]);
   });
   it("satisfied by docs / slots", () => {
+    expect(gapIds("ASSETS_LIABILITIES", base)).toEqual([]);
+  });
+  it("current-account statement P2 only enforced when the P2 block was shown", () => {
+    // P2 array key absent → not enforced.
+    expect(gapIds("ASSETS_LIABILITIES", base)).toEqual([]);
+    // P2 array present but empty → enforced.
+    expect(
+      gapIds("ASSETS_LIABILITIES", { ...base, parent2CurrentAccountDocumentIds: [] })
+    ).toEqual(["ASSETS_LIABILITIES:BANK_STATEMENT_CURRENT_PARENT_2"]);
+  });
+  it("mortgage statement required when hasMortgage, satisfied by the doc", () => {
+    expect(gapIds("ASSETS_LIABILITIES", { ...base, hasMortgage: true })).toEqual([
+      "ASSETS_LIABILITIES:MAIN_MORTGAGE_STATEMENT",
+    ]);
     expect(
       gapIds("ASSETS_LIABILITIES", {
-        councilTaxDocumentId: "x",
-        parent1BankStatementDocumentIds: ["a"],
+        ...base,
+        hasMortgage: true,
+        mortgageStatementDocumentId: "m",
       })
     ).toEqual([]);
   });
-  it("bank statement P2 only enforced when the P2 block was shown", () => {
-    // P2 array key absent → not enforced.
+  it("rent-arrangement uploads gate by type", () => {
+    expect(gapIds("ASSETS_LIABILITIES", { ...base, rentAgreementType: "PRIVATE" })).toEqual([
+      "ASSETS_LIABILITIES:TENANCY_AGREEMENT",
+    ]);
     expect(
-      gapIds("ASSETS_LIABILITIES", {
-        councilTaxDocumentId: "x",
-        parent1BankStatementDocumentIds: ["a"],
-      })
+      gapIds("ASSETS_LIABILITIES", { ...base, rentAgreementType: "COUNCIL_NO_RENT" })
+    ).toEqual(["ASSETS_LIABILITIES:HOUSING_BENEFIT_LETTER"]);
+    expect(gapIds("ASSETS_LIABILITIES", { ...base, rentAgreementType: "RELATIVES" })).toEqual([
+      "ASSETS_LIABILITIES:RELATIVE_LETTER",
+    ]);
+  });
+  it("investment docs required per parent when stocks/bonds declared", () => {
+    expect(gapIds("ASSETS_LIABILITIES", { ...base, parent1OwnsInvestments: true })).toEqual([
+      "ASSETS_LIABILITIES:INVESTMENT_PARENT_1",
+    ]);
+  });
+  it("credit-card statement required only when a debt balance is declared", () => {
+    expect(
+      gapIds("ASSETS_LIABILITIES", { ...base, hasPersonalDebt: true, creditCardBalance: 500 })
+    ).toEqual(["ASSETS_LIABILITIES:CREDIT_CARD_STATEMENT"]);
+    expect(
+      gapIds("ASSETS_LIABILITIES", { ...base, hasPersonalDebt: true, creditCardBalance: 0 })
     ).toEqual([]);
-    // P2 array present but empty → enforced.
-    expect(
-      gapIds("ASSETS_LIABILITIES", {
-        councilTaxDocumentId: "x",
-        parent1BankStatementDocumentIds: ["a"],
-        parent2BankStatementDocumentIds: [],
-      })
-    ).toEqual(["ASSETS_LIABILITIES:BANK_STATEMENT_PARENT_2"]);
   });
 });
 
@@ -324,7 +349,7 @@ describe("OTHER_INFO — court / insurance / maintenance uploads (PR-3)", () => 
 });
 
 describe("ASSETS_LIABILITIES — per other-property mortgage statement (PR-3)", () => {
-  const base = { councilTaxDocumentId: "x", parent1BankStatementDocumentIds: ["a"] };
+  const base = { councilTaxDocumentId: "x", parent1CurrentAccountDocumentIds: ["a"] };
   it("requires a mortgage statement only for properties with a balance > 0", () => {
     expect(
       gapIds("ASSETS_LIABILITIES", {

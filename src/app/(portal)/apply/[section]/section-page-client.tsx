@@ -190,12 +190,15 @@ function getDefaultValues(
       };
     case "ASSETS_LIABILITIES":
       return {
-        propertyOwnership: undefined, residenceValue: 0, carValue: 0,
-        otherPossessionsValue: 0, stocksAndSharesValue: 0, investmentsValue: 0,
-        otherAssetsValue: 0, hasOtherProperties: undefined, otherMortgageBalance: 0,
-        parent1BankStatementDocumentIds: [], otherProperties: [],
-        outstandingMainMortgage: 0, totalOtherMortgages: 0, currentOverdraft: 0,
-        hasHirePurchase: undefined, hasLiabilityChanges: undefined, documentsConfirmed: false,
+        propertyOwnership: undefined, residenceValue: 0, hasMortgage: undefined,
+        hasOtherProperties: undefined, otherProperties: [], hasChargingOrder: undefined,
+        carOwnership: undefined, usesPublicTransport: undefined,
+        otherPossessionsValue: 0, otherNonFinancialAssetsValue: 0,
+        totalCashBalance: 0, investmentsValue: 0,
+        parent1CurrentAccountDocumentIds: [], parent1SavingsAccountDocumentIds: [],
+        parent1InvestmentDocumentIds: [], hasPersonalDebt: undefined,
+        creditCardStatementDocumentIds: [], loanStatementDocumentIds: [],
+        otherDebtDocumentIds: [], documentsConfirmed: false,
       };
     case "ADDITIONAL_INFO":
       return {

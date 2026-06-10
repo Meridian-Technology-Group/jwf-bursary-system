@@ -38,8 +38,24 @@ export const ALL_DOCUMENT_SLOTS = [
   "EMPLOYMENT_REDUNDANCY_PARENT_1",
   "EMPLOYMENT_REDUNDANCY_PARENT_2",
   "COUNCIL_TAX",
-  "BANK_STATEMENT_PARENT_1",
-  "BANK_STATEMENT_PARENT_2",
+  // Assets & Liabilities — property
+  "MAIN_MORTGAGE_STATEMENT",
+  "TENANCY_AGREEMENT",
+  "HOUSING_BENEFIT_LETTER",
+  "RELATIVE_LETTER",
+  // Assets & Liabilities — car
+  "CAR_LEASE_AGREEMENT",
+  // Assets & Liabilities — financial: bank statements (current + savings) + investments
+  "BANK_STATEMENT_CURRENT_PARENT_1",
+  "BANK_STATEMENT_CURRENT_PARENT_2",
+  "BANK_STATEMENT_SAVINGS_PARENT_1",
+  "BANK_STATEMENT_SAVINGS_PARENT_2",
+  "INVESTMENT_PARENT_1",
+  "INVESTMENT_PARENT_2",
+  // Assets & Liabilities — debt
+  "CREDIT_CARD_STATEMENT",
+  "LOAN_STATEMENT",
+  "OTHER_DEBT_DOCUMENT",
 ] as const;
 
 export type DocumentSlot = (typeof ALL_DOCUMENT_SLOTS)[number];

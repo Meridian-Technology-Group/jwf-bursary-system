@@ -88,24 +88,33 @@ function fmtSchool(school: string | undefined | null): string {
 // draft via the back-compat reader (lib/portal/income-model.ts).
 
 function totalAssets(d: AssetsLiabilitiesData): number {
+  const otherProperties = Array.isArray(d.otherProperties)
+    ? d.otherProperties
+    : [];
   return (
     (d.residenceValue ?? 0) +
     (d.carValue ?? 0) +
     (d.otherPossessionsValue ?? 0) +
-    (d.stocksAndSharesValue ?? 0) +
+    (d.otherNonFinancialAssetsValue ?? 0) +
+    (d.totalCashBalance ?? 0) +
     (d.investmentsValue ?? 0) +
-    (d.otherAssetsValue ?? 0) +
-    (d.otherPropertiesTotalValue ?? 0)
+    otherProperties.reduce((sum, p) => sum + (p.value ?? 0), 0)
   );
 }
 
 function totalLiabilities(d: AssetsLiabilitiesData): number {
+  const otherProperties = Array.isArray(d.otherProperties)
+    ? d.otherProperties
+    : [];
   return (
-    (d.outstandingMainMortgage ?? 0) +
-    (d.totalOtherMortgages ?? 0) +
-    (d.currentOverdraft ?? 0) +
-    (d.hirePurchaseBalance ?? 0) +
-    (d.otherMortgageBalance ?? 0)
+    (d.mortgageBalance ?? 0) +
+    otherProperties.reduce((sum, p) => sum + (p.mortgageBalance ?? 0), 0) +
+    (d.chargingOrderValue ?? 0) +
+    (d.creditCardBalance ?? 0) +
+    (d.bankOverdraft ?? 0) +
+    (d.loansToAgencies ?? 0) +
+    (d.loansToFriendsFamily ?? 0) +
+    (d.schoolFeesOwed ?? 0)
   );
 }
 
@@ -855,7 +864,7 @@ const SECTION_DOC_SLOTS: Partial<Record<ApplicationSectionType, string[]>> = {
   CHILD_DETAILS: ["BIRTH_CERTIFICATE"],
   FAMILY_ID: ["UK_PASSPORT_PARENT_1", "PASSPORT_PARENT_1", "UK_PASSPORT_PARENT_2", "PASSPORT_PARENT_2"],
   PARENTS_INCOME: ["P60_PARENT_1", "P60_PARENT_2", "SELF_ASSESSMENT_PARENT_1", "SELF_ASSESSMENT_PARENT_2", "BENEFITS_EVIDENCE_PARENT_1", "BENEFITS_EVIDENCE_PARENT_2", "CAPITAL_REPAYMENTS_PARENT_1", "CAPITAL_REPAYMENTS_PARENT_2"],
-  ASSETS_LIABILITIES: ["COUNCIL_TAX", "BANK_STATEMENT_PARENT_1", "BANK_STATEMENT_PARENT_2"],
+  ASSETS_LIABILITIES: ["COUNCIL_TAX", "MAIN_MORTGAGE_STATEMENT", "TENANCY_AGREEMENT", "HOUSING_BENEFIT_LETTER", "RELATIVE_LETTER", "BANK_STATEMENT_CURRENT_PARENT_1", "BANK_STATEMENT_CURRENT_PARENT_2", "BANK_STATEMENT_SAVINGS_PARENT_1", "BANK_STATEMENT_SAVINGS_PARENT_2", "INVESTMENT_PARENT_1", "INVESTMENT_PARENT_2", "CREDIT_CARD_STATEMENT", "LOAN_STATEMENT", "OTHER_DEBT_DOCUMENT", "CAR_LEASE_AGREEMENT"],
 };
 
 function DocumentCount({
