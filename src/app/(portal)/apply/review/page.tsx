@@ -309,23 +309,17 @@ function renderAssetsLiabilities(raw: unknown): SummaryRow[] {
 function renderAdditionalInfo(raw: unknown): SummaryRow[] {
   const d = parseSafe<AdditionalInfoData>(raw);
   if (!d) return [];
-  const circumstances: string[] = [];
-  if (d.divorced?.applies) circumstances.push("Divorced");
-  if (d.separated?.applies) circumstances.push("Separated");
-  if (d.sickUnableToWork?.applies) circumstances.push("Sick / unable to work");
-  if (d.rent?.applies) circumstances.push("Paying rent");
-  if (d.madeRedundant?.applies) circumstances.push("Made redundant");
-  if (d.receivingBenefits?.applies) circumstances.push("Receiving benefits");
-  if (circumstances.length === 0) {
-    return [{ label: "Special circumstances", value: "None declared" }];
-  }
-  const rows: SummaryRow[] = [
-    { label: "Circumstances", value: circumstances.join(", ") },
-  ];
   if (d.additionalNarrative) {
-    rows.push({ label: "Narrative", value: d.additionalNarrative.slice(0, 120) + (d.additionalNarrative.length > 120 ? "…" : "") });
+    return [
+      {
+        label: "Narrative",
+        value:
+          d.additionalNarrative.slice(0, 120) +
+          (d.additionalNarrative.length > 120 ? "…" : ""),
+      },
+    ];
   }
-  return rows;
+  return [{ label: "Additional information", value: "None provided" }];
 }
 
 // ─── Section card ─────────────────────────────────────────────────────────────

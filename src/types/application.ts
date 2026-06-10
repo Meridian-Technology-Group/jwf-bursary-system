@@ -447,18 +447,7 @@ export interface AssetsLiabilitiesData {
 
 // ─── Section 9: Additional Info ───────────────────────────────────────────────
 
-export interface CircumstanceItem {
-  applies: boolean;
-  documentId?: string;
-}
-
 export interface AdditionalInfoData {
-  divorced: CircumstanceItem;
-  separated: CircumstanceItem;
-  sickUnableToWork: CircumstanceItem;
-  rent: CircumstanceItem;
-  madeRedundant: CircumstanceItem;
-  receivingBenefits: CircumstanceItem;
   additionalNarrative?: string;
   additionalDocumentIds: string[];
 }

@@ -374,23 +374,10 @@ function assetsRows(raw: unknown): SummaryRow[] {
 function additionalInfoRows(raw: unknown): SummaryRow[] {
   const d = parseSafe<AdditionalInfoData>(raw);
   if (!d) return [];
-  const circumstances: string[] = [];
-  if (d.divorced?.applies) circumstances.push("Divorced");
-  if (d.separated?.applies) circumstances.push("Separated");
-  if (d.sickUnableToWork?.applies) circumstances.push("Sick / unable to work");
-  if (d.rent?.applies) circumstances.push("Paying rent");
-  if (d.madeRedundant?.applies) circumstances.push("Made redundant");
-  if (d.receivingBenefits?.applies) circumstances.push("Receiving benefits");
-  const rows: SummaryRow[] = [
-    {
-      label: "Circumstances",
-      value: circumstances.length ? circumstances.join(", ") : "None declared",
-    },
-  ];
   if (d.additionalNarrative) {
-    rows.push({ label: "Additional information", value: d.additionalNarrative });
+    return [{ label: "Additional information", value: d.additionalNarrative }];
   }
-  return rows;
+  return [{ label: "Additional information", value: "None provided" }];
 }
 
 // ─── Document grouping ──────────────────────────────────────────────────────
