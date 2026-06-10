@@ -68,10 +68,13 @@ function parentDetailsRules(earner: Earner): DocumentRule[] {
 // ─── PARENT_DETAILS household evidence (Epic 09) ─────────────────────────────
 //
 // Household-level (not per-earner) evidence asks driven by the relationship
-// status / guardian facet. Death certificate (H3 widowed) is an equality gate
-// → a structural predicate; guardianship evidence (H4, D16) is a boolean gate
-// on `isGuardian`. Both are error-severity gaps that block submit until the
-// document is provided, mirroring the left-self-employment / scholarship asks.
+// status. Death certificate (H3 widowed) is an equality gate → a structural
+// predicate, an error-severity gap that blocks submit until the document is
+// provided, mirroring the left-self-employment / scholarship asks.
+//
+// The guardianship-evidence gate (H4, D16) was removed alongside the foster
+// carer / legal guardian question on the Parent/Guardian Details page; the
+// engine's `isGuardian` facet is retained only for back-compat.
 
 function householdEvidenceRules(): DocumentRule[] {
   return [
@@ -87,17 +90,6 @@ function householdEvidenceRules(): DocumentRule[] {
           (typeof id === "string" && id.length > 0) ||
           uploadedSlots.has("DEATH_CERTIFICATE")
         );
-      },
-    },
-    {
-      kind: "requiredIfTrue",
-      id: "GUARDIANSHIP_EVIDENCE",
-      truePath: "isGuardian",
-      label: "Evidence of guardianship / foster status is required",
-      fieldRef: "guardianshipDocumentId",
-      doc: {
-        docIdPath: "guardianshipDocumentId",
-        slot: "GUARDIANSHIP_EVIDENCE",
       },
     },
   ];

@@ -80,16 +80,12 @@ describe("PARENT_DETAILS", () => {
     expect(gapIds("PARENT_DETAILS", { relationshipStatus: "DIVORCED" })).toEqual([]);
   });
 
-  it("guardian facet → guardianship evidence required until uploaded", () => {
-    expect(gapIds("PARENT_DETAILS", { isGuardian: true })).toEqual([
-      "PARENT_DETAILS:GUARDIANSHIP_EVIDENCE",
-    ]);
-    expect(
-      gapIds("PARENT_DETAILS", { isGuardian: true, guardianshipDocumentId: "g-1" })
-    ).toEqual([]);
-    expect(
-      gapIds("PARENT_DETAILS", { isGuardian: false })
-    ).toEqual([]);
+  it("guardian facet no longer produces a guardianship-evidence gap", () => {
+    // The foster carer / legal guardian question and its evidence upload were
+    // removed from the Parent/Guardian Details page; no gap should fire even if
+    // a legacy blob still carries the facet.
+    expect(gapIds("PARENT_DETAILS", { isGuardian: true })).toEqual([]);
+    expect(gapIds("PARENT_DETAILS", { isGuardian: false })).toEqual([]);
   });
 });
 

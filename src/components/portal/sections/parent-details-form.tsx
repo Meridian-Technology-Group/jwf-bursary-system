@@ -703,10 +703,10 @@ function ParentEmploymentFields({
   );
 }
 
-// ─── Household evidence upload (Epic 09: death cert / guardianship) ───────────
+// ─── Household evidence upload (Epic 09: death cert) ─────────────────────────
 
 interface HouseholdEvidenceUploadProps {
-  field: "deathCertificateDocumentId" | "guardianshipDocumentId";
+  field: "deathCertificateDocumentId";
   slot: string;
   label: string;
   applicationId: string;
@@ -783,7 +783,6 @@ export function ParentDetailsForm({
 
   const isSoleParent = useWatch({ control, name: "isSoleParent" });
   const relationshipStatus = useWatch({ control, name: "relationshipStatus" });
-  const isGuardian = useWatch({ control, name: "isGuardian" });
   const custodyArrangement = useWatch({ control, name: "custodyArrangement" });
   const hasSchoolFeesCourtOrder = useWatch({
     control,
@@ -809,7 +808,10 @@ export function ParentDetailsForm({
         relationshipStatus: (relationshipStatus ??
           "SINGLE") as RelationshipStatus,
         isSoleParent: isSoleParent === true,
-        isGuardian: isGuardian === true,
+        // Guardianship facet (D16) removed from the parent form — never enters
+        // guardian-only handling from this flow. Engine support retained for
+        // back-compat with any historical data.
+        isGuardian: false,
         custodyArrangement: custodyArrangement ?? "SOLE",
         hasSchoolFeesCourtOrder: hasSchoolFeesCourtOrder === true,
         isRemarriedSoleParent: isRemarriedSoleParent === true,
@@ -818,7 +820,6 @@ export function ParentDetailsForm({
     [
       relationshipStatus,
       isSoleParent,
-      isGuardian,
       custodyArrangement,
       hasSchoolFeesCourtOrder,
       isRemarriedSoleParent,
@@ -889,14 +890,6 @@ export function ParentDetailsForm({
           relationship status / facets so we ask only the right question set. ── */}
       {!secondaryMode && (
         <div className="space-y-6 rounded-md border border-slate-200 bg-slate-50 p-4">
-          {/* D16 — foster carer / legal guardian facet */}
-          <YesNoToggle
-            control={control}
-            name="isGuardian"
-            label="Are you applying as a foster carer or legal guardian?"
-            description="If you are the child's guardian rather than a natural parent, we will ask for evidence of guardianship."
-          />
-
           {/* Separated / divorced — school-fees court order (H7 discriminator)
               and the finances-in-flux (H9) facet. */}
           <ConditionalField show={isSeparatedOrDivorced}>
@@ -999,17 +992,6 @@ export function ParentDetailsForm({
               field="deathCertificateDocumentId"
               slot="DEATH_CERTIFICATE"
               label="Death certificate of the child's other parent (required)"
-              applicationId={applicationId}
-              documentMap={documentMap}
-            />
-          </ConditionalField>
-
-          {/* H4 — guardianship / foster evidence (D16) */}
-          <ConditionalField show={isGuardian === true}>
-            <HouseholdEvidenceUpload
-              field="guardianshipDocumentId"
-              slot="GUARDIANSHIP_EVIDENCE"
-              label="Evidence of guardianship / foster status (required)"
               applicationId={applicationId}
               documentMap={documentMap}
             />
