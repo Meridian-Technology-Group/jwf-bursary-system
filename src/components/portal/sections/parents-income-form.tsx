@@ -32,6 +32,7 @@ import type { UploadedDocument } from "@/components/portal/file-upload";
 import type { DocumentMeta } from "@/lib/db/queries/applications";
 import { getTaxYearLabels } from "@/lib/portal/tax-year";
 import { newIncomeTotal } from "@/lib/portal/income-model";
+import { AlertTriangle } from "lucide-react";
 
 // ─── status → sub-table mapping ──────────────────────────────────────────────
 
@@ -618,6 +619,46 @@ function ParentIncomeColumn({
           £{total.toLocaleString("en-GB")}
         </span>
       </div>
+
+      {/* £0 prompter — when the parent's total income is £0, force an explicit
+          acknowledgment that they genuinely had no income / benefit support. */}
+      {total === 0 && (
+        <FormField
+          control={control}
+          name={`${prefix}.noIncomeConfirmed` as never}
+          render={({ field }) => (
+            <FormItem>
+              <div className="flex items-start gap-3 rounded-md border border-warning-200 bg-warning-50 p-4">
+                <AlertTriangle
+                  className="mt-0.5 h-5 w-5 shrink-0 text-warning-600"
+                  aria-hidden="true"
+                />
+                <div className="space-y-2">
+                  <p className="text-sm font-medium text-warning-600">
+                    You have entered £0 total income for {parentLabel}.
+                  </p>
+                  <div className="flex items-start gap-3">
+                    <FormControl>
+                      <Checkbox
+                        checked={field.value as boolean}
+                        onCheckedChange={field.onChange}
+                        className="mt-0.5"
+                      />
+                    </FormControl>
+                    <FormLabel className="cursor-pointer font-normal text-slate-700">
+                      I confirm that {parentLabel} received no income or benefit
+                      support of any kind during the{" "}
+                      {taxYear.financialYearEndedLabel}.{" "}
+                      <span className="text-error-600" aria-hidden="true">*</span>
+                    </FormLabel>
+                  </div>
+                </div>
+              </div>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+      )}
 
       {/* Legibility tick */}
       <FormField

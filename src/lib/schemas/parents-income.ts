@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { newIncomeTotal } from "@/lib/portal/income-model";
 
 /**
  * Parents' Income — status-driven sub-tables (Epic 02, decision D3).
@@ -78,19 +79,37 @@ export const thirdPartyIncomeSchema = z.object({
   supportNote: z.string().default(""),
 });
 
-export const parentIncomeRecordSchema = z.object({
-  employed: employedIncomeSchema.optional(),
-  selfEmployed: selfEmployedIncomeSchema.optional(),
-  benefits: benefitsIncomeSchema.optional(),
-  unemployed: unemployedIncomeSchema.optional(),
-  retired: retiredIncomeSchema.optional(),
-  divorcedSeparated: divorcedSeparatedIncomeSchema.optional(),
-  thirdParty: thirdPartyIncomeSchema.optional(),
-  total: z.coerce.number().nonnegative().default(0),
-  documentsConfirmed: z.boolean().refine((v) => v === true, {
-    message: "You must confirm documents are current and legible",
-  }),
-});
+export const parentIncomeRecordSchema = z
+  .object({
+    employed: employedIncomeSchema.optional(),
+    selfEmployed: selfEmployedIncomeSchema.optional(),
+    benefits: benefitsIncomeSchema.optional(),
+    unemployed: unemployedIncomeSchema.optional(),
+    retired: retiredIncomeSchema.optional(),
+    divorcedSeparated: divorcedSeparatedIncomeSchema.optional(),
+    thirdParty: thirdPartyIncomeSchema.optional(),
+    total: z.coerce.number().nonnegative().default(0),
+    // Explicit acknowledgment required only when the total income is £0 — the
+    // form surfaces a confirmation tick so a £0 return is a deliberate
+    // declaration, not an accidental empty submission.
+    noIncomeConfirmed: z.boolean().optional(),
+    documentsConfirmed: z.boolean().refine((v) => v === true, {
+      message: "You must confirm documents are current and legible",
+    }),
+  })
+  .superRefine((data, ctx) => {
+    if (
+      newIncomeTotal(data as Parameters<typeof newIncomeTotal>[0]) === 0 &&
+      data.noIncomeConfirmed !== true
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message:
+          "Please confirm this parent/guardian received no income or benefit support during the tax year.",
+        path: ["noIncomeConfirmed"],
+      });
+    }
+  });
 
 export const parentsIncomeSchema = z.object({
   parent1Income: parentIncomeRecordSchema,
