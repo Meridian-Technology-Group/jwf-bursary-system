@@ -37,29 +37,32 @@ function parentDetailsRules(earner: Earner): DocumentRule[] {
   // Parent 2 rules only apply when the Parent 2 employment block exists in the
   // saved blob (mirrors the legacy "if (data.parent2Employment)" gate).
   const onlyIfExistsPath = earner === "PARENT_2" ? empPath : undefined;
+  // Rule IDs are EMPLOYMENT_* to be distinct from the income section's
+  // P45/REDUNDANCY rule ids, but the SLOT is the shared P45/REDUNDANCY — one
+  // upload (in either section) satisfies both gaps.
   return [
     {
       kind: "requiredIfTrue",
-      id: `LEFT_SELF_EMPLOYMENT${suffix}`,
-      truePath: `${empPath}.leftSelfEmployment`,
+      id: `EMPLOYMENT_P45${suffix}`,
+      truePath: `${empPath}.leftEmployment`,
       onlyIfExistsPath,
-      label: `Evidence of previous self-employment for ${label} is required`,
-      fieldRef: `${empPath}.leftSelfEmploymentDocumentId`,
+      label: `Evidence (P45) for ${label} is required because they left employment in the last 12 months`,
+      fieldRef: `${empPath}.p45DocumentId`,
       doc: {
-        docIdPath: `${empPath}.leftSelfEmploymentDocumentId`,
-        slot: `LEFT_SELF_EMPLOYMENT${suffix}`,
+        docIdPath: `${empPath}.p45DocumentId`,
+        slot: `P45${suffix}`,
       },
     },
     {
       kind: "requiredIfTrue",
-      id: `SCHOLARSHIP${suffix}`,
-      truePath: `${empPath}.receivesScholarship`,
+      id: `EMPLOYMENT_REDUNDANCY${suffix}`,
+      truePath: `${empPath}.receivedRedundancy`,
       onlyIfExistsPath,
-      label: `Scholarship / maintenance evidence for ${label} is required`,
-      fieldRef: `${empPath}.scholarshipDocumentId`,
+      label: `Evidence of redundancy / severance package for ${label} is required`,
+      fieldRef: `${empPath}.redundancyDocumentId`,
       doc: {
-        docIdPath: `${empPath}.scholarshipDocumentId`,
-        slot: `SCHOLARSHIP${suffix}`,
+        docIdPath: `${empPath}.redundancyDocumentId`,
+        slot: `REDUNDANCY${suffix}`,
       },
     },
   ];
