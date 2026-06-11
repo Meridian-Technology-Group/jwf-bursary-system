@@ -16,6 +16,10 @@ import { EmailTemplateType } from "@prisma/client";
  *
  * - INVITATION    — carries the applicant registration link.
  * - INVITE_STAFF  — carries the staff onboarding registration link.
+ * - APPLICATION_RESTART_REQUIRED — carries the restart link and is the ONLY
+ *   notice a rejected applicant gets that their submission was voided and a
+ *   fresh application awaits (the old application is hard-deleted). Disabling it
+ *   would silently strand them, so it is locked.
  *
  * Every other `EmailTemplateType` is toggleable.
  */
@@ -23,6 +27,7 @@ export const LOCKED_EMAIL_TEMPLATE_TYPES: ReadonlySet<EmailTemplateType> =
   new Set<EmailTemplateType>([
     EmailTemplateType.INVITATION,
     EmailTemplateType.INVITE_STAFF,
+    EmailTemplateType.APPLICATION_RESTART_REQUIRED,
   ]);
 
 /**

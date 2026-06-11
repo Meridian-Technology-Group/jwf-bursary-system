@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import {
   isLegalFormTransition,
   isLegalAssessmentTransition,
@@ -10,6 +10,7 @@ import {
   deriveFormStatusFromCounts,
   defaultPausedUntil,
   PAUSE_WINDOW_DAYS,
+  pauseAssessmentRow,
   assertSubmittedAtUnset,
   SUBMITTED_AT_IMMUTABLE_MESSAGE,
 } from "../status";
@@ -186,6 +187,40 @@ describe("status service — pause deadline", () => {
     expected.setDate(expected.getDate() + PAUSE_WINDOW_DAYS);
     expect(due.toISOString()).toBe(expected.toISOString());
     expect(PAUSE_WINDOW_DAYS).toBe(14);
+  });
+
+  it("pauseAssessmentRow persists a caller-supplied deadline (assessor-set window)", async () => {
+    const update = vi.fn(async () => undefined);
+    const tx = { assessment: { update } } as never;
+    const chosen = new Date("2026-06-16T00:00:00.000Z");
+
+    const returned = await pauseAssessmentRow(
+      tx,
+      "asmt-1",
+      "IN_PROGRESS",
+      chosen
+    );
+
+    expect(returned).toBe(chosen);
+    expect(update).toHaveBeenCalledWith({
+      where: { id: "asmt-1" },
+      data: { status: "PAUSED", pausedUntil: chosen },
+    });
+  });
+
+  it("pauseAssessmentRow falls back to the default window when no deadline is given", async () => {
+    const update = vi.fn(async () => undefined);
+    const tx = { assessment: { update } } as never;
+
+    const returned = await pauseAssessmentRow(tx, "asmt-1", "IN_PROGRESS");
+
+    // The default is ~now + PAUSE_WINDOW_DAYS; assert it is in the future and the
+    // same value was persisted (single source of truth for the email).
+    expect(returned.getTime()).toBeGreaterThan(Date.now());
+    expect(update).toHaveBeenCalledWith({
+      where: { id: "asmt-1" },
+      data: { status: "PAUSED", pausedUntil: returned },
+    });
   });
 });
 

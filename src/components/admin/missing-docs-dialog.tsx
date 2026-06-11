@@ -27,11 +27,36 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { pauseApplication } from "@/app/(admin)/applications/[id]/actions";
 import { ALL_DOCUMENT_SLOTS, humaniseSlot } from "@/lib/documents/slots";
 import type { Document } from "@prisma/client";
+
+// ─── Deadline helpers ─────────────────────────────────────────────────────────
+
+/** Formats a Date as a `yyyy-mm-dd` value for an `<input type="date">`. */
+function toDateInputValue(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+/** Default document deadline: today + 5 days (typical 3–5 day turnaround). */
+function defaultDeadlineValue(): string {
+  const d = new Date();
+  d.setDate(d.getDate() + 5);
+  return toDateInputValue(d);
+}
+
+/** Earliest selectable deadline: tomorrow. */
+function minDeadlineValue(): string {
+  const d = new Date();
+  d.setDate(d.getDate() + 1);
+  return toDateInputValue(d);
+}
 
 // ─── Props ────────────────────────────────────────────────────────────────────
 
@@ -70,12 +95,14 @@ export function MissingDocsDialog({
     new Set(missingByDefault)
   );
   const [customMessage, setCustomMessage] = React.useState("");
+  const [deadline, setDeadline] = React.useState<string>(defaultDeadlineValue());
 
   // Reset state when dialog opens
   function handleOpenChange(next: boolean) {
     if (next) {
       setSelectedSlots(new Set(missingByDefault));
       setCustomMessage("");
+      setDeadline(defaultDeadlineValue());
       setSent(false);
       setError(null);
     }
@@ -105,7 +132,8 @@ export function MissingDocsDialog({
       const result = await pauseApplication(
         applicationId,
         Array.from(selectedSlots),
-        customMessage.trim() || undefined
+        customMessage.trim() || undefined,
+        deadline || undefined
       );
 
       if (result.success) {
@@ -203,20 +231,42 @@ export function MissingDocsDialog({
               </p>
             </div>
 
+            {/* Deadline */}
+            <div className="space-y-1.5">
+              <Label
+                htmlFor="docs-deadline"
+                className="text-xs font-semibold uppercase tracking-wide text-slate-500"
+              >
+                Response deadline
+              </Label>
+              <Input
+                id="docs-deadline"
+                type="date"
+                value={deadline}
+                min={minDeadlineValue()}
+                onChange={(e) => setDeadline(e.target.value)}
+                disabled={isPending}
+              />
+              <p className="text-xs text-slate-400">
+                The applicant is asked to upload the documents by this date
+                (typically 3–5 days).
+              </p>
+            </div>
+
             {/* Custom message */}
             <div className="space-y-1.5">
               <Label
                 htmlFor="custom-message"
                 className="text-xs font-semibold uppercase tracking-wide text-slate-500"
               >
-                Additional message{" "}
+                Personal note{" "}
                 <span className="font-normal normal-case tracking-normal text-slate-400">
-                  (optional)
+                  (optional — included in the email)
                 </span>
               </Label>
               <Textarea
                 id="custom-message"
-                placeholder="Provide any additional context or instructions for the applicant..."
+                placeholder="e.g. Thank you for your submission — the pay slips provided appear to be from a previous role, could you please provide current ones?"
                 value={customMessage}
                 onChange={(e) => setCustomMessage(e.target.value)}
                 disabled={isPending}
