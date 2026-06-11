@@ -77,7 +77,7 @@ export function CurrencyInput<
               <p className="text-xs text-slate-500">{description}</p>
             )}
 
-            <div className="relative flex items-center">
+            <div className="relative flex min-w-0 items-center">
               {/* £ prefix */}
               <span
                 className={cn(
@@ -122,7 +122,7 @@ export function CurrencyInput<
                   }
                 }}
                 className={cn(
-                  "block h-9 flex-1 rounded-r-md border bg-white px-3 text-sm",
+                  "block h-9 w-full min-w-0 flex-1 rounded-r-md border bg-white px-3 text-sm",
                   "tabular-nums",
                   "transition-colors focus:outline-none focus:ring-2 focus:ring-offset-0",
                   hasError

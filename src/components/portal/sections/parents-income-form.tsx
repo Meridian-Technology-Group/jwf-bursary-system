@@ -70,7 +70,7 @@ function resolveDoc(
 // Shared 3-column template: Source | Amount (£) | Evidence. Single column on
 // mobile (each row reflows to a stacked card); three columns from `sm:` upward.
 const GRID_COLS =
-  "grid grid-cols-1 gap-x-4 gap-y-1.5 sm:grid-cols-[minmax(0,1fr)_168px_minmax(190px,1.2fr)] sm:items-center";
+  "grid grid-cols-1 gap-x-4 gap-y-1.5 sm:grid-cols-[minmax(0,1fr)_180px_minmax(200px,1.1fr)] sm:items-start";
 
 /**
  * A static, always-open income group. Replaces the previous collapsible
@@ -122,13 +122,13 @@ function IncomeRow({
   const { control } = useFormContext<ParentsIncomeFormValues>();
   return (
     <div className={`${GRID_COLS} px-4 py-2.5`}>
-      <div className="text-sm text-slate-700">{label}</div>
-      <div>
+      <div className="min-w-0 text-sm text-slate-700 sm:pt-2">{label}</div>
+      <div className="min-w-0">
         {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
         <CurrencyInput control={control as any} name={`${prefix}.${path}` as any} label={label} hideLabel />
       </div>
-      <div className="min-w-0">
-        {evidence ?? <span className="text-xs text-slate-400">—</span>}
+      <div className="min-w-0 sm:pt-1">
+        {evidence ?? <span className="block text-xs text-slate-400 sm:pt-1.5">—</span>}
       </div>
     </div>
   );
