@@ -78,6 +78,15 @@ export interface SingleFileUploadProps extends FileUploadBaseProps {
   onUploadComplete?: (doc: UploadedDocument) => void;
   /** Called after the document is successfully removed */
   onRemove?: (docId: string) => void;
+  /**
+   * Layout variant.
+   *   "block"  (default) — full dashed drop-zone with its own label above it.
+   *   "inline" — a single-line affordance for spreadsheet-style grids: an
+   *              "⬆ Upload …" button when empty, a one-line "✓ file [view][x]"
+   *              chip when uploaded. The label is carried by the button itself,
+   *              so the control consumes no extra vertical space.
+   */
+  variant?: "block" | "inline";
 }
 
 export interface MultiFileUploadProps extends FileUploadBaseProps {
@@ -180,6 +189,7 @@ function SingleFileUpload({
   onUploadComplete,
   onRemove,
   disabled = false,
+  variant = "block",
 }: SingleFileUploadProps) {
   const inputRef = React.useRef<HTMLInputElement>(null);
   const [isDragOver, setIsDragOver] = React.useState(false);
@@ -288,6 +298,72 @@ function SingleFileUpload({
 
   const inputId = `file-upload-${slot}`;
   const descId = `file-upload-desc-${slot}`;
+
+  // ── Inline (spreadsheet) variant ──────────────────────────────────────────
+  // One-line control, no block label / drop-zone. The whole element is still a
+  // drop target so drag-and-drop keeps working inside a grid cell.
+  if (variant === "inline") {
+    return (
+      <div
+        className="space-y-1"
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
+      >
+        <input
+          ref={inputRef}
+          id={inputId}
+          type="file"
+          accept={ACCEPTED_EXTENSIONS}
+          className="sr-only"
+          aria-describedby={hint ? descId : undefined}
+          disabled={disabled}
+          onChange={handleInputChange}
+        />
+
+        {uploadState === "empty" && (
+          <InlineDropButton
+            label={label}
+            disabled={disabled}
+            isDragOver={isDragOver}
+            onPick={openFilePicker}
+          />
+        )}
+
+        {uploadState === "uploading" && (
+          <InlineUploadingChip progress={uploadProgress} />
+        )}
+
+        {uploadState === "uploaded" && uploadedDoc && (
+          <InlineUploadedChip
+            doc={uploadedDoc}
+            disabled={disabled}
+            removing={removing}
+            onView={() => openDocumentUrl(uploadedDoc.id)}
+            onRemove={handleRemove}
+          />
+        )}
+
+        {uploadState === "error" && (
+          <InlineErrorChip
+            message={errorMessage}
+            disabled={disabled}
+            onRetry={() => {
+              setUploadState("empty");
+              setErrorMessage("");
+              if (inputRef.current) inputRef.current.value = "";
+            }}
+          />
+        )}
+
+        {hint && (
+          <p id={descId} className="text-[11px] leading-tight text-slate-400">
+            {hint}
+          </p>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-1.5">
@@ -819,6 +895,119 @@ function UploadedRow({
         )}
       </div>
     </div>
+  );
+}
+
+// ─── Inline (spreadsheet) sub-components ──────────────────────────────────────
+
+function InlineDropButton({
+  label,
+  disabled,
+  isDragOver,
+  onPick,
+}: {
+  label: string;
+  disabled: boolean;
+  isDragOver: boolean;
+  onPick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onPick}
+      disabled={disabled}
+      aria-label={`Upload ${label}`}
+      className={cn(
+        "inline-flex min-h-9 w-full items-center gap-1.5 rounded-md border border-dashed border-slate-300 bg-white px-2.5 py-1.5 text-left text-xs font-medium text-slate-600",
+        "transition-colors hover:border-accent-400 hover:bg-accent-50 hover:text-accent-700",
+        "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-600",
+        isDragOver && "border-accent-400 bg-accent-50 text-accent-700",
+        disabled && "cursor-not-allowed opacity-60"
+      )}
+    >
+      <UploadCloud className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+      <span className="min-w-0">{label}</span>
+    </button>
+  );
+}
+
+function InlineUploadingChip({ progress }: { progress: number }) {
+  return (
+    <span className="inline-flex min-h-9 w-full items-center gap-1.5 rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-600">
+      <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-accent-600" aria-hidden="true" />
+      <span>Uploading… {progress}%</span>
+    </span>
+  );
+}
+
+function InlineUploadedChip({
+  doc,
+  disabled,
+  removing,
+  onView,
+  onRemove,
+}: UploadedRowProps) {
+  return (
+    <span className="inline-flex min-h-9 w-full max-w-full items-center gap-1.5 rounded-md border border-green-200 bg-green-50 px-2.5 py-1.5 text-xs text-green-800">
+      <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-green-600" aria-hidden="true" />
+      <span className="min-w-0 flex-1 truncate font-medium" title={doc.filename}>
+        {doc.filename}
+      </span>
+      <button
+        type="button"
+        onClick={onView}
+        className="shrink-0 rounded p-1 text-green-800 hover:bg-green-100 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-accent-600"
+        aria-label={`View ${doc.filename}`}
+      >
+        <Eye className="h-3.5 w-3.5" aria-hidden="true" />
+      </button>
+      {!disabled && (
+        <button
+          type="button"
+          onClick={onRemove}
+          disabled={removing}
+          className="shrink-0 rounded p-1 text-red-600 hover:bg-red-50 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-accent-600 disabled:pointer-events-none disabled:opacity-60"
+          aria-label={`Remove ${doc.filename}`}
+        >
+          {removing ? (
+            <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
+          ) : (
+            <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
+          )}
+        </button>
+      )}
+    </span>
+  );
+}
+
+function InlineErrorChip({
+  message,
+  disabled,
+  onRetry,
+}: {
+  message: string;
+  disabled: boolean;
+  onRetry: () => void;
+}) {
+  return (
+    <span
+      role="alert"
+      className="inline-flex min-h-9 w-full items-center gap-1.5 rounded-md border border-red-200 bg-red-50 px-2.5 py-1.5 text-xs text-red-700"
+    >
+      <AlertCircle className="h-3.5 w-3.5 shrink-0 text-red-600" aria-hidden="true" />
+      <span className="min-w-0 flex-1 truncate" title={message}>
+        {message || "Upload failed"}
+      </span>
+      {!disabled && (
+        <button
+          type="button"
+          onClick={onRetry}
+          className="shrink-0 rounded border border-red-300 bg-white px-2 py-0.5 font-medium text-red-700 hover:bg-red-100 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-accent-600"
+        >
+          Retry
+        </button>
+      )}
+    </span>
   );
 }
 
