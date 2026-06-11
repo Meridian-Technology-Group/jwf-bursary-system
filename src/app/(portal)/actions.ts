@@ -11,7 +11,7 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { InvitationStatus, Role } from "@prisma/client";
-import { withAdminContext, withUserContext, type RlsRole } from "@/lib/db/prisma";
+import { withAdminContext } from "@/lib/db/prisma";
 import { requireRole } from "@/lib/auth/roles";
 import {
   getLatestAcceptedInvitationForUser,
@@ -294,9 +294,13 @@ export async function submitMissingDocsResponse(
   const user = await requireRole([Role.APPLICANT]);
 
   try {
-    const result = await withUserContext(
-      user.id,
-      user.role as RlsRole,
+    // Admin (service-role) context: the assessment row is invisible to the
+    // applicant under RLS (assessments_select is staff-only), so reading its
+    // PAUSED status and resuming review must bypass RLS. Ownership is enforced
+    // explicitly below (leadApplicantId === user.id) since RLS no longer does.
+    // Mirrors startApplicationAction, which likewise runs an applicant action
+    // under admin context with an explicit ownership check.
+    const result = await withAdminContext(
       async (tx) => {
         const application = await tx.application.findUnique({
           where: { id: applicationId },

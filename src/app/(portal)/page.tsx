@@ -15,7 +15,11 @@ import { redirect } from "next/navigation";
 import type { ApplicationSectionType } from "@prisma/client";
 import { getCurrentUser } from "@/lib/auth/roles";
 import { withAdminContext, withUserContext, type RlsRole } from "@/lib/db/prisma";
-import { getCurrentApplicationForUser, getSectionStatusList } from "@/lib/db/queries/applications";
+import {
+  getCurrentApplicationForUser,
+  getSectionStatusList,
+  getApplicationPausedStateForUser,
+} from "@/lib/db/queries/applications";
 import {
   getSecondaryContributorContext,
   resolveOwningContributorId,
@@ -312,6 +316,14 @@ export default async function PortalDashboardPage() {
     </div>
   );
 
+  // Paused → "respond to a document request" CTA. The signal lives on the
+  // assessment, which the applicant cannot read under RLS, so probe just the
+  // PAUSED bit under service-role context (see getApplicationPausedStateForUser).
+  const hasOutstandingDocRequest =
+    user && application
+      ? (await getApplicationPausedStateForUser(user.id)).isPaused
+      : false;
+
   return (
     <PortalPage className="space-y-8">
       {/* Welcome heading */}
@@ -338,7 +350,7 @@ export default async function PortalDashboardPage() {
           )}
 
           {/* Paused — missing documents call to action */}
-          {application.assessment?.status === "PAUSED" && (
+          {hasOutstandingDocRequest && (
             <Link
               href="/respond"
               className="group flex items-start gap-4 rounded-xl border border-yellow-300 bg-yellow-50 p-6 shadow-sm transition-shadow hover:shadow-md focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-600"
