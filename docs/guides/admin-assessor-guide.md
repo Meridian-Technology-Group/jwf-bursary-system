@@ -428,9 +428,12 @@ Additional Information, and Declaration — each with a green **Complete** or am
 **Incomplete** chip. Currency renders as £-formatted figures; unset fields show
 *"Not provided"*.
 
-There is no "edit" button: to correct a value, either the applicant resubmits,
-or you record the correct, evidence-based figure in the assessment workspace
-where it takes precedence. Use the document cards to flip into the PDFs while you
+To correct a *calculated* value, you record the correct, evidence-based figure
+in the assessment workspace, where it takes precedence. Where the form data
+itself must change — a postal application to type up, or a family who cannot
+manage the portal — staff amend it via the **Edit on behalf** button at the top
+of this tab; see [Editing an application on the applicant's behalf](#editing-an-application-on-the-applicants-behalf).
+Use the document cards to flip into the PDFs while you
 read. See [Read the submitted application](walkthroughs/assessors/05-read-submitted-application.md).
 
 ### Separated families: two parents, one assessment
@@ -506,6 +509,96 @@ is emailed the bulleted list, and the assessment is held until they respond.
 When new documents arrive, the assessment does **not** resume automatically —
 verify the new files, then click **Resume Review** to return to `NOT_STARTED`.
 See [Request missing documents](walkthroughs/assessors/08-request-missing-documents.md).
+
+### Editing an application on the applicant's behalf
+
+Sometimes the form data itself — not just the calculation — has to change, and
+the applicant cannot do it: a paper application arrives by post, details are
+dictated over the telephone, or a family struggles with the portal and asks for
+help. For these cases, the **Edit on behalf** button at the top of the
+Applicant Data tab opens the applicant's own ten section forms for you to amend
+directly. The button is visible to an **Admin**, or to the **assessor assigned**
+to the application; a viewer never sees it. (This capability was added under
+change request [CR-001](../contract/change-requests/CR-001-assessor-edit-on-behalf.md).)
+
+**Entering edit mode.** Click **Edit on behalf** to land on the first section.
+A pill navigation moves you between the sections (a re-assessment hides
+**Family Identification**, exactly as the portal does), and a sticky footer
+carries **Save and Continue** (or **Save and Finish** on the Declaration). These
+are the *same* forms the applicant fills in, with the *same* validation — a
+value the portal would reject is rejected here too, so you can never save a
+form the applicant could not have saved themselves.
+
+**The banner.** Every edit page carries a persistent amber banner — *"Editing
+on behalf of the applicant"* — reminding you that every change you save is
+attributed to you and recorded in the application history, and that the
+applicant keeps read-only access. On a paused application the banner adds the
+requested-documents deadline and a note that saving here does **not** resume
+the assessment.
+
+**When you can edit.** Editing is allowed only while the review is still live:
+
+| Phase | Edit on behalf? |
+|-------|-----------------|
+| **Pre-Submission** | ✅ Yes — staff saves drive the form's normal completion progress, exactly like applicant saves. |
+| **Submitted** | ✅ Yes — the form stays **Submitted**; a staff edit never reverts it to a draft. |
+| **Not Started** (review begun) | ✅ Yes. |
+| **Paused** (awaiting documents) | ✅ Yes — but editing does **not** auto-resume the assessment; resuming stays the explicit **Resume Review** action. |
+| **Completed**, or an outcome set | ❌ No — the button disappears and saves are refused. Changing the source data after completion would silently desynchronise the assessment figures from the form. |
+
+**Provenance and audit.** Every staff save stamps the changed fields with your
+name and the timestamp, and writes a **Section saved by assessor** entry — with
+the changed-field list — to the application's History. On the Applicant Data
+tab, assessor-entered values carry a purple **"Entered by assessor"** pill
+(hover it to see who and when), and each amended section card summarises with
+an *"N fields entered by assessor"* chip. The applicant's portal shows none of
+these flags — applicant-side transparency is the notification email below. If
+the applicant later re-edits a staff-entered field before submission, that
+field's pill clears: provenance always reflects who entered the *current*
+value.
+
+**Documents.** Uploads and deletions inside edit mode go through the staff
+document endpoints — audited as assessor actions, and they work even on a
+Submitted application, exactly like the [Upload Document (Assessor)
+card](#uploading-a-document-on-behalf-of-an-applicant).
+
+**Finishing — and the notification email.** When you are done, click **Finish
+editing** in the banner. This sends the applicant exactly **one** summary email
+(template *Application edited on behalf*) listing the sections you amended and
+the date, and writes an **Editing on behalf finished** entry to the History
+recording whether the email was sent. A pass that edited nothing sends nothing.
+**Always finish explicitly** — navigating away without clicking **Finish
+editing** sends no email (the audit trail still records every save, but the
+applicant is not notified). If the Foundation prefers silent edits, an admin
+can switch the template's **Send this email** toggle off under Settings →
+Email Templates; finishing then records the email as skipped.
+
+**Submitting on behalf (postal / telephone intake).** Staff can also take a
+fresh application end-to-end: enter every section of a paper or dictated
+application, and once all ten sections are complete a **Submit on behalf of
+applicant** button appears in the banner. Confirming submits exactly as if the
+applicant had pressed Submit — the same completeness checks, the same
+**Submitted** transition, and the standard confirmation email to the applicant
+— audited as **Submitted by assessor on behalf of applicant**. Two deliberate
+differences from the portal:
+
+- the **submission deadline is not enforced** on the staff path — a paper
+  application that arrived in time may be typed up after the portal deadline
+  (the audit trail records who submitted);
+- on the **Declaration**, the *"Full name of Parent / Guardian 1 / 2"* fields
+  record who signed the paper form — type the signatures exactly as written.
+
+**Scope.** On-behalf editing covers the **lead applicant's** sections only. A
+[second parent](#separated--divorced-parents-inviting-a-second-parent-admin-or-assessor)'s
+own copies of Parent Details, Parents' Income and Assets & Liabilities cannot
+be edited on their behalf — if their data is wrong, ask them to correct it
+through their own `/contribute` portal. And throughout, the form remains
+read-only to the applicant after submission, exactly as before.
+
+See [Edit an application on the applicant's behalf](walkthroughs/assessors/38-edit-application-on-behalf.md).
+
+> 📷 *Screenshot: an edit-on-behalf section with the amber "Editing on behalf of
+> the applicant" banner, the section pill navigation and the sticky Save footer.*
 
 ---
 
@@ -1266,6 +1359,7 @@ See [Getting help / support](#getting-help--support) in the appendix.
 | View the application queue & detail | ✅ | ✅ (assigned) | ✅ |
 | Reveal names (Show names, logged) | ✅ | ✅ | ✅ |
 | Verify / upload documents | ✅ | ✅ | ❌ |
+| Edit / submit the application on the applicant's behalf | ✅ | ✅ (assigned) | ❌ |
 | Begin / run / complete an assessment | ✅ | ✅ | ❌ |
 | Write & save a recommendation | ✅ | ✅ | ❌ |
 | Set outcome (Qualifies / Does Not Qualify) | ✅ | ✅ | ❌ |
@@ -1438,6 +1532,7 @@ The click-by-click walkthroughs are the screenshot-led companion to this guide.
 - [06 — Verify uploaded documents](walkthroughs/assessors/06-verify-uploaded-documents.md)
 - [07 — Upload a document on behalf of the applicant](walkthroughs/assessors/07-upload-document-on-behalf-of-applicant.md)
 - [08 — Request missing documents](walkthroughs/assessors/08-request-missing-documents.md)
+- [38 — Edit an application on the applicant's behalf](walkthroughs/assessors/38-edit-application-on-behalf.md)
 
 *Tab 2 — Running the assessment*
 - [09 — Set up the assessment workspace](walkthroughs/assessors/09-set-up-assessment-workspace.md)
