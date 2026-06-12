@@ -23,6 +23,11 @@
  *   - Below that: in-flight uploads with per-file progress and per-file errors.
  *
  * Drag-and-drop uses native HTML5 drag events — no external library.
+ *
+ * Upload/delete endpoints default to the applicant-facing /api/documents
+ * routes but are configurable via UploadEndpointProvider, so the admin
+ * edit-on-behalf layout can retarget the widget at the staff endpoints
+ * (CR-001). The signed-url GET is shared and stays fixed.
  */
 
 import * as React from "react";
@@ -36,6 +41,10 @@ import {
   Loader2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import {
+  useUploadEndpoints,
+  type UploadEndpoints,
+} from "@/components/portal/upload-endpoints";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -129,14 +138,15 @@ function validateFile(file: File): string | null {
 async function uploadFile(
   file: File,
   applicationId: string,
-  slot: string
+  slot: string,
+  endpoints: UploadEndpoints
 ): Promise<UploadedDocument> {
   const formData = new FormData();
   formData.append("file", file);
   formData.append("applicationId", applicationId);
   formData.append("slot", slot);
 
-  const response = await fetch("/api/documents", {
+  const response = await fetch(endpoints.uploadUrl, {
     method: "POST",
     body: formData,
   });
@@ -151,8 +161,13 @@ async function uploadFile(
   return (await response.json()) as UploadedDocument;
 }
 
-async function deleteDocument(docId: string): Promise<void> {
-  const response = await fetch(`/api/documents/${docId}`, { method: "DELETE" });
+async function deleteDocument(
+  docId: string,
+  endpoints: UploadEndpoints
+): Promise<void> {
+  const response = await fetch(endpoints.deleteUrl(docId), {
+    method: "DELETE",
+  });
   if (!response.ok) {
     const body = await response.json().catch(() => ({}));
     throw new Error(
@@ -191,6 +206,7 @@ function SingleFileUpload({
   disabled = false,
   variant = "block",
 }: SingleFileUploadProps) {
+  const endpoints = useUploadEndpoints();
   const inputRef = React.useRef<HTMLInputElement>(null);
   const [isDragOver, setIsDragOver] = React.useState(false);
   const [uploadProgress, setUploadProgress] = React.useState(0);
@@ -230,7 +246,7 @@ function SingleFileUpload({
     }, 150);
 
     try {
-      const doc = await uploadFile(file, applicationId, slot);
+      const doc = await uploadFile(file, applicationId, slot, endpoints);
       clearInterval(progressInterval);
       setUploadProgress(100);
       setUploadedDoc({
@@ -254,7 +270,7 @@ function SingleFileUpload({
     if (!uploadedDoc) return;
     setRemoving(true);
     try {
-      await deleteDocument(uploadedDoc.id);
+      await deleteDocument(uploadedDoc.id, endpoints);
       onRemove?.(uploadedDoc.id);
       setUploadedDoc(undefined);
       setUploadState("empty");
@@ -453,6 +469,7 @@ function MultiFileUpload({
   onRemove,
   disabled = false,
 }: MultiFileUploadProps) {
+  const endpoints = useUploadEndpoints();
   const inputRef = React.useRef<HTMLInputElement>(null);
   const [isDragOver, setIsDragOver] = React.useState(false);
   const [uploadedDocs, setUploadedDocs] = React.useState<ExistingDocument[]>(
@@ -475,7 +492,7 @@ function MultiFileUpload({
 
   async function uploadOne(file: File, key: string) {
     try {
-      const doc = await uploadFile(file, applicationId, slot);
+      const doc = await uploadFile(file, applicationId, slot, endpoints);
       setInflight((prev) => prev.filter((u) => u.key !== key));
       setUploadedDocs((prev) => [
         ...prev,
@@ -564,7 +581,7 @@ function MultiFileUpload({
   async function handleRemove(docId: string) {
     setRemovingId(docId);
     try {
-      await deleteDocument(docId);
+      await deleteDocument(docId, endpoints);
       setUploadedDocs((prev) => prev.filter((d) => d.id !== docId));
       onRemove?.(docId);
     } catch (err) {

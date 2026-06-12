@@ -24,6 +24,7 @@ import {
   normaliseLegacyIncomeRecord,
 } from "@/lib/portal/income-model";
 import { saveSection, submitApplication } from "../actions";
+import type { SaveSectionResult } from "../actions";
 
 // Section form components
 import {
@@ -94,6 +95,22 @@ interface SectionPageClientProps {
    * Triggers the "Pre-filled from last year" banner.
    */
   isPrepopulated?: boolean;
+  /**
+   * Optional replacement for the portal `saveSection` server action (CR-001).
+   * The assessor edit-on-behalf shell passes its own role-guarded, audited
+   * action; the portal passes nothing and keeps the static import.
+   */
+  saveOverride?: (
+    applicationId: string,
+    section: ApplicationSectionType,
+    data: unknown
+  ) => Promise<SaveSectionResult>;
+  /**
+   * True when an assessor is editing on behalf of the applicant (CR-001).
+   * Suppresses the auto-submit after a DECLARATION save — on-behalf
+   * submission is an explicit, separate action.
+   */
+  onBehalf?: boolean;
 }
 
 interface DefaultValuesSeed {
@@ -298,6 +315,8 @@ export function SectionPageClient({
   totalSteps,
   isReassessment = false,
   isPrepopulated = false,
+  saveOverride,
+  onBehalf = false,
 }: SectionPageClientProps) {
   const schema = getSectionSchema(sectionType);
   const defaultValues = getDefaultValues(sectionType, existingData, {
@@ -307,8 +326,11 @@ export function SectionPageClient({
   });
 
   async function handleSave(data: unknown) {
-    const result = await saveSection(applicationId, sectionType, data);
-    if (!result.success || sectionType !== "DECLARATION") return result;
+    const save = saveOverride ?? saveSection;
+    const result = await save(applicationId, sectionType, data);
+    // On-behalf editing never auto-submits — submission is an explicit,
+    // separate action taken by the assessor (CR-001).
+    if (!result.success || sectionType !== "DECLARATION" || onBehalf) return result;
 
     // Declaration is the terminal step: after a successful save, submit the
     // application. submitApplication throws Next's NEXT_REDIRECT on success

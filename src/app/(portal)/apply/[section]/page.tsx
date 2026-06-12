@@ -17,11 +17,8 @@ import { notFound, redirect } from "next/navigation";
 import { ApplicationSectionType } from "@prisma/client";
 import { getCurrentUser } from "@/lib/auth/roles";
 import { withUserContext, withAdminContext, type RlsRole } from "@/lib/db/prisma";
-import {
-  getApplicationForUser,
-  getSectionData,
-  getDocumentsForApplication,
-} from "@/lib/db/queries/applications";
+import { getApplicationForUser } from "@/lib/db/queries/applications";
+import { loadSectionPageData } from "@/lib/portal/section-page-data";
 import {
   ensurePrimaryContributor,
   resolveOwningContributorId,
@@ -171,99 +168,9 @@ export default async function SectionPage({ params }: PageProps) {
     parent2Status,
     relationshipStatus,
     parent1Address,
-  } = await withUserContext(user.id, user.role as RlsRole, async (tx) => {
-      const [section, docs] = await Promise.all([
-        getSectionData(tx, application.id, sectionType, ownerContributorId),
-        getDocumentsForApplication(tx, application.id),
-      ]);
-
-      let childName: string | undefined;
-      if (sectionType === "DEPENDENT_CHILDREN") {
-        const childSection = await getSectionData(
-          tx,
-          application.id,
-          "CHILD_DETAILS",
-          ownerContributorId
-        );
-        const childData = childSection?.data as { childFullName?: string } | null;
-        childName = childData?.childFullName ?? undefined;
-      }
-
-      // CHILD_DETAILS shows the stored Parent 1 address read-only when the child
-      // shares it (D1, workbook §3 Q7). Read it from PARENT_DETAILS.
-      let parent1Address:
-        | {
-            addressLine1?: string;
-            addressLine2?: string;
-            city?: string;
-            postcode?: string;
-            country?: string;
-          }
-        | undefined;
-      if (sectionType === "CHILD_DETAILS") {
-        const parentSection = await getSectionData(
-          tx,
-          application.id,
-          "PARENT_DETAILS",
-          ownerContributorId
-        );
-        const parentData = parentSection?.data as {
-          parent1Contact?: {
-            addressLine1?: string;
-            addressLine2?: string;
-            city?: string;
-            postcode?: string;
-            country?: string;
-          };
-        } | null;
-        parent1Address = parentData?.parent1Contact;
-      }
-
-      let soleParent: boolean | undefined;
-      let parent1Status: string | undefined;
-      let parent2Status: string | undefined;
-      let relationshipStatus: string | undefined;
-      // DECLARATION needs isSoleParent to decide whether to show the P2 tick.
-      if (sectionType === "DECLARATION") {
-        const parentSection = await getSectionData(
-          tx,
-          application.id,
-          "PARENT_DETAILS",
-          ownerContributorId
-        );
-        const parentData = parentSection?.data as { isSoleParent?: boolean } | null;
-        soleParent = parentData?.isSoleParent;
-      }
-      if (sectionType === "PARENTS_INCOME") {
-        const parentSection = await getSectionData(
-          tx,
-          application.id,
-          "PARENT_DETAILS",
-          ownerContributorId
-        );
-        const parentData = parentSection?.data as {
-          isSoleParent?: boolean;
-          relationshipStatus?: string;
-          parent1Employment?: { status?: string };
-          parent2Employment?: { status?: string };
-        } | null;
-        soleParent = parentData?.isSoleParent;
-        relationshipStatus = parentData?.relationshipStatus;
-        parent1Status = parentData?.parent1Employment?.status;
-        parent2Status = parentData?.parent2Employment?.status;
-      }
-
-      return {
-        existingSection: section,
-        documentMap: docs,
-        childFullName: childName,
-        isSoleParent: soleParent,
-        parent1Status,
-        parent2Status,
-        relationshipStatus,
-        parent1Address,
-      };
-    });
+  } = await withUserContext(user.id, user.role as RlsRole, (tx) =>
+    loadSectionPageData(tx, application.id, sectionType, ownerContributorId)
+  );
 
   // Determine if this section was pre-populated from the previous year
   const isPrepopulated =
