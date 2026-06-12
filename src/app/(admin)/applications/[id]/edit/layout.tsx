@@ -4,7 +4,10 @@
  * Server component nested under the application-detail layout, so the admin
  * chrome (breadcrumb, header card, tab strip) renders above it. Owns the
  * edit shell's persistent pieces:
- *   - the gold "Editing on behalf of the applicant" banner (every edit page);
+ *   - the gold "Editing on behalf of the applicant" banner (every edit page),
+ *     carrying the "Finish editing" action and — only while the form is
+ *     FILLED_IN — "Submit on behalf of applicant" (the layout re-renders per
+ *     navigation, so the gate tracks every save's formStatus refresh);
  *   - the section pill nav over the application's ACTIVE section order
  *     (rolling-over hides FAMILY_ID, exactly like the portal wizard);
  *   - the staff upload endpoints (FileUpload → /api/admin/documents);
@@ -34,6 +37,7 @@ import {
   EditSectionNav,
   StaffUploadEndpoints,
   EditOnBehalfFooter,
+  EditOnBehalfBannerActions,
 } from "./edit-on-behalf-chrome";
 
 interface Props {
@@ -92,29 +96,37 @@ export default async function EditOnBehalfLayout({ children, params }: Props) {
   return (
     <SectionSavingProvider>
       <div className="space-y-4 pt-4">
-        {/* On-behalf banner — persistent across every edit page. */}
+        {/* On-behalf banner — persistent across every edit page. Carries the
+            Finish editing / Submit-on-behalf actions so they are visible from
+            every section. */}
         <div className="rounded-xl border border-accent-400/60 bg-accent-50 px-5 py-4">
-          <div className="flex gap-3">
-            <UserCog
-              className="mt-0.5 h-5 w-5 shrink-0 text-accent-700"
-              aria-hidden="true"
-            />
-            <div className="space-y-1">
-              <p className="text-sm font-semibold text-primary-900">
-                Editing on behalf of the applicant
-              </p>
-              <p className="text-sm text-slate-600">
-                Every change you save is attributed to you and recorded in the
-                application history. The applicant keeps read-only access.
-              </p>
-              {pausedUntil && (
-                <p className="text-sm text-slate-600">
-                  Assessment paused — documents requested by{" "}
-                  {pausedUntil.toLocaleDateString("en-GB")}. Saving here does
-                  not resume the assessment.
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="flex gap-3">
+              <UserCog
+                className="mt-0.5 h-5 w-5 shrink-0 text-accent-700"
+                aria-hidden="true"
+              />
+              <div className="space-y-1">
+                <p className="text-sm font-semibold text-primary-900">
+                  Editing on behalf of the applicant
                 </p>
-              )}
+                <p className="text-sm text-slate-600">
+                  Every change you save is attributed to you and recorded in the
+                  application history. The applicant keeps read-only access.
+                </p>
+                {pausedUntil && (
+                  <p className="text-sm text-slate-600">
+                    Assessment paused — documents requested by{" "}
+                    {pausedUntil.toLocaleDateString("en-GB")}. Saving here does
+                    not resume the assessment.
+                  </p>
+                )}
+              </div>
             </div>
+            <EditOnBehalfBannerActions
+              applicationId={params.id}
+              canSubmit={application.formStatus === "FILLED_IN"}
+            />
           </div>
         </div>
 

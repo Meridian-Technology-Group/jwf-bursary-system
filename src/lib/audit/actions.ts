@@ -53,6 +53,10 @@ export const AUDIT_ACTIONS = {
 
   // Edit on behalf (CR-001)
   SECTION_SAVED_BY_ASSESSOR: "SECTION_SAVED_BY_ASSESSOR",
+  /** An edit-on-behalf pass ended; the applicant was notified of the edited sections. */
+  EDIT_ON_BEHALF_FINISHED: "EDIT_ON_BEHALF_FINISHED",
+  /** Staff submitted the application on the applicant's behalf (typed-up paper form). */
+  APPLICATION_SUBMITTED_BY_ASSESSOR: "APPLICATION_SUBMITTED_BY_ASSESSOR",
 
   // Siblings
   SIBLING_LINK_CREATED: "SIBLING_LINK_CREATED",
@@ -232,6 +236,7 @@ const ACTION_COLOUR: Partial<Record<AuditAction, string>> = {
   [AUDIT_ACTIONS.APPLICATION_PAUSED]: "bg-yellow-400",
   [AUDIT_ACTIONS.APPLICATION_OUTCOME_SET]: "bg-green-500",
   [AUDIT_ACTIONS.APPLICATION_SUBMITTED]: "bg-green-500",
+  [AUDIT_ACTIONS.APPLICATION_SUBMITTED_BY_ASSESSOR]: "bg-green-500",
   [AUDIT_ACTIONS.ASSESSMENT_COMPLETE]: "bg-green-500",
   [AUDIT_ACTIONS.RECOMMENDATION_SAVE]: "bg-green-500",
   [AUDIT_ACTIONS.APPLICATION_RESUMED]: "bg-blue-500",
@@ -241,6 +246,7 @@ const ACTION_COLOUR: Partial<Record<AuditAction, string>> = {
   [AUDIT_ACTIONS.DOCUMENT_DELETED]: "bg-purple-500",
   [AUDIT_ACTIONS.DOCUMENT_URL_GRANTED]: "bg-purple-500",
   [AUDIT_ACTIONS.SECTION_SAVED_BY_ASSESSOR]: "bg-purple-500",
+  [AUDIT_ACTIONS.EDIT_ON_BEHALF_FINISHED]: "bg-purple-500",
   [AUDIT_ACTIONS.DOCUMENT_VERIFIED]: "bg-orange-400",
   [AUDIT_ACTIONS.DOCUMENT_UNVERIFIED]: "bg-orange-400",
   [AUDIT_ACTIONS.APPLICATION_STATUS_CHANGED]: "bg-red-400",

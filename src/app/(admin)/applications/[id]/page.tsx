@@ -56,9 +56,71 @@ const SECTION_LABELS: Record<ApplicationSectionType, string> = {
   DECLARATION: "Declaration",
 };
 
+// ─── Assessor provenance (CR-001) ─────────────────────────────────────────────
+// `application_sections.assessor_provenance` maps leaf dot-paths (matching the
+// DataBlock recursion, e.g. "parent1Contact.addressLine1", "children.0.fullName")
+// to who entered the value on the applicant's behalf. Shown to ALL staff roles
+// including VIEWER — the badges indicate data origin, not an action.
+
+/** Display-side provenance entry — fields are optional defensively. */
+interface ProvenanceDisplayEntry {
+  editedByName?: string;
+  editedAt?: string;
+}
+
+type ProvenanceDisplayMap = Record<string, ProvenanceDisplayEntry>;
+
+/**
+ * Parses stored provenance JSONB defensively: non-objects (null, arrays,
+ * primitives) become `{}` and malformed entries are dropped.
+ */
+function asProvenanceMap(raw: unknown): ProvenanceDisplayMap {
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return {};
+  const map: ProvenanceDisplayMap = {};
+  for (const [path, entry] of Object.entries(raw)) {
+    if (typeof entry !== "object" || entry === null || Array.isArray(entry)) {
+      continue;
+    }
+    const { editedByName, editedAt } = entry as Record<string, unknown>;
+    map[path] = {
+      editedByName:
+        typeof editedByName === "string" ? editedByName : undefined,
+      editedAt: typeof editedAt === "string" ? editedAt : undefined,
+    };
+  }
+  return map;
+}
+
+function provenancePillTitle(
+  entry: ProvenanceDisplayEntry
+): string | undefined {
+  if (!entry.editedByName) return undefined;
+  const date = entry.editedAt ? new Date(entry.editedAt) : null;
+  if (date && !Number.isNaN(date.getTime())) {
+    return `Entered by ${entry.editedByName} on ${date.toLocaleDateString("en-GB")}`;
+  }
+  return `Entered by ${entry.editedByName}`;
+}
+
+function AssessorPill({ entry }: { entry: ProvenanceDisplayEntry }) {
+  return (
+    <span
+      className="ml-2 inline-block whitespace-nowrap rounded-full bg-purple-100 px-2 py-0.5 text-[11px] text-purple-700"
+      title={provenancePillTitle(entry)}
+    >
+      Entered by assessor
+    </span>
+  );
+}
+
 // ─── Field rendering ──────────────────────────────────────────────────────────
 
-function formatValue(key: string, value: unknown): React.ReactNode {
+function formatValue(
+  key: string,
+  value: unknown,
+  provenance: ProvenanceDisplayMap,
+  path: string
+): React.ReactNode {
   if (value === null || value === undefined) {
     return <span className="text-slate-400 italic">Not provided</span>;
   }
@@ -126,22 +188,41 @@ function formatValue(key: string, value: unknown): React.ReactNode {
     }
     return (
       <ol className="ml-4 list-decimal space-y-1">
-        {value.map((item, i) => (
-          <li key={i} className="text-slate-700">
-            {typeof item === "object" ? (
-              <DataBlock data={item as Record<string, unknown>} indent />
-            ) : (
-              String(item)
-            )}
-          </li>
-        ))}
+        {value.map((item, i) => {
+          // Array elements extend the dot-path with their numeric index
+          // ("children.0.fullName"), matching diffSectionPaths.
+          const itemPath = `${path}.${i}`;
+          const itemEntry = provenance[itemPath];
+          return (
+            <li key={i} className="text-slate-700">
+              {typeof item === "object" ? (
+                <DataBlock
+                  data={item as Record<string, unknown>}
+                  indent
+                  provenance={provenance}
+                  pathPrefix={itemPath}
+                />
+              ) : (
+                <>
+                  {String(item)}
+                  {itemEntry && <AssessorPill entry={itemEntry} />}
+                </>
+              )}
+            </li>
+          );
+        })}
       </ol>
     );
   }
 
   if (typeof value === "object") {
     return (
-      <DataBlock data={value as Record<string, unknown>} indent />
+      <DataBlock
+        data={value as Record<string, unknown>}
+        indent
+        provenance={provenance}
+        pathPrefix={path}
+      />
     );
   }
 
@@ -159,9 +240,13 @@ function humaniseKey(key: string): string {
 function DataBlock({
   data,
   indent = false,
+  provenance = {},
+  pathPrefix = "",
 }: {
   data: Record<string, unknown>;
   indent?: boolean;
+  provenance?: ProvenanceDisplayMap;
+  pathPrefix?: string;
 }) {
   const entries = Object.entries(data);
   if (entries.length === 0)
@@ -175,16 +260,23 @@ function DataBlock({
           : "space-y-3"
       }
     >
-      {entries.map(([key, val]) => (
-        <div key={key} className="flex flex-col gap-0.5 sm:flex-row sm:gap-4">
-          <dt className="min-w-[180px] text-xs font-medium text-slate-500 shrink-0">
-            {humaniseKey(key)}
-          </dt>
-          <dd className="text-sm text-slate-700">
-            {formatValue(key, val)}
-          </dd>
-        </div>
-      ))}
+      {entries.map(([key, val]) => {
+        const path = pathPrefix ? `${pathPrefix}.${key}` : key;
+        // Provenance paths are leaf paths, so containers never match —
+        // the pill only ever lands on the leaf row that was edited.
+        const entry = provenance[path];
+        return (
+          <div key={key} className="flex flex-col gap-0.5 sm:flex-row sm:gap-4">
+            <dt className="min-w-[180px] text-xs font-medium text-slate-500 shrink-0">
+              {humaniseKey(key)}
+            </dt>
+            <dd className="text-sm text-slate-700">
+              {formatValue(key, val, provenance, path)}
+              {entry && <AssessorPill entry={entry} />}
+            </dd>
+          </div>
+        );
+      })}
     </dl>
   );
 }
@@ -381,6 +473,11 @@ export default async function ApplicantDataPage({ params }: Props) {
             ? ownerLabelFor(section.ownerContributorId)
             : null;
 
+        // Assessor-entered fields (CR-001) — badge each leaf row and
+        // summarise the count in the card header.
+        const provenance = asProvenanceMap(section.assessorProvenance);
+        const provenanceCount = Object.keys(provenance).length;
+
         return (
           <Card key={section.id} className="overflow-hidden">
             <CardHeader className="bg-neutral-50 px-6 py-4 border-b border-neutral-100">
@@ -395,20 +492,28 @@ export default async function ApplicantDataPage({ params }: Props) {
                     </span>
                   )}
                 </div>
-                <span
-                  className={
-                    section.isComplete
-                      ? "text-xs font-medium text-green-600"
-                      : "text-xs font-medium text-amber-600"
-                  }
-                >
-                  {section.isComplete ? "Complete" : "Incomplete"}
-                </span>
+                <div className="flex items-center gap-2">
+                  {provenanceCount > 0 && (
+                    <span className="whitespace-nowrap rounded-full bg-purple-100 px-2 py-0.5 text-[11px] text-purple-700">
+                      {provenanceCount} field{provenanceCount === 1 ? "" : "s"}{" "}
+                      entered by assessor
+                    </span>
+                  )}
+                  <span
+                    className={
+                      section.isComplete
+                        ? "text-xs font-medium text-green-600"
+                        : "text-xs font-medium text-amber-600"
+                    }
+                  >
+                    {section.isComplete ? "Complete" : "Incomplete"}
+                  </span>
+                </div>
               </div>
             </CardHeader>
             <CardContent className="px-6 py-5">
               {hasData ? (
-                <DataBlock data={sectionData} />
+                <DataBlock data={sectionData} provenance={provenance} />
               ) : (
                 <p className="text-sm text-slate-400 italic">No data recorded.</p>
               )}

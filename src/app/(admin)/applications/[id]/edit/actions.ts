@@ -12,6 +12,13 @@
  * The review-phase gate (`canEditOnBehalf`) is RE-CHECKED inside the write
  * transaction — the edit layout's gate alone cannot stop a concurrent
  * complete/outcome from landing between render and save.
+ *
+ * finishEditingOnBehalf — ends an editing pass: emails the applicant a summary
+ * of the assessor-edited sections (derived from the stored provenance) and
+ * audits the pass. A pass that changed nothing is a silent no-op.
+ *
+ * submitApplicationOnBehalf — staff submission of a FILLED_IN form through the
+ * SAME `submitApplicationCore` the portal uses (typed-up paper form, CR-001).
  */
 
 import { revalidatePath } from "next/cache";
@@ -37,9 +44,13 @@ import {
   diffSectionPaths,
   mergeProvenance,
 } from "@/lib/applications/section-diff";
+import { submitApplicationCore } from "@/lib/applications/submission";
+import { SECTION_ORDER, SECTION_TITLES } from "@/lib/portal/sections";
+import { sendEmail } from "@/lib/email/send";
 import { createAuditLog } from "@/lib/audit/log";
 import { AUDIT_ACTIONS, AUDIT_ENTITY_TYPES } from "@/lib/audit/actions";
 import type { SaveSectionResult } from "@/app/(portal)/apply/actions";
+import type { ActionResult } from "@/app/(admin)/applications/[id]/actions";
 
 /**
  * Validates and saves a section's data on the applicant's behalf.
@@ -232,5 +243,281 @@ export async function saveSectionOnBehalf(
       success: false,
       errors: ["Failed to save your data. Please try again."],
     };
+  }
+}
+
+// ─── finishEditingOnBehalf ────────────────────────────────────────────────────
+
+/**
+ * True when a stored provenance payload records at least one assessor-edited
+ * field. Parsed defensively — the JSONB column may be null, a non-object, or
+ * hand-edited garbage; anything that is not a plain object reads as "no edits".
+ */
+function hasProvenanceEntries(value: unknown): boolean {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return false;
+  }
+  return Object.keys(value).length > 0;
+}
+
+/**
+ * Ends an edit-on-behalf pass: derives WHICH sections carry assessor
+ * provenance, emails the applicant a summary of them
+ * (APPLICATION_EDITED_ON_BEHALF), and audits the pass.
+ *
+ * A pass that edited nothing returns success WITHOUT email or audit — a staff
+ * member opening the edit shell and leaving must not spam the applicant.
+ * The email is non-blocking (pauseApplication style): a send failure is logged
+ * but never fails the action.
+ */
+export async function finishEditingOnBehalf(
+  applicationId: string
+): Promise<ActionResult> {
+  // Auth: staff only; an ASSESSOR must be assigned to this application.
+  const user = await requireRole([Role.ADMIN, Role.ASSESSOR]);
+  await requireApplicationAccess(user, applicationId);
+
+  try {
+    // Resolve the applicant's PRIMARY contributor — same SELECT-then-self-heal
+    // pattern as saveSectionOnBehalf (the heal must run under ADMIN context).
+    const preflight = await withUserContext(
+      user.id,
+      user.role as RlsRole,
+      async (tx) => {
+        const application = await tx.application.findUnique({
+          where: { id: applicationId },
+          select: {
+            reference: true,
+            childName: true,
+            leadApplicantId: true,
+            leadApplicant: {
+              select: { email: true, firstName: true, lastName: true },
+            },
+          },
+        });
+        if (!application) return null;
+
+        const contributorId = await resolveOwningContributorId(
+          tx,
+          applicationId,
+          application.leadApplicantId
+        );
+        return { application, contributorId };
+      }
+    );
+    if (!preflight) {
+      return { success: false, error: "Application not found." };
+    }
+
+    const { application } = preflight;
+    const ownerContributorId =
+      preflight.contributorId ??
+      (await withAdminContext((tx) =>
+        ensurePrimaryContributor(
+          tx,
+          applicationId,
+          application.leadApplicantId
+        )
+      ));
+
+    // Sections this pass (or any earlier one) assessor-edited, in workbook
+    // order, as the human titles the email lists.
+    const sectionRows = await withUserContext(
+      user.id,
+      user.role as RlsRole,
+      (tx) =>
+        tx.applicationSection.findMany({
+          where: { applicationId, ownerContributorId },
+          select: { section: true, assessorProvenance: true },
+        })
+    );
+    const editedSet = new Set<ApplicationSectionType>(
+      sectionRows
+        .filter((row) => hasProvenanceEntries(row.assessorProvenance))
+        .map((row) => row.section)
+    );
+    const editedSections = SECTION_ORDER.filter((s) => editedSet.has(s)).map(
+      (s) => SECTION_TITLES[s]
+    );
+
+    // Nothing was edited on the applicant's behalf — a no-op pass must not
+    // email the applicant or write an audit row.
+    if (editedSections.length === 0) {
+      return { success: true };
+    }
+
+    // Send the summary email — non-blocking; log failure but don't abort.
+    const emailResult = await sendEmail(
+      application.leadApplicant.email,
+      "APPLICATION_EDITED_ON_BEHALF",
+      {
+        applicant_name:
+          `${application.leadApplicant.firstName ?? ""} ${application.leadApplicant.lastName ?? ""}`.trim() ||
+          "Applicant",
+        child_name: application.childName,
+        reference: application.reference,
+        edited_sections: editedSections
+          .map((title) => `• ${title}`)
+          .join("\n"),
+        edited_date: new Date().toLocaleDateString("en-GB"),
+      }
+    );
+
+    if (!emailResult.success) {
+      console.warn(
+        `[finishEditingOnBehalf] APPLICATION_EDITED_ON_BEHALF email failed for ${applicationId}: ${emailResult.error}`
+      );
+    }
+
+    await withUserContext(user.id, user.role as RlsRole, (tx) =>
+      createAuditLog(tx, {
+        userId: user.id,
+        action: AUDIT_ACTIONS.EDIT_ON_BEHALF_FINISHED,
+        entityType: AUDIT_ENTITY_TYPES.Application,
+        entityId: applicationId,
+        context: `Edit-on-behalf pass finished — Reference: ${application.reference}`,
+        metadata: {
+          reference: application.reference,
+          sections: editedSections,
+          // A disabled template short-circuits to success+skipped; record the
+          // applicant as NOT notified in that case.
+          emailSent: emailResult.success && !emailResult.skipped,
+          emailSkipped: emailResult.skipped ?? false,
+          emailMessageId: emailResult.messageId ?? null,
+        },
+      })
+    );
+
+    revalidatePath(`/applications/${applicationId}`);
+    revalidatePath(`/applications/${applicationId}/history`);
+
+    return { success: true };
+  } catch (err) {
+    console.error("[finishEditingOnBehalf]", err);
+    return {
+      success: false,
+      error: "Failed to finish the editing pass. Please try again.",
+    };
+  }
+}
+
+// ─── submitApplicationOnBehalf ────────────────────────────────────────────────
+
+/**
+ * Submits a FILLED_IN application on the applicant's behalf (CR-001 — e.g. a
+ * paper form a staff member typed up). Runs the SAME `submitApplicationCore`
+ * as the portal submit, with the staff knobs:
+ *
+ *   - no `expectedLeadApplicantId` — staff are authorised via
+ *     `requireApplicationAccess`, not ownership;
+ *   - `enforceDeadline: false` — deliberate: a paper application that arrived
+ *     in time may be typed up after the portal deadline; the audit trail
+ *     records the actor;
+ *   - audited as APPLICATION_SUBMITTED_BY_ASSESSOR with the staff actor/role.
+ *
+ * The applicant receives the normal CONFIRMATION email. Never redirects — the
+ * edit shell navigates on success and surfaces the error otherwise.
+ */
+export async function submitApplicationOnBehalf(
+  applicationId: string
+): Promise<ActionResult> {
+  // Auth: staff only; an ASSESSOR must be assigned to this application.
+  const user = await requireRole([Role.ADMIN, Role.ASSESSOR]);
+  await requireApplicationAccess(user, applicationId);
+
+  try {
+    // Resolve the applicant's PRIMARY contributor — same SELECT-then-self-heal
+    // pattern as saveSectionOnBehalf (the heal must run under ADMIN context).
+    const preflight = await withUserContext(
+      user.id,
+      user.role as RlsRole,
+      async (tx) => {
+        const application = await tx.application.findUnique({
+          where: { id: applicationId },
+          select: {
+            formStatus: true,
+            childName: true,
+            leadApplicantId: true,
+            leadApplicant: {
+              select: { email: true, firstName: true, lastName: true },
+            },
+          },
+        });
+        if (!application) return null;
+
+        const contributorId = await resolveOwningContributorId(
+          tx,
+          applicationId,
+          application.leadApplicantId
+        );
+        return { application, contributorId };
+      }
+    );
+    if (!preflight) {
+      return { success: false, error: "Application not found." };
+    }
+
+    const { application } = preflight;
+    const ownerContributorId =
+      preflight.contributorId ??
+      (await withAdminContext((tx) =>
+        ensurePrimaryContributor(
+          tx,
+          applicationId,
+          application.leadApplicantId
+        )
+      ));
+
+    // Gate: only a fully filled-in form can be submitted on behalf. The core
+    // re-checks completeness/gaps; this gate gives the staff UI a precise
+    // message (and the layout only renders the button when FILLED_IN).
+    if (application.formStatus !== "FILLED_IN") {
+      return {
+        success: false,
+        error:
+          "The application must be fully filled in before it can be submitted on the applicant's behalf.",
+      };
+    }
+
+    const result = await submitApplicationCore({
+      actor: { id: user.id, role: user.role as RlsRole },
+      applicationId,
+      ownerContributorId,
+      enforceDeadline: false,
+      auditAction: AUDIT_ACTIONS.APPLICATION_SUBMITTED_BY_ASSESSOR,
+      auditMetadata: { onBehalf: true, submittedByRole: user.role },
+      // The LEAD APPLICANT gets the normal CONFIRMATION email — the same
+      // recipient/name shape the portal submit sends.
+      confirmation: {
+        to: application.leadApplicant.email,
+        applicantName:
+          `${application.leadApplicant.firstName ?? ""} ${application.leadApplicant.lastName ?? ""}`.trim() ||
+          application.leadApplicant.email,
+      },
+    });
+
+    if (result.alreadySubmitted) {
+      return {
+        success: false,
+        error: "This application has already been submitted.",
+      };
+    }
+
+    revalidatePath(`/applications/${applicationId}`);
+    revalidatePath(`/applications/${applicationId}/history`);
+    revalidatePath("/queue");
+    revalidatePath(`/applications/${applicationId}/edit`, "layout");
+
+    return { success: true };
+  } catch (err) {
+    // The core throws with applicant-grade messages (incomplete sections,
+    // blocking gaps as a JSON-encoded payload, write-once submitted_at) — pass
+    // them through so the edit shell can show exactly what blocked the submit.
+    console.error("[submitApplicationOnBehalf]", err);
+    const message =
+      err instanceof Error && err.message
+        ? err.message
+        : "Failed to submit the application. Please try again.";
+    return { success: false, error: message };
   }
 }
