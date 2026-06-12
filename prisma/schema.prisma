@@ -202,6 +202,12 @@ model ApplicationSection {
   section            ApplicationSectionType
   data               Json                   @default("{}")
   isComplete         Boolean                @default(false) @map("is_complete")
+  /// CR-001 edit-on-behalf: flat dot-path map of fields entered/amended by
+  /// staff on the applicant's behalf, e.g.
+  /// `{ "parent1Income.salary": { editedBy, editedByName, editedAt } }`.
+  /// Merged on each staff save; cleared per-path when the applicant
+  /// re-edits that field pre-submission.
+  assessorProvenance Json                   @default("{}") @map("assessor_provenance")
   updatedAt          DateTime               @updatedAt @map("updated_at") @db.Timestamptz(6)
   application        Application            @relation(fields: [applicationId], references: [id], onDelete: Cascade)
   ownerContributor   ApplicationContributor @relation(fields: [ownerContributorId], references: [id], onDelete: Cascade)

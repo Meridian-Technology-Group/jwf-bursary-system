@@ -32,6 +32,7 @@ const ACTION_LABELS: Record<string, string> = {
   APPLICATION_RESUMED: "Application resumed",
   APPLICATION_OUTCOME_SET: "Outcome set",
   DOCUMENT_UPLOADED_BY_ASSESSOR: "Document uploaded by assessor",
+  SECTION_SAVED_BY_ASSESSOR: "Section saved by assessor",
   DOCUMENT_VERIFIED: "Document verified",
   DOCUMENT_UNVERIFIED: "Document unverified",
   "assessment.begin": "Assessment begun",
@@ -60,7 +61,7 @@ function actionColour(action: string): string {
   if (action.includes("RESUMED") || action.includes("begin")) {
     return "bg-blue-500";
   }
-  if (action.includes("DOCUMENT")) {
+  if (action.includes("DOCUMENT") || action.includes("BY_ASSESSOR")) {
     return "bg-purple-500";
   }
   if (action.includes("STATUS")) {

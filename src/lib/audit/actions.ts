@@ -51,6 +51,9 @@ export const AUDIT_ACTIONS = {
   DOCUMENT_VERIFIED: "DOCUMENT_VERIFIED",
   DOCUMENT_UNVERIFIED: "DOCUMENT_UNVERIFIED",
 
+  // Edit on behalf (CR-001)
+  SECTION_SAVED_BY_ASSESSOR: "SECTION_SAVED_BY_ASSESSOR",
+
   // Siblings
   SIBLING_LINK_CREATED: "SIBLING_LINK_CREATED",
   SIBLING_LINK_REMOVED: "SIBLING_LINK_REMOVED",
@@ -129,6 +132,7 @@ export type AuditAction = (typeof AUDIT_ACTIONS)[keyof typeof AUDIT_ACTIONS];
  */
 export const AUDIT_ENTITY_TYPES = {
   Application: "Application",
+  ApplicationSection: "ApplicationSection",
   Assessment: "Assessment",
   AssessmentChecklist: "AssessmentChecklist",
   Recommendation: "Recommendation",
@@ -236,6 +240,7 @@ const ACTION_COLOUR: Partial<Record<AuditAction, string>> = {
   [AUDIT_ACTIONS.DOCUMENT_UPLOADED_BY_ASSESSOR]: "bg-purple-500",
   [AUDIT_ACTIONS.DOCUMENT_DELETED]: "bg-purple-500",
   [AUDIT_ACTIONS.DOCUMENT_URL_GRANTED]: "bg-purple-500",
+  [AUDIT_ACTIONS.SECTION_SAVED_BY_ASSESSOR]: "bg-purple-500",
   [AUDIT_ACTIONS.DOCUMENT_VERIFIED]: "bg-orange-400",
   [AUDIT_ACTIONS.DOCUMENT_UNVERIFIED]: "bg-orange-400",
   [AUDIT_ACTIONS.APPLICATION_STATUS_CHANGED]: "bg-red-400",

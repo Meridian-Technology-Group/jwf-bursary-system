@@ -549,6 +549,10 @@ export async function getSectionStatusList(
  * Targets the contributor-scoped unique (applicationId, section,
  * ownerContributorId). For the lead applicant `ownerContributorId` is their
  * PRIMARY contributor — behaviour is identical to before (one row per section).
+ *
+ * `assessorProvenance` is an optional staff edit-on-behalf provenance map,
+ * computed by the caller (e.g. which fields a staff member changed and when).
+ * When omitted the stored provenance is left untouched.
  */
 export async function upsertSection(
   tx: Tx,
@@ -556,9 +560,12 @@ export async function upsertSection(
   section: ApplicationSectionType,
   data: unknown,
   isComplete: boolean,
-  ownerContributorId: string
+  ownerContributorId: string,
+  assessorProvenance?: Prisma.InputJsonValue
 ) {
   const jsonData = data as Prisma.InputJsonValue;
+  const provenance =
+    assessorProvenance !== undefined ? { assessorProvenance } : undefined;
   return tx.applicationSection.upsert({
     where: {
       applicationId_section_ownerContributorId: {
@@ -570,6 +577,7 @@ export async function upsertSection(
     update: {
       data: jsonData,
       isComplete,
+      ...provenance,
     },
     create: {
       applicationId,
@@ -577,6 +585,7 @@ export async function upsertSection(
       ownerContributorId,
       data: jsonData,
       isComplete,
+      ...provenance,
     },
   });
 }
