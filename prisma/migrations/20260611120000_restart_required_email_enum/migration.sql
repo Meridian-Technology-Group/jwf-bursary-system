@@ -1,0 +1,11 @@
+-- Missing Documents Workflow — Full Rejection.
+--
+-- Adds the APPLICATION_RESTART_REQUIRED email template type, sent to the
+-- applicant when an assessor fully rejects a submission and asks them to start
+-- a fresh application from scratch.
+--
+-- ADD VALUE is split from any DML that USES the new value (the template seed in
+-- 20260611120100_seed_restart_and_update_missing_docs_template) — Postgres
+-- requires a new enum value to be committed before it can be referenced in the
+-- same transaction. IF NOT EXISTS makes this safe to re-run.
+ALTER TYPE "EmailTemplateType" ADD VALUE IF NOT EXISTS 'APPLICATION_RESTART_REQUIRED';

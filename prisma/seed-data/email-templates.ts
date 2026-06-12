@@ -15,7 +15,8 @@ export type EmailTemplateType =
   | "MISSING_DOCS_RESPONDED"
   | "SECONDARY_PARENT_INVITE"
   | "SECONDARY_PARENT_REMINDER"
-  | "SECONDARY_PARENT_RECEIVED";
+  | "SECONDARY_PARENT_RECEIVED"
+  | "APPLICATION_RESTART_REQUIRED";
 
 interface EmailTemplateData {
   type: EmailTemplateType;
@@ -93,6 +94,7 @@ John Whitgift Foundation`,
       "Documents required for your bursary application — {{child_name}}",
     mergeFields: [
       "applicant_name",
+      "custom_message",
       "child_name",
       "reference",
       "missing_documents",
@@ -100,19 +102,17 @@ John Whitgift Foundation`,
     ],
     body: `Dear {{applicant_name}},
 
-Thank you for submitting your bursary application for {{child_name}} (reference: {{reference}}).
+{{custom_message}}
 
-Having reviewed your application, we find that the following documents are still required to enable us to complete our assessment:
+To enable us to complete our assessment of your bursary application for {{child_name}} (reference: {{reference}}), the following documents are still required:
 
 {{missing_documents}}
 
-Without these documents, we are unable to progress your application further. Please submit the outstanding documents as soon as possible, and no later than {{deadline}}.
+Please submit the outstanding documents through your online application portal as soon as possible, and no later than {{deadline}}. Without these documents, we are unable to progress your application further.
 
-Documents can be uploaded securely through your online application portal. If you experience any difficulty with the upload process, or if you are unable to provide a particular document, please contact the Bursary Office as soon as possible so that we can discuss alternative arrangements.
+If you experience any difficulty with the upload process, or if you are unable to provide a particular document, please contact the Bursary Office as soon as possible so that we can discuss alternative arrangements.
 
 We would like to remind you that all information provided is treated in strict confidence and used solely for the purpose of assessing your application for bursary support.
-
-Please do not hesitate to get in touch if you have any questions or concerns.
 
 Yours sincerely,
 
@@ -407,6 +407,40 @@ Registration link: {{registration_link}}
 Please aim to complete your section by {{deadline}}. If your information is not received, the Foundation may need to assess the application on the basis of the details available, which could affect the outcome.
 
 If you have already completed your section, please disregard this message. If you have any questions, please contact the Bursary Office.
+
+Yours sincerely,
+
+The Bursary Office
+John Whitgift Foundation`,
+  },
+  {
+    // Full Rejection flow — the applicant's submission was rejected outright and
+    // a fresh blank application has been created for them to complete.
+    // Kept in sync with migration
+    // 20260611120100_seed_restart_and_update_missing_docs_template.
+    type: "APPLICATION_RESTART_REQUIRED",
+    subject:
+      "Your bursary application needs to be resubmitted — {{child_name}}",
+    mergeFields: [
+      "applicant_name",
+      "child_name",
+      "reference",
+      "custom_message",
+      "restart_link",
+    ],
+    body: `Dear {{applicant_name}},
+
+{{custom_message}}
+
+Having reviewed the bursary application submitted for {{child_name}} (reference: {{reference}}), we are unable to proceed with it in its current form. We have therefore closed that submission and ask that you complete a new application.
+
+A fresh application has been prepared for you. Please log in to your online application portal using the link below to complete and submit it:
+
+{{restart_link}}
+
+When completing your new application, please take particular care to provide clear, current, and valid supporting documents. If you have any questions about what is required, or if you would like to discuss your application, please contact the Bursary Office — we are happy to help.
+
+We would like to remind you that all information provided is treated in strict confidence and used solely for the purpose of assessing your application for bursary support.
 
 Yours sincerely,
 

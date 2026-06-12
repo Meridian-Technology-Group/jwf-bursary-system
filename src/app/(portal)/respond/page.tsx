@@ -20,6 +20,7 @@ import { ArrowLeft, Inbox } from "lucide-react";
 import { getCurrentUser } from "@/lib/auth/roles";
 import { withUserContext, type RlsRole } from "@/lib/db/prisma";
 import { getLatestMissingDocsRequest } from "@/lib/db/queries/missing-docs";
+import { getApplicationPausedState } from "@/lib/db/queries/applications";
 import { PortalPage } from "@/components/portal/portal-page";
 import { RespondMissingDocsClient } from "./respond-client";
 
@@ -45,7 +46,6 @@ export default async function RespondPage() {
           id: true,
           reference: true,
           childName: true,
-          assessment: { select: { status: true } },
           documents: {
             select: {
               id: true,
@@ -63,9 +63,11 @@ export default async function RespondPage() {
   if (!application) redirect("/");
 
   // Not paused → nothing to respond to. Send the applicant to the status page,
-  // which explains the current state. PR-6a: "paused" is the assessment
-  // lifecycle status, not the deprecated fused `applications.status`.
-  if (application.assessment?.status !== "PAUSED") {
+  // which explains the current state. The PAUSED signal lives on the assessment,
+  // which the applicant cannot read under RLS, so probe it under service-role
+  // context (ownership already established by the user-context read above).
+  const { isPaused } = await getApplicationPausedState(application.id);
+  if (!isPaused) {
     redirect("/status");
   }
 

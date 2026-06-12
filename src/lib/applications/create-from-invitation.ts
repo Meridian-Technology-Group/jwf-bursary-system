@@ -17,7 +17,12 @@
  * onboarding card).
  */
 
-import type { EntryYearGroup, School } from "@prisma/client";
+import type {
+  ApplicationType,
+  CustodyArrangement,
+  EntryYearGroup,
+  School,
+} from "@prisma/client";
 import type { Tx } from "@/lib/db/prisma";
 import { generateApplicationReference } from "@/lib/applications/reference";
 import { applicationCreateData } from "@/lib/applications/status";
@@ -96,6 +101,83 @@ export async function createFirstYearApplicationFromSource(
 
   // Every application must have a PRIMARY contributor from creation so the
   // section write path can tag the owner (dual-parent foundation).
+  await ensurePrimaryContributor(tx, application.id, source.leadApplicantId);
+
+  return application.id;
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// Full Rejection — hard-delete + recreate ("void + new")
+// ───────────────────────────────────────────────────────────────────────────
+
+/**
+ * The carry-over identity of the application being restarted. These are the
+ * fields the fresh application inherits verbatim from the rejected one — the
+ * child/round identity, the locked entry-year/school (D1), and the bursary-
+ * account link (for a ROLLING_OVER re-assessment). NOT carried: any form data,
+ * documents, or assessment — the new application starts blank ("from scratch").
+ */
+export interface RejectedApplicationSource {
+  id: string;
+  reference: string;
+  roundId: string;
+  leadApplicantId: string;
+  school: School;
+  childName: string;
+  childDob: Date | null;
+  entryYear: number | null;
+  entryYearGroup: EntryYearGroup | null;
+  contactId: string | null;
+  isReassessment: boolean;
+  applicationType: ApplicationType;
+  bursaryAccountId: string | null;
+  custodyArrangement: CustodyArrangement;
+}
+
+/**
+ * Voids a rejected application and creates a fresh blank one in its place
+ * ("Full Rejection" → restart). Because of the
+ * `@@unique([roundId, leadApplicantId, childName, childDob])` constraint, the
+ * rejected application cannot coexist with its replacement, so it is
+ * hard-deleted (the row's cascades remove its sections, contributors,
+ * documents, assessment and invitations) and the new application REUSES the old
+ * `reference` — freed by the delete, and avoiding a sequence collision in the
+ * count-based `generateApplicationReference`.
+ *
+ * Storage objects are NOT removed here — the DB cascade only drops the Document
+ * rows. The caller captures each `storagePath` BEFORE calling this and deletes
+ * the Storage objects after the transaction commits (non-fatal cleanup).
+ *
+ * Runs inside the caller's transaction: the delete precedes the insert so the
+ * unique tuple is free when the new row is written. Returns the new app id.
+ */
+export async function restartApplicationFromRejection(
+  tx: Tx,
+  source: RejectedApplicationSource
+): Promise<string> {
+  // Delete the rejected application first — cascades clear its sections,
+  // contributors, documents, assessment and invitations, and free both the
+  // unique child/round tuple and the reference for reuse below.
+  await tx.application.delete({ where: { id: source.id } });
+
+  const application = await tx.application.create({
+    data: {
+      reference: source.reference,
+      roundId: source.roundId,
+      leadApplicantId: source.leadApplicantId,
+      school: source.school,
+      childName: source.childName,
+      childDob: source.childDob,
+      entryYear: source.entryYear,
+      entryYearGroup: source.entryYearGroup,
+      contactId: source.contactId,
+      bursaryAccountId: source.bursaryAccountId,
+      isReassessment: source.isReassessment,
+      custodyArrangement: source.custodyArrangement,
+      ...applicationCreateData(source.applicationType),
+    },
+  });
+
   await ensurePrimaryContributor(tx, application.id, source.leadApplicantId);
 
   return application.id;

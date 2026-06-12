@@ -37,6 +37,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { MissingDocsDialog } from "@/components/admin/missing-docs-dialog";
+import { RejectRestartDialog } from "@/components/admin/reject-restart-dialog";
 import {
   updateApplicationStatus,
   resumeApplication,
@@ -257,6 +258,19 @@ export function ApplicationActions({
                       className="gap-2 border-slate-300"
                     >
                       Request Missing Documents
+                    </Button>
+                  }
+                />
+                <RejectRestartDialog
+                  applicationId={applicationId}
+                  trigger={
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={isPending}
+                      className="gap-2 border-rose-300 text-rose-700 hover:bg-rose-50 hover:border-rose-400"
+                    >
+                      Reject &amp; Restart
                     </Button>
                   }
                 />

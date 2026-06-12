@@ -2,7 +2,7 @@
  * Application database queries for the admin queue and detail views.
  */
 
-import type { Tx } from "@/lib/db/prisma";
+import { withAdminContext, type Tx } from "@/lib/db/prisma";
 import { createAuditLog } from "@/lib/audit/log";
 import { AUDIT_ACTIONS, AUDIT_ENTITY_TYPES } from "@/lib/audit/actions";
 import {
@@ -435,8 +435,6 @@ export async function getCurrentApplicationForUser(tx: Tx, userId: string) {
 export interface PortalNavState {
   /** Drives the adaptive "My Application" target (SUBMITTED → /status). */
   formStatus: ApplicationFormStatus;
-  /** PAUSED → an assessor has requested documents → badge the Documents item. */
-  isPaused: boolean;
 }
 
 export async function getPortalNavState(
@@ -448,14 +446,75 @@ export async function getPortalNavState(
     orderBy: { updatedAt: "desc" },
     select: {
       formStatus: true,
-      assessment: { select: { status: true } },
     },
   });
   if (!app) return null;
   return {
     formStatus: app.formStatus,
-    isPaused: app.assessment?.status === "PAUSED",
   };
+}
+
+/** The minimal paused signal the applicant portal is allowed to surface. */
+export interface ApplicationPausedState {
+  /** True when an assessor has paused review pending documents. */
+  isPaused: boolean;
+  /** The document deadline the assessor set, when paused. */
+  pausedUntil: Date | null;
+}
+
+/**
+ * Reads ONLY the paused bit + deadline for a user's current application, under
+ * SERVICE-ROLE (admin) context.
+ *
+ * Why admin context: applicants cannot SELECT the `assessments` row under RLS
+ * (`assessments_select` is admin/viewer/assigned-assessor only — "applicants
+ * must NOT see assessment data"). Reading `application.assessment.status` under
+ * the applicant's own context therefore always returns null, which silently
+ * disabled the missing-documents CTA (the assessment is invisible). We read just
+ * these two scalars server-side so the portal can surface "a document request is
+ * outstanding, due by X" WITHOUT ever exposing assessment financials, scoring,
+ * notes or in-progress outcome to the applicant.
+ *
+ * Resolves "the user's current application" the same way `getPortalNavState` /
+ * `getCurrentApplicationForUser` do (most-recently-updated), so the signal
+ * always matches the application the rest of the portal is showing.
+ */
+export async function getApplicationPausedStateForUser(
+  userId: string
+): Promise<ApplicationPausedState> {
+  return withAdminContext(async (tx) => {
+    const app = await tx.application.findFirst({
+      where: { leadApplicantId: userId },
+      orderBy: { updatedAt: "desc" },
+      select: { assessment: { select: { status: true, pausedUntil: true } } },
+    });
+    return {
+      isPaused: app?.assessment?.status === "PAUSED",
+      pausedUntil: app?.assessment?.pausedUntil ?? null,
+    };
+  });
+}
+
+/**
+ * Reads ONLY the paused bit + deadline for a specific application, under
+ * service-role context. Used by pages that already resolved the application id
+ * under the applicant's context (ownership established) and now need the paused
+ * signal the applicant's RLS cannot read. See `getApplicationPausedStateForUser`
+ * for the disclosure rationale.
+ */
+export async function getApplicationPausedState(
+  applicationId: string
+): Promise<ApplicationPausedState> {
+  return withAdminContext(async (tx) => {
+    const assessment = await tx.assessment.findUnique({
+      where: { applicationId },
+      select: { status: true, pausedUntil: true },
+    });
+    return {
+      isPaused: assessment?.status === "PAUSED",
+      pausedUntil: assessment?.pausedUntil ?? null,
+    };
+  });
 }
 
 /**

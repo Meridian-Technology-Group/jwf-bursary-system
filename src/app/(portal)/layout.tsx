@@ -25,7 +25,10 @@ import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth/roles";
 import { withUserContext, type RlsRole } from "@/lib/db/prisma";
 import { loadPortalAccessState } from "@/lib/bursary-accounts/access";
-import { getPortalNavState } from "@/lib/db/queries/applications";
+import {
+  getPortalNavState,
+  getApplicationPausedStateForUser,
+} from "@/lib/db/queries/applications";
 import { PortalNav } from "@/components/portal/portal-nav";
 import { PortalNavMobileHeader } from "@/components/portal/portal-nav-mobile-header";
 import { StepperDataProvider } from "@/components/portal/stepper-data-context";
@@ -72,6 +75,15 @@ export default async function PortalLayout({
     navState = nav;
   }
 
+  // The paused signal lives on the assessment, which the applicant CANNOT read
+  // under RLS (assessments_select is staff-only — "applicants must NOT see
+  // assessment data"). Read just the PAUSED bit under service-role context so
+  // the missing-documents CTA can surface without exposing assessment data.
+  // Separate hop from the user-context block above, by necessity.
+  const needsDocs = user
+    ? (await getApplicationPausedStateForUser(user.id)).isPaused
+    : false;
+
   const displayName = user
     ? `${user.firstName ?? ""} ${user.lastName ?? ""}`.trim() || user.email
     : "Applicant";
@@ -81,7 +93,6 @@ export default async function PortalLayout({
   // dead /submitted page). Pre-submit / no application → the wizard's first
   // section; the wizard's own redirect lands the user on the right section, so
   // we keep the layout read minimal and skip a second gap fetch here.
-  const needsDocs = navState?.isPaused ?? false;
   const applicationHref =
     navState?.formStatus === "SUBMITTED" ? "/status" : "/apply/child-details";
 

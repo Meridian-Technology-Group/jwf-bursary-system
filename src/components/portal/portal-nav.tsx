@@ -25,6 +25,7 @@ import {
   Upload,
   History,
   HelpCircle,
+  AlertCircle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { JwfLogo } from "@/components/brand/jwf-logo";
@@ -40,19 +41,43 @@ export interface PortalNavItem {
   /** Pathname to match for active state. */
   match: string;
   matchMode?: "exact" | "prefix";
-  /** Dot badge (e.g. paused → Documents). Wired in PR-9. */
-  badge?: boolean;
+  /**
+   * Colour-coded, attention-drawing item (the "Missing Documents" call to
+   * action). Only ever set on the conditional Missing Documents entry, which is
+   * present in the nav ONLY while a document request is outstanding.
+   */
+  highlight?: boolean;
 }
 
 /**
- * Constant nav membership. Documents is first-class from this PR (Decision 2) —
- * it points at `/documents` (an empty-state page until PR-8) and is never
- * hidden or disabled. `applicationHref` is the adaptive "My Application" target
- * (default `/apply/child-details`; made adaptive in PR-9, Decision 4).
+ * Constant nav membership. Documents is first-class (Decision 2) — it points at
+ * `/documents` and is never hidden or disabled. `applicationHref` is the
+ * adaptive "My Application" target (default `/apply/child-details`).
+ *
+ * When `needsDocs` is true (an assessor has paused the application pending
+ * documents) a dedicated, colour-coded "Missing Documents" item is surfaced near
+ * the top of the nav, linking to `/respond`. It appears ONLY while the request
+ * is outstanding — a normal login does not show it — so the parent's attention
+ * is directed exactly where it needs to be without cluttering the interface.
  */
-export function buildPortalNav(applicationHref: string): PortalNavItem[] {
+export function buildPortalNav(
+  applicationHref: string,
+  needsDocs = false
+): PortalNavItem[] {
   return [
     { label: "Home", href: "/", icon: Home, match: "/", matchMode: "exact" },
+    ...(needsDocs
+      ? [
+          {
+            label: "Missing Documents",
+            href: "/respond",
+            icon: AlertCircle,
+            match: "/respond",
+            matchMode: "prefix" as const,
+            highlight: true,
+          },
+        ]
+      : []),
     {
       label: "My Application",
       href: applicationHref,
@@ -101,19 +126,29 @@ function PortalNavLink({
   isActive: boolean;
 }) {
   const Icon = item.icon;
+  // The "Missing Documents" CTA is colour-coded (gold accent) to draw the
+  // parent's attention. It's a normal nav link, so we convey the urgency to
+  // assistive tech with an explicit aria-label rather than a role.
+  const highlight = item.highlight === true;
   return (
     <Link
       href={item.href}
+      aria-label={highlight ? `${item.label}: action needed` : undefined}
       className={cn(
         "group relative flex items-center gap-3 rounded-md px-3 py-2 text-sm transition-colors",
-        isActive
-          ? "bg-primary-50 text-primary-900 font-medium"
-          : "text-slate-600 hover:bg-slate-50 hover:text-primary-900"
+        highlight
+          ? isActive
+            ? "bg-accent-100 text-accent-900 font-medium"
+            : "bg-accent-50 text-accent-800 font-medium hover:bg-accent-100"
+          : isActive
+            ? "bg-primary-50 text-primary-900 font-medium"
+            : "text-slate-600 hover:bg-slate-50 hover:text-primary-900"
       )}
       aria-current={isActive ? "page" : undefined}
     >
-      {/* Active gold left-border accent (matches the admin nav pattern). */}
-      {isActive && (
+      {/* Gold left-border accent: always on for the highlighted CTA, otherwise
+          only when active (matches the admin nav pattern). */}
+      {(isActive || highlight) && (
         <span
           className="absolute inset-y-0 left-0 w-0.5 rounded-r bg-accent-600"
           aria-hidden="true"
@@ -122,22 +157,15 @@ function PortalNavLink({
       <Icon
         className={cn(
           "h-4 w-4 shrink-0",
-          isActive ? "text-primary-700" : "text-slate-400 group-hover:text-primary-700"
+          highlight
+            ? "text-accent-700"
+            : isActive
+              ? "text-primary-700"
+              : "text-slate-400 group-hover:text-primary-700"
         )}
         aria-hidden="true"
       />
       <span className="flex-1 truncate">{item.label}</span>
-      {/* Dot badge (PR-9) — e.g. paused → Documents. An accessible, labelled
-          status indicator (not a bare decorative dot): `role="status"` so screen
-          readers announce the outstanding request, with a self-describing label.
-          Gold accent to match the navy/gold design system. */}
-      {item.badge && (
-        <span
-          role="status"
-          aria-label={`${item.label}: action needed`}
-          className="h-2 w-2 shrink-0 rounded-full bg-accent-600"
-        />
-      )}
     </Link>
   );
 }
@@ -162,7 +190,7 @@ export function PortalNav({
   needsDocs = false,
 }: PortalNavProps) {
   const pathname = usePathname() ?? "/";
-  const items = buildPortalNav(applicationHref);
+  const items = buildPortalNav(applicationHref, needsDocs);
 
   return (
     <div className="flex h-full flex-col">
@@ -181,14 +209,10 @@ export function PortalNav({
       >
         <ul className="space-y-0.5" role="list">
           {items.map((item) => {
-            const withBadge =
-              item.label === "Documents"
-                ? { ...item, badge: needsDocs }
-                : item;
-            const active = isItemActive(pathname, withBadge);
+            const active = isItemActive(pathname, item);
             return (
               <li key={item.href}>
-                <PortalNavLink item={withBadge} isActive={active} />
+                <PortalNavLink item={item} isActive={active} />
                 {/* The stepper renders nested under "My Application". RailStepper
                     reads the shared store and is pathname-gated to /apply/*, so
                     it is null off the wizard and the wrapper collapses to empty

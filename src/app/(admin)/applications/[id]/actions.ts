@@ -29,6 +29,8 @@ import { humaniseSlot } from "@/lib/documents/slots";
 import { deleteDocument } from "@/lib/storage/documents";
 import { createSupabaseAdminClient } from "@/lib/auth/supabase-admin";
 import { setApplicationOutcomeLegacy } from "@/lib/applications/set-outcome-core";
+import { restartApplicationFromRejection } from "@/lib/applications/create-from-invitation";
+import { getAppUrl } from "@/lib/app-url";
 import { isPurgeable, notYetPurgeableMessage } from "@/lib/retention/policy";
 import {
   purgeApplication,
@@ -183,15 +185,42 @@ export async function updateApplicationStatus(
  *
  * @param applicationId       The application to pause.
  * @param missingDocumentSlots Array of slot names that are missing / unverified.
- * @param customMessage       Optional free-text appended to the email body.
+ * @param customMessage       Optional personal note from the assessor, shown
+ *                            in-portal AND injected into the MISSING_DOCS email.
+ * @param deadlineIso         Optional assessor-chosen deadline (ISO/date string
+ *                            from the dialog's date picker). When omitted the
+ *                            status service falls back to `defaultPausedUntil()`.
  */
 export async function pauseApplication(
   applicationId: string,
   missingDocumentSlots: string[],
-  customMessage?: string
+  customMessage?: string,
+  deadlineIso?: string
 ): Promise<ActionResult> {
   try {
     const user = await requireRole([Role.ADMIN, Role.ASSESSOR]);
+
+    // Parse the assessor-chosen deadline (if any) up-front. The picker sends a
+    // date-only "yyyy-mm-dd" string; build it as LOCAL midnight (not UTC, which
+    // `new Date("2026-06-16")` would give) so the past-date comparison and the
+    // emailed date render in the server's own day, free of timezone skew. Reject
+    // malformed or past dates so a stale picker value can't set a gone deadline.
+    let chosenDeadline: Date | undefined;
+    if (deadlineIso && deadlineIso.trim() !== "") {
+      const ymd = /^(\d{4})-(\d{2})-(\d{2})$/.exec(deadlineIso.trim());
+      const parsed = ymd
+        ? new Date(Number(ymd[1]), Number(ymd[2]) - 1, Number(ymd[3]))
+        : new Date(deadlineIso);
+      if (Number.isNaN(parsed.getTime())) {
+        return { success: false, error: "Invalid deadline date." };
+      }
+      const startOfToday = new Date();
+      startOfToday.setHours(0, 0, 0, 0);
+      if (parsed.getTime() < startOfToday.getTime()) {
+        return { success: false, error: "The deadline cannot be in the past." };
+      }
+      chosenDeadline = parsed;
+    }
 
     // First validate + persist + fetch application data (under RLS)
     const preEmail = await withUserContext(
@@ -212,13 +241,15 @@ export async function pauseApplication(
           };
         }
 
-        // Status service moves the assessment → PAUSED and PERSISTS the 14-day
-        // deadline on the assessment row (previously email-only). The returned
-        // deadline is the single source the email reads below.
+        // Status service moves the assessment → PAUSED and PERSISTS the deadline
+        // on the assessment row. Use the assessor-chosen deadline when supplied,
+        // otherwise the service default. The returned deadline is the single
+        // source the email reads below.
         const pausedUntil = await pauseReviewForDocs(
           tx,
           applicationId,
-          user.id
+          user.id,
+          chosenDeadline
         );
 
         return { success: true as const, application, phase, pausedUntil };
@@ -233,6 +264,13 @@ export async function pauseApplication(
       .map((s) => `• ${humaniseSlot(s)}`)
       .join("\n");
 
+    // The assessor's personal note leads the email body. When they leave it
+    // blank, fall back to a neutral sentence so the email still reads correctly
+    // (the {{custom_message}} placeholder sits at the top of the template).
+    const noteForEmail =
+      customMessage?.trim() ||
+      "Thank you for submitting your bursary application. Having completed an initial review, we find that some supporting documents are still required.";
+
     // Send MISSING_DOCS email — non-blocking; log failure but don't abort.
     // Reads the persisted `paused_until` deadline instead of recomputing it.
     const docDeadline = pausedUntil;
@@ -243,6 +281,7 @@ export async function pauseApplication(
         applicant_name:
           `${application.leadApplicant.firstName ?? ""} ${application.leadApplicant.lastName ?? ""}`.trim() ||
           "Applicant",
+        custom_message: noteForEmail,
         reference: application.reference,
         child_name: application.childName,
         missing_documents: slotList,
@@ -281,6 +320,188 @@ export async function pauseApplication(
   } catch (err) {
     console.error("[pauseApplication]", err);
     return { success: false, error: "Failed to pause application." };
+  }
+}
+
+// ─── rejectAndRestartApplication (Full Rejection) ────────────────────────────
+
+/**
+ * Full Rejection: the submitted application is invalid as a whole. The assessor
+ * voids it and the applicant is asked to start a brand-new application from
+ * scratch.
+ *
+ * Because of the `@@unique([roundId, leadApplicantId, childName, childDob])`
+ * constraint the rejected application cannot coexist with its replacement, so it
+ * is HARD-DELETED (its cascades clear sections, contributors, documents,
+ * assessment and invitations — this subsumes "clear all documents") and a fresh
+ * blank application is created in its place, reusing the freed `reference`.
+ * Storage objects are removed after the transaction commits (the DB cascade only
+ * drops the Document rows). An `APPLICATION_RESTART_REQUIRED` email points the
+ * applicant back into the portal, and the rejection is recorded in the
+ * append-only audit log (which survives the row delete).
+ *
+ * Allowed before a final outcome only (SUBMITTED / NOT_STARTED / PAUSED).
+ *
+ * @param applicationId The application being rejected.
+ * @param customMessage The assessor's note explaining what was wrong / what to
+ *                      address in the new submission (shown in the email).
+ */
+export async function rejectAndRestartApplication(
+  applicationId: string,
+  customMessage?: string
+): Promise<ActionResult> {
+  try {
+    const user = await requireRole([Role.ADMIN, Role.ASSESSOR]);
+
+    // Admin context: deleting the application + creating the replacement's
+    // PRIMARY contributor both need service_role (the application_contributors
+    // write policy is admin-only — mirrors startApplicationAction).
+    const result = await withAdminContext(async (tx) => {
+      const application = await tx.application.findUnique({
+        where: { id: applicationId },
+        select: {
+          id: true,
+          reference: true,
+          roundId: true,
+          leadApplicantId: true,
+          school: true,
+          childName: true,
+          childDob: true,
+          entryYear: true,
+          entryYearGroup: true,
+          contactId: true,
+          isReassessment: true,
+          applicationType: true,
+          bursaryAccountId: true,
+          custodyArrangement: true,
+          formStatus: true,
+          leadApplicant: {
+            select: { email: true, firstName: true, lastName: true },
+          },
+          assessment: { select: { status: true, outcome: true } },
+          documents: { select: { storagePath: true } },
+        },
+      });
+
+      if (!application) {
+        return { success: false as const, error: "Application not found." };
+      }
+
+      const phase = deriveReviewPhase({
+        formStatus: application.formStatus,
+        assessmentStatus: application.assessment?.status ?? null,
+        outcome: application.assessment?.outcome ?? null,
+      });
+
+      // Reject only before a final outcome. A decided/completed application must
+      // go through the outcome flow, not a restart.
+      if (
+        phase !== "SUBMITTED" &&
+        phase !== "NOT_STARTED" &&
+        phase !== "PAUSED"
+      ) {
+        return {
+          success: false as const,
+          error: `Cannot reject and restart an application from status ${phase}.`,
+        };
+      }
+
+      const storagePaths = application.documents.map((d) => d.storagePath);
+      const clearedDocumentCount = storagePaths.length;
+      const oldReference = application.reference;
+
+      // Void + recreate. Helper deletes the old row (cascade) and creates the
+      // fresh blank application reusing the reference.
+      const newApplicationId = await restartApplicationFromRejection(tx, {
+        id: application.id,
+        reference: application.reference,
+        roundId: application.roundId,
+        leadApplicantId: application.leadApplicantId,
+        school: application.school,
+        childName: application.childName,
+        childDob: application.childDob,
+        entryYear: application.entryYear,
+        entryYearGroup: application.entryYearGroup,
+        contactId: application.contactId,
+        isReassessment: application.isReassessment,
+        applicationType: application.applicationType,
+        bursaryAccountId: application.bursaryAccountId,
+        custodyArrangement: application.custodyArrangement,
+      });
+
+      // Audit on the OLD application id (entityId is a loose UUID — the row was
+      // just deleted, but the append-only audit trail persists).
+      await createAuditLog(tx, {
+        userId: user.id,
+        action: AUDIT_ACTIONS.APPLICATION_REJECTED_RESTART,
+        entityType: AUDIT_ENTITY_TYPES.Application,
+        entityId: applicationId,
+        context: `Application ${oldReference} rejected and restarted from scratch`,
+        metadata: {
+          fromStatus: phase,
+          reference: oldReference,
+          customMessage: customMessage?.trim() || null,
+          clearedDocumentCount,
+          newApplicationId,
+        },
+      });
+
+      return {
+        success: true as const,
+        newApplicationId,
+        reference: oldReference,
+        childName: application.childName,
+        leadApplicant: application.leadApplicant,
+        storagePaths,
+      };
+    });
+
+    if (!result.success) return result;
+
+    // Storage cleanup AFTER the DB transaction commits. Non-fatal — the Document
+    // rows are already gone via cascade; an orphaned object is logged, not fatal.
+    for (const path of result.storagePaths) {
+      try {
+        await deleteDocument(path);
+      } catch (err) {
+        console.warn(
+          `[rejectAndRestartApplication] storage cleanup failed for ${path}:`,
+          err
+        );
+      }
+    }
+
+    // Email the applicant — non-blocking. The note explains what was wrong; fall
+    // back to a neutral sentence when the assessor left it blank.
+    const noteForEmail =
+      customMessage?.trim() ||
+      "Having reviewed your application, we are unable to proceed with it as submitted.";
+    const emailResult = await sendEmail(
+      result.leadApplicant.email,
+      "APPLICATION_RESTART_REQUIRED",
+      {
+        applicant_name:
+          `${result.leadApplicant.firstName ?? ""} ${result.leadApplicant.lastName ?? ""}`.trim() ||
+          "Applicant",
+        child_name: result.childName,
+        reference: result.reference,
+        custom_message: noteForEmail,
+        restart_link: `${getAppUrl()}/apply/child-details`,
+      }
+    );
+    if (!emailResult.success) {
+      console.warn(
+        `[rejectAndRestartApplication] APPLICATION_RESTART_REQUIRED email failed for ${applicationId}: ${emailResult.error}`
+      );
+    }
+
+    revalidateApplicationPaths(applicationId);
+    revalidatePath(`/applications/${result.newApplicationId}`);
+
+    return { success: true };
+  } catch (err) {
+    console.error("[rejectAndRestartApplication]", err);
+    return { success: false, error: "Failed to reject and restart application." };
   }
 }
 

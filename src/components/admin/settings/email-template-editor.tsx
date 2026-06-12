@@ -51,6 +51,7 @@ const TEMPLATE_LABELS: Record<EmailTemplateType, string> = {
   SECONDARY_PARENT_INVITE: "Second Parent — Invitation",
   SECONDARY_PARENT_REMINDER: "Second Parent — Reminder",
   SECONDARY_PARENT_RECEIVED: "Second Parent — Information Received",
+  APPLICATION_RESTART_REQUIRED: "Application Rejected — Restart Required",
 };
 
 // ─── Merge field hints ────────────────────────────────────────────────────────
