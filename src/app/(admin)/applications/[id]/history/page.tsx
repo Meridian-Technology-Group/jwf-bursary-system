@@ -9,14 +9,15 @@
  *   - Context string
  *   - Metadata JSON (collapsed by default — future enhancement)
  *
- * Uses getAuditLogsForEntity from src/lib/db/queries/audit.ts.
+ * Uses getAuditLogsForApplicationHistory from src/lib/db/queries/audit.ts
+ * (Application-entity rows plus CR-001 edit-on-behalf section saves).
  */
 
 import { notFound } from "next/navigation";
 import { requireRole, Role } from "@/lib/auth/roles";
 import { withUserContext, type RlsRole } from "@/lib/db/prisma";
 import { getApplicationWithDetails } from "@/lib/db/queries/applications";
-import { getAuditLogsForEntity } from "@/lib/db/queries/audit";
+import { getAuditLogsForApplicationHistory } from "@/lib/db/queries/audit";
 import type { AuditLogWithUser } from "@/lib/db/queries/audit";
 import { ClockIcon, UserIcon } from "lucide-react";
 
@@ -191,7 +192,7 @@ export default async function HistoryPage({ params }: Props) {
     async (tx) => {
       const app = await getApplicationWithDetails(tx, params.id);
       if (!app) return { application: null, logs: [] };
-      const auditLogs = await getAuditLogsForEntity(tx, "Application", params.id);
+      const auditLogs = await getAuditLogsForApplicationHistory(tx, params.id);
       return { application: app, logs: auditLogs };
     }
   );
