@@ -6,7 +6,9 @@
  * Document slots are listed via DocumentChecklist.
  */
 
+import Link from "next/link";
 import { notFound } from "next/navigation";
+import { Pencil } from "lucide-react";
 import { requireRole, Role } from "@/lib/auth/roles";
 import { withUserContext, type RlsRole } from "@/lib/db/prisma";
 import {
@@ -15,6 +17,8 @@ import {
 } from "@/lib/db/queries/applications";
 import { getApplicationContributors } from "@/lib/db/queries/contributors";
 import { contributorRoleLabel, isParentOwnedSection } from "@/lib/contributors/dual-view";
+import { deriveReviewPhase } from "@/lib/applications/status";
+import { canEditOnBehalf } from "@/lib/applications/edit-on-behalf";
 import { getSiblingLinks } from "@/lib/db/queries/siblings";
 import { getScheduleForAccount, type ScheduleEntryRow } from "@/lib/db/queries/schedule";
 import { ScheduleGrid } from "@/components/admin/schedule-grid";
@@ -24,6 +28,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 import { DocumentChecklist } from "@/components/admin/document-checklist";
 import { AdminUpload } from "@/components/admin/admin-upload";
 import { SubmissionDeadlineCard } from "@/components/admin/submission-deadline-card";
@@ -238,6 +243,37 @@ export default async function ApplicantDataPage({ params }: Props) {
     { closeDate: application.round.closeDate }
   );
 
+  // ── Edit on behalf (CR-001) ─────────────────────────────────────────────────
+  // Entry point to amend the applicant's form data. Shown only while the review
+  // phase still permits editing (blocked once the assessment is COMPLETED or an
+  // outcome is set — see canEditOnBehalf) AND the viewer is an ADMIN or the
+  // assigned ASSESSOR. VIEWERs never see it.
+  const reviewPhase = deriveReviewPhase({
+    formStatus: application.formStatus,
+    assessmentStatus: application.assessment?.status ?? null,
+    outcome: application.assessment?.outcome ?? null,
+  });
+  const showEditOnBehalf =
+    canEditOnBehalf(reviewPhase) &&
+    (isAdmin ||
+      (user.role === Role.ASSESSOR && application.assignedToId === user.id));
+
+  const editOnBehalfButton = showEditOnBehalf ? (
+    <div className="flex justify-end">
+      <Button
+        asChild
+        variant="outline"
+        size="sm"
+        className="h-9 border-neutral-200 bg-white text-slate-600 hover:bg-neutral-50"
+      >
+        <Link href={`/applications/${application.id}/edit`}>
+          <Pencil className="h-4 w-4" aria-hidden="true" />
+          Edit on behalf
+        </Link>
+      </Button>
+    </div>
+  ) : null;
+
   // ── Dual-parent: separate sections by owning contributor ───────────────────
   // When a SECONDARY contributor exists, the parent-owned sections
   // (PARENT_DETAILS / PARENTS_INCOME / ASSETS_LIABILITIES) have a copy per
@@ -273,6 +309,8 @@ export default async function ApplicantDataPage({ params }: Props) {
   if (sections.length === 0) {
     return (
       <div className="space-y-5">
+        {editOnBehalfButton}
+
         <div className="rounded-xl border border-dashed border-slate-300 bg-white p-10 text-center">
           <p className="text-sm text-slate-400">
             No application sections have been submitted yet.
@@ -304,6 +342,8 @@ export default async function ApplicantDataPage({ params }: Props) {
 
   return (
     <div className="space-y-5">
+      {editOnBehalfButton}
+
       {/* Document checklist first */}
       <DocumentChecklist
         applicationId={application.id}
