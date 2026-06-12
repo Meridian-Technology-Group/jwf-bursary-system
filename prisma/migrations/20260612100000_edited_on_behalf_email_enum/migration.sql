@@ -1,0 +1,12 @@
+-- CR-001 Edit-on-Behalf.
+--
+-- Adds the APPLICATION_EDITED_ON_BEHALF email template type, sent once to the
+-- applicant when a member of the Bursary Office finishes an editing pass on
+-- their application form (D-CR1-1 decision (b)). Disabling the template in
+-- Settings is decision (a) — the kill-switch for the notification.
+--
+-- ADD VALUE is split from any DML that USES the new value (the template seed in
+-- 20260612100100_seed_edited_on_behalf_template) — Postgres requires a new enum
+-- value to be committed before it can be referenced in the same transaction.
+-- IF NOT EXISTS makes this safe to re-run.
+ALTER TYPE "EmailTemplateType" ADD VALUE IF NOT EXISTS 'APPLICATION_EDITED_ON_BEHALF';

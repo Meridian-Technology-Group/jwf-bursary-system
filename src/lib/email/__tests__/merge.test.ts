@@ -150,6 +150,14 @@ const callSiteData: Record<string, EmailMergeData> = {
       "The documents supplied were not valid; please upload current, legible copies.",
     restart_link: "https://app.example.com/apply/child-details",
   },
+  // src/app/(admin)/applications/[id]/edit/actions.ts — finishEditingOnBehalf
+  APPLICATION_EDITED_ON_BEHALF: {
+    applicant_name: "Alex Parent",
+    child_name: "Sam Parent",
+    reference: "TRI-2026-0001",
+    edited_sections: "• Parents' Income\n• Assets & Liabilities",
+    edited_date: "12/06/2026",
+  },
 };
 
 const UNRESOLVED_TOKEN = /\{\{[^}]+\}\}/;

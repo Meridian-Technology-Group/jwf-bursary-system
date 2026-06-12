@@ -16,7 +16,8 @@ export type EmailTemplateType =
   | "SECONDARY_PARENT_INVITE"
   | "SECONDARY_PARENT_REMINDER"
   | "SECONDARY_PARENT_RECEIVED"
-  | "APPLICATION_RESTART_REQUIRED";
+  | "APPLICATION_RESTART_REQUIRED"
+  | "APPLICATION_EDITED_ON_BEHALF";
 
 interface EmailTemplateData {
   type: EmailTemplateType;
@@ -439,6 +440,40 @@ A fresh application has been prepared for you. Please log in to your online appl
 {{restart_link}}
 
 When completing your new application, please take particular care to provide clear, current, and valid supporting documents. If you have any questions about what is required, or if you would like to discuss your application, please contact the Bursary Office — we are happy to help.
+
+We would like to remind you that all information provided is treated in strict confidence and used solely for the purpose of assessing your application for bursary support.
+
+Yours sincerely,
+
+The Bursary Office
+John Whitgift Foundation`,
+  },
+  {
+    // CR-001 edit-on-behalf — sent once when a member of the Bursary Office
+    // finishes an editing pass on an applicant's form, listing the sections
+    // that were entered or amended on their behalf.
+    // Kept in sync with migration
+    // 20260612100100_seed_edited_on_behalf_template.
+    type: "APPLICATION_EDITED_ON_BEHALF",
+    subject: "Your bursary application has been updated — {{child_name}}",
+    mergeFields: [
+      "applicant_name",
+      "child_name",
+      "reference",
+      "edited_sections",
+      "edited_date",
+    ],
+    body: `Dear {{applicant_name}},
+
+I am writing to let you know that a member of the Bursary Office team has updated the bursary application for {{child_name}} (reference: {{reference}}) on your behalf on {{edited_date}}.
+
+The following sections were entered or amended on your behalf:
+
+{{edited_sections}}
+
+You can review your submitted application in your online application portal at any time. The information shown there is read-only, so nothing further is required of you.
+
+If anything in the updated information looks incorrect, or if you have any questions about the changes, please contact the Bursary Office and we will be happy to help.
 
 We would like to remind you that all information provided is treated in strict confidence and used solely for the purpose of assessing your application for bursary support.
 
