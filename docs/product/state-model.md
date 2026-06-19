@@ -189,8 +189,9 @@ How the three tracks stay in step:
    in-place reset: the login is kept, all fields are cleared, and no submission
    date is carried over. *(GDPR: see §7.3.)*
 5. **Material change.** Assessment *In Progress* → **discarded** to *Not
-   Started*; application back to *In Progress*; **new submission date** on
-   re-submit; a **fresh** assessment runs.
+   Started*; application back to *In Progress*; the **original submission date
+   is preserved** (write-once) on re-submit; a **fresh** assessment runs.
+   *(Per D-G6/D3 — see §7.6.)*
 6. **Completion.** Assessment *Complete* → for a **new** application, a *School
    decision*; for a **rollover**, the account simply **stays Active**.
 7. **Award.** *Offered* → account *Active · rounds scheduled* + schedule
@@ -215,10 +216,10 @@ The subtle rules that are easy to get wrong. These are normative.
      assessment **preserved** and resumed; the submitted **data is not altered**.
      This is append-only — it preserves evidence and any dishonesty flags the
      assessor has noticed.
-   - **Data change** (*material change* → application *In Progress*): submission
-     date **reset** on re-submit; assessment **discarded** and re-run. **Any**
-     material change — accidental, a misunderstanding, or deliberate —
-     invalidates an in-flight assessment.
+   - **Data change** (*material change* → application *In Progress*): the
+     **original submission date is preserved** (write-once) on re-submit;
+     assessment **discarded** and re-run. **Any** material change — accidental,
+     a misunderstanding, or deliberate — invalidates an in-flight assessment.
 3. **Hard reject is void + recreate, not an in-place reset.** The prior
    application is **voided and a new one is recreated reusing the same
    application reference**: login / password are kept, all fields are cleared,
@@ -232,8 +233,11 @@ The subtle rules that are easy to get wrong. These are normative.
    *stays Active*). See §8.
 5. **Rollover never fails out.** A rollover assessment that does **not** qualify
    still reaches *Complete* and the account **stays Active**.
-6. **Submission date** shown is the **latest** Submit, **except** on the
-   documents-only path, where the **original** date is preserved (§7.2).
+6. **Submission date** is **write-once** (D-G6/D3): the **original** Submit
+   date is preserved across **both** correction paths — the documents-only
+   pause and the material-change re-submit — and is never re-stamped within an
+   application's lifecycle. (A rollover round is a *new* application with its
+   own submission date.)
 7. **Withdrawal** is account-level, available at any time, and requires **no
    documents**.
 8. **Data ownership.** The applicant is the owner of application data. Staff
@@ -387,6 +391,10 @@ reaches **Complete** (the required-fields/required-documents gate, §3):
     governed by the D6 tiered-retention policy (grace window + tiered retention
     years, `RETENTION_PURGE_ENABLED` report-only today). ⚠️ DPO **retention-year
     sign-off** still owed — **flagged for external sign-off**.
+  - **D-G6/D3 (§6.5/§7.2/§7.6)** — post-submission material change **keeps the
+    original submission date** (write-once), rather than re-stamping a new one.
+    The assessment is still discarded and re-run; only the date semantics were
+    aligned to the built behaviour (no `submitted_at` migration).
   - **§10** — confirmed the final eligible school year is **Year 13** (no change
     required).
   - **Submitted/Received labels** — confirmed correct as written; the code was
