@@ -37,12 +37,15 @@ interface PortalNavMobileHeaderProps {
   applicationHref?: string;
   /** Whether a paused document request exists (badges Documents). PR-9. */
   needsDocs?: boolean;
+  /** Whether the family has a portal-visible schedule (gap F2). */
+  hasSchedule?: boolean;
 }
 
 export function PortalNavMobileHeader({
   userName,
   applicationHref,
   needsDocs,
+  hasSchedule,
 }: PortalNavMobileHeaderProps) {
   const pathname = usePathname();
   const [navOpen, setNavOpen] = useState(false);
@@ -80,6 +83,7 @@ export function PortalNavMobileHeader({
               userName={userName}
               applicationHref={applicationHref}
               needsDocs={needsDocs}
+              hasSchedule={hasSchedule}
             />
           </div>
         </SheetContent>
