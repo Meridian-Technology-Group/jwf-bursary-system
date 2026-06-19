@@ -5,9 +5,9 @@ describe("projectFormStatusForApplicant — parent-safe label (Epic 01)", () => 
   it("never leaks internal assessment/outcome states — all post-submission collapses to one surface", () => {
     // SUBMITTED is the only post-submission form state; assessment/outcome are
     // separate columns the applicant never sees here.
-    expect(projectFormStatusForApplicant("SUBMITTED", "NEW")).toBe("Received");
+    expect(projectFormStatusForApplicant("SUBMITTED", "NEW")).toBe("Submitted");
     expect(projectFormStatusForApplicant("SUBMITTED", "ROLLING_OVER")).toBe(
-      "Submitted"
+      "Received"
     );
   });
 
@@ -24,10 +24,10 @@ describe("projectFormStatusForApplicant — parent-safe label (Epic 01)", () => 
     );
   });
 
-  it("derives the Received/Submitted label from application type (D2)", () => {
-    expect(projectFormStatusForApplicant("SUBMITTED", "NEW")).toBe("Received");
+  it("derives the Submitted/Received label from application type (signed diagram)", () => {
+    expect(projectFormStatusForApplicant("SUBMITTED", "NEW")).toBe("Submitted");
     expect(projectFormStatusForApplicant("SUBMITTED", "ROLLING_OVER")).toBe(
-      "Submitted"
+      "Received"
     );
   });
 });

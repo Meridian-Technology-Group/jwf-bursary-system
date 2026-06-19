@@ -4,7 +4,7 @@
  * Every status read goes through the parent-safe projection
  * (`projectParentStatus`) — NO internal workflow state (IN_PROGRESS, PAUSED,
  * raw outcome enum names) is ever shown to a parent. The timeline shows only
- * parent-meaningful steps: Application started → Received/Submitted → Being
+ * parent-meaningful steps: Application started → Submitted/Received → Being
  * assessed → Outcome.
  *
  * While the application is still an editable draft, the per-application

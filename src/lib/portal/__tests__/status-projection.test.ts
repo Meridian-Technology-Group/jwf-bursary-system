@@ -4,10 +4,10 @@ import {
   submittedLabel,
 } from "@/lib/portal/status-projection";
 
-describe("submittedLabel (D2)", () => {
-  it("reads Received for new, Submitted for rolling-over", () => {
-    expect(submittedLabel("NEW")).toBe("Received");
-    expect(submittedLabel("ROLLING_OVER")).toBe("Submitted");
+describe("submittedLabel (signed bursary-flow diagram)", () => {
+  it("reads Submitted for new, Received for rolling-over", () => {
+    expect(submittedLabel("NEW")).toBe("Submitted");
+    expect(submittedLabel("ROLLING_OVER")).toBe("Received");
   });
 });
 
