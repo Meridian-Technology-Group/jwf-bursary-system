@@ -31,7 +31,10 @@ import {
   pauseAssessment,
 } from "@/lib/db/queries/assessments";
 import type { AssessmentSaveInput } from "@/lib/db/queries/assessments";
-import { startAssessmentIfNotStarted } from "@/lib/applications/status";
+import {
+  startAssessmentIfNotStarted,
+  deriveReviewPhase,
+} from "@/lib/applications/status";
 import { getSecondaryContributor } from "@/lib/db/queries/contributors";
 import { createAuditLog } from "@/lib/audit/log";
 import { AUDIT_ACTIONS, AUDIT_ENTITY_TYPES } from "@/lib/audit/actions";
@@ -68,6 +71,49 @@ async function checkSecondParentGate(
   };
 }
 
+// ─── Submitted gate (B1) ────────────────────────────────────────────────────────
+
+/** User-facing message when assessment is attempted on a not-yet-submitted form. */
+export const NOT_SUBMITTED_GATE_MESSAGE =
+  "This application has not been submitted yet — an assessment can only be " +
+  "started once the applicant has submitted their form.";
+
+/**
+ * "Form submitted" gate (B1). An assessment row must never be created for an
+ * application whose form is still a draft. Loads the application's lifecycle
+ * facts and funnels them through `deriveReviewPhase` (the single source of
+ * truth) rather than comparing `formStatus` strings by hand: a PRE_SUBMISSION
+ * review phase means the form has not been submitted, so begin is blocked.
+ *
+ * MUST be called inside an RLS context that can read the application row.
+ * Reuses the assessment row's status/outcome when one already exists so the
+ * derivation matches the application-detail review track exactly.
+ */
+async function checkSubmittedGate(
+  tx: Tx,
+  applicationId: string
+): Promise<{ ok: true } | { ok: false; reason: string }> {
+  const app = await tx.application.findUnique({
+    where: { id: applicationId },
+    select: {
+      formStatus: true,
+      assessment: { select: { status: true, outcome: true } },
+    },
+  });
+  if (!app) {
+    return { ok: false, reason: "Application not found." };
+  }
+  const phase = deriveReviewPhase({
+    formStatus: app.formStatus,
+    assessmentStatus: app.assessment?.status ?? null,
+    outcome: app.assessment?.outcome ?? null,
+  });
+  if (phase === "PRE_SUBMISSION") {
+    return { ok: false, reason: NOT_SUBMITTED_GATE_MESSAGE };
+  }
+  return { ok: true };
+}
+
 // ─── Begin Assessment ─────────────────────────────────────────────────────────
 
 export async function beginAssessmentAction(
@@ -81,6 +127,12 @@ export async function beginAssessmentAction(
       user.id,
       user.role as RlsRole,
       async (tx) => {
+        // Submitted gate (B1): never create an assessment row for a draft
+        // application — block when the form has not been submitted yet.
+        const submitted = await checkSubmittedGate(tx, applicationId);
+        if (!submitted.ok)
+          return { ok: false as const, blocked: submitted.reason };
+
         // Completeness gate: block begin when a second parent was invited but
         // has not submitted and no override is in effect (no assessment row
         // exists yet here, so there can be no prior override).
@@ -149,6 +201,13 @@ export async function proceedWithoutSecondParentAction(
       user.id,
       user.role as RlsRole,
       async (tx) => {
+        // Submitted gate (B1): never create an assessment row for a draft
+        // application — block when the form has not been submitted yet.
+        const submitted = await checkSubmittedGate(tx, applicationId);
+        if (!submitted.ok) {
+          return { ok: false as const, error: submitted.reason };
+        }
+
         // Guard: only meaningful when a secondary exists and has not submitted.
         const secondary = await getSecondaryContributor(tx, applicationId);
         if (!secondary) {

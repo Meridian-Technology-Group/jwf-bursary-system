@@ -14,7 +14,7 @@
  * server/client boundary).
  */
 
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import type { Decimal } from "@prisma/client/runtime/library";
 import { requireRole, Role, type CurrentUser } from "@/lib/auth/roles";
 import {
@@ -36,6 +36,7 @@ import { AssessmentForm, type SerialisedAssessment } from "@/components/admin/as
 import { AssessmentSynopsis } from "@/components/admin/assessment-synopsis";
 import { HouseholdDecisionAid } from "@/components/admin/household-decision-aid";
 import { deriveHouseholdFromSources, type HouseholdSources } from "@/lib/household/from-sections";
+import { deriveReviewPhase } from "@/lib/applications/status";
 import { BeginAssessmentButton } from "@/components/admin/begin-assessment-button";
 import { SecondParentGate } from "@/components/admin/second-parent-gate";
 import { DocumentListClient } from "@/components/admin/document-list-client";
@@ -172,6 +173,21 @@ export default async function AssessmentPage({ params }: Props) {
       }
     );
   if (!application) notFound();
+
+  // B1 — assessment-begin gate. A draft (not-yet-submitted) application reached
+  // via the direct workspace URL must NOT render the begin/assessment workspace.
+  // Funnel the lifecycle facts through `deriveReviewPhase` (the single source of
+  // truth, also used by the server actions) rather than comparing formStatus by
+  // hand: a PRE_SUBMISSION phase means the form has not been submitted, so send
+  // the assessor back to the application detail page.
+  const reviewPhase = deriveReviewPhase({
+    formStatus: application.formStatus,
+    assessmentStatus: assessment?.status ?? null,
+    outcome: assessment?.outcome ?? null,
+  });
+  if (reviewPhase === "PRE_SUBMISSION") {
+    redirect(`/applications/${params.id}`);
+  }
 
   // Derive the household scenario + handling (Epic 09) for the decision aid.
   const householdHandling = householdSources
