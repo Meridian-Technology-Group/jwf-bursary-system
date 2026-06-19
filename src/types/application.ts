@@ -230,7 +230,7 @@ export interface OtherInfoData {
 
 /** Employed (PAYE) — annual salary as on P60; P60 or March payslip required. */
 export interface EmployedIncome {
-  /** Gross earned income / annual salary (PAYE, as on P60). */
+  /** Annual salary (PAYE, as on P60). */
   annualSalaryPaye: number;
   /** P60 document slot (dated April YYYY). */
   p60DocumentId?: string;
