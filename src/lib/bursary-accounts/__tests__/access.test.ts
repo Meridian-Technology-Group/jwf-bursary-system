@@ -57,6 +57,15 @@ describe("hasPortalAccess (D18)", () => {
     ).toBe(false);
   });
 
+  it("F1 manual withdrawal: a CLOSED-only account with no in-flight application revokes access", () => {
+    // Setting the account CLOSED (withdrawBursaryAccount) is sufficient to
+    // revoke portal access — there is no other account and no application
+    // still being assessed.
+    expect(
+      hasPortalAccess({ accountStatuses: ["CLOSED"], applicationOutcomes: [] })
+    ).toBe(false);
+  });
+
   it("re-award restores access (CLOSED → ACTIVE)", () => {
     const beforeReaward = hasPortalAccess({
       accountStatuses: ["CLOSED"],
