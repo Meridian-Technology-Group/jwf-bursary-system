@@ -39,6 +39,36 @@ export async function getAuditLogsForEntity(
 }
 
 /**
+ * Returns the full audit history for an application detail page: rows logged
+ * against the Application entity itself, plus CR-001 edit-on-behalf section
+ * saves — those are logged against the ApplicationSection entity (entityId =
+ * section row id) and carry the application id in their metadata, so an
+ * entityId match alone would never surface them.
+ */
+export async function getAuditLogsForApplicationHistory(
+  tx: Tx,
+  applicationId: string
+): Promise<AuditLogWithUser[]> {
+  return tx.auditLog.findMany({
+    where: {
+      OR: [
+        { entityType: "Application", entityId: applicationId },
+        {
+          entityType: "ApplicationSection",
+          metadata: { path: ["applicationId"], equals: applicationId },
+        },
+      ],
+    },
+    include: {
+      user: {
+        select: { id: true, firstName: true, lastName: true, email: true },
+      },
+    },
+    orderBy: { createdAt: "asc" },
+  });
+}
+
+/**
  * Returns the most recent audit log entries across all entities.
  */
 export async function getRecentAuditLogs(

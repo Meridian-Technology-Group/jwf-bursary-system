@@ -260,9 +260,11 @@ export async function submitContribution(): Promise<never> {
   // getSectionGapStatuses returns ALL section types; we only care about the
   // three the secondary owns. Their gap evaluation reads only the secondary's
   // owned section rows + their own uploaded documents (owner-scoped, PR 4b).
-  const gapStatuses = await getSectionGapStatuses(
-    ctx.applicationId,
-    ctx.contributorId
+  // Runs under the secondary's RLS context — these reads hit RLS-protected
+  // tables; off the global client they return zero rows, which would silently
+  // pass this gate even with missing required documents.
+  const gapStatuses = await withUserContext(user.id, user.role as RlsRole, (tx) =>
+    getSectionGapStatuses(tx, ctx.applicationId, ctx.contributorId)
   );
   const errorGaps: SectionGap[] = gapStatuses
     .filter((gs) => SECONDARY_SECTIONS.includes(gs.sectionType))

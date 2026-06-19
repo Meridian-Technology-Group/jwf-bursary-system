@@ -6,6 +6,10 @@
 
 import type { Tx } from "@/lib/db/prisma";
 import type { School, EmailTemplateType } from "@prisma/client";
+import {
+  resolveFeeYearPair,
+  parseAcademicYearStart,
+} from "@/lib/assessment/fee-year";
 
 // ─── Family Type Configs ──────────────────────────────────────────────────────
 
@@ -24,9 +28,16 @@ export interface FamilyTypeConfigRow {
  * Ordered by category ascending.
  */
 export async function getFamilyTypeConfigs(tx: Tx): Promise<FamilyTypeConfigRow[]> {
-  // Fetch all configs ordered by category + effectiveFrom desc, then deduplicate
+  // Fetch all configs ordered by category + effectiveFrom desc, then deduplicate.
+  // The createdAt desc tie-break makes same-day edits deterministic: when two
+  // rows share an effectiveFrom date, the most recently inserted row wins, so a
+  // same-day edit surfaces instead of a stale version (defect plan §2.2).
   const rows = await tx.familyTypeConfig.findMany({
-    orderBy: [{ category: "asc" }, { effectiveFrom: "desc" }],
+    orderBy: [
+      { category: "asc" },
+      { effectiveFrom: "desc" },
+      { createdAt: "desc" },
+    ],
   });
 
   // Keep only the most recent per category
@@ -63,8 +74,13 @@ export interface SchoolFeesRow {
  * Returns the most recent SchoolFees per school.
  */
 export async function getSchoolFees(tx: Tx): Promise<SchoolFeesRow[]> {
+  // createdAt desc tie-break: same-day edits are deterministic — see §2.2.
   const rows = await tx.schoolFees.findMany({
-    orderBy: [{ school: "asc" }, { effectiveFrom: "desc" }],
+    orderBy: [
+      { school: "asc" },
+      { effectiveFrom: "desc" },
+      { createdAt: "desc" },
+    ],
   });
 
   const seen = new Set<School>();
@@ -84,6 +100,47 @@ export async function getSchoolFees(tx: Tx): Promise<SchoolFeesRow[]> {
   return result;
 }
 
+/**
+ * Epic 07 — resolves the current-year AND next-year annual fee for one school,
+ * given the assessed academic year (e.g. "2025-26").
+ *
+ * Unlike `getSchoolFees` (which keeps the single most-recent row per school with
+ * no year dimension), this resolves the row effective FOR the assessed academic
+ * year and the row for the FOLLOWING year, using `resolveFeeYearPair`. Ordering
+ * is deterministic (`effectiveFrom desc, createdAt desc`) — the same tie-break
+ * the settings read path uses (defect [12]); same-day fee edits resolve to the
+ * most recently inserted row.
+ *
+ * If the academic year cannot be parsed, both figures fall back to the single
+ * most-recent row (current behaviour) so nothing regresses. If no forward-dated
+ * row exists, `nextYearAnnualFees` is `null` and the UI labels it "not yet set".
+ */
+export async function getSchoolFeesForYear(
+  tx: Tx,
+  school: School,
+  academicYear: string | null | undefined
+): Promise<{ currentYearAnnualFees: number | null; nextYearAnnualFees: number | null }> {
+  const rows = await tx.schoolFees.findMany({
+    where: { school },
+    orderBy: [{ effectiveFrom: "desc" }, { createdAt: "desc" }],
+  });
+
+  const versioned = rows.map((r) => ({
+    annualFees: Number(r.annualFees),
+    effectiveFrom: r.effectiveFrom,
+    createdAt: r.createdAt,
+  }));
+
+  const startYear = parseAcademicYearStart(academicYear);
+  if (startYear === null) {
+    // No parseable year — fall back to the single most-recent row for both.
+    const latest = versioned[0]?.annualFees ?? null;
+    return { currentYearAnnualFees: latest, nextYearAnnualFees: null };
+  }
+
+  return resolveFeeYearPair(versioned, startYear);
+}
+
 // ─── Council Tax Default ──────────────────────────────────────────────────────
 
 export interface CouncilTaxDefaultRow {
@@ -97,8 +154,9 @@ export interface CouncilTaxDefaultRow {
  * Returns the most recent CouncilTaxDefault record.
  */
 export async function getCouncilTaxDefault(tx: Tx): Promise<CouncilTaxDefaultRow | null> {
+  // createdAt desc tie-break: same-day edits are deterministic — see §2.2.
   const row = await tx.councilTaxDefault.findFirst({
-    orderBy: { effectiveFrom: "desc" },
+    orderBy: [{ effectiveFrom: "desc" }, { createdAt: "desc" }],
   });
 
   if (!row) return null;
@@ -114,7 +172,18 @@ export async function getCouncilTaxDefault(tx: Tx): Promise<CouncilTaxDefaultRow
 // ─── Combined Config for Assessment ──────────────────────────────────────────
 
 export interface AssessmentReferenceConfigs {
+  /**
+   * Current-year annual fee for the school. Back-compat name retained — this is
+   * the fee in force for the assessed academic year (Epic 07). Falls back to the
+   * single most-recent row when no academic year is supplied.
+   */
   annualFees: number;
+  /**
+   * Epic 07 — next-year annual fee (the fee-uplift the family will pay across the
+   * year that spans the boundary). `null` when no forward-dated row exists yet,
+   * or when no academic year was supplied; the UI labels it "not yet set".
+   */
+  nextYearAnnualFees: number | null;
   notionalRent: number;
   utilityCosts: number;
   foodCosts: number;
@@ -127,25 +196,38 @@ export interface AssessmentReferenceConfigs {
  * Returns all reference configs needed for an assessment form.
  * Populates annualFees for the given school, and notionalRent/utilities/food
  * for the given family type category (or the first category if not specified).
+ *
+ * Epic 07: when `academicYear` is supplied (from `Round.academicYear`, D5), the
+ * fee is resolved per fee-year — `annualFees` is the current-year figure and
+ * `nextYearAnnualFees` the following year's. When omitted, `annualFees` is the
+ * single most-recent row (current behaviour) and `nextYearAnnualFees` is `null`.
  */
 export async function getConfigsForAssessment(
   tx: Tx,
   school: School,
-  familyTypeCategory?: number
+  familyTypeCategory?: number,
+  academicYear?: string | null
 ): Promise<AssessmentReferenceConfigs> {
-  const [familyTypeConfigs, schoolFees, councilTaxDefault] = await Promise.all([
-    getFamilyTypeConfigs(tx),
-    getSchoolFees(tx),
-    getCouncilTaxDefault(tx),
-  ]);
+  const [familyTypeConfigs, schoolFees, councilTaxDefault, feeYearPair] =
+    await Promise.all([
+      getFamilyTypeConfigs(tx),
+      getSchoolFees(tx),
+      getCouncilTaxDefault(tx),
+      getSchoolFeesForYear(tx, school, academicYear),
+    ]);
 
-  // Build school fees map
+  // Build school fees map (single most-recent per school — used elsewhere)
   const schoolFeesMap: Record<string, number> = {};
   for (const sf of schoolFees) {
     schoolFeesMap[sf.school] = sf.annualFees;
   }
 
-  const annualFees = schoolFeesMap[school] ?? 0;
+  // Current-year fee: prefer the year-resolved figure; fall back to the legacy
+  // single-most-recent row so the form is never left with £0 when a year is
+  // supplied but the school's schedule predates it / can't be parsed.
+  const annualFees =
+    feeYearPair.currentYearAnnualFees ?? schoolFeesMap[school] ?? 0;
+  const nextYearAnnualFees = feeYearPair.nextYearAnnualFees;
   const councilTax = councilTaxDefault?.amount ?? 2480;
 
   // Find the matching family type config (default to category 1)
@@ -155,6 +237,7 @@ export async function getConfigsForAssessment(
 
   return {
     annualFees,
+    nextYearAnnualFees,
     notionalRent: familyConfig?.notionalRent ?? 0,
     utilityCosts: familyConfig?.utilityCosts ?? 0,
     foodCosts: familyConfig?.foodCosts ?? 0,
@@ -171,8 +254,13 @@ export async function getConfigsForAssessment(
  * Ordered by category asc, effectiveFrom desc so newest per category comes first.
  */
 export async function getAllFamilyTypeConfigs(tx: Tx): Promise<FamilyTypeConfigRow[]> {
+  // createdAt desc tie-break keeps newest-per-category first on same-day edits.
   const rows = await tx.familyTypeConfig.findMany({
-    orderBy: [{ category: "asc" }, { effectiveFrom: "desc" }],
+    orderBy: [
+      { category: "asc" },
+      { effectiveFrom: "desc" },
+      { createdAt: "desc" },
+    ],
   });
 
   return rows.map((row) => ({
@@ -191,8 +279,13 @@ export async function getAllFamilyTypeConfigs(tx: Tx): Promise<FamilyTypeConfigR
  * Ordered by school asc, effectiveFrom desc.
  */
 export async function getAllSchoolFees(tx: Tx): Promise<SchoolFeesRow[]> {
+  // createdAt desc tie-break keeps newest-per-school first on same-day edits.
   const rows = await tx.schoolFees.findMany({
-    orderBy: [{ school: "asc" }, { effectiveFrom: "desc" }],
+    orderBy: [
+      { school: "asc" },
+      { effectiveFrom: "desc" },
+      { createdAt: "desc" },
+    ],
   });
 
   return rows.map((row) => ({

@@ -12,7 +12,7 @@ related:
   - src/components/portal/portal-sidebar-sections.ts
   - src/app/(contribute)/contribute/*
   - "#109 (PR 4b — restricted secondary-parent portal)"
-  - docs/engineering/dual-parent-implementation-plan.md
+  - docs/archive/engineering/dual-parent-implementation-plan.md
 ---
 
 ## Resolution (2026-05-25, #118)

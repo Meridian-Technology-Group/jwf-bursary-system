@@ -1,9 +1,9 @@
 /**
  * POST /api/admin/documents
  *
- * Assessor-side document upload endpoint. Allows ASSESSOR role users to upload
- * documents on behalf of applicants, bypassing the lead-applicant ownership
- * check that applies to the public /api/documents route.
+ * Staff-side document upload endpoint. Allows ADMIN and ASSESSOR role users to
+ * upload documents on behalf of applicants, bypassing the lead-applicant
+ * ownership check that applies to the public /api/documents route.
  *
  * Accepts multipart/form-data with:
  *   - file          (File)   — PDF, JPEG, or PNG, max 20 MB
@@ -27,14 +27,14 @@ const ACCEPTED_MIME = ["application/pdf", "image/jpeg", "image/png"];
 const MAX_SIZE_BYTES = 20 * 1024 * 1024; // 20 MB
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
-  // ── Auth: ASSESSOR only ──────────────────────────────────────────────────────
+  // ── Auth: staff (ADMIN or ASSESSOR) only ─────────────────────────────────────
   const user = await getCurrentUser();
   if (!user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
-  if (user.role !== Role.ASSESSOR) {
+  if (user.role !== Role.ADMIN && user.role !== Role.ASSESSOR) {
     return NextResponse.json(
-      { error: "Forbidden — ASSESSOR role required" },
+      { error: "Forbidden — staff role required" },
       { status: 403 }
     );
   }
@@ -116,7 +116,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     );
   }
 
-  // ── Assessor-on-application ownership check (finding 2.12) ────────────────
+  // ── Application access check (finding 2.12): ADMIN passes trivially,
+  //    ASSESSOR must be assigned to the application. Redirects on failure. ───
   await requireApplicationAccess(user, applicationId);
 
   // ── Upload to Supabase Storage ─────────────────────────────────────────────
@@ -169,7 +170,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
           action: AUDIT_ACTIONS.DOCUMENT_UPLOADED_BY_ASSESSOR,
           entityType: AUDIT_ENTITY_TYPES.Document,
           entityId: doc.id,
-          context: `Assessor uploaded document for slot: ${slot}`,
+          context: `Staff uploaded document on the applicant's behalf for slot: ${slot}`,
           metadata: {
             applicationId,
             reference: application.reference,

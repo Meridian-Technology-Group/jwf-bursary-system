@@ -7,7 +7,6 @@
 
 import type { Tx } from "@/lib/db/prisma";
 import {
-  ApplicationStatus,
   AssessmentStatus,
   BursaryAccountStatus,
   RoundStatus,
@@ -18,8 +17,8 @@ import { deriveCurrentYearGroupNumber } from "@/lib/assessment/schooling-years";
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 export interface DashboardCounts {
-  awaitingAssessment: number; // SUBMITTED + NOT_STARTED
-  inProgress: number;         // PAUSED
+  awaitingAssessment: number; // submitted form, assessment not yet started
+  inProgress: number;         // assessment IN_PROGRESS or PAUSED
   awaitingRecommendation: number; // assessment COMPLETED but no recommendation
   qualifies: number;
   doesNotQualify: number;
@@ -116,8 +115,16 @@ export interface SiblingSummaryRow {
 const FINAL_SCHOOL_YEAR = 13;
 
 /**
- * Returns the active round (most recent OPEN), falling back to the most
- * recent round of any status. Returns null when no rounds exist.
+ * Returns the DEFAULT active round — the most-recent OPEN, falling back to the
+ * most-recent round of any status. Returns null when no rounds exist.
+ *
+ * Epic 03 (concurrent rounds): more than one round may now be OPEN at once. This
+ * helper deliberately returns just ONE round and is the right choice only where
+ * a sensible *default* round is needed (e.g. pre-selecting a selector). It is
+ * NOT "the open round" — callers that must act on a specific round (bulk
+ * re-assessment) take an explicit roundId, and callers that must show all live
+ * rounds (invite picker) use {@link listOpenRounds}. Do not reintroduce a
+ * single-OPEN assumption on top of this.
  */
 export async function getActiveRound(tx: Tx) {
   const openRound = await tx.round.findFirst({
@@ -129,6 +136,20 @@ export async function getActiveRound(tx: Tx) {
   if (openRound) return openRound;
 
   return tx.round.findFirst({
+    orderBy: { openDate: "desc" },
+    select: { id: true, academicYear: true, closeDate: true, status: true },
+  });
+}
+
+/**
+ * Returns ALL currently-OPEN rounds, most recent first. Epic 03: with the
+ * single-OPEN guard lifted, several rounds can be live at once; the invite
+ * picker and the concurrent-round selectors enumerate them through this helper
+ * rather than assuming a single "the open round". Empty when none are OPEN.
+ */
+export async function listOpenRounds(tx: Tx) {
+  return tx.round.findMany({
+    where: { status: RoundStatus.OPEN },
     orderBy: { openDate: "desc" },
     select: { id: true, academicYear: true, closeDate: true, status: true },
   });
@@ -149,16 +170,18 @@ export async function getDashboardCounts(
     select: { id: true, academicYear: true, closeDate: true, status: true },
   });
 
-  // Fetch all application statuses for the round in one query
+  // Fetch all application lifecycle statuses for the round in one query
+  // (PR-6a: lifecycle columns, not the deprecated fused applications.status).
   const applications = await tx.application.findMany({
     where: { roundId },
     select: {
       id: true,
-      status: true,
+      formStatus: true,
       assessment: {
         select: {
           id: true,
           status: true,
+          outcome: true,
           recommendation: { select: { id: true } },
         },
       },
@@ -172,23 +195,32 @@ export async function getDashboardCounts(
   let doesNotQualify = 0;
 
   for (const app of applications) {
+    // "In progress" reads the REAL assessment lifecycle (Epic 01): an assessment
+    // that is actively being worked (IN_PROGRESS) OR paused for documents
+    // (PAUSED). Previously this bucket was PAUSED-only and a genuinely
+    // in-progress assessment was mis-bucketed as "awaiting" — see plan 01.
+    const asmtStatus = app.assessment?.status ?? null;
+    const outcome = app.assessment?.outcome ?? null;
+
     if (
-      app.status === ApplicationStatus.SUBMITTED ||
-      app.status === ApplicationStatus.NOT_STARTED
+      asmtStatus === AssessmentStatus.IN_PROGRESS ||
+      asmtStatus === AssessmentStatus.PAUSED
     ) {
-      awaitingAssessment++;
-    } else if (app.status === ApplicationStatus.PAUSED) {
       inProgress++;
-    } else if (app.status === ApplicationStatus.QUALIFIES) {
+    } else if (outcome === "AWARDED" || outcome === "QUALIFIES_NOT_AWARDED") {
       qualifies++;
-    } else if (app.status === ApplicationStatus.DOES_NOT_QUALIFY) {
+    } else if (outcome === "DOES_NOT_QUALIFY") {
       doesNotQualify++;
+    } else if (app.formStatus === "SUBMITTED") {
+      // Form submitted, review not yet meaningfully started (no assessment, or
+      // a freshly-created NOT_STARTED assessment) and not yet decided.
+      awaitingAssessment++;
     }
 
     // Awaiting recommendation: assessment COMPLETED but no recommendation row
     if (
-      app.assessment?.status === AssessmentStatus.COMPLETED &&
-      !app.assessment.recommendation
+      asmtStatus === AssessmentStatus.COMPLETED &&
+      !app.assessment?.recommendation
     ) {
       awaitingRecommendation++;
     }

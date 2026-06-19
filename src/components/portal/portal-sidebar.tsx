@@ -92,6 +92,13 @@ interface PortalSidebarContentProps {
    * the count reads "N of 3" over the real sections only.
    */
   countSynthetic?: boolean;
+  /**
+   * Chrome variant. `"full"` (default) renders the JWF logo header — used by the
+   * standalone stepper shells (`/contribute` desktop sidebar + mobile sheet).
+   * `"bare"` drops the logo header — used by the unified rail's `RailStepper`,
+   * where `PortalNav` already owns the logo, so a second one would duplicate it.
+   */
+  chrome?: "full" | "bare";
 }
 
 export function PortalSidebarContent({
@@ -100,6 +107,7 @@ export function PortalSidebarContent({
   sections,
   basePath = "/apply",
   countSynthetic = true,
+  chrome = "full",
 }: PortalSidebarContentProps) {
   const pathname = usePathname();
   const sectionList = sections ?? DEFAULT_SIDEBAR_SECTIONS;
@@ -138,14 +146,24 @@ export function PortalSidebarContent({
   ).length;
 
   return (
-    <div className="flex h-full flex-col overflow-hidden">
-      {/* Foundation logo / wordmark */}
-      <div className="flex flex-col items-center gap-2 border-b border-slate-200 px-6 py-7">
-        <JwfLogo className="h-20" />
-        <span className="text-[11px] font-medium uppercase tracking-[0.22em] text-slate-500">
-          Bursary Assessment
-        </span>
-      </div>
+    <div
+      className={cn(
+        "flex flex-col",
+        // The standalone shells own the full-height rail; the bare (rail-nested)
+        // variant flows inside PortalNav's own scroll container instead.
+        chrome === "full" && "h-full overflow-hidden"
+      )}
+    >
+      {/* Foundation logo / wordmark — suppressed in the unified rail, where
+          PortalNav already renders the logo (chrome="bare"). */}
+      {chrome === "full" ? (
+        <div className="flex flex-col items-center gap-2 border-b border-slate-200 px-6 py-7">
+          <JwfLogo className="h-20" />
+          <span className="text-[11px] font-medium uppercase tracking-[0.22em] text-slate-500">
+            Bursary Assessment
+          </span>
+        </div>
+      ) : null}
 
       {/* Round name — hidden when the user has no invitation/application yet */}
       {roundName ? (

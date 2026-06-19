@@ -17,7 +17,11 @@ import { upsertRecommendation } from "@/lib/db/queries/recommendations";
 import type { UpsertRecommendationInput } from "@/lib/db/queries/recommendations";
 import { createAuditLog } from "@/lib/audit/log";
 import { AUDIT_ACTIONS, AUDIT_ENTITY_TYPES } from "@/lib/audit/actions";
-import { setApplicationOutcome } from "@/lib/applications/set-outcome-core";
+import {
+  setApplicationOutcome,
+  type AwardDecision,
+} from "@/lib/applications/set-outcome-core";
+import type { AwardFigures } from "@/lib/applications/account-promotion";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -104,20 +108,19 @@ export async function saveRecommendationAction(
 // ─── Set Application Outcome ──────────────────────────────────────────────────
 
 /**
- * Sets the application status to QUALIFIES or DOES_NOT_QUALIFY.
- * Sends the appropriate outcome email to the lead applicant.
- *
- * Thin wrapper around the shared core in
- * `@/lib/applications/set-outcome-core` (backlog #11) — see that module for
- * the transition validation, idempotent BursaryAccount creation, email and
- * canonical audit write. This entry point revalidates the recommendation and
+ * Records the 3-value award decision (Epic 08): AWARDED, QUALIFIES_NOT_AWARDED,
+ * or DOES_NOT_QUALIFY (Decline). Sends the matching outcome email and, on
+ * AWARDED, promotes to the rolling ACTIVE bursary account (idempotent) and
+ * records the scholarship award (£). Thin wrapper around the shared core in
+ * `@/lib/applications/set-outcome-core`. Revalidates the recommendation +
  * application-detail paths.
  */
-export async function setApplicationOutcomeAction(
+export async function setApplicationAwardAction(
   applicationId: string,
-  outcome: "QUALIFIES" | "DOES_NOT_QUALIFY"
+  outcome: AwardDecision,
+  awards?: AwardFigures
 ): Promise<{ success: true } | { success: false; error: string }> {
-  const result = await setApplicationOutcome(applicationId, outcome);
+  const result = await setApplicationOutcome(applicationId, outcome, awards);
   if (result.success) {
     revalidatePath(`/applications/${applicationId}/recommendation`);
     revalidatePath(`/applications/${applicationId}`);

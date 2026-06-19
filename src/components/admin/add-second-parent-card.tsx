@@ -39,12 +39,6 @@ import {
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
 import { addSecondParentAction } from "@/app/(admin)/invitations/actions";
 import type { ApplicationContributorStatus } from "@prisma/client";
 
@@ -202,28 +196,23 @@ export function AddSecondParentCard({
       : STATUS_CLASSES[secondary.status];
 
     return (
-      <Card className="mb-6">
-        <CardHeader className="pb-3">
-          <CardTitle className="text-sm font-semibold text-slate-700">
-            Second Parent
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="flex flex-wrap items-center justify-between gap-3">
-          <div className="text-sm text-slate-600">
-            <span className="font-medium text-slate-800">
-              {contributorName(secondary)}
-            </span>
-            {secondary.email && contributorName(secondary) !== secondary.email && (
-              <span className="ml-1 text-slate-400">({secondary.email})</span>
-            )}
-          </div>
-          <span
-            className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium ${statusClass}`}
-          >
-            {statusLabel}
-          </span>
-        </CardContent>
-      </Card>
+      <div className="flex flex-wrap items-center justify-between gap-3 px-6 py-4">
+        <div className="text-sm">
+          <p className="font-medium text-slate-800">Second parent</p>
+          <p className="text-slate-500">
+            <span className="text-slate-600">{contributorName(secondary)}</span>
+            {secondary.email &&
+              contributorName(secondary) !== secondary.email && (
+                <span className="ml-1 text-slate-400">({secondary.email})</span>
+              )}
+          </p>
+        </div>
+        <span
+          className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium ${statusClass}`}
+        >
+          {statusLabel}
+        </span>
+      </div>
     );
   }
 
@@ -237,7 +226,7 @@ export function AddSecondParentCard({
   const showReinvitePrompt = !!priorYearSecondary && !promptDismissed;
 
   return (
-    <Card className="mb-6">
+    <div>
       {showReinvitePrompt && priorYearSecondary && (
         <div className="flex flex-wrap items-start justify-between gap-3 border-b border-amber-200 bg-amber-50 px-6 py-3">
           <div className="flex items-start gap-2 text-sm text-amber-800">
@@ -276,7 +265,7 @@ export function AddSecondParentCard({
         </div>
       )}
 
-      <CardContent className="flex flex-wrap items-center justify-between gap-3 py-4">
+      <div className="flex flex-wrap items-center justify-between gap-3 px-6 py-4">
         <div className="text-sm text-slate-600">
           <p className="font-medium text-slate-800">Second parent</p>
           <p className="text-slate-500">
@@ -293,7 +282,7 @@ export function AddSecondParentCard({
           <UserPlus className="h-4 w-4" aria-hidden="true" />
           Add second parent
         </Button>
-      </CardContent>
+      </div>
 
       <Dialog open={open} onOpenChange={handleOpenChange}>
         <DialogContent className="sm:max-w-md">
@@ -428,6 +417,6 @@ export function AddSecondParentCard({
           )}
         </DialogContent>
       </Dialog>
-    </Card>
+    </div>
   );
 }

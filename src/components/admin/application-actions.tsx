@@ -37,27 +37,25 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { MissingDocsDialog } from "@/components/admin/missing-docs-dialog";
+import { RejectRestartDialog } from "@/components/admin/reject-restart-dialog";
 import {
   updateApplicationStatus,
   resumeApplication,
   setOutcome,
 } from "@/app/(admin)/applications/[id]/actions";
 import type { Document } from "@prisma/client";
+import type { ReviewPhase } from "@/lib/applications/status";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type PrismaStatus =
-  | "PRE_SUBMISSION"
-  | "SUBMITTED"
-  | "NOT_STARTED"
-  | "PAUSED"
-  | "COMPLETED"
-  | "QUALIFIES"
-  | "DOES_NOT_QUALIFY";
-
 interface ApplicationActionsProps {
   applicationId: string;
-  status: PrismaStatus;
+  /**
+   * The derived review phase (Epic 01 PR-6a) — the 7-value vocabulary projected
+   * from the lifecycle columns by `deriveReviewPhase`. Replaces the deprecated
+   * fused `applications.status` the component used to read.
+   */
+  status: ReviewPhase;
   /** Documents needed by MissingDocsDialog to pre-select unverified slots */
   documents: Document[];
 }
@@ -213,7 +211,7 @@ export function ApplicationActions({
 
   return (
     <>
-      <div className="rounded-xl border border-slate-200 bg-white px-6 py-4 shadow-sm mb-6">
+      <div className="rounded-xl border border-slate-200 bg-white px-6 py-4 shadow-sm">
         <div className="flex flex-wrap items-center justify-between gap-3">
           {/* Left: context label */}
           <div className="flex items-center gap-2">
@@ -260,6 +258,19 @@ export function ApplicationActions({
                       className="gap-2 border-slate-300"
                     >
                       Request Missing Documents
+                    </Button>
+                  }
+                />
+                <RejectRestartDialog
+                  applicationId={applicationId}
+                  trigger={
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={isPending}
+                      className="gap-2 border-rose-300 text-rose-700 hover:bg-rose-50 hover:border-rose-400"
+                    >
+                      Reject &amp; Restart
                     </Button>
                   }
                 />
@@ -350,7 +361,7 @@ export function ApplicationActions({
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-const STATUS_LABEL: Record<PrismaStatus, string> = {
+const STATUS_LABEL: Record<ReviewPhase, string> = {
   PRE_SUBMISSION: "Pre-submission",
   SUBMITTED: "Awaiting review",
   NOT_STARTED: "Review in progress",

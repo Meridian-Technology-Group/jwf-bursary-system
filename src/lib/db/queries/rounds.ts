@@ -6,7 +6,11 @@
  */
 
 import type { Tx } from "@/lib/db/prisma";
-import { RoundStatus, ApplicationStatus, type Round } from "@prisma/client";
+import { RoundStatus, type Round } from "@prisma/client";
+import {
+  deriveReviewPhase,
+  type ReviewPhase,
+} from "@/lib/applications/status";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -27,6 +31,15 @@ export interface RoundWithCounts {
     complete: number;
     total: number;
   };
+  /**
+   * Decided-outcome split for the round (computed the same way as `getRound`).
+   * Lets the Season Ledger show qualification % without a richer per-round
+   * fetch. Non-breaking additive field.
+   */
+  statusBreakdown: {
+    qualifies: number;
+    doesNotQualify: number;
+  };
 }
 
 export interface RoundDetail extends RoundWithCounts {
@@ -34,10 +47,6 @@ export interface RoundDetail extends RoundWithCounts {
     school: string;
     count: number;
   }>;
-  statusBreakdown: {
-    qualifies: number;
-    doesNotQualify: number;
-  };
 }
 
 // ---------------------------------------------------------------------------
@@ -53,15 +62,20 @@ export async function listRounds(tx: Tx): Promise<RoundWithCounts[]> {
     orderBy: { academicYear: "desc" },
     include: {
       applications: {
-        select: { status: true },
+        select: {
+          formStatus: true,
+          assessment: { select: { status: true, outcome: true } },
+        },
       },
     },
   });
 
   return rounds.map((round) => {
-    const counts = buildCounts(round.applications.map((a) => a.status));
+    const phases = round.applications.map(reviewPhaseFor);
+    const counts = buildCounts(phases);
+    const statusBreakdown = buildStatusBreakdown(phases);
     const { applications: _apps, ...rest } = round;
-    return { ...rest, counts };
+    return { ...rest, counts, statusBreakdown };
   });
 }
 
@@ -78,15 +92,19 @@ export async function getRound(tx: Tx, id: string): Promise<RoundDetail | null> 
     where: { id },
     include: {
       applications: {
-        select: { status: true, school: true },
+        select: {
+          formStatus: true,
+          school: true,
+          assessment: { select: { status: true, outcome: true } },
+        },
       },
     },
   });
 
   if (!round) return null;
 
-  const statuses = round.applications.map((a) => a.status);
-  const counts = buildCounts(statuses);
+  const phases = round.applications.map(reviewPhaseFor);
+  const counts = buildCounts(phases);
 
   // School breakdown
   const schoolMap = new Map<string, number>();
@@ -97,12 +115,7 @@ export async function getRound(tx: Tx, id: string): Promise<RoundDetail | null> 
     ([school, count]) => ({ school, count })
   );
 
-  const statusBreakdown = {
-    qualifies: statuses.filter((s) => s === ApplicationStatus.QUALIFIES).length,
-    doesNotQualify: statuses.filter(
-      (s) => s === ApplicationStatus.DOES_NOT_QUALIFY
-    ).length,
-  };
+  const statusBreakdown = buildStatusBreakdown(phases);
 
   const { applications: _apps, ...rest } = round;
   return { ...rest, counts, schoolBreakdown, statusBreakdown };
@@ -173,24 +186,44 @@ export async function closeRound(tx: Tx, id: string): Promise<Round> {
 // Internal helpers
 // ---------------------------------------------------------------------------
 
-function buildCounts(statuses: ApplicationStatus[]) {
-  const IN_PROGRESS_STATUSES: ApplicationStatus[] = [
-    ApplicationStatus.NOT_STARTED,
-    ApplicationStatus.PAUSED,
-  ];
-  const COMPLETE_STATUSES: ApplicationStatus[] = [
-    ApplicationStatus.COMPLETED,
-    ApplicationStatus.QUALIFIES,
-    ApplicationStatus.DOES_NOT_QUALIFY,
-  ];
+/**
+ * Projects an application's lifecycle columns onto the 7-value review phase
+ * (Epic 01 PR-6a) — the single mapping `buildCounts` / `buildStatusBreakdown`
+ * bucket on, replacing the deprecated fused applications.status.
+ */
+function reviewPhaseFor(app: {
+  formStatus: import("@prisma/client").ApplicationFormStatus;
+  assessment: {
+    status: import("@prisma/client").AssessmentStatus;
+    outcome: import("@prisma/client").AssessmentOutcome | null;
+  } | null;
+}): ReviewPhase {
+  return deriveReviewPhase({
+    formStatus: app.formStatus,
+    assessmentStatus: app.assessment?.status ?? null,
+    outcome: app.assessment?.outcome ?? null,
+  });
+}
+
+function buildCounts(phases: ReviewPhase[]) {
+  // The review-phase vocabulary preserves the old fused-enum bucketing exactly:
+  //   inProgress = NOT_STARTED (review in progress) + PAUSED
+  //   complete   = COMPLETED + QUALIFIES + DOES_NOT_QUALIFY (decided)
+  const IN_PROGRESS: ReviewPhase[] = ["NOT_STARTED", "PAUSED"];
+  const COMPLETE: ReviewPhase[] = ["COMPLETED", "QUALIFIES", "DOES_NOT_QUALIFY"];
 
   return {
-    preSubmission: statuses.filter(
-      (s) => s === ApplicationStatus.PRE_SUBMISSION
-    ).length,
-    submitted: statuses.filter((s) => s === ApplicationStatus.SUBMITTED).length,
-    inProgress: statuses.filter((s) => IN_PROGRESS_STATUSES.includes(s)).length,
-    complete: statuses.filter((s) => COMPLETE_STATUSES.includes(s)).length,
-    total: statuses.length,
+    preSubmission: phases.filter((p) => p === "PRE_SUBMISSION").length,
+    submitted: phases.filter((p) => p === "SUBMITTED").length,
+    inProgress: phases.filter((p) => IN_PROGRESS.includes(p)).length,
+    complete: phases.filter((p) => COMPLETE.includes(p)).length,
+    total: phases.length,
+  };
+}
+
+function buildStatusBreakdown(phases: ReviewPhase[]) {
+  return {
+    qualifies: phases.filter((p) => p === "QUALIFIES").length,
+    doesNotQualify: phases.filter((p) => p === "DOES_NOT_QUALIFY").length,
   };
 }

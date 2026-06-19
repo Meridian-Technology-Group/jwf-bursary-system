@@ -38,9 +38,11 @@ const callSiteData: Record<string, EmailMergeData> = {
     reference: "TRI-2026-0001",
     submission_date: "19 May 2026",
   },
-  // src/app/(admin)/applications/[id]/actions.ts:209
+  // src/app/(admin)/applications/[id]/actions.ts — pauseApplication
   MISSING_DOCS: {
     applicant_name: "Alex Parent",
+    custom_message:
+      "The pay slips provided appear to be from a previous role — please provide current ones.",
     child_name: "Sam Parent",
     reference: "TRI-2026-0001",
     missing_documents: "• HMRC SA302\n• P60",
@@ -62,6 +64,22 @@ const callSiteData: Record<string, EmailMergeData> = {
     child_name: "Sam Parent",
     school: "Whitgift School",
     reference: "WHI-2026-0042",
+    academic_year: "2026/27",
+  },
+  // Epic 08 — src/lib/applications/set-outcome-core.ts (templateForOutcome)
+  OUTCOME_AWARDED: {
+    applicant_name: "Alex Parent",
+    child_name: "Sam Parent",
+    school: "Whitgift School",
+    reference: "WHI-2026-0043",
+    academic_year: "2026/27",
+  },
+  // Epic 08 — src/lib/applications/set-outcome-core.ts (templateForOutcome)
+  OUTCOME_QUALIFIES_NOT_AWARDED: {
+    applicant_name: "Alex Parent",
+    child_name: "Sam Parent",
+    school: "Trinity School",
+    reference: "TRI-2026-0044",
     academic_year: "2026/27",
   },
   // src/app/(admin)/invitations/actions.ts:399
@@ -122,6 +140,23 @@ const callSiteData: Record<string, EmailMergeData> = {
     round_year: "2026/27",
     registration_link: "https://app.example.com/register?token=abc",
     deadline: "01/06/2026",
+  },
+  // src/app/(admin)/applications/[id]/actions.ts — rejectAndRestartApplication
+  APPLICATION_RESTART_REQUIRED: {
+    applicant_name: "Alex Parent",
+    child_name: "Sam Parent",
+    reference: "TRI-2026-0001",
+    custom_message:
+      "The documents supplied were not valid; please upload current, legible copies.",
+    restart_link: "https://app.example.com/apply/child-details",
+  },
+  // src/app/(admin)/applications/[id]/edit/actions.ts — finishEditingOnBehalf
+  APPLICATION_EDITED_ON_BEHALF: {
+    applicant_name: "Alex Parent",
+    child_name: "Sam Parent",
+    reference: "TRI-2026-0001",
+    edited_sections: "• Parents' Income\n• Assets & Liabilities",
+    edited_date: "12/06/2026",
   },
 };
 

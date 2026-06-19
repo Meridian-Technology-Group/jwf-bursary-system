@@ -24,6 +24,37 @@ import type { ZodType } from "zod";
 import type { Resolver } from "react-hook-form";
 import { AlertCircle, CheckCircle2, ChevronLeft, ChevronRight, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useSectionSaving } from "./section-saving-context";
+
+/**
+ * Minimal slice of Next's `AppRouterInstance` that the post-save navigation
+ * needs. Declared locally so the side-effect can be unit-tested with a plain
+ * mock (no jsdom / RTL in this repo).
+ */
+type NavRouter = {
+  refresh: () => void;
+  push: (href: string) => void;
+};
+
+/**
+ * After a successful section save, re-run the server layout subtree so the
+ * stepper/progress rail picks up the already-revalidated gap data
+ * (`revalidatePath` in `saveSection`), then soft-navigate to the next section.
+ *
+ * Order matters: `refresh()` MUST be called before `push()`. `refresh()` does
+ * not block navigation; the push proceeds and the refreshed tree resolves for
+ * the destination route. `refresh()` re-runs `apply/layout.tsx` (a normal
+ * layout in the children tree), which re-fetches the gap data and republishes
+ * it to the rail via the stepper-data store — so the stepper/progress goes
+ * live. Fixes the frozen "0 of N" progress and the tri-state section icons
+ * feeding off stale data.
+ */
+export function navigateAfterSave(router: NavRouter, nextHref?: string): void {
+  router.refresh();
+  if (nextHref) {
+    router.push(nextHref);
+  }
+}
 
 interface SectionFormProps<T extends FieldValues> {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -38,9 +69,16 @@ interface SectionFormProps<T extends FieldValues> {
   /** Optional override for the primary button label. Defaults to "Save and Continue". */
   nextLabel?: string;
   children: React.ReactNode;
-  /** Form element id — must match the portal-bottom-nav submit button */
+  /** Form element id — must match the external footer submit button (form=…). */
   formId?: string;
   className?: string;
+  /**
+   * Suppress the in-form Back / Save-and-Continue nav block. The lead-applicant
+   * apply flow sets this because its nav is now the single sticky `ApplyFooter`
+   * (PR-7, Decision 3). The `/contribute` flow leaves it unset, so it KEEPS the
+   * in-form nav (its layout renders no sticky footer) — no regression.
+   */
+  hideInlineNav?: boolean;
 }
 
 export function SectionForm<T extends FieldValues>({
@@ -53,9 +91,14 @@ export function SectionForm<T extends FieldValues>({
   children,
   formId = "section-form",
   className,
+  hideInlineNav = false,
 }: SectionFormProps<T>) {
   const router = useRouter();
   const [saving, setSaving] = React.useState(false);
+  // The single saving source for the sticky ApplyFooter (PR-7). Outside a
+  // provider (e.g. the /contribute flow) this is an inert no-op, so the local
+  // `saving` state above still drives the in-form button there.
+  const { setSaving: setFooterSaving } = useSectionSaving();
   const [saveState, setSaveState] = React.useState<
     "idle" | "saving" | "saved" | "error"
   >("idle");
@@ -89,6 +132,7 @@ export function SectionForm<T extends FieldValues>({
 
   async function onSubmit(data: T) {
     setSaving(true);
+    setFooterSaving(true);
     setSaveState("saving");
     setServerErrors([]);
 
@@ -97,9 +141,7 @@ export function SectionForm<T extends FieldValues>({
 
       if (result.success) {
         setSaveState("saved");
-        if (nextHref) {
-          router.push(nextHref);
-        }
+        navigateAfterSave(router, nextHref);
       } else {
         setSaveState("error");
         setServerErrors(result.errors ?? ["An unexpected error occurred."]);
@@ -115,6 +157,7 @@ export function SectionForm<T extends FieldValues>({
       setServerErrors(["An unexpected error occurred. Please try again."]);
     } finally {
       setSaving(false);
+      setFooterSaving(false);
     }
   }
 
@@ -222,48 +265,53 @@ export function SectionForm<T extends FieldValues>({
         {children}
       </form>
 
-      {/* Navigation buttons (also rendered in portal-bottom-nav via form="section-form") */}
-      <div className="mt-8 flex items-center justify-between border-t border-slate-200 pt-6">
-        {backHref ? (
-          <a
-            href={backHref}
+      {/* In-form navigation buttons.
+          The lead-applicant apply flow sets `hideInlineNav` because its nav is
+          now the single sticky `ApplyFooter` (PR-7). The /contribute flow leaves
+          it unset and KEEPS these buttons (its layout has no sticky footer). */}
+      {!hideInlineNav && (
+        <div className="mt-8 flex items-center justify-between border-t border-slate-200 pt-6">
+          {backHref ? (
+            <a
+              href={backHref}
+              className={cn(
+                "flex items-center gap-1.5 rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700",
+                "hover:bg-slate-50 hover:text-slate-900 transition-colors",
+                "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-600"
+              )}
+            >
+              <ChevronLeft className="h-4 w-4" aria-hidden="true" />
+              Back
+            </a>
+          ) : (
+            <div />
+          )}
+
+          <button
+            type="submit"
+            form={formId}
+            disabled={saving}
             className={cn(
-              "flex items-center gap-1.5 rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700",
-              "hover:bg-slate-50 hover:text-slate-900 transition-colors",
-              "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-600"
+              "flex items-center gap-1.5 rounded-md bg-primary-900 px-5 py-2 text-sm font-medium text-white",
+              "hover:bg-primary-800 transition-colors",
+              "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-600",
+              "disabled:pointer-events-none disabled:opacity-60"
             )}
           >
-            <ChevronLeft className="h-4 w-4" aria-hidden="true" />
-            Back
-          </a>
-        ) : (
-          <div />
-        )}
-
-        <button
-          type="submit"
-          form={formId}
-          disabled={saving}
-          className={cn(
-            "flex items-center gap-1.5 rounded-md bg-primary-900 px-5 py-2 text-sm font-medium text-white",
-            "hover:bg-primary-800 transition-colors",
-            "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-600",
-            "disabled:pointer-events-none disabled:opacity-60"
-          )}
-        >
-          {saving ? (
-            <>
-              <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
-              Saving...
-            </>
-          ) : (
-            <>
-              {nextLabel}
-              <ChevronRight className="h-4 w-4" aria-hidden="true" />
-            </>
-          )}
-        </button>
-      </div>
+            {saving ? (
+              <>
+                <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                Saving...
+              </>
+            ) : (
+              <>
+                {nextLabel}
+                <ChevronRight className="h-4 w-4" aria-hidden="true" />
+              </>
+            )}
+          </button>
+        </div>
+      )}
     </FormProvider>
   );
 }

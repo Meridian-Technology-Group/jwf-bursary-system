@@ -4,6 +4,11 @@
  */
 
 import type { Tx } from "@/lib/db/prisma";
+import {
+  ASSESSMENT_INITIAL_STATUS,
+  completeAssessmentRow,
+  pauseAssessmentRow,
+} from "@/lib/applications/status";
 import type {
   Assessment,
   AssessmentEarner,
@@ -76,6 +81,11 @@ export interface AssessmentSaveInput {
   yearlyPayableFees?: number;
   monthlyPayableFees?: number;
 
+  // Epic 07 — next-year fee snapshot (null when no next-year fee is in play)
+  nextYearAnnualFees?: number | null;
+  nextYearYearlyPayableFees?: number | null;
+  nextYearMonthlyPayableFees?: number | null;
+
   // Status
   status?: AssessmentStatus;
 
@@ -117,7 +127,7 @@ export async function createAssessment(
     data: {
       applicationId,
       assessorId,
-      status: "NOT_STARTED",
+      status: ASSESSMENT_INITIAL_STATUS,
       scholarshipPct: 0,
       vatRate: 20,
       manualAdjustment: 0,
@@ -190,6 +200,13 @@ export async function saveAssessment(
     updateData.yearlyPayableFees = assessmentFields.yearlyPayableFees;
   if (assessmentFields.monthlyPayableFees !== undefined)
     updateData.monthlyPayableFees = assessmentFields.monthlyPayableFees;
+  // Epic 07 — next-year fee snapshot (explicit null is a valid "clear" write).
+  if (assessmentFields.nextYearAnnualFees !== undefined)
+    updateData.nextYearAnnualFees = assessmentFields.nextYearAnnualFees;
+  if (assessmentFields.nextYearYearlyPayableFees !== undefined)
+    updateData.nextYearYearlyPayableFees = assessmentFields.nextYearYearlyPayableFees;
+  if (assessmentFields.nextYearMonthlyPayableFees !== undefined)
+    updateData.nextYearMonthlyPayableFees = assessmentFields.nextYearMonthlyPayableFees;
   if (assessmentFields.status !== undefined)
     updateData.status = assessmentFields.status;
 
@@ -284,29 +301,34 @@ export async function saveAssessment(
 
 /**
  * Marks an assessment as COMPLETED and records the completion timestamp.
+ * Routed through the central status service (validates the transition + owns
+ * the write); returns the updated row to preserve the existing signature.
  */
 export async function completeAssessment(
   tx: Tx,
   assessmentId: string
 ): Promise<Assessment> {
-  return tx.assessment.update({
+  const current = await tx.assessment.findUniqueOrThrow({
     where: { id: assessmentId },
-    data: {
-      status: "COMPLETED",
-      completedAt: new Date(),
-    },
+    select: { status: true },
   });
+  await completeAssessmentRow(tx, assessmentId, current.status);
+  return tx.assessment.findUniqueOrThrow({ where: { id: assessmentId } });
 }
 
 /**
- * Marks an assessment as PAUSED.
+ * Marks an assessment as PAUSED, persisting the default missing-docs deadline
+ * (paused_until). Routed through the central status service; returns the
+ * updated row to preserve the existing signature.
  */
 export async function pauseAssessment(
   tx: Tx,
   assessmentId: string
 ): Promise<Assessment> {
-  return tx.assessment.update({
+  const current = await tx.assessment.findUniqueOrThrow({
     where: { id: assessmentId },
-    data: { status: "PAUSED" },
+    select: { status: true },
   });
+  await pauseAssessmentRow(tx, assessmentId, current.status);
+  return tx.assessment.findUniqueOrThrow({ where: { id: assessmentId } });
 }

@@ -21,16 +21,14 @@ import {
 } from "@/components/ui/table";
 import { upsertReasonCodeAction } from "@/app/(admin)/settings/actions";
 import type { ReasonCodeRow } from "@/lib/db/queries/reference-tables";
+import { categoryForCode } from "@/lib/reason-codes/category";
 
 // ─── Category helpers ──────────────────────────────────────────────────────────
+// The range→category mapping is shared with the recommendation selector via the
+// `categoryForCode` util (Epic 08), so both stay in lockstep when the real codes
+// (D4) swap in.
 
-function getCategory(code: number): string {
-  if (code >= 1 && code <= 9) return "Income";
-  if (code >= 10 && code <= 19) return "Property & Assets";
-  if (code >= 20 && code <= 29) return "Family Circumstances";
-  if (code >= 30 && code <= 39) return "Risk Flags";
-  return "Other";
-}
+const getCategory = categoryForCode;
 
 // ─── Inline edit row ──────────────────────────────────────────────────────────
 

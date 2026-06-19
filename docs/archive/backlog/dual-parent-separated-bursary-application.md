@@ -27,10 +27,10 @@ related:
 > Out-of-scope policy items (joint-asset double-counting, inter-parent
 > maintenance) carry data-model fields but defer calculation logic pending
 > Foundation rules. Remaining cosmetic follow-up tracked separately:
-> [`contribute-portal-shows-full-applicant-sidebar.md`](../../backlog/contribute-portal-shows-full-applicant-sidebar.md).
+> [`contribute-portal-shows-full-applicant-sidebar.md`](./contribute-portal-shows-full-applicant-sidebar.md).
 >
 > **Build plan:** the code-grounded, PR-by-PR implementation plan lives at
-> [`docs/engineering/dual-parent-implementation-plan.md`](../../engineering/dual-parent-implementation-plan.md).
+> [`docs/archive/engineering/dual-parent-implementation-plan.md`](../engineering/dual-parent-implementation-plan.md).
 > This file records the original scope and the eight locked decisions.
 
 ## Context

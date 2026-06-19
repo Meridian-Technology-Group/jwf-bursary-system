@@ -9,14 +9,15 @@
  *   - Context string
  *   - Metadata JSON (collapsed by default — future enhancement)
  *
- * Uses getAuditLogsForEntity from src/lib/db/queries/audit.ts.
+ * Uses getAuditLogsForApplicationHistory from src/lib/db/queries/audit.ts
+ * (Application-entity rows plus CR-001 edit-on-behalf section saves).
  */
 
 import { notFound } from "next/navigation";
 import { requireRole, Role } from "@/lib/auth/roles";
 import { withUserContext, type RlsRole } from "@/lib/db/prisma";
 import { getApplicationWithDetails } from "@/lib/db/queries/applications";
-import { getAuditLogsForEntity } from "@/lib/db/queries/audit";
+import { getAuditLogsForApplicationHistory } from "@/lib/db/queries/audit";
 import type { AuditLogWithUser } from "@/lib/db/queries/audit";
 import { ClockIcon, UserIcon } from "lucide-react";
 
@@ -32,6 +33,10 @@ const ACTION_LABELS: Record<string, string> = {
   APPLICATION_RESUMED: "Application resumed",
   APPLICATION_OUTCOME_SET: "Outcome set",
   DOCUMENT_UPLOADED_BY_ASSESSOR: "Document uploaded by assessor",
+  SECTION_SAVED_BY_ASSESSOR: "Section saved by assessor",
+  EDIT_ON_BEHALF_FINISHED: "Editing on behalf finished",
+  APPLICATION_SUBMITTED_BY_ASSESSOR:
+    "Submitted by assessor on behalf of applicant",
   DOCUMENT_VERIFIED: "Document verified",
   DOCUMENT_UNVERIFIED: "Document unverified",
   "assessment.begin": "Assessment begun",
@@ -60,7 +65,7 @@ function actionColour(action: string): string {
   if (action.includes("RESUMED") || action.includes("begin")) {
     return "bg-blue-500";
   }
-  if (action.includes("DOCUMENT")) {
+  if (action.includes("DOCUMENT") || action.includes("BY_ASSESSOR")) {
     return "bg-purple-500";
   }
   if (action.includes("STATUS")) {
@@ -187,7 +192,7 @@ export default async function HistoryPage({ params }: Props) {
     async (tx) => {
       const app = await getApplicationWithDetails(tx, params.id);
       if (!app) return { application: null, logs: [] };
-      const auditLogs = await getAuditLogsForEntity(tx, "Application", params.id);
+      const auditLogs = await getAuditLogsForApplicationHistory(tx, params.id);
       return { application: app, logs: auditLogs };
     }
   );

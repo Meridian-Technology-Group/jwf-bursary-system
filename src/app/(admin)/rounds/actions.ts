@@ -5,7 +5,6 @@
  */
 
 import { revalidatePath } from "next/cache";
-import { redirect } from "next/navigation";
 import { z } from "zod";
 import { RoundStatus } from "@prisma/client";
 import { requireRole, Role } from "@/lib/auth/roles";
@@ -14,6 +13,20 @@ import { withUserContext, type RlsRole } from "@/lib/db/prisma";
 import { createAuditLog } from "@/lib/audit/log";
 
 import { AUDIT_ACTIONS, AUDIT_ENTITY_TYPES } from "@/lib/audit/actions";
+
+// ---------------------------------------------------------------------------
+// Config
+// ---------------------------------------------------------------------------
+
+/**
+ * Reversible safety flag (Epic 03 / D13). Concurrent OPEN rounds are allowed by
+ * default; setting `ROUNDS_SINGLE_OPEN_ONLY` to "1"/"true" restores the old
+ * "only one OPEN round at a time" guard in {@link openRoundAction} without a
+ * code change. Read once at module load.
+ */
+const SINGLE_OPEN_ONLY =
+  process.env.ROUNDS_SINGLE_OPEN_ONLY === "1" ||
+  process.env.ROUNDS_SINGLE_OPEN_ONLY === "true";
 
 // ---------------------------------------------------------------------------
 // Validation schemas
@@ -108,7 +121,12 @@ export async function createRoundAction(
     return { success: false, error: message };
   }
 
-  redirect("/rounds");
+  // Return success and let the client navigate. Calling redirect() here throws
+  // a NEXT_REDIRECT control-flow error that propagates to the client as a
+  // rejected promise, which the dialog mis-renders as "An unexpected error
+  // occurred" even though the write committed (defect plan §2.3). This mirrors
+  // openRoundAction / closeRoundAction, which already return without redirecting.
+  return { success: true };
 }
 
 // ---------------------------------------------------------------------------
@@ -165,7 +183,9 @@ export async function updateRoundAction(
     return { success: false, error: message };
   }
 
-  redirect(`/rounds/${id}`);
+  // Return success and let the client navigate (same NEXT_REDIRECT pitfall as
+  // createRoundAction — see §2.3).
+  return { success: true };
 }
 
 // ---------------------------------------------------------------------------
@@ -178,11 +198,16 @@ export async function updateRoundAction(
  * Guards:
  * - Admin-gated (matches createRoundAction).
  * - Refuses if the target round is not currently DRAFT.
- * - Refuses if another round is already OPEN. This invariant ("only one OPEN
- *   at a time") is enforced at the action layer via an explicit findFirst,
- *   not via a DB unique partial index. The action-layer guard is a smaller,
- *   reversible change appropriate for MVP; revisit if concurrent admin
- *   activity becomes a real concern (then promote to a DB constraint).
+ *
+ * Concurrent OPEN rounds (Epic 03, decision D13). The Foundation runs more than
+ * one intake at a time, so the old "only one OPEN round at a time" invariant is
+ * LIFTED by default — opening a second OPEN round is now allowed. The check is
+ * retained ONLY as a reversible, OFF-by-default soft guard behind the
+ * `ROUNDS_SINGLE_OPEN_ONLY` env flag (set to "1"/"true" to restore the old
+ * single-OPEN behaviour without a code change). It was never a DB constraint;
+ * the database stays permissive. Readers no longer assume a single OPEN round
+ * (getActiveRound is a *default*-only helper, listOpenRounds enumerates all,
+ * and bulk re-assessment takes an explicit roundId).
  *
  * Stamps an audit log entry (action: "ROUND_OPENED") and revalidates the
  * rounds list + detail routes.
@@ -209,15 +234,19 @@ export async function openRoundAction(
         );
       }
 
-      const existingOpen = await tx.round.findFirst({
-        where: { status: RoundStatus.OPEN, NOT: { id } },
-        select: { academicYear: true },
-      });
+      // Soft, reversible single-OPEN guard — OFF by default (D13: concurrent
+      // rounds are the norm). Only enforced when explicitly opted into via env.
+      if (SINGLE_OPEN_ONLY) {
+        const existingOpen = await tx.round.findFirst({
+          where: { status: RoundStatus.OPEN, NOT: { id } },
+          select: { academicYear: true },
+        });
 
-      if (existingOpen) {
-        throw new Error(
-          `Cannot open: round ${existingOpen.academicYear} is already OPEN. Close it first.`
-        );
+        if (existingOpen) {
+          throw new Error(
+            `Cannot open: round ${existingOpen.academicYear} is already OPEN (ROUNDS_SINGLE_OPEN_ONLY is set). Close it first.`
+          );
+        }
       }
 
       const updated = await updateRound(tx, id, {

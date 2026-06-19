@@ -6,7 +6,9 @@
  * Document slots are listed via DocumentChecklist.
  */
 
+import Link from "next/link";
 import { notFound } from "next/navigation";
+import { Pencil } from "lucide-react";
 import { requireRole, Role } from "@/lib/auth/roles";
 import { withUserContext, type RlsRole } from "@/lib/db/prisma";
 import {
@@ -15,15 +17,22 @@ import {
 } from "@/lib/db/queries/applications";
 import { getApplicationContributors } from "@/lib/db/queries/contributors";
 import { contributorRoleLabel, isParentOwnedSection } from "@/lib/contributors/dual-view";
+import { deriveReviewPhase } from "@/lib/applications/status";
+import { canEditOnBehalf } from "@/lib/applications/edit-on-behalf";
 import { getSiblingLinks } from "@/lib/db/queries/siblings";
+import { getScheduleForAccount, type ScheduleEntryRow } from "@/lib/db/queries/schedule";
+import { ScheduleGrid } from "@/components/admin/schedule-grid";
 import {
   Card,
   CardContent,
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 import { DocumentChecklist } from "@/components/admin/document-checklist";
 import { AdminUpload } from "@/components/admin/admin-upload";
+import { SubmissionDeadlineCard } from "@/components/admin/submission-deadline-card";
+import { effectiveSubmissionDeadline } from "@/lib/rounds/submission-deadline";
 import { SiblingLinkerCard } from "@/components/admin/sibling-linker";
 import { SiblingListCard } from "@/components/admin/sibling-list";
 import type { ApplicationSectionType } from "@prisma/client";
@@ -47,9 +56,71 @@ const SECTION_LABELS: Record<ApplicationSectionType, string> = {
   DECLARATION: "Declaration",
 };
 
+// ─── Assessor provenance (CR-001) ─────────────────────────────────────────────
+// `application_sections.assessor_provenance` maps leaf dot-paths (matching the
+// DataBlock recursion, e.g. "parent1Contact.addressLine1", "children.0.fullName")
+// to who entered the value on the applicant's behalf. Shown to ALL staff roles
+// including VIEWER — the badges indicate data origin, not an action.
+
+/** Display-side provenance entry — fields are optional defensively. */
+interface ProvenanceDisplayEntry {
+  editedByName?: string;
+  editedAt?: string;
+}
+
+type ProvenanceDisplayMap = Record<string, ProvenanceDisplayEntry>;
+
+/**
+ * Parses stored provenance JSONB defensively: non-objects (null, arrays,
+ * primitives) become `{}` and malformed entries are dropped.
+ */
+function asProvenanceMap(raw: unknown): ProvenanceDisplayMap {
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return {};
+  const map: ProvenanceDisplayMap = {};
+  for (const [path, entry] of Object.entries(raw)) {
+    if (typeof entry !== "object" || entry === null || Array.isArray(entry)) {
+      continue;
+    }
+    const { editedByName, editedAt } = entry as Record<string, unknown>;
+    map[path] = {
+      editedByName:
+        typeof editedByName === "string" ? editedByName : undefined,
+      editedAt: typeof editedAt === "string" ? editedAt : undefined,
+    };
+  }
+  return map;
+}
+
+function provenancePillTitle(
+  entry: ProvenanceDisplayEntry
+): string | undefined {
+  if (!entry.editedByName) return undefined;
+  const date = entry.editedAt ? new Date(entry.editedAt) : null;
+  if (date && !Number.isNaN(date.getTime())) {
+    return `Entered by ${entry.editedByName} on ${date.toLocaleDateString("en-GB")}`;
+  }
+  return `Entered by ${entry.editedByName}`;
+}
+
+function AssessorPill({ entry }: { entry: ProvenanceDisplayEntry }) {
+  return (
+    <span
+      className="ml-2 inline-block whitespace-nowrap rounded-full bg-purple-100 px-2 py-0.5 text-[11px] text-purple-700"
+      title={provenancePillTitle(entry)}
+    >
+      Entered by assessor
+    </span>
+  );
+}
+
 // ─── Field rendering ──────────────────────────────────────────────────────────
 
-function formatValue(key: string, value: unknown): React.ReactNode {
+function formatValue(
+  key: string,
+  value: unknown,
+  provenance: ProvenanceDisplayMap,
+  path: string
+): React.ReactNode {
   if (value === null || value === undefined) {
     return <span className="text-slate-400 italic">Not provided</span>;
   }
@@ -117,22 +188,41 @@ function formatValue(key: string, value: unknown): React.ReactNode {
     }
     return (
       <ol className="ml-4 list-decimal space-y-1">
-        {value.map((item, i) => (
-          <li key={i} className="text-slate-700">
-            {typeof item === "object" ? (
-              <DataBlock data={item as Record<string, unknown>} indent />
-            ) : (
-              String(item)
-            )}
-          </li>
-        ))}
+        {value.map((item, i) => {
+          // Array elements extend the dot-path with their numeric index
+          // ("children.0.fullName"), matching diffSectionPaths.
+          const itemPath = `${path}.${i}`;
+          const itemEntry = provenance[itemPath];
+          return (
+            <li key={i} className="text-slate-700">
+              {typeof item === "object" ? (
+                <DataBlock
+                  data={item as Record<string, unknown>}
+                  indent
+                  provenance={provenance}
+                  pathPrefix={itemPath}
+                />
+              ) : (
+                <>
+                  {String(item)}
+                  {itemEntry && <AssessorPill entry={itemEntry} />}
+                </>
+              )}
+            </li>
+          );
+        })}
       </ol>
     );
   }
 
   if (typeof value === "object") {
     return (
-      <DataBlock data={value as Record<string, unknown>} indent />
+      <DataBlock
+        data={value as Record<string, unknown>}
+        indent
+        provenance={provenance}
+        pathPrefix={path}
+      />
     );
   }
 
@@ -150,9 +240,13 @@ function humaniseKey(key: string): string {
 function DataBlock({
   data,
   indent = false,
+  provenance = {},
+  pathPrefix = "",
 }: {
   data: Record<string, unknown>;
   indent?: boolean;
+  provenance?: ProvenanceDisplayMap;
+  pathPrefix?: string;
 }) {
   const entries = Object.entries(data);
   if (entries.length === 0)
@@ -166,16 +260,23 @@ function DataBlock({
           : "space-y-3"
       }
     >
-      {entries.map(([key, val]) => (
-        <div key={key} className="flex flex-col gap-0.5 sm:flex-row sm:gap-4">
-          <dt className="min-w-[180px] text-xs font-medium text-slate-500 shrink-0">
-            {humaniseKey(key)}
-          </dt>
-          <dd className="text-sm text-slate-700">
-            {formatValue(key, val)}
-          </dd>
-        </div>
-      ))}
+      {entries.map(([key, val]) => {
+        const path = pathPrefix ? `${pathPrefix}.${key}` : key;
+        // Provenance paths are leaf paths, so containers never match —
+        // the pill only ever lands on the leaf row that was edited.
+        const entry = provenance[path];
+        return (
+          <div key={key} className="flex flex-col gap-0.5 sm:flex-row sm:gap-4">
+            <dt className="min-w-[180px] text-xs font-medium text-slate-500 shrink-0">
+              {humaniseKey(key)}
+            </dt>
+            <dd className="text-sm text-slate-700">
+              {formatValue(key, val, provenance, path)}
+              {entry && <AssessorPill entry={entry} />}
+            </dd>
+          </div>
+        );
+      })}
     </dl>
   );
 }
@@ -190,7 +291,7 @@ export default async function ApplicantDataPage({ params }: Props) {
   const user = await requireRole([Role.ADMIN, Role.ASSESSOR, Role.VIEWER]);
   const isAssessor = user.role === Role.ADMIN || user.role === Role.ASSESSOR;
 
-  const { application, siblingLinks, names, contributors } =
+  const { application, siblingLinks, names, contributors, scheduleEntries } =
     await withUserContext(user.id, user.role as RlsRole, async (tx) => {
       const app = await getApplicationWithDetails(tx, params.id);
       if (!app)
@@ -199,9 +300,13 @@ export default async function ApplicantDataPage({ params }: Props) {
           siblingLinks: [],
           names: null,
           contributors: [],
+          scheduleEntries: [] as ScheduleEntryRow[],
         };
       const siblings = app.bursaryAccountId
         ? await getSiblingLinks(tx, app.bursaryAccountId)
+        : [];
+      const schedule = app.bursaryAccountId
+        ? await getScheduleForAccount(tx, app.bursaryAccountId)
         : [];
       const revealed = await getApplicationNamesForReveal(tx, app.id, user.id);
       const ctribs = await getApplicationContributors(tx, params.id);
@@ -210,6 +315,7 @@ export default async function ApplicantDataPage({ params }: Props) {
         siblingLinks: siblings,
         names: revealed,
         contributors: ctribs,
+        scheduleEntries: schedule,
       };
     });
 
@@ -219,6 +325,46 @@ export default async function ApplicantDataPage({ params }: Props) {
 
   const { sections, documents, bursaryAccountId } = application;
   const currentChildName = names?.childName ?? "";
+
+  // Per-application submission deadline (Epic 03) — ADMIN-editable. The effective
+  // deadline (override ?? round close end-of-day) is derived in one helper so
+  // this display and Epic 05's parent countdown agree.
+  const isAdmin = user.role === Role.ADMIN;
+  const effective = effectiveSubmissionDeadline(
+    { submissionDeadlineAt: application.submissionDeadlineAt },
+    { closeDate: application.round.closeDate }
+  );
+
+  // ── Edit on behalf (CR-001) ─────────────────────────────────────────────────
+  // Entry point to amend the applicant's form data. Shown only while the review
+  // phase still permits editing (blocked once the assessment is COMPLETED or an
+  // outcome is set — see canEditOnBehalf) AND the viewer is an ADMIN or the
+  // assigned ASSESSOR. VIEWERs never see it.
+  const reviewPhase = deriveReviewPhase({
+    formStatus: application.formStatus,
+    assessmentStatus: application.assessment?.status ?? null,
+    outcome: application.assessment?.outcome ?? null,
+  });
+  const showEditOnBehalf =
+    canEditOnBehalf(reviewPhase) &&
+    (isAdmin ||
+      (user.role === Role.ASSESSOR && application.assignedToId === user.id));
+
+  const editOnBehalfButton = showEditOnBehalf ? (
+    <div className="flex justify-end">
+      <Button
+        asChild
+        variant="outline"
+        size="sm"
+        className="h-9 border-neutral-200 bg-white text-slate-600 hover:bg-neutral-50"
+      >
+        <Link href={`/applications/${application.id}/edit`}>
+          <Pencil className="h-4 w-4" aria-hidden="true" />
+          Edit on behalf
+        </Link>
+      </Button>
+    </div>
+  ) : null;
 
   // ── Dual-parent: separate sections by owning contributor ───────────────────
   // When a SECONDARY contributor exists, the parent-owned sections
@@ -255,11 +401,22 @@ export default async function ApplicantDataPage({ params }: Props) {
   if (sections.length === 0) {
     return (
       <div className="space-y-5">
+        {editOnBehalfButton}
+
         <div className="rounded-xl border border-dashed border-slate-300 bg-white p-10 text-center">
           <p className="text-sm text-slate-400">
             No application sections have been submitted yet.
           </p>
         </div>
+
+        {/* Forward schedule — shown when the account is linked (Epic 10) */}
+        {bursaryAccountId && (
+          <ScheduleGrid
+            applicationId={application.id}
+            entries={scheduleEntries}
+            canManage={user.role === Role.ADMIN}
+          />
+        )}
 
         {/* Sibling Links — shown even when no sections exist if account is linked */}
         {bursaryAccountId && (
@@ -277,6 +434,8 @@ export default async function ApplicantDataPage({ params }: Props) {
 
   return (
     <div className="space-y-5">
+      {editOnBehalfButton}
+
       {/* Document checklist first */}
       <DocumentChecklist
         applicationId={application.id}
@@ -285,6 +444,21 @@ export default async function ApplicantDataPage({ params }: Props) {
 
       {/* Assessor document upload */}
       <AdminUpload applicationId={application.id} />
+
+      {/* Per-application submission deadline — ADMIN only */}
+      {isAdmin && (
+        <SubmissionDeadlineCard
+          applicationId={application.id}
+          submissionDeadlineAt={
+            application.submissionDeadlineAt
+              ? application.submissionDeadlineAt.toISOString()
+              : null
+          }
+          roundCloseDate={application.round.closeDate.toISOString()}
+          effectiveDeadline={effective.deadline.toISOString()}
+          isOverride={effective.isOverride}
+        />
+      )}
 
       {/* Section data cards */}
       {orderedSections.map((section) => {
@@ -298,6 +472,11 @@ export default async function ApplicantDataPage({ params }: Props) {
           hasSecondary && isParentOwnedSection(section.section)
             ? ownerLabelFor(section.ownerContributorId)
             : null;
+
+        // Assessor-entered fields (CR-001) — badge each leaf row and
+        // summarise the count in the card header.
+        const provenance = asProvenanceMap(section.assessorProvenance);
+        const provenanceCount = Object.keys(provenance).length;
 
         return (
           <Card key={section.id} className="overflow-hidden">
@@ -313,20 +492,28 @@ export default async function ApplicantDataPage({ params }: Props) {
                     </span>
                   )}
                 </div>
-                <span
-                  className={
-                    section.isComplete
-                      ? "text-xs font-medium text-green-600"
-                      : "text-xs font-medium text-amber-600"
-                  }
-                >
-                  {section.isComplete ? "Complete" : "Incomplete"}
-                </span>
+                <div className="flex items-center gap-2">
+                  {provenanceCount > 0 && (
+                    <span className="whitespace-nowrap rounded-full bg-purple-100 px-2 py-0.5 text-[11px] text-purple-700">
+                      {provenanceCount} field{provenanceCount === 1 ? "" : "s"}{" "}
+                      entered by assessor
+                    </span>
+                  )}
+                  <span
+                    className={
+                      section.isComplete
+                        ? "text-xs font-medium text-green-600"
+                        : "text-xs font-medium text-amber-600"
+                    }
+                  >
+                    {section.isComplete ? "Complete" : "Incomplete"}
+                  </span>
+                </div>
               </div>
             </CardHeader>
             <CardContent className="px-6 py-5">
               {hasData ? (
-                <DataBlock data={sectionData} />
+                <DataBlock data={sectionData} provenance={provenance} />
               ) : (
                 <p className="text-sm text-slate-400 italic">No data recorded.</p>
               )}
@@ -334,6 +521,15 @@ export default async function ApplicantDataPage({ params }: Props) {
           </Card>
         );
       })}
+
+      {/* Forward schedule — only when the application has a bursary account (Epic 10) */}
+      {bursaryAccountId && (
+        <ScheduleGrid
+          applicationId={application.id}
+          entries={scheduleEntries}
+          canManage={user.role === Role.ADMIN}
+        />
+      )}
 
       {/* Sibling Links section — only when application has a bursary account */}
       {bursaryAccountId && (

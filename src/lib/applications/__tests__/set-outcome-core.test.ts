@@ -2,10 +2,15 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 // ─── Mocks ──────────────────────────────────────────────────────────────────
 // The shared core authenticates, runs two `withUserContext` transactions
-// (status/account write, then the audit write) and sends an email. We mock
+// (promotion/outcome write, then the audit write) and sends an email. We mock
 // those boundaries and pass a fake Prisma `tx` through `withUserContext` so we
-// can assert the invariant: exactly one BursaryAccount create and one audit
-// write on QUALIFIES, and zero account creates on DOES_NOT_QUALIFY.
+// can assert the Epic 08 invariants:
+//   - AWARDED → exactly one BursaryAccount create (idempotent), the scholarship
+//     award persisted onto the recommendation, one audit row carrying both
+//     award figures.
+//   - QUALIFIES_NOT_AWARDED → no account, no scholarship write, one audit row.
+//   - DOES_NOT_QUALIFY → no account, one audit row.
+//   - non-COMPLETED assessment → rejected, no side effects.
 
 vi.mock("@/lib/auth/roles", async () => {
   const actual = await vi.importActual<typeof import("@/lib/auth/roles")>(
@@ -58,7 +63,30 @@ function makeFakeTx(application: Record<string, unknown>) {
       update: vi.fn(async () => ({})),
     },
     bursaryAccount: {
-      create: vi.fn(async () => ({ id: "account-1" })),
+      create: vi.fn(async () => ({
+        id: "account-1",
+        entryYearGroup: "Y7",
+        firstAssessmentYear: "2025/2026",
+      })),
+      findUnique: vi.fn(async () => ({
+        id: "existing-account",
+        entryYearGroup: "Y7",
+        firstAssessmentYear: "2025/2026",
+        status: "ACTIVE",
+      })),
+      update: vi.fn(async () => ({})),
+    },
+    bursaryScheduleEntry: {
+      findMany: vi.fn(async () => []),
+      create: vi.fn(async () => ({})),
+    },
+    assessment: {
+      updateMany: vi.fn(async () => ({ count: 1 })),
+    },
+    recommendation: {
+      updateMany: vi.fn(async (_args: { data: { scholarshipAward: number } }) => ({
+        count: 1,
+      })),
     },
     auditLog: {
       create: vi.fn(async (_args: { data: { action: string } }) => ({})),
@@ -74,9 +102,11 @@ function baseApplication(overrides: Record<string, unknown> = {}) {
     childName: "Child Name",
     childDob: new Date("2014-01-01"),
     entryYear: 2025,
-    entryYearGroup: "Year 7",
+    entryYearGroup: "Y7",
     school: "WHITGIFT",
     bursaryAccountId: null,
+    applicationType: "NEW",
+    archivedAt: null,
     leadApplicantId: "lead-1",
     leadApplicant: {
       id: "lead-1",
@@ -84,32 +114,101 @@ function baseApplication(overrides: Record<string, unknown> = {}) {
       firstName: "Pat",
       lastName: "Parent",
     },
-    round: { academicYear: "2025/2026" },
-    assessment: { yearlyPayableFees: 12000 },
+    round: {
+      academicYear: "2025/2026",
+      openDate: new Date("2025-09-01"),
+      closeDate: new Date("2025-12-01"),
+    },
+    assessment: {
+      id: "assess-1",
+      status: "COMPLETED",
+      yearlyPayableFees: 12000,
+    },
     ...overrides,
   };
 }
 
-describe("setApplicationOutcome (shared core)", () => {
+describe("setApplicationOutcome (shared core, Epic 08)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
-  it("creates exactly one BursaryAccount and one audit row on QUALIFIES", async () => {
+  it("AWARDED: creates one account, records scholarship, writes one audit row with both awards", async () => {
     fakeTx = makeFakeTx(baseApplication());
 
-    const result = await setApplicationOutcome("app-1", "QUALIFIES");
+    const result = await setApplicationOutcome("app-1", "AWARDED", {
+      bursaryAward: 22456,
+      scholarshipAward: 3000,
+    });
 
     expect(result).toEqual({ success: true });
     expect(fakeTx.bursaryAccount.create).toHaveBeenCalledTimes(1);
-    expect(fakeTx.auditLog.create).toHaveBeenCalledTimes(1);
+    // Scholarship award persisted onto the recommendation.
+    expect(fakeTx.recommendation.updateMany).toHaveBeenCalledTimes(1);
+    const recArg = fakeTx.recommendation.updateMany.mock.calls[0]![0] as unknown as {
+      data: { scholarshipAward: number };
+    };
+    expect(recArg.data.scholarshipAward).toBe(3000);
 
-    // Canonical audit action key.
-    const auditArg = fakeTx.auditLog.create.mock.calls[0]?.[0];
-    expect(auditArg?.data.action).toBe("APPLICATION_OUTCOME_SET");
+    expect(fakeTx.auditLog.create).toHaveBeenCalledTimes(1);
+    const auditArg = fakeTx.auditLog.create.mock.calls[0]![0] as unknown as {
+      data: { action: string; metadata: Record<string, unknown> };
+    };
+    expect(auditArg.data.action).toBe("APPLICATION_OUTCOME_SET");
+    expect(auditArg.data.metadata.outcome).toBe("AWARDED");
+    expect(auditArg.data.metadata.bursaryAward).toBe(22456);
+    expect(auditArg.data.metadata.scholarshipAward).toBe(3000);
   });
 
-  it("does NOT create a BursaryAccount on DOES_NOT_QUALIFY, but still writes one audit row", async () => {
+  it("AWARDED with no scholarship: still creates account, does not write scholarship", async () => {
+    fakeTx = makeFakeTx(baseApplication());
+
+    const result = await setApplicationOutcome("app-1", "AWARDED", {
+      bursaryAward: 10000,
+      scholarshipAward: null,
+    });
+
+    expect(result).toEqual({ success: true });
+    expect(fakeTx.bursaryAccount.create).toHaveBeenCalledTimes(1);
+    expect(fakeTx.recommendation.updateMany).not.toHaveBeenCalled();
+  });
+
+  it("AWARDED is idempotent: continues an existing account, no new account", async () => {
+    fakeTx = makeFakeTx(
+      baseApplication({ bursaryAccountId: "existing-account" })
+    );
+
+    const result = await setApplicationOutcome("app-1", "AWARDED", {
+      bursaryAward: 5000,
+      scholarshipAward: 0,
+    });
+
+    expect(result).toEqual({ success: true });
+    expect(fakeTx.bursaryAccount.create).not.toHaveBeenCalled();
+    // scholarshipAward of 0 is a real figure (not null) → recorded.
+    expect(fakeTx.recommendation.updateMany).toHaveBeenCalledTimes(1);
+    expect(fakeTx.auditLog.create).toHaveBeenCalledTimes(1);
+  });
+
+  it("QUALIFIES_NOT_AWARDED: no account, no scholarship write, one audit row", async () => {
+    fakeTx = makeFakeTx(baseApplication());
+
+    const result = await setApplicationOutcome(
+      "app-1",
+      "QUALIFIES_NOT_AWARDED"
+    );
+
+    expect(result).toEqual({ success: true });
+    expect(fakeTx.bursaryAccount.create).not.toHaveBeenCalled();
+    expect(fakeTx.recommendation.updateMany).not.toHaveBeenCalled();
+    expect(fakeTx.auditLog.create).toHaveBeenCalledTimes(1);
+    const auditArg = fakeTx.auditLog.create.mock.calls[0]![0] as unknown as {
+      data: { metadata: Record<string, unknown> };
+    };
+    expect(auditArg.data.metadata.outcome).toBe("QUALIFIES_NOT_AWARDED");
+  });
+
+  it("DOES_NOT_QUALIFY: no account create, still writes one audit row", async () => {
     fakeTx = makeFakeTx(baseApplication());
 
     const result = await setApplicationOutcome("app-1", "DOES_NOT_QUALIFY");
@@ -119,22 +218,14 @@ describe("setApplicationOutcome (shared core)", () => {
     expect(fakeTx.auditLog.create).toHaveBeenCalledTimes(1);
   });
 
-  it("is idempotent: skips BursaryAccount creation when the application is already linked", async () => {
+  it("rejects the decision when the assessment is not COMPLETED, no side effects", async () => {
     fakeTx = makeFakeTx(
-      baseApplication({ bursaryAccountId: "existing-account" })
+      baseApplication({
+        assessment: { id: "assess-1", status: "IN_PROGRESS", yearlyPayableFees: null },
+      })
     );
 
-    const result = await setApplicationOutcome("app-1", "QUALIFIES");
-
-    expect(result).toEqual({ success: true });
-    expect(fakeTx.bursaryAccount.create).not.toHaveBeenCalled();
-    expect(fakeTx.auditLog.create).toHaveBeenCalledTimes(1);
-  });
-
-  it("rejects the transition from a non-COMPLETED status without side effects", async () => {
-    fakeTx = makeFakeTx(baseApplication({ status: "NOT_STARTED" }));
-
-    const result = await setApplicationOutcome("app-1", "QUALIFIES");
+    const result = await setApplicationOutcome("app-1", "AWARDED");
 
     expect(result.success).toBe(false);
     expect(fakeTx.application.update).not.toHaveBeenCalled();

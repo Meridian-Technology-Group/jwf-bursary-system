@@ -30,6 +30,8 @@ model Profile {
   staffInvitationsCreated StaffInvitation[]        @relation("StaffInvitationCreator")
   contributorLinks        ApplicationContributor[] @relation("ContributorProfile")
   contributorsInvited     ApplicationContributor[] @relation("ContributorInvitedBy")
+  contacts                Contact[]                @relation("ContactProfile")
+  contactsCreated         Contact[]                @relation("ContactCreator")
 
   @@map("profiles")
 }
@@ -52,61 +54,131 @@ model Round {
 
 /// A persistent account per child, spanning multiple assessment years.
 model BursaryAccount {
-  id                   String               @id @default(uuid()) @db.Uuid
-  reference            String               @unique
+  id                   String                 @id @default(uuid()) @db.Uuid
+  reference            String                 @unique
   school               School
-  childName            String               @map("child_name")
-  childDob             DateTime?            @map("child_dob") @db.Date
-  entryYear            Int                  @map("entry_year")
-  entryYearGroup       EntryYearGroup?      @map("entry_year_group")
-  firstAssessmentYear  String               @map("first_assessment_year")
-  benchmarkPayableFees Decimal?             @map("benchmark_payable_fees") @db.Decimal(10, 2)
-  leadApplicantId      String               @map("lead_applicant_id") @db.Uuid
-  status               BursaryAccountStatus @default(ACTIVE)
-  closedAt             DateTime?            @map("closed_at") @db.Timestamptz(6)
-  createdAt            DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt            DateTime             @updatedAt @map("updated_at") @db.Timestamptz(6)
+  childName            String                 @map("child_name")
+  childDob             DateTime?              @map("child_dob") @db.Date
+  entryYear            Int                    @map("entry_year")
+  entryYearGroup       EntryYearGroup?        @map("entry_year_group")
+  firstAssessmentYear  String                 @map("first_assessment_year")
+  /// Agreed forward-schedule horizon N (Epic 10, D19) — number of future
+  /// assessment years generated on AWARD. NULL for legacy accounts created
+  /// before the schedule landed.
+  scheduleYears        Int?                   @map("schedule_years")
+  benchmarkPayableFees Decimal?               @map("benchmark_payable_fees") @db.Decimal(10, 2)
+  leadApplicantId      String                 @map("lead_applicant_id") @db.Uuid
+  status               BursaryAccountStatus   @default(ACTIVE)
+  closedAt             DateTime?              @map("closed_at") @db.Timestamptz(6)
+  createdAt            DateTime               @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt            DateTime               @updatedAt @map("updated_at") @db.Timestamptz(6)
   applications         Application[]
-  leadApplicant        Profile              @relation(fields: [leadApplicantId], references: [id])
+  leadApplicant        Profile                @relation(fields: [leadApplicantId], references: [id])
   invitations          Invitation[]
   recommendations      Recommendation[]
   siblingLinks         SiblingLink[]
+  contacts             Contact[]
+  scheduleEntries      BursaryScheduleEntry[]
 
   @@index([leadApplicantId])
   @@map("bursary_accounts")
 }
 
+/// Epic 10 — one row per future assessment year for a rolling bursary account
+/// (the application-lifecycle illustration's Year 1..N grid). Generated on
+/// AWARD; future rows materialise into Rounds one year at a time (Epic 03).
+model BursaryScheduleEntry {
+  id               String              @id @default(uuid()) @db.Uuid
+  bursaryAccountId String              @map("bursary_account_id") @db.Uuid
+  scheduleYear     Int                 @map("schedule_year")
+  academicYear     String              @map("academic_year")
+  type             ScheduleEntryType   @default(ANNUAL)
+  status           ScheduleEntryStatus @default(SCHEDULED)
+  manuallyCreated  Boolean             @default(false) @map("manually_created")
+  availableOn      DateTime?           @map("available_on") @db.Date
+  requiredBy       DateTime?           @map("required_by") @db.Date
+  receivedOn       DateTime?           @map("received_on") @db.Date
+  showOnPortal     Boolean             @default(false) @map("show_on_portal")
+  roundId          String?             @map("round_id") @db.Uuid
+  applicationId    String?             @map("application_id") @db.Uuid
+  createdAt        DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime            @updatedAt @map("updated_at") @db.Timestamptz(6)
+  bursaryAccount   BursaryAccount      @relation(fields: [bursaryAccountId], references: [id], onDelete: Cascade)
+
+  @@unique([bursaryAccountId, scheduleYear])
+  @@index([bursaryAccountId])
+  @@index([roundId])
+  @@map("bursary_schedule_entries")
+}
+
 /// One application per child per round.
 model Application {
-  id               String                   @id @default(uuid()) @db.Uuid
-  reference        String                   @unique
-  roundId          String                   @map("round_id") @db.Uuid
-  bursaryAccountId String?                  @map("bursary_account_id") @db.Uuid
-  leadApplicantId  String                   @map("lead_applicant_id") @db.Uuid
-  school           School
-  childName        String                   @map("child_name")
-  childDob         DateTime?                @map("child_dob") @db.Date
-  entryYear        Int?                     @map("entry_year")
-  entryYearGroup   EntryYearGroup?          @map("entry_year_group")
-  isReassessment   Boolean                  @default(false) @map("is_reassessment")
-  isInternal       Boolean                  @default(false) @map("is_internal")
-  status           ApplicationStatus        @default(PRE_SUBMISSION)
-  submittedAt      DateTime?                @map("submitted_at") @db.Timestamptz(6)
-  createdAt        DateTime                 @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt        DateTime                 @updatedAt @map("updated_at") @db.Timestamptz(6)
-  assignedToId     String?                  @map("assigned_to_id") @db.Uuid
-  sections         ApplicationSection[]
-  assignedTo       Profile?                 @relation("ApplicationAssignee", fields: [assignedToId], references: [id])
-  bursaryAccount   BursaryAccount?          @relation(fields: [bursaryAccountId], references: [id])
-  leadApplicant    Profile                  @relation("ApplicationLeadApplicant", fields: [leadApplicantId], references: [id])
-  round            Round                    @relation(fields: [roundId], references: [id])
-  assessment       Assessment?
-  documents        Document[]
-  contributors     ApplicationContributor[]
-  invitations      Invitation[]
+  id                   String                   @id @default(uuid()) @db.Uuid
+  reference            String                   @unique
+  roundId              String                   @map("round_id") @db.Uuid
+  bursaryAccountId     String?                  @map("bursary_account_id") @db.Uuid
+  contactId            String?                  @map("contact_id") @db.Uuid
+  leadApplicantId      String                   @map("lead_applicant_id") @db.Uuid
+  school               School
+  childName            String                   @map("child_name")
+  childDob             DateTime?                @map("child_dob") @db.Date
+  entryYear            Int?                     @map("entry_year")
+  entryYearGroup       EntryYearGroup?          @map("entry_year_group")
+  isReassessment       Boolean                  @default(false) @map("is_reassessment")
+  isInternal           Boolean                  @default(false) @map("is_internal")
+  formStatus           ApplicationFormStatus    @default(CREATED) @map("form_status")
+  applicationType      ApplicationType          @default(NEW) @map("application_type")
+  /// Shared-custody arrangement (Epic 09, Decision D15). SOLE is the default
+  /// (single resident parent/guardian, or a two-resident-parent household).
+  /// SHARED_5050 ⇒ both natural parents are lead applicants (either may hold
+  /// the account); SHARED_MAIN_LIMITED ⇒ the main-custody parent is the lead.
+  /// Additive/non-null with a SOLE default so existing rows are unaffected; the
+  /// "either may hold the account" rule is policy (see lib/household/rules.ts),
+  /// not a second lead FK — the one-account-per-child unique is NOT widened.
+  custodyArrangement   CustodyArrangement       @default(SOLE) @map("custody_arrangement")
+  archivedAt           DateTime?                @map("archived_at") @db.Timestamptz(6)
+  submittedAt          DateTime?                @map("submitted_at") @db.Timestamptz(6)
+  /// When the parent accepted the Terms & Conditions for THIS submission
+  /// (Epic 05, Decision D10). NULL until submitted. Stamped at submit and
+  /// rendered into the submitted summary + submission PDF. Additive/nullable.
+  termsAcceptedAt      DateTime?                @map("terms_accepted_at") @db.Timestamptz(6)
+  /// Which T&Cs document/version the parent accepted at submission (D10), so a
+  /// later document swap never rewrites a historic acceptance. See
+  /// lib/portal/terms.ts (TERMS_AND_CONDITIONS_VERSION).
+  termsVersion         String?                  @map("terms_version")
+  /// Per-applicant submit-by override (Epic 03). NULL ⇒ fall back to
+  /// round.closeDate. Distinct from Assessment.pausedUntil (post-submission
+  /// doc deadline, Epic 01) and from Round.closeDate (round-level intake
+  /// window). Read via effectiveSubmissionDeadline() — never compared raw.
+  submissionDeadlineAt DateTime?                @map("submission_deadline_at") @db.Timestamptz(6)
+  createdAt            DateTime                 @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt            DateTime                 @updatedAt @map("updated_at") @db.Timestamptz(6)
+  assignedToId         String?                  @map("assigned_to_id") @db.Uuid
+  sections             ApplicationSection[]
+  assignedTo           Profile?                 @relation("ApplicationAssignee", fields: [assignedToId], references: [id])
+  bursaryAccount       BursaryAccount?          @relation(fields: [bursaryAccountId], references: [id])
+  contact              Contact?                 @relation(fields: [contactId], references: [id])
+  leadApplicant        Profile                  @relation("ApplicationLeadApplicant", fields: [leadApplicantId], references: [id])
+  round                Round                    @relation(fields: [roundId], references: [id])
+  assessment           Assessment?
+  documents            Document[]
+  contributors         ApplicationContributor[]
+  invitations          Invitation[]
 
-  @@unique([roundId, leadApplicantId, childName])
-  @@index([roundId, status])
+  // One application per child per round, keyed including DOB so twins (same
+  // first name, distinct DOB) no longer collide (Epic 04, D12). This composite
+  // unique enforces the non-NULL-DOB case. A SEPARATE raw PARTIAL unique index
+  // (applications_round_lead_child_null_dob_key, WHERE child_dob IS NULL —
+  // created in migration 20260605210000_application_dob_unique) forbids two
+  // same-name rows that BOTH have NULL DOB, so Postgres NULL-distinctness can't
+  // weaken the dedupe for legacy/unknown-DOB rows. Together they fully replace
+  // the old childName-only unique without weakening it.
+  @@unique([roundId, leadApplicantId, childName, childDob])
+  // Replaces the old (round_id, status) index (Epic 01 PR-6b): the deprecated
+  // fused `status` column is dropped; the round queue/cockpit now filters on the
+  // authoritative form lifecycle, so the index follows it to keep the same
+  // round-scoped access pattern.
+  @@index([roundId, formStatus])
   @@index([leadApplicantId])
   @@index([bursaryAccountId])
   @@index([assignedToId])
@@ -130,6 +202,12 @@ model ApplicationSection {
   section            ApplicationSectionType
   data               Json                   @default("{}")
   isComplete         Boolean                @default(false) @map("is_complete")
+  /// CR-001 edit-on-behalf: flat dot-path map of fields entered/amended by
+  /// staff on the applicant's behalf, e.g.
+  /// `{ "parent1Income.salary": { editedBy, editedByName, editedAt } }`.
+  /// Merged on each staff save; cleared per-path when the applicant
+  /// re-edits that field pre-submission.
+  assessorProvenance Json                   @default("{}") @map("assessor_provenance")
   updatedAt          DateTime               @updatedAt @map("updated_at") @db.Timestamptz(6)
   application        Application            @relation(fields: [applicationId], references: [id], onDelete: Cascade)
   ownerContributor   ApplicationContributor @relation(fields: [ownerContributorId], references: [id], onDelete: Cascade)
@@ -228,8 +306,25 @@ model Assessment {
   vatRate                       Decimal?              @default(20.00) @map("vat_rate") @db.Decimal(5, 2)
   yearlyPayableFees             Decimal?              @map("yearly_payable_fees") @db.Decimal(10, 2)
   monthlyPayableFees            Decimal?              @map("monthly_payable_fees") @db.Decimal(10, 2)
+  /// Epic 07: next-year fee snapshot. `nextYearAnnualFees` is the resolved
+  /// following-academic-year gross fee (from the fee-year resolver); the payable
+  /// figures mirror the current-year breakdown but against the higher gross
+  /// (scholarship %/bursary held flat — D14 default). Persisted on save so the
+  /// recommendation/PDF (Epic 08) can show the uplift without recomputation.
+  /// All additive + nullable; null for rows saved before this column existed.
+  nextYearAnnualFees            Decimal?              @map("next_year_annual_fees") @db.Decimal(10, 2)
+  nextYearYearlyPayableFees     Decimal?              @map("next_year_yearly_payable_fees") @db.Decimal(10, 2)
+  nextYearMonthlyPayableFees    Decimal?              @map("next_year_monthly_payable_fees") @db.Decimal(10, 2)
   manualAdjustment              Decimal?              @default(0) @map("manual_adjustment") @db.Decimal(10, 2)
   manualAdjustmentReason        String?               @map("manual_adjustment_reason")
+  /// Epic 06: single qualitative narrative for the assessment. Replaces the six
+  /// AssessmentChecklist tabs and the Recommendation family_synopsis/summary as
+  /// the editable surface. Visible during assessment and on the completed /
+  /// recommendation screens; remains editable AFTER the assessment is COMPLETED
+  /// (its read-only rule is relaxed in the UI; the server action is always
+  /// permissive). Backfilled from the eight legacy boxes (those columns are
+  /// retained, read-only, until the 08 cutover). Additive + nullable.
+  synopsis                      String?               @map("synopsis")
   propertyCategory              Int?                  @map("property_category")
   propertyExceedsThreshold      Boolean               @default(false) @map("property_exceeds_threshold")
   dishonestyFlag                Boolean               @default(false) @map("dishonesty_flag")
@@ -238,6 +333,7 @@ model Assessment {
   secondaryParentOverrideReason String?               @map("secondary_parent_override_reason")
   status                        AssessmentStatus      @default(NOT_STARTED)
   outcome                       AssessmentOutcome?
+  pausedUntil                   DateTime?             @map("paused_until") @db.Timestamptz(6)
   completedAt                   DateTime?             @map("completed_at") @db.Timestamptz(6)
   createdAt                     DateTime              @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt                     DateTime              @updatedAt @map("updated_at") @db.Timestamptz(6)
@@ -316,6 +412,12 @@ model Recommendation {
   incomeCategory      String?                    @map("income_category")
   propertyCategory    Int?                       @map("property_category")
   bursaryAward        Decimal?                   @map("bursary_award") @db.Decimal(10, 2)
+  /// Distinct merit/academic scholarship award (£), recorded alongside the
+  /// means-tested bursary award (Epic 08, Decision D9). Additive/nullable —
+  /// NULL means no scholarship award was recorded for this recommendation.
+  /// The 0–100 Assessment.scholarshipPct remains the fee-calculation lever; this
+  /// is the recorded £ figure the rolling account carries forward (Epic 10).
+  scholarshipAward    Decimal?                   @map("scholarship_award") @db.Decimal(10, 2)
   yearlyPayableFees   Decimal?                   @map("yearly_payable_fees") @db.Decimal(10, 2)
   monthlyPayableFees  Decimal?                   @map("monthly_payable_fees") @db.Decimal(10, 2)
   dishonestyFlag      Boolean                    @default(false) @map("dishonesty_flag")
@@ -407,6 +509,68 @@ model CouncilTaxDefault {
   @@map("council_tax_defaults")
 }
 
+/// Admin-managed lead-applicant contact: the pre-application record of a
+/// family (parent + child + school + entry year + address). Exists
+/// independently of any Application; it is the source from which an
+/// invitation and a pre-filled, school/year-LOCKED application are seeded
+/// (Epic 04, D1). The child name + DOB form the per-child identity key so
+/// twins (same name, distinct DOB) get distinct contacts (D12).
+model Contact {
+  id String @id @default(uuid()) @db.Uuid
+
+  // Parent (lead applicant) — identity & reachability. lastName required.
+  firstName String? @map("first_name")
+  lastName  String  @map("last_name")
+  email     String  @map("email")
+  phone     String? @map("phone")
+
+  // Child — name (required) + DOB form the per-child identity key (twins).
+  childName String    @map("child_name")
+  childDob  DateTime? @map("child_dob") @db.Date
+
+  // School & year — set by admin, LOCKED for the parent (D1).
+  school         School
+  entryYear      Int             @map("entry_year")
+  entryYearGroup EntryYearGroup? @map("entry_year_group")
+
+  // Home address — structured, so the portal can show the stored address
+  // when the child is "at the same address" (Epic 02 reads it).
+  addressLine1 String? @map("address_line1")
+  addressLine2 String? @map("address_line2")
+  town         String? @map("town")
+  postcode     String? @map("postcode")
+
+  // Linkage — bound to a Profile once the family registers; to an account
+  // once they hold a bursary. Both nullable: a contact precedes both.
+  profileId        String? @map("profile_id") @db.Uuid
+  bursaryAccountId String? @map("bursary_account_id") @db.Uuid
+
+  notes      String?
+  archivedAt DateTime? @map("archived_at") @db.Timestamptz(6)
+  createdBy  String    @map("created_by") @db.Uuid
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt  DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  profile        Profile?        @relation("ContactProfile", fields: [profileId], references: [id])
+  bursaryAccount BursaryAccount? @relation(fields: [bursaryAccountId], references: [id])
+  creator        Profile         @relation("ContactCreator", fields: [createdBy], references: [id])
+  invitations    Invitation[]
+  applications   Application[]
+
+  // One contact per child per lead applicant: name + DOB disambiguates twins.
+  // NOTE: profileId is nullable (a contact precedes registration) and Postgres
+  // treats NULLs as DISTINCT in unique indexes, so this constraint does NOT
+  // dedupe two not-yet-bound contacts for the same child. The friendly
+  // "already a contact for that child" guard lives in createContactAction,
+  // scoped by creator, to catch that case at the app layer before binding.
+  @@unique([profileId, childName, childDob])
+  @@index([email])
+  @@index([profileId])
+  @@index([bursaryAccountId])
+  @@index([createdBy])
+  @@map("contacts")
+}
+
 /// Tracks invitations sent by assessors.
 model Invitation {
   id               String           @id @default(uuid()) @db.Uuid
@@ -417,8 +581,11 @@ model Invitation {
   school           School?
   roundId          String?          @map("round_id") @db.Uuid
   bursaryAccountId String?          @map("bursary_account_id") @db.Uuid
+  contactId        String?          @map("contact_id") @db.Uuid
   applicationId    String?          @map("application_id") @db.Uuid
   authUserId       String?          @map("auth_user_id") @db.Uuid
+  entryYear        Int?             @map("entry_year")
+  entryYearGroup   EntryYearGroup?  @map("entry_year_group")
   token            String           @unique
   status           InvitationStatus @default(PENDING)
   expiresAt        DateTime         @map("expires_at") @db.Timestamptz(6)
@@ -426,6 +593,7 @@ model Invitation {
   createdBy        String           @map("created_by") @db.Uuid
   createdAt        DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
   bursaryAccount   BursaryAccount?  @relation(fields: [bursaryAccountId], references: [id])
+  contact          Contact?         @relation(fields: [contactId], references: [id])
   application      Application?     @relation(fields: [applicationId], references: [id], onDelete: Cascade)
   creator          Profile          @relation("InvitationCreator", fields: [createdBy], references: [id])
   round            Round?           @relation(fields: [roundId], references: [id])
@@ -433,6 +601,7 @@ model Invitation {
   @@index([token])
   @@index([email])
   @@index([applicationId])
+  @@index([contactId])
   @@map("invitations")
 }
 
@@ -522,25 +691,54 @@ enum RoundStatus {
   CLOSED
 }
 
-enum ApplicationStatus {
-  PRE_SUBMISSION
-  SUBMITTED
+/// Form lifecycle for an Application (Epic 01).
+/// CREATED → NOT_STARTED → IN_PROGRESS → FILLED_IN → SUBMITTED.
+enum ApplicationFormStatus {
+  CREATED
   NOT_STARTED
-  PAUSED
-  COMPLETED
-  QUALIFIES
-  DOES_NOT_QUALIFY
+  IN_PROGRESS
+  FILLED_IN
+  SUBMITTED
+}
+
+/// Whether an Application is a brand-new application or a rolling-over
+/// reassessment of an existing BursaryAccount (Epic 01). Replaces the
+/// inferred `bursaryAccountId == null` + `isReassessment` heuristic.
+enum ApplicationType {
+  NEW
+  ROLLING_OVER
+}
+
+/// Shared-custody arrangement for an Application (Epic 09, Decision D15).
+///   SOLE                — single resident parent/guardian, or a single
+///                         two-resident-parent household (the default).
+///   SHARED_5050         — 50/50 shared custody; both natural parents are lead
+///                         applicants (either may hold the account).
+///   SHARED_MAIN_LIMITED — main + limited custody; the main-custody parent is
+///                         the lead, both natural parents are assessed.
+enum CustodyArrangement {
+  SOLE
+  SHARED_5050
+  SHARED_MAIN_LIMITED
 }
 
 enum AssessmentStatus {
   NOT_STARTED
+  IN_PROGRESS
   PAUSED
   COMPLETED
 }
 
 enum AssessmentOutcome {
+  /// VESTIGIAL (Epic 01 PR-6b): the legacy binary `QUALIFIES` value is fully
+  /// unused — 0 rows on nonprod (residuals remapped to AWARDED /
+  /// QUALIFIES_NOT_AWARDED in PR-6a) and no code references. Removing a value
+  /// from an in-use Postgres enum requires a risky new-enum-swap, so it is left
+  /// in place. Safe to drop later via an enum swap once confidence is high.
   QUALIFIES
   DOES_NOT_QUALIFY
+  QUALIFIES_NOT_AWARDED
+  AWARDED
 }
 
 enum EarnerLabel {
@@ -603,6 +801,8 @@ enum EmailTemplateType {
   MISSING_DOCS
   OUTCOME_QUALIFIES
   OUTCOME_DNQ
+  OUTCOME_AWARDED
+  OUTCOME_QUALIFIES_NOT_AWARDED
   REASSESSMENT
   REMINDER
   INVITE_STAFF
@@ -610,9 +810,24 @@ enum EmailTemplateType {
   SECONDARY_PARENT_INVITE
   SECONDARY_PARENT_REMINDER
   SECONDARY_PARENT_RECEIVED
+  APPLICATION_RESTART_REQUIRED
+  APPLICATION_EDITED_ON_BEHALF
 }
 
 enum BursaryAccountStatus {
   ACTIVE
   CLOSED
+}
+
+/// Epic 10 — schedule-row type ("AnnualType" in the illustration). Extensible.
+enum ScheduleEntryType {
+  ANNUAL
+}
+
+/// Epic 10 — schedule-row lifecycle: SCHEDULED until the year's application is
+/// received, then RECEIVED, then COMPLETE once that year's assessment finishes.
+enum ScheduleEntryStatus {
+  SCHEDULED
+  RECEIVED
+  COMPLETE
 }

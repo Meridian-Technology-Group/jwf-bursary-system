@@ -54,6 +54,7 @@ import {
   recommendations,
   recommendationReasonCodes,
   siblingLinks,
+  scheduleEntries,
   ACCOUNT_OKAFOR_ID,
   ACCOUNT_PATEL_ID,
   ACCOUNT_WILLIAMS_M_ID,
@@ -62,6 +63,7 @@ import {
   APP_PATEL_ID,
 } from "./seed-data/demo-applications";
 import { demoDocuments } from "./seed-data/demo-documents";
+import { demoContacts } from "./seed-data/demo-contacts";
 
 // The runtime DATABASE_URL points at the non-superuser `app_user` role
 // (subject to RLS). Seeding requires the superuser session pooler so it can
@@ -87,6 +89,11 @@ function getSupabaseAdmin() {
 // ─── Round ────────────────────────────────────────────────────────────────────
 
 const ROUND_ID = "00000000-0000-4000-0000-000000000001";
+// Epic 03 (D13): demo a SECOND concurrently-OPEN round so the dashboard/queue/
+// reports round selectors and the live-rounds invite picker have something to
+// switch between. Applications are seeded into ROUND_ID; this round is empty
+// (newly opened intake) and exists to prove concurrency works end-to-end.
+const SECOND_ROUND_ID = "00000000-0000-4000-0000-000000000002";
 
 const round = {
   id: ROUND_ID,
@@ -94,6 +101,15 @@ const round = {
   openDate: new Date("2026-01-15"),
   closeDate: new Date("2026-04-30"),
   decisionDate: new Date("2026-06-30"),
+  status: "OPEN" as const,
+};
+
+const secondRound = {
+  id: SECOND_ROUND_ID,
+  academicYear: "2027/28",
+  openDate: new Date("2026-03-01"),
+  closeDate: new Date("2026-07-31"),
+  decisionDate: new Date("2026-09-30"),
   status: "OPEN" as const,
 };
 
@@ -169,9 +185,19 @@ async function clearAll(): Promise<void> {
   const app = await prisma.application.deleteMany({});
   log(`Deleted ${app.count} applications`);
 
-  // Invitations (reference rounds + bursary accounts + profiles)
+  // Invitations (reference rounds + bursary accounts + profiles + contacts)
   const inv = await prisma.invitation.deleteMany({});
   log(`Deleted ${inv.count} invitations`);
+
+  // Contacts (reference profiles + bursary accounts; applications/invitations
+  // contact_id are SET NULL, already cleared above)
+  const co = await prisma.contact.deleteMany({});
+  log(`Deleted ${co.count} contacts`);
+
+  // Schedule entries (FK → bursary accounts; deleted explicitly before the
+  // accounts even though ON DELETE CASCADE would also clear them).
+  const se = await prisma.bursaryScheduleEntry.deleteMany({});
+  log(`Deleted ${se.count} schedule entries`);
 
   // Bursary accounts
   const ba = await prisma.bursaryAccount.deleteMany({});
@@ -267,6 +293,10 @@ async function seedRound(): Promise<void> {
 
   await prisma.round.create({ data: round });
   log(`Created round: ${round.academicYear} (${round.status})`);
+
+  // Second concurrently-OPEN round (Epic 03 / D13).
+  await prisma.round.create({ data: secondRound });
+  log(`Created round: ${secondRound.academicYear} (${secondRound.status})`);
 }
 
 // ─── Bursary Accounts ─────────────────────────────────────────────────────────
@@ -278,6 +308,14 @@ async function seedBursaryAccounts(): Promise<void> {
     await prisma.bursaryAccount.create({ data: account });
   }
   log(`Created ${bursaryAccounts.length} bursary accounts`);
+
+  // Forward-schedule entries (Epic 10) — created after the accounts they belong
+  // to. Okafor = ACTIVE with a mixed RECEIVED/SCHEDULED grid; Chen = CLOSED with
+  // a fully COMPLETE grid.
+  for (const entry of scheduleEntries) {
+    await prisma.bursaryScheduleEntry.create({ data: entry });
+  }
+  log(`Created ${scheduleEntries.length} schedule entries`);
 }
 
 // ─── Applications ─────────────────────────────────────────────────────────────
@@ -294,6 +332,20 @@ async function seedApplications(): Promise<void> {
     });
   }
   log(`Created ${applications.length} applications`);
+
+  // Epic 03: per-application submission-deadline overrides. Round close is
+  // 2026-04-30; demo one applicant granted a LATER deadline and one set EARLIER
+  // so the effective-deadline derivation + override marker (and Epic 05's
+  // countdown) have fixtures. NULL on every other app ⇒ inherits round close.
+  await prisma.application.update({
+    where: { id: APP_OKAFOR_ID },
+    data: { submissionDeadlineAt: new Date("2026-05-14T17:00:00Z") }, // extended
+  });
+  await prisma.application.update({
+    where: { id: APP_PATEL_ID },
+    data: { submissionDeadlineAt: new Date("2026-04-18T17:00:00Z") }, // earlier
+  });
+  log("Applied 2 per-application submission-deadline overrides (1 later, 1 earlier)");
 }
 
 // ─── Assign Applications ──────────────────────────────────────────────────────
@@ -314,6 +366,19 @@ async function assignApplications(): Promise<void> {
     });
   }
   log(`Assigned ${assignedIds.length} applications to Michael Thompson`);
+}
+
+// ─── Contacts (Epic 04 — lead-applicant contact register) ─────────────────────
+
+async function seedContacts(): Promise<void> {
+  section("Seeding lead-applicant contacts");
+
+  for (const contact of demoContacts) {
+    await prisma.contact.create({ data: contact });
+  }
+  log(
+    `Created ${demoContacts.length} contacts (incl. a twin pair: same name, distinct DOB)`,
+  );
 }
 
 // ─── Application Sections ─────────────────────────────────────────────────────
@@ -506,6 +571,7 @@ async function printSummary(): Promise<void> {
     ["Profiles",                     await prisma.profile.count()],
     ["Rounds",                       await prisma.round.count()],
     ["Bursary accounts",             await prisma.bursaryAccount.count()],
+    ["Schedule entries",             await prisma.bursaryScheduleEntry.count()],
     ["Applications",                 await prisma.application.count()],
     ["Application sections",         await prisma.applicationSection.count()],
     ["Documents",                    await prisma.document.count()],
@@ -541,6 +607,7 @@ async function main(): Promise<void> {
   await seedProfiles();
   await seedRound();
   await seedBursaryAccounts();
+  await seedContacts();
   await seedApplications();
   await assignApplications();
   await seedApplicationSections();

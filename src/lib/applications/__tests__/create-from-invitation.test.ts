@@ -1,0 +1,217 @@
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import {
+  canCreateFirstYearApplication,
+  createFirstYearApplicationFromSource,
+  restartApplicationFromRejection,
+  type FirstYearApplicationSource,
+  type RejectedApplicationSource,
+} from "../create-from-invitation";
+import { ensurePrimaryContributor } from "@/lib/db/queries/contributors";
+
+// Mock the collaborators so the test exercises only the lock logic + create
+// payload, not the DB.
+vi.mock("@/lib/applications/reference", () => ({
+  generateApplicationReference: vi.fn(async () => "REF-TEST-0001"),
+}));
+vi.mock("@/lib/db/queries/contributors", () => ({
+  ensurePrimaryContributor: vi.fn(async () => undefined),
+}));
+
+const complete: FirstYearApplicationSource = {
+  leadApplicantId: "lead-1",
+  roundId: "round-1",
+  school: "WHITGIFT",
+  childName: "Daniel Adeyemi",
+  entryYear: 2026,
+  entryYearGroup: "Y7",
+  contactId: "contact-1",
+};
+
+function makeTx(createdSpy: (data: unknown) => void) {
+  return {
+    round: { findUnique: vi.fn(async () => ({ academicYear: "2026/27" })) },
+    application: {
+      create: vi.fn(async ({ data }: { data: unknown }) => {
+        createdSpy(data);
+        return { id: "app-1" };
+      }),
+    },
+  } as never;
+}
+
+describe("canCreateFirstYearApplication", () => {
+  it("true when school + childName + roundId all present", () => {
+    expect(canCreateFirstYearApplication(complete)).toBe(true);
+  });
+
+  it("false when school missing (falls back to onboarding card)", () => {
+    expect(
+      canCreateFirstYearApplication({ ...complete, school: null })
+    ).toBe(false);
+  });
+
+  it("false when round missing", () => {
+    expect(
+      canCreateFirstYearApplication({ ...complete, roundId: null })
+    ).toBe(false);
+  });
+});
+
+describe("createFirstYearApplicationFromSource (D1 locked school/year)", () => {
+  let captured: Record<string, unknown> | null;
+
+  beforeEach(() => {
+    captured = null;
+  });
+
+  it("stamps the LOCKED school, entry-year and contactId from the source", async () => {
+    const tx = makeTx((data) => {
+      captured = data as Record<string, unknown>;
+    });
+
+    const id = await createFirstYearApplicationFromSource(tx, complete);
+
+    expect(id).toBe("app-1");
+    expect(captured).toMatchObject({
+      school: "WHITGIFT",
+      childName: "Daniel Adeyemi",
+      entryYear: 2026,
+      entryYearGroup: "Y7",
+      contactId: "contact-1",
+      leadApplicantId: "lead-1",
+      roundId: "round-1",
+      isReassessment: false,
+    });
+    // applicationCreateData("NEW") spread → form CREATED, type NEW.
+    expect(captured).toMatchObject({
+      formStatus: "CREATED",
+      applicationType: "NEW",
+    });
+  });
+
+  it("writes null entry-year when the source omits it (still locked to source)", async () => {
+    const tx = makeTx((data) => {
+      captured = data as Record<string, unknown>;
+    });
+    await createFirstYearApplicationFromSource(tx, {
+      ...complete,
+      entryYear: null,
+      entryYearGroup: null,
+    });
+    expect(captured).toMatchObject({ entryYear: null, entryYearGroup: null });
+  });
+
+  it("throws if required locked fields are absent", async () => {
+    const tx = makeTx(() => {});
+    await expect(
+      createFirstYearApplicationFromSource(tx, { ...complete, school: null })
+    ).rejects.toThrow(/missing school/i);
+  });
+});
+
+describe("restartApplicationFromRejection (Full Rejection void + recreate)", () => {
+  const rejected: RejectedApplicationSource = {
+    id: "old-app-1",
+    reference: "WS-20262027-0007",
+    roundId: "round-1",
+    leadApplicantId: "lead-1",
+    school: "WHITGIFT",
+    childName: "Daniel Adeyemi",
+    childDob: null,
+    entryYear: 2026,
+    entryYearGroup: "Y7",
+    contactId: "contact-1",
+    isReassessment: false,
+    applicationType: "NEW",
+    bursaryAccountId: null,
+    custodyArrangement: "SOLE",
+  };
+
+  function makeRestartTx(opts: {
+    onDelete: (arg: unknown) => void;
+    onCreate: (data: unknown) => void;
+  }) {
+    return {
+      application: {
+        delete: vi.fn(async (arg: unknown) => {
+          opts.onDelete(arg);
+          return { id: "old-app-1" };
+        }),
+        create: vi.fn(async ({ data }: { data: unknown }) => {
+          opts.onCreate(data);
+          return { id: "new-app-1" };
+        }),
+      },
+    } as never;
+  }
+
+  beforeEach(() => {
+    vi.mocked(ensurePrimaryContributor).mockClear();
+  });
+
+  it("deletes the old application, recreates it blank reusing the reference, and ensures a PRIMARY contributor", async () => {
+    let deletedArg: unknown = null;
+    let created: Record<string, unknown> | null = null;
+    const tx = makeRestartTx({
+      onDelete: (arg) => {
+        deletedArg = arg;
+      },
+      onCreate: (data) => {
+        created = data as Record<string, unknown>;
+      },
+    });
+
+    const newId = await restartApplicationFromRejection(tx, rejected);
+
+    expect(newId).toBe("new-app-1");
+    // Old row hard-deleted by id.
+    expect(deletedArg).toEqual({ where: { id: "old-app-1" } });
+    // New row reuses the freed reference + carries the child/round identity,
+    // starts blank (CREATED), and keeps the application type.
+    expect(created).toMatchObject({
+      reference: "WS-20262027-0007",
+      roundId: "round-1",
+      leadApplicantId: "lead-1",
+      school: "WHITGIFT",
+      childName: "Daniel Adeyemi",
+      childDob: null,
+      entryYear: 2026,
+      contactId: "contact-1",
+      isReassessment: false,
+      bursaryAccountId: null,
+      custodyArrangement: "SOLE",
+      formStatus: "CREATED",
+      applicationType: "NEW",
+    });
+    // PRIMARY contributor created for the NEW application.
+    expect(ensurePrimaryContributor).toHaveBeenCalledWith(
+      tx,
+      "new-app-1",
+      "lead-1"
+    );
+  });
+
+  it("carries the bursary account + ROLLING_OVER type for a re-assessment restart", async () => {
+    let created: Record<string, unknown> | null = null;
+    const tx = makeRestartTx({
+      onDelete: () => {},
+      onCreate: (data) => {
+        created = data as Record<string, unknown>;
+      },
+    });
+
+    await restartApplicationFromRejection(tx, {
+      ...rejected,
+      isReassessment: true,
+      applicationType: "ROLLING_OVER",
+      bursaryAccountId: "acct-9",
+    });
+
+    expect(created).toMatchObject({
+      isReassessment: true,
+      applicationType: "ROLLING_OVER",
+      bursaryAccountId: "acct-9",
+      formStatus: "CREATED",
+    });
+  });
+});

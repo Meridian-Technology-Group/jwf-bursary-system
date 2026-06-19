@@ -27,8 +27,6 @@ import {
 } from "@/components/ui/dialog";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
-import { CurrencyInput } from "@/components/portal/form-fields/currency-input";
-import { ConditionalField } from "@/components/portal/form-fields/conditional-field";
 import { AlertCircle, Plus, Pencil, Trash2 } from "lucide-react";
 import type { DependentChildrenFormValues } from "@/lib/schemas/dependent-children";
 import { cn } from "@/lib/utils";
@@ -38,8 +36,7 @@ import { cn } from "@/lib/utils";
 interface ChildDialogInitialValues {
   name?: string;
   school?: string;
-  unearnedIncome?: number;
-  bursaryAmount?: number;
+  schoolAddress?: string;
   isNamedChild?: boolean;
 }
 
@@ -54,8 +51,7 @@ interface ChildDialogProps {
   onSave: (data: {
     name: string;
     school: string;
-    unearnedIncome: number;
-    bursaryAmount?: number;
+    schoolAddress: string;
     isNamedChild?: boolean;
   }) => void;
 }
@@ -70,8 +66,7 @@ function ChildDialog({
 }: ChildDialogProps) {
   const [name, setName] = React.useState("");
   const [school, setSchool] = React.useState("");
-  const [unearnedIncome, setUnearnedIncome] = React.useState("0");
-  const [bursaryAmount, setBursaryAmount] = React.useState("0");
+  const [schoolAddress, setSchoolAddress] = React.useState("");
   const [isNamedChild, setIsNamedChild] = React.useState(false);
   const [errors, setErrors] = React.useState<Record<string, string>>({});
 
@@ -82,23 +77,13 @@ function ChildDialog({
     if (open) {
       setName(initialValues?.name ?? "");
       setSchool(initialValues?.school ?? "");
-      setUnearnedIncome(
-        initialValues?.unearnedIncome != null
-          ? String(initialValues.unearnedIncome)
-          : "0"
-      );
-      setBursaryAmount(
-        initialValues?.bursaryAmount != null
-          ? String(initialValues.bursaryAmount)
-          : "0"
-      );
+      setSchoolAddress(initialValues?.schoolAddress ?? "");
       setIsNamedChild(!!initialValues?.isNamedChild);
       setErrors({});
     } else {
       setName("");
       setSchool("");
-      setUnearnedIncome("0");
-      setBursaryAmount("0");
+      setSchoolAddress("");
       setIsNamedChild(false);
       setErrors({});
     }
@@ -107,8 +92,6 @@ function ChildDialog({
   function handleSave() {
     const newErrors: Record<string, string> = {};
     if (!name.trim()) newErrors.name = "Child name is required";
-    if (isNaN(parseFloat(unearnedIncome)))
-      newErrors.unearnedIncome = "Enter 0 if not applicable";
 
     setErrors(newErrors);
     if (Object.keys(newErrors).length > 0) return;
@@ -116,8 +99,7 @@ function ChildDialog({
     onSave({
       name: name.trim(),
       school: school.trim(),
-      unearnedIncome: parseFloat(unearnedIncome) || 0,
-      bursaryAmount: parseFloat(bursaryAmount) || undefined,
+      schoolAddress: schoolAddress.trim(),
       isNamedChild,
     });
     onClose();
@@ -170,9 +152,9 @@ function ChildDialog({
             )}
           </div>
 
-          {/* School */}
+          {/* School name */}
           <div className="space-y-1.5">
-            <Label htmlFor="child-school">School</Label>
+            <Label htmlFor="child-school">School Name</Label>
             <Input
               id="child-school"
               value={school}
@@ -181,55 +163,15 @@ function ChildDialog({
             />
           </div>
 
-          {/* Bursary amount */}
+          {/* School address */}
           <div className="space-y-1.5">
-            <Label htmlFor="child-bursary">Amount of bursary (£)</Label>
-            <div className="relative flex items-center">
-              <span className="inline-flex h-9 items-center rounded-l-md border border-r-0 border-slate-300 bg-slate-50 px-3 text-sm text-slate-500">
-                £
-              </span>
-              <input
-                id="child-bursary"
-                type="text"
-                inputMode="decimal"
-                value={bursaryAmount}
-                onChange={(e) => setBursaryAmount(e.target.value)}
-                className="block flex-1 rounded-r-md border border-slate-300 bg-white py-2 pr-3 text-right text-sm tabular-nums focus:outline-none focus:ring-2 focus:ring-accent-200 focus:border-accent-500"
-              />
-            </div>
-          </div>
-
-          {/* Unearned income */}
-          <div className="space-y-1.5">
-            <Label htmlFor="child-unearned">
-              Children&rsquo;s unearned income (£){" "}
-              <span className="text-error-600" aria-hidden="true">*</span>
-            </Label>
-            <p className="text-xs text-slate-500">
-              Where a value is not applicable, please enter 0.
-            </p>
-            <div className="relative flex items-center">
-              <span className="inline-flex h-9 items-center rounded-l-md border border-r-0 border-slate-300 bg-slate-50 px-3 text-sm text-slate-500">
-                £
-              </span>
-              <input
-                id="child-unearned"
-                type="text"
-                inputMode="decimal"
-                value={unearnedIncome}
-                onChange={(e) => setUnearnedIncome(e.target.value)}
-                className={cn(
-                  "block flex-1 rounded-r-md border bg-white py-2 pr-3 text-right text-sm tabular-nums",
-                  "focus:outline-none focus:ring-2",
-                  errors.unearnedIncome
-                    ? "border-error-600 focus:ring-error-300"
-                    : "border-slate-300 focus:ring-accent-200 focus:border-accent-500"
-                )}
-              />
-            </div>
-            {errors.unearnedIncome && (
-              <p className="text-xs text-error-600">{errors.unearnedIncome}</p>
-            )}
+            <Label htmlFor="child-school-address">School address</Label>
+            <Input
+              id="child-school-address"
+              value={schoolAddress}
+              onChange={(e) => setSchoolAddress(e.target.value)}
+              placeholder="School address"
+            />
           </div>
         </div>
 
@@ -277,8 +219,7 @@ export function DependentChildrenForm({ childFullName }: { childFullName?: strin
   function handleSave(data: {
     name: string;
     school: string;
-    unearnedIncome: number;
-    bursaryAmount?: number;
+    schoolAddress: string;
     isNamedChild?: boolean;
   }) {
     const id = crypto.randomUUID();
@@ -371,13 +312,10 @@ export function DependentChildrenForm({ childFullName }: { childFullName?: strin
                     Name
                   </th>
                   <th className="px-4 py-2.5 text-left text-xs font-medium uppercase tracking-wider text-slate-500">
-                    School
+                    School Name
                   </th>
-                  <th className="px-4 py-2.5 text-right text-xs font-medium uppercase tracking-wider text-slate-500">
-                    Bursary (£)
-                  </th>
-                  <th className="px-4 py-2.5 text-right text-xs font-medium uppercase tracking-wider text-slate-500">
-                    Unearned income (£)
+                  <th className="px-4 py-2.5 text-left text-xs font-medium uppercase tracking-wider text-slate-500">
+                    School address
                   </th>
                   <th className="px-4 py-2.5 text-right text-xs font-medium uppercase tracking-wider text-slate-500">
                     Actions
@@ -424,13 +362,8 @@ export function DependentChildrenForm({ childFullName }: { childFullName?: strin
                       <td className="px-4 py-3 text-slate-500">
                         {field.school || "—"}
                       </td>
-                      <td className="px-4 py-3 text-right tabular-nums text-slate-700">
-                        {field.bursaryAmount !== undefined
-                          ? `£${field.bursaryAmount.toLocaleString()}`
-                          : "—"}
-                      </td>
-                      <td className="px-4 py-3 text-right tabular-nums text-slate-700">
-                        £{(field.unearnedIncome ?? 0).toLocaleString()}
+                      <td className="px-4 py-3 text-slate-500">
+                        {field.schoolAddress || "—"}
                       </td>
                       <td className="px-4 py-3 text-right">
                         <div className="flex items-center justify-end gap-2">
@@ -480,8 +413,7 @@ export function DependentChildrenForm({ childFullName }: { childFullName?: strin
             ? {
                 name: fields[editIndex].name,
                 school: fields[editIndex].school,
-                unearnedIncome: fields[editIndex].unearnedIncome,
-                bursaryAmount: fields[editIndex].bursaryAmount,
+                schoolAddress: fields[editIndex].schoolAddress,
                 isNamedChild: fields[editIndex].isNamedChild,
               }
             : undefined

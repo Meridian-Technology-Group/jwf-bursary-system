@@ -60,6 +60,7 @@ export async function getExportRows(
       assessment: {
         select: {
           outcome: true,
+          synopsis: true,
           recommendation: {
             select: {
               familySynopsis: true,
@@ -120,7 +121,10 @@ export async function getExportRows(
       childFirstName,
       childLastName,
       school: app.school,
-      familySynopsis: rec?.familySynopsis ?? "",
+      // Epic 06: prefer the legacy recommendation synopsis for historical rows;
+      // fall back to the single Assessment.synopsis for newer assessments.
+      familySynopsis:
+        rec?.familySynopsis ?? app.assessment?.synopsis ?? "",
       accommodationType: rec?.accommodationStatus ?? "",
       incomeCategory: rec?.incomeCategory ?? "",
       propertyCategory:

@@ -34,34 +34,33 @@ export function GdprDeleteAction({
   const [open, setOpen] = React.useState(false);
 
   return (
-    <div className="rounded-xl border border-red-200 bg-red-50/40 px-6 py-4 shadow-sm mb-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-start gap-2">
-          <ShieldAlert
-            className="mt-0.5 h-4 w-4 shrink-0 text-red-600"
-            aria-hidden="true"
-          />
-          <div>
-            <p className="text-sm font-medium text-red-800">
-              Destructive actions
-            </p>
-            <p className="text-xs text-red-700/80">
-              GDPR right-to-erasure removes personal data permanently. Subject
-              to a 7-year retention guard.
-            </p>
-          </div>
+    <div className="flex flex-wrap items-center justify-between gap-3 px-6 py-4">
+      <div className="flex items-start gap-2">
+        <ShieldAlert
+          className="mt-0.5 h-4 w-4 shrink-0 text-red-500"
+          aria-hidden="true"
+        />
+        <div>
+          <p className="text-sm font-medium text-slate-800">
+            Delete applicant data
+          </p>
+          <p className="text-xs text-slate-500">
+            GDPR right-to-erasure removes personal data permanently. Subject to
+            a 7-year retention guard.
+          </p>
         </div>
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          className="gap-2 border-red-300 text-red-700 hover:bg-red-100 hover:border-red-400"
-          onClick={() => setOpen(true)}
-        >
-          <ShieldAlert className="h-4 w-4" aria-hidden="true" />
-          Delete (GDPR)
-        </Button>
       </div>
+
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        className="gap-2 border-red-300 text-red-700 hover:bg-red-100 hover:border-red-400"
+        onClick={() => setOpen(true)}
+      >
+        <ShieldAlert className="h-4 w-4" aria-hidden="true" />
+        Delete (GDPR)
+      </Button>
 
       <GdprDeleteDialog
         applicationId={applicationId}

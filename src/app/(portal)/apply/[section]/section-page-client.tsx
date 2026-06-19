@@ -19,10 +19,18 @@ import type { DocumentMeta } from "@/lib/db/queries/applications";
 import { SectionForm } from "@/components/portal/section-form";
 // ProgressBar removed — progress is shown in the sidebar
 import { PrepopulatedSectionBanner } from "@/components/portal/form-fields/prepopulated-field";
+import {
+  isLegacyIncomeRecord,
+  normaliseLegacyIncomeRecord,
+} from "@/lib/portal/income-model";
 import { saveSection, submitApplication } from "../actions";
+import type { SaveSectionResult } from "../actions";
 
 // Section form components
-import { ChildDetailsForm } from "@/components/portal/sections/child-details-form";
+import {
+  ChildDetailsForm,
+  type StoredParentAddress,
+} from "@/components/portal/sections/child-details-form";
 import { FamilyIdForm } from "@/components/portal/sections/family-id-form";
 import { ParentDetailsForm } from "@/components/portal/sections/parent-details-form";
 import { DependentChildrenForm } from "@/components/portal/sections/dependent-children-form";
@@ -52,14 +60,28 @@ interface SectionPageClientProps {
   existingData: unknown;
   /** Seed for Section 1 defaults — the school captured on the Application. */
   applicationSchool?: "TRINITY" | "WHITGIFT";
+  /** The school LOCKED at the admin invite (D1) — shown read-only as Q1. */
+  lockedSchool?: "TRINITY" | "WHITGIFT" | null;
   /** Seed for Section 1 defaults — the child's name captured on the Application. */
   applicationChildName?: string;
+  /** Stored Parent 1 address — shown read-only when child shares it (D1, §3 Q7). */
+  parent1Address?: StoredParentAddress | null;
+  /**
+   * The round's academic-year string (e.g. "2026/27"). Drives the dynamic
+   * tax-year wording on the income section (D5). Null when unavailable.
+   */
+  academicYear?: string | null;
   /** Map of document ID → metadata for showing previously uploaded files. */
   documentMap?: Record<string, DocumentMeta>;
   /** Child's full name from CHILD_DETAILS (for DEPENDENT_CHILDREN section). */
   childFullName?: string;
   /** isSoleParent flag from PARENT_DETAILS (for PARENTS_INCOME section). */
   isSoleParent?: boolean;
+  /** Declared employment statuses from PARENT_DETAILS — drive the income sub-tables. */
+  parent1EmploymentStatus?: string;
+  parent2EmploymentStatus?: string;
+  /** Relationship status from PARENT_DETAILS — drives the divorced/separated sub-table. */
+  relationshipStatus?: string;
   backHref: string;
   nextHref: string;
   /** Optional override for the primary button label (e.g. "Review and Submit"). */
@@ -73,11 +95,28 @@ interface SectionPageClientProps {
    * Triggers the "Pre-filled from last year" banner.
    */
   isPrepopulated?: boolean;
+  /**
+   * Optional replacement for the portal `saveSection` server action (CR-001).
+   * The assessor edit-on-behalf shell passes its own role-guarded, audited
+   * action; the portal passes nothing and keeps the static import.
+   */
+  saveOverride?: (
+    applicationId: string,
+    section: ApplicationSectionType,
+    data: unknown
+  ) => Promise<SaveSectionResult>;
+  /**
+   * True when an assessor is editing on behalf of the applicant (CR-001).
+   * Suppresses the auto-submit after a DECLARATION save — on-behalf
+   * submission is an explicit, separate action.
+   */
+  onBehalf?: boolean;
 }
 
 interface DefaultValuesSeed {
   applicationSchool?: "TRINITY" | "WHITGIFT";
   applicationChildName?: string;
+  isSoleParent?: boolean;
 }
 
 function getDefaultValues(
@@ -85,7 +124,51 @@ function getDefaultValues(
   existingData: unknown,
   seed: DefaultValuesSeed = {}
 ) {
-  if (existingData && typeof existingData === "object") return existingData;
+  if (existingData && typeof existingData === "object") {
+    // Back-compat: an in-flight PARENTS_INCOME draft may hold the LEGACY flat
+    // shape. Normalise each parent record into the new status-driven shape so
+    // the rebuilt form can render and re-validate it (Epic 02 §5.1).
+    if (sectionType === "PARENTS_INCOME") {
+      const d = existingData as {
+        parent1Income?: unknown;
+        parent2Income?: unknown;
+      };
+      return {
+        parent1Income: isLegacyIncomeRecord(d.parent1Income)
+          ? normaliseLegacyIncomeRecord(d.parent1Income)
+          : (d.parent1Income ?? { total: 0, documentsConfirmed: false }),
+        ...(d.parent2Income !== undefined
+          ? {
+              parent2Income: isLegacyIncomeRecord(d.parent2Income)
+                ? normaliseLegacyIncomeRecord(d.parent2Income)
+                : d.parent2Income,
+            }
+          : {}),
+      };
+    }
+    // Back-compat: a legacy DECLARATION draft holds {accepted, signedOnBehalfOf}.
+    // Map it onto the new per-parent P1 fields so the rebuilt form renders it.
+    if (sectionType === "DECLARATION") {
+      const d = existingData as {
+        acceptedParent1?: boolean;
+        signedOnBehalfOfParent1?: string;
+        acceptedParent2?: boolean;
+        signedOnBehalfOfParent2?: string;
+        accepted?: boolean;
+        signedOnBehalfOf?: string;
+      };
+      const hasNew = d.acceptedParent1 !== undefined || d.signedOnBehalfOfParent1 !== undefined;
+      if (hasNew) return existingData;
+      const base = {
+        acceptedParent1: d.accepted ?? false,
+        signedOnBehalfOfParent1: d.signedOnBehalfOf ?? "",
+      };
+      return seed.isSoleParent
+        ? base
+        : { ...base, acceptedParent2: false, signedOnBehalfOfParent2: "" };
+    }
+    return existingData;
+  }
 
   switch (sectionType) {
     case "CHILD_DETAILS":
@@ -116,34 +199,38 @@ function getDefaultValues(
     case "OTHER_INFO":
       return { hasCOurtOrder: undefined, hasInsurancePolicy: undefined, hasOutstandingFees: undefined };
     case "PARENTS_INCOME":
+      // Status-driven sub-tables (D3). The form seeds the relevant sub-blocks
+      // from the declared employment status and normalises any legacy draft on
+      // load (see parents-income-form.tsx). A minimal record here is enough.
       return {
-        parent1Income: {
-          salaryWagesPension: 0, supplementsAndBonus: 0, otherBenefitsAndCommissions: 0,
-          amountFromPartner: 0, workingTaxCredits: 0, grossInterestReceived: 0,
-          allDividendIncome: 0, grossRentsReceived: 0, allIncomeBonds: 0,
-          otherGrossIncomes: 0, maintenanceOrEquivalents: 0, bursariesOrSponsorships: 0,
-          otherIncomeNotIncluded: 0, otherIncome: 0,
-          hasCapitalRepayments: false, documentsConfirmed: false,
-        },
+        parent1Income: { total: 0, documentsConfirmed: false },
       };
     case "ASSETS_LIABILITIES":
       return {
-        propertyOwnership: undefined, residenceValue: 0, carValue: 0,
-        otherPossessionsValue: 0, stocksAndSharesValue: 0, investmentsValue: 0,
-        otherAssetsValue: 0, hasOtherProperties: undefined, otherMortgageBalance: 0,
-        parent1BankStatementDocumentIds: [], otherProperties: [],
-        outstandingMainMortgage: 0, totalOtherMortgages: 0, currentOverdraft: 0,
-        hasHirePurchase: undefined, hasLiabilityChanges: undefined, documentsConfirmed: false,
+        propertyOwnership: undefined, residenceValue: 0, hasMortgage: undefined,
+        hasOtherProperties: undefined, otherProperties: [], hasChargingOrder: undefined,
+        carOwnership: undefined, usesPublicTransport: undefined,
+        otherPossessionsValue: 0, otherNonFinancialAssetsValue: 0,
+        totalCashBalance: 0, investmentsValue: 0,
+        parent1CurrentAccountDocumentIds: [], parent1SavingsAccountDocumentIds: [],
+        parent1InvestmentDocumentIds: [], hasPersonalDebt: undefined,
+        creditCardStatementDocumentIds: [], loanStatementDocumentIds: [],
+        otherDebtDocumentIds: [], documentsConfirmed: false,
       };
     case "ADDITIONAL_INFO":
-      return {
-        divorced: { applies: false }, separated: { applies: false },
-        sickUnableToWork: { applies: false }, rent: { applies: false },
-        madeRedundant: { applies: false }, receivingBenefits: { applies: false },
-        additionalNarrative: "", additionalDocumentIds: [],
-      };
+      return { additionalNarrative: "", additionalDocumentIds: [] };
     case "DECLARATION":
-      return { accepted: false, signedOnBehalfOf: "" };
+      // Per-parent ticks (Epic 02 PR-5). Seed the P2 fields only for a
+      // dual-parent application so a sole parent's declaration is not blocked by
+      // the P2 superRefine.
+      return seed.isSoleParent
+        ? { acceptedParent1: false, signedOnBehalfOfParent1: "" }
+        : {
+            acceptedParent1: false,
+            signedOnBehalfOfParent1: "",
+            acceptedParent2: false,
+            signedOnBehalfOfParent2: "",
+          };
     default:
       return {};
   }
@@ -155,24 +242,36 @@ function SectionFormContent({
   documentMap,
   childFullName,
   isSoleParent,
+  academicYear,
+  parent1EmploymentStatus,
+  parent2EmploymentStatus,
+  relationshipStatus,
+  lockedSchool,
+  parent1Address,
 }: {
   sectionType: ApplicationSectionType;
   applicationId: string;
   documentMap?: Record<string, DocumentMeta>;
   childFullName?: string;
   isSoleParent?: boolean;
+  academicYear?: string | null;
+  parent1EmploymentStatus?: string;
+  parent2EmploymentStatus?: string;
+  relationshipStatus?: string;
+  lockedSchool?: "TRINITY" | "WHITGIFT" | null;
+  parent1Address?: StoredParentAddress | null;
 }) {
   switch (sectionType) {
-    case "CHILD_DETAILS": return <ChildDetailsForm applicationId={applicationId} documentMap={documentMap} />;
+    case "CHILD_DETAILS": return <ChildDetailsForm applicationId={applicationId} documentMap={documentMap} lockedSchool={lockedSchool} parent1Address={parent1Address} />;
     case "FAMILY_ID": return <FamilyIdForm applicationId={applicationId} documentMap={documentMap} />;
     case "PARENT_DETAILS": return <ParentDetailsForm applicationId={applicationId} documentMap={documentMap} />;
     case "DEPENDENT_CHILDREN": return <DependentChildrenForm childFullName={childFullName} />;
-    case "DEPENDENT_ELDERLY": return <DependentElderlyForm />;
-    case "OTHER_INFO": return <OtherInfoForm />;
-    case "PARENTS_INCOME": return <ParentsIncomeForm isSoleParent={isSoleParent} applicationId={applicationId} documentMap={documentMap} />;
+    case "DEPENDENT_ELDERLY": return <DependentElderlyForm applicationId={applicationId} documentMap={documentMap} />;
+    case "OTHER_INFO": return <OtherInfoForm applicationId={applicationId} documentMap={documentMap} />;
+    case "PARENTS_INCOME": return <ParentsIncomeForm isSoleParent={isSoleParent} applicationId={applicationId} documentMap={documentMap} academicYear={academicYear} parent1EmploymentStatus={parent1EmploymentStatus} parent2EmploymentStatus={parent2EmploymentStatus} relationshipStatus={relationshipStatus} />;
     case "ASSETS_LIABILITIES": return <AssetsLiabilitiesForm isSoleParent={isSoleParent} applicationId={applicationId} documentMap={documentMap} />;
-    case "ADDITIONAL_INFO": return <AdditionalInfoForm />;
-    case "DECLARATION": return <DeclarationForm />;
+    case "ADDITIONAL_INFO": return <AdditionalInfoForm applicationId={applicationId} documentMap={documentMap} />;
+    case "DECLARATION": return <DeclarationForm isSoleParent={isSoleParent} />;
     default: return null;
   }
 }
@@ -199,10 +298,16 @@ export function SectionPageClient({
   applicationId,
   existingData,
   applicationSchool,
+  lockedSchool,
   applicationChildName,
+  academicYear,
   documentMap,
   childFullName,
+  parent1Address,
   isSoleParent,
+  parent1EmploymentStatus,
+  parent2EmploymentStatus,
+  relationshipStatus,
   backHref,
   nextHref,
   nextLabel,
@@ -210,16 +315,22 @@ export function SectionPageClient({
   totalSteps,
   isReassessment = false,
   isPrepopulated = false,
+  saveOverride,
+  onBehalf = false,
 }: SectionPageClientProps) {
   const schema = getSectionSchema(sectionType);
   const defaultValues = getDefaultValues(sectionType, existingData, {
     applicationSchool,
     applicationChildName,
+    isSoleParent,
   });
 
   async function handleSave(data: unknown) {
-    const result = await saveSection(applicationId, sectionType, data);
-    if (!result.success || sectionType !== "DECLARATION") return result;
+    const save = saveOverride ?? saveSection;
+    const result = await save(applicationId, sectionType, data);
+    // On-behalf editing never auto-submits — submission is an explicit,
+    // separate action taken by the assessor (CR-001).
+    if (!result.success || sectionType !== "DECLARATION" || onBehalf) return result;
 
     // Declaration is the terminal step: after a successful save, submit the
     // application. submitApplication throws Next's NEXT_REDIRECT on success
@@ -261,6 +372,15 @@ export function SectionPageClient({
         document.querySelector<HTMLElement>(`[name^="${escaped}"]`) ??
         document.getElementById(hash);
       if (!target) return false;
+      // PR-10: the Income section collapses empty sub-tables into <details>
+      // disclosures. A deep-link may target a field inside a closed one, which
+      // is display:none and cannot be scrolled-to/focused — open every ancestor
+      // <details> first so the target becomes visible and focusable.
+      let node: HTMLElement | null = target;
+      while (node) {
+        if (node instanceof HTMLDetailsElement) node.open = true;
+        node = node.parentElement;
+      }
       target.scrollIntoView({ behavior: "smooth", block: "center" });
       const focusable =
         target.tagName === "INPUT" ||
@@ -287,7 +407,21 @@ export function SectionPageClient({
   }, [sectionType]);
 
   return (
-    <div className="space-y-6">
+    // Per-section width cap. The portal root no longer hard-caps content at
+    // max-w-3xl, so each apply section sets its own readable width HERE, on the
+    // wrapper that holds BOTH the section header and the card — so the heading
+    // stays aligned with the card it labels at every breakpoint. The grid-heavy
+    // PARENTS_INCOME section opens to the full max-w-4xl (56rem); every other
+    // section stays at the historical max-w-3xl (48rem). The cap is
+    // `mx-auto w-full max-w-Nxl` inside the layout's padded <main>, so the
+    // rendered width is min(cap, viewport − 280px rail − padding): bounded by
+    // the available width (never a fixed +rem), so no horizontal scroll at any
+    // breakpoint, and a single column on mobile.
+    <div
+      className={`mx-auto w-full space-y-6 ${
+        sectionType === "PARENTS_INCOME" ? "max-w-4xl" : "max-w-3xl"
+      }`}
+    >
       <div>
         <div className="mb-1 text-xs font-medium uppercase tracking-wider text-slate-400">
           Section {stepNumber} of {totalSteps}
@@ -303,6 +437,9 @@ export function SectionPageClient({
       {/* Pre-populated banner — shown for personal sections copied from last year */}
       {isPrepopulated && <PrepopulatedSectionBanner />}
 
+      {/* The card fills the (already width-capped) wrapper, so its border is the
+          section's visible width boundary and the form content lives inside its
+          padding — content can never spill past the border. */}
       <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
         {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
         <SectionForm
@@ -312,6 +449,7 @@ export function SectionPageClient({
           backHref={backHref}
           nextHref={nextHref}
           nextLabel={nextLabel}
+          hideInlineNav
         >
           <SectionFormContent
             sectionType={sectionType}
@@ -319,6 +457,12 @@ export function SectionPageClient({
             documentMap={documentMap}
             childFullName={childFullName}
             isSoleParent={isSoleParent}
+            academicYear={academicYear}
+            parent1EmploymentStatus={parent1EmploymentStatus}
+            parent2EmploymentStatus={parent2EmploymentStatus}
+            relationshipStatus={relationshipStatus}
+            lockedSchool={lockedSchool}
+            parent1Address={parent1Address}
           />
         </SectionForm>
       </div>

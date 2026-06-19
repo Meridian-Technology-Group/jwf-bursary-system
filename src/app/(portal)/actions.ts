@@ -11,18 +11,19 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { InvitationStatus, Role } from "@prisma/client";
-import { withAdminContext, withUserContext, type RlsRole } from "@/lib/db/prisma";
+import { withAdminContext } from "@/lib/db/prisma";
 import { requireRole } from "@/lib/auth/roles";
 import {
   getLatestAcceptedInvitationForUser,
   markInvitationAccepted,
 } from "@/lib/db/queries/invitations";
-import { generateApplicationReference } from "@/lib/applications/reference";
 import { createReassessmentApplicationFromInvitation } from "@/lib/db/queries/reassessment";
-import { ensurePrimaryContributor } from "@/lib/db/queries/contributors";
+import { createFirstYearApplicationFromSource } from "@/lib/applications/create-from-invitation";
+import { resumeReview } from "@/lib/applications/status";
 import { createAuditLog } from "@/lib/audit/log";
 import { sendEmail } from "@/lib/email/send";
 import { getAppUrl } from "@/lib/app-url";
+import { assertSubmissionInvariantPreserved } from "@/lib/portal/missing-docs-invariant";
 
 import { AUDIT_ACTIONS, AUDIT_ENTITY_TYPES } from "@/lib/audit/actions";
 
@@ -133,23 +134,22 @@ export async function startApplicationAction(
             };
           }
 
-          const reference = await generateApplicationReference(tx, school, round.academicYear);
-
-          const application = await tx.application.create({
-            data: {
-              reference,
-              roundId: invitation.roundId,
-              leadApplicantId: user.id,
-              school,
-              childName: childName.trim(),
-              isReassessment: false,
-              status: "PRE_SUBMISSION",
-            },
+          // D1 lock-enforcement: when the invitation already fixes the school
+          // (seeded from the admin's contact), it is authoritative — the
+          // parent-supplied school is IGNORED. Likewise childName + the locked
+          // entry-year come from the invitation when present. The parent's
+          // onboarding-card inputs only fill the gaps a bare invite left open.
+          // (Epic 02 removes the parent school selector entirely; this is the
+          // server-side belt-and-braces in the interim.)
+          await createFirstYearApplicationFromSource(tx, {
+            leadApplicantId: user.id,
+            roundId: invitation.roundId,
+            school: invitation.school ?? school,
+            childName: invitation.childName ?? childName.trim(),
+            entryYear: invitation.entryYear,
+            entryYearGroup: invitation.entryYearGroup,
+            contactId: invitation.contactId,
           });
-
-          // Every application must have a PRIMARY contributor from creation so
-          // the section write path can tag the owner (dual-parent foundation).
-          await ensurePrimaryContributor(tx, application.id, user.id);
         }
 
         return { error: null };
@@ -294,19 +294,27 @@ export async function submitMissingDocsResponse(
   const user = await requireRole([Role.APPLICANT]);
 
   try {
-    const result = await withUserContext(
-      user.id,
-      user.role as RlsRole,
+    // Admin (service-role) context: the assessment row is invisible to the
+    // applicant under RLS (assessments_select is staff-only), so reading its
+    // PAUSED status and resuming review must bypass RLS. Ownership is enforced
+    // explicitly below (leadApplicantId === user.id) since RLS no longer does.
+    // Mirrors startApplicationAction, which likewise runs an applicant action
+    // under admin context with an explicit ownership check.
+    const result = await withAdminContext(
       async (tx) => {
         const application = await tx.application.findUnique({
           where: { id: applicationId },
           select: {
             id: true,
             reference: true,
-            status: true,
+            formStatus: true,
+            submittedAt: true,
             childName: true,
             leadApplicantId: true,
             assignedToId: true,
+            assessment: {
+              select: { id: true, status: true, assessorId: true },
+            },
           },
         });
 
@@ -314,7 +322,9 @@ export async function submitMissingDocsResponse(
           return { success: false as const, error: "Application not found." };
         }
 
-        if (application.status !== "PAUSED") {
+        // PR-6a: "awaiting documents" reads the assessment lifecycle (PAUSED)
+        // rather than the deprecated fused `applications.status`.
+        if (application.assessment?.status !== "PAUSED") {
           return {
             success: false as const,
             error:
@@ -322,10 +332,35 @@ export async function submitMissingDocsResponse(
           };
         }
 
-        await tx.application.update({
+        // Capture the pre-response submission invariants. The portal missing-doc
+        // upload must keep the SUBMISSION DATE intact and the form status fixed
+        // (Epic 05 §3.5): only the assessment moves (PAUSED → resumes). The
+        // uploads themselves are attached to the application by the FileUpload
+        // mechanic (/api/documents) before this action is called, so this action
+        // just resumes the assessment — it never touches submittedAt/formStatus.
+        const submittedAtBefore = application.submittedAt;
+        const formStatusBefore = application.formStatus;
+
+        // A PAUSED assessment always exists with its original assessor; resume it
+        // (assessment PAUSED → IN_PROGRESS) and clear the persisted pause
+        // deadline. The applicant is not the assessor, so we resume the existing
+        // row rather than creating one.
+        await resumeReview(tx, applicationId, application.assessment.assessorId);
+
+        // Invariant guard (defence-in-depth): re-read and assert the submission
+        // date + form status did NOT move. The write-once submitted_at trigger
+        // (Epic 01) is the durable backstop; this catches a regression here at
+        // the app layer with a clear message.
+        const after = await tx.application.findUnique({
           where: { id: applicationId },
-          data: { status: "NOT_STARTED" },
+          select: { submittedAt: true, formStatus: true },
         });
+        assertSubmissionInvariantPreserved(
+          { submittedAt: submittedAtBefore, formStatus: formStatusBefore },
+          after
+            ? { submittedAt: after.submittedAt, formStatus: after.formStatus }
+            : null
+        );
 
         await createAuditLog(tx, {
           userId: user.id,

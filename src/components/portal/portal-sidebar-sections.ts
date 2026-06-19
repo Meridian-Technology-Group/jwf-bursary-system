@@ -8,7 +8,9 @@
  * export.
  */
 
+import type { ApplicationSectionType } from "@prisma/client";
 import type { SectionGapStatus } from "@/lib/portal/section-gaps";
+import { SECTION_ORDER, SECTION_TO_SLUG } from "@/lib/portal/sections";
 
 /**
  * Tri-state section status:
@@ -37,38 +39,71 @@ export interface SidebarSection {
 }
 
 // ─── Ordered list of sections, matching the 10 form steps ─────────────────────
-// The Review entry sits between Additional Information (9) and Declaration (10).
+// The Review entry sits between Additional Information (9) and Declaration (11).
 // It is synthetic — it has no ApplicationSectionType — so its status is derived
 // from the overall gap roll-up in buildSidebarSections() rather than from any
 // individual SectionGapStatus row.
+//
+// The ORDER is derived from the canonical `SECTION_ORDER` (single source of
+// truth) so it can never drift from the wizard / review / gap engine. Only the
+// stepper-specific LABELS and the synthetic Review entry live here.
 
-export const DEFAULT_SIDEBAR_SECTIONS: SidebarSection[] = [
-  { id: 1, label: "Details of Child", slug: "child-details", status: "not_started", gapCount: 0, progressSatisfied: 0, progressTotal: 1 },
-  { id: 2, label: "Family Identification", slug: "family-id", status: "not_started", gapCount: 0, progressSatisfied: 0, progressTotal: 1 },
-  { id: 3, label: "Parent / Guardian Details", slug: "parent-details", status: "not_started", gapCount: 0, progressSatisfied: 0, progressTotal: 1 },
-  { id: 4, label: "Dependent Children", slug: "dependent-children", status: "not_started", gapCount: 0, progressSatisfied: 0, progressTotal: 1 },
-  { id: 5, label: "Dependent Elderly", slug: "dependent-elderly", status: "not_started", gapCount: 0, progressSatisfied: 0, progressTotal: 1 },
-  { id: 6, label: "Other Information", slug: "other-info", status: "not_started", gapCount: 0, progressSatisfied: 0, progressTotal: 1 },
-  { id: 7, label: "Parents' Income", slug: "parents-income", status: "not_started", gapCount: 0, progressSatisfied: 0, progressTotal: 1 },
-  { id: 8, label: "Assets & Liabilities", slug: "assets-liabilities", status: "not_started", gapCount: 0, progressSatisfied: 0, progressTotal: 1 },
-  { id: 9, label: "Additional Information", slug: "additional-info", status: "not_started", gapCount: 0, progressSatisfied: 0, progressTotal: 1 },
-  // Synthetic Review step — always navigable; status derived from global gap roll-up.
-  { id: 10, label: "Review", slug: "review", status: "not_started", gapCount: 0, progressSatisfied: 0, progressTotal: 1, isSynthetic: true },
-  { id: 11, label: "Declaration & Submit", slug: "declaration", status: "not_started", gapCount: 0, progressSatisfied: 0, progressTotal: 1 },
-];
+// Reuse the canonical section → slug map. The sidebar historically typed this
+// as Record<string, string>; ApplicationSectionType keys satisfy that.
+const SECTION_TYPE_TO_SLUG: Record<string, string> = SECTION_TO_SLUG;
 
-const SECTION_TYPE_TO_SLUG: Record<string, string> = {
-  CHILD_DETAILS: "child-details",
-  FAMILY_ID: "family-id",
-  PARENT_DETAILS: "parent-details",
-  DEPENDENT_CHILDREN: "dependent-children",
-  DEPENDENT_ELDERLY: "dependent-elderly",
-  OTHER_INFO: "other-info",
-  PARENTS_INCOME: "parents-income",
-  ASSETS_LIABILITIES: "assets-liabilities",
-  ADDITIONAL_INFO: "additional-info",
-  DECLARATION: "declaration",
+/**
+ * Stepper-specific labels per section. These differ from the page-header /
+ * review titles (`SECTION_TITLES`) — e.g. "Assets & Liabilities" here vs
+ * "Parents' Assets & Liabilities" on the review page — so they are NOT sourced
+ * from the canonical title map; only the ordering is shared.
+ */
+const SIDEBAR_SECTION_LABELS: Record<ApplicationSectionType, string> = {
+  CHILD_DETAILS: "Details of Child",
+  FAMILY_ID: "Family Identification",
+  PARENT_DETAILS: "Parent / Guardian Details",
+  DEPENDENT_CHILDREN: "Dependent Children",
+  DEPENDENT_ELDERLY: "Dependent Elderly",
+  OTHER_INFO: "Other Information",
+  PARENTS_INCOME: "Parents' Income",
+  ASSETS_LIABILITIES: "Assets & Liabilities",
+  ADDITIONAL_INFO: "Additional Information",
+  DECLARATION: "Declaration & Submit",
 };
+
+// Build the ordered stepper list from the canonical SECTION_ORDER, splicing the
+// synthetic Review step in immediately before DECLARATION (its historical slot,
+// between Additional Information and Declaration). Ids stay 1-based and
+// contiguous so existing styling/keys are byte-for-byte unchanged.
+export const DEFAULT_SIDEBAR_SECTIONS: SidebarSection[] = (() => {
+  const sections: SidebarSection[] = [];
+  let id = 1;
+  for (const sectionType of SECTION_ORDER) {
+    if (sectionType === "DECLARATION") {
+      // Synthetic Review step — always navigable; status derived from global gap roll-up.
+      sections.push({
+        id: id++,
+        label: "Review",
+        slug: "review",
+        status: "not_started",
+        gapCount: 0,
+        progressSatisfied: 0,
+        progressTotal: 1,
+        isSynthetic: true,
+      });
+    }
+    sections.push({
+      id: id++,
+      label: SIDEBAR_SECTION_LABELS[sectionType],
+      slug: SECTION_TO_SLUG[sectionType],
+      status: "not_started",
+      gapCount: 0,
+      progressSatisfied: 0,
+      progressTotal: 1,
+    });
+  }
+  return sections;
+})();
 
 // ─── Secondary-parent /contribute stepper ────────────────────────────────────
 // The second parent fills ONLY their own three sections (PR 4b, backlog #20).

@@ -20,7 +20,13 @@ import {
   resolveOwningContributorId,
 } from "@/lib/db/queries/contributors";
 import { getSectionGapStatuses } from "@/lib/portal/section-gaps";
+import {
+  SECTION_ORDER,
+  SECTION_TITLES,
+  SECTION_TO_SLUG as SECTION_SLUGS,
+} from "@/lib/portal/sections";
 import { ENTRY_YEAR_GROUP_LABELS } from "@/lib/assessment/schooling-years";
+import { PortalPage } from "@/components/portal/portal-page";
 import { cn } from "@/lib/utils";
 import type {
   ChildDetailsData,
@@ -33,56 +39,24 @@ import type {
   AssetsLiabilitiesData,
   AdditionalInfoData,
 } from "@/types/application";
+import {
+  parentIncomeTotal,
+  readIncomeItems,
+} from "@/lib/portal/income-model";
 
 export const metadata = {
   title: "Review Your Application",
 };
 
 // ─── Section metadata ─────────────────────────────────────────────────────────
-
-const SECTION_ORDER: ApplicationSectionType[] = [
-  "CHILD_DETAILS",
-  "FAMILY_ID",
-  "PARENT_DETAILS",
-  "DEPENDENT_CHILDREN",
-  "DEPENDENT_ELDERLY",
-  "OTHER_INFO",
-  "PARENTS_INCOME",
-  "ASSETS_LIABILITIES",
-  "ADDITIONAL_INFO",
-  "DECLARATION",
-];
+// Order / titles / slugs come from the canonical `@/lib/portal/sections` (single
+// source of truth). The review page's titles ARE the canonical set; the wizard
+// keeps a one-key override for FAMILY_ID (see PR-5 / sections.ts).
 
 // DECLARATION is excluded from summary cards (that's where submit lives)
 const SUMMARY_SECTIONS: ApplicationSectionType[] = SECTION_ORDER.filter(
   (s) => s !== "DECLARATION"
 );
-
-const SECTION_TITLES: Record<ApplicationSectionType, string> = {
-  CHILD_DETAILS: "Details of Child",
-  FAMILY_ID: "Family Identification",
-  PARENT_DETAILS: "Parent / Guardian Details",
-  DEPENDENT_CHILDREN: "Dependent Children",
-  DEPENDENT_ELDERLY: "Dependent Elderly",
-  OTHER_INFO: "Other Information Required",
-  PARENTS_INCOME: "Parents' Income",
-  ASSETS_LIABILITIES: "Parents' Assets & Liabilities",
-  ADDITIONAL_INFO: "Additional Information",
-  DECLARATION: "Declaration",
-};
-
-const SECTION_SLUGS: Record<ApplicationSectionType, string> = {
-  CHILD_DETAILS: "child-details",
-  FAMILY_ID: "family-id",
-  PARENT_DETAILS: "parent-details",
-  DEPENDENT_CHILDREN: "dependent-children",
-  DEPENDENT_ELDERLY: "dependent-elderly",
-  OTHER_INFO: "other-info",
-  PARENTS_INCOME: "parents-income",
-  ASSETS_LIABILITIES: "assets-liabilities",
-  ADDITIONAL_INFO: "additional-info",
-  DECLARATION: "declaration",
-};
 
 // ─── Formatting helpers ───────────────────────────────────────────────────────
 
@@ -110,44 +84,37 @@ function fmtSchool(school: string | undefined | null): string {
   return school;
 }
 
-function totalIncome(inc: ParentsIncomeData["parent1Income"]): number {
-  return (
-    (inc.salaryWagesPension ?? 0) +
-    (inc.supplementsAndBonus ?? 0) +
-    (inc.otherBenefitsAndCommissions ?? 0) +
-    (inc.amountFromPartner ?? 0) +
-    (inc.workingTaxCredits ?? 0) +
-    (inc.grossInterestReceived ?? 0) +
-    (inc.allDividendIncome ?? 0) +
-    (inc.grossRentsReceived ?? 0) +
-    (inc.allIncomeBonds ?? 0) +
-    (inc.otherGrossIncomes ?? 0) +
-    (inc.maintenanceOrEquivalents ?? 0) +
-    (inc.bursariesOrSponsorships ?? 0) +
-    (inc.otherIncomeNotIncluded ?? 0) +
-    (inc.otherIncome ?? 0)
-  );
-}
+// Income totalling handles BOTH the new status-driven shape and any legacy flat
+// draft via the back-compat reader (lib/portal/income-model.ts).
 
 function totalAssets(d: AssetsLiabilitiesData): number {
+  const otherProperties = Array.isArray(d.otherProperties)
+    ? d.otherProperties
+    : [];
   return (
     (d.residenceValue ?? 0) +
     (d.carValue ?? 0) +
     (d.otherPossessionsValue ?? 0) +
-    (d.stocksAndSharesValue ?? 0) +
+    (d.otherNonFinancialAssetsValue ?? 0) +
+    (d.totalCashBalance ?? 0) +
     (d.investmentsValue ?? 0) +
-    (d.otherAssetsValue ?? 0) +
-    (d.otherPropertiesTotalValue ?? 0)
+    otherProperties.reduce((sum, p) => sum + (p.value ?? 0), 0)
   );
 }
 
 function totalLiabilities(d: AssetsLiabilitiesData): number {
+  const otherProperties = Array.isArray(d.otherProperties)
+    ? d.otherProperties
+    : [];
   return (
-    (d.outstandingMainMortgage ?? 0) +
-    (d.totalOtherMortgages ?? 0) +
-    (d.currentOverdraft ?? 0) +
-    (d.hirePurchaseBalance ?? 0) +
-    (d.otherMortgageBalance ?? 0)
+    (d.mortgageBalance ?? 0) +
+    otherProperties.reduce((sum, p) => sum + (p.mortgageBalance ?? 0), 0) +
+    (d.chargingOrderValue ?? 0) +
+    (d.creditCardBalance ?? 0) +
+    (d.bankOverdraft ?? 0) +
+    (d.loansToAgencies ?? 0) +
+    (d.loansToFriendsFamily ?? 0) +
+    (d.schoolFeesOwed ?? 0)
   );
 }
 
@@ -294,25 +261,12 @@ function buildIncomeSection(
   inc: ParentsIncomeData["parent1Income"],
   parentLabel: string
 ): IncomeSection {
-  const items: { label: string; value: number }[] = [
-    { label: "Salary / wages / pension", value: inc.salaryWagesPension ?? 0 },
-    { label: "Supplements & bonus", value: inc.supplementsAndBonus ?? 0 },
-    { label: "Benefits & commissions", value: inc.otherBenefitsAndCommissions ?? 0 },
-    { label: "Amount from partner", value: inc.amountFromPartner ?? 0 },
-    { label: "Working tax credits", value: inc.workingTaxCredits ?? 0 },
-    { label: "Gross interest", value: inc.grossInterestReceived ?? 0 },
-    { label: "Dividend income", value: inc.allDividendIncome ?? 0 },
-    { label: "Rental income", value: inc.grossRentsReceived ?? 0 },
-    { label: "Income bonds", value: inc.allIncomeBonds ?? 0 },
-    { label: "Other gross income", value: inc.otherGrossIncomes ?? 0 },
-    { label: "Maintenance / equivalents", value: inc.maintenanceOrEquivalents ?? 0 },
-    { label: "Bursaries / sponsorships", value: inc.bursariesOrSponsorships ?? 0 },
-    { label: "Other income", value: (inc.otherIncomeNotIncluded ?? 0) + (inc.otherIncome ?? 0) },
-  ].filter((i) => i.value > 0);
-
+  // readIncomeItems + parentIncomeTotal both accept the new status-driven shape
+  // OR a legacy flat draft (back-compat).
+  const items = readIncomeItems(inc).filter((i) => i.value > 0);
   return {
     label: parentLabel,
-    total: fmtCurrency(totalIncome(inc)),
+    total: fmtCurrency(parentIncomeTotal(inc)),
     itemised: items.map((i) => ({ label: i.label, value: fmtCurrency(i.value) })),
   };
 }
@@ -355,23 +309,17 @@ function renderAssetsLiabilities(raw: unknown): SummaryRow[] {
 function renderAdditionalInfo(raw: unknown): SummaryRow[] {
   const d = parseSafe<AdditionalInfoData>(raw);
   if (!d) return [];
-  const circumstances: string[] = [];
-  if (d.divorced?.applies) circumstances.push("Divorced");
-  if (d.separated?.applies) circumstances.push("Separated");
-  if (d.sickUnableToWork?.applies) circumstances.push("Sick / unable to work");
-  if (d.rent?.applies) circumstances.push("Paying rent");
-  if (d.madeRedundant?.applies) circumstances.push("Made redundant");
-  if (d.receivingBenefits?.applies) circumstances.push("Receiving benefits");
-  if (circumstances.length === 0) {
-    return [{ label: "Special circumstances", value: "None declared" }];
-  }
-  const rows: SummaryRow[] = [
-    { label: "Circumstances", value: circumstances.join(", ") },
-  ];
   if (d.additionalNarrative) {
-    rows.push({ label: "Narrative", value: d.additionalNarrative.slice(0, 120) + (d.additionalNarrative.length > 120 ? "…" : "") });
+    return [
+      {
+        label: "Narrative",
+        value:
+          d.additionalNarrative.slice(0, 120) +
+          (d.additionalNarrative.length > 120 ? "…" : ""),
+      },
+    ];
   }
-  return rows;
+  return [{ label: "Additional information", value: "None provided" }];
 }
 
 // ─── Section card ─────────────────────────────────────────────────────────────
@@ -459,12 +407,20 @@ export default async function ReviewPage() {
 
   if (!application) redirect("/");
 
-  if (application.status === "SUBMITTED") {
+  if (application.formStatus === "SUBMITTED") {
     redirect("/submitted");
   }
 
   // ── Gap analysis ───────────────────────────────────────────────────────────
-  const gapStatuses = await getSectionGapStatuses(application.id, ownerContributorId);
+  // Runs under the lead applicant's RLS context: getSectionGapStatuses reads
+  // application_sections/documents (both RLS-protected), so it must share the
+  // applicant context or it sees zero rows. ownerContributorId keeps the read
+  // scoped to the PRIMARY (dual-parent isolation, PR 4b).
+  const gapStatuses = await withUserContext(
+    user.id,
+    user.role as RlsRole,
+    (tx) => getSectionGapStatuses(tx, application.id, ownerContributorId)
+  );
 
   const allErrorGaps = gapStatuses.flatMap((gs) =>
     gs.gaps.filter((g) => g.severity === "error")
@@ -502,11 +458,11 @@ export default async function ReviewPage() {
       : 0;
 
   return (
-    <div className="space-y-8">
+    <PortalPage className="space-y-8">
       {/* Page header */}
       <div>
         <div className="mb-1 text-xs font-medium uppercase tracking-wider text-slate-400">
-          Step 10 of 11 — Review
+          Review — final check before you submit
         </div>
         <h1 className="text-2xl font-semibold text-primary-900">
           Review Your Application
@@ -555,10 +511,13 @@ export default async function ReviewPage() {
                 id="issues-heading"
                 className="text-base font-semibold text-red-800"
               >
-                {allErrorGaps.length} issue{allErrorGaps.length === 1 ? "" : "s"} to resolve before you can submit
+                Validation summary — {allErrorGaps.length} item
+                {allErrorGaps.length === 1 ? "" : "s"} still need
+                {allErrorGaps.length === 1 ? "s" : ""} completing
               </h2>
               <p className="mt-1 text-sm text-red-700">
-                Please fix the following before submitting your application.
+                Please complete the outstanding mandatory items below, then return
+                here to submit your application.
               </p>
               <ul className="mt-3 space-y-2">
                 {allErrorGaps.map((gap) => {
@@ -736,7 +695,7 @@ export default async function ReviewPage() {
           </div>
         </div>
       </section>
-    </div>
+    </PortalPage>
   );
 }
 
@@ -899,7 +858,7 @@ const SECTION_DOC_SLOTS: Partial<Record<ApplicationSectionType, string[]>> = {
   CHILD_DETAILS: ["BIRTH_CERTIFICATE"],
   FAMILY_ID: ["UK_PASSPORT_PARENT_1", "PASSPORT_PARENT_1", "UK_PASSPORT_PARENT_2", "PASSPORT_PARENT_2"],
   PARENTS_INCOME: ["P60_PARENT_1", "P60_PARENT_2", "SELF_ASSESSMENT_PARENT_1", "SELF_ASSESSMENT_PARENT_2", "BENEFITS_EVIDENCE_PARENT_1", "BENEFITS_EVIDENCE_PARENT_2", "CAPITAL_REPAYMENTS_PARENT_1", "CAPITAL_REPAYMENTS_PARENT_2"],
-  ASSETS_LIABILITIES: ["COUNCIL_TAX", "BANK_STATEMENT_PARENT_1", "BANK_STATEMENT_PARENT_2"],
+  ASSETS_LIABILITIES: ["COUNCIL_TAX", "MAIN_MORTGAGE_STATEMENT", "TENANCY_AGREEMENT", "HOUSING_BENEFIT_LETTER", "RELATIVE_LETTER", "BANK_STATEMENT_CURRENT_PARENT_1", "BANK_STATEMENT_CURRENT_PARENT_2", "BANK_STATEMENT_SAVINGS_PARENT_1", "BANK_STATEMENT_SAVINGS_PARENT_2", "INVESTMENT_PARENT_1", "INVESTMENT_PARENT_2", "CREDIT_CARD_STATEMENT", "LOAN_STATEMENT", "OTHER_DEBT_DOCUMENT", "CAR_LEASE_AGREEMENT"],
 };
 
 function DocumentCount({

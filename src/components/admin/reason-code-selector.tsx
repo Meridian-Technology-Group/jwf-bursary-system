@@ -13,6 +13,10 @@ import { ChevronDown, ChevronUp, Tag } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
+import {
+  groupHeadingForCode,
+  REASON_CODE_GROUP_HEADINGS,
+} from "@/lib/reason-codes/category";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -31,45 +35,27 @@ interface ReasonCodeSelectorProps {
 
 // ─── Group helpers ─────────────────────────────────────────────────────────────
 
-/** Bucket reason codes into named groups by numeric range. */
+/**
+ * Bucket reason codes into named groups by numeric range. The range→category
+ * mapping lives in the shared `categoryForCode` util (Epic 08) so the selector
+ * and the settings table can never drift — and the real codes (D4) swap in by
+ * editing one place.
+ */
 function groupReasonCodes(
   codes: ReasonCodeOption[]
 ): Array<{ groupLabel: string; codes: ReasonCodeOption[] }> {
-  const groups: Array<{ groupLabel: string; codes: ReasonCodeOption[] }> = [];
-
   const buckets: Record<string, ReasonCodeOption[]> = {};
 
   for (const rc of codes) {
-    let groupLabel: string;
-
-    if (rc.code >= 1 && rc.code <= 9) {
-      groupLabel = "1 – 9: Income";
-    } else if (rc.code >= 10 && rc.code <= 19) {
-      groupLabel = "10 – 19: Property & Assets";
-    } else if (rc.code >= 20 && rc.code <= 29) {
-      groupLabel = "20 – 29: Family Circumstances";
-    } else if (rc.code >= 30 && rc.code <= 39) {
-      groupLabel = "30 – 39: Risk Flags";
-    } else {
-      groupLabel = "Other";
-    }
-
+    const groupLabel = groupHeadingForCode(rc.code);
     if (!buckets[groupLabel]) {
       buckets[groupLabel] = [];
     }
     buckets[groupLabel].push(rc);
   }
 
-  // Preserve insertion order by iterating in predictable order
-  const orderedKeys = [
-    "1 – 9: Income",
-    "10 – 19: Property & Assets",
-    "20 – 29: Family Circumstances",
-    "30 – 39: Risk Flags",
-    "Other",
-  ];
-
-  for (const key of orderedKeys) {
+  const groups: Array<{ groupLabel: string; codes: ReasonCodeOption[] }> = [];
+  for (const key of REASON_CODE_GROUP_HEADINGS) {
     if (buckets[key] && buckets[key].length > 0) {
       groups.push({ groupLabel: key, codes: buckets[key] });
     }

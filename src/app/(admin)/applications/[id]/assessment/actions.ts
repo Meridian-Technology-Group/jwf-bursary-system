@@ -14,7 +14,16 @@
 
 import { revalidatePath } from "next/cache";
 import { requireRole, requireApplicationAccess, Role } from "@/lib/auth/roles";
-import { withUserContext, type RlsRole, type Tx } from "@/lib/db/prisma";
+import {
+  withUserContext,
+  withAdminContext,
+  type RlsRole,
+  type Tx,
+} from "@/lib/db/prisma";
+import {
+  mirrorApplicationToSchedule,
+  closeAccountIfComplete,
+} from "@/lib/bursary-accounts/lifecycle";
 import {
   createAssessment,
   saveAssessment,
@@ -22,6 +31,7 @@ import {
   pauseAssessment,
 } from "@/lib/db/queries/assessments";
 import type { AssessmentSaveInput } from "@/lib/db/queries/assessments";
+import { startAssessmentIfNotStarted } from "@/lib/applications/status";
 import { getSecondaryContributor } from "@/lib/db/queries/contributors";
 import { createAuditLog } from "@/lib/audit/log";
 import { AUDIT_ACTIONS, AUDIT_ENTITY_TYPES } from "@/lib/audit/actions";
@@ -218,16 +228,20 @@ export async function saveAssessmentAction(
     await requireApplicationAccess(user, applicationId);
 
     await withUserContext(user.id, user.role as RlsRole, async (tx) => {
-      await saveAssessment(tx, assessmentId, {
-        ...data,
-        status: data.status ?? "NOT_STARTED",
-      });
+      // Persist the field data WITHOUT forcing a status (the previous
+      // `status: data.status ?? "NOT_STARTED"` re-pinned every save to
+      // NOT_STARTED, so an assessment never progressed). Status is owned by the
+      // service: the first save promotes NOT_STARTED → IN_PROGRESS.
+      await saveAssessment(tx, assessmentId, data);
+      const started = await startAssessmentIfNotStarted(tx, assessmentId);
       await createAuditLog(tx, {
         userId: user.id,
         action: AUDIT_ACTIONS.ASSESSMENT_SAVE,
         entityType: AUDIT_ENTITY_TYPES.Assessment,
         entityId: assessmentId,
-        context: "Assessment data saved",
+        context: started
+          ? "Assessment data saved — review started (IN_PROGRESS)"
+          : "Assessment data saved",
         metadata: { assessmentId, applicationId, fieldsUpdated: Object.keys(data) },
       });
     });
@@ -262,6 +276,39 @@ export async function completeAssessmentAction(
         metadata: { assessmentId, applicationId },
       });
     });
+
+    // ── Mirror onto the forward schedule + close-when-complete (Epic 10) ──────
+    // Mark the matching schedule year COMPLETE, then close the account if the
+    // whole schedule is now terminal (the close revokes portal access via the
+    // status-keyed guard). Runs under withAdminContext because the schedule
+    // table is ADMIN-write and the actor may be an ASSESSOR. Non-blocking and a
+    // no-op when the application has no account or no matching schedule row.
+    try {
+      await withAdminContext(async (tx) => {
+        const app = await tx.application.findUnique({
+          where: { id: applicationId },
+          select: {
+            bursaryAccountId: true,
+            roundId: true,
+            round: { select: { academicYear: true } },
+          },
+        });
+        if (!app?.bursaryAccountId) return;
+        await mirrorApplicationToSchedule(tx, {
+          bursaryAccountId: app.bursaryAccountId,
+          academicYear: app.round.academicYear,
+          applicationId,
+          roundId: app.roundId,
+          status: "COMPLETE",
+        });
+        await closeAccountIfComplete(tx, app.bursaryAccountId);
+      });
+    } catch (err) {
+      console.error(
+        "[completeAssessmentAction] schedule mirror/close failed",
+        err
+      );
+    }
 
     revalidatePath(`/applications/${applicationId}/assessment`);
 

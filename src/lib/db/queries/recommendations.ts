@@ -20,6 +20,8 @@ export interface UpsertRecommendationInput {
   incomeCategory?: string | null;
   propertyCategory?: number | null;
   bursaryAward?: number | null;
+  /** Distinct merit/academic scholarship award (£), Epic 08 / D9. */
+  scholarshipAward?: number | null;
   yearlyPayableFees?: number | null;
   monthlyPayableFees?: number | null;
   dishonestyFlag?: boolean;
@@ -72,6 +74,7 @@ export async function upsertRecommendation(
       incomeCategory: fields.incomeCategory ?? null,
       propertyCategory: fields.propertyCategory ?? null,
       bursaryAward: fields.bursaryAward ?? null,
+      scholarshipAward: fields.scholarshipAward ?? null,
       yearlyPayableFees: fields.yearlyPayableFees ?? null,
       monthlyPayableFees: fields.monthlyPayableFees ?? null,
       dishonestyFlag: fields.dishonestyFlag ?? false,
@@ -84,6 +87,7 @@ export async function upsertRecommendation(
       incomeCategory: fields.incomeCategory ?? null,
       propertyCategory: fields.propertyCategory ?? null,
       bursaryAward: fields.bursaryAward ?? null,
+      scholarshipAward: fields.scholarshipAward ?? null,
       yearlyPayableFees: fields.yearlyPayableFees ?? null,
       monthlyPayableFees: fields.monthlyPayableFees ?? null,
       dishonestyFlag: fields.dishonestyFlag ?? false,

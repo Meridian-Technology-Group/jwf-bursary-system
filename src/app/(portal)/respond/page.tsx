@@ -20,6 +20,8 @@ import { ArrowLeft, Inbox } from "lucide-react";
 import { getCurrentUser } from "@/lib/auth/roles";
 import { withUserContext, type RlsRole } from "@/lib/db/prisma";
 import { getLatestMissingDocsRequest } from "@/lib/db/queries/missing-docs";
+import { getApplicationPausedState } from "@/lib/db/queries/applications";
+import { PortalPage } from "@/components/portal/portal-page";
 import { RespondMissingDocsClient } from "./respond-client";
 
 export const metadata = {
@@ -43,7 +45,6 @@ export default async function RespondPage() {
         select: {
           id: true,
           reference: true,
-          status: true,
           childName: true,
           documents: {
             select: {
@@ -62,8 +63,11 @@ export default async function RespondPage() {
   if (!application) redirect("/");
 
   // Not paused → nothing to respond to. Send the applicant to the status page,
-  // which explains the current state.
-  if (application.status !== "PAUSED") {
+  // which explains the current state. The PAUSED signal lives on the assessment,
+  // which the applicant cannot read under RLS, so probe it under service-role
+  // context (ownership already established by the user-context read above).
+  const { isPaused } = await getApplicationPausedState(application.id);
+  if (!isPaused) {
     redirect("/status");
   }
 
@@ -77,7 +81,7 @@ export default async function RespondPage() {
   // state directing the applicant to the email they received.
   if (!request || request.requestedSlots.length === 0) {
     return (
-      <div className="space-y-6">
+      <PortalPage className="space-y-6">
         <Header reference={application.reference} childName={application.childName} />
         <div className="rounded-xl border border-slate-200 bg-white p-8 text-center shadow-sm">
           <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-slate-100">
@@ -94,7 +98,7 @@ export default async function RespondPage() {
           </p>
         </div>
         <BackLink />
-      </div>
+      </PortalPage>
     );
   }
 
@@ -115,7 +119,7 @@ export default async function RespondPage() {
   }
 
   return (
-    <div className="space-y-8">
+    <PortalPage className="space-y-8">
       <Header reference={application.reference} childName={application.childName} />
       <RespondMissingDocsClient
         applicationId={application.id}
@@ -123,7 +127,7 @@ export default async function RespondPage() {
         customMessage={request.customMessage}
         existingBySlot={docsBySlot}
       />
-    </div>
+    </PortalPage>
   );
 }
 

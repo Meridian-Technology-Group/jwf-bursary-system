@@ -2,11 +2,15 @@
  * Application database queries for the admin queue and detail views.
  */
 
-import type { Tx } from "@/lib/db/prisma";
+import { withAdminContext, type Tx } from "@/lib/db/prisma";
 import { createAuditLog } from "@/lib/audit/log";
 import { AUDIT_ACTIONS, AUDIT_ENTITY_TYPES } from "@/lib/audit/actions";
+import {
+  reviewPhaseWhere,
+  undecidedWhere,
+  type ReviewPhase,
+} from "@/lib/applications/queue-filter";
 import type {
-  ApplicationStatus,
   School,
   Application,
   Round,
@@ -14,6 +18,10 @@ import type {
   ApplicationSectionType,
   ApplicationContributorRole,
   ApplicationContributorStatus,
+  ApplicationFormStatus,
+  ApplicationType,
+  AssessmentStatus,
+  AssessmentOutcome,
   Document,
   Assessment,
   Profile,
@@ -42,7 +50,12 @@ export interface ApplicationListItem {
   id: string;
   reference: string;
   school: School;
-  status: ApplicationStatus;
+  formStatus: ApplicationFormStatus;
+  applicationType: ApplicationType;
+  /** Real assessment lifecycle status, null when no assessment exists yet. */
+  assessmentStatus: AssessmentStatus | null;
+  /** Final outcome (3-value), null until set. */
+  outcome: AssessmentOutcome | null;
   entryYear: number | null;
   submittedAt: Date | null;
   isReassessment: boolean;
@@ -53,10 +66,32 @@ export interface ApplicationListItem {
 
 export interface ListApplicationsFilters {
   roundId?: string;
-  status?: ApplicationStatus;
+  /**
+   * Review-phase filter (Epic 01 PR-6a) — the 7-value vocabulary projected from
+   * the lifecycle columns. Replaces the old fused `status` filter; translated to
+   * a lifecycle-column `where` via `reviewPhaseWhere`.
+   */
+  reviewPhases?: ReviewPhase[];
   school?: School;
   search?: string;
   assignedToId?: string;
+  /**
+   * Restrict to an explicit set of application ids (drill-in from the Round
+   * Cockpit watchlist — keeps the queue identical to the lane's count). An
+   * EMPTY array intentionally returns zero rows, not "all".
+   */
+  ids?: string[];
+  /**
+   * Restrict to applications linked to an explicit set of BursaryAccount ids
+   * (re-assessment-eligible drill-in from the queue). An EMPTY array
+   * intentionally returns zero rows, not "all".
+   */
+  bursaryAccountIds?: string[];
+  /**
+   * Undecided filter: applications with no final assessment outcome yet. A plain
+   * lifecycle filter, not a watchlist rule.
+   */
+  undecided?: boolean;
 }
 
 /**
@@ -68,13 +103,17 @@ export async function listApplications(
   filters: ListApplicationsFilters = {}
 ): Promise<ApplicationListItem[]> {
   const where: Prisma.ApplicationWhereInput = {};
+  // Lifecycle-column fragments (review-phase / undecided) are combined under AND
+  // so their internal OR/relation clauses never clobber each other (Epic 01 PR-6a).
+  const and: Prisma.ApplicationWhereInput[] = [];
 
   if (filters.roundId) {
     where.roundId = filters.roundId;
   }
 
-  if (filters.status) {
-    where.status = filters.status;
+  const phaseWhere = reviewPhaseWhere(filters.reviewPhases);
+  if (phaseWhere) {
+    and.push(phaseWhere);
   }
 
   if (filters.school) {
@@ -92,13 +131,33 @@ export async function listApplications(
     where.assignedToId = filters.assignedToId;
   }
 
+  if (filters.ids !== undefined) {
+    // An empty array must return zero rows (not "all"), so set the `in`
+    // constraint unconditionally — Prisma `{ in: [] }` matches nothing.
+    where.id = { in: filters.ids };
+  }
+
+  if (filters.bursaryAccountIds !== undefined) {
+    // Same empty-array semantics as `ids`: an empty set matches nothing.
+    where.bursaryAccountId = { in: filters.bursaryAccountIds };
+  }
+
+  if (filters.undecided) {
+    and.push(undecidedWhere());
+  }
+
+  if (and.length > 0) {
+    where.AND = and;
+  }
+
   const applications = await tx.application.findMany({
     where,
     select: {
       id: true,
       reference: true,
       school: true,
-      status: true,
+      formStatus: true,
+      applicationType: true,
       entryYear: true,
       submittedAt: true,
       isReassessment: true,
@@ -112,7 +171,11 @@ export async function listApplications(
         select: { status: true },
       },
       assessment: {
-        select: { secondaryParentOverride: true },
+        select: {
+          secondaryParentOverride: true,
+          status: true,
+          outcome: true,
+        },
       },
     },
     orderBy: { submittedAt: "desc" },
@@ -131,7 +194,12 @@ export async function listApplications(
         secondParent = "AWAITING";
       }
     }
-    return { ...rest, secondParent };
+    return {
+      ...rest,
+      assessmentStatus: assessment?.status ?? null,
+      outcome: assessment?.outcome ?? null,
+      secondParent,
+    };
   });
 }
 
@@ -173,7 +241,12 @@ export async function getApplicationNames(
  * the application-detail pages must not carry names unless they have been
  * explicitly revealed via the audit-logged path (`getApplicationNamesForReveal`).
  */
-export type ApplicationWithDetails = Omit<Application, "childName"> & {
+export type ApplicationWithDetails = Omit<
+  Application,
+  // `status` (the deprecated fused enum) is intentionally NOT selected (Epic 01
+  // PR-6a) — the detail view derives the review phase from the lifecycle columns.
+  "childName" | "status"
+> & {
   round: Round;
   sections: ApplicationSection[];
   documents: Document[];
@@ -206,8 +279,12 @@ export async function getApplicationWithDetails(
       isReassessment: true,
       isInternal: true,
       assignedToId: true,
-      status: true,
+      formStatus: true,
+      applicationType: true,
+      custodyArrangement: true,
+      archivedAt: true,
       submittedAt: true,
+      submissionDeadlineAt: true,
       createdAt: true,
       updatedAt: true,
       round: true,
@@ -291,18 +368,21 @@ export interface SectionStatusResult {
 }
 
 /**
- * Returns the applicant's current active application (most recently updated
- * with PRE_SUBMISSION status), or null if none exists.
+ * Returns the applicant's current active (not-yet-submitted) draft application,
+ * or null if none exists.
  *
  * Use this for the editable apply flow, which only operates on the draft.
  * For the dashboard's "current application whatever its status" need, use
  * getCurrentApplicationForUser instead.
+ *
+ * PR-6a: "draft" is `form_status` ≠ SUBMITTED (the lifecycle equivalent of the
+ * old fused PRE_SUBMISSION), not the deprecated fused `applications.status`.
  */
 export async function getApplicationForUser(tx: Tx, userId: string) {
   return tx.application.findFirst({
     where: {
       leadApplicantId: userId,
-      status: "PRE_SUBMISSION",
+      formStatus: { not: "SUBMITTED" },
     },
     orderBy: { updatedAt: "desc" },
     include: {
@@ -330,7 +410,110 @@ export async function getCurrentApplicationForUser(tx: Tx, userId: string) {
       round: {
         select: { academicYear: true, status: true },
       },
+      // PR-6a: the portal "awaiting documents" CTA reads the assessment
+      // lifecycle (PAUSED) instead of the deprecated fused applications.status.
+      assessment: {
+        select: { status: true },
+      },
     },
+  });
+}
+
+/**
+ * Narrow nav-state read for the persistent portal rail (PR-9).
+ *
+ * Runs on EVERY portal page (it backs the root `(portal)/layout.tsx`), so it is
+ * deliberately the smallest possible read: just the lifecycle bits the nav needs
+ * to badge Documents (paused → outstanding document request) and to point the
+ * "My Application" item at the right target (wizard while drafting, `/status`
+ * after submit). NO round read (Decision 5 — the round label stays out of the
+ * global nav), NO section/gap computation, NO full-application include.
+ *
+ * Returns null when the user has no application yet (invited-not-started, or no
+ * invitation) — the nav then falls back to its static defaults.
+ */
+export interface PortalNavState {
+  /** Drives the adaptive "My Application" target (SUBMITTED → /status). */
+  formStatus: ApplicationFormStatus;
+}
+
+export async function getPortalNavState(
+  tx: Tx,
+  userId: string
+): Promise<PortalNavState | null> {
+  const app = await tx.application.findFirst({
+    where: { leadApplicantId: userId },
+    orderBy: { updatedAt: "desc" },
+    select: {
+      formStatus: true,
+    },
+  });
+  if (!app) return null;
+  return {
+    formStatus: app.formStatus,
+  };
+}
+
+/** The minimal paused signal the applicant portal is allowed to surface. */
+export interface ApplicationPausedState {
+  /** True when an assessor has paused review pending documents. */
+  isPaused: boolean;
+  /** The document deadline the assessor set, when paused. */
+  pausedUntil: Date | null;
+}
+
+/**
+ * Reads ONLY the paused bit + deadline for a user's current application, under
+ * SERVICE-ROLE (admin) context.
+ *
+ * Why admin context: applicants cannot SELECT the `assessments` row under RLS
+ * (`assessments_select` is admin/viewer/assigned-assessor only — "applicants
+ * must NOT see assessment data"). Reading `application.assessment.status` under
+ * the applicant's own context therefore always returns null, which silently
+ * disabled the missing-documents CTA (the assessment is invisible). We read just
+ * these two scalars server-side so the portal can surface "a document request is
+ * outstanding, due by X" WITHOUT ever exposing assessment financials, scoring,
+ * notes or in-progress outcome to the applicant.
+ *
+ * Resolves "the user's current application" the same way `getPortalNavState` /
+ * `getCurrentApplicationForUser` do (most-recently-updated), so the signal
+ * always matches the application the rest of the portal is showing.
+ */
+export async function getApplicationPausedStateForUser(
+  userId: string
+): Promise<ApplicationPausedState> {
+  return withAdminContext(async (tx) => {
+    const app = await tx.application.findFirst({
+      where: { leadApplicantId: userId },
+      orderBy: { updatedAt: "desc" },
+      select: { assessment: { select: { status: true, pausedUntil: true } } },
+    });
+    return {
+      isPaused: app?.assessment?.status === "PAUSED",
+      pausedUntil: app?.assessment?.pausedUntil ?? null,
+    };
+  });
+}
+
+/**
+ * Reads ONLY the paused bit + deadline for a specific application, under
+ * service-role context. Used by pages that already resolved the application id
+ * under the applicant's context (ownership established) and now need the paused
+ * signal the applicant's RLS cannot read. See `getApplicationPausedStateForUser`
+ * for the disclosure rationale.
+ */
+export async function getApplicationPausedState(
+  applicationId: string
+): Promise<ApplicationPausedState> {
+  return withAdminContext(async (tx) => {
+    const assessment = await tx.assessment.findUnique({
+      where: { applicationId },
+      select: { status: true, pausedUntil: true },
+    });
+    return {
+      isPaused: assessment?.status === "PAUSED",
+      pausedUntil: assessment?.pausedUntil ?? null,
+    };
   });
 }
 
@@ -366,6 +549,10 @@ export async function getSectionStatusList(
  * Targets the contributor-scoped unique (applicationId, section,
  * ownerContributorId). For the lead applicant `ownerContributorId` is their
  * PRIMARY contributor — behaviour is identical to before (one row per section).
+ *
+ * `assessorProvenance` is an optional staff edit-on-behalf provenance map,
+ * computed by the caller (e.g. which fields a staff member changed and when).
+ * When omitted the stored provenance is left untouched.
  */
 export async function upsertSection(
   tx: Tx,
@@ -373,9 +560,12 @@ export async function upsertSection(
   section: ApplicationSectionType,
   data: unknown,
   isComplete: boolean,
-  ownerContributorId: string
+  ownerContributorId: string,
+  assessorProvenance?: Prisma.InputJsonValue
 ) {
   const jsonData = data as Prisma.InputJsonValue;
+  const provenance =
+    assessorProvenance !== undefined ? { assessorProvenance } : undefined;
   return tx.applicationSection.upsert({
     where: {
       applicationId_section_ownerContributorId: {
@@ -387,6 +577,7 @@ export async function upsertSection(
     update: {
       data: jsonData,
       isComplete,
+      ...provenance,
     },
     create: {
       applicationId,
@@ -394,6 +585,7 @@ export async function upsertSection(
       ownerContributorId,
       data: jsonData,
       isComplete,
+      ...provenance,
     },
   });
 }
@@ -454,4 +646,47 @@ export async function getDocumentsForApplication(
     };
   }
   return map;
+}
+
+/**
+ * Serialisable, ORDERED list of an application's documents — the first-class
+ * `/documents` portal area (PR-8). Sibling to `getDocumentsForApplication`
+ * (the keyed-map variant above): same `DocumentMeta` shape, but returns an
+ * array ordered for display (slot ascending, then newest-first within a slot)
+ * so the page can group by humanised slot without re-sorting client-side.
+ *
+ * Contributor scoping (dual-parent, data-leak guard): when `ownerContributorId`
+ * is supplied the query filters on `uploadedByContributorId` so the lead
+ * applicant (their PRIMARY contributor) NEVER sees the secondary parent's
+ * uploads — exactly as the review page scopes its document include
+ * (`apply/review/page.tsx:396-399`: `documents: { where: { uploadedByContributorId } }`)
+ * and as the signed-URL route enforces per-document
+ * (`api/documents/[id]/url/route.ts:87-103`). This filter is defence-in-depth
+ * ON TOP of RLS — callers MUST still run it under `withUserContext`, never
+ * admin context. Omit `ownerContributorId` only for a caller that legitimately
+ * wants every contributor's documents (e.g. an admin view under RLS).
+ */
+export async function getAllDocumentsForApplication(
+  tx: Tx,
+  applicationId: string,
+  ownerContributorId?: string
+): Promise<DocumentMeta[]> {
+  const rows = await tx.document.findMany({
+    where: {
+      applicationId,
+      ...(ownerContributorId
+        ? { uploadedByContributorId: ownerContributorId }
+        : {}),
+    },
+    select: { id: true, slot: true, filename: true, fileSize: true, uploadedAt: true },
+    orderBy: [{ slot: "asc" }, { uploadedAt: "desc" }],
+  });
+
+  return rows.map((row) => ({
+    id: row.id,
+    slot: row.slot,
+    filename: row.filename,
+    fileSize: row.fileSize,
+    uploadedAt: row.uploadedAt.toISOString(),
+  }));
 }

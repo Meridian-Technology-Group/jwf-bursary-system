@@ -7,13 +7,17 @@ export type EmailTemplateType =
   | "MISSING_DOCS"
   | "OUTCOME_QUALIFIES"
   | "OUTCOME_DNQ"
+  | "OUTCOME_AWARDED"
+  | "OUTCOME_QUALIFIES_NOT_AWARDED"
   | "REASSESSMENT"
   | "REMINDER"
   | "INVITE_STAFF"
   | "MISSING_DOCS_RESPONDED"
   | "SECONDARY_PARENT_INVITE"
   | "SECONDARY_PARENT_REMINDER"
-  | "SECONDARY_PARENT_RECEIVED";
+  | "SECONDARY_PARENT_RECEIVED"
+  | "APPLICATION_RESTART_REQUIRED"
+  | "APPLICATION_EDITED_ON_BEHALF";
 
 interface EmailTemplateData {
   type: EmailTemplateType;
@@ -91,6 +95,7 @@ John Whitgift Foundation`,
       "Documents required for your bursary application — {{child_name}}",
     mergeFields: [
       "applicant_name",
+      "custom_message",
       "child_name",
       "reference",
       "missing_documents",
@@ -98,19 +103,17 @@ John Whitgift Foundation`,
     ],
     body: `Dear {{applicant_name}},
 
-Thank you for submitting your bursary application for {{child_name}} (reference: {{reference}}).
+{{custom_message}}
 
-Having reviewed your application, we find that the following documents are still required to enable us to complete our assessment:
+To enable us to complete our assessment of your bursary application for {{child_name}} (reference: {{reference}}), the following documents are still required:
 
 {{missing_documents}}
 
-Without these documents, we are unable to progress your application further. Please submit the outstanding documents as soon as possible, and no later than {{deadline}}.
+Please submit the outstanding documents through your online application portal as soon as possible, and no later than {{deadline}}. Without these documents, we are unable to progress your application further.
 
-Documents can be uploaded securely through your online application portal. If you experience any difficulty with the upload process, or if you are unable to provide a particular document, please contact the Bursary Office as soon as possible so that we can discuss alternative arrangements.
+If you experience any difficulty with the upload process, or if you are unable to provide a particular document, please contact the Bursary Office as soon as possible so that we can discuss alternative arrangements.
 
 We would like to remind you that all information provided is treated in strict confidence and used solely for the purpose of assessing your application for bursary support.
-
-Please do not hesitate to get in touch if you have any questions or concerns.
 
 Yours sincerely,
 
@@ -167,6 +170,62 @@ We understand that this may be disappointing news, and we are sorry that we are 
 If your financial circumstances change significantly, you are welcome to apply in a future round. Should you wish to discuss the outcome of your assessment, or if you believe that there are exceptional circumstances which were not fully reflected in your application, please contact the Bursary Office within 14 days of receiving this letter.
 
 We wish {{child_name}} all the best for the future.
+
+Yours sincerely,
+
+The Bursary Office
+John Whitgift Foundation`,
+  },
+  {
+    // Epic 08 — the 3-value outcome lifecycle's "Approved Bursary" letter.
+    // Kept in sync with migration 20260606180200_seed_outcome_email_templates.
+    type: "OUTCOME_AWARDED",
+    subject: "Bursary assessment outcome — {{child_name}}",
+    mergeFields: [
+      "applicant_name",
+      "child_name",
+      "school",
+      "reference",
+      "academic_year",
+    ],
+    body: `Dear {{applicant_name}},
+
+I am very pleased to write to you regarding the outcome of the bursary assessment for {{child_name}} at {{school}} for the {{academic_year}} academic year (reference: {{reference}}).
+
+Having carefully considered all of the information provided in your application, including your household income, assets, and family circumstances, the Bursary Committee has determined that {{child_name}} has been awarded a bursary.
+
+Full details of the award, including the level of support, any scholarship element, and any applicable conditions, will be set out in a separate award letter which will follow shortly. Please read that letter carefully, as it will contain important information about how the award will be administered and what is required of you to maintain it.
+
+We are delighted to be able to support {{child_name}}'s education at {{school}}, and we hope that this award will make a real difference to your family. Should your circumstances change at any point, you are required to notify the Bursary Office without delay, as this may affect the level of support provided.
+
+If you have any questions, please do not hesitate to contact us.
+
+Yours sincerely,
+
+The Bursary Office
+John Whitgift Foundation`,
+  },
+  {
+    // Epic 08 — "eligible but not awarded this round" (held per retention).
+    // Kept in sync with migration 20260606180200_seed_outcome_email_templates.
+    type: "OUTCOME_QUALIFIES_NOT_AWARDED",
+    subject: "Bursary assessment outcome — {{child_name}}",
+    mergeFields: [
+      "applicant_name",
+      "child_name",
+      "school",
+      "reference",
+      "academic_year",
+    ],
+    body: `Dear {{applicant_name}},
+
+Thank you for submitting a bursary application for {{child_name}} at {{school}} for the {{academic_year}} academic year (reference: {{reference}}).
+
+We have given careful consideration to all of the information and documentation you provided. Having completed our assessment, I can confirm that {{child_name}}'s application has been assessed as eligible for bursary support.
+
+Unfortunately, on this occasion we are not able to offer an award in this round. Bursary funding is limited, and the Foundation must make awards within the resources available to it. Your application has been retained, and {{child_name}} remains eligible to be considered in a future round.
+
+We understand that this may be disappointing news, and we are sorry that we are unable to offer an award at this time. If your financial circumstances change significantly, or if you would like to discuss the outcome, please contact the Bursary Office.
 
 Yours sincerely,
 
@@ -349,6 +408,74 @@ Registration link: {{registration_link}}
 Please aim to complete your section by {{deadline}}. If your information is not received, the Foundation may need to assess the application on the basis of the details available, which could affect the outcome.
 
 If you have already completed your section, please disregard this message. If you have any questions, please contact the Bursary Office.
+
+Yours sincerely,
+
+The Bursary Office
+John Whitgift Foundation`,
+  },
+  {
+    // Full Rejection flow — the applicant's submission was rejected outright and
+    // a fresh blank application has been created for them to complete.
+    // Kept in sync with migration
+    // 20260611120100_seed_restart_and_update_missing_docs_template.
+    type: "APPLICATION_RESTART_REQUIRED",
+    subject:
+      "Your bursary application needs to be resubmitted — {{child_name}}",
+    mergeFields: [
+      "applicant_name",
+      "child_name",
+      "reference",
+      "custom_message",
+      "restart_link",
+    ],
+    body: `Dear {{applicant_name}},
+
+{{custom_message}}
+
+Having reviewed the bursary application submitted for {{child_name}} (reference: {{reference}}), we are unable to proceed with it in its current form. We have therefore closed that submission and ask that you complete a new application.
+
+A fresh application has been prepared for you. Please log in to your online application portal using the link below to complete and submit it:
+
+{{restart_link}}
+
+When completing your new application, please take particular care to provide clear, current, and valid supporting documents. If you have any questions about what is required, or if you would like to discuss your application, please contact the Bursary Office — we are happy to help.
+
+We would like to remind you that all information provided is treated in strict confidence and used solely for the purpose of assessing your application for bursary support.
+
+Yours sincerely,
+
+The Bursary Office
+John Whitgift Foundation`,
+  },
+  {
+    // CR-001 edit-on-behalf — sent once when a member of the Bursary Office
+    // finishes an editing pass on an applicant's form, listing the sections
+    // that were entered or amended on their behalf.
+    // Kept in sync with migration
+    // 20260612100100_seed_edited_on_behalf_template.
+    type: "APPLICATION_EDITED_ON_BEHALF",
+    subject: "Your bursary application has been updated — {{child_name}}",
+    mergeFields: [
+      "applicant_name",
+      "child_name",
+      "reference",
+      "edited_sections",
+      "edited_date",
+    ],
+    body: `Dear {{applicant_name}},
+
+I am writing to let you know that a member of the Bursary Office team has updated the bursary application for {{child_name}} (reference: {{reference}}) on your behalf on {{edited_date}}.
+
+The following sections were entered or amended on your behalf:
+
+{{edited_sections}}
+
+You can review your submitted application in your online application portal at any time. The information shown there is read-only, so nothing further is required of you.
+
+If anything in the updated information looks incorrect, or if you have any questions about the changes, please contact the Bursary Office and we will be happy to help.
+
+We would like to remind you that all information provided is treated in strict confidence and used solely for the purpose of assessing your application for bursary support.
 
 Yours sincerely,
 

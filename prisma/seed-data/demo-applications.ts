@@ -98,7 +98,82 @@ export const bursaryAccounts = [
     firstAssessmentYear: "2026/27",
     benchmarkPayableFees: null,
     leadApplicantId: APPLICANT_4_ID,
-    status: "ACTIVE" as const,
+    // CLOSED demo (Epic 10): a concluded account whose full schedule completed.
+    // Exercises the admin grid rendering a CLOSED account + COMPLETE schedule.
+    // (A full PORTAL-ACCESS-revocation demo needs a lead with no in-flight
+    // application; every fixed demo user currently has one, so that is a
+    // deferred seed nicety — the access guard itself is unit-tested.)
+    status: "CLOSED" as const,
+    closedAt: new Date("2026-03-01T10:00:00Z"),
+    scheduleYears: 2,
+  },
+];
+
+// ─── Forward schedule entries (Epic 10) ────────────────────────────────────────
+//
+// Okafor (ACTIVE) — a populated multi-year schedule: Year 1 RECEIVED (the award
+// year's application is in), Years 2–3 SCHEDULED future. Years 1–2 are shown on
+// the portal, Year 3 hidden — matching the illustration's Show/Hide defaults.
+// Chen (CLOSED) — a fully COMPLETE 2-year schedule, so the grid shows a
+// concluded account.
+
+export const scheduleEntries = [
+  // Okafor — ACTIVE, mixed RECEIVED past + SCHEDULED future.
+  {
+    bursaryAccountId: ACCOUNT_OKAFOR_ID,
+    scheduleYear: 1,
+    academicYear: "2026-27",
+    status: "RECEIVED" as const,
+    manuallyCreated: false,
+    availableOn: new Date("2026-09-01"),
+    requiredBy: new Date("2026-12-01"),
+    receivedOn: new Date("2026-10-15"),
+    showOnPortal: true,
+  },
+  {
+    bursaryAccountId: ACCOUNT_OKAFOR_ID,
+    scheduleYear: 2,
+    academicYear: "2027-28",
+    status: "SCHEDULED" as const,
+    manuallyCreated: false,
+    availableOn: new Date("2027-09-01"),
+    requiredBy: new Date("2027-12-01"),
+    receivedOn: null,
+    showOnPortal: true,
+  },
+  {
+    bursaryAccountId: ACCOUNT_OKAFOR_ID,
+    scheduleYear: 3,
+    academicYear: "2028-29",
+    status: "SCHEDULED" as const,
+    manuallyCreated: false,
+    availableOn: new Date("2028-09-01"),
+    requiredBy: new Date("2028-12-01"),
+    receivedOn: null,
+    showOnPortal: false,
+  },
+  // Chen — CLOSED, schedule fully complete.
+  {
+    bursaryAccountId: ACCOUNT_CHEN_ID,
+    scheduleYear: 1,
+    academicYear: "2026-27",
+    status: "COMPLETE" as const,
+    manuallyCreated: false,
+    availableOn: new Date("2026-09-01"),
+    requiredBy: new Date("2026-12-01"),
+    receivedOn: new Date("2026-10-20"),
+    showOnPortal: false,
+  },
+  {
+    bursaryAccountId: ACCOUNT_CHEN_ID,
+    scheduleYear: 2,
+    academicYear: "2027-28",
+    status: "COMPLETE" as const,
+    manuallyCreated: false,
+    availableOn: new Date("2027-09-01"),
+    requiredBy: new Date("2027-12-01"),
+    receivedOn: new Date("2027-10-18"),
+    showOnPortal: false,
   },
 ];
 
@@ -295,24 +370,18 @@ const okaforSections: SectionDef[] = [
     applicationId: APP_OKAFOR_ID,
     section: "PARENTS_INCOME",
     isComplete: true,
+    // Status-driven income shape (Epic 02 D3): both parents Employed.
     data: {
       parent1Income: {
-        employmentStatus: "PAYE",
-        grossSalary: 68000,
-        netAnnualPay: 47200,
-        pensionContribution: 4000,
-        taxCode: "1257L",
-        niNumber: "AB123456C",
+        employed: { annualSalaryPaye: 68000 },
+        total: 68000,
+        documentsConfirmed: true,
       },
       parent2Income: {
-        employmentStatus: "PAYE",
-        grossSalary: 42000,
-        netAnnualPay: 31500,
-        pensionContribution: 2100,
-        taxCode: "1257L",
-        niNumber: "CD789012A",
+        employed: { annualSalaryPaye: 42000 },
+        total: 42000,
+        documentsConfirmed: true,
       },
-      totalHouseholdGross: 110000,
     },
   },
   {
@@ -455,25 +524,23 @@ const patelSections: SectionDef[] = [
     applicationId: APP_PATEL_ID,
     section: "PARENTS_INCOME",
     isComplete: true,
+    // P1 Employed, P2 Self-employed (SA302 sub-table).
     data: {
       parent1Income: {
-        employmentStatus: "PAYE",
-        grossSalary: 52000,
-        netAnnualPay: 37800,
-        pensionContribution: 2600,
-        taxCode: "1257L",
+        employed: { annualSalaryPaye: 52000 },
+        total: 52000,
+        documentsConfirmed: true,
       },
       parent2Income: {
-        employmentStatus: "SELF_EMPLOYED_DIRECTOR",
-        directorSalary: 12570,
-        dividendsGross: 38000,
-        netDividends: 35000,
-        netDirectorPay: 10500,
-        companyAccountingYear: "April",
-        latestAccountsTurnover: 210000,
-        latestAccountsProfit: 55000,
+        selfEmployed: {
+          grossSalaried: 12570,
+          propertyIncome: 0,
+          dividends: 38000,
+          otherInvestmentIncome: 0,
+        },
+        total: 50570,
+        documentsConfirmed: true,
       },
-      totalHouseholdGross: 102570,
     },
   },
   {
@@ -607,15 +674,24 @@ const williamsMSections: SectionDef[] = [
     applicationId: APP_WILLIAMS_M_ID,
     section: "PARENTS_INCOME",
     isComplete: true,
+    // Sole parent On benefits (exercises the benefits sub-table; Child Benefit
+    // declared with no upload — the workbook exception).
     data: {
       parent1Income: {
-        employmentStatus: "PAYE",
-        grossSalary: 36000,
-        netAnnualPay: 27900,
-        pensionContribution: 3240,
-        taxCode: "1257L",
+        benefits: {
+          universalCredit: 9600,
+          housingBenefit: 0,
+          childBenefit: 1820,
+          childWorkingTaxCredit: 0,
+          esa: 0,
+          pipOrDla: 0,
+          carersAllowance: 0,
+          childcareSupport: 0,
+          other: 0,
+        },
+        total: 11420,
+        documentsConfirmed: true,
       },
-      totalHouseholdGross: 36000,
     },
   },
   {
@@ -748,15 +824,13 @@ const williamsASections: SectionDef[] = [
     applicationId: APP_WILLIAMS_A_ID,
     section: "PARENTS_INCOME",
     isComplete: true,
+    // Sole parent Retired (exercises the retired pension sub-table).
     data: {
       parent1Income: {
-        employmentStatus: "PAYE",
-        grossSalary: 36000,
-        netAnnualPay: 27900,
-        pensionContribution: 3240,
-        taxCode: "1257L",
+        retired: { statePension: 11500, privatePension: 14000 },
+        total: 25500,
+        documentsConfirmed: true,
       },
-      totalHouseholdGross: 36000,
     },
   },
   {
@@ -887,21 +961,23 @@ const chenSections: SectionDef[] = [
     applicationId: APP_CHEN_ID,
     section: "PARENTS_INCOME",
     isComplete: true,
+    // P1 Employed, P2 Self-employed (sole trader) — exercises both sub-tables.
     data: {
       parent1Income: {
-        employmentStatus: "PAYE",
-        grossSalary: 78000,
-        netAnnualPay: 52400,
-        pensionContribution: 5850,
-        taxCode: "1257L",
+        employed: { annualSalaryPaye: 78000 },
+        total: 78000,
+        documentsConfirmed: true,
       },
       parent2Income: {
-        employmentStatus: "SELF_EMPLOYED_SOLE",
-        grossSelfEmployedProfit: 8400,
-        netSelfEmployedProfit: 7560,
-        taxReturnYear: "2024/25",
+        selfEmployed: {
+          grossSalaried: 8400,
+          propertyIncome: 0,
+          dividends: 0,
+          otherInvestmentIncome: 0,
+        },
+        total: 8400,
+        documentsConfirmed: true,
       },
-      totalHouseholdGross: 86400,
     },
   },
   {
@@ -991,9 +1067,13 @@ export const assessments = [
     // Flags
     dishonestyFlag: false,
     creditRiskFlag: false,
-    // Status
+    // Single qualitative synopsis (Epic 06). COMPLETED assessment — demonstrates
+    // the post-completion editable synopsis alongside an otherwise-locked form.
+    synopsis:
+      "## Bursary Assessment Details\nNew application, Year 7 entry. Both parents PAYE, NHS and teaching. Renting in Croydon. Cat 3 family. No previous bursary. Straightforward application.\n\n## Living Conditions / Other JWF Children\nFamily renting at £1,850/month in Croydon. Notional rent applies (Cat 3: £18,000). No property ownership. Rent confirmed against bank statements.\n\n## Debt Situation\nCar loan outstanding £6,500 at £280/month. No other significant debts. Credit checks satisfactory.\n\n## Other Fees with the Foundation\nNo other independent school fees. Younger sibling at state primary.\n\n## Staff Situation\nNo connection to school staff or Foundation trustees identified.\n\n## Financial Profile Impact\nP60s verified for both parents. Bank statements reviewed for 3 months. Income consistent with declared figures. Savings in line with stated amounts. No anomalies detected.",
+    // Status — Epic 08: AWARDED is the panel's "Approved Bursary" outcome.
     status: "COMPLETED" as const,
-    outcome: "QUALIFIES" as const,
+    outcome: "AWARDED" as const,
     completedAt: new Date("2026-02-28T16:00:00Z"),
   },
   // Patel — PAUSED (in progress)
@@ -1027,6 +1107,9 @@ export const assessments = [
     propertyExceedsThreshold: false,
     dishonestyFlag: false,
     creditRiskFlag: false,
+    // Single qualitative synopsis (Epic 06) — partial, assessment paused.
+    synopsis:
+      "## Bursary Assessment Details\nRe-assessment Year 9. Director income requires company accounts verification. Awaiting certified accounts for Patel IT Solutions Ltd.\n\n## Living Conditions / Other JWF Children\nOwner-occupier, mortgaged. Property value £580k, outstanding mortgage £240k.\n\n## Debt Situation\nBusiness loan £18,000. No personal debts.",
     status: "PAUSED" as const,
     outcome: null,
     completedAt: null,
@@ -1060,8 +1143,11 @@ export const assessments = [
     propertyExceedsThreshold: false,
     dishonestyFlag: false,
     creditRiskFlag: false,
+    // Single qualitative synopsis (Epic 06) — completed re-assessment.
+    synopsis:
+      "## Bursary Assessment Details\nRe-assessment Year 9. Sole parent household, no change in circumstances from 2025/26 assessment. Sibling Amara now applying for Trinity (TS-2601). Sibling income absorption modelled.\n\n## Living Conditions / Other JWF Children\nRenting at £1,350/month, Cat 1 notional rent £13,000 applies. No property assets.\n\n## Debt Situation\nNo debts. Clean credit profile.\n\n## Other Fees with the Foundation\nAmara's Trinity application (TS-2601) being assessed separately. Sibling link created.\n\n## Staff Situation\nNo connections identified.\n\n## Financial Profile Impact\nSingle P60 verified. Bank statements show consistent income. Child Tax Credit and Child Benefit confirmed. Low savings are consistent with sole parent income level. No concerns.",
     status: "COMPLETED" as const,
-    outcome: "QUALIFIES" as const,
+    outcome: "AWARDED" as const,
     completedAt: new Date("2026-02-25T11:30:00Z"),
   },
 ];
@@ -1287,12 +1373,15 @@ export const recommendations = [
     incomeCategory: "Middle income — combined net £78,700",
     propertyCategory: 1,
     bursaryAward: 22456,
+    // Epic 08 / D9 — distinct merit scholarship award (£) recorded alongside the
+    // means-tested bursary. Demonstrates a non-null scholarshipAward fixture.
+    scholarshipAward: 3000,
     yearlyPayableFees: 11155,
     monthlyPayableFees: 929.58,
     dishonestyFlag: false,
     creditRiskFlag: false,
     summary:
-      "Recommend bursary award of £22,456 (70.7% of gross fees). Family demonstrates genuine need and the application is fully supported by documentary evidence. No concerns identified.",
+      "Recommend bursary award of £22,456 (70.7% of gross fees) plus a £3,000 merit scholarship. Family demonstrates genuine need and the application is fully supported by documentary evidence. No concerns identified.",
   },
   {
     id: REC_WILLIAMS_M_ID,
@@ -1304,6 +1393,8 @@ export const recommendations = [
     incomeCategory: "Low income — net £27,900 (sole parent)",
     propertyCategory: 1,
     bursaryAward: 29532,
+    // No scholarship element on this re-assessment (Epic 08 / D9).
+    scholarshipAward: null,
     yearlyPayableFees: 2664,
     monthlyPayableFees: 222,
     dishonestyFlag: false,

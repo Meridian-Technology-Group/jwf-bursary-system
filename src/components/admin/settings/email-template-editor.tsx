@@ -40,8 +40,10 @@ const TEMPLATE_LABELS: Record<EmailTemplateType, string> = {
   INVITATION: "Invitation",
   CONFIRMATION: "Submission Confirmation",
   MISSING_DOCS: "Missing Documents",
-  OUTCOME_QUALIFIES: "Outcome — Qualifies",
-  OUTCOME_DNQ: "Outcome — Does Not Qualify",
+  OUTCOME_QUALIFIES: "Outcome — Qualifies (legacy)",
+  OUTCOME_DNQ: "Outcome — Declined",
+  OUTCOME_AWARDED: "Outcome — Awarded",
+  OUTCOME_QUALIFIES_NOT_AWARDED: "Outcome — Qualifies, Not Awarded",
   REASSESSMENT: "Reassessment",
   REMINDER: "Reminder",
   INVITE_STAFF: "Staff Invitation",
@@ -49,6 +51,8 @@ const TEMPLATE_LABELS: Record<EmailTemplateType, string> = {
   SECONDARY_PARENT_INVITE: "Second Parent — Invitation",
   SECONDARY_PARENT_REMINDER: "Second Parent — Reminder",
   SECONDARY_PARENT_RECEIVED: "Second Parent — Information Received",
+  APPLICATION_RESTART_REQUIRED: "Application Rejected — Restart Required",
+  APPLICATION_EDITED_ON_BEHALF: "Application Edited on Your Behalf",
 };
 
 // ─── Merge field hints ────────────────────────────────────────────────────────

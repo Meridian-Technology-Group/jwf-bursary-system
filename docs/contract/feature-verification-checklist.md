@@ -793,6 +793,35 @@ You won't be auditing the server, but a few things should be visible from the br
 >
 
 
+## 33. Assessor edit-on-behalf (CR-001)
+
+**Where to find it:** Admin Console → application detail → "Applicant Data" tab → **Edit on behalf** button. This capability was added under **Change Request CR-001** after the original checklist was issued; the items below transcribe CR-001 §5's acceptance criteria as checkable steps.
+
+- [ ] An assessor can open a **submitted** application and **edit any of its ten sections**, with the **same validation the applicant experiences** — enter an invalid value (e.g. clear a required field) and confirm the same per-field error the Portal shows, with the save rejected.
+- [ ] A **VIEWER** (read-only) account **cannot access edit mode** — the **Edit on behalf** button is not shown, and pasting an edit URL (`/applications/<id>/edit/...`) does not open the edit forms.
+- [ ] The application **remains read-only to the applicant throughout** — while and after an assessor edits, the applicant's Portal still shows the locked, read-only view with no edit controls.
+- [ ] While editing, the assessor sees a **clear, persistent indication** that they are acting on the applicant's behalf — the amber *"Editing on behalf of the applicant"* banner appears on **every** section of edit mode.
+- [ ] Fields/sections saved by the assessor are **visually distinguished** from applicant-entered data — a purple **"Entered by assessor"** badge per field (hover shows who and when) and an *"N fields entered by assessor"* count on each amended section card of the Applicant Data tab.
+- [ ] Each assessor edit appears in the **audit trail** (the application's History tab), **attributed to the assessor, with a timestamp** — one *"Section saved by assessor"* entry per save, listing the changed fields.
+- [ ] An assessor **cannot reach or edit an application they are not entitled to** — sign in as an assessor who is *not* assigned to the application: there is no **Edit on behalf** button, and a pasted edit URL is turned away. (The server- and row-security enforcement behind this is covered by the Master Services Agreement's security clauses, per the footnote at the end of this checklist.)
+- [ ] The **agreed notification behaviour (D-CR1-1)** is implemented as decided — clicking **Finish editing** sends the applicant exactly **one** summary email listing the edited sections and the date; and the email can be switched off via Settings → Email Templates → *Application edited on behalf* → **Send this email** (the agreed "silent" option).
+- [ ] The **Admin & Assessor Guide** and this **Feature Verification Checklist** are updated to cover the capability — the guide's "Editing an application on the applicant's behalf" section, walkthrough 38, and this §33.
+
+### Submit on behalf of the applicant (postal / telephone intake)
+
+- [ ] A fresh application entered **entirely by staff** through edit mode (every section completed) reaches the fully-filled-in state, and a **Submit on behalf of applicant** button appears in the editing banner.
+- [ ] Clicking it shows a **confirmation dialog**; confirming submits the application with the **same completeness checks** as an applicant submission, and the status becomes **Submitted**.
+- [ ] The applicant receives the standard **submission confirmation email**.
+- [ ] The submission appears in the **audit trail** attributed to the staff member (*"Submitted by assessor on behalf of applicant"*).
+- [ ] On the **Declaration** section, the *"Full name of Parent / Guardian 1 / 2"* fields record who signed the paper form.
+- [ ] The Portal's **submission deadline is not enforced** on the staff path — a staff member can still submit on behalf after the portal deadline (deliberate: a postal application that arrived in time may be typed up late).
+- [ ] Once the assessment is **Completed**, or an outcome is set, the **Edit on behalf** button no longer appears and edit mode is locked.
+
+**Notes / issues found:**
+
+>
+
+
 ---
 
 # Part 5 — Open Questions / Things to Discuss

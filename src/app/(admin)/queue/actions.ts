@@ -30,6 +30,7 @@ import { createProfile } from "@/lib/auth/create-profile";
 import { getAppUrl } from "@/lib/app-url";
 import { createInvitation } from "@/lib/db/queries/invitations";
 import { ensurePrimaryContributor } from "@/lib/db/queries/contributors";
+import { applicationCreateData } from "@/lib/applications/status";
 
 import { AUDIT_ACTIONS, AUDIT_ENTITY_TYPES } from "@/lib/audit/actions";
 
@@ -236,7 +237,7 @@ export async function createInternalRequestAction(
           entryYear,
           entryYearGroup,
           isInternal: true,
-          status: "PRE_SUBMISSION",
+          ...applicationCreateData("NEW"),
         },
         select: { id: true, reference: true },
       });

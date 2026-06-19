@@ -1,18 +1,25 @@
 "use client";
 
 /**
- * WP-12: Recommendation Form
+ * Recommendation form (Epic 08 — real award terminology & outcome).
  *
- * Client component for the Recommendation tab. Allows assessors to:
- *  - Review auto-populated fee/flag data from the assessment
- *  - Edit family synopsis, accommodation status, income category, property
- *    category, and summary narrative
- *  - Select reason codes (via ReasonCodeSelector)
- *  - Save the recommendation
- *  - Set the application outcome (QUALIFIES / DOES_NOT_QUALIFY) with a
- *    confirmation dialog
+ * The assessor reviews the assessment fee summary, records:
+ *  - the recommendation context (accommodation, income category, property cat),
+ *  - the single editable synopsis (Epic 06),
+ *  - reason codes,
+ *  - a distinct SCHOLARSHIP AWARD (£) alongside the calculated bursary (D9),
+ * and confirms a THREE-WAY award decision in the Foundation's own language:
+ *  - Award (the panel's "Approved Bursary"),
+ *  - Qualifies — not awarded (eligible but not granted this round),
+ *  - Decline (the panel's "Declined Bursary").
  *
- * Read-only when the application status is QUALIFIES or DOES_NOT_QUALIFY.
+ * Sibling context and an options comparison are surfaced read-only so the
+ * assessor sees and confirms the chosen scenario rather than inheriting one
+ * opaque number.
+ *
+ * The form is read-only once a terminal outcome has been recorded on the
+ * assessment (Epic 01's AssessmentOutcome) — EXCEPT the synopsis, which Epic 06
+ * keeps editable after completion.
  */
 
 import * as React from "react";
@@ -20,15 +27,17 @@ import { useRouter } from "next/navigation";
 import {
   AlertTriangle,
   Save,
-  CheckCircle2,
+  Award,
+  PauseCircle,
   XCircle,
   ShieldAlert,
   DollarSign,
+  Users,
+  Scale,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import {
   Select,
   SelectContent,
@@ -52,13 +61,20 @@ import {
 } from "@/components/ui/dialog";
 import { ReasonCodeSelector } from "@/components/admin/reason-code-selector";
 import type { ReasonCodeOption } from "@/components/admin/reason-code-selector";
+import { AssessmentSynopsis } from "@/components/admin/assessment-synopsis";
+import { OutcomeBadge } from "@/components/shared/lifecycle-badges";
 import {
   saveRecommendationAction,
-  setApplicationOutcomeAction,
+  setApplicationAwardAction,
 } from "@/app/(admin)/applications/[id]/recommendation/actions";
+import type { OptionScenario } from "@/lib/assessment/recommendation-options";
 import { cn } from "@/lib/utils";
+import type { AssessmentOutcome } from "@prisma/client";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
+
+/** The 3-value award decision (Epic 08 / Epic 01 outcome). */
+type AwardDecision = "AWARDED" | "QUALIFIES_NOT_AWARDED" | "DOES_NOT_QUALIFY";
 
 export interface SerialisedRecommendation {
   id: string;
@@ -68,6 +84,7 @@ export interface SerialisedRecommendation {
   incomeCategory: string | null;
   propertyCategory: number | null;
   bursaryAward: number | null;
+  scholarshipAward: number | null;
   yearlyPayableFees: number | null;
   monthlyPayableFees: number | null;
   dishonestyFlag: boolean;
@@ -76,9 +93,24 @@ export interface SerialisedRecommendation {
   selectedReasonCodeIds: string[];
 }
 
+/** Read-only sibling context surfaced at decision time. */
+export interface SiblingContextRow {
+  reference: string;
+  childName: string;
+  school: string;
+  priorityOrder: number;
+  /** The payable fee this sibling absorbed (latest completed assessment). */
+  absorbedPayableFees: number | null;
+}
+
 export interface RecommendationFormProps {
   applicationId: string;
-  applicationStatus: string;
+  /** The recorded outcome on the assessment (Epic 01); null until decided. */
+  assessmentOutcome: AssessmentOutcome | null;
+  /** Assessment id — backs the single editable synopsis (Epic 06). */
+  assessmentId: string;
+  /** Current single synopsis (Epic 06), shown + editable on this screen too. */
+  synopsis: string | null;
   /** Values pre-populated from the completed assessment */
   assessmentValues: {
     bursaryAward: number | null;
@@ -90,6 +122,10 @@ export interface RecommendationFormProps {
   /** Existing recommendation (null if first time) */
   recommendation: SerialisedRecommendation | null;
   reasonCodes: ReasonCodeOption[];
+  /** Linked siblings + the fees they absorbed (read-only context). */
+  siblingContext: SiblingContextRow[];
+  /** Side-by-side option scenarios projected from the pure engine. */
+  optionScenarios: OptionScenario[];
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -105,6 +141,17 @@ function formatCurrency(value: number | null | undefined): string {
 
 /** Property category considered high-value; show advisory above this level. */
 const PROPERTY_THRESHOLD = 8;
+
+/** An outcome already recorded makes the decision terminal (synopsis excepted). */
+function isTerminalOutcome(outcome: AssessmentOutcome | null): boolean {
+  return (
+    outcome === "AWARDED" ||
+    outcome === "QUALIFIES_NOT_AWARDED" ||
+    outcome === "DOES_NOT_QUALIFY" ||
+    // Legacy pre-Epic-08 value, still terminal for read-only purposes.
+    outcome === "QUALIFIES"
+  );
+}
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
@@ -152,54 +199,100 @@ function PropertyAdvisoryBanner() {
   );
 }
 
-function ReadOnlyBanner({ status }: { status: string }) {
+function ReadOnlyBanner({ outcome }: { outcome: AssessmentOutcome }) {
   return (
     <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
-      <CheckCircle2
-        className="h-4 w-4 shrink-0 text-slate-400"
-        aria-hidden="true"
-      />
+      <OutcomeBadge outcome={outcome} />
       <p className="text-sm text-slate-500">
-        This application has a terminal status of{" "}
-        <span className="font-semibold">{status.replace(/_/g, " ")}</span>.
-        Recommendation is read-only.
+        A final outcome has been recorded for this application. The
+        recommendation is read-only (the synopsis remains editable).
       </p>
     </div>
   );
 }
 
-// ─── Outcome confirmation dialog ───────────────────────────────────────────────
+// ─── Award decision metadata ───────────────────────────────────────────────────
 
-interface OutcomeDialogProps {
+const AWARD_DECISIONS: Record<
+  AwardDecision,
+  {
+    label: string;
+    icon: React.ElementType;
+    buttonClass: string;
+    title: string;
+    consequence: string;
+  }
+> = {
+  AWARDED: {
+    label: "Award",
+    icon: Award,
+    buttonClass: "bg-green-600 hover:bg-green-700 text-white",
+    title: "Confirm: Award bursary",
+    consequence:
+      "An award confirmation email is sent to the lead applicant, the rolling bursary account is opened (or continued), and the bursary and scholarship awards are recorded. This cannot be undone.",
+  },
+  QUALIFIES_NOT_AWARDED: {
+    label: "Qualifies — not awarded",
+    icon: PauseCircle,
+    buttonClass: "bg-amber-500 hover:bg-amber-600 text-white",
+    title: "Confirm: Qualifies — not awarded",
+    consequence:
+      "The applicant is assessed as eligible but is not granted an award this round. An email is sent and the application is retained per the retention policy. This cannot be undone.",
+  },
+  DOES_NOT_QUALIFY: {
+    label: "Decline",
+    icon: XCircle,
+    buttonClass: "bg-rose-600 hover:bg-rose-700 text-white",
+    title: "Confirm: Decline bursary",
+    consequence:
+      "A decline email is sent to the lead applicant and a new application is archived. This cannot be undone.",
+  },
+};
+
+interface AwardDialogProps {
   open: boolean;
-  outcome: "QUALIFIES" | "DOES_NOT_QUALIFY" | null;
+  decision: AwardDecision | null;
+  scholarshipAward: number | null;
+  bursaryAward: number | null;
   isPending: boolean;
   onConfirm: () => void;
   onCancel: () => void;
 }
 
-function OutcomeDialog({
+function AwardDialog({
   open,
-  outcome,
+  decision,
+  scholarshipAward,
+  bursaryAward,
   isPending,
   onConfirm,
   onCancel,
-}: OutcomeDialogProps) {
-  const isQualifies = outcome === "QUALIFIES";
+}: AwardDialogProps) {
+  const meta = decision ? AWARD_DECISIONS[decision] : null;
 
   return (
     <Dialog open={open} onOpenChange={(v) => { if (!v) onCancel(); }}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>
-            {isQualifies ? "Confirm: Qualifies" : "Confirm: Does Not Qualify"}
-          </DialogTitle>
-          <DialogDescription>
-            {isQualifies
-              ? "This will mark the application as QUALIFIES and send an outcome email to the lead applicant. This action cannot be undone."
-              : "This will mark the application as DOES NOT QUALIFY and send an outcome email to the lead applicant. This action cannot be undone."}
-          </DialogDescription>
+          <DialogTitle>{meta?.title ?? "Confirm outcome"}</DialogTitle>
+          <DialogDescription>{meta?.consequence}</DialogDescription>
         </DialogHeader>
+        {decision === "AWARDED" && (
+          <div className="rounded-md border border-slate-200 bg-slate-50 px-4 py-3 text-sm">
+            <div className="flex items-center justify-between">
+              <span className="text-slate-500">Bursary award</span>
+              <span className="font-semibold text-primary-900">
+                {formatCurrency(bursaryAward)}
+              </span>
+            </div>
+            <div className="mt-1 flex items-center justify-between">
+              <span className="text-slate-500">Scholarship award</span>
+              <span className="font-semibold text-primary-900">
+                {formatCurrency(scholarshipAward)}
+              </span>
+            </div>
+          </div>
+        )}
         <DialogFooter>
           <Button
             type="button"
@@ -213,17 +306,9 @@ function OutcomeDialog({
             type="button"
             onClick={onConfirm}
             disabled={isPending}
-            className={cn(
-              isQualifies
-                ? "bg-green-600 hover:bg-green-700 text-white"
-                : "bg-rose-600 hover:bg-rose-700 text-white"
-            )}
+            className={cn(meta?.buttonClass)}
           >
-            {isPending
-              ? "Processing..."
-              : isQualifies
-              ? "Confirm Qualifies"
-              : "Confirm Does Not Qualify"}
+            {isPending ? "Processing…" : `Confirm ${meta?.label ?? ""}`.trim()}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -231,25 +316,146 @@ function OutcomeDialog({
   );
 }
 
+// ─── Sibling context panel ──────────────────────────────────────────────────────
+
+function SiblingContextPanel({ rows }: { rows: SiblingContextRow[] }) {
+  if (rows.length === 0) return null;
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 text-base">
+          <Users className="h-4 w-4 text-slate-400" aria-hidden="true" />
+          Sibling context
+        </CardTitle>
+        <p className="text-sm text-slate-500">
+          Linked siblings in this family group and the payable fees absorbed
+          before this child&apos;s bursary was computed (read-only).
+        </p>
+      </CardHeader>
+      <CardContent>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-slate-200 text-left text-xs uppercase tracking-wide text-slate-400">
+                <th className="py-2 pr-4 font-semibold">Priority</th>
+                <th className="py-2 pr-4 font-semibold">Child</th>
+                <th className="py-2 pr-4 font-semibold">Account</th>
+                <th className="py-2 pr-4 font-semibold">School</th>
+                <th className="py-2 text-right font-semibold">Absorbed fees</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r) => (
+                <tr key={r.reference} className="border-b border-slate-100">
+                  <td className="py-2 pr-4 text-slate-600">{r.priorityOrder}</td>
+                  <td className="py-2 pr-4 font-medium text-slate-800">
+                    {r.childName}
+                  </td>
+                  <td className="py-2 pr-4 font-mono text-xs text-slate-500">
+                    {r.reference}
+                  </td>
+                  <td className="py-2 pr-4 text-slate-600">
+                    {r.school === "TRINITY" ? "Trinity" : "Whitgift"}
+                  </td>
+                  <td className="py-2 text-right font-semibold text-primary-900">
+                    {formatCurrency(r.absorbedPayableFees)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+// ─── Options comparison panel ───────────────────────────────────────────────────
+
+function OptionsComparisonPanel({
+  scenarios,
+}: {
+  scenarios: OptionScenario[];
+}) {
+  if (scenarios.length <= 1) return null;
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 text-base">
+          <Scale className="h-4 w-4 text-slate-400" aria-hidden="true" />
+          Options comparison
+        </CardTitle>
+        <p className="text-sm text-slate-500">
+          Net-payable fees under each scenario, projected from the same
+          calculation. The chosen scenario is what the award figures reflect.
+        </p>
+      </CardHeader>
+      <CardContent>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-slate-200 text-left text-xs uppercase tracking-wide text-slate-400">
+                <th className="py-2 pr-4 font-semibold">Scenario</th>
+                <th className="py-2 pr-4 text-right font-semibold">Bursary</th>
+                <th className="py-2 pr-4 text-right font-semibold">
+                  Scholarship %
+                </th>
+                <th className="py-2 pr-4 text-right font-semibold">
+                  Yearly payable
+                </th>
+                <th className="py-2 text-right font-semibold">
+                  Monthly payable
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {scenarios.map((s) => (
+                <tr key={s.key} className="border-b border-slate-100">
+                  <td className="py-2 pr-4 font-medium text-slate-800">
+                    {s.label}
+                  </td>
+                  <td className="py-2 pr-4 text-right text-slate-600">
+                    {formatCurrency(s.bursaryAward)}
+                  </td>
+                  <td className="py-2 pr-4 text-right text-slate-600">
+                    {s.scholarshipPct}%
+                  </td>
+                  <td className="py-2 pr-4 text-right font-semibold text-primary-900">
+                    {formatCurrency(s.yearlyPayableFees)}
+                  </td>
+                  <td className="py-2 text-right font-semibold text-primary-900">
+                    {formatCurrency(s.monthlyPayableFees)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
 // ─── Main Form ────────────────────────────────────────────────────────────────
 
 export function RecommendationForm({
   applicationId,
-  applicationStatus,
+  assessmentOutcome,
+  assessmentId,
+  synopsis,
   assessmentValues,
   recommendation,
   reasonCodes,
+  siblingContext,
+  optionScenarios,
 }: RecommendationFormProps) {
   const router = useRouter();
 
-  const isReadOnly =
-    applicationStatus === "QUALIFIES" ||
-    applicationStatus === "DOES_NOT_QUALIFY";
+  const isReadOnly = isTerminalOutcome(assessmentOutcome);
 
-  // Form state — initialise from existing recommendation or assessment values
-  const [familySynopsis, setFamilySynopsis] = React.useState(
-    recommendation?.familySynopsis ?? ""
-  );
+  // Form state — initialise from existing recommendation or assessment values.
+  // Epic 06: the free-text familySynopsis/summary boxes are removed; the single
+  // Assessment.synopsis (rendered below) is the qualitative narrative now.
   const [accommodationStatus, setAccommodationStatus] = React.useState(
     recommendation?.accommodationStatus ?? ""
   );
@@ -259,9 +465,13 @@ export function RecommendationForm({
   const [propertyCategory, setPropertyCategory] = React.useState<string>(
     recommendation?.propertyCategory?.toString() ?? ""
   );
-  const [summary, setSummary] = React.useState(
-    recommendation?.summary ?? ""
-  );
+  // Distinct £ scholarship award (D9) — empty string = none recorded.
+  const [scholarshipAwardInput, setScholarshipAwardInput] =
+    React.useState<string>(
+      recommendation?.scholarshipAward != null
+        ? String(recommendation.scholarshipAward)
+        : ""
+    );
   const [selectedReasonCodeIds, setSelectedReasonCodeIds] = React.useState<
     string[]
   >(recommendation?.selectedReasonCodeIds ?? []);
@@ -273,6 +483,14 @@ export function RecommendationForm({
   const dishonestyFlag = assessmentValues.dishonestyFlag;
   const creditRiskFlag = assessmentValues.creditRiskFlag;
 
+  const scholarshipAwardNum =
+    scholarshipAwardInput.trim() === ""
+      ? null
+      : Number.parseFloat(scholarshipAwardInput);
+  const scholarshipAwardValid =
+    scholarshipAwardNum == null ||
+    (!Number.isNaN(scholarshipAwardNum) && scholarshipAwardNum >= 0);
+
   // Save state
   const [isSaving, setIsSaving] = React.useState(false);
   const [saveMessage, setSaveMessage] = React.useState<{
@@ -280,10 +498,9 @@ export function RecommendationForm({
     text: string;
   } | null>(null);
 
-  // Outcome dialog state
-  const [pendingOutcome, setPendingOutcome] = React.useState<
-    "QUALIFIES" | "DOES_NOT_QUALIFY" | null
-  >(null);
+  // Award decision dialog state
+  const [pendingDecision, setPendingDecision] =
+    React.useState<AwardDecision | null>(null);
   const [isSettingOutcome, setIsSettingOutcome] = React.useState(false);
 
   const propertyCategoryNum = propertyCategory
@@ -295,20 +512,31 @@ export function RecommendationForm({
   // ── Handlers ────────────────────────────────────────────────────────────────
 
   async function handleSave() {
+    if (!scholarshipAwardValid) {
+      setSaveMessage({
+        type: "error",
+        text: "Scholarship award must be a non-negative amount.",
+      });
+      return;
+    }
     setIsSaving(true);
     setSaveMessage(null);
 
     const result = await saveRecommendationAction(applicationId, {
-      familySynopsis: familySynopsis || null,
+      // Epic 06: the qualitative narrative moved to Assessment.synopsis. The
+      // legacy recommendation free-text columns are retained but no longer
+      // written from the UI — always persist null here.
+      familySynopsis: null,
       accommodationStatus: accommodationStatus || null,
       incomeCategory: incomeCategory || null,
       propertyCategory: propertyCategoryNum,
       bursaryAward,
+      scholarshipAward: scholarshipAwardNum,
       yearlyPayableFees,
       monthlyPayableFees,
       dishonestyFlag,
       creditRiskFlag,
-      summary: summary || null,
+      summary: null,
       reasonCodeIds: selectedReasonCodeIds,
     });
 
@@ -322,18 +550,25 @@ export function RecommendationForm({
     }
   }
 
-  async function handleConfirmOutcome() {
-    if (!pendingOutcome) return;
+  async function handleConfirmDecision() {
+    if (!pendingDecision) return;
 
     setIsSettingOutcome(true);
-    const result = await setApplicationOutcomeAction(applicationId, pendingOutcome);
+    const result = await setApplicationAwardAction(
+      applicationId,
+      pendingDecision,
+      {
+        bursaryAward,
+        scholarshipAward: scholarshipAwardNum,
+      }
+    );
     setIsSettingOutcome(false);
 
     if (result.success) {
-      setPendingOutcome(null);
+      setPendingDecision(null);
       router.refresh();
     } else {
-      setPendingOutcome(null);
+      setPendingDecision(null);
       setSaveMessage({ type: "error", text: result.error });
     }
   }
@@ -343,7 +578,9 @@ export function RecommendationForm({
   return (
     <div className="space-y-6">
       {/* Read-only notice */}
-      {isReadOnly && <ReadOnlyBanner status={applicationStatus} />}
+      {isReadOnly && assessmentOutcome && (
+        <ReadOnlyBanner outcome={assessmentOutcome} />
+      )}
 
       {/* Red flag banners */}
       {dishonestyFlag && (
@@ -400,26 +637,18 @@ export function RecommendationForm({
         </CardContent>
       </Card>
 
+      {/* ── Sibling context (read-only) ─────────────────────────────────── */}
+      <SiblingContextPanel rows={siblingContext} />
+
+      {/* ── Options comparison (read-only) ──────────────────────────────── */}
+      <OptionsComparisonPanel scenarios={optionScenarios} />
+
       {/* ── Section B: Recommendation Details ───────────────────────────── */}
       <Card>
         <CardHeader>
           <CardTitle className="text-base">Recommendation Details</CardTitle>
         </CardHeader>
         <CardContent className="space-y-5">
-          {/* Family synopsis */}
-          <div className="space-y-1.5">
-            <Label htmlFor="family-synopsis">Family Synopsis</Label>
-            <Textarea
-              id="family-synopsis"
-              value={familySynopsis}
-              onChange={(e) => setFamilySynopsis(e.target.value)}
-              disabled={isReadOnly}
-              placeholder="Brief summary of the family's circumstances..."
-              rows={4}
-              className="resize-y"
-            />
-          </div>
-
           {/* Two-column: accommodation + income category */}
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div className="space-y-1.5">
@@ -445,45 +674,67 @@ export function RecommendationForm({
             </div>
           </div>
 
-          {/* Property category */}
-          <div className="space-y-1.5">
-            <Label htmlFor="property-category">
-              Property Category{" "}
-              <span className="font-normal text-slate-400">(1 – 12)</span>
-            </Label>
-            <Select
-              value={propertyCategory}
-              onValueChange={setPropertyCategory}
-              disabled={isReadOnly}
-            >
-              <SelectTrigger id="property-category" className="w-40">
-                <SelectValue placeholder="Select..." />
-              </SelectTrigger>
-              <SelectContent>
-                {Array.from({ length: 12 }, (_, i) => i + 1).map((n) => (
-                  <SelectItem key={n} value={String(n)}>
-                    {n}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
+          {/* Property category + scholarship award */}
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div className="space-y-1.5">
+              <Label htmlFor="property-category">
+                Property Category{" "}
+                <span className="font-normal text-slate-400">(1 – 12)</span>
+              </Label>
+              <Select
+                value={propertyCategory}
+                onValueChange={setPropertyCategory}
+                disabled={isReadOnly}
+              >
+                <SelectTrigger id="property-category" className="w-40">
+                  <SelectValue placeholder="Select..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {Array.from({ length: 12 }, (_, i) => i + 1).map((n) => (
+                    <SelectItem key={n} value={String(n)}>
+                      {n}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
 
-          {/* Summary narrative */}
-          <div className="space-y-1.5">
-            <Label htmlFor="summary">Recommendation Summary</Label>
-            <Textarea
-              id="summary"
-              value={summary}
-              onChange={(e) => setSummary(e.target.value)}
-              disabled={isReadOnly}
-              placeholder="Detailed recommendation narrative for the panel..."
-              rows={6}
-              className="resize-y"
-            />
+            {/* Distinct £ scholarship award (D9) */}
+            <div className="space-y-1.5">
+              <Label htmlFor="scholarship-award">
+                Scholarship Award{" "}
+                <span className="font-normal text-slate-400">(£, optional)</span>
+              </Label>
+              <Input
+                id="scholarship-award"
+                type="number"
+                min={0}
+                step="0.01"
+                inputMode="decimal"
+                value={scholarshipAwardInput}
+                onChange={(e) => setScholarshipAwardInput(e.target.value)}
+                disabled={isReadOnly}
+                placeholder="0.00"
+                aria-invalid={!scholarshipAwardValid}
+              />
+              <p className="text-xs text-slate-400">
+                A merit/academic award, distinct from the means-tested bursary.
+                Recorded alongside the bursary on the rolling account.
+              </p>
+            </div>
           </div>
         </CardContent>
       </Card>
+
+      {/* ── Single assessment synopsis (Epic 06) ─────────────────────────── */}
+      {/* The qualitative narrative now lives on Assessment.synopsis and is
+          shown + EDITABLE here, independent of the recommendation lock above. */}
+      <AssessmentSynopsis
+        assessmentId={assessmentId}
+        applicationId={applicationId}
+        synopsis={synopsis}
+        assessmentCompleted
+      />
 
       {/* ── Section C: Reason Codes ──────────────────────────────────────── */}
       <Card>
@@ -530,46 +781,51 @@ export function RecommendationForm({
         </div>
       )}
 
-      {/* ── Section D: Set Outcome ───────────────────────────────────────── */}
+      {/* ── Section D: Award decision ────────────────────────────────────── */}
       {!isReadOnly && (
         <Card className="border-slate-200">
           <CardHeader>
-            <CardTitle className="text-base">Set Application Outcome</CardTitle>
+            <CardTitle className="text-base">Award decision</CardTitle>
             <p className="text-sm text-slate-500">
-              Once the outcome is set, an email is sent to the lead applicant
-              and this recommendation becomes read-only.
+              Record the panel&apos;s decision. Once set, the matching outcome
+              email is sent to the lead applicant and this recommendation becomes
+              read-only. Save the recommendation first so the scholarship award is
+              recorded with the decision.
             </p>
           </CardHeader>
           <CardContent>
             <div className="flex flex-wrap gap-3">
-              <Button
-                type="button"
-                onClick={() => setPendingOutcome("QUALIFIES")}
-                className="bg-green-600 hover:bg-green-700 text-white"
-              >
-                <CheckCircle2 className="mr-2 h-4 w-4" aria-hidden="true" />
-                Qualifies
-              </Button>
-              <Button
-                type="button"
-                onClick={() => setPendingOutcome("DOES_NOT_QUALIFY")}
-                className="bg-rose-600 hover:bg-rose-700 text-white"
-              >
-                <XCircle className="mr-2 h-4 w-4" aria-hidden="true" />
-                Does Not Qualify
-              </Button>
+              {(
+                ["AWARDED", "QUALIFIES_NOT_AWARDED", "DOES_NOT_QUALIFY"] as const
+              ).map((decision) => {
+                const meta = AWARD_DECISIONS[decision];
+                const Icon = meta.icon;
+                return (
+                  <Button
+                    key={decision}
+                    type="button"
+                    onClick={() => setPendingDecision(decision)}
+                    className={meta.buttonClass}
+                  >
+                    <Icon className="mr-2 h-4 w-4" aria-hidden="true" />
+                    {meta.label}
+                  </Button>
+                );
+              })}
             </div>
           </CardContent>
         </Card>
       )}
 
-      {/* ── Outcome confirmation dialog ──────────────────────────────────── */}
-      <OutcomeDialog
-        open={pendingOutcome !== null}
-        outcome={pendingOutcome}
+      {/* ── Award decision confirmation dialog ───────────────────────────── */}
+      <AwardDialog
+        open={pendingDecision !== null}
+        decision={pendingDecision}
+        scholarshipAward={scholarshipAwardNum}
+        bursaryAward={bursaryAward}
         isPending={isSettingOutcome}
-        onConfirm={handleConfirmOutcome}
-        onCancel={() => setPendingOutcome(null)}
+        onConfirm={handleConfirmDecision}
+        onCancel={() => setPendingDecision(null)}
       />
     </div>
   );

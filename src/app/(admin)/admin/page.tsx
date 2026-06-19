@@ -22,6 +22,7 @@ import {
   XCircle,
   CalendarRange,
   ChevronRight,
+  ArrowRight,
 } from "lucide-react";
 import { requireRole, Role } from "@/lib/auth/roles";
 import { withUserContext, type RlsRole } from "@/lib/db/prisma";
@@ -31,86 +32,14 @@ import {
   getDashboardFeed,
 } from "@/lib/db/queries/reports";
 import { ActivityFeed } from "@/components/admin/charts/activity-feed";
+import { RoundSelector } from "@/components/admin/charts/round-selector";
+import { StatTile, type TileConfig } from "@/components/admin/stat-tile";
 import { cn } from "@/lib/utils";
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
   title: "Dashboard",
 };
-
-// ─── Tile configuration ───────────────────────────────────────────────────────
-
-interface TileConfig {
-  label: string;
-  subLabel: string;
-  icon: React.ElementType;
-  iconBg: string;
-  iconColor: string;
-  borderAccent: string;
-  href?: string;
-}
-
-// ─── Stat tile card ───────────────────────────────────────────────────────────
-
-function StatTile({
-  config,
-  count,
-}: {
-  config: TileConfig;
-  count: number | string;
-}) {
-  const Icon = config.icon;
-
-  const inner = (
-    <div
-      className={cn(
-        "group flex items-start gap-4 rounded-xl border bg-white p-6 shadow-sm transition-shadow",
-        config.borderAccent,
-        config.href
-          ? "hover:shadow-md cursor-pointer"
-          : "cursor-default"
-      )}
-    >
-      {/* Icon badge */}
-      <div
-        className={cn(
-          "flex h-11 w-11 shrink-0 items-center justify-center rounded-lg",
-          config.iconBg
-        )}
-        aria-hidden="true"
-      >
-        <Icon className={cn("h-5 w-5", config.iconColor)} />
-      </div>
-
-      {/* Text */}
-      <div className="min-w-0 flex-1">
-        <p className="text-sm font-medium text-slate-500">{config.label}</p>
-        <p className="mt-1 text-3xl font-semibold tabular-nums text-primary-900">
-          {count}
-        </p>
-        <p className="mt-1 text-xs text-slate-400">{config.subLabel}</p>
-      </div>
-
-      {/* Arrow for clickable tiles */}
-      {config.href && (
-        <ChevronRight
-          className="h-4 w-4 shrink-0 self-center text-slate-300 transition-transform group-hover:translate-x-0.5 group-hover:text-slate-400"
-          aria-hidden="true"
-        />
-      )}
-    </div>
-  );
-
-  if (config.href) {
-    return (
-      <Link href={config.href} className="block focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-600 focus-visible:ring-offset-2 rounded-xl">
-        {inner}
-      </Link>
-    );
-  }
-
-  return inner;
-}
 
 // ─── Round tile ───────────────────────────────────────────────────────────────
 
@@ -188,15 +117,46 @@ function NoRoundState() {
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
-export default async function AdminDashboardPage() {
+export default async function AdminDashboardPage({
+  searchParams,
+}: {
+  searchParams?: Promise<{ roundId?: string }>;
+}) {
   const user = await requireRole([Role.ADMIN, Role.ASSESSOR, Role.VIEWER]);
 
-  const activeRound = await withUserContext(user.id, user.role as RlsRole, (tx) =>
-    getActiveRound(tx)
+  const sp = (await searchParams) ?? {};
+  const roundIdParam =
+    typeof sp.roundId === "string" ? sp.roundId : undefined;
+
+  // Epic 03 (concurrent rounds): several rounds may be OPEN at once, so the
+  // dashboard no longer pins to a single "active round" — it lists all rounds
+  // and lets the admin choose via ?roundId, defaulting to the most-recent OPEN.
+  const { allRounds, defaultRound } = await withUserContext(
+    user.id,
+    user.role as RlsRole,
+    async (tx) => {
+      const [rounds, active] = await Promise.all([
+        tx.round.findMany({
+          select: { id: true, academicYear: true, closeDate: true },
+          orderBy: { openDate: "desc" },
+        }),
+        getActiveRound(tx),
+      ]);
+      return { allRounds: rounds, defaultRound: active };
+    }
   );
 
+  const selectedRoundId =
+    roundIdParam && allRounds.some((r) => r.id === roundIdParam)
+      ? roundIdParam
+      : defaultRound?.id;
+
+  const activeRound = selectedRoundId
+    ? allRounds.find((r) => r.id === selectedRoundId) ?? defaultRound
+    : defaultRound;
+
   // If no rounds exist, show empty state
-  if (!activeRound) {
+  if (!activeRound || !selectedRoundId) {
     return (
       <div className="space-y-8">
         <div>
@@ -240,7 +200,7 @@ export default async function AdminDashboardPage() {
     {
       config: {
         label: "In Progress",
-        subLabel: "Assessment paused",
+        subLabel: "Assessment in progress or paused",
         icon: Loader2,
         iconBg: "bg-orange-50",
         iconColor: "text-orange-600",
@@ -298,12 +258,34 @@ export default async function AdminDashboardPage() {
 
   return (
     <div className="space-y-8">
-      {/* Page header */}
-      <div>
-        <h1 className="text-2xl font-semibold text-primary-900">Dashboard</h1>
-        <p className="mt-1 text-sm text-slate-500">
-          Overview of the {activeRound.academicYear} assessment round.
-        </p>
+      {/* Page header — with a prominent CTA into the active round's cockpit. */}
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-semibold text-primary-900">Dashboard</h1>
+          <p className="mt-1 text-sm text-slate-500">
+            Overview of the {activeRound.academicYear} assessment round.
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-3">
+          {/* Round selector — Epic 03: switch between concurrently-open rounds.
+              Only shown when more than one round exists. */}
+          {allRounds.length > 1 && (
+            <RoundSelector
+              rounds={allRounds.map((r) => ({
+                id: r.id,
+                academicYear: r.academicYear,
+              }))}
+              selectedRoundId={selectedRoundId}
+            />
+          )}
+          <Link
+            href={`/rounds/${activeRound.id}`}
+            className="inline-flex items-center gap-2 rounded-lg bg-primary-900 px-4 py-2 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-primary-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-500 focus-visible:ring-offset-2"
+          >
+            Open round
+            <ArrowRight className="h-4 w-4" aria-hidden="true" />
+          </Link>
+        </div>
       </div>
 
       {/* Summary tiles — 3x2 grid */}

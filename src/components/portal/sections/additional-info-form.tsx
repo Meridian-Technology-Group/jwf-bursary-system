@@ -1,11 +1,14 @@
 "use client";
 
 /**
- * AdditionalInfoForm — Section 9: Additional Information (stub)
+ * AdditionalInfoForm — Additional Information.
  *
- * Circumstances checklist + free-text narrative.
+ * A free-form section: an OPTIONAL narrative where the applicant can share any
+ * contextual information relevant to their bursary application, plus an upload
+ * area for any supporting documents not covered by the checklist elsewhere.
  */
 
+import * as React from "react";
 import { useFormContext, useWatch } from "react-hook-form";
 import {
   FormField,
@@ -15,125 +18,93 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { Textarea } from "@/components/ui/textarea";
-import { YesNoToggle } from "@/components/portal/form-fields/yes-no-toggle";
-import { ConditionalField } from "@/components/portal/form-fields/conditional-field";
+import { FileUpload } from "@/components/portal/file-upload";
+import type { UploadedDocument } from "@/components/portal/file-upload";
+import type { DocumentMeta } from "@/lib/db/queries/applications";
 import type { AdditionalInfoFormValues } from "@/lib/schemas/additional-info";
 
-type CircumstanceKey = keyof Pick<
-  AdditionalInfoFormValues,
-  | "divorced"
-  | "separated"
-  | "sickUnableToWork"
-  | "rent"
-  | "madeRedundant"
-  | "receivingBenefits"
->;
-
-const CIRCUMSTANCES: { key: CircumstanceKey; label: string }[] = [
-  { key: "divorced", label: "Divorced (if applicable)" },
-  { key: "separated", label: "Separated (if applicable)" },
-  { key: "sickUnableToWork", label: "Sick / unable to work" },
-  { key: "rent", label: "Paying rent (current statement or lease)" },
-  { key: "madeRedundant", label: "Been made redundant or lost employment" },
-  { key: "receivingBenefits", label: "Receiving benefits" },
-];
-
-function CircumstanceRow({ item }: { item: (typeof CIRCUMSTANCES)[0] }) {
-  const { control } = useFormContext<AdditionalInfoFormValues>();
-  const applies = useWatch({
-    control,
-    name: `${item.key}.applies`,
-  });
-
-  return (
-    <div className="rounded-md border border-slate-200 bg-white p-4 space-y-4">
-      <YesNoToggle
-        control={control}
-        name={`${item.key}.applies`}
-        label={item.label}
-      />
-      <ConditionalField show={applies === true}>
-        <div className="rounded-md border border-dashed border-slate-300 bg-slate-50 p-3">
-          <p className="text-sm font-medium text-slate-700">
-            Upload: Supporting documents for &ldquo;{item.label}&rdquo;
-          </p>
-          <p className="text-xs text-slate-500 mt-1">
-            Document upload available once application is created.
-          </p>
-        </div>
-      </ConditionalField>
-    </div>
-  );
+function resolveDoc(
+  docId: string | undefined,
+  documentMap: Record<string, DocumentMeta> | undefined
+): { id: string; filename: string; fileSize: number; uploadedAt: string } | undefined {
+  if (!docId || !documentMap?.[docId]) return undefined;
+  const doc = documentMap[docId];
+  return { id: doc.id, filename: doc.filename, fileSize: doc.fileSize, uploadedAt: doc.uploadedAt };
 }
 
-export function AdditionalInfoForm() {
-  const { control, watch } = useFormContext<AdditionalInfoFormValues>();
+interface AdditionalInfoFormProps {
+  applicationId: string;
+  documentMap?: Record<string, DocumentMeta>;
+}
+
+export function AdditionalInfoForm({ applicationId, documentMap }: AdditionalInfoFormProps) {
+  const { control, watch, setValue, getValues } = useFormContext<AdditionalInfoFormValues>();
   const narrative = watch("additionalNarrative") ?? "";
   const maxChars = 3000;
 
+  const additionalIds = useWatch({ control, name: "additionalDocumentIds" }) ?? [];
+  const initialAdditional = React.useRef(getValues("additionalDocumentIds") ?? []);
+  const existingAdditional = React.useMemo(
+    () =>
+      initialAdditional.current
+        .map((id) => resolveDoc(id, documentMap))
+        .filter((d): d is NonNullable<typeof d> => Boolean(d)),
+    [documentMap]
+  );
+
   return (
     <div className="space-y-6">
-      {/* Circumstances checklist */}
-      <div>
-        <h3 className="text-base font-semibold text-primary-900 mb-2">
-          Circumstances checklist
-        </h3>
-        <p className="text-sm text-slate-500 mb-4">
-          Please use this form to tell us if, in a current or previous
-          application, any of the following apply:
-        </p>
+      <p className="text-sm text-slate-600">
+        If you would like to share with us some additional contextual information
+        which you think may be relevant to us when assessing your bursary
+        application, please use the field below to add your comments and use the
+        uploading section below the text box to attach to your form any documents
+        which do not show in our checklist.
+      </p>
 
-        <div className="space-y-3">
-          {CIRCUMSTANCES.map((item) => (
-            <CircumstanceRow key={item.key} item={item} />
-          ))}
-        </div>
-      </div>
+      <FormField
+        control={control}
+        name="additionalNarrative"
+        render={({ field }) => (
+          <FormItem>
+            <FormLabel>Your comments</FormLabel>
+            <FormControl>
+              <Textarea
+                rows={6}
+                placeholder="Add any additional context relevant to your application..."
+                {...field}
+                value={field.value ?? ""}
+              />
+            </FormControl>
+            <div className="flex justify-end">
+              <span className={narrative.length > maxChars * 0.9 ? "text-xs text-warning-600" : "text-xs text-slate-400"}>
+                {narrative.length} / {maxChars} characters
+              </span>
+            </div>
+            <FormMessage />
+          </FormItem>
+        )}
+      />
 
-      <hr className="border-slate-200" />
-
-      {/* Free-text narrative */}
-      <div className="space-y-3">
-        <h3 className="text-base font-semibold text-primary-900">
-          Additional information
-        </h3>
-        <p className="text-sm text-slate-500">
-          Please help us identify any difficulties which you think we may
-          consider to be factors in assessing need for this award. The bursary
-          committee is unable to consider any information that is not included in
-          your application.
-        </p>
-
-        <FormField
-          control={control}
-          name="additionalNarrative"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>Additional narrative</FormLabel>
-              <FormControl>
-                <Textarea
-                  rows={8}
-                  placeholder="Provide any additional context relevant to your application..."
-                  {...field}
-                  value={field.value ?? ""}
-                />
-              </FormControl>
-              <div className="flex justify-end">
-                <span
-                  className={
-                    narrative.length > maxChars * 0.9
-                      ? "text-xs text-warning-600"
-                      : "text-xs text-slate-400"
-                  }
-                >
-                  {narrative.length} / {maxChars} characters
-                </span>
-              </div>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-      </div>
+      <FileUpload
+        multiple
+        slot="ADDITIONAL_DOCUMENT"
+        label="Additional documents"
+        applicationId={applicationId}
+        existingDocuments={existingAdditional}
+        onUploadComplete={(doc: UploadedDocument) =>
+          setValue("additionalDocumentIds", [...additionalIds.filter((id) => id !== doc.id), doc.id], {
+            shouldValidate: true,
+            shouldDirty: true,
+          })
+        }
+        onRemove={(docId: string) =>
+          setValue("additionalDocumentIds", additionalIds.filter((id) => id !== docId), {
+            shouldValidate: true,
+            shouldDirty: true,
+          })
+        }
+      />
     </div>
   );
 }

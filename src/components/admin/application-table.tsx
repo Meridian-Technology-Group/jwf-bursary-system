@@ -8,7 +8,9 @@
  */
 
 import * as React from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { useTransition } from "react";
 import {
   useReactTable,
   getCoreRowModel,
@@ -18,6 +20,7 @@ import {
   createColumnHelper,
   type SortingState,
   type ColumnFiltersState,
+  type RowSelectionState,
 } from "@tanstack/react-table";
 import {
   ChevronUp,
@@ -27,8 +30,15 @@ import {
   MoreHorizontal,
   Eye,
   AlertTriangle,
+  Filter,
+  X,
+  Loader2,
+  UserPlus,
+  Mail,
+  RefreshCw,
 } from "lucide-react";
-import { formatDistanceToNow, format } from "date-fns";
+import { formatDistanceToNow } from "date-fns";
+import { formatLondonDate } from "@/lib/datetime";
 
 import {
   Table,
@@ -40,6 +50,7 @@ import {
 } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Alert } from "@/components/ui/alert";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -62,18 +73,44 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { StatusBadge } from "@/components/shared/status-badge";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import {
+  FormStatusBadge,
+  AssessmentStatusBadge,
+  OutcomeBadge,
+} from "@/components/shared/lifecycle-badges";
 import { cn } from "@/lib/utils";
+
+import { bulkAssignApplicationsAction } from "@/app/(admin)/applications/[id]/actions";
+import { bulkReassessmentInviteFromApplicationsAction } from "@/app/(admin)/invitations/actions";
 
 import type {
   ApplicationListItem,
   SecondParentIndicator,
 } from "@/lib/db/queries/applications";
-import type { ApplicationStatus, School } from "@prisma/client";
+import type { School, Role } from "@prisma/client";
+import {
+  ALL_REVIEW_PHASES,
+  matchesReviewPhase,
+  type ReviewPhase,
+} from "@/lib/applications/queue-filter";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 type RoundOption = { id: string; academicYear: string; status: string };
+
+type AssessorOption = {
+  id: string;
+  firstName: string | null;
+  lastName: string | null;
+};
 
 interface NameData {
   childName: string;
@@ -87,6 +124,37 @@ interface ApplicationRow extends ApplicationListItem {
 interface ApplicationTableProps {
   applications: ApplicationListItem[];
   rounds: RoundOption[];
+  /**
+   * Assessors available for the bulk-assign dropdown. Only populated (and only
+   * used) for ADMIN; empty for ASSESSOR/VIEWER.
+   */
+  assessors?: AssessorOption[];
+  /**
+   * The viewer's role. Selection + bulk toolbar are ADMIN-only — non-ADMIN
+   * users get no checkbox column at all (no dead UI).
+   */
+  userRole?: Role;
+  /** Seed the round dropdown from a drill-in URL (defaults to "all"). */
+  initialRound?: string;
+  /** Seed the school dropdown from a drill-in URL (defaults to "all"). */
+  initialSchool?: string;
+  /** Seed the status multi-select from a drill-in URL (defaults to none). */
+  initialStatuses?: ReviewPhase[];
+  /**
+   * When present, render a dismissible banner above the table describing the
+   * server-side filter applied via the URL, with a "Clear filters" link.
+   */
+  activeFilter?: { label: string; clearHref: string };
+  /**
+   * Whether the `?reassessEligible=1` server filter is currently active. Drives
+   * the "on" state of the Re-assessment eligible filter toggle (ADMIN only).
+   */
+  reassessEligibleActive?: boolean;
+  /**
+   * Academic year of the open round re-assessment invites would target, or null
+   * when there is no open round. Surfaced in the bulk-invite confirmation.
+   */
+  reassessTargetRound?: string | null;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -168,7 +236,10 @@ function formatSubmittedDate(date: Date | null): React.ReactNode {
   const d = new Date(date);
   return (
     <span>
-      <span className="block text-slate-700">{format(d, "d MMM yyyy")}</span>
+      {/* Absolute date in Europe/London so a just-past-midnight-London
+          submission is not rolled back a day on a UTC runtime (§2.4). The
+          relative line below is a duration (zone-agnostic). */}
+      <span className="block text-slate-700">{formatLondonDate(d)}</span>
       <span className="block text-xs text-slate-400">
         {formatDistanceToNow(d, { addSuffix: true })}
       </span>
@@ -176,38 +247,37 @@ function formatSubmittedDate(date: Date | null): React.ReactNode {
   );
 }
 
-// Map Prisma ApplicationStatus to StatusBadge's accepted values
-function mapStatus(
-  status: ApplicationStatus
-): React.ComponentProps<typeof StatusBadge>["status"] {
-  const map: Record<
-    ApplicationStatus,
-    React.ComponentProps<typeof StatusBadge>["status"]
-  > = {
-    PRE_SUBMISSION: "DRAFT",
-    SUBMITTED: "SUBMITTED",
-    NOT_STARTED: "SUBMITTED",
-    PAUSED: "PAUSED",
-    COMPLETED: "IN_REVIEW",
-    QUALIFIES: "QUALIFIES",
-    DOES_NOT_QUALIFY: "DOES_NOT_QUALIFY",
-  };
-  return map[status] ?? "DRAFT";
+/**
+ * Composite lifecycle cell for the queue (Epic 01 PR-4). Shows the real
+ * per-lifecycle values: form status, then assessment status + outcome once
+ * those exist. Replaces the old single mislabelled StatusBadge (e.g. COMPLETED
+ * was shown as "In Review"). The status FILTER below still keys off the legacy
+ * fused `status` (dual-written until PR-6) — only the DISPLAY moved.
+ */
+function ApplicationLifecycleCell({ row }: { row: ApplicationRow }) {
+  // Once an outcome is set, it is the headline; before that show the most
+  // advanced lifecycle the row has reached.
+  if (row.outcome) {
+    return <OutcomeBadge outcome={row.outcome} />;
+  }
+  if (row.assessmentStatus && row.assessmentStatus !== "NOT_STARTED") {
+    return <AssessmentStatusBadge status={row.assessmentStatus} />;
+  }
+  return (
+    <FormStatusBadge
+      status={row.formStatus}
+      applicationType={row.applicationType}
+    />
+  );
 }
 
 // ─── Status multi-select popover ──────────────────────────────────────────────
 
-const ALL_STATUSES: ApplicationStatus[] = [
-  "PRE_SUBMISSION",
-  "SUBMITTED",
-  "NOT_STARTED",
-  "PAUSED",
-  "COMPLETED",
-  "QUALIFIES",
-  "DOES_NOT_QUALIFY",
-];
+// The status multi-select speaks the 7-value review-phase vocabulary (Epic 01
+// PR-6a) — derived from the lifecycle columns, not the deprecated fused enum.
+const ALL_STATUSES: ReviewPhase[] = ALL_REVIEW_PHASES;
 
-const STATUS_LABELS: Record<ApplicationStatus, string> = {
+const STATUS_LABELS: Record<ReviewPhase, string> = {
   PRE_SUBMISSION: "Pre-Submission",
   SUBMITTED: "Submitted",
   NOT_STARTED: "Not Started",
@@ -218,12 +288,12 @@ const STATUS_LABELS: Record<ApplicationStatus, string> = {
 };
 
 interface StatusFilterProps {
-  selected: ApplicationStatus[];
-  onChange: (statuses: ApplicationStatus[]) => void;
+  selected: ReviewPhase[];
+  onChange: (statuses: ReviewPhase[]) => void;
 }
 
 function StatusFilter({ selected, onChange }: StatusFilterProps) {
-  const toggle = (status: ApplicationStatus) => {
+  const toggle = (status: ReviewPhase) => {
     if (selected.includes(status)) {
       onChange(selected.filter((s) => s !== status));
     } else {
@@ -277,25 +347,322 @@ function StatusFilter({ selected, onChange }: StatusFilterProps) {
   );
 }
 
+// ─── Bulk-action toolbar ────────────────────────────────────────────────────────
+
+// Sentinel value for the "Unassigned" option in the bulk-assign Select
+// (mirrors AssignAssessorSelect — Radix Select cannot use an empty string).
+const BULK_UNASSIGNED_VALUE = "__unassigned__";
+
+type BulkFeedback = { kind: "success" | "error"; message: string } | null;
+
+/**
+ * Descriptor for a bulk action. Keeping these in an array makes it cheap to add
+ * further actions later (e.g. bulk status change, export-selected) — each one
+ * renders its own control inside the toolbar. For now there is a single action:
+ * Assign assessor (which also covers Unassign via the sentinel option).
+ */
+interface BulkAction {
+  id: string;
+  /** Renders the action's control. */
+  render: (ctx: {
+    selectedIds: string[];
+    isPending: boolean;
+    run: (fn: () => Promise<void>) => void;
+  }) => React.ReactNode;
+}
+
+/**
+ * Self-contained control for the "Send re-assessment invite" bulk action.
+ * Because this sends real emails it gates behind a confirmation Dialog before
+ * calling the server action. Result feedback is surfaced via the toolbar's
+ * shared `onFeedback` banner (which outlives the toolbar on success).
+ */
+function ReassessmentBulkAction({
+  selectedIds,
+  isPending,
+  run,
+  targetRound,
+  targetRoundId,
+  onFeedback,
+  onActionComplete,
+}: {
+  selectedIds: string[];
+  isPending: boolean;
+  run: (fn: () => Promise<void>) => void;
+  targetRound: string | null;
+  targetRoundId: string | null;
+  onFeedback: (feedback: BulkFeedback) => void;
+  onActionComplete: () => void;
+}) {
+  const [open, setOpen] = React.useState(false);
+  const count = selectedIds.length;
+
+  const handleConfirm = () => {
+    setOpen(false);
+    run(async () => {
+      const result = await bulkReassessmentInviteFromApplicationsAction(
+        selectedIds,
+        targetRoundId
+      );
+      if (result.sent > 0 || result.failed === 0) {
+        onFeedback({
+          kind: result.failed > 0 ? "error" : "success",
+          message: `Invited ${result.sent} · skipped ${result.skipped} · failed ${result.failed}${
+            result.targetRound ? ` · → ${result.targetRound}` : ""
+          }`,
+        });
+        // Clear selection + refresh once at least one invite landed.
+        if (result.sent > 0) onActionComplete();
+      } else {
+        // Nothing sent: surface the first error (e.g. "No open round to invite
+        // into") rather than a misleading success summary.
+        onFeedback({
+          kind: "error",
+          message:
+            result.errors[0] ??
+            `Invited ${result.sent} · skipped ${result.skipped} · failed ${result.failed}`,
+        });
+      }
+    });
+  };
+
+  return (
+    <>
+      <Button
+        variant="outline"
+        size="sm"
+        disabled={isPending || count === 0}
+        onClick={() => setOpen(true)}
+        className="h-8 shrink-0 whitespace-nowrap border-primary-200 bg-white text-xs text-slate-600"
+      >
+        {isPending ? (
+          <Loader2 className="mr-1.5 h-3 w-3 shrink-0 animate-spin" aria-hidden="true" />
+        ) : (
+          <Mail className="mr-1.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+        )}
+        Send re-assessment invite
+      </Button>
+
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Send re-assessment invites</DialogTitle>
+            <DialogDescription>
+              Send re-assessment invites to {count} selected holder
+              {count === 1 ? "" : "s"}
+              {targetRound ? ` for round ${targetRound}` : ""}?
+              {!targetRound && (
+                <span className="mt-1 block text-amber-600">
+                  There is no open round to invite into — nothing will be sent.
+                </span>
+              )}
+              <span className="mt-2 block text-xs text-slate-500">
+                Selections without an eligible bursary holder are skipped.
+              </span>
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setOpen(false)}>
+              Cancel
+            </Button>
+            <Button onClick={handleConfirm}>Confirm</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+}
+
+interface BulkToolbarProps {
+  selectedIds: string[];
+  assessors: AssessorOption[];
+  /** Target round year for re-assessment invites (null = no open round). */
+  reassessTargetRound: string | null;
+  /**
+   * The id of the round the queue is scoped to (Epic 03). Passed explicitly to
+   * the re-assessment invite action so it targets THIS round and never silently
+   * fans into another open round. null when the queue is not round-scoped.
+   */
+  reassessTargetRoundId: string | null;
+  onClear: () => void;
+  /**
+   * Called after a successful action so the parent can refresh + clear the
+   * selection. Note: clearing unmounts this toolbar, so success feedback is
+   * surfaced by the parent (which outlives the toolbar), not here.
+   */
+  onActionComplete: () => void;
+  /** Report feedback up so it survives the toolbar unmounting on success. */
+  onFeedback: (feedback: BulkFeedback) => void;
+}
+
+function BulkToolbar({
+  selectedIds,
+  assessors,
+  reassessTargetRound,
+  reassessTargetRoundId,
+  onClear,
+  onActionComplete,
+  onFeedback,
+}: BulkToolbarProps) {
+  const [isPending, startTransition] = useTransition();
+
+  const count = selectedIds.length;
+
+  // Wraps an async action in a transition. Shared by every BulkAction.
+  const run = React.useCallback(
+    (fn: () => Promise<void>) => {
+      onFeedback(null);
+      startTransition(() => {
+        void fn();
+      });
+    },
+    [onFeedback]
+  );
+
+  // The set of available bulk actions. Extend this array to add more.
+  const actions: BulkAction[] = [
+    {
+      id: "assign-assessor",
+      render: ({ selectedIds, isPending, run }) => (
+        <Select
+          disabled={isPending || selectedIds.length === 0}
+          onValueChange={(value) => {
+            const assessorId =
+              value === BULK_UNASSIGNED_VALUE ? null : value;
+            run(async () => {
+              const result = await bulkAssignApplicationsAction(
+                selectedIds,
+                assessorId
+              );
+              if (result.success) {
+                onFeedback({
+                  kind: "success",
+                  message: `Assigned ${result.updated} application${
+                    result.updated === 1 ? "" : "s"
+                  }.`,
+                });
+                onActionComplete();
+              } else {
+                onFeedback({
+                  kind: "error",
+                  message: result.error ?? "Bulk assignment failed.",
+                });
+              }
+            });
+          }}
+        >
+          <SelectTrigger className="h-8 w-[190px] shrink-0 border-primary-200 bg-white text-xs">
+            {isPending ? (
+              <span className="flex items-center gap-1.5 whitespace-nowrap text-slate-400">
+                <Loader2 className="h-3 w-3 shrink-0 animate-spin" aria-hidden="true" />
+                Saving…
+              </span>
+            ) : (
+              <span className="flex items-center gap-1.5 whitespace-nowrap text-slate-600">
+                <UserPlus className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                Assign assessor
+              </span>
+            )}
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value={BULK_UNASSIGNED_VALUE}>
+              <span className="text-slate-400 italic">Unassigned</span>
+            </SelectItem>
+            {assessors.map((assessor) => {
+              const name =
+                `${assessor.firstName ?? ""} ${
+                  assessor.lastName ?? ""
+                }`.trim() || assessor.id;
+              return (
+                <SelectItem key={assessor.id} value={assessor.id}>
+                  {name}
+                </SelectItem>
+              );
+            })}
+          </SelectContent>
+        </Select>
+      ),
+    },
+    {
+      id: "reassessment-invite",
+      render: ({ selectedIds, isPending, run }) => (
+        <ReassessmentBulkAction
+          selectedIds={selectedIds}
+          isPending={isPending}
+          run={run}
+          targetRound={reassessTargetRound}
+          targetRoundId={reassessTargetRoundId}
+          onFeedback={onFeedback}
+          onActionComplete={onActionComplete}
+        />
+      ),
+    },
+  ];
+
+  return (
+    <div className="sticky top-0 z-10 flex flex-wrap items-center gap-3 rounded-lg border border-primary-200 bg-primary-50/80 px-4 py-2.5 shadow-sm backdrop-blur">
+      <span className="text-sm font-medium text-primary-900">
+        {count} selected
+      </span>
+      <Button
+        variant="ghost"
+        size="sm"
+        className="h-7 px-2 text-xs text-slate-500 hover:text-slate-700"
+        onClick={onClear}
+        disabled={isPending}
+      >
+        <X className="mr-1 h-3 w-3" aria-hidden="true" />
+        Clear
+      </Button>
+
+      <div className="h-5 w-px bg-primary-200" aria-hidden="true" />
+
+      {actions.map((action) => (
+        <React.Fragment key={action.id}>
+          {action.render({ selectedIds, isPending, run })}
+        </React.Fragment>
+      ))}
+    </div>
+  );
+}
+
 // ─── Main component ───────────────────────────────────────────────────────────
 
 export function ApplicationTable({
   applications,
   rounds,
+  assessors = [],
+  userRole,
+  initialRound,
+  initialSchool,
+  initialStatuses,
+  activeFilter,
+  reassessEligibleActive = false,
+  reassessTargetRound = null,
 }: ApplicationTableProps) {
   const router = useRouter();
 
-  // Filter state
-  const [selectedRound, setSelectedRound] = React.useState<string>("all");
-  const [selectedSchool, setSelectedSchool] = React.useState<string>("all");
+  // Selection + bulk actions are ADMIN-only. Non-ADMIN users (ASSESSOR/VIEWER)
+  // have no bulk actions available, so we hide the checkbox column and toolbar
+  // entirely rather than show a dead UI.
+  const bulkEnabled = userRole === "ADMIN";
+
+  // Filter state — seeded from drill-in props when present, else current defaults.
+  const [selectedRound, setSelectedRound] = React.useState<string>(
+    initialRound ?? "all"
+  );
+  const [selectedSchool, setSelectedSchool] = React.useState<string>(
+    initialSchool ?? "all"
+  );
   const [selectedStatuses, setSelectedStatuses] = React.useState<
-    ApplicationStatus[]
-  >([]);
+    ReviewPhase[]
+  >(initialStatuses ?? []);
   const [searchText, setSearchText] = React.useState("");
 
   // Name reveal state
   const [namesRevealed, setNamesRevealed] = React.useState(false);
   const [namesLoading, setNamesLoading] = React.useState(false);
+  const [namesError, setNamesError] = React.useState<string | null>(null);
   const [nameMap, setNameMap] = React.useState<
     Map<string, NameData>
   >(new Map());
@@ -304,6 +671,17 @@ export function ApplicationTable({
   const [sorting, setSorting] = React.useState<SortingState>([]);
   const [columnFilters, setColumnFilters] =
     React.useState<ColumnFiltersState>([]);
+  const [rowSelection, setRowSelection] = React.useState<RowSelectionState>({});
+  const [bulkFeedback, setBulkFeedback] = React.useState<BulkFeedback>(null);
+
+  // Selection coherence: clear the selection whenever any filter changes so we
+  // never act on rows that have scrolled out of the filtered view. Keeping
+  // hidden rows selected would let a bulk action hit applications the user can
+  // no longer see. Simplest safe behaviour: reset on filter change.
+  React.useEffect(() => {
+    setRowSelection({});
+    setBulkFeedback(null);
+  }, [selectedRound, selectedSchool, selectedStatuses, searchText]);
 
   // Derived rows with optional names merged in
   const rows: ApplicationRow[] = React.useMemo(() => {
@@ -320,9 +698,21 @@ export function ApplicationTable({
         return false;
       if (selectedSchool !== "all" && row.school !== selectedSchool)
         return false;
+      // Match the row's lifecycle state against any selected review phase
+      // (Epic 01 PR-6a) — derived from form_status + assessment status/outcome,
+      // not the dropped fused status.
       if (
         selectedStatuses.length > 0 &&
-        !selectedStatuses.includes(row.status)
+        !selectedStatuses.some((phase) =>
+          matchesReviewPhase(
+            {
+              formStatus: row.formStatus,
+              assessmentStatus: row.assessmentStatus,
+              outcome: row.outcome,
+            },
+            phase
+          )
+        )
       )
         return false;
       if (searchText) {
@@ -342,10 +732,12 @@ export function ApplicationTable({
   const handleNamesToggle = async (checked: boolean) => {
     if (!checked) {
       setNamesRevealed(false);
+      setNamesError(null);
       return;
     }
 
     setNamesLoading(true);
+    setNamesError(null);
     try {
       const ids = applications.map((a) => a.id);
       const params = new URLSearchParams();
@@ -372,6 +764,10 @@ export function ApplicationTable({
       setNamesRevealed(true);
     } catch (err) {
       console.error("Name reveal failed:", err);
+      // Surface the failure to the user and reset the toggle so it visibly
+      // fails rather than silently no-opping (see defect plan §2.1).
+      setNamesError("Could not reveal names. Please try again.");
+      setNamesRevealed(false);
     } finally {
       setNamesLoading(false);
     }
@@ -382,6 +778,37 @@ export function ApplicationTable({
 
   const columns = React.useMemo(() => {
     const base = [
+      // Leading selection column (ADMIN only). The header checkbox selects /
+      // deselects ALL currently-filtered rows (table.data === filteredRows), and
+      // shows an indeterminate state when only some are selected.
+      columnHelper.display({
+        id: "select",
+        header: ({ table }) => (
+          <Checkbox
+            checked={
+              table.getIsAllRowsSelected()
+                ? true
+                : table.getIsSomeRowsSelected()
+                  ? "indeterminate"
+                  : false
+            }
+            onCheckedChange={(value) =>
+              table.toggleAllRowsSelected(!!value)
+            }
+            onClick={(e) => e.stopPropagation()}
+            aria-label="Select all applications"
+          />
+        ),
+        cell: (info) => (
+          <Checkbox
+            checked={info.row.getIsSelected()}
+            onCheckedChange={(value) => info.row.toggleSelected(!!value)}
+            onClick={(e) => e.stopPropagation()}
+            aria-label="Select application"
+          />
+        ),
+        enableSorting: false,
+      }),
       columnHelper.accessor("reference", {
         header: "Reference",
         cell: (info) => (
@@ -407,9 +834,13 @@ export function ApplicationTable({
           return dateA - dateB;
         },
       }),
-      columnHelper.accessor("status", {
+      // Status is a DERIVED lifecycle projection (Epic 01 PR-6a), not a single
+      // stored column — render it as a display column (sorting on a fused string
+      // was never meaningful).
+      columnHelper.display({
+        id: "status",
         header: "Status",
-        cell: (info) => <StatusBadge status={mapStatus(info.getValue())} />,
+        cell: (info) => <ApplicationLifecycleCell row={info.row.original} />,
       }),
       columnHelper.accessor("secondParent", {
         header: "2nd Parent",
@@ -503,22 +934,62 @@ export function ApplicationTable({
       }) as typeof base[0]
     );
 
-    return base;
-  }, [namesRevealed, columnHelper, router]);
+    // Drop the leading select column for non-ADMIN viewers (no bulk actions).
+    return bulkEnabled ? base : base.filter((col) => col.id !== "select");
+  }, [namesRevealed, columnHelper, router, bulkEnabled]);
 
   const table = useReactTable({
     data: filteredRows,
     columns,
-    state: { sorting, columnFilters },
+    state: { sorting, columnFilters, rowSelection },
+    enableRowSelection: bulkEnabled,
+    getRowId: (row) => row.id,
     onSortingChange: setSorting,
     onColumnFiltersChange: setColumnFilters,
+    onRowSelectionChange: setRowSelection,
     getCoreRowModel: getCoreRowModel(),
     getSortedRowModel: getSortedRowModel(),
     getFilteredRowModel: getFilteredRowModel(),
   });
 
+  // Selected application ids (stable across re-renders via getRowId === app id).
+  // Reading from rowSelection keys is sufficient because getRowId uses the id.
+  const selectedIds = React.useMemo(
+    () => Object.keys(rowSelection).filter((id) => rowSelection[id]),
+    [rowSelection]
+  );
+
+  const handleClearSelection = React.useCallback(() => {
+    setRowSelection({});
+  }, []);
+
+  // After a successful bulk action: clear selection and refresh server data.
+  const handleBulkComplete = React.useCallback(() => {
+    setRowSelection({});
+    router.refresh();
+  }, [router]);
+
   return (
     <div className="space-y-4">
+      {/* Active drill-in filter banner */}
+      {activeFilter && (
+        <Alert className="flex items-center justify-between gap-3 border-primary-200 bg-primary-50/60 py-2.5 text-primary-900">
+          <span className="flex items-center gap-2 text-sm">
+            <Filter className="h-4 w-4 shrink-0 text-primary-700" aria-hidden="true" />
+            <span>
+              <span className="font-medium">Showing:</span> {activeFilter.label}
+            </span>
+          </span>
+          <Link
+            href={activeFilter.clearHref}
+            className="inline-flex items-center gap-1 rounded-full border border-primary-200 bg-white px-2.5 py-1 text-xs font-medium text-primary-700 transition-colors hover:bg-primary-50"
+          >
+            <X className="h-3 w-3" aria-hidden="true" />
+            Clear filters
+          </Link>
+        </Alert>
+      )}
+
       {/* Filter bar */}
       <div className="flex flex-wrap items-center gap-3 rounded-lg bg-neutral-50 px-4 py-3 border border-neutral-200">
         {/* Round selector */}
@@ -554,6 +1025,29 @@ export function ApplicationTable({
           onChange={setSelectedStatuses}
         />
 
+        {/* Re-assessment-eligible toggle (ADMIN only, URL-driven server filter) */}
+        {bulkEnabled && (
+          <Button
+            variant="outline"
+            size="sm"
+            aria-pressed={reassessEligibleActive}
+            onClick={() =>
+              router.push(
+                reassessEligibleActive ? "/queue" : "/queue?reassessEligible=1"
+              )
+            }
+            className={cn(
+              "h-9 shrink-0 whitespace-nowrap border-neutral-200 bg-white text-sm",
+              reassessEligibleActive
+                ? "border-primary-300 bg-primary-50 text-primary-800 hover:bg-primary-100"
+                : "text-slate-600 hover:bg-neutral-50"
+            )}
+          >
+            <RefreshCw className="mr-1.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+            Re-assessment eligible
+          </Button>
+        )}
+
         {/* Search */}
         <Input
           placeholder="Search reference…"
@@ -567,6 +1061,15 @@ export function ApplicationTable({
 
         {/* Name reveal toggle */}
         <div className="flex items-center gap-2.5">
+          {namesError && (
+            <span
+              role="alert"
+              className="flex items-center gap-1 rounded-full bg-rose-50 px-2.5 py-1 text-xs font-medium text-rose-700 border border-rose-200"
+            >
+              <AlertTriangle className="h-3 w-3" aria-hidden="true" />
+              {namesError}
+            </span>
+          )}
           {namesRevealed && (
             <span className="flex items-center gap-1 rounded-full bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-700 border border-amber-200">
               <AlertTriangle className="h-3 w-3" aria-hidden="true" />
@@ -590,6 +1093,47 @@ export function ApplicationTable({
           </div>
         </div>
       </div>
+
+      {/* Bulk-action toolbar — ADMIN only, shown when ≥1 row is selected */}
+      {bulkEnabled && selectedIds.length > 0 && (
+        <BulkToolbar
+          selectedIds={selectedIds}
+          assessors={assessors}
+          reassessTargetRound={reassessTargetRound}
+          // Epic 03 (concurrent rounds): pass the round the queue is scoped to
+          // so the re-assessment invite targets it explicitly and never fans
+          // into the wrong open round. "all" ⇒ no explicit round (the server
+          // refuses when >1 round is OPEN).
+          reassessTargetRoundId={selectedRound !== "all" ? selectedRound : null}
+          onClear={handleClearSelection}
+          onActionComplete={handleBulkComplete}
+          onFeedback={setBulkFeedback}
+        />
+      )}
+
+      {/* Bulk-action result — lives in the parent so a success message survives
+          the toolbar unmounting after the selection is cleared. */}
+      {bulkEnabled && bulkFeedback && (
+        <div
+          role="status"
+          className={cn(
+            "flex items-center justify-between gap-3 rounded-lg border px-4 py-2 text-sm font-medium",
+            bulkFeedback.kind === "success"
+              ? "border-green-200 bg-green-50 text-green-700"
+              : "border-red-200 bg-red-50 text-red-600"
+          )}
+        >
+          <span>{bulkFeedback.message}</span>
+          <button
+            type="button"
+            onClick={() => setBulkFeedback(null)}
+            className="text-current opacity-60 hover:opacity-100"
+            aria-label="Dismiss message"
+          >
+            <X className="h-3.5 w-3.5" aria-hidden="true" />
+          </button>
+        </div>
+      )}
 
       {/* Table — horizontal scroll wrapper for mobile */}
       <div className="overflow-x-auto -mx-4 md:mx-0">

@@ -28,12 +28,21 @@ import { sendEmail } from "@/lib/email/send";
 import { humaniseSlot } from "@/lib/documents/slots";
 import { deleteDocument } from "@/lib/storage/documents";
 import { createSupabaseAdminClient } from "@/lib/auth/supabase-admin";
-import { setApplicationOutcome } from "@/lib/applications/set-outcome-core";
+import { setApplicationOutcomeLegacy } from "@/lib/applications/set-outcome-core";
+import { restartApplicationFromRejection } from "@/lib/applications/create-from-invitation";
+import { getAppUrl } from "@/lib/app-url";
+import { isPurgeable, notYetPurgeableMessage } from "@/lib/retention/policy";
 import {
-  getSecondaryContributorForGdpr,
-  decideSecondaryProfileErasure,
-} from "@/lib/db/queries/secondary-gdpr";
-import type { ApplicationStatus } from "@prisma/client";
+  purgeApplication,
+  buildPurgeAuditMetadata,
+} from "@/lib/retention/purge";
+import {
+  beginReview,
+  resumeReview,
+  markReviewComplete,
+  pauseReviewForDocs,
+  deriveReviewPhase,
+} from "@/lib/applications/status";
 
 import { AUDIT_ACTIONS, AUDIT_ENTITY_TYPES } from "@/lib/audit/actions";
 
@@ -43,27 +52,12 @@ export type ActionResult =
   | { success: true }
   | { success: false; error: string };
 
-// ─── Valid transition map ─────────────────────────────────────────────────────
-
-/**
- * Defines which target statuses are reachable from each source status.
- * PRE_SUBMISSION → SUBMITTED is handled by the applicant portal submission flow.
- */
-const VALID_TRANSITIONS: Partial<Record<ApplicationStatus, ApplicationStatus[]>> = {
-  SUBMITTED: ["NOT_STARTED"],
-  NOT_STARTED: ["PAUSED", "COMPLETED"],
-  PAUSED: ["NOT_STARTED"],
-  COMPLETED: ["QUALIFIES", "DOES_NOT_QUALIFY"],
-};
-
-function isValidTransition(
-  from: ApplicationStatus,
-  to: ApplicationStatus
-): boolean {
-  return VALID_TRANSITIONS[from]?.includes(to) ?? false;
-}
-
 // ─── Helper: fetch application with lead applicant email ──────────────────────
+//
+// PR-6a: the application-detail review track no longer reads the deprecated fused
+// `applications.status`. The current review phase is DERIVED from the lifecycle
+// columns (`form_status` + the assessment's `status`/`outcome`) via
+// `deriveReviewPhase`, and the transitions write the assessment lifecycle.
 
 async function fetchApplicationForStatus(tx: Tx, applicationId: string) {
   return tx.application.findUnique({
@@ -71,7 +65,7 @@ async function fetchApplicationForStatus(tx: Tx, applicationId: string) {
     select: {
       id: true,
       reference: true,
-      status: true,
+      formStatus: true,
       childName: true,
       school: true,
       leadApplicant: {
@@ -80,7 +74,25 @@ async function fetchApplicationForStatus(tx: Tx, applicationId: string) {
       round: {
         select: { academicYear: true },
       },
+      assessment: {
+        select: { status: true, outcome: true },
+      },
     },
+  });
+}
+
+/** The derived review phase for a fetched application (lifecycle-column based). */
+function reviewPhaseOf(application: {
+  formStatus: import("@prisma/client").ApplicationFormStatus;
+  assessment: {
+    status: import("@prisma/client").AssessmentStatus;
+    outcome: import("@prisma/client").AssessmentOutcome | null;
+  } | null;
+}) {
+  return deriveReviewPhase({
+    formStatus: application.formStatus,
+    assessmentStatus: application.assessment?.status ?? null,
+    outcome: application.assessment?.outcome ?? null,
   });
 }
 
@@ -101,7 +113,7 @@ function revalidateApplicationPaths(applicationId: string) {
  */
 export async function updateApplicationStatus(
   applicationId: string,
-  newStatus: ApplicationStatus,
+  newStatus: "NOT_STARTED" | "COMPLETED",
   context?: string
 ): Promise<ActionResult> {
   try {
@@ -116,19 +128,26 @@ export async function updateApplicationStatus(
           return { success: false as const, error: "Application not found." };
         }
 
-        const oldStatus = application.status;
+        const oldStatus = reviewPhaseOf(application);
 
-        if (!isValidTransition(oldStatus, newStatus)) {
+        // Behaviour-preserving guard matching the old fused graph:
+        //   SUBMITTED → NOT_STARTED (begin review)
+        //   NOT_STARTED → COMPLETED (mark complete)
+        const legal =
+          (newStatus === "NOT_STARTED" && oldStatus === "SUBMITTED") ||
+          (newStatus === "COMPLETED" && oldStatus === "NOT_STARTED");
+        if (!legal) {
           return {
             success: false as const,
             error: `Cannot transition from ${oldStatus} to ${newStatus}.`,
           };
         }
 
-        await tx.application.update({
-          where: { id: applicationId },
-          data: { status: newStatus },
-        });
+        if (newStatus === "NOT_STARTED") {
+          await beginReview(tx, applicationId, user.id);
+        } else {
+          await markReviewComplete(tx, applicationId, user.id);
+        }
 
         await createAuditLog(tx, {
           userId: user.id,
@@ -166,15 +185,42 @@ export async function updateApplicationStatus(
  *
  * @param applicationId       The application to pause.
  * @param missingDocumentSlots Array of slot names that are missing / unverified.
- * @param customMessage       Optional free-text appended to the email body.
+ * @param customMessage       Optional personal note from the assessor, shown
+ *                            in-portal AND injected into the MISSING_DOCS email.
+ * @param deadlineIso         Optional assessor-chosen deadline (ISO/date string
+ *                            from the dialog's date picker). When omitted the
+ *                            status service falls back to `defaultPausedUntil()`.
  */
 export async function pauseApplication(
   applicationId: string,
   missingDocumentSlots: string[],
-  customMessage?: string
+  customMessage?: string,
+  deadlineIso?: string
 ): Promise<ActionResult> {
   try {
     const user = await requireRole([Role.ADMIN, Role.ASSESSOR]);
+
+    // Parse the assessor-chosen deadline (if any) up-front. The picker sends a
+    // date-only "yyyy-mm-dd" string; build it as LOCAL midnight (not UTC, which
+    // `new Date("2026-06-16")` would give) so the past-date comparison and the
+    // emailed date render in the server's own day, free of timezone skew. Reject
+    // malformed or past dates so a stale picker value can't set a gone deadline.
+    let chosenDeadline: Date | undefined;
+    if (deadlineIso && deadlineIso.trim() !== "") {
+      const ymd = /^(\d{4})-(\d{2})-(\d{2})$/.exec(deadlineIso.trim());
+      const parsed = ymd
+        ? new Date(Number(ymd[1]), Number(ymd[2]) - 1, Number(ymd[3]))
+        : new Date(deadlineIso);
+      if (Number.isNaN(parsed.getTime())) {
+        return { success: false, error: "Invalid deadline date." };
+      }
+      const startOfToday = new Date();
+      startOfToday.setHours(0, 0, 0, 0);
+      if (parsed.getTime() < startOfToday.getTime()) {
+        return { success: false, error: "The deadline cannot be in the past." };
+      }
+      chosenDeadline = parsed;
+    }
 
     // First validate + persist + fetch application data (under RLS)
     const preEmail = await withUserContext(
@@ -186,33 +232,48 @@ export async function pauseApplication(
           return { success: false as const, error: "Application not found." };
         }
 
-        if (!isValidTransition(application.status, "PAUSED")) {
+        const phase = reviewPhaseOf(application);
+        // Old fused graph: only NOT_STARTED (review in progress) → PAUSED.
+        if (phase !== "NOT_STARTED") {
           return {
             success: false as const,
-            error: `Cannot pause application from status ${application.status}.`,
+            error: `Cannot pause application from status ${phase}.`,
           };
         }
 
-        await tx.application.update({
-          where: { id: applicationId },
-          data: { status: "PAUSED" },
-        });
+        // Status service moves the assessment → PAUSED and PERSISTS the deadline
+        // on the assessment row. Use the assessor-chosen deadline when supplied,
+        // otherwise the service default. The returned deadline is the single
+        // source the email reads below.
+        const pausedUntil = await pauseReviewForDocs(
+          tx,
+          applicationId,
+          user.id,
+          chosenDeadline
+        );
 
-        return { success: true as const, application };
+        return { success: true as const, application, phase, pausedUntil };
       }
     );
 
     if (!preEmail.success) return preEmail;
-    const { application } = preEmail;
+    const { application, phase, pausedUntil } = preEmail;
 
     // Build a human-readable list of missing slots
     const slotList = missingDocumentSlots
       .map((s) => `• ${humaniseSlot(s)}`)
       .join("\n");
 
-    // Send MISSING_DOCS email — non-blocking; log failure but don't abort
-    const docDeadline = new Date();
-    docDeadline.setDate(docDeadline.getDate() + 14);
+    // The assessor's personal note leads the email body. When they leave it
+    // blank, fall back to a neutral sentence so the email still reads correctly
+    // (the {{custom_message}} placeholder sits at the top of the template).
+    const noteForEmail =
+      customMessage?.trim() ||
+      "Thank you for submitting your bursary application. Having completed an initial review, we find that some supporting documents are still required.";
+
+    // Send MISSING_DOCS email — non-blocking; log failure but don't abort.
+    // Reads the persisted `paused_until` deadline instead of recomputing it.
+    const docDeadline = pausedUntil;
     const emailResult = await sendEmail(
       application.leadApplicant.email,
       "MISSING_DOCS",
@@ -220,6 +281,7 @@ export async function pauseApplication(
         applicant_name:
           `${application.leadApplicant.firstName ?? ""} ${application.leadApplicant.lastName ?? ""}`.trim() ||
           "Applicant",
+        custom_message: noteForEmail,
         reference: application.reference,
         child_name: application.childName,
         missing_documents: slotList,
@@ -241,7 +303,7 @@ export async function pauseApplication(
         entityId: applicationId,
         context: "Application paused — missing documents requested",
         metadata: {
-          fromStatus: application.status,
+          fromStatus: phase,
           toStatus: "PAUSED",
           reference: application.reference,
           missingDocumentSlots,
@@ -258,6 +320,188 @@ export async function pauseApplication(
   } catch (err) {
     console.error("[pauseApplication]", err);
     return { success: false, error: "Failed to pause application." };
+  }
+}
+
+// ─── rejectAndRestartApplication (Full Rejection) ────────────────────────────
+
+/**
+ * Full Rejection: the submitted application is invalid as a whole. The assessor
+ * voids it and the applicant is asked to start a brand-new application from
+ * scratch.
+ *
+ * Because of the `@@unique([roundId, leadApplicantId, childName, childDob])`
+ * constraint the rejected application cannot coexist with its replacement, so it
+ * is HARD-DELETED (its cascades clear sections, contributors, documents,
+ * assessment and invitations — this subsumes "clear all documents") and a fresh
+ * blank application is created in its place, reusing the freed `reference`.
+ * Storage objects are removed after the transaction commits (the DB cascade only
+ * drops the Document rows). An `APPLICATION_RESTART_REQUIRED` email points the
+ * applicant back into the portal, and the rejection is recorded in the
+ * append-only audit log (which survives the row delete).
+ *
+ * Allowed before a final outcome only (SUBMITTED / NOT_STARTED / PAUSED).
+ *
+ * @param applicationId The application being rejected.
+ * @param customMessage The assessor's note explaining what was wrong / what to
+ *                      address in the new submission (shown in the email).
+ */
+export async function rejectAndRestartApplication(
+  applicationId: string,
+  customMessage?: string
+): Promise<ActionResult> {
+  try {
+    const user = await requireRole([Role.ADMIN, Role.ASSESSOR]);
+
+    // Admin context: deleting the application + creating the replacement's
+    // PRIMARY contributor both need service_role (the application_contributors
+    // write policy is admin-only — mirrors startApplicationAction).
+    const result = await withAdminContext(async (tx) => {
+      const application = await tx.application.findUnique({
+        where: { id: applicationId },
+        select: {
+          id: true,
+          reference: true,
+          roundId: true,
+          leadApplicantId: true,
+          school: true,
+          childName: true,
+          childDob: true,
+          entryYear: true,
+          entryYearGroup: true,
+          contactId: true,
+          isReassessment: true,
+          applicationType: true,
+          bursaryAccountId: true,
+          custodyArrangement: true,
+          formStatus: true,
+          leadApplicant: {
+            select: { email: true, firstName: true, lastName: true },
+          },
+          assessment: { select: { status: true, outcome: true } },
+          documents: { select: { storagePath: true } },
+        },
+      });
+
+      if (!application) {
+        return { success: false as const, error: "Application not found." };
+      }
+
+      const phase = deriveReviewPhase({
+        formStatus: application.formStatus,
+        assessmentStatus: application.assessment?.status ?? null,
+        outcome: application.assessment?.outcome ?? null,
+      });
+
+      // Reject only before a final outcome. A decided/completed application must
+      // go through the outcome flow, not a restart.
+      if (
+        phase !== "SUBMITTED" &&
+        phase !== "NOT_STARTED" &&
+        phase !== "PAUSED"
+      ) {
+        return {
+          success: false as const,
+          error: `Cannot reject and restart an application from status ${phase}.`,
+        };
+      }
+
+      const storagePaths = application.documents.map((d) => d.storagePath);
+      const clearedDocumentCount = storagePaths.length;
+      const oldReference = application.reference;
+
+      // Void + recreate. Helper deletes the old row (cascade) and creates the
+      // fresh blank application reusing the reference.
+      const newApplicationId = await restartApplicationFromRejection(tx, {
+        id: application.id,
+        reference: application.reference,
+        roundId: application.roundId,
+        leadApplicantId: application.leadApplicantId,
+        school: application.school,
+        childName: application.childName,
+        childDob: application.childDob,
+        entryYear: application.entryYear,
+        entryYearGroup: application.entryYearGroup,
+        contactId: application.contactId,
+        isReassessment: application.isReassessment,
+        applicationType: application.applicationType,
+        bursaryAccountId: application.bursaryAccountId,
+        custodyArrangement: application.custodyArrangement,
+      });
+
+      // Audit on the OLD application id (entityId is a loose UUID — the row was
+      // just deleted, but the append-only audit trail persists).
+      await createAuditLog(tx, {
+        userId: user.id,
+        action: AUDIT_ACTIONS.APPLICATION_REJECTED_RESTART,
+        entityType: AUDIT_ENTITY_TYPES.Application,
+        entityId: applicationId,
+        context: `Application ${oldReference} rejected and restarted from scratch`,
+        metadata: {
+          fromStatus: phase,
+          reference: oldReference,
+          customMessage: customMessage?.trim() || null,
+          clearedDocumentCount,
+          newApplicationId,
+        },
+      });
+
+      return {
+        success: true as const,
+        newApplicationId,
+        reference: oldReference,
+        childName: application.childName,
+        leadApplicant: application.leadApplicant,
+        storagePaths,
+      };
+    });
+
+    if (!result.success) return result;
+
+    // Storage cleanup AFTER the DB transaction commits. Non-fatal — the Document
+    // rows are already gone via cascade; an orphaned object is logged, not fatal.
+    for (const path of result.storagePaths) {
+      try {
+        await deleteDocument(path);
+      } catch (err) {
+        console.warn(
+          `[rejectAndRestartApplication] storage cleanup failed for ${path}:`,
+          err
+        );
+      }
+    }
+
+    // Email the applicant — non-blocking. The note explains what was wrong; fall
+    // back to a neutral sentence when the assessor left it blank.
+    const noteForEmail =
+      customMessage?.trim() ||
+      "Having reviewed your application, we are unable to proceed with it as submitted.";
+    const emailResult = await sendEmail(
+      result.leadApplicant.email,
+      "APPLICATION_RESTART_REQUIRED",
+      {
+        applicant_name:
+          `${result.leadApplicant.firstName ?? ""} ${result.leadApplicant.lastName ?? ""}`.trim() ||
+          "Applicant",
+        child_name: result.childName,
+        reference: result.reference,
+        custom_message: noteForEmail,
+        restart_link: `${getAppUrl()}/apply/child-details`,
+      }
+    );
+    if (!emailResult.success) {
+      console.warn(
+        `[rejectAndRestartApplication] APPLICATION_RESTART_REQUIRED email failed for ${applicationId}: ${emailResult.error}`
+      );
+    }
+
+    revalidateApplicationPaths(applicationId);
+    revalidatePath(`/applications/${result.newApplicationId}`);
+
+    return { success: true };
+  } catch (err) {
+    console.error("[rejectAndRestartApplication]", err);
+    return { success: false, error: "Failed to reject and restart application." };
   }
 }
 
@@ -282,17 +526,18 @@ export async function resumeApplication(
           return { success: false as const, error: "Application not found." };
         }
 
-        if (!isValidTransition(application.status, "NOT_STARTED")) {
+        const phase = reviewPhaseOf(application);
+        // Old fused graph: only PAUSED → NOT_STARTED (resume).
+        if (phase !== "PAUSED") {
           return {
             success: false as const,
-            error: `Cannot resume application from status ${application.status}.`,
+            error: `Cannot resume application from status ${phase}.`,
           };
         }
 
-        await tx.application.update({
-          where: { id: applicationId },
-          data: { status: "NOT_STARTED" },
-        });
+        // Resume moves the assessment back to IN_PROGRESS and clears the
+        // persisted pause deadline.
+        await resumeReview(tx, applicationId, user.id);
 
         await createAuditLog(tx, {
           userId: user.id,
@@ -301,7 +546,7 @@ export async function resumeApplication(
           entityId: applicationId,
           context: "Application resumed from PAUSED to NOT_STARTED",
           metadata: {
-            fromStatus: application.status,
+            fromStatus: phase,
             toStatus: "NOT_STARTED",
             reference: application.reference,
           },
@@ -338,7 +583,7 @@ export async function setOutcome(
   applicationId: string,
   outcome: "QUALIFIES" | "DOES_NOT_QUALIFY"
 ): Promise<ActionResult> {
-  const result = await setApplicationOutcome(applicationId, outcome);
+  const result = await setApplicationOutcomeLegacy(applicationId, outcome);
   if (result.success) {
     revalidateApplicationPaths(applicationId);
   }
@@ -382,6 +627,85 @@ export async function assignApplicationAction(
   } catch (err) {
     console.error("[assignApplicationAction]", err);
     return { success: false, error: "Failed to assign assessor." };
+  }
+}
+
+// ─── bulkAssignApplicationsAction ─────────────────────────────────────────────
+
+/** Hard cap on how many applications a single bulk assign may touch. */
+const BULK_ASSIGN_MAX = 500;
+
+/**
+ * Assigns (or unassigns) MANY applications to a single assessor in one pass.
+ *
+ * Mirrors `assignApplicationAction` but over a list of ids. Each application
+ * gets its own `APPLICATION_ASSESSOR_ASSIGNED` audit row (identical action +
+ * metadata shape to the single action) so the per-application trail is
+ * preserved — there is no aggregate "bulk" audit event by design.
+ *
+ * ADMIN only. Empty input is a no-op success; oversized input is rejected.
+ * Runs every update + audit write inside a single `withUserContext` so RLS
+ * `current_user_id()` / role are set once for the whole batch.
+ */
+export async function bulkAssignApplicationsAction(
+  applicationIds: string[],
+  assessorId: string | null
+): Promise<{ success: boolean; updated: number; error?: string }> {
+  try {
+    const user = await requireRole([Role.ADMIN]);
+
+    // De-dupe and drop falsy ids defensively.
+    const ids = Array.from(new Set(applicationIds.filter(Boolean)));
+
+    if (ids.length === 0) {
+      return { success: true, updated: 0 };
+    }
+    if (ids.length > BULK_ASSIGN_MAX) {
+      return {
+        success: false,
+        updated: 0,
+        error: `Cannot assign more than ${BULK_ASSIGN_MAX} applications at once.`,
+      };
+    }
+
+    const updated = await withUserContext(
+      user.id,
+      user.role as RlsRole,
+      async (tx) => {
+        let count = 0;
+        for (const applicationId of ids) {
+          await tx.application.update({
+            where: { id: applicationId },
+            data: { assignedToId: assessorId },
+          });
+
+          await createAuditLog(tx, {
+            userId: user.id,
+            action: AUDIT_ACTIONS.APPLICATION_ASSESSOR_ASSIGNED,
+            entityType: AUDIT_ENTITY_TYPES.Application,
+            entityId: applicationId,
+            context: assessorId
+              ? `Application assigned to assessor ${assessorId}`
+              : "Application unassigned from assessor",
+            metadata: { assessorId },
+          });
+
+          count += 1;
+        }
+        return count;
+      }
+    );
+
+    revalidatePath("/queue");
+
+    return { success: true, updated };
+  } catch (err) {
+    console.error("[bulkAssignApplicationsAction]", err);
+    return {
+      success: false,
+      updated: 0,
+      error: "Failed to assign applications.",
+    };
   }
 }
 
@@ -435,23 +759,20 @@ export async function gdprDeleteApplicantAction(
         select: {
           id: true,
           reference: true,
-          status: true,
           submittedAt: true,
+          archivedAt: true,
           leadApplicantId: true,
           documents: { select: { id: true, storagePath: true } },
           assessment: {
             select: {
               id: true,
-              earners: { select: { id: true } },
+              outcome: true,
               property: { select: { id: true } },
-              checklists: { select: { id: true } },
-              recommendation: {
-                select: {
-                  id: true,
-                  reasonCodes: { select: { reasonCodeId: true } },
-                },
-              },
+              recommendation: { select: { id: true } },
             },
+          },
+          bursaryAccount: {
+            select: { status: true, closedAt: true },
           },
         },
       })
@@ -461,231 +782,62 @@ export async function gdprDeleteApplicantAction(
       return { success: false, error: "Application not found." };
     }
 
-    // 2. 7-year retention check — block if submitted within the last 7 years
-    if (application.submittedAt) {
-      const sevenYearsAgo = new Date();
-      sevenYearsAgo.setFullYear(sevenYearsAgo.getFullYear() - 7);
-      if (application.submittedAt > sevenYearsAgo) {
-        return {
-          success: false,
-          error:
-            "This application cannot be deleted yet. Records must be retained for 7 years from the date of submission.",
-        };
-      }
+    // 2. Tiered retention check (Epic 10, D6) — single source of truth shared
+    //    with the auto-purge cron. Replaces the old flat 7-year-from-submission
+    //    guard; the horizon now depends on the outcome (declined / qualifies-
+    //    not-awarded / awarded) and anchors from the correct date.
+    const evaluation = isPurgeable(
+      {
+        outcome: application.assessment?.outcome ?? null,
+        archivedAt: application.archivedAt,
+        submittedAt: application.submittedAt,
+      },
+      application.bursaryAccount
+        ? {
+            status: application.bursaryAccount.status,
+            closedAt: application.bursaryAccount.closedAt,
+          }
+        : null
+    );
+    if (!evaluation.purgeable) {
+      return {
+        success: false,
+        error: notYetPurgeableMessage(evaluation),
+      };
     }
 
     const leadApplicantId = application.leadApplicantId;
 
-    // 2b. Resolve the SECONDARY contributor (second parent), if any, and decide
-    //     whether their Profile + Supabase auth user may be erased. The decision
-    //     is computed here (read-only) so the mutating transaction below and the
-    //     post-transaction auth deletion both act on a single, consistent
-    //     verdict. RETAIN if the profile is lawfully linked elsewhere.
-    const secondary = await withAdminContext((tx) =>
-      getSecondaryContributorForGdpr(tx, applicationId)
+    // 3. Run the shared erasure cascade (Epic 10): Storage-first, anonymising
+    //    DB transaction (append-only audit honoured by nulling userId, never
+    //    deleting), dual-parent shared-profile guard, then Supabase auth
+    //    deletion. The manual button and the auto-purge cron call the SAME
+    //    cascade, so they can never diverge.
+    const purgeResult = await purgeApplication(
+      {
+        id: application.id,
+        reference: application.reference,
+        leadApplicantId,
+        documents: application.documents,
+        assessment: application.assessment
+          ? {
+              id: application.assessment.id,
+              property: application.assessment.property,
+              recommendation: application.assessment.recommendation,
+            }
+          : null,
+      },
+      {
+        withAdminContext,
+        deleteDocument,
+        deleteAuthUser: (uid) =>
+          createSupabaseAdminClient().auth.admin.deleteUser(uid),
+      }
     );
-    const secondaryProfileDecision = secondary
-      ? await withAdminContext((tx) =>
-          decideSecondaryProfileErasure(tx, secondary.profileId, applicationId)
-        )
-      : null;
 
-    // 3. Delete Storage files first (non-fatal: continue on partial failure).
-    //    application.documents enumerates EVERY Document row for this
-    //    application regardless of uploader, so secondary uploads under
-    //    `documents/{appId}/secondary/{slot}/...` are deleted from Storage here
-    //    too — each row carries its own storagePath.
-    const storageErrors: string[] = [];
-    for (const doc of application.documents) {
-      try {
-        await deleteDocument(doc.storagePath);
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        storageErrors.push(`${doc.id}: ${msg}`);
-        console.warn("[gdprDelete] Storage delete failed for", doc.id, msg);
-      }
-    }
-
-    // 4. Run the DB mutations in a single admin-context transaction. The
-    //    cascade must bypass RLS because policies normally forbid these
-    //    updates (e.g. AuditLog is INSERT-only for everyone except
-    //    service_role; Profile email changes; etc.).
-    await withAdminContext(async (tx) => {
-      // a. Delete assessment children
-      if (application.assessment) {
-        const assessmentId = application.assessment.id;
-
-        await tx.assessmentEarner.deleteMany({ where: { assessmentId } });
-        await tx.assessmentChecklist.deleteMany({ where: { assessmentId } });
-        if (application.assessment.property) {
-          await tx.assessmentProperty.delete({
-            where: { assessmentId },
-          });
-        }
-
-        // b. Delete recommendation + junction rows
-        if (application.assessment.recommendation) {
-          const recommendationId = application.assessment.recommendation.id;
-          await tx.recommendationReasonCode.deleteMany({
-            where: { recommendationId },
-          });
-          await tx.recommendation.delete({ where: { id: recommendationId } });
-        }
-
-        // c. Delete assessment itself
-        await tx.assessment.delete({ where: { id: assessmentId } });
-      }
-
-      // d. Delete ApplicationSection rows
-      await tx.applicationSection.deleteMany({ where: { applicationId } });
-
-      // e. Delete Document DB records
-      await tx.document.deleteMany({ where: { applicationId } });
-
-      // f. Anonymise Application
-      await tx.application.update({
-        where: { id: applicationId },
-        data: {
-          childName: "[Child Removed]",
-          childDob: null,
-        },
-      });
-
-      // g. Delete Invitation records linked to this lead applicant
-      await tx.invitation.deleteMany({ where: { createdBy: leadApplicantId } });
-      // Also invitations where the email matches (authUserId may be null)
-      const profile = await tx.profile.findUnique({
-        where: { id: leadApplicantId },
-        select: { email: true },
-      });
-      if (profile) {
-        await tx.invitation.deleteMany({ where: { email: profile.email } });
-      }
-
-      // h. Anonymise AuditLog rows (set userId → null). Runs under
-      //    withAdminContext (service_role) so the INSERT-only RLS policy
-      //    on audit_logs does not block this Article 17 erasure step.
-      await tx.auditLog.updateMany({
-        where: { userId: leadApplicantId },
-        data: { userId: null },
-      });
-
-      // i. Anonymise Profile
-      const anonymisedEmail = `[deleted-${leadApplicantId}]@removed.invalid`;
-      await tx.profile.update({
-        where: { id: leadApplicantId },
-        data: {
-          firstName: null,
-          lastName: null,
-          phone: null,
-          email: anonymisedEmail,
-          role: "DELETED",
-        },
-      });
-
-      // j. Dual-parent secondary erasure. The application is ANONYMISED (not
-      //    deleted) so the ON DELETE CASCADE on ApplicationContributor.application
-      //    never fires — delete every contributor row for this application
-      //    explicitly (both PRIMARY and SECONDARY). The PRIMARY's lead profile is
-      //    already anonymised above; the SECONDARY's profile is handled by the
-      //    shared-profile guard below.
-      await tx.applicationContributor.deleteMany({ where: { applicationId } });
-
-      if (secondary && secondaryProfileDecision) {
-        // The secondary's owned sections and Document rows were already removed
-        // by the by-applicationId deletes (steps d/e) and their Storage objects
-        // by the enumeration in step 3 — nothing extra to delete here.
-
-        if (secondaryProfileDecision.canErase) {
-          // Profile linked ONLY to this application → erase it like the lead.
-          // Delete invitations addressed to the secondary, null their audit
-          // rows, then anonymise the profile.
-          await tx.invitation.deleteMany({
-            where: { email: secondary.email },
-          });
-          await tx.auditLog.updateMany({
-            where: { userId: secondary.profileId },
-            data: { userId: null },
-          });
-          await tx.profile.update({
-            where: { id: secondary.profileId },
-            data: {
-              firstName: null,
-              lastName: null,
-              phone: null,
-              email: `[deleted-${secondary.profileId}]@removed.invalid`,
-              role: "DELETED",
-            },
-          });
-        } else {
-          // Profile lawfully linked elsewhere (lead applicant of another child,
-          // or secondary on another application, or owns a bursary account) →
-          // RETAIN it. Only this application's secondary invitation is removed
-          // so it no longer points at an erased application. The profile, its
-          // auth user and its audit trail are left untouched.
-          await tx.invitation.deleteMany({
-            where: { applicationId, email: secondary.email },
-          });
-        }
-      }
-    });
-
-    // 4b. Delete the Supabase Auth user (GDPR Art. 17). The DB Profile is
-    //     already anonymised inside the transaction; this final step ensures
-    //     the auth-provider record (email, password hash, identity links) is
-    //     also removed. Non-fatal: log & continue so DB state is not
-    //     inconsistent with the audit log if Supabase returns an error.
-    let authDeleteError: string | null = null;
-    try {
-      const admin = createSupabaseAdminClient();
-      const { error } = await admin.auth.admin.deleteUser(leadApplicantId);
-      if (error) {
-        authDeleteError = error.message;
-        console.error(
-          "[gdprDeleteApplicantAction] Supabase auth.admin.deleteUser failed:",
-          error
-        );
-      }
-    } catch (err) {
-      authDeleteError = err instanceof Error ? err.message : String(err);
-      console.error(
-        "[gdprDeleteApplicantAction] Supabase auth.admin.deleteUser threw:",
-        err
-      );
-    }
-
-    // 4c. Dual-parent: delete the SECONDARY parent's Supabase auth user — but
-    //     ONLY when the shared-profile guard cleared erasure (profile linked to
-    //     nothing else). When retained, we never touch their auth user. Their
-    //     Profile was anonymised inside the transaction above (canErase branch).
-    let secondaryAuthDeleteError: string | null = null;
-    if (secondary && secondaryProfileDecision?.canErase) {
-      try {
-        const admin = createSupabaseAdminClient();
-        const { error } = await admin.auth.admin.deleteUser(
-          secondary.profileId
-        );
-        if (error) {
-          secondaryAuthDeleteError = error.message;
-          console.error(
-            "[gdprDeleteApplicantAction] secondary auth.admin.deleteUser failed:",
-            error
-          );
-        }
-      } catch (err) {
-        secondaryAuthDeleteError =
-          err instanceof Error ? err.message : String(err);
-        console.error(
-          "[gdprDeleteApplicantAction] secondary auth.admin.deleteUser threw:",
-          err
-        );
-      }
-    }
-
-    // 5. Write the GDPR audit log entry (using a system/null user as the
-    //    lead applicant's userId was just nulled — we record the assessor).
-    //    Admin context so the audit insert succeeds independently of the
-    //    actor's current_user_id() / role.
+    // 4. Write the GDPR audit log entry (the lead's userId was just nulled, so
+    //    we record the assessor who triggered it). Admin context so the insert
+    //    succeeds independently of the actor's current_user_id() / role.
     await withAdminContext((tx) =>
       createAuditLog(tx, {
         userId: user.id,
@@ -693,38 +845,11 @@ export async function gdprDeleteApplicantAction(
         entityType: AUDIT_ENTITY_TYPES.Application,
         entityId: applicationId,
         context: `GDPR deletion performed on application ${application.reference}`,
-        metadata: {
-          reference: application.reference,
+        metadata: buildPurgeAuditMetadata(
+          application,
           leadApplicantId,
-          storageErrors: storageErrors.length > 0 ? storageErrors : undefined,
-          authDeleteError: authDeleteError ?? undefined,
-          // Dual-parent secondary-contributor handling (omitted entirely for
-          // single-parent applications so their audit shape is unchanged).
-          secondary: secondary
-            ? {
-                contributorId: secondary.contributorId,
-                profileId: secondary.profileId,
-                // RETAINED when linked elsewhere; ERASED (anonymised + auth
-                // deleted) when linked only to this application.
-                profileHandling: secondaryProfileDecision?.canErase
-                  ? "erased"
-                  : "retained",
-                links: secondaryProfileDecision
-                  ? {
-                      otherContributorLinks:
-                        secondaryProfileDecision.otherContributorLinks,
-                      leadApplicantApplications:
-                        secondaryProfileDecision.leadApplicantApplications,
-                      bursaryAccounts: secondaryProfileDecision.bursaryAccounts,
-                    }
-                  : undefined,
-                authDeleted:
-                  secondaryProfileDecision?.canErase &&
-                  !secondaryAuthDeleteError,
-                authDeleteError: secondaryAuthDeleteError ?? undefined,
-              }
-            : undefined,
-        },
+          purgeResult
+        ),
       })
     );
 
@@ -738,5 +863,78 @@ export async function gdprDeleteApplicantAction(
       success: false,
       error: "Failed to perform GDPR deletion. Please try again.",
     };
+  }
+}
+
+// ─── setSubmissionDeadlineAction (Epic 03 — per-application submit-by) ──────────
+
+/**
+ * Sets or clears the per-application submission deadline override
+ * (`submission_deadline_at`). ADMIN-gated.
+ *
+ * - `deadlineIso` is an ISO 8601 instant (from a datetime-local input, converted
+ *   client-side) granting THIS applicant a later/earlier submit-by date than the
+ *   round close. Passing `null` (or empty) CLEARS the override, reverting the
+ *   application to the round-level close date.
+ * - The effective deadline is derived everywhere via
+ *   `effectiveSubmissionDeadline()` (src/lib/rounds/submission-deadline.ts);
+ *   this action only persists the raw override.
+ * - Audited as `SET_SUBMISSION_DEADLINE`. Never touches `submitted_at`,
+ *   `form_status`, or the assessment pause clock — the three clocks stay
+ *   distinct (plan §3).
+ */
+export async function setSubmissionDeadlineAction(
+  applicationId: string,
+  deadlineIso: string | null
+): Promise<ActionResult> {
+  const user = await requireRole([Role.ADMIN]);
+
+  let deadline: Date | null = null;
+  if (deadlineIso && deadlineIso.trim() !== "") {
+    const parsed = new Date(deadlineIso);
+    if (Number.isNaN(parsed.getTime())) {
+      return { success: false, error: "Invalid deadline date." };
+    }
+    deadline = parsed;
+  }
+
+  try {
+    await withUserContext(user.id, user.role as RlsRole, async (tx) => {
+      const app = await tx.application.findUnique({
+        where: { id: applicationId },
+        select: { id: true, reference: true, roundId: true },
+      });
+      if (!app) throw new Error("Application not found.");
+
+      await tx.application.update({
+        where: { id: applicationId },
+        data: { submissionDeadlineAt: deadline },
+      });
+
+      await createAuditLog(tx, {
+        userId: user.id,
+        action: AUDIT_ACTIONS.SET_SUBMISSION_DEADLINE,
+        entityType: AUDIT_ENTITY_TYPES.Application,
+        entityId: applicationId,
+        context: deadline
+          ? `Set submission deadline for ${app.reference} to ${deadline.toISOString()}`
+          : `Cleared submission deadline override for ${app.reference} (reverts to round close)`,
+        metadata: {
+          reference: app.reference,
+          roundId: app.roundId,
+          submissionDeadlineAt: deadline ? deadline.toISOString() : null,
+        },
+      });
+    });
+
+    revalidatePath(`/applications/${applicationId}`);
+    revalidatePath("/queue");
+
+    return { success: true };
+  } catch (err) {
+    const message =
+      err instanceof Error ? err.message : "Failed to set submission deadline.";
+    console.error("[setSubmissionDeadlineAction]", err);
+    return { success: false, error: message };
   }
 }

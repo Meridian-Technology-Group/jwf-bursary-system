@@ -31,6 +31,10 @@ import { AssetsLiabilitiesForm } from "@/components/portal/sections/assets-liabi
 import { parentDetailsSchema } from "@/lib/schemas/parent-details";
 import { parentsIncomeSchema } from "@/lib/schemas/parents-income";
 import { assetsLiabilitiesSchema } from "@/lib/schemas/assets-liabilities";
+import {
+  isLegacyIncomeRecord,
+  normaliseLegacyIncomeRecord,
+} from "@/lib/portal/income-model";
 
 import { saveSection } from "../actions";
 
@@ -41,6 +45,12 @@ interface ContributeSectionClientProps {
   childName: string;
   existingData: unknown;
   documentMap?: Record<string, DocumentMeta>;
+  /** Round academic year — drives the dynamic tax-year wording (D5). */
+  academicYear?: string | null;
+  /** The secondary's own declared employment status — drives the income sub-tables. */
+  employmentStatus?: string;
+  /** Household relationship status — drives the divorced/separated sub-table. */
+  relationshipStatus?: string;
   backHref: string;
   nextHref: string;
   nextLabel?: string;
@@ -63,6 +73,15 @@ function getDefaultValues(
     if (sectionType === "PARENT_DETAILS") {
       return { ...(existingData as object), isSoleParent: true };
     }
+    // Back-compat: normalise a legacy flat income draft into the new shape.
+    if (sectionType === "PARENTS_INCOME") {
+      const d = existingData as { parent1Income?: unknown };
+      return {
+        parent1Income: isLegacyIncomeRecord(d.parent1Income)
+          ? normaliseLegacyIncomeRecord(d.parent1Income)
+          : (d.parent1Income ?? { total: 0, documentsConfirmed: false }),
+      };
+    }
     return existingData;
   }
 
@@ -84,43 +103,29 @@ function getDefaultValues(
       };
     case "PARENTS_INCOME":
       return {
-        parent1Income: {
-          salaryWagesPension: 0,
-          supplementsAndBonus: 0,
-          otherBenefitsAndCommissions: 0,
-          amountFromPartner: 0,
-          workingTaxCredits: 0,
-          grossInterestReceived: 0,
-          allDividendIncome: 0,
-          grossRentsReceived: 0,
-          allIncomeBonds: 0,
-          otherGrossIncomes: 0,
-          maintenanceOrEquivalents: 0,
-          bursariesOrSponsorships: 0,
-          otherIncomeNotIncluded: 0,
-          otherIncome: 0,
-          hasCapitalRepayments: false,
-          documentsConfirmed: false,
-        },
+        parent1Income: { total: 0, documentsConfirmed: false },
       };
     case "ASSETS_LIABILITIES":
       return {
         propertyOwnership: undefined,
         residenceValue: 0,
-        carValue: 0,
-        otherPossessionsValue: 0,
-        stocksAndSharesValue: 0,
-        investmentsValue: 0,
-        otherAssetsValue: 0,
+        hasMortgage: undefined,
         hasOtherProperties: undefined,
-        otherMortgageBalance: 0,
-        parent1BankStatementDocumentIds: [],
         otherProperties: [],
-        outstandingMainMortgage: 0,
-        totalOtherMortgages: 0,
-        currentOverdraft: 0,
-        hasHirePurchase: undefined,
-        hasLiabilityChanges: undefined,
+        hasChargingOrder: undefined,
+        carOwnership: undefined,
+        usesPublicTransport: undefined,
+        otherPossessionsValue: 0,
+        otherNonFinancialAssetsValue: 0,
+        totalCashBalance: 0,
+        investmentsValue: 0,
+        parent1CurrentAccountDocumentIds: [],
+        parent1SavingsAccountDocumentIds: [],
+        parent1InvestmentDocumentIds: [],
+        hasPersonalDebt: undefined,
+        creditCardStatementDocumentIds: [],
+        loanStatementDocumentIds: [],
+        otherDebtDocumentIds: [],
         documentsConfirmed: false,
       };
     default:
@@ -145,10 +150,16 @@ function SectionBody({
   sectionType,
   applicationId,
   documentMap,
+  academicYear,
+  employmentStatus,
+  relationshipStatus,
 }: {
   sectionType: ApplicationSectionType;
   applicationId: string;
   documentMap?: Record<string, DocumentMeta>;
+  academicYear?: string | null;
+  employmentStatus?: string;
+  relationshipStatus?: string;
 }) {
   // isSoleParent forces the single-earner ("Parent / Guardian 1") layout so the
   // secondary only ever supplies their own figures.
@@ -167,6 +178,9 @@ function SectionBody({
           isSoleParent
           applicationId={applicationId}
           documentMap={documentMap}
+          academicYear={academicYear}
+          parent1EmploymentStatus={employmentStatus}
+          relationshipStatus={relationshipStatus}
         />
       );
     case "ASSETS_LIABILITIES":
@@ -189,6 +203,9 @@ export function ContributeSectionClient({
   childName,
   existingData,
   documentMap,
+  academicYear,
+  employmentStatus,
+  relationshipStatus,
   backHref,
   nextHref,
   nextLabel,
@@ -233,6 +250,9 @@ export function ContributeSectionClient({
             sectionType={sectionType}
             applicationId={applicationId}
             documentMap={documentMap}
+            academicYear={academicYear}
+            employmentStatus={employmentStatus}
+            relationshipStatus={relationshipStatus}
           />
         </SectionForm>
       </div>

@@ -17,75 +17,44 @@ import { notFound, redirect } from "next/navigation";
 import { ApplicationSectionType } from "@prisma/client";
 import { getCurrentUser } from "@/lib/auth/roles";
 import { withUserContext, withAdminContext, type RlsRole } from "@/lib/db/prisma";
-import {
-  getApplicationForUser,
-  getSectionData,
-  getDocumentsForApplication,
-} from "@/lib/db/queries/applications";
+import { getApplicationForUser } from "@/lib/db/queries/applications";
+import { loadSectionPageData } from "@/lib/portal/section-page-data";
 import {
   ensurePrimaryContributor,
   resolveOwningContributorId,
 } from "@/lib/db/queries/contributors";
 import { SectionPageClient } from "./section-page-client";
-import { HIDDEN_REASSESSMENT_SECTIONS, PREPOPULATED_SECTIONS } from "@/lib/db/queries/reassessment";
+import {
+  HIDDEN_REASSESSMENT_SECTIONS,
+  PREPOPULATED_SECTIONS,
+  isRollingOverApplication,
+} from "@/lib/db/queries/reassessment";
+import { isSubmissionDeadlinePassed } from "@/lib/rounds/submission-deadline";
+import {
+  SECTION_ORDER,
+  SECTION_TO_SLUG,
+  SLUG_TO_SECTION,
+  SECTION_TITLES as CANONICAL_SECTION_TITLES,
+} from "@/lib/portal/sections";
 
-// ─── Slug → ApplicationSectionType map ───────────────────────────────────────
-
-const SLUG_TO_SECTION: Record<string, ApplicationSectionType> = {
-  "child-details": "CHILD_DETAILS",
-  "family-id": "FAMILY_ID",
-  "parent-details": "PARENT_DETAILS",
-  "dependent-children": "DEPENDENT_CHILDREN",
-  "dependent-elderly": "DEPENDENT_ELDERLY",
-  "other-info": "OTHER_INFO",
-  "parents-income": "PARENTS_INCOME",
-  "assets-liabilities": "ASSETS_LIABILITIES",
-  "additional-info": "ADDITIONAL_INFO",
-  declaration: "DECLARATION",
-};
-
-const SECTION_TO_SLUG: Record<ApplicationSectionType, string> = {
-  CHILD_DETAILS: "child-details",
-  FAMILY_ID: "family-id",
-  PARENT_DETAILS: "parent-details",
-  DEPENDENT_CHILDREN: "dependent-children",
-  DEPENDENT_ELDERLY: "dependent-elderly",
-  OTHER_INFO: "other-info",
-  PARENTS_INCOME: "parents-income",
-  ASSETS_LIABILITIES: "assets-liabilities",
-  ADDITIONAL_INFO: "additional-info",
-  DECLARATION: "declaration",
-};
-
-const SECTION_ORDER: ApplicationSectionType[] = [
-  "CHILD_DETAILS",
-  "FAMILY_ID",
-  "PARENT_DETAILS",
-  "DEPENDENT_CHILDREN",
-  "DEPENDENT_ELDERLY",
-  "OTHER_INFO",
-  "PARENTS_INCOME",
-  "ASSETS_LIABILITIES",
-  "ADDITIONAL_INFO",
-  "DECLARATION",
-];
+// ─── Section metadata ─────────────────────────────────────────────────────────
+// Order / slug maps come from the canonical `@/lib/portal/sections` (single
+// source of truth). The hidden-set for re-assessments still derives from
+// `HIDDEN_REASSESSMENT_SECTIONS` (the reassessment module remains its single
+// source) so this file does not introduce a second hidden-set.
 
 /** Section order with FAMILY_ID removed — used for re-assessments. */
 const REASSESSMENT_SECTION_ORDER: ApplicationSectionType[] = SECTION_ORDER.filter(
   (s) => !HIDDEN_REASSESSMENT_SECTIONS.includes(s)
 );
 
+// Wizard page-header titles. Identical to the canonical (review) titles EXCEPT
+// for FAMILY_ID, which the wizard renders as "Details of Child — Identification"
+// (vs "Family Identification" on review). This one-key divergence is a copy
+// decision for product to reconcile — see PR-5; it is NOT merged silently here.
 const SECTION_TITLES: Record<ApplicationSectionType, string> = {
-  CHILD_DETAILS: "Details of Child",
-  FAMILY_ID: "Family Identification",
-  PARENT_DETAILS: "Parent / Guardian Details",
-  DEPENDENT_CHILDREN: "Dependent Children",
-  DEPENDENT_ELDERLY: "Dependent Elderly",
-  OTHER_INFO: "Other Information Required",
-  PARENTS_INCOME: "Parents' Income",
-  ASSETS_LIABILITIES: "Parents' Assets & Liabilities",
-  ADDITIONAL_INFO: "Additional Information",
-  DECLARATION: "Declaration",
+  ...CANONICAL_SECTION_TITLES,
+  FAMILY_ID: "Details of Child — Identification",
 };
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
@@ -125,14 +94,42 @@ export default async function SectionPage({ params }: PageProps) {
   // Once submitted, the form is read-only. Server-side enforcement —
   // the action layer also blocks writes via withUserContext + status checks,
   // but redirecting here prevents the form from rendering at all.
-  if (application.status === "SUBMITTED") {
+  if (application.formStatus === "SUBMITTED") {
     redirect("/submitted");
   }
 
-  const isReassessment = application.isReassessment;
+  // Deadline-missed lockout (Epic 05 §3.2). Past the per-application deadline an
+  // unsubmitted draft is read-only — bounce to /status, which shows the clear
+  // "submission deadline passed" banner. The submit action also rejects late
+  // posts server-side, so a stale tab cannot bypass this.
+  const deadlineRound = await withUserContext(
+    user.id,
+    user.role as RlsRole,
+    (tx) =>
+      tx.round.findUnique({
+        where: { id: application.roundId },
+        select: { closeDate: true },
+      })
+  );
+  if (
+    deadlineRound &&
+    isSubmissionDeadlinePassed(
+      { submissionDeadlineAt: application.submissionDeadlineAt },
+      { closeDate: deadlineRound.closeDate }
+    )
+  ) {
+    redirect("/status");
+  }
 
-  // For re-assessments, FAMILY_ID is completely hidden — skip to next section
-  if (isReassessment && HIDDEN_REASSESSMENT_SECTIONS.includes(sectionType)) {
+  const isReassessment = application.isReassessment;
+  // ID-section visibility is keyed on Epic 01's explicit applicationType (D-PR4):
+  // NEW shows FAMILY_ID; ROLLING_OVER hides it. Falls back to isReassessment for
+  // any pre-backfill row.
+  const isRollingOver = isRollingOverApplication(application);
+
+  // For a rolling-over application, FAMILY_ID is completely hidden — skip to next
+  // section (identity documents are already on file from the first application).
+  if (isRollingOver && HIDDEN_REASSESSMENT_SECTIONS.includes(sectionType)) {
     // Find the next visible section
     const sectionOrder = REASSESSMENT_SECTION_ORDER;
     const firstSection = sectionOrder[0];
@@ -140,7 +137,7 @@ export default async function SectionPage({ params }: PageProps) {
   }
 
   // Determine the visible section order based on application type
-  const activeSectionOrder = isReassessment
+  const activeSectionOrder = isRollingOver
     ? REASSESSMENT_SECTION_ORDER
     : SECTION_ORDER;
 
@@ -162,44 +159,18 @@ export default async function SectionPage({ params }: PageProps) {
   // Load existing section data, documents, and any cross-section reads needed.
   // All section reads are scoped to the lead applicant's PRIMARY contributor
   // (dual-parent foundation, PR 4a) — identical to before for a single parent.
-  const { existingSection, documentMap, childFullName, isSoleParent } =
-    await withUserContext(user.id, user.role as RlsRole, async (tx) => {
-      const [section, docs] = await Promise.all([
-        getSectionData(tx, application.id, sectionType, ownerContributorId),
-        getDocumentsForApplication(tx, application.id),
-      ]);
-
-      let childName: string | undefined;
-      if (sectionType === "DEPENDENT_CHILDREN") {
-        const childSection = await getSectionData(
-          tx,
-          application.id,
-          "CHILD_DETAILS",
-          ownerContributorId
-        );
-        const childData = childSection?.data as { childFullName?: string } | null;
-        childName = childData?.childFullName ?? undefined;
-      }
-
-      let soleParent: boolean | undefined;
-      if (sectionType === "PARENTS_INCOME") {
-        const parentSection = await getSectionData(
-          tx,
-          application.id,
-          "PARENT_DETAILS",
-          ownerContributorId
-        );
-        const parentData = parentSection?.data as { isSoleParent?: boolean } | null;
-        soleParent = parentData?.isSoleParent;
-      }
-
-      return {
-        existingSection: section,
-        documentMap: docs,
-        childFullName: childName,
-        isSoleParent: soleParent,
-      };
-    });
+  const {
+    existingSection,
+    documentMap,
+    childFullName,
+    isSoleParent,
+    parent1Status,
+    parent2Status,
+    relationshipStatus,
+    parent1Address,
+  } = await withUserContext(user.id, user.role as RlsRole, (tx) =>
+    loadSectionPageData(tx, application.id, sectionType, ownerContributorId)
+  );
 
   // Determine if this section was pre-populated from the previous year
   const isPrepopulated =
@@ -249,10 +220,16 @@ export default async function SectionPage({ params }: PageProps) {
       applicationId={application.id}
       existingData={existingSection?.data ?? null}
       applicationSchool={application.school}
+      lockedSchool={application.school}
       applicationChildName={application.childName}
+      academicYear={application.round?.academicYear ?? null}
       documentMap={documentMap}
       childFullName={childFullName}
+      parent1Address={parent1Address}
       isSoleParent={isSoleParent}
+      parent1EmploymentStatus={parent1Status}
+      parent2EmploymentStatus={parent2Status}
+      relationshipStatus={relationshipStatus}
       nextLabel={nextLabel}
       backHref={backHref}
       nextHref={nextHref}

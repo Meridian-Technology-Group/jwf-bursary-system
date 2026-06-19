@@ -60,7 +60,7 @@ export async function DELETE(
             select: {
               id: true,
               leadApplicantId: true,
-              status: true,
+              formStatus: true,
             },
           },
         },
@@ -89,8 +89,8 @@ export async function DELETE(
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  // ── Submission guard ───────────────────────────────────────────────────────
-  if (document.application.status === "SUBMITTED") {
+  // ── Submission guard (PR-6a: reads form_status, not fused status) ───────────
+  if (document.application.formStatus === "SUBMITTED") {
     return NextResponse.json(
       { error: "Cannot delete documents from a submitted application" },
       { status: 409 }

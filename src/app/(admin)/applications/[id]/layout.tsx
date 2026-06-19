@@ -15,31 +15,16 @@ import { getSecondaryContributor } from "@/lib/db/queries/contributors";
 import { getPriorYearSecondaryContributor } from "@/lib/db/queries/reassessment";
 import { listAssessors } from "@/lib/db/queries/profiles";
 import { withUserContext, type RlsRole } from "@/lib/db/prisma";
-import { StatusBadge } from "@/components/shared/status-badge";
+import {
+  FormStatusBadge,
+  AssessmentStatusBadge,
+  OutcomeBadge,
+} from "@/components/shared/lifecycle-badges";
+import { deriveReviewPhase } from "@/lib/applications/status";
 import { ApplicationActions } from "@/components/admin/application-actions";
 import { AssignAssessorSelect } from "@/components/admin/assign-assessor-select";
 import { GdprDeleteAction } from "@/components/admin/gdpr-delete-action";
 import { AddSecondParentCard } from "@/components/admin/add-second-parent-card";
-import type { ApplicationStatus as PrismaStatus } from "@prisma/client";
-
-// Map Prisma status to StatusBadge status
-function mapStatus(
-  status: PrismaStatus
-): React.ComponentProps<typeof StatusBadge>["status"] {
-  const map: Record<
-    PrismaStatus,
-    React.ComponentProps<typeof StatusBadge>["status"]
-  > = {
-    PRE_SUBMISSION: "DRAFT",
-    SUBMITTED: "SUBMITTED",
-    NOT_STARTED: "SUBMITTED",
-    PAUSED: "PAUSED",
-    COMPLETED: "IN_REVIEW",
-    QUALIFIES: "QUALIFIES",
-    DOES_NOT_QUALIFY: "DOES_NOT_QUALIFY",
-  };
-  return map[status] ?? "DRAFT";
-}
 
 function SchoolBadge({ school }: { school: "WHITGIFT" | "TRINITY" }) {
   if (school === "WHITGIFT") {
@@ -162,11 +147,23 @@ export default async function ApplicationDetailLayout({
 
   const tabs = getTabItems(params.id);
 
+  // Secondary "Manage" affordances are demoted beneath the primary outcome
+  // actions. Role gating is unchanged from the original layout:
+  //   • GDPR erasure        → ADMIN only.
+  //   • Second-parent panel → ADMIN/ASSESSOR can invite; VIEWER only sees the
+  //     read-only status panel once a secondary already exists.
+  const canManageGdpr = user.role === Role.ADMIN;
+  const showSecondParent =
+    user.role === Role.ADMIN ||
+    user.role === Role.ASSESSOR ||
+    Boolean(secondary);
+  const showManageCard = canManageGdpr || showSecondParent;
+
   return (
-    <div className="space-y-0">
+    <div className="space-y-4">
       {/* Breadcrumb */}
       <nav
-        className="mb-4 flex items-center gap-1.5 text-sm text-slate-500"
+        className="flex items-center gap-1.5 text-sm text-slate-500"
         aria-label="Breadcrumb"
       >
         <Link
@@ -180,7 +177,7 @@ export default async function ApplicationDetailLayout({
       </nav>
 
       {/* Header card */}
-      <div className="rounded-xl border border-slate-200 bg-white px-6 py-5 shadow-sm mb-6">
+      <div className="rounded-xl border border-slate-200 bg-white px-6 py-5 shadow-sm">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
             <div className="flex flex-wrap items-center gap-3 mb-1">
@@ -203,7 +200,18 @@ export default async function ApplicationDetailLayout({
           </div>
 
           <div className="flex flex-wrap items-center gap-3">
-            <StatusBadge status={mapStatus(application.status)} />
+            {/* Three independent lifecycles (Epic 01): form → assessment →
+                outcome. Staff see the real internal values. */}
+            <FormStatusBadge
+              status={application.formStatus}
+              applicationType={application.applicationType}
+            />
+            {application.assessment && (
+              <AssessmentStatusBadge status={application.assessment.status} />
+            )}
+            {application.assessment?.outcome && (
+              <OutcomeBadge outcome={application.assessment.outcome} />
+            )}
             {user.role === Role.ADMIN && (
               <AssignAssessorSelect
                 applicationId={application.id}
@@ -215,51 +223,69 @@ export default async function ApplicationDetailLayout({
         </div>
       </div>
 
-      {/* WP-15: Contextual actions bar — hidden for terminal statuses */}
+      {/* WP-15: Primary outcome actions — the prominent decision surface.
+          Hidden for terminal statuses (handled inside the component). The review
+          phase is DERIVED from the lifecycle columns (Epic 01 PR-6a), not the
+          deprecated fused `applications.status`. */}
       <ApplicationActions
         applicationId={application.id}
-        status={application.status}
+        status={deriveReviewPhase({
+          formStatus: application.formStatus,
+          assessmentStatus: application.assessment?.status ?? null,
+          outcome: application.assessment?.outcome ?? null,
+        })}
         documents={application.documents}
       />
 
-      {/* B7: GDPR right-to-erasure affordance — ADMIN only. The server
-          action enforces ADMIN/ASSESSOR + 7-year retention guard; we
-          additionally hide the UI from ASSESSOR/VIEWER to keep this in
-          the ADMIN remit. */}
-      {user.role === Role.ADMIN && (
-        <GdprDeleteAction
-          applicationId={application.id}
-          reference={application.reference}
-          documentCount={application.documents.length}
-        />
-      )}
-
-      {/* Dual-parent: add / show second parent. ADMIN and ASSESSOR can invite;
-          VIEWER sees the status panel only when a second parent already
-          exists (the add form is gated to staff who can write). */}
-      {(user.role === Role.ADMIN ||
-        user.role === Role.ASSESSOR ||
-        secondary) && (
-        <AddSecondParentCard
-          applicationId={application.id}
-          secondary={secondary}
-          overrideActive={secondaryOverride}
-          priorYearSecondary={
-            priorYearSecondary
-              ? {
-                  email: priorYearSecondary.email,
-                  firstName: priorYearSecondary.firstName,
-                  lastName: priorYearSecondary.lastName,
-                  previousAcademicYear:
-                    priorYearSecondary.previousAcademicYear,
+      {/* Secondary "Manage" affordances — demoted beneath the primary actions
+          so the rare/destructive (GDPR) and occasional (second parent) tasks
+          don't compete with the outcome decision. Each affordance is rendered
+          as a quiet row inside one shared card. Role gating is unchanged:
+          GDPR is ADMIN-only; the second-parent row follows the original
+          ADMIN/ASSESSOR-or-existing-secondary rule. */}
+      {showManageCard && (
+        <section
+          className="rounded-xl border border-slate-200 bg-white shadow-sm"
+          aria-label="Manage application"
+        >
+          <h2 className="px-6 pt-4 pb-3 text-xs font-semibold uppercase tracking-wide text-slate-500">
+            Manage
+          </h2>
+          <div className="divide-y divide-slate-100 border-t border-slate-100">
+            {showSecondParent && (
+              <AddSecondParentCard
+                applicationId={application.id}
+                secondary={secondary}
+                overrideActive={secondaryOverride}
+                priorYearSecondary={
+                  priorYearSecondary
+                    ? {
+                        email: priorYearSecondary.email,
+                        firstName: priorYearSecondary.firstName,
+                        lastName: priorYearSecondary.lastName,
+                        previousAcademicYear:
+                          priorYearSecondary.previousAcademicYear,
+                      }
+                    : null
                 }
-              : null
-          }
-        />
+              />
+            )}
+
+            {/* B7: GDPR right-to-erasure — ADMIN only. The server action also
+                enforces ADMIN/ASSESSOR + the 7-year retention guard. */}
+            {canManageGdpr && (
+              <GdprDeleteAction
+                applicationId={application.id}
+                reference={application.reference}
+                documentCount={application.documents.length}
+              />
+            )}
+          </div>
+        </section>
       )}
 
       {/* Tab navigation */}
-      <div className="border-b border-slate-200 mb-6">
+      <div className="border-b border-slate-200 pt-2">
         <nav
           className="-mb-px flex gap-0"
           aria-label="Application detail tabs"

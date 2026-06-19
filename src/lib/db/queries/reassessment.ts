@@ -9,6 +9,7 @@ import type { Tx } from "@/lib/db/prisma";
 import type { ApplicationSectionType, Invitation } from "@prisma/client";
 import { ApplicationContributorRole } from "@prisma/client";
 import { generateApplicationReference } from "@/lib/applications/reference";
+import { applicationCreateData } from "@/lib/applications/status";
 import { ensurePrimaryContributor } from "@/lib/db/queries/contributors";
 
 // ─── Section types that are pre-populated from the previous year ─────────────
@@ -33,11 +34,34 @@ export const FINANCIAL_SECTIONS: ApplicationSectionType[] = [
 ];
 
 /**
- * Section hidden entirely during re-assessments (documents already on file).
+ * Section hidden entirely for a ROLLING_OVER application (identity documents are
+ * already on file from the first application — feedback.md item 4 + Epic 02 PR-4).
+ *
+ * A NEW application = the full form WITH the mandatory ID-documents section
+ * (FAMILY_ID); a ROLLING_OVER application = the form with the ID section hidden /
+ * not required. Driven by Epic 01's explicit `applicationType` (see
+ * `isRollingOverApplication`), not the old `isReassessment` heuristic.
  */
 export const HIDDEN_REASSESSMENT_SECTIONS: ApplicationSectionType[] = [
   "FAMILY_ID",
 ];
+
+/**
+ * Whether an application rolls over a prior award (so identity capture is hidden).
+ *
+ * Re-keyed onto Epic 01's explicit `applicationType` (the single source). The
+ * `isReassessment` boolean is kept as a transitional fallback for any row whose
+ * `applicationType` predates the Epic 01 backfill — but on a backfilled DB the
+ * two always agree.
+ */
+export function isRollingOverApplication(app: {
+  applicationType?: string | null;
+  isReassessment?: boolean | null;
+}): boolean {
+  if (app.applicationType === "ROLLING_OVER") return true;
+  if (app.applicationType === "NEW") return false;
+  return app.isReassessment === true;
+}
 
 // ─── getPreviousYearApplication ───────────────────────────────────────────────
 
@@ -76,9 +100,10 @@ export async function getPreviousYearApplication(
     where: {
       bursaryAccountId,
       roundId: { not: currentRoundId },
-      status: {
-        in: ["SUBMITTED", "COMPLETED", "QUALIFIES", "DOES_NOT_QUALIFY"],
-      },
+      // PR-6a: "reached submission" is form_status SUBMITTED (the lifecycle
+      // equivalent of the old fused SUBMITTED/COMPLETED/QUALIFIES/DNQ set), not
+      // the deprecated fused applications.status.
+      formStatus: "SUBMITTED",
     },
     orderBy: { submittedAt: "desc" },
     select: {
@@ -276,7 +301,7 @@ export async function createReassessmentApplicationFromInvitation(
     where: {
       leadApplicantId: authUserId,
       roundId,
-      status: "PRE_SUBMISSION",
+      formStatus: { not: "SUBMITTED" },
     },
     select: { id: true },
   });
@@ -323,7 +348,7 @@ export async function createReassessmentApplicationFromInvitation(
       childDob: account?.childDob ?? null,
       entryYear: account?.entryYear ?? null,
       isReassessment: true,
-      status: "PRE_SUBMISSION",
+      ...applicationCreateData("ROLLING_OVER"),
     },
   });
 

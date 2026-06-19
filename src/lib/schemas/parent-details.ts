@@ -19,69 +19,76 @@ export const relationshipStatusSchema = z.enum(
 );
 
 /**
- * Portal-side employment status. Reconciled with the assessor-side
- * Prisma EmploymentStatus enum so values can flow straight into Stage 1
- * without a translation step. See B11 in docs/PRODUCTION_READINESS.md.
+ * Parent-facing employment status — a 3-way classifier only. It does NOT map
+ * to the assessor-side Prisma EmploymentStatus enum; the assessor sets the
+ * granular earner status independently, and the detailed income breakdown is
+ * captured in the Income section.
  */
 export const employmentStatusSchema = z.enum(
-  [
-    "PAYE",
-    "BENEFITS",
-    "SELF_EMPLOYED_DIRECTOR",
-    "SELF_EMPLOYED_SOLE",
-    "OLD_AGE_PENSION",
-    "PAST_PENSION",
-    "UNEMPLOYED",
-  ] as const,
+  ["UNEMPLOYED_OR_RETIRED", "EMPLOYED", "SELF_EMPLOYED"] as const,
   { message: "Please select an employment status" }
 );
 
-/** Statuses that should reveal the profession/employer/director fields. */
-const WORKING_STATUSES = [
-  "PAYE",
-  "SELF_EMPLOYED_DIRECTOR",
-  "SELF_EMPLOYED_SOLE",
-] as const;
+/** Self-employment "Position" within the self-employment details sub-panel. */
+export const selfEmploymentPositionSchema = z.enum(
+  ["DIRECTOR", "PARTNER", "SOLE_TRADER"] as const,
+  { message: "Please select your position" }
+);
 
 const UK_POSTCODE_RE = /^[A-Z]{1,2}\d[A-Z\d]?\s?\d[A-Z]{2}$/i;
 
-export const parentContactSchema = z.object({
-  title: parentTitleSchema,
-  firstName: z.string().min(1, "First name is required"),
-  lastName: z.string().min(1, "Last name is required"),
-  telephone: z.string().optional(),
-  telephone2: z.string().optional(),
-  mobile: z.string().optional(),
-  email: z.string().optional(),
-  addressLine1: z.string().min(1, "Address line 1 is required"),
-  addressLine2: z.string().optional(),
-  city: z.string().min(1, "City or town is required"),
-  postcode: z.string().min(1, "Postcode is required"),
-  country: z.string().min(1, "Country is required"),
-});
+export const parentContactSchema = z
+  .object({
+    title: parentTitleSchema,
+    firstName: z.string().min(1, "First name is required"),
+    lastName: z.string().min(1, "Last name is required"),
+    telephone: z.string().optional(),
+    telephone2: z.string().optional(),
+    mobile: z.string().optional(),
+    // Email is MANDATORY (meeting-findings) — captured explicitly even when the
+    // family was invited by email.
+    email: z
+      .string()
+      .min(1, "Email address is required")
+      .email("Enter a valid email address"),
+    addressLine1: z.string().min(1, "Address line 1 is required"),
+    addressLine2: z.string().optional(),
+    city: z.string().min(1, "City or town is required"),
+    postcode: z.string().min(1, "Postcode is required"),
+    country: z.string().min(1, "Country is required"),
+  })
+  .superRefine((data, ctx) => {
+    // A contact telephone is MANDATORY (meeting-findings). At least one of
+    // mobile / telephone must be provided.
+    const hasPhone =
+      (data.mobile && data.mobile.trim().length > 0) ||
+      (data.telephone && data.telephone.trim().length > 0);
+    if (!hasPhone) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "A contact telephone or mobile number is required",
+        path: ["mobile"],
+      });
+    }
+  });
 
 export const parentEmploymentSchema = z
   .object({
     status: employmentStatusSchema,
     profession: z.string().optional(),
     employerAddress: z.string().optional(),
-    bookYearEndDate: z.string().optional(),
     isDirector: z.boolean().optional(),
     sharePercentage: z.string().optional(),
-    certifiedAccountsDocumentId: z.string().optional(),
-    balanceSheetDocumentId: z.string().optional(),
-    leftSelfEmployment: z.boolean().optional(),
-    leftSelfEmploymentDocumentId: z.string().optional(),
-    grossPay: z.coerce.number().nonnegative("Gross pay must be 0 or more").optional(),
-    receivesScholarship: z.boolean().optional(),
-    scholarshipDocumentId: z.string().optional(),
-    unemployedDetails: z.string().optional(),
+    selfEmploymentCompanyName: z.string().optional(),
+    selfEmploymentPosition: selfEmploymentPositionSchema.optional(),
+    leftEmployment: z.boolean().optional(),
+    p45DocumentId: z.string().optional(),
+    receivedRedundancy: z.boolean().optional(),
+    redundancyDocumentId: z.string().optional(),
     declarationAccepted: z.boolean().optional(),
   })
   .superRefine((data, ctx) => {
-    const isWorking = (WORKING_STATUSES as readonly string[]).includes(data.status);
-
-    if (isWorking) {
+    if (data.status === "EMPLOYED") {
       if (!data.profession) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
@@ -96,18 +103,14 @@ export const parentEmploymentSchema = z
           path: ["employerAddress"],
         });
       }
-    }
-
-    if (data.status === "UNEMPLOYED" && !data.unemployedDetails) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: "Please provide details about your circumstances",
-        path: ["unemployedDetails"],
-      });
-    }
-
-    if (data.isDirector) {
-      if (!data.sharePercentage) {
+      if (data.isDirector === undefined) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "Please tell us whether you are a director",
+          path: ["isDirector"],
+        });
+      }
+      if (data.isDirector === true && !data.sharePercentage) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
           message: "Share percentage is required for directors",
@@ -116,12 +119,53 @@ export const parentEmploymentSchema = z
       }
     }
 
-    // NOTE: left-self-employment and scholarship evidence documents are NOT
-    // required at the per-section level — the applicant can move on without
-    // them. They are enforced as error-severity gaps in section-gaps.ts, which
-    // block the final submitApplication until the document is provided (the
-    // uploader is rendered in parent-details-form.tsx). See backlog
-    // parent-details-required-doc-upload-not-rendered.
+    if (data.status === "SELF_EMPLOYED") {
+      if (!data.profession) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "Profession or trade is required",
+          path: ["profession"],
+        });
+      }
+      if (!data.selfEmploymentCompanyName) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "Company name is required",
+          path: ["selfEmploymentCompanyName"],
+        });
+      }
+      if (!data.selfEmploymentPosition) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "Please select your position",
+          path: ["selfEmploymentPosition"],
+        });
+      }
+    }
+
+    // Shared "left employment" sub-branch — asked for ALL statuses.
+    if (data.leftEmployment === undefined) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message:
+          "Please tell us whether you have left employment in the last 12 months",
+        path: ["leftEmployment"],
+      });
+    }
+
+    if (data.leftEmployment === true && data.receivedRedundancy === undefined) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message:
+          "Please tell us whether you received a redundancy / severance package",
+        path: ["receivedRedundancy"],
+      });
+    }
+
+    // NOTE: the P45 and redundancy-evidence DOCUMENTS are NOT required at the
+    // per-section level — they are enforced as error-severity gaps in
+    // section-rules.ts (EMPLOYMENT_P45 / EMPLOYMENT_REDUNDANCY), which block the
+    // final submitApplication until the document is provided.
   });
 
 /** Validate UK postcode on a contact object. */
@@ -156,10 +200,39 @@ function isPopulatedObject(val: unknown): val is Record<string, unknown> {
  * empty objects ({}) from react-hook-form don't cause parse failures.
  * They are validated manually in superRefine only when isSoleParent is false.
  */
+/** Shared-custody arrangement (Epic 09, D15). Mirrors the Prisma enum. */
+export const custodyArrangementSchema = z.enum(
+  ["SOLE", "SHARED_5050", "SHARED_MAIN_LIMITED"] as const,
+  { message: "Please select the custody arrangement" }
+);
+
 export const parentDetailsSchema = z
   .object({
     isSoleParent: z.boolean(),
     relationshipStatus: relationshipStatusSchema,
+    // ── Epic 09 household facets (D15/D16/D17). All optional + additive so
+    // existing drafts and immutable submitted blobs validate unchanged; the
+    // rules engine treats absent facets as their defaults (SOLE / not guardian /
+    // not remarried / finances stable). ─────────────────────────────────────
+    /** D16 — foster carer / legal guardian facet. Drives the guardianship ask. */
+    isGuardian: z.boolean().optional(),
+    /** D15 — shared-custody split (only meaningful for shared care). */
+    custodyArrangement: custodyArrangementSchema.optional(),
+    /** D17 — remarried sole parent (resident household + absent natural parent). */
+    isRemarriedSoleParent: z.boolean().optional(),
+    /** H9 — mid-divorce, finances not yet disentangled (assessor may-defer flag). */
+    financesNotDisentangled: z.boolean().optional(),
+    /**
+     * H7 discriminator — "Is there a court order specifically for school fees?"
+     * Only asked (and the cannot-support notice only shown) when DIVORCED. The
+     * authoritative store remains OTHER_INFO.hasCOurtOrder; this mirror lets the
+     * notice render live on the parent-details step. Optional/back-compat.
+     */
+    hasSchoolFeesCourtOrder: z.boolean().optional(),
+    /** H3 — death certificate of the deceased parent (widowed). */
+    deathCertificateDocumentId: z.string().optional(),
+    /** H4 — evidence of guardianship / foster status (D16). */
+    guardianshipDocumentId: z.string().optional(),
     parent1Contact: parentContactSchema,
     parent1Employment: parentEmploymentSchema,
     parent2Contact: z.any().optional(),
