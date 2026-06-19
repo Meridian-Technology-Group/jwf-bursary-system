@@ -26,7 +26,7 @@ interface ScheduleCalendarProps {
 
 /** Per-state row styling. State is ALSO surfaced as text, never colour alone. */
 const ROW_CLASS: Record<PortalScheduleRow["state"], string> = {
-  current: "border-accent-300 bg-accent-50",
+  current: "border-accent-500 bg-accent-50",
   active: "border-slate-200 bg-white",
   greyed: "border-slate-100 bg-slate-50",
 };
@@ -46,15 +46,20 @@ export function ScheduleCalendar({ rows }: ScheduleCalendarProps) {
     >
       {rows.map((row) => {
         const isGreyed = row.state === "greyed";
+        // OTHER/unknown entry groups have no real school year (schoolYear null);
+        // the "Year N" label is omitted so we never contradict the Yr6→13 frame.
+        const yearLabel = row.schoolYear != null ? `Year ${row.schoolYear}` : null;
         return (
           <li
-            key={row.schoolYear}
+            key={row.academicYear}
             className={cn(
               "flex items-center justify-between gap-4 rounded-lg border px-4 py-3",
               ROW_CLASS[row.state]
             )}
             // State conveyed to assistive tech in words, not by colour.
-            aria-label={`Year ${row.schoolYear}, ${row.academicYear}: ${row.stateLabel}`}
+            aria-label={`${
+              yearLabel ? `${yearLabel}, ` : ""
+            }${row.academicYear}: ${row.stateLabel}`}
           >
             <div className="flex min-w-0 items-center gap-3">
               <CalendarRange
@@ -69,26 +74,46 @@ export function ScheduleCalendar({ rows }: ScheduleCalendarProps) {
                 aria-hidden="true"
               />
               <div className="min-w-0">
-                <p
-                  className={cn(
-                    "text-sm font-medium",
-                    row.state === "current"
-                      ? "text-primary-900"
-                      : isGreyed
-                        ? "text-slate-400"
-                        : "text-slate-700"
-                  )}
-                >
-                  Year {row.schoolYear}
-                </p>
-                <p
-                  className={cn(
-                    "text-xs",
-                    isGreyed ? "text-slate-300" : "text-slate-500"
-                  )}
-                >
-                  {row.academicYear} academic year
-                </p>
+                {yearLabel ? (
+                  <>
+                    <p
+                      className={cn(
+                        "text-sm font-medium",
+                        row.state === "current"
+                          ? "text-primary-900"
+                          : isGreyed
+                            ? "text-slate-400"
+                            : "text-slate-700"
+                      )}
+                    >
+                      {yearLabel}
+                    </p>
+                    <p
+                      className={cn(
+                        "text-xs",
+                        isGreyed ? "text-slate-300" : "text-slate-500"
+                      )}
+                    >
+                      {row.academicYear} academic year
+                    </p>
+                  </>
+                ) : (
+                  // No deterministic school year (OTHER/unknown entry group):
+                  // promote the academic year to the row's primary label so we
+                  // never show a misleading "Year N".
+                  <p
+                    className={cn(
+                      "text-sm font-medium",
+                      row.state === "current"
+                        ? "text-primary-900"
+                        : isGreyed
+                          ? "text-slate-400"
+                          : "text-slate-700"
+                    )}
+                  >
+                    {row.academicYear} academic year
+                  </p>
+                )}
               </div>
             </div>
 

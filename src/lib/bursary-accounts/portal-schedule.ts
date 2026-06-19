@@ -54,8 +54,13 @@ export type PortalScheduleRowState = "current" | "active" | "greyed";
 
 /** A single academic-year row in the parent calendar. */
 export interface PortalScheduleRow {
-  /** School year number this row represents (6..13). */
-  schoolYear: number;
+  /**
+   * School year number this row represents (6..13), or `null` when the entry
+   * year-group is OTHER/unknown and no real school year can be derived. The UI
+   * omits the "Year N" label for `null` rows rather than inventing a misleading
+   * "Year 1..N" that contradicts the Year 6 → Year 13 framing.
+   */
+  schoolYear: number | null;
   /** Academic-year label, identical to the admin grid (e.g. "2027-28"). */
   academicYear: string;
   /** Visual / accessibility state. */
@@ -107,9 +112,12 @@ const STATE_LABELS: Record<PortalScheduleRowState, string> = {
  *   - current → the active row whose academic year is the current/next
  *               assessment year (the earliest active year at or after "now").
  *
- * When the entry school year can't be derived (OTHER/unknown group) the span is
- * anchored on the visible entries alone, so an OTHER-group account still gets a
- * sensible calendar rather than an empty one.
+ * When the entry school year can't be derived (OTHER/unknown group) there is no
+ * deterministic Year 6 → Year 13 span to draw and no real school-year number per
+ * row. Rather than invent a misleading "Year 1..N" index (which contradicts the
+ * page's Year 6 → Year 13 framing), the OTHER/null case renders ONLY the visible
+ * scheduled entries — ordered by academic year, each with `schoolYear: null` so
+ * the UI shows just the academic year + state. No greyed synthetic rows.
  */
 export function buildPortalScheduleRows(
   params: BuildPortalScheduleParams
@@ -131,22 +139,6 @@ export function buildPortalScheduleRows(
     visibleEntries.map((e) => entryStart + (e.scheduleYear - 1))
   );
 
-  const entrySchoolYear = schoolYearForGroup(entryYearGroup);
-
-  // Determine the span of school years to render.
-  let firstSchoolYear: number;
-  let lastSchoolYear: number;
-  if (entrySchoolYear != null) {
-    firstSchoolYear = entrySchoolYear;
-    lastSchoolYear = FINAL_ELIGIBLE_SCHOOL_YEAR;
-  } else {
-    // OTHER/unknown group: anchor the span on the visible entries. The school
-    // year is unknown so we surface a synthetic ascending 1..N index instead.
-    const count = Math.max(visibleEntries.length, 1);
-    firstSchoolYear = 1;
-    lastSchoolYear = count;
-  }
-
   // The current/next assessment year is the EARLIEST active (portal-visible)
   // academic year at or after the current academic year. If every active year
   // is in the past, the latest active year is treated as current.
@@ -159,24 +151,37 @@ export function buildPortalScheduleRows(
         ? activeStarts[activeStarts.length - 1]
         : null;
 
+  const stateForStart = (academicStart: number): PortalScheduleRowState => {
+    if (!visibleStarts.has(academicStart)) return "greyed";
+    if (currentStart != null && academicStart === currentStart) return "current";
+    return "active";
+  };
+
+  const entrySchoolYear = schoolYearForGroup(entryYearGroup);
+
+  // OTHER/unknown group: no deterministic school year. Render one row per
+  // VISIBLE entry (no synthetic span, no "Year N" label) so the calendar stays
+  // graceful and never mislabels rows against the Year 6 → Year 13 framing.
+  if (entrySchoolYear == null) {
+    return activeStarts.map((academicStart) => {
+      const state = stateForStart(academicStart);
+      return {
+        schoolYear: null,
+        academicYear: formatAcademicYearLabel(academicStart),
+        state,
+        stateLabel: STATE_LABELS[state],
+      };
+    });
+  }
+
+  // Known entry group: draw the full school-year span entry → Year 13.
   const rows: PortalScheduleRow[] = [];
-  for (let s = firstSchoolYear; s <= lastSchoolYear; s++) {
-    const offset = s - firstSchoolYear;
-    const academicStart = entryStart + offset;
-    const academicYear = formatAcademicYearLabel(academicStart);
-
-    let state: PortalScheduleRowState;
-    if (!visibleStarts.has(academicStart)) {
-      state = "greyed";
-    } else if (currentStart != null && academicStart === currentStart) {
-      state = "current";
-    } else {
-      state = "active";
-    }
-
+  for (let s = entrySchoolYear; s <= FINAL_ELIGIBLE_SCHOOL_YEAR; s++) {
+    const academicStart = entryStart + (s - entrySchoolYear);
+    const state = stateForStart(academicStart);
     rows.push({
       schoolYear: s,
-      academicYear,
+      academicYear: formatAcademicYearLabel(academicStart),
       state,
       stateLabel: STATE_LABELS[state],
     });

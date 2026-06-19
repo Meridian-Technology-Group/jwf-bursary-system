@@ -116,3 +116,52 @@ describe("buildPortalScheduleRows — greyed vs active vs current", () => {
     expect(current?.academicYear).toBe("2027-28");
   });
 });
+
+describe("buildPortalScheduleRows — OTHER/null entry group", () => {
+  const visible: PortalScheduleEntryInput[] = [
+    { scheduleYear: 1, academicYear: "2026-27" },
+    { scheduleYear: 2, academicYear: "2027-28" },
+  ];
+
+  it("renders ONLY the visible entries with NO 'Year N' school-year label", () => {
+    const rows = buildPortalScheduleRows({
+      entryYearGroup: "OTHER",
+      firstAssessmentYear: "2026/2027",
+      visibleEntries: visible,
+      currentAcademicYearStart: 2026,
+    });
+
+    // One row per visible entry — no synthetic Yr1..N span, no greyed padding.
+    expect(rows).toHaveLength(2);
+    // No misleading school-year number: every row has schoolYear === null.
+    expect(rows.every((r) => r.schoolYear === null)).toBe(true);
+    // Real academic-year labels are still surfaced.
+    expect(rows.map((r) => r.academicYear)).toEqual(["2026-27", "2027-28"]);
+    // Current/active marking still works off the academic year.
+    expect(rows[0].state).toBe("current");
+    expect(rows[1].state).toBe("active");
+    // No "Outside your award" / greyed rows are invented for OTHER groups.
+    expect(rows.some((r) => r.state === "greyed")).toBe(false);
+  });
+
+  it("treats a null entry group the same as OTHER (graceful, no crash)", () => {
+    const rows = buildPortalScheduleRows({
+      entryYearGroup: null,
+      firstAssessmentYear: "2026/2027",
+      visibleEntries: visible,
+      currentAcademicYearStart: 2026,
+    });
+    expect(rows).toHaveLength(2);
+    expect(rows.every((r) => r.schoolYear === null)).toBe(true);
+  });
+
+  it("renders an empty calendar (not a crash) when an OTHER group has no visible entries", () => {
+    const rows = buildPortalScheduleRows({
+      entryYearGroup: "OTHER",
+      firstAssessmentYear: "2026/2027",
+      visibleEntries: [],
+      currentAcademicYearStart: 2026,
+    });
+    expect(rows).toEqual([]);
+  });
+});

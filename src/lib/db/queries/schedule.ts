@@ -105,9 +105,18 @@ export async function getPortalScheduleForUser(
   tx: Tx,
   userId: string
 ): Promise<PortalScheduleData | null> {
+  // SINGLE-ACCOUNT ASSUMPTION: a lead applicant with more than one ACTIVE
+  // account (e.g. separate accounts per sibling) currently sees only ONE
+  // calendar — the deterministically-resolved account below. Rendering one
+  // calendar per account is out of scope for gap F2; `hasPortalSchedule` MUST
+  // resolve the SAME account (it delegates here) so the nav gate and this page
+  // loader never disagree about which account is "the user's schedule".
   const account = await tx.bursaryAccount.findFirst({
     where: { leadApplicantId: userId, status: "ACTIVE" },
-    orderBy: { createdAt: "desc" },
+    // Deterministic single-account selection. `createdAt` is the primary key of
+    // the ordering; `id` is a stable tiebreak so two accounts created in the
+    // same instant still resolve to one fixed account across both queries.
+    orderBy: [{ createdAt: "desc" }, { id: "desc" }],
     select: {
       id: true,
       entryYearGroup: true,
@@ -138,18 +147,18 @@ export async function getPortalScheduleForUser(
  * schedule entry? Drives the conditional "Assessment Schedule" nav item: the
  * calendar link is shown ONLY to ACTIVE families that actually have a schedule.
  *
- * A lightweight count, kept separate from the full read so the portal layout's
- * nav decision is one cheap query rather than fetching every row.
+ * Defined as "the account `getPortalScheduleForUser` would load has ≥1
+ * portal-visible entry" — it delegates to that loader rather than running its
+ * own account-resolution query. This guarantees the nav item is shown IFF the
+ * page would render a non-empty calendar for the SAME account: with more than
+ * one ACTIVE account (siblings) a count across all accounts could otherwise be
+ * positive while the loader picks a different, empty account (nav shown, blank
+ * page). See the single-account assumption in `getPortalScheduleForUser`.
  */
 export async function hasPortalSchedule(
   tx: Tx,
   userId: string
 ): Promise<boolean> {
-  const count = await tx.bursaryScheduleEntry.count({
-    where: {
-      showOnPortal: true,
-      bursaryAccount: { leadApplicantId: userId, status: "ACTIVE" },
-    },
-  });
-  return count > 0;
+  const data = await getPortalScheduleForUser(tx, userId);
+  return data != null && data.visibleEntries.length > 0;
 }
