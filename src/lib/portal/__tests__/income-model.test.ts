@@ -83,6 +83,18 @@ describe("readIncomeItems — both shapes", () => {
     expect(labels).toContain("State Pension");
     expect(labels).not.toContain("Employed — annual salary (PAYE)");
   });
+  it("uses the H1 review labels for employed and self-employed income", () => {
+    const items = readIncomeItems({
+      employed: { annualSalaryPaye: 30000 },
+      selfEmployed: {
+        grossSalaried: 12000, propertyIncome: 0, dividends: 0, otherInvestmentIncome: 0,
+      },
+      total: 0,
+      documentsConfirmed: false,
+    });
+    expect(items.find((i) => i.label === "Employed — annual salary (PAYE)")?.value).toBe(30000);
+    expect(items.find((i) => i.label === "Self-employed — gross earned income")?.value).toBe(12000);
+  });
 });
 
 describe("normaliseLegacyIncomeRecord", () => {
