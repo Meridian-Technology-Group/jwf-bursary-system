@@ -13,7 +13,11 @@ import {
   pauseAssessmentRow,
   assertSubmittedAtUnset,
   SUBMITTED_AT_IMMUTABLE_MESSAGE,
+  discardAssessment,
+  reopenAssessmentForMaterialChange,
+  refreshFormStatus,
 } from "../status";
+import { AUDIT_ACTIONS, AUDIT_ENTITY_TYPES } from "@/lib/audit/actions";
 
 describe("status service — review-phase derivation (PR-6a)", () => {
   it("projects the lifecycle columns onto the 7-value review phase (backfill table)", () => {
@@ -119,6 +123,25 @@ describe("status service — form lifecycle", () => {
     expect(isLegalFormTransition("SUBMITTED", "IN_PROGRESS")).toBe(false);
     expect(isLegalFormTransition("SUBMITTED", "SUBMITTED")).toBe(true); // identity ok
   });
+
+  it("refreshFormStatus NEVER demotes a SUBMITTED form (terminal-safe; the only SUBMITTED→IN_PROGRESS path is the explicit reopen writer)", async () => {
+    // Even with zero complete sections (which would derive CREATED for a draft),
+    // a SUBMITTED form short-circuits and is never written back.
+    const update = vi.fn(async () => ({}));
+    const tx = {
+      application: {
+        findUniqueOrThrow: vi.fn(async () => ({
+          formStatus: "SUBMITTED",
+          applicationType: "NEW",
+        })),
+        update,
+      },
+      applicationSection: { count: vi.fn(async () => 0) },
+    };
+    const result = await refreshFormStatus(tx as never, "app-1");
+    expect(result).toBe("SUBMITTED");
+    expect(update).not.toHaveBeenCalled();
+  });
 });
 
 describe("status service — assessment lifecycle (strict, PR-4)", () => {
@@ -140,6 +163,15 @@ describe("status service — assessment lifecycle (strict, PR-4)", () => {
   it("treats COMPLETED as terminal", () => {
     expect(isLegalAssessmentTransition("COMPLETED", "PAUSED")).toBe(false);
     expect(isLegalAssessmentTransition("COMPLETED", "IN_PROGRESS")).toBe(false);
+  });
+
+  it("allows the discard edges IN_PROGRESS/PAUSED → NOT_STARTED (D-G6/D3)", () => {
+    expect(isLegalAssessmentTransition("IN_PROGRESS", "NOT_STARTED")).toBe(true);
+    expect(isLegalAssessmentTransition("PAUSED", "NOT_STARTED")).toBe(true);
+  });
+
+  it("does NOT allow COMPLETED → NOT_STARTED (no auto-invalidation of a finished assessment)", () => {
+    expect(isLegalAssessmentTransition("COMPLETED", "NOT_STARTED")).toBe(false);
   });
 });
 
@@ -246,5 +278,167 @@ describe("status service — write-once submitted_at invariant (PR-5)", () => {
     expect(() => assertSubmittedAtUnset(new Date(0))).toThrowError(
       SUBMITTED_AT_IMMUTABLE_MESSAGE
     );
+  });
+});
+
+describe("status service — discardAssessment (D-G6/D3 invalidation primitive)", () => {
+  /** Fake tx exposing the assessment + auditLog surfaces discardAssessment uses. */
+  function makeTx(assessment: { id: string; status: string } | null) {
+    return {
+      assessment: {
+        findUnique: vi.fn(async () => assessment),
+        update: vi.fn(async () => ({})),
+      },
+      auditLog: { create: vi.fn(async (..._args: unknown[]) => ({})) },
+    };
+  }
+
+  it("resets an IN_PROGRESS assessment to NOT_STARTED, clearing outcome/completedAt/pausedUntil", async () => {
+    const tx = makeTx({ id: "asmt-1", status: "IN_PROGRESS" });
+    const discarded = await discardAssessment(tx as never, "app-1", "assessor-1", {
+      reason: "on-behalf edit",
+      changedFields: ["parent1Income.salary"],
+    });
+
+    expect(discarded).toBe(true);
+    expect(tx.assessment.update).toHaveBeenCalledWith({
+      where: { id: "asmt-1" },
+      data: {
+        status: "NOT_STARTED",
+        outcome: null,
+        completedAt: null,
+        pausedUntil: null,
+      },
+    });
+  });
+
+  it("discards a PAUSED assessment too", async () => {
+    const tx = makeTx({ id: "asmt-2", status: "PAUSED" });
+    const discarded = await discardAssessment(tx as never, "app-1", "assessor-1", {
+      reason: "on-behalf edit",
+    });
+    expect(discarded).toBe(true);
+    expect(tx.assessment.update).toHaveBeenCalledTimes(1);
+  });
+
+  it("writes ASSESSMENT_DISCARDED with { applicationId, reason, changedFields } on the assessment row", async () => {
+    const tx = makeTx({ id: "asmt-1", status: "IN_PROGRESS" });
+    await discardAssessment(tx as never, "app-1", "assessor-1", {
+      reason: "on-behalf edit",
+      changedFields: ["a", "b"],
+    });
+
+    expect(tx.auditLog.create).toHaveBeenCalledTimes(1);
+    const arg = tx.auditLog.create.mock.calls[0]![0] as {
+      data: Record<string, unknown>;
+    };
+    expect(arg.data).toMatchObject({
+      userId: "assessor-1",
+      action: AUDIT_ACTIONS.ASSESSMENT_DISCARDED,
+      entityType: AUDIT_ENTITY_TYPES.Assessment,
+      entityId: "asmt-1",
+    });
+    expect(arg.data.metadata).toMatchObject({
+      applicationId: "app-1",
+      reason: "on-behalf edit",
+      changedFields: ["a", "b"],
+      fromStatus: "IN_PROGRESS",
+    });
+  });
+
+  it("is a no-op (no write, no audit) when already NOT_STARTED", async () => {
+    const tx = makeTx({ id: "asmt-1", status: "NOT_STARTED" });
+    const discarded = await discardAssessment(tx as never, "app-1", "assessor-1", {
+      reason: "x",
+    });
+    expect(discarded).toBe(false);
+    expect(tx.assessment.update).not.toHaveBeenCalled();
+    expect(tx.auditLog.create).not.toHaveBeenCalled();
+  });
+
+  it("is a no-op when there is no assessment row", async () => {
+    const tx = makeTx(null);
+    const discarded = await discardAssessment(tx as never, "app-1", "assessor-1", {
+      reason: "x",
+    });
+    expect(discarded).toBe(false);
+    expect(tx.assessment.update).not.toHaveBeenCalled();
+    expect(tx.auditLog.create).not.toHaveBeenCalled();
+  });
+
+  it("does NOT discard a COMPLETED assessment via this path (no auto-invalidation)", async () => {
+    const tx = makeTx({ id: "asmt-1", status: "COMPLETED" });
+    const discarded = await discardAssessment(tx as never, "app-1", "assessor-1", {
+      reason: "x",
+    });
+    expect(discarded).toBe(false);
+    expect(tx.assessment.update).not.toHaveBeenCalled();
+    expect(tx.auditLog.create).not.toHaveBeenCalled();
+  });
+});
+
+describe("status service — reopenAssessmentForMaterialChange (soft send-back)", () => {
+  function makeTx(
+    formStatus: string,
+    assessment: { id: string; status: string } | null
+  ) {
+    return {
+      application: {
+        findUniqueOrThrow: vi.fn(async () => ({ formStatus })),
+        update: vi.fn(async () => ({})),
+      },
+      assessment: {
+        findUnique: vi.fn(async () => assessment),
+        update: vi.fn(async () => ({})),
+      },
+      auditLog: { create: vi.fn(async () => ({})) },
+    };
+  }
+
+  it("moves a SUBMITTED form → IN_PROGRESS and discards the live assessment, keeping data", async () => {
+    const tx = makeTx("SUBMITTED", { id: "asmt-1", status: "IN_PROGRESS" });
+    const res = await reopenAssessmentForMaterialChange(
+      tx as never,
+      "app-1",
+      "assessor-1",
+      "correcting income"
+    );
+
+    expect(res).toEqual({ formStatus: "IN_PROGRESS", assessmentDiscarded: true });
+    // Form demoted via the explicit writer (NOT a section delete).
+    expect(tx.application.update).toHaveBeenCalledWith({
+      where: { id: "app-1" },
+      data: { formStatus: "IN_PROGRESS" },
+    });
+    // Assessment reset in the SAME tx.
+    expect(tx.assessment.update).toHaveBeenCalledWith({
+      where: { id: "asmt-1" },
+      data: {
+        status: "NOT_STARTED",
+        outcome: null,
+        completedAt: null,
+        pausedUntil: null,
+      },
+    });
+  });
+
+  it("throws when the form is not SUBMITTED (terminal-safety: only this writer demotes)", async () => {
+    const tx = makeTx("IN_PROGRESS", null);
+    await expect(
+      reopenAssessmentForMaterialChange(tx as never, "app-1", "assessor-1", "x")
+    ).rejects.toThrow(/not submitted/i);
+    expect(tx.application.update).not.toHaveBeenCalled();
+  });
+
+  it("reopens even with no assessment row (assessmentDiscarded = false)", async () => {
+    const tx = makeTx("SUBMITTED", null);
+    const res = await reopenAssessmentForMaterialChange(
+      tx as never,
+      "app-1",
+      "assessor-1",
+      "x"
+    );
+    expect(res).toEqual({ formStatus: "IN_PROGRESS", assessmentDiscarded: false });
+    expect(tx.application.update).toHaveBeenCalledTimes(1);
   });
 });

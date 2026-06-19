@@ -38,6 +38,7 @@ import {
 import {
   refreshFormStatus,
   deriveReviewPhase,
+  discardAssessment,
 } from "@/lib/applications/status";
 import { canEditOnBehalf } from "@/lib/applications/edit-on-behalf";
 import {
@@ -194,6 +195,28 @@ export async function saveSectionOnBehalf(
           ownerContributorId
         );
 
+        // ── Invalidate the assessment on a material change (D-G6/D3) ──────────
+        // Any NON-EMPTY data change to a SUBMITTED application under a LIVE
+        // (IN_PROGRESS) or PAUSED assessment is material (materiality v1 =
+        // any change), so the assessment is DISCARDED — reset to Not Started —
+        // and must be re-run against the corrected form (state-model §4/§6.5/
+        // §7.2). The edit stays IN PLACE: the form remains SUBMITTED and the
+        // original submission date is retained (we do NOT route through
+        // reopenForMaterialChange). A no-op save (empty diff) never invalidates.
+        // discardAssessment is itself idempotent and only ever resets
+        // IN_PROGRESS/PAUSED → NOT_STARTED; a COMPLETED/decided assessment is
+        // unreachable here because the phase gate above already blocked the edit.
+        const assessmentStatus = application.assessment?.status ?? null;
+        const assessmentDiscarded =
+          changedFields.length > 0 &&
+          application.formStatus === "SUBMITTED" &&
+          (assessmentStatus === "IN_PROGRESS" || assessmentStatus === "PAUSED")
+            ? await discardAssessment(tx, applicationId, user.id, {
+                reason: `On-behalf edit to ${section} after submission`,
+                changedFields,
+              })
+            : false;
+
         return {
           ok: true as const,
           sectionRowId: row.id,
@@ -201,6 +224,7 @@ export async function saveSectionOnBehalf(
           phase,
           changedFields,
           formStatus,
+          assessmentDiscarded,
         };
       }
     );
@@ -225,6 +249,9 @@ export async function saveSectionOnBehalf(
           changedFields: written.changedFields,
           formStatus: written.formStatus,
           reviewPhase: written.phase,
+          // True when this material change discarded a live/paused assessment
+          // (D-G6/D3) — a paired ASSESSMENT_DISCARDED row records the reset.
+          assessmentDiscarded: written.assessmentDiscarded,
         },
       })
     );
