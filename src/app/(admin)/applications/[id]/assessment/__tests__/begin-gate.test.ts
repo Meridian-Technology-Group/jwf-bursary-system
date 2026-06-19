@@ -60,8 +60,8 @@ vi.mock("@/lib/db/prisma", () => ({
 import {
   beginAssessmentAction,
   proceedWithoutSecondParentAction,
-  NOT_SUBMITTED_GATE_MESSAGE,
 } from "../actions";
+import { NOT_SUBMITTED_GATE_MESSAGE } from "../gate";
 
 function makeFakeTx(
   app: {

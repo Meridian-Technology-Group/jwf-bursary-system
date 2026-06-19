@@ -38,6 +38,7 @@ import {
 import { getSecondaryContributor } from "@/lib/db/queries/contributors";
 import { createAuditLog } from "@/lib/audit/log";
 import { AUDIT_ACTIONS, AUDIT_ENTITY_TYPES } from "@/lib/audit/actions";
+import { NOT_SUBMITTED_GATE_MESSAGE } from "./gate";
 
 // ─── Completeness gate ─────────────────────────────────────────────────────────
 
@@ -73,10 +74,8 @@ async function checkSecondParentGate(
 
 // ─── Submitted gate (B1) ────────────────────────────────────────────────────────
 
-/** User-facing message when assessment is attempted on a not-yet-submitted form. */
-export const NOT_SUBMITTED_GATE_MESSAGE =
-  "This application has not been submitted yet — an assessment can only be " +
-  "started once the applicant has submitted their form.";
+// NOTE: NOT_SUBMITTED_GATE_MESSAGE lives in ./gate (a plain module) because this
+// is a "use server" file, which may only export async functions.
 
 /**
  * "Form submitted" gate (B1). An assessment row must never be created for an
