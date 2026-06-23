@@ -18,7 +18,7 @@
  * `loadPortalAccessState`.
  */
 
-import type { Tx } from "@/lib/db/prisma";
+import { withAdminContext, type Tx } from "@/lib/db/prisma";
 import type { AssessmentOutcome, BursaryAccountStatus } from "@prisma/client";
 
 /** Outcomes that mean an application is finished (no longer in-flight). */
@@ -57,22 +57,43 @@ export function hasPortalAccess(input: PortalAccessInput): boolean {
 
 /**
  * Loads the access-relevant facts for a lead applicant and decides access.
- * Runs under the caller's RLS context (the portal layout passes the user's tx).
+ *
+ * RLS context split — IMPORTANT:
+ *  - Bursary ACCOUNTS are applicant-readable, so they are read under the
+ *    caller's RLS context (the portal layout passes the user's `tx`).
+ *  - Application OUTCOMES live on the assessment, which the applicant CANNOT
+ *    read: `assessments_select` is staff-only ("applicants must NOT see
+ *    assessment data"). Reading `application.assessment.outcome` under the
+ *    applicant's own context therefore ALWAYS resolves to null, which makes a
+ *    terminal application (AWARDED / DOES_NOT_QUALIFY / QUALIFIES_NOT_AWARDED)
+ *    look in-flight and wrongly KEEPS portal access — defeating the D18
+ *    revocation. So the outcomes must be read where the assessment row is
+ *    visible. We take a service-role hop for exactly that read, mirroring
+ *    `getApplicationPausedStateForUser` (same staff-only-assessment problem,
+ *    same fix). This exposes nothing extra to the applicant: it only feeds the
+ *    pure `hasPortalAccess` predicate; no assessment data leaves this function.
+ *    It does NOT weaken any RLS policy.
  */
 export async function loadPortalAccessState(
   tx: Tx,
   leadApplicantId: string
 ): Promise<{ hasAccess: boolean; input: PortalAccessInput }> {
-  const [accounts, applications] = await Promise.all([
-    tx.bursaryAccount.findMany({
-      where: { leadApplicantId },
-      select: { status: true },
-    }),
-    tx.application.findMany({
+  // Accounts: applicant-readable — read under the caller's RLS context.
+  const accounts = await tx.bursaryAccount.findMany({
+    where: { leadApplicantId },
+    select: { status: true },
+  });
+
+  // Outcomes: assessment is staff-only under RLS, so read it under a
+  // service-role context where the assessment row is visible. Without this hop
+  // every outcome resolves to null and terminal applications masquerade as
+  // in-flight (the bug this guard exists to prevent).
+  const applications = await withAdminContext((adminTx) =>
+    adminTx.application.findMany({
       where: { leadApplicantId },
       select: { assessment: { select: { outcome: true } } },
-    }),
-  ]);
+    })
+  );
 
   const input: PortalAccessInput = {
     accountStatuses: accounts.map((a) => a.status),

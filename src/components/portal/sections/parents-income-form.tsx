@@ -337,7 +337,7 @@ function ParentIncomeColumn({
         <IncomeRow
           prefix={prefix}
           path="employed.annualSalaryPaye"
-          label="Gross earned income / annual salary (PAYE, as on P60)"
+          label="Annual salary (PAYE, as on P60)"
           evidence={
             employedHasValue ? (
               <div className="space-y-1.5">
@@ -360,7 +360,7 @@ function ParentIncomeColumn({
       </IncomeGroup>
 
       <IncomeGroup title="Self-employed (SA302)">
-        <IncomeRow prefix={prefix} path="selfEmployed.grossSalaried" label="Gross salaried income" />
+        <IncomeRow prefix={prefix} path="selfEmployed.grossSalaried" label="Gross earned income" />
         <IncomeRow prefix={prefix} path="selfEmployed.propertyIncome" label="Property income" />
         <IncomeRow prefix={prefix} path="selfEmployed.dividends" label="Dividends" />
         <IncomeRow prefix={prefix} path="selfEmployed.otherInvestmentIncome" label="Additional other interest / investment income" />

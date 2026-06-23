@@ -26,11 +26,12 @@ describe("academicYearStartForDate", () => {
 });
 
 describe("getTotalSchoolingYearsForGroup", () => {
-  it("maps each year-group to its total schooling years", () => {
-    expect(getTotalSchoolingYearsForGroup("Y6")).toBe(7);
-    expect(getTotalSchoolingYearsForGroup("Y7")).toBe(6);
-    expect(getTotalSchoolingYearsForGroup("Y9")).toBe(4);
-    expect(getTotalSchoolingYearsForGroup("Y12")).toBe(1);
+  it("maps each year-group to its total schooling years (to Year 13)", () => {
+    // Total = 13 − entryYear + 1 (inclusive of entry and final Year 13).
+    expect(getTotalSchoolingYearsForGroup("Y6")).toBe(8);
+    expect(getTotalSchoolingYearsForGroup("Y7")).toBe(7);
+    expect(getTotalSchoolingYearsForGroup("Y9")).toBe(5);
+    expect(getTotalSchoolingYearsForGroup("Y12")).toBe(2);
   });
   it("returns null for OTHER / null / undefined (manual entry)", () => {
     expect(getTotalSchoolingYearsForGroup("OTHER")).toBeNull();
@@ -44,23 +45,25 @@ describe("getTotalSchoolingYearsForGroup", () => {
 
 describe("calculateSchoolingYearsRemainingFromEntry", () => {
   it("returns the full total in the entry year (nothing elapsed)", () => {
-    expect(calculateSchoolingYearsRemainingFromEntry("Y7", 2026, OCT_2026)).toBe(6);
+    // Y7 → 7 total (Years 7–13); entered & assessed 2026 → 0 elapsed → 7.
+    expect(calculateSchoolingYearsRemainingFromEntry("Y7", 2026, OCT_2026)).toBe(7);
   });
 
   it("subtracts elapsed academic years", () => {
-    // Entered Y7 (6 total) in calendar 2025; now academic 2026 → 1 elapsed → 5.
-    expect(calculateSchoolingYearsRemainingFromEntry("Y7", 2025, OCT_2026)).toBe(5);
+    // Entered Y7 (7 total) in calendar 2025; now academic 2026 → 1 elapsed → 6.
+    expect(calculateSchoolingYearsRemainingFromEntry("Y7", 2025, OCT_2026)).toBe(6);
   });
 
   it("distinguishes same-group cohorts by entry calendar year", () => {
     // The crux of the year-group model: Y7-in-2025 vs Y7-in-2026 differ.
     const lastYearCohort = calculateSchoolingYearsRemainingFromEntry("Y7", 2025, OCT_2026);
     const thisYearCohort = calculateSchoolingYearsRemainingFromEntry("Y7", 2026, OCT_2026);
-    expect(lastYearCohort).toBe(5);
-    expect(thisYearCohort).toBe(6);
+    expect(lastYearCohort).toBe(6);
+    expect(thisYearCohort).toBe(7);
   });
 
   it("floors at 0 when more years elapse than the total", () => {
+    // Y12 → 2 total; entered 2020, assessed 2026 → 6 elapsed → floored to 0.
     expect(calculateSchoolingYearsRemainingFromEntry("Y12", 2020, OCT_2026)).toBe(0);
   });
 
@@ -90,10 +93,12 @@ describe("deriveCurrentYearGroupNumber", () => {
 
 describe("calculateSchoolingYearsRemaining (existing group-number API)", () => {
   it("subtracts elapsed assessment cycles from the total", () => {
-    // Year 7 entry → 6 total; first assessed 2023-24, now 2025-26 → 4 left.
-    expect(calculateSchoolingYearsRemaining(7, "2025-26", "2023-24")).toBe(4);
+    // Year 7 entry → 7 total (Years 7–13); first assessed 2023-24, now 2025-26
+    // → 2 elapsed → 5 left.
+    expect(calculateSchoolingYearsRemaining(7, "2025-26", "2023-24")).toBe(5);
   });
   it("floors at 0", () => {
+    // Year 12 entry → 2 total; first 2025-26, now 2030-31 → 5 elapsed → 0.
     expect(calculateSchoolingYearsRemaining(12, "2030-31", "2025-26")).toBe(0);
   });
 });

@@ -674,7 +674,8 @@ enum School {
 }
 
 /// School year-group at which a child enters (spec §4). The numeric year-group
-/// determines total schooling years (Y6→7, Y7→6, Y9→4, Y12→1); see
+/// determines total schooling years, running to the end of Year 13 / Upper
+/// Sixth (Years 6–13): Y6→8, Y7→7, Y9→5, Y12→2; see
 /// `src/lib/assessment/schooling-years.ts`. OTHER is the escape hatch for
 /// unusual cohorts — schooling years are then entered manually by the assessor.
 enum EntryYearGroup {

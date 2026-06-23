@@ -42,6 +42,7 @@ import {
   markReviewComplete,
   pauseReviewForDocs,
   deriveReviewPhase,
+  reopenAssessmentForMaterialChange,
 } from "@/lib/applications/status";
 
 import { AUDIT_ACTIONS, AUDIT_ENTITY_TYPES } from "@/lib/audit/actions";
@@ -502,6 +503,100 @@ export async function rejectAndRestartApplication(
   } catch (err) {
     console.error("[rejectAndRestartApplication]", err);
     return { success: false, error: "Failed to reject and restart application." };
+  }
+}
+
+// ─── reopenForMaterialChange (soft send-back, keep submission date) ───────────
+
+/**
+ * Reopen a SUBMITTED application for a MATERIAL change, KEEPING the original
+ * submission date (D-G6/D3). A soft send-back: the form moves SUBMITTED →
+ * IN_PROGRESS so the applicant (or staff on their behalf) can correct the data
+ * and re-submit; the in-progress/paused assessment is DISCARDED in the same
+ * transaction (state-model §4/§6.5/§7.2) so it is re-run against the corrected
+ * form. Unlike `rejectAndRestartApplication`, NOTHING is deleted — all section
+ * data is preserved, and the original `submitted_at` is retained (re-submission
+ * reuses it without violating the write-once guard/trigger).
+ *
+ * Allowed only from a phase where an assessment is still live and reversible:
+ * SUBMITTED (awaiting review), NOT_STARTED (review in progress) or PAUSED. A
+ * COMPLETED/decided application is NOT reopened on this path.
+ */
+export async function reopenForMaterialChange(
+  applicationId: string,
+  reason: string
+): Promise<ActionResult> {
+  try {
+    const user = await requireRole([Role.ADMIN, Role.ASSESSOR]);
+
+    const trimmedReason = reason?.trim();
+    if (!trimmedReason) {
+      return { success: false, error: "A reason for reopening is required." };
+    }
+
+    const result = await withUserContext(
+      user.id,
+      user.role as RlsRole,
+      async (tx) => {
+        const application = await fetchApplicationForStatus(tx, applicationId);
+        if (!application) {
+          return { success: false as const, error: "Application not found." };
+        }
+
+        const phase = reviewPhaseOf(application);
+        // Only reversible, pre-outcome phases. A reopen demotes the form, so the
+        // form must currently be SUBMITTED (it is, in every one of these phases).
+        if (
+          phase !== "SUBMITTED" &&
+          phase !== "NOT_STARTED" &&
+          phase !== "PAUSED"
+        ) {
+          return {
+            success: false as const,
+            error: `Cannot reopen an application from status ${phase}.`,
+          };
+        }
+
+        // Form SUBMITTED → IN_PROGRESS + discard the live assessment (the
+        // primitive writes the ASSESSMENT_DISCARDED audit row itself).
+        const { assessmentDiscarded } = await reopenAssessmentForMaterialChange(
+          tx,
+          applicationId,
+          user.id,
+          trimmedReason
+        );
+
+        // Audit the reopen (the form-status side); the discard is audited by the
+        // primitive as ASSESSMENT_DISCARDED.
+        await createAuditLog(tx, {
+          userId: user.id,
+          action: AUDIT_ACTIONS.APPLICATION_STATUS_CHANGED,
+          entityType: AUDIT_ENTITY_TYPES.Application,
+          entityId: applicationId,
+          context: `Application reopened for a material change: ${trimmedReason}`,
+          metadata: {
+            fromStatus: phase,
+            toStatus: "PRE_SUBMISSION",
+            formStatus: "IN_PROGRESS",
+            reference: application.reference,
+            reason: trimmedReason,
+            assessmentDiscarded,
+            submittedAtRetained: true,
+          },
+        });
+
+        return { success: true as const };
+      }
+    );
+
+    if (!result.success) return result;
+
+    revalidateApplicationPaths(applicationId);
+
+    return { success: true };
+  } catch (err) {
+    console.error("[reopenForMaterialChange]", err);
+    return { success: false, error: "Failed to reopen application." };
   }
 }
 

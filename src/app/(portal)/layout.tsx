@@ -29,6 +29,7 @@ import {
   getPortalNavState,
   getApplicationPausedStateForUser,
 } from "@/lib/db/queries/applications";
+import { hasPortalSchedule } from "@/lib/db/queries/schedule";
 import { PortalNav } from "@/components/portal/portal-nav";
 import { PortalNavMobileHeader } from "@/components/portal/portal-nav-mobile-header";
 import { StepperDataProvider } from "@/components/portal/stepper-data-context";
@@ -59,20 +60,27 @@ export default async function PortalLayout({
   // there is no extra context hop and no full-application fetch on every page.
   // Decision 5: NO round read is added here — the round label stays out of the
   // global nav (it lives in the stepper + dashboard only).
+  // gap F2 — the "Assessment Schedule" calendar item is shown ONLY for an ACTIVE
+  // family with ≥1 portal-visible schedule entry. We fold that cheap count into
+  // the SAME RLS context as the access guard + nav state, so the nav decision
+  // costs no extra context hop.
   let navState: Awaited<ReturnType<typeof getPortalNavState>> = null;
+  let hasSchedule = false;
   if (user) {
-    const { hasAccess, nav } = await withUserContext(
+    const { hasAccess, nav, scheduled } = await withUserContext(
       user.id,
       user.role as RlsRole,
       async (tx) => ({
         hasAccess: (await loadPortalAccessState(tx, user.id)).hasAccess,
         nav: await getPortalNavState(tx, user.id),
+        scheduled: await hasPortalSchedule(tx, user.id),
       })
     );
     if (!hasAccess) {
       redirect("/portal-closed");
     }
     navState = nav;
+    hasSchedule = scheduled;
   }
 
   // The paused signal lives on the assessment, which the applicant CANNOT read
@@ -125,6 +133,7 @@ export default async function PortalLayout({
             userName={displayName}
             applicationHref={applicationHref}
             needsDocs={needsDocs}
+            hasSchedule={hasSchedule}
           />
         </aside>
 
@@ -134,6 +143,7 @@ export default async function PortalLayout({
             userName={displayName}
             applicationHref={applicationHref}
             needsDocs={needsDocs}
+            hasSchedule={hasSchedule}
           />
         </div>
 

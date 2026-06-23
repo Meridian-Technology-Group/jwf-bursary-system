@@ -84,8 +84,27 @@ Customer signs** — see [Open items](#open-items).
    |---|---|---|
    | `formStatus = SUBMITTED` | Stays `SUBMITTED`, always | `refreshFormStatus` is already terminal-safe (`src/lib/applications/status.ts:282-283`); call unconditionally |
    | Pre-submission | Staff saves drive normal derivation (`NOT_STARTED → IN_PROGRESS → FILLED_IN`) | same `refreshFormStatus` call as the applicant path |
-   | Assessment `PAUSED` (missing docs) | Editing allowed; **no auto-resume** — the pause carries an emailed deadline contract; resuming stays the explicit `resumeApplication` action. Banner shows the paused deadline. | phase gate allows `PAUSED`; no status write |
+   | Assessment `PAUSED` (missing docs) | Editing allowed; **no auto-resume** — the pause carries an emailed deadline contract; resuming stays the explicit `resumeApplication` action. Banner shows the paused deadline. **A material change DISCARDS the paused assessment** (see below). | phase gate allows `PAUSED`; no status write; `discardAssessment` on a non-empty diff |
    | Assessment `COMPLETED` / outcome set | **Blocked** (ADMIN and ASSESSOR alike) — editing source data after completion would silently desynchronise the assessment's figures from the form | `deriveReviewPhase()` gate in the edit layout, re-checked inside the action transaction. Allowed phases: `PRE_SUBMISSION`, `SUBMITTED`, `NOT_STARTED`, `PAUSED` |
+
+   **Post-build addendum (state-model alignment, D-G6/D3 — 2026-06-19):** CR-001
+   as first built amended submitted data **in place without touching the
+   assessment**, so household/income could change under a live assessment with
+   no invalidation — a gap against canonical §4/§6.5/§7.2 ("any material change
+   to submitted data discards an in-progress assessment; it must be re-run").
+   This is now closed: when `saveSectionOnBehalf` computes a **non-empty diff**
+   on a **SUBMITTED** application whose assessment is **IN_PROGRESS or PAUSED**,
+   it calls the new `discardAssessment` primitive in the **same transaction** —
+   resetting the assessment to **Not Started** and clearing `outcome` /
+   `completedAt` / `pausedUntil`, plus an `ASSESSMENT_DISCARDED` audit row
+   carrying the changed-field list. Materiality v1 = *any* non-empty data change
+   (conservative). The edit stays **in place** (the form remains `SUBMITTED`,
+   the original submission date is retained — it is **not** routed through the
+   new soft send-back `reopenForMaterialChange`); the integrity fix here is the
+   assessment discard only. A no-op (empty-diff) save never invalidates, and a
+   `COMPLETED`/decided assessment is unreachable (the phase gate above already
+   blocks the edit), so the discard only ever applies to `IN_PROGRESS`/`PAUSED`.
+   Staff must re-run the assessment after the change.
 
 5. **Submit-on-behalf in scope.** "Submit on behalf of applicant" button on the
    edit screen, visible only at `formStatus = FILLED_IN`, calling

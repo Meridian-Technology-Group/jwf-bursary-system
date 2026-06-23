@@ -42,6 +42,10 @@
  *
  * These primitives do NOT authorise callers or write audit logs — the calling
  * server action keeps owning those (unchanged), so this stays a pure refactor.
+ * (One deliberate exception: `discardAssessment` writes its own
+ * `ASSESSMENT_DISCARDED` audit row, because the discard is an internal,
+ * side-effecting invariant — not a caller-initiated transition — and the audit
+ * must fire iff the reset actually happened, which only the primitive knows.)
  */
 
 import type {
@@ -52,6 +56,8 @@ import type {
   Prisma,
 } from "@prisma/client";
 import type { Tx } from "@/lib/db/prisma";
+import { createAuditLog } from "@/lib/audit/log";
+import { AUDIT_ACTIONS, AUDIT_ENTITY_TYPES } from "@/lib/audit/actions";
 
 // ───────────────────────────────────────────────────────────────────────────
 // Review phase — the application-detail review-track vocabulary
@@ -150,11 +156,18 @@ const FORM_TRANSITIONS: Record<ApplicationFormStatus, ApplicationFormStatus[]> =
  * complete/pause handlers save first, so this should not happen in practice) —
  * see the NOT_STARTED tolerance in `completeAssessmentRow` / `pauseAssessmentRow`.
  * They are NOT advertised as a normal transition.
+ *
+ * The reverse edges IN_PROGRESS → NOT_STARTED and PAUSED → NOT_STARTED are the
+ * DISCARD path (`discardAssessment`): a material post-submission change to the
+ * source form invalidates an in-progress/paused assessment, resetting it to
+ * NOT_STARTED so it must be re-run (state-model §4/§6.5/§7.2, D-G6/D3). There is
+ * deliberately NO COMPLETED → NOT_STARTED edge — a finished assessment is never
+ * auto-invalidated in v1 (edit-on-behalf is itself blocked once COMPLETED).
  */
 const ASSESSMENT_TRANSITIONS: Record<AssessmentStatus, AssessmentStatus[]> = {
   NOT_STARTED: ["IN_PROGRESS"],
-  IN_PROGRESS: ["PAUSED", "COMPLETED"],
-  PAUSED: ["IN_PROGRESS", "COMPLETED"],
+  IN_PROGRESS: ["PAUSED", "COMPLETED", "NOT_STARTED"],
+  PAUSED: ["IN_PROGRESS", "COMPLETED", "NOT_STARTED"],
   COMPLETED: [],
 };
 
@@ -506,6 +519,130 @@ export async function setApplicationOutcomeStatus(
       data: { archivedAt: new Date() },
     });
   }
+}
+
+/**
+ * Discard (invalidate) an in-progress / paused assessment because the source
+ * form changed materially after submission. Resets the assessment row to
+ * NOT_STARTED and CLEARS `outcome`, `completedAt` and `pausedUntil`, so the
+ * review must be re-run from scratch (state-model §4/§6.5/§7.2, D-G6/D3).
+ *
+ * Resetting to NOT_STARTED IS the "must re-run" signal — there is deliberately
+ * no extra column. By design this fires `ASSESSMENT_DISCARDED` itself (see the
+ * module docstring exception) so the audit is written iff the reset happens.
+ *
+ * Idempotent and conservative about what it discards:
+ *   - No assessment row, or already NOT_STARTED → no-op, no write, no audit.
+ *   - COMPLETED / decided (outcome set) → NOT discardable on this path. The only
+ *     legal sources are IN_PROGRESS and PAUSED (the ASSESSMENT_TRANSITIONS table
+ *     has no COMPLETED → NOT_STARTED edge); a completed assessment is left
+ *     untouched (and edit-on-behalf, the only caller, is itself blocked once
+ *     COMPLETED, so this branch is belt-and-braces).
+ *
+ * Authorisation stays with the caller; `assessorId` is the staff actor recorded
+ * on the audit row. Runs inside the caller's transaction.
+ */
+export async function discardAssessment(
+  tx: Tx,
+  applicationId: string,
+  assessorId: string,
+  opts: { reason: string; changedFields?: string[] }
+): Promise<boolean> {
+  const assessment = await tx.assessment.findUnique({
+    where: { applicationId },
+    select: { id: true, status: true },
+  });
+
+  // No row, or already at NOT_STARTED → nothing to invalidate.
+  if (!assessment || assessment.status === "NOT_STARTED") return false;
+
+  // Only IN_PROGRESS / PAUSED are discardable. A COMPLETED (or otherwise
+  // non-resettable) assessment is never auto-invalidated in v1.
+  if (!isLegalAssessmentTransition(assessment.status, "NOT_STARTED")) {
+    return false;
+  }
+
+  await tx.assessment.update({
+    where: { id: assessment.id },
+    data: {
+      status: "NOT_STARTED",
+      outcome: null,
+      completedAt: null,
+      pausedUntil: null,
+    },
+  });
+
+  await createAuditLog(tx, {
+    userId: assessorId,
+    action: AUDIT_ACTIONS.ASSESSMENT_DISCARDED,
+    entityType: AUDIT_ENTITY_TYPES.Assessment,
+    entityId: assessment.id,
+    context: `Assessment discarded (reset to Not Started): ${opts.reason}`,
+    metadata: {
+      applicationId,
+      reason: opts.reason,
+      changedFields: opts.changedFields ?? [],
+      fromStatus: assessment.status,
+    },
+  });
+
+  return true;
+}
+
+/**
+ * Reopen a SUBMITTED application for a material change (soft send-back):
+ * form_status SUBMITTED → IN_PROGRESS, keeping ALL section data, AND discard the
+ * in-progress/paused assessment in the SAME transaction. The original
+ * `submittedAt` is deliberately KEPT (D-G6/D3 — keep the original submission
+ * date); re-submission via `submitApplicationCore` reuses it without rewriting
+ * it. This is NOT reject's void+recreate — nothing is deleted.
+ *
+ * TERMINAL-SAFETY: SUBMITTED is terminal in `FORM_TRANSITIONS`, and
+ * `refreshFormStatus` early-returns on a SUBMITTED form, so the GENERIC
+ * derivation can never demote a submitted form. This explicit writer is the ONLY
+ * path that performs SUBMITTED → IN_PROGRESS, and it does so directly with a
+ * targeted guard (current status must be SUBMITTED) — it does NOT add the edge to
+ * `FORM_TRANSITIONS` or relax `refreshFormStatus`. Calling it on a non-SUBMITTED
+ * form throws.
+ *
+ * Authorisation stays with the caller; `assessorId` is the staff actor recorded
+ * on the discard audit row. Returns the assessment id (or null when there was no
+ * assessment to discard) for the caller's audit metadata.
+ */
+export async function reopenAssessmentForMaterialChange(
+  tx: Tx,
+  applicationId: string,
+  assessorId: string,
+  reason: string
+): Promise<{ formStatus: ApplicationFormStatus; assessmentDiscarded: boolean }> {
+  const app = await tx.application.findUniqueOrThrow({
+    where: { id: applicationId },
+    select: { formStatus: true },
+  });
+
+  // Targeted guard: only a SUBMITTED form may be reopened, and ONLY via this
+  // explicit writer. (refreshFormStatus stays terminal-safe and untouched.)
+  if (app.formStatus !== "SUBMITTED") {
+    throw new Error(
+      `Cannot reopen an application that is not submitted (form status ${app.formStatus}).`
+    );
+  }
+
+  await tx.application.update({
+    where: { id: applicationId },
+    data: { formStatus: "IN_PROGRESS" },
+  });
+
+  // Invalidate the live assessment in the SAME transaction — a reopened form is
+  // back in the applicant's hands, so any in-progress/paused review is stale.
+  const assessmentDiscarded = await discardAssessment(
+    tx,
+    applicationId,
+    assessorId,
+    { reason }
+  );
+
+  return { formStatus: "IN_PROGRESS", assessmentDiscarded };
 }
 
 // ───────────────────────────────────────────────────────────────────────────

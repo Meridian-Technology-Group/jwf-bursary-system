@@ -186,7 +186,7 @@ function newItems(rec: Partial<ParentIncomeRecord>): IncomeItem[] {
   if (rec.selfEmployed) {
     const s = rec.selfEmployed;
     items.push(
-      { label: "Self-employed — gross salaried", value: n(s.grossSalaried) },
+      { label: "Self-employed — gross earned income", value: n(s.grossSalaried) },
       { label: "Self-employed — property income", value: n(s.propertyIncome) },
       { label: "Self-employed — dividends", value: n(s.dividends) },
       {

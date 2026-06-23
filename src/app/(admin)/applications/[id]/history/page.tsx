@@ -35,6 +35,7 @@ const ACTION_LABELS: Record<string, string> = {
   DOCUMENT_UPLOADED_BY_ASSESSOR: "Document uploaded by assessor",
   SECTION_SAVED_BY_ASSESSOR: "Section saved by assessor",
   EDIT_ON_BEHALF_FINISHED: "Editing on behalf finished",
+  ASSESSMENT_DISCARDED: "Assessment discarded (form changed)",
   APPLICATION_SUBMITTED_BY_ASSESSOR:
     "Submitted by assessor on behalf of applicant",
   DOCUMENT_VERIFIED: "Document verified",

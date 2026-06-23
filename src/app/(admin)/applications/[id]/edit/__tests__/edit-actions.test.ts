@@ -119,6 +119,12 @@ function makeFakeTx(overrides: Record<string, unknown> = {}) {
       upsert: vi.fn(async (..._args: unknown[]) => ({ id: "sec-row-1" })),
       count: vi.fn(async () => 0),
     },
+    // discardAssessment (D-G6/D3) does its own assessment lookup + reset. Default
+    // returns no row, so a save never discards unless a test supplies one.
+    assessment: {
+      findUnique: vi.fn(async (..._args: unknown[]): Promise<unknown> => null),
+      update: vi.fn(async () => ({})),
+    },
     ...overrides,
   };
 }
@@ -294,6 +300,145 @@ describe("saveSectionOnBehalf", () => {
         }),
       })
     );
+  });
+
+  // ── D-G6/D3 invalidation: a material on-behalf change discards the live
+  //    assessment in place (form stays SUBMITTED, date retained). ────────────
+
+  /** SUBMITTED form whose assessment is at `status` (NOT_STARTED phase or PAUSED). */
+  function submittedUnderAssessment(status: "IN_PROGRESS" | "PAUSED") {
+    return makeFakeTx({
+      application: {
+        findUnique: vi.fn(async () => ({
+          leadApplicantId: "lead-1",
+          reference: "APP-1",
+          formStatus: "SUBMITTED",
+          assessment: { status, outcome: null },
+        })),
+        findUniqueOrThrow: vi.fn(async () => ({
+          formStatus: "SUBMITTED",
+          applicationType: "NEW",
+        })),
+        update: vi.fn(async () => ({})),
+      },
+      assessment: {
+        // discardAssessment's own lookup of the row to reset.
+        findUnique: vi.fn(async () => ({ id: "asmt-1", status })),
+        update: vi.fn(async () => ({})),
+      },
+    });
+  }
+
+  it("discards an IN_PROGRESS assessment on a non-empty change + writes ASSESSMENT_DISCARDED", async () => {
+    fakeTx = submittedUnderAssessment("IN_PROGRESS");
+
+    const res = await saveSectionOnBehalf(
+      "app-1",
+      "ADDITIONAL_INFO",
+      VALID_PAYLOAD
+    );
+    expect(res).toEqual({ success: true });
+
+    // Assessment reset to NOT_STARTED with outcome/completedAt/pausedUntil cleared.
+    expect(fakeTx.assessment.update).toHaveBeenCalledWith({
+      where: { id: "asmt-1" },
+      data: {
+        status: "NOT_STARTED",
+        outcome: null,
+        completedAt: null,
+        pausedUntil: null,
+      },
+    });
+
+    // Two audit rows: SECTION_SAVED_BY_ASSESSOR (with assessmentDiscarded: true)
+    // and the paired ASSESSMENT_DISCARDED.
+    const actions = auditMock.mock.calls.map(
+      (c) => (c[0] as { action: string }).action
+    );
+    expect(actions).toContain(AUDIT_ACTIONS.ASSESSMENT_DISCARDED);
+    expect(actions).toContain(AUDIT_ACTIONS.SECTION_SAVED_BY_ASSESSOR);
+
+    expect(auditMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: AUDIT_ACTIONS.ASSESSMENT_DISCARDED,
+        entityType: AUDIT_ENTITY_TYPES.Assessment,
+        entityId: "asmt-1",
+        metadata: expect.objectContaining({
+          applicationId: "app-1",
+          changedFields: ["additionalNarrative"],
+        }),
+      })
+    );
+    expect(auditMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: AUDIT_ACTIONS.SECTION_SAVED_BY_ASSESSOR,
+        metadata: expect.objectContaining({ assessmentDiscarded: true }),
+      })
+    );
+  });
+
+  it("discards a PAUSED assessment too", async () => {
+    fakeTx = submittedUnderAssessment("PAUSED");
+
+    const res = await saveSectionOnBehalf(
+      "app-1",
+      "ADDITIONAL_INFO",
+      VALID_PAYLOAD
+    );
+    expect(res).toEqual({ success: true });
+    expect(fakeTx.assessment.update).toHaveBeenCalledWith({
+      where: { id: "asmt-1" },
+      data: {
+        status: "NOT_STARTED",
+        outcome: null,
+        completedAt: null,
+        pausedUntil: null,
+      },
+    });
+  });
+
+  it("does NOT discard on a no-op (empty diff) save", async () => {
+    fakeTx = submittedUnderAssessment("IN_PROGRESS");
+    // Stored row already equals the incoming payload → diffSectionPaths is empty.
+    fakeTx.applicationSection.findUnique.mockResolvedValue({
+      data: { ...VALID_PAYLOAD },
+      assessorProvenance: {},
+    });
+
+    const res = await saveSectionOnBehalf(
+      "app-1",
+      "ADDITIONAL_INFO",
+      VALID_PAYLOAD
+    );
+    expect(res).toEqual({ success: true });
+
+    // No assessment reset, no ASSESSMENT_DISCARDED row.
+    expect(fakeTx.assessment.update).not.toHaveBeenCalled();
+    const actions = auditMock.mock.calls.map(
+      (c) => (c[0] as { action: string }).action
+    );
+    expect(actions).not.toContain(AUDIT_ACTIONS.ASSESSMENT_DISCARDED);
+    expect(auditMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: AUDIT_ACTIONS.SECTION_SAVED_BY_ASSESSOR,
+        metadata: expect.objectContaining({ assessmentDiscarded: false }),
+      })
+    );
+  });
+
+  it("does NOT discard when there is no live assessment (plain SUBMITTED, awaiting review)", async () => {
+    // Default fakeTx: assessment null → phase SUBMITTED, nothing to invalidate.
+    const res = await saveSectionOnBehalf(
+      "app-1",
+      "ADDITIONAL_INFO",
+      VALID_PAYLOAD
+    );
+    expect(res).toEqual({ success: true });
+    expect(fakeTx.assessment.update).not.toHaveBeenCalled();
+    const actions = auditMock.mock.calls.map(
+      (c) => (c[0] as { action: string }).action
+    );
+    expect(actions).not.toContain(AUDIT_ACTIONS.ASSESSMENT_DISCARDED);
   });
 });
 

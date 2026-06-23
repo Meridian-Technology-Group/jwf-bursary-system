@@ -51,7 +51,7 @@ function makeFakeTx() {
   return {
     application: {
       findUnique: vi.fn(async (..._args: unknown[]): Promise<unknown> => null),
-      update: vi.fn(async () => ({})),
+      update: vi.fn(async (..._args: unknown[]) => ({})),
     },
   };
 }
@@ -112,6 +112,57 @@ describe("submitApplicationCore", () => {
     expect(gapStatusesMock).not.toHaveBeenCalled();
     expect(sendEmailMock).not.toHaveBeenCalled();
     expect(auditMock).not.toHaveBeenCalled();
+  });
+
+  it("re-submits a REOPENED application keeping the ORIGINAL submission date and never rewriting submitted_at (D-G6/D3)", async () => {
+    // A reopened app: form back to FILLED_IN, but submittedAt is the RETAINED
+    // original instant. The core must not throw (write-once guard relaxed for
+    // re-submit) and must NOT include submittedAt in the update (leaving it
+    // unchanged satisfies the immutable-submitted_at trigger).
+    const originalSubmittedAt = new Date("2026-05-01T10:00:00.000Z");
+    fakeTx.application.findUnique.mockResolvedValue(
+      makeApplication({
+        formStatus: "FILLED_IN",
+        submittedAt: originalSubmittedAt,
+      })
+    );
+
+    const result = await submitApplicationCore(CORE_INPUT);
+    expect(result).toEqual({ alreadySubmitted: false, reference: "APP-1" });
+
+    // The SUBMITTED transition ran...
+    expect(fakeTx.application.update).toHaveBeenCalledTimes(1);
+    const updateArg = fakeTx.application.update.mock.calls[0]![0] as {
+      data: Record<string, unknown>;
+    };
+    expect(updateArg.data.formStatus).toBe("SUBMITTED");
+    // ...but submitted_at (and the historic T&Cs acceptance) is NOT rewritten.
+    expect(updateArg.data).not.toHaveProperty("submittedAt");
+    expect(updateArg.data).not.toHaveProperty("termsAcceptedAt");
+    expect(updateArg.data).not.toHaveProperty("termsVersion");
+
+    // The audit records the ORIGINAL submission instant, not "now".
+    expect(auditMock).toHaveBeenCalledTimes(1);
+    const auditArg = auditMock.mock.calls[0]![0] as {
+      metadata: Record<string, unknown>;
+    };
+    expect(auditArg.metadata.submittedAt).toBe(originalSubmittedAt.toISOString());
+  });
+
+  it("stamps submitted_at + T&Cs on a FIRST submission (submittedAt was null)", async () => {
+    fakeTx.application.findUnique.mockResolvedValue(
+      makeApplication({ formStatus: "FILLED_IN", submittedAt: null })
+    );
+
+    await submitApplicationCore(CORE_INPUT);
+
+    const updateArg = fakeTx.application.update.mock.calls[0]![0] as {
+      data: Record<string, unknown>;
+    };
+    expect(updateArg.data.formStatus).toBe("SUBMITTED");
+    expect(updateArg.data.submittedAt).toBeInstanceOf(Date);
+    expect(updateArg.data).toHaveProperty("termsAcceptedAt");
+    expect(updateArg.data).toHaveProperty("termsVersion");
   });
 
   it("throws the exact completeness-gate message naming the incomplete sections", async () => {
