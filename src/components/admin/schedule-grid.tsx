@@ -31,10 +31,12 @@ import {
 } from "@/components/ui/table";
 import { formatLondonDate } from "@/lib/datetime";
 import type { ScheduleEntryRow } from "@/lib/db/queries/schedule";
+import type { BursaryAccountStatus } from "@prisma/client";
 import {
   regenerateScheduleAction,
   toggleScheduleShowOnPortalAction,
 } from "@/app/(admin)/applications/[id]/schedule-actions";
+import { WithdrawAccountDialog } from "@/components/admin/withdraw-account-dialog";
 
 const STATUS_VARIANT: Record<
   ScheduleEntryRow["status"],
@@ -61,12 +63,21 @@ interface ScheduleGridProps {
   entries: ScheduleEntryRow[];
   /** True for ADMIN — shows the Regenerate button + per-row Show/Hide toggle. */
   canManage: boolean;
+  /** The owning bursary account's id — required for the withdraw control. */
+  accountId: string;
+  /** Current account status — the withdraw control only shows while ACTIVE. */
+  accountStatus: BursaryAccountStatus;
+  /** True for ADMIN/ASSESSOR — shows the destructive "Withdraw account" control (F1). */
+  canWithdraw: boolean;
 }
 
 export function ScheduleGrid({
   applicationId,
   entries,
   canManage,
+  accountId,
+  accountStatus,
+  canWithdraw,
 }: ScheduleGridProps) {
   const router = useRouter();
   const [pendingId, setPendingId] = React.useState<string | null>(null);
@@ -118,22 +129,39 @@ export function ScheduleGrid({
           <CalendarRange className="h-4 w-4 text-slate-500" aria-hidden />
           Assessment Schedule
         </CardTitle>
-        {canManage && (
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={handleRegenerate}
-            disabled={regenerating}
-          >
-            {regenerating ? (
-              <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" aria-hidden />
-            ) : (
-              <RefreshCw className="mr-1.5 h-3.5 w-3.5" aria-hidden />
-            )}
-            Regenerate Schedule
-          </Button>
-        )}
+        <div className="flex items-center gap-2">
+          {accountStatus === "CLOSED" ? (
+            <Badge variant="outline" className="text-rose-700 border-rose-200">
+              Account closed
+            </Badge>
+          ) : (
+            canWithdraw && (
+              <WithdrawAccountDialog
+                accountId={accountId}
+                applicationId={applicationId}
+              />
+            )
+          )}
+          {canManage && (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={handleRegenerate}
+              disabled={regenerating}
+            >
+              {regenerating ? (
+                <Loader2
+                  className="mr-1.5 h-3.5 w-3.5 animate-spin"
+                  aria-hidden
+                />
+              ) : (
+                <RefreshCw className="mr-1.5 h-3.5 w-3.5" aria-hidden />
+              )}
+              Regenerate Schedule
+            </Button>
+          )}
+        </div>
       </CardHeader>
       <CardContent className="px-0 py-0">
         {error && (

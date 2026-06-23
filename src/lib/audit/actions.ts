@@ -130,6 +130,8 @@ export const AUDIT_ACTIONS = {
   // Bursary-account forward schedule (Epic 10)
   SCHEDULE_REGENERATED: "SCHEDULE_REGENERATED",
   SCHEDULE_SHOW_ON_PORTAL_TOGGLED: "SCHEDULE_SHOW_ON_PORTAL_TOGGLED",
+  /** Assessor/admin closed (withdrew) a bursary account at account level (gap F1). */
+  BURSARY_ACCOUNT_WITHDRAWN: "BURSARY_ACCOUNT_WITHDRAWN",
 } as const;
 
 export type AuditAction = (typeof AUDIT_ACTIONS)[keyof typeof AUDIT_ACTIONS];
@@ -264,6 +266,7 @@ const ACTION_COLOUR: Partial<Record<AuditAction, string>> = {
   [AUDIT_ACTIONS.NAME_REVEAL]: "bg-orange-400",
   [AUDIT_ACTIONS.SCHEDULE_REGENERATED]: "bg-blue-500",
   [AUDIT_ACTIONS.SCHEDULE_SHOW_ON_PORTAL_TOGGLED]: "bg-blue-500",
+  [AUDIT_ACTIONS.BURSARY_ACCOUNT_WITHDRAWN]: "bg-red-400",
 };
 
 /**

@@ -35,7 +35,10 @@ import { SubmissionDeadlineCard } from "@/components/admin/submission-deadline-c
 import { effectiveSubmissionDeadline } from "@/lib/rounds/submission-deadline";
 import { SiblingLinkerCard } from "@/components/admin/sibling-linker";
 import { SiblingListCard } from "@/components/admin/sibling-list";
-import type { ApplicationSectionType } from "@prisma/client";
+import type {
+  ApplicationSectionType,
+  BursaryAccountStatus,
+} from "@prisma/client";
 
 export const metadata = {
   title: "Applicant Data",
@@ -291,33 +294,47 @@ export default async function ApplicantDataPage({ params }: Props) {
   const user = await requireRole([Role.ADMIN, Role.ASSESSOR, Role.VIEWER]);
   const isAssessor = user.role === Role.ADMIN || user.role === Role.ASSESSOR;
 
-  const { application, siblingLinks, names, contributors, scheduleEntries } =
-    await withUserContext(user.id, user.role as RlsRole, async (tx) => {
-      const app = await getApplicationWithDetails(tx, params.id);
-      if (!app)
-        return {
-          application: null,
-          siblingLinks: [],
-          names: null,
-          contributors: [],
-          scheduleEntries: [] as ScheduleEntryRow[],
-        };
-      const siblings = app.bursaryAccountId
-        ? await getSiblingLinks(tx, app.bursaryAccountId)
-        : [];
-      const schedule = app.bursaryAccountId
-        ? await getScheduleForAccount(tx, app.bursaryAccountId)
-        : [];
-      const revealed = await getApplicationNamesForReveal(tx, app.id, user.id);
-      const ctribs = await getApplicationContributors(tx, params.id);
+  const {
+    application,
+    siblingLinks,
+    names,
+    contributors,
+    scheduleEntries,
+    accountStatus,
+  } = await withUserContext(user.id, user.role as RlsRole, async (tx) => {
+    const app = await getApplicationWithDetails(tx, params.id);
+    if (!app)
       return {
-        application: app,
-        siblingLinks: siblings,
-        names: revealed,
-        contributors: ctribs,
-        scheduleEntries: schedule,
+        application: null,
+        siblingLinks: [],
+        names: null,
+        contributors: [],
+        scheduleEntries: [] as ScheduleEntryRow[],
+        accountStatus: null as BursaryAccountStatus | null,
       };
-    });
+    const siblings = app.bursaryAccountId
+      ? await getSiblingLinks(tx, app.bursaryAccountId)
+      : [];
+    const schedule = app.bursaryAccountId
+      ? await getScheduleForAccount(tx, app.bursaryAccountId)
+      : [];
+    const account = app.bursaryAccountId
+      ? await tx.bursaryAccount.findUnique({
+          where: { id: app.bursaryAccountId },
+          select: { status: true },
+        })
+      : null;
+    const revealed = await getApplicationNamesForReveal(tx, app.id, user.id);
+    const ctribs = await getApplicationContributors(tx, params.id);
+    return {
+      application: app,
+      siblingLinks: siblings,
+      names: revealed,
+      contributors: ctribs,
+      scheduleEntries: schedule,
+      accountStatus: account?.status ?? null,
+    };
+  });
 
   if (!application) {
     notFound();
@@ -415,6 +432,9 @@ export default async function ApplicantDataPage({ params }: Props) {
             applicationId={application.id}
             entries={scheduleEntries}
             canManage={user.role === Role.ADMIN}
+            accountId={bursaryAccountId}
+            accountStatus={accountStatus ?? "ACTIVE"}
+            canWithdraw={isAssessor}
           />
         )}
 
@@ -528,6 +548,9 @@ export default async function ApplicantDataPage({ params }: Props) {
           applicationId={application.id}
           entries={scheduleEntries}
           canManage={user.role === Role.ADMIN}
+          accountId={bursaryAccountId}
+          accountStatus={accountStatus ?? "ACTIVE"}
+          canWithdraw={isAssessor}
         />
       )}
 
