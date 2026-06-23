@@ -26,6 +26,7 @@ import {
   History,
   HelpCircle,
   AlertCircle,
+  CalendarRange,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { JwfLogo } from "@/components/brand/jwf-logo";
@@ -59,10 +60,17 @@ export interface PortalNavItem {
  * the top of the nav, linking to `/respond`. It appears ONLY while the request
  * is outstanding — a normal login does not show it — so the parent's attention
  * is directed exactly where it needs to be without cluttering the interface.
+ *
+ * When `hasSchedule` is true (the family has an ACTIVE bursary account with ≥1
+ * portal-visible schedule entry — gap F2) an "Assessment Schedule" item links to
+ * the standing, read-only Year 6 → Year 13 calendar (`/schedule`). It is shown
+ * ONLY for active, scheduled families — the same conditional-visibility
+ * mechanism as Missing Documents — so first-year applicants never see it.
  */
 export function buildPortalNav(
   applicationHref: string,
-  needsDocs = false
+  needsDocs = false,
+  hasSchedule = false
 ): PortalNavItem[] {
   return [
     { label: "Home", href: "/", icon: Home, match: "/", matchMode: "exact" },
@@ -85,6 +93,17 @@ export function buildPortalNav(
       match: "/apply",
       matchMode: "prefix",
     },
+    ...(hasSchedule
+      ? [
+          {
+            label: "Assessment Schedule",
+            href: "/schedule",
+            icon: CalendarRange,
+            match: "/schedule",
+            matchMode: "prefix" as const,
+          },
+        ]
+      : []),
     {
       label: "Documents",
       href: "/documents",
@@ -182,15 +201,21 @@ interface PortalNavProps {
   applicationHref?: string;
   /** Whether a paused document request exists (badges Documents). Wired PR-9. */
   needsDocs?: boolean;
+  /**
+   * Whether the family has an ACTIVE account with a portal-visible schedule
+   * (gap F2). Gates the "Assessment Schedule" calendar item.
+   */
+  hasSchedule?: boolean;
 }
 
 export function PortalNav({
   userName,
   applicationHref = "/apply/child-details",
   needsDocs = false,
+  hasSchedule = false,
 }: PortalNavProps) {
   const pathname = usePathname() ?? "/";
-  const items = buildPortalNav(applicationHref, needsDocs);
+  const items = buildPortalNav(applicationHref, needsDocs, hasSchedule);
 
   return (
     <div className="flex h-full flex-col">
