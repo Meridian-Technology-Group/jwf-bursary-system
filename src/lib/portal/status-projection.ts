@@ -7,15 +7,20 @@
  * and collapses the entire post-submission assessment machinery (IN_PROGRESS,
  * PAUSED, raw outcome enum names) into a small parent-meaningful step model:
  *
- *     Draft → Received/Submitted → Being assessed → Outcome
+ *     Draft → Submitted/Received → Being assessed → Outcome
  *
  * No internal enum name ever crosses into a portal view through this module.
  * `status/page.tsx` and the dashboard read ONLY this projection (replacing the
  * old inline maps + the stale status-badge shim).
  *
- * Decision D2: a single submitted state, with the label derived from the
- * application type — "Received" for a NEW application, "Submitted" for a
- * ROLLING_OVER one.
+ * Submitted-state label (per the signed bursary-flow diagram): a single
+ * submitted state, with the label derived from the application type —
+ * "Submitted" for a NEW application, "Received" for a ROLLING_OVER one. This
+ * `submittedLabel` helper is the canonical mapping; the lifecycle badges and
+ * the submission PDF derive from it rather than re-encoding the rule.
+ *
+ * (Was inverted under the since-reversed Decision D2, which had NEW→"Received"
+ * / ROLLING_OVER→"Submitted"; gap A2 flipped it to the signed diagram.)
  */
 
 import type {
@@ -72,9 +77,14 @@ export interface ParentStatusProjection {
   timeline: ParentTimelineStep[];
 }
 
-/** Parent-safe submitted-state label (D2). */
+/**
+ * Canonical parent-safe submitted-state label (per the signed bursary-flow
+ * diagram): a NEW application shows "Submitted"; a ROLLING_OVER re-assessment
+ * shows "Received". The single source of truth for this mapping — the lifecycle
+ * badges and the submission PDF derive from it.
+ */
 export function submittedLabel(applicationType: ApplicationType): string {
-  return applicationType === "NEW" ? "Received" : "Submitted";
+  return applicationType === "NEW" ? "Submitted" : "Received";
 }
 
 /**
@@ -178,8 +188,8 @@ export function projectParentStatus(
       label: submittedLabel(applicationType),
       description:
         applicationType === "NEW"
-          ? "Your application has been received."
-          : "Your re-assessment has been submitted.",
+          ? "Your application has been submitted."
+          : "Your re-assessment has been received.",
       reached: reachedSubmitted,
       // Never current — submitted collapses into "assessing" for the parent.
       current: false,

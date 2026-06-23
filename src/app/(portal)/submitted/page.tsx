@@ -6,7 +6,7 @@
  * acceptance — with a dismissible "Download submission (PDF)" offer. The
  * submitted application is immutable (Epic 01), so the displayed submission date
  * never changes even after a later document request. The parent-safe label is
- * "Received" (new) / "Submitted" (rolling) per Decision D2.
+ * "Submitted" (new) / "Received" (rolling) per the signed bursary-flow diagram.
  */
 
 import { redirect } from "next/navigation";
@@ -68,8 +68,8 @@ export default async function SubmittedPage() {
           <div>
             <h1 className="text-xl font-semibold text-green-900">
               {submission.applicationType === "NEW"
-                ? "Your application has been received"
-                : "Your re-assessment has been submitted"}
+                ? "Your application has been submitted"
+                : "Your re-assessment has been received"}
             </h1>
             <p className="mt-1 text-sm text-green-700">
               Thank you. A copy of the details you submitted is shown below — you

@@ -16,7 +16,7 @@ import { SubmissionDownloadOffer } from "@/components/portal/submission-download
 interface SubmittedSummaryProps {
   applicationId: string;
   reference: string;
-  /** Parent-safe submitted label: "Received" (new) / "Submitted" (rolling). */
+  /** Parent-safe submitted label: "Submitted" (new) / "Received" (rolling). */
   submittedLabel: string;
   /** Localised submission date string (Europe/London). */
   submittedDate: string;

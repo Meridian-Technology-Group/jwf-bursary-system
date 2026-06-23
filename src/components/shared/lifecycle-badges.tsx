@@ -35,6 +35,7 @@ import type {
   AssessmentOutcome,
 } from "@prisma/client";
 import { cn } from "@/lib/utils";
+import { submittedLabel } from "@/lib/portal/status-projection";
 
 type BadgeConfig = {
   label: string;
@@ -99,9 +100,10 @@ const FORM_STATUS_CONFIG: Record<ApplicationFormStatus, BadgeConfig> = {
 
 /**
  * Internal (staff-facing) form-status badge. For a SUBMITTED form, the label is
- * derived from the application type: "Received" for a NEW application,
- * "Submitted" for a ROLLING_OVER one (decision D2). All other states render
- * their literal internal label.
+ * derived from the application type via the canonical `submittedLabel` helper:
+ * "Submitted" for a NEW application, "Received" for a ROLLING_OVER one (per the
+ * signed bursary-flow diagram). All other states render their literal internal
+ * label.
  */
 export function FormStatusBadge({
   status,
@@ -114,8 +116,8 @@ export function FormStatusBadge({
 }) {
   const base = FORM_STATUS_CONFIG[status];
   const config =
-    status === "SUBMITTED" && applicationType === "NEW"
-      ? { ...base, label: "Received" }
+    status === "SUBMITTED" && applicationType
+      ? { ...base, label: submittedLabel(applicationType) }
       : base;
   return <Badge config={config} className={className} />;
 }
@@ -239,7 +241,9 @@ export function projectFormStatusForApplicant(
     case "FILLED_IN":
       return "Ready to Submit";
     case "SUBMITTED":
-      return applicationType === "NEW" ? "Received" : "Submitted";
+      // Canonical mapping (signed diagram): NEW → "Submitted",
+      // ROLLING_OVER → "Received".
+      return submittedLabel(applicationType);
     default:
       return "In Progress";
   }
