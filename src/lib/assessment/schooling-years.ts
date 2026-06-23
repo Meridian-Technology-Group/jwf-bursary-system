@@ -5,19 +5,25 @@
  * used in both the assessment engine and the auto-decrement logic on
  * re-assessment.
  *
- * School year structure at JWF schools:
- *   Year 6  entry → 7 years total (Years 6–12)
- *   Year 7  entry → 6 years total (Years 7–12)
- *   Year 9  entry → 4 years total (Years 9–12)
- *   Year 12 entry → 1 year  total
+ * School year structure at JWF schools (Years 6–13; eligibility runs to the
+ * end of Year 13 / Upper Sixth — see the signed flow diagram, state-model §10
+ * and `src/lib/bursary-accounts/schedule.ts` FINAL_ELIGIBLE_SCHOOL_YEAR=13):
+ *   Year 6  entry → 8 years total (Years 6–13)
+ *   Year 7  entry → 7 years total (Years 7–13)
+ *   Year 9  entry → 5 years total (Years 9–13)
+ *   Year 12 entry → 2 years total (Years 12–13)
  */
 
-/** Mapping of entry year to total number of schooling years. */
+/**
+ * Mapping of entry year to total number of schooling years.
+ * Each total = 13 − entryYear + 1 (inclusive of both the entry year and the
+ * final Year 13 / Upper Sixth).
+ */
 const TOTAL_YEARS_BY_ENTRY: Record<number, number> = {
-  6: 7,
-  7: 6,
-  9: 4,
-  12: 1,
+  6: 8,
+  7: 7,
+  9: 5,
+  12: 2,
 };
 
 /**
@@ -47,8 +53,8 @@ function parseAcademicYearStart(academicYear: string): number {
  * @example
  * // Child entered Year 7 and was first assessed in 2023-24.
  * // Now in 2025-26: 2 years have passed since first assessment.
- * // Total years = 6. Remaining = 6 - 2 = 4.
- * calculateSchoolingYearsRemaining(7, "2025-26", "2023-24"); // → 4
+ * // Total years = 7 (Years 7–13). Remaining = 7 - 2 = 5.
+ * calculateSchoolingYearsRemaining(7, "2025-26", "2023-24"); // → 5
  */
 export function calculateSchoolingYearsRemaining(
   entryYear: number,
@@ -155,9 +161,9 @@ export function getTotalSchoolingYearsForGroup(
  * entry calendar year is unknown — callers then fall back to manual entry.
  *
  * @example
- * // Entered Y7 (6 total years) in calendar 2025; assessed in academic 2026.
- * // 1 year elapsed → 5 remaining.
- * calculateSchoolingYearsRemainingFromEntry("Y7", 2025, new Date("2026-10-01")); // → 5
+ * // Entered Y7 (7 total years, Years 7–13) in calendar 2025; assessed in academic 2026.
+ * // 1 year elapsed → 6 remaining.
+ * calculateSchoolingYearsRemainingFromEntry("Y7", 2025, new Date("2026-10-01")); // → 6
  */
 export function calculateSchoolingYearsRemainingFromEntry(
   group: EntryYearGroupCode | null | undefined,
