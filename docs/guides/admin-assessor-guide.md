@@ -541,10 +541,21 @@ the assessment.
 | Phase | Edit on behalf? |
 |-------|-----------------|
 | **Pre-Submission** | ✅ Yes — staff saves drive the form's normal completion progress, exactly like applicant saves. |
-| **Submitted** | ✅ Yes — the form stays **Submitted**; a staff edit never reverts it to a draft. |
-| **Not Started** (review begun) | ✅ Yes. |
-| **Paused** (awaiting documents) | ✅ Yes — but editing does **not** auto-resume the assessment; resuming stays the explicit **Resume Review** action. |
+| **Submitted** | ✅ Yes — the form stays **Submitted** (the original submission date is kept); a staff edit never reverts it to a draft. |
+| **Not Started** (review begun) | ✅ Yes — but a change here **discards the in-progress assessment** (see below). |
+| **Paused** (awaiting documents) | ✅ Yes — editing does **not** auto-resume the assessment; resuming stays the explicit **Resume Review** action. A change here **discards the paused assessment** (see below). |
 | **Completed**, or an outcome set | ❌ No — the button disappears and saves are refused. Changing the source data after completion would silently desynchronise the assessment figures from the form. |
+
+**Editing under a live assessment resets it.** If you change any of the
+applicant's data **after a review has begun** (the assessment is *In Progress*
+or *Paused*), saving **discards that assessment** — it is reset to **Not
+Started**, any draft outcome and the pause/missing-documents clock are cleared,
+and the History records an **Assessment discarded (form changed)** entry naming
+the changed fields. This is deliberate: the figures must be re-calculated
+against the corrected form, so **you must re-run the assessment** after the
+change. The form itself stays **Submitted** with its original submission date —
+only the assessment is invalidated. A save that changes nothing leaves the
+assessment alone.
 
 **Provenance and audit.** Every staff save stamps the changed fields with your
 name and the timestamp, and writes a **Section saved by assessor** entry — with

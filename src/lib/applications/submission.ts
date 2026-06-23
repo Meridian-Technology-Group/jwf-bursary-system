@@ -28,10 +28,7 @@ import {
 } from "@/lib/db/prisma";
 import { sendEmail } from "@/lib/email/send";
 import { createAuditLog } from "@/lib/audit/log";
-import {
-  submitApplicationData,
-  assertSubmittedAtUnset,
-} from "@/lib/applications/status";
+import { submitApplicationData } from "@/lib/applications/status";
 import { getSectionGapStatuses, type SectionGap } from "@/lib/portal/section-gaps";
 import { SECTION_ORDER } from "@/lib/portal/sections";
 import { isSubmissionDeadlinePassed } from "@/lib/rounds/submission-deadline";
@@ -172,12 +169,21 @@ export async function submitApplicationCore(
   }
 
   // ── Invariant: submitted_at is write-once (Epic 01 PR-5) ──────────────────
-  // Defence-in-depth on the immutable submission date. The form-status guard
-  // above handles the normal double-submit (redirects to the receipt). This
-  // explicit check covers any state where a submission date is already recorded
-  // but form_status is not SUBMITTED — it returns a friendly message BEFORE the
-  // write reaches the durable Postgres trigger (trg_submitted_at_immutable).
-  assertSubmittedAtUnset(application.submittedAt);
+  // The submission date is fixed at FIRST submit and never rewritten. A normal
+  // first submission has submittedAt === null; the form-status guard above
+  // already caught the ordinary double-submit (form still SUBMITTED → receipt).
+  //
+  // The one path that reaches here WITH submittedAt already set is a
+  // re-submission of an application that was REOPENED for a material change
+  // (`reopenForMaterialChange`): form_status was moved SUBMITTED → IN_PROGRESS
+  // but the ORIGINAL submission date was deliberately kept (D-G6/D3 — keep the
+  // original date). We must NOT throw and must NOT rewrite the date: leaving
+  // submitted_at unchanged satisfies the write-once trigger
+  // (trg_submitted_at_immutable fires only when OLD is non-null AND NEW IS
+  // DISTINCT FROM OLD). So we stamp submitted_at ONLY when it is currently null,
+  // and reuse the existing instant otherwise.
+  const isResubmission = application.submittedAt != null;
+  const submittedAt = application.submittedAt ?? new Date();
 
   // ── Deadline lockout (Epic 05 §3.2) ───────────────────────────────────────
   // Server-side enforcement of the per-application submission deadline so a
@@ -302,20 +308,26 @@ export async function submitApplicationCore(
   // Prisma create() which issues INSERT ... RETURNING *; if the SELECT policy
   // on audit_logs filtered the RETURNING row, Prisma would throw, abort the
   // Postgres transaction, and undo the status change — the original bug.)
-  const submittedAt = new Date();
   await withUserContext(actor.id, actor.role, async (tx) => {
     await tx.application.update({
       where: { id: applicationId },
       data: {
         ...submitApplicationData(),
-        submittedAt,
-        // Record T&Cs acceptance per submission (Epic 05, D10). The declaration
-        // section (validated complete above) carries the per-parent acceptance
-        // ticks; here we stamp WHEN it was accepted and WHICH document/version,
-        // so a later T&Cs swap never rewrites a historic acceptance. Stamped
-        // alongside submittedAt so they share the immutable submission instant.
-        termsAcceptedAt: submittedAt,
-        termsVersion: TERMS_AND_CONDITIONS_VERSION,
+        // Stamp the submission instant + T&Cs acceptance ONLY on a first
+        // submission. On a re-submission of a reopened application we keep the
+        // ORIGINAL submitted_at (D-G6/D3) — writing it again would trip the
+        // write-once trigger — and we leave the historic T&Cs acceptance
+        // (termsAcceptedAt/termsVersion) untouched so a later T&Cs swap never
+        // rewrites it. Record T&Cs acceptance per submission (Epic 05, D10): the
+        // declaration section (validated complete above) carries the per-parent
+        // ticks; we stamp WHEN it was accepted and WHICH document/version.
+        ...(isResubmission
+          ? {}
+          : {
+              submittedAt,
+              termsAcceptedAt: submittedAt,
+              termsVersion: TERMS_AND_CONDITIONS_VERSION,
+            }),
         entryYearGroup: entryYearGroupToPersist,
         entryYear: entryYearToPersist,
         childDob: childDobToPersist,

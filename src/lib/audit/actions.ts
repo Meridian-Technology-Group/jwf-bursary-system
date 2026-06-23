@@ -41,6 +41,13 @@ export const AUDIT_ACTIONS = {
   ASSESSMENT_SYNOPSIS_SAVE: "ASSESSMENT_SYNOPSIS_SAVE",
   ASSESSMENT_COMPLETE: "ASSESSMENT_COMPLETE",
   ASSESSMENT_PAUSE: "ASSESSMENT_PAUSE",
+  /**
+   * An in-progress / paused assessment was DISCARDED (reset to NOT_STARTED) by a
+   * material post-submission change to the source form (state-model §4/§6.5/§7.2,
+   * D-G6/D3). The assessment must be re-run. Outcome/completedAt/pausedUntil are
+   * cleared by the same write. Carries `{ applicationId, reason, changedFields }`.
+   */
+  ASSESSMENT_DISCARDED: "ASSESSMENT_DISCARDED",
   ASSESSMENT_SECOND_PARENT_OVERRIDE: "ASSESSMENT_SECOND_PARENT_OVERRIDE",
   RECOMMENDATION_SAVE: "RECOMMENDATION_SAVE",
 
@@ -251,6 +258,7 @@ const ACTION_COLOUR: Partial<Record<AuditAction, string>> = {
   [AUDIT_ACTIONS.DOCUMENT_UNVERIFIED]: "bg-orange-400",
   [AUDIT_ACTIONS.APPLICATION_STATUS_CHANGED]: "bg-red-400",
   [AUDIT_ACTIONS.APPLICATION_REJECTED_RESTART]: "bg-red-400",
+  [AUDIT_ACTIONS.ASSESSMENT_DISCARDED]: "bg-red-400",
   [AUDIT_ACTIONS.GDPR_DELETION]: "bg-red-400",
   [AUDIT_ACTIONS.RETENTION_PURGE_CRON]: "bg-red-400",
   [AUDIT_ACTIONS.NAME_REVEAL]: "bg-orange-400",
