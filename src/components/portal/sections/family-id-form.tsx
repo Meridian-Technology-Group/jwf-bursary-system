@@ -41,15 +41,19 @@ export function FamilyIdForm({ applicationId, documentMap }: FamilyIdFormProps) 
 
   const [dialogOpen, setDialogOpen] = React.useState(false);
   const [memberName, setMemberName] = React.useState("");
+  const [memberType, setMemberType] = React.useState<"CHILD" | "ADULT" | "">("");
 
   function handleAdd() {
-    if (!memberName.trim()) return;
+    if (!memberName.trim() || !memberType) return;
     append({
       id: crypto.randomUUID(),
       familyMemberName: memberName.trim(),
+      role: "OTHER",
+      memberType,
       isBritishCitizen: true,
     });
     setMemberName("");
+    setMemberType("");
     setDialogOpen(false);
   }
 
@@ -57,8 +61,10 @@ export function FamilyIdForm({ applicationId, documentMap }: FamilyIdFormProps) 
     <div className="space-y-6">
       <div className="rounded-md bg-primary-50 border border-primary-200 p-4">
         <p className="text-sm text-primary-800">
-          <strong>Note:</strong> This includes all dependent children and any
-          dependent elderly family members.
+          <strong>Note:</strong> The child and the parent / guardian named on your
+          application are listed below and each needs an identity document. You
+          can also add any other dependent children or dependent elderly family
+          members.
         </p>
       </div>
 
@@ -75,6 +81,7 @@ export function FamilyIdForm({ applicationId, documentMap }: FamilyIdFormProps) 
               index={index}
               fieldId={field.id}
               familyMemberName={field.familyMemberName}
+              role={field.role ?? "OTHER"}
               control={control}
               applicationId={applicationId}
               documentMap={documentMap}
@@ -113,6 +120,25 @@ export function FamilyIdForm({ applicationId, documentMap }: FamilyIdFormProps) 
                 placeholder="Full name"
               />
             </div>
+            <div className="space-y-1.5">
+              <Label>
+                Is this a child or an adult?{" "}
+                <span className="text-error-600">*</span>
+              </Label>
+              <div className="flex gap-2">
+                {(["CHILD", "ADULT"] as const).map((opt) => (
+                  <Button
+                    key={opt}
+                    type="button"
+                    variant={memberType === opt ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => setMemberType(opt)}
+                  >
+                    {opt === "CHILD" ? "Child" : "Adult"}
+                  </Button>
+                ))}
+              </div>
+            </div>
           </div>
           <DialogFooter>
             <Button
@@ -122,7 +148,11 @@ export function FamilyIdForm({ applicationId, documentMap }: FamilyIdFormProps) 
             >
               Cancel
             </Button>
-            <Button type="button" onClick={handleAdd}>
+            <Button
+              type="button"
+              onClick={handleAdd}
+              disabled={!memberName.trim() || !memberType}
+            >
               Save
             </Button>
           </DialogFooter>
@@ -138,6 +168,7 @@ interface FamilyMemberCardProps {
   index: number;
   fieldId: string;
   familyMemberName: string;
+  role: "CHILD" | "GUARDIAN" | "OTHER";
   control: ReturnType<typeof useFormContext<FamilyIdFormValues>>["control"];
   applicationId: string;
   documentMap?: Record<string, DocumentMeta>;
@@ -145,18 +176,31 @@ interface FamilyMemberCardProps {
   onRemove: () => void;
 }
 
+const ROLE_CAPTION: Record<"CHILD" | "GUARDIAN", string> = {
+  CHILD: "Child named on this application",
+  GUARDIAN: "Parent / guardian named on this application",
+};
+
 function FamilyMemberCard({
   index,
   familyMemberName,
+  role,
   control,
   applicationId,
   documentMap,
   setValue,
   onRemove,
 }: FamilyMemberCardProps) {
+  // CHILD / GUARDIAN rows are auto-added, name-locked and always required — no
+  // child/adult toggle and no remove control. Only OTHER rows are editable (Q1).
+  const isLocked = role !== "OTHER";
   const isBritishCitizen = useWatch({
     control,
     name: `familyMembers.${index}.isBritishCitizen`,
+  });
+  const memberType = useWatch({
+    control,
+    name: `familyMembers.${index}.memberType`,
   });
 
   // Resolve existing documents from documentMap
@@ -180,19 +224,55 @@ function FamilyMemberCard({
   return (
     <fieldset className="rounded-md border border-slate-200 bg-white p-3 space-y-4 sm:p-4">
       <legend className="sr-only">{familyMemberName}</legend>
-      <div className="flex items-center justify-between">
-        <span className="font-medium text-sm text-primary-900">
-          {familyMemberName}
-        </span>
-        <button
-          type="button"
-          onClick={onRemove}
-          className="rounded p-1 text-slate-400 hover:bg-error-50 hover:text-error-600"
-          aria-label={`Remove ${familyMemberName}`}
-        >
-          <Trash2 className="h-4 w-4" />
-        </button>
+      <div className="flex items-start justify-between">
+        <div>
+          {isLocked && (
+            <p className="text-xs font-medium uppercase tracking-wide text-slate-400">
+              {ROLE_CAPTION[role as "CHILD" | "GUARDIAN"]}
+            </p>
+          )}
+          <span className="font-medium text-sm text-primary-900">
+            {familyMemberName || "—"}
+          </span>
+        </div>
+        {!isLocked && (
+          <button
+            type="button"
+            onClick={onRemove}
+            className="rounded p-1 text-slate-400 hover:bg-error-50 hover:text-error-600"
+            aria-label={`Remove ${familyMemberName}`}
+          >
+            <Trash2 className="h-4 w-4" />
+          </button>
+        )}
       </div>
+
+      {!isLocked && (
+        <div className="space-y-1.5">
+          <Label>
+            Is this family member a child or an adult?{" "}
+            <span className="text-error-600">*</span>
+          </Label>
+          <div className="flex gap-2">
+            {(["CHILD", "ADULT"] as const).map((opt) => (
+              <Button
+                key={opt}
+                type="button"
+                variant={memberType === opt ? "default" : "outline"}
+                size="sm"
+                onClick={() =>
+                  setValue(`familyMembers.${index}.memberType`, opt, {
+                    shouldValidate: true,
+                    shouldDirty: true,
+                  })
+                }
+              >
+                {opt === "CHILD" ? "Child" : "Adult"}
+              </Button>
+            ))}
+          </div>
+        </div>
+      )}
 
       <YesNoToggle
         control={control}

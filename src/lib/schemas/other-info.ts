@@ -57,7 +57,7 @@ export const otherInfoSchema = z
     }
     if (
       data.hasChildMaintenance &&
-      data.maintenancePayer === "YOU" &&
+      data.maintenancePayer !== undefined &&
       data.maintenanceIsDivorced === false &&
       !data.maintenanceAgreementNote
     ) {

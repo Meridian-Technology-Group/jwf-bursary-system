@@ -668,19 +668,8 @@ function ParentEmploymentFields({
         )}
       </ConditionalField>
 
-      {/* Declaration */}
+      {/* Confirmation (income declaration lives on the final Declaration step). */}
       <Separator />
-      <div className="rounded-md bg-primary-50 p-4 text-sm text-primary-900">
-        <p className="font-medium">Declaration of {parentLabel}</p>
-        <p className="mt-2 text-xs leading-relaxed text-primary-700">
-          I declare to the best of my knowledge and belief, all the particulars
-          here submitted are true and contain a full statement of our income from
-          all sources during the period stated. I understand that the provision
-          of false information will lead to my application being disqualified
-          from assessment under the bursary scheme and full fees would become
-          payable thereafter.
-        </p>
-      </div>
       <FormField
         control={control}
         name={`${prefix}.declarationAccepted` as "parent1Employment.declarationAccepted"}
@@ -694,7 +683,7 @@ function ParentEmploymentFields({
             </FormControl>
             <div className="space-y-1 leading-none">
               <FormLabel className="cursor-pointer">
-                I accept the above declaration{" "}
+                I can confirm that the information entered above is accurate.{" "}
                 <span className="text-error-600" aria-hidden="true">*</span>
               </FormLabel>
             </div>
@@ -832,6 +821,16 @@ export function ParentDetailsForm({
   const isSeparatedOrDivorced =
     relationshipStatus === "SEPARATED" || relationshipStatus === "DIVORCED";
 
+  // Whether the household-questions box has anything to show for the current
+  // relationship status / facets. When false the box is not rendered at all, so
+  // it collapses to nothing rather than leaving an empty grey panel.
+  const hasHouseholdContent =
+    isSeparatedOrDivorced ||
+    relationshipStatus === "WIDOWED" ||
+    isSoleParent === false ||
+    handling.gate === "CANNOT_SUPPORT" ||
+    handling.requiredEvidence.length > 0;
+
   return (
     <div className="space-y-8">
       {/* 2.1 Sole parent — hidden in secondary mode (held at sole-parent) */}
@@ -890,28 +889,28 @@ export function ParentDetailsForm({
       {/* ── Epic 09 household questions — suppressed for the second parent
           (they answer only their own subset). Each reveal is driven by the
           relationship status / facets so we ask only the right question set. ── */}
-      {!secondaryMode && (
+      {!secondaryMode && hasHouseholdContent && (
         <div className="space-y-6 rounded-md border border-slate-200 bg-slate-50 p-4">
           {/* Separated / divorced — school-fees court order (H7 discriminator)
               and the finances-in-flux (H9) facet. */}
-          <ConditionalField show={isSeparatedOrDivorced}>
+          {isSeparatedOrDivorced && (
             <YesNoToggle
               control={control}
               name="financesNotDisentangled"
               label="Are your finances still being separated (for example, mid-divorce)?"
               description="This helps the assessor understand whether the household income is settled."
             />
-          </ConditionalField>
+          )}
 
           {/* H7 — divorced + school-fees court order question */}
-          <ConditionalField show={relationshipStatus === "DIVORCED"}>
+          {relationshipStatus === "DIVORCED" && (
             <YesNoToggle
               control={control}
               name="hasSchoolFeesCourtOrder"
               label="Is there a court order specifically for the payment of school fees?"
               description="A court order that already covers the school fees affects whether a bursary can be considered."
             />
-          </ConditionalField>
+          )}
 
           {/* H7 cannot-support notice — inline, NON-blocking. The applicant may
               still submit; it explains the likely outcome (mirrors the FAQ). */}
@@ -938,18 +937,18 @@ export function ParentDetailsForm({
 
           {/* D17 — remarried sole parent (three incomes via two-earner +
               maintenance). Offered when the parent is in a couple (not sole). */}
-          <ConditionalField show={isSoleParent === false}>
+          {isSoleParent === false && (
             <YesNoToggle
               control={control}
               name="isRemarriedSoleParent"
               label="Have you remarried or formed a new partnership since the child's other natural parent?"
               description="If so, we assess your current household together and capture the absent natural parent's contribution as maintenance."
             />
-          </ConditionalField>
+          )}
 
           {/* D15 — shared custody split. Offered when there is a non-resident
               natural parent (separated/divorced, not sole). */}
-          <ConditionalField show={isSeparatedOrDivorced && isSoleParent === false}>
+          {isSeparatedOrDivorced && isSoleParent === false && (
             <FormField
               control={control}
               name="custodyArrangement"
@@ -986,10 +985,10 @@ export function ParentDetailsForm({
                 </FormItem>
               )}
             />
-          </ConditionalField>
+          )}
 
           {/* H3 — death certificate (widowed) */}
-          <ConditionalField show={relationshipStatus === "WIDOWED"}>
+          {relationshipStatus === "WIDOWED" && (
             <HouseholdEvidenceUpload
               field="deathCertificateDocumentId"
               slot="DEATH_CERTIFICATE"
@@ -997,7 +996,7 @@ export function ParentDetailsForm({
               applicationId={applicationId}
               documentMap={documentMap}
             />
-          </ConditionalField>
+          )}
 
           {/* Evidence prompt — surfaces the scenario's expected evidence so the
               applicant knows what to gather (the actual uploads live on the

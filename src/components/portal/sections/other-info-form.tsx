@@ -124,7 +124,7 @@ export function OtherInfoForm({ applicationId, documentMap }: OtherInfoFormProps
             name="maintenancePayer"
             render={({ field }) => (
               <FormItem>
-                <FormLabel>Who pays maintenance to the other parent? <span className="text-error-600">*</span></FormLabel>
+                <FormLabel>Who pays the maintenance? <span className="text-error-600">*</span></FormLabel>
                 <Select onValueChange={field.onChange} value={field.value}>
                   <FormControl>
                     <SelectTrigger className="w-72"><SelectValue placeholder="Select..." /></SelectTrigger>
@@ -138,7 +138,7 @@ export function OtherInfoForm({ applicationId, documentMap }: OtherInfoFormProps
               </FormItem>
             )}
           />
-          <ConditionalField show={maintenancePayer === "YOU"}>
+          <ConditionalField show={maintenancePayer === "YOU" || maintenancePayer === "EX_PARTNER"}>
             <YesNoToggle control={control} name="maintenanceIsDivorced" label="Are you divorced?" />
             <ConditionalField show={maintenanceIsDivorced === true}>
               <FileUpload

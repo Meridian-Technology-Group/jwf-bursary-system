@@ -47,6 +47,14 @@ export interface ChildDetailsData {
 export interface FamilyMemberIdentity {
   id: string;
   familyMemberName: string;
+  /**
+   * CHILD/GUARDIAN = the auto-added, always-required child and parent/guardian
+   * named on the application; OTHER = an additional dependent added by the
+   * applicant (Q1). Optional for back-compat with pre-Q1 blobs.
+   */
+  role?: "CHILD" | "GUARDIAN" | "OTHER";
+  /** Child vs adult — only used for OTHER rows (Q1). */
+  memberType?: "CHILD" | "ADULT";
   isBritishCitizen: boolean;
   /** Document slot ID for UK passport (when British citizen) */
   ukPassportDocumentId?: string;
