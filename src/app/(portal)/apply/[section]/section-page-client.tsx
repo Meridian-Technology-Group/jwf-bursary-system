@@ -64,6 +64,8 @@ interface SectionPageClientProps {
   lockedSchool?: "TRINITY" | "WHITGIFT" | null;
   /** Seed for Section 1 defaults — the child's name captured on the Application. */
   applicationChildName?: string;
+  /** The applicant's own name — seeds the locked "guardian" row on FAMILY_ID (Q1). */
+  applicationGuardianName?: string;
   /** Stored Parent 1 address — shown read-only when child shares it (D1, §3 Q7). */
   parent1Address?: StoredParentAddress | null;
   /**
@@ -116,7 +118,61 @@ interface SectionPageClientProps {
 interface DefaultValuesSeed {
   applicationSchool?: "TRINITY" | "WHITGIFT";
   applicationChildName?: string;
+  applicationGuardianName?: string;
   isSoleParent?: boolean;
+}
+
+/**
+ * FAMILY_ID (Q1): guarantee two locked, always-required rows — the child named
+ * on the application (role CHILD) and the applicant / named guardian (role
+ * GUARDIAN) — followed by any additional members. Their names are locked to the
+ * application source (refreshed on every load); uploaded doc ids are preserved.
+ * Legacy rows with no role are treated as OTHER additional members.
+ */
+function normaliseFamilyId(
+  existing: unknown,
+  childName: string,
+  guardianName: string
+) {
+  const raw =
+    existing &&
+    typeof existing === "object" &&
+    Array.isArray((existing as { familyMembers?: unknown }).familyMembers)
+      ? ((existing as { familyMembers: unknown[] })
+          .familyMembers as Array<Record<string, unknown>>)
+      : [];
+
+  const find = (role: string) =>
+    raw.find((m) => m && typeof m === "object" && m.role === role);
+  const others = raw
+    .filter(
+      (m) =>
+        m && typeof m === "object" && m.role !== "CHILD" && m.role !== "GUARDIAN"
+    )
+    .map((m) => ({ ...m, role: "OTHER" }));
+
+  const fixedRow = (
+    existingRow: Record<string, unknown> | undefined,
+    role: "CHILD" | "GUARDIAN",
+    name: string,
+    fallbackId: string
+  ) => ({
+    id: (existingRow?.id as string) ?? fallbackId,
+    role,
+    familyMemberName: name, // locked to the application source
+    isBritishCitizen: (existingRow?.isBritishCitizen as boolean) ?? true,
+    ukPassportDocumentId: existingRow?.ukPassportDocumentId as string | undefined,
+    passportDocumentId: existingRow?.passportDocumentId as string | undefined,
+    ilrDocumentId: existingRow?.ilrDocumentId as string | undefined,
+  });
+
+  return {
+    familyMembers: [
+      fixedRow(find("CHILD"), "CHILD", childName, "family-role-child"),
+      fixedRow(find("GUARDIAN"), "GUARDIAN", guardianName, "family-role-guardian"),
+      ...others,
+    ],
+  };
 }
 
 function getDefaultValues(
@@ -124,6 +180,15 @@ function getDefaultValues(
   existingData: unknown,
   seed: DefaultValuesSeed = {}
 ) {
+  // FAMILY_ID is normalised the same way whether or not a draft exists (Q1).
+  if (sectionType === "FAMILY_ID") {
+    return normaliseFamilyId(
+      existingData,
+      seed.applicationChildName ?? "",
+      seed.applicationGuardianName ?? ""
+    );
+  }
+
   if (existingData && typeof existingData === "object") {
     // Back-compat: an in-flight PARENTS_INCOME draft may hold the LEGACY flat
     // shape. Normalise each parent record into the new status-driven shape so
@@ -183,8 +248,6 @@ function getDefaultValues(
         currentSchool: "",
         currentSchoolStartDate: "",
       };
-    case "FAMILY_ID":
-      return { familyMembers: [] };
     case "PARENT_DETAILS":
       return {
         isSoleParent: undefined,
@@ -300,6 +363,7 @@ export function SectionPageClient({
   applicationSchool,
   lockedSchool,
   applicationChildName,
+  applicationGuardianName,
   academicYear,
   documentMap,
   childFullName,
@@ -322,6 +386,7 @@ export function SectionPageClient({
   const defaultValues = getDefaultValues(sectionType, existingData, {
     applicationSchool,
     applicationChildName,
+    applicationGuardianName,
     isSoleParent,
   });
 

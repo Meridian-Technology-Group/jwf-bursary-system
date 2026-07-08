@@ -108,7 +108,7 @@ describe("PARENTS_INCOME (status-driven sub-tables — D3)", () => {
     expect(gapIds("PARENTS_INCOME", { parent1Income: {} })).toEqual([]);
   });
 
-  it("employed: P60-or-payslip required when salary > 0, not when 0", () => {
+  it("employed: BOTH P60 and March payslip required when salary > 0, not when 0", () => {
     expect(
       gapIds("PARENTS_INCOME", {
         parent1Income: { employed: { annualSalaryPaye: 0 } },
@@ -118,19 +118,36 @@ describe("PARENTS_INCOME (status-driven sub-tables — D3)", () => {
       gapIds("PARENTS_INCOME", {
         parent1Income: { employed: { annualSalaryPaye: 30000 } },
       })
-    ).toEqual(["PARENTS_INCOME:EMPLOYED_P60_OR_PAYSLIP_PARENT_1"]);
+    ).toEqual([
+      "PARENTS_INCOME:EMPLOYED_MARCH_PAYSLIP_PARENT_1",
+      "PARENTS_INCOME:EMPLOYED_P60_PARENT_1",
+    ]);
   });
 
-  it("employed: satisfied by EITHER P60 or March payslip", () => {
+  it("employed: only satisfied when BOTH P60 and March payslip present", () => {
+    // P60 alone → payslip still outstanding.
     expect(
       gapIds("PARENTS_INCOME", {
         parent1Income: { employed: { annualSalaryPaye: 30000, p60DocumentId: "x" } },
       })
-    ).toEqual([]);
+    ).toEqual(["PARENTS_INCOME:EMPLOYED_MARCH_PAYSLIP_PARENT_1"]);
+    // Payslip alone → P60 still outstanding.
     expect(
       gapIds("PARENTS_INCOME", {
         parent1Income: {
           employed: { annualSalaryPaye: 30000, marchPayslipDocumentId: "y" },
+        },
+      })
+    ).toEqual(["PARENTS_INCOME:EMPLOYED_P60_PARENT_1"]);
+    // Both present → no gap.
+    expect(
+      gapIds("PARENTS_INCOME", {
+        parent1Income: {
+          employed: {
+            annualSalaryPaye: 30000,
+            p60DocumentId: "x",
+            marchPayslipDocumentId: "y",
+          },
         },
       })
     ).toEqual([]);
@@ -200,17 +217,25 @@ describe("PARENTS_INCOME (status-driven sub-tables — D3)", () => {
   });
 
   it("parent 2 rules only fire when the parent2Income block exists", () => {
+    const parent1Complete = {
+      employed: {
+        annualSalaryPaye: 30000,
+        p60DocumentId: "x",
+        marchPayslipDocumentId: "y",
+      },
+    };
     expect(
-      gapIds("PARENTS_INCOME", {
-        parent1Income: { employed: { annualSalaryPaye: 30000, p60DocumentId: "x" } },
-      })
+      gapIds("PARENTS_INCOME", { parent1Income: parent1Complete })
     ).toEqual([]);
     expect(
       gapIds("PARENTS_INCOME", {
-        parent1Income: { employed: { annualSalaryPaye: 30000, p60DocumentId: "x" } },
+        parent1Income: parent1Complete,
         parent2Income: { employed: { annualSalaryPaye: 25000 } },
       })
-    ).toEqual(["PARENTS_INCOME:EMPLOYED_P60_OR_PAYSLIP_PARENT_2"]);
+    ).toEqual([
+      "PARENTS_INCOME:EMPLOYED_MARCH_PAYSLIP_PARENT_2",
+      "PARENTS_INCOME:EMPLOYED_P60_PARENT_2",
+    ]);
   });
 });
 
@@ -372,26 +397,54 @@ describe("FAMILY_ID — per-member identity documents (PR-4)", () => {
   it("no gaps when the section is unstarted (no members array)", () => {
     expect(gapIds("FAMILY_ID", {})).toEqual([]);
   });
+  // A fully-documented guardian, so the child-and-guardian rule (Q1) is
+  // satisfied and these tests isolate the per-member MEMBER_IDENTITY behaviour.
+  const documentedGuardian = {
+    role: "GUARDIAN",
+    isBritishCitizen: true,
+    ukPassportDocumentId: "a",
+  };
   it("British citizen requires a UK passport", () => {
     expect(
-      gapIds("FAMILY_ID", { familyMembers: [{ isBritishCitizen: true }] })
-    ).toEqual(["FAMILY_ID:MEMBER_IDENTITY"]);
+      gapIds("FAMILY_ID", {
+        familyMembers: [documentedGuardian, { role: "CHILD", isBritishCitizen: true }],
+      })
+    ).toEqual([
+      "FAMILY_ID:CHILD_AND_GUARDIAN_DOCUMENTED",
+      "FAMILY_ID:MEMBER_IDENTITY",
+    ]);
     expect(
       gapIds("FAMILY_ID", {
-        familyMembers: [{ isBritishCitizen: true, ukPassportDocumentId: "x" }],
+        familyMembers: [
+          documentedGuardian,
+          { role: "CHILD", isBritishCitizen: true, ukPassportDocumentId: "x" },
+        ],
       })
     ).toEqual([]);
   });
   it("non-British requires passport AND ILR", () => {
     expect(
       gapIds("FAMILY_ID", {
-        familyMembers: [{ isBritishCitizen: false, passportDocumentId: "p" }],
+        familyMembers: [
+          documentedGuardian,
+          { role: "CHILD", isBritishCitizen: false, passportDocumentId: "p" },
+        ],
       })
-    ).toEqual(["FAMILY_ID:MEMBER_IDENTITY"]);
+    ).toEqual([
+      // Child has a passport (counts as documented), just missing ILR → only
+      // the per-member identity gap fires.
+      "FAMILY_ID:MEMBER_IDENTITY",
+    ]);
     expect(
       gapIds("FAMILY_ID", {
         familyMembers: [
-          { isBritishCitizen: false, passportDocumentId: "p", ilrDocumentId: "i" },
+          documentedGuardian,
+          {
+            role: "CHILD",
+            isBritishCitizen: false,
+            passportDocumentId: "p",
+            ilrDocumentId: "i",
+          },
         ],
       })
     ).toEqual([]);
@@ -400,12 +453,58 @@ describe("FAMILY_ID — per-member identity documents (PR-4)", () => {
     expect(
       gapIds(
         "FAMILY_ID",
-        { familyMembers: [{ isBritishCitizen: true }] },
-        new Set(["FAMILY_ID_PASSPORT_0"])
+        {
+          familyMembers: [documentedGuardian, { role: "CHILD", isBritishCitizen: true }],
+        },
+        new Set(["FAMILY_ID_PASSPORT_1"])
       )
     ).toEqual([]);
   });
-  it("does not block before citizenship is answered", () => {
-    expect(gapIds("FAMILY_ID", { familyMembers: [{}] })).toEqual([]);
+  it("does not fire the per-member identity gap before citizenship is answered", () => {
+    expect(gapIds("FAMILY_ID", { familyMembers: [{}] })).not.toContain(
+      "FAMILY_ID:MEMBER_IDENTITY"
+    );
+  });
+});
+
+describe("FAMILY_ID — requires a documented child AND guardian (Q1)", () => {
+  const withDoc = { isBritishCitizen: true, ukPassportDocumentId: "x" };
+  it("a documented child alone does not complete the section", () => {
+    expect(
+      gapIds("FAMILY_ID", { familyMembers: [{ role: "CHILD", ...withDoc }] })
+    ).toEqual(["FAMILY_ID:CHILD_AND_GUARDIAN_DOCUMENTED"]);
+  });
+  it("a documented child AND guardian completes it", () => {
+    expect(
+      gapIds("FAMILY_ID", {
+        familyMembers: [
+          { role: "CHILD", ...withDoc },
+          { role: "GUARDIAN", ...withDoc },
+        ],
+      })
+    ).toEqual([]);
+  });
+  it("a documented guardian but undocumented child still blocks", () => {
+    expect(
+      gapIds("FAMILY_ID", {
+        familyMembers: [
+          { role: "CHILD", isBritishCitizen: true },
+          { role: "GUARDIAN", ...withDoc },
+        ],
+      })
+    ).toEqual([
+      "FAMILY_ID:CHILD_AND_GUARDIAN_DOCUMENTED",
+      "FAMILY_ID:MEMBER_IDENTITY",
+    ]);
+  });
+  it("extra (OTHER) members do not satisfy the child+guardian requirement", () => {
+    expect(
+      gapIds("FAMILY_ID", {
+        familyMembers: [
+          { role: "OTHER", memberType: "CHILD", ...withDoc },
+          { role: "OTHER", memberType: "ADULT", ...withDoc },
+        ],
+      })
+    ).toEqual(["FAMILY_ID:CHILD_AND_GUARDIAN_DOCUMENTED"]);
   });
 });
