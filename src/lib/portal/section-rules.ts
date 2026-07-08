@@ -118,21 +118,27 @@ function incomeRules(earner: Earner): DocumentRule[] {
   const div = `${inc}.divorcedSeparated`;
 
   return [
-    // Employed — P60 OR March payslip required when salary > 0.
+    // Employed — both a P60 AND a March payslip required when salary > 0.
     {
-      kind: "requiredOneOf",
-      id: `EMPLOYED_P60_OR_PAYSLIP${suffix}`,
+      kind: "requiredIfValueGt0",
+      id: `EMPLOYED_P60${suffix}`,
       onlyIfExistsPath: emp,
-      gateValuePaths: [`${emp}.annualSalaryPaye`],
-      label: `${label}: a P60 or March payslip is required for declared employed income`,
+      valuePaths: [`${emp}.annualSalaryPaye`],
+      label: `${label}: a P60 is required for declared employed income`,
       fieldRef: `${emp}.p60DocumentId`,
-      docs: [
-        { docIdPath: `${emp}.p60DocumentId`, slot: `P60${suffix}` },
-        {
-          docIdPath: `${emp}.marchPayslipDocumentId`,
-          slot: `MARCH_PAYSLIP${suffix}`,
-        },
-      ],
+      doc: { docIdPath: `${emp}.p60DocumentId`, slot: `P60${suffix}` },
+    },
+    {
+      kind: "requiredIfValueGt0",
+      id: `EMPLOYED_MARCH_PAYSLIP${suffix}`,
+      onlyIfExistsPath: emp,
+      valuePaths: [`${emp}.annualSalaryPaye`],
+      label: `${label}: a March payslip is required for declared employed income`,
+      fieldRef: `${emp}.marchPayslipDocumentId`,
+      doc: {
+        docIdPath: `${emp}.marchPayslipDocumentId`,
+        slot: `MARCH_PAYSLIP${suffix}`,
+      },
     },
 
     // Self-employed — SA302 required when any SE cell > 0.
@@ -587,6 +593,37 @@ const familyIdRules: DocumentRule[] = [
         // citizenship not yet answered → don't block here (the form requires it)
         return true;
       });
+    },
+  },
+  // Q1: the named child AND the named parent/guardian must each have an identity
+  // document uploaded — a single document against the child alone no longer
+  // completes the section. (These two rows are auto-added and always required;
+  // any extra members the applicant adds are validated by MEMBER_IDENTITY only.)
+  {
+    kind: "structural",
+    id: "CHILD_AND_GUARDIAN_DOCUMENTED",
+    label:
+      "Upload an identity document for both the child and the parent/guardian named on the application",
+    fieldRef: "familyMembers",
+    predicate: (blob, uploadedSlots) => {
+      const members = blob.familyMembers;
+      if (!Array.isArray(members)) return true; // not started
+      const hasAnyDoc = (member: Record<string, unknown>, i: number) => {
+        const has = (id: unknown, slot: string) =>
+          (typeof id === "string" && id.length > 0) || uploadedSlots.has(slot);
+        return (
+          has(member.ukPassportDocumentId, `FAMILY_ID_PASSPORT_${i}`) ||
+          has(member.passportDocumentId, `FAMILY_ID_PASSPORT_${i}`) ||
+          has(member.ilrDocumentId, `FAMILY_ID_ILR_${i}`)
+        );
+      };
+      const roleDocumented = (role: string) =>
+        members.some((m, i) => {
+          if (!m || typeof m !== "object") return false;
+          const member = m as Record<string, unknown>;
+          return member.role === role && hasAnyDoc(member, i);
+        });
+      return roleDocumented("CHILD") && roleDocumented("GUARDIAN");
     },
   },
 ];

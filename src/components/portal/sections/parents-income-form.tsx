@@ -307,6 +307,14 @@ function ParentIncomeColumn({
     />
   );
 
+  // Shown beside any benefit row with a value > 0, pointing the applicant to
+  // the free-upload box at the bottom of the benefits group.
+  const uploadHint = (
+    <span className="block text-xs text-slate-500 sm:pt-1.5">
+      Please upload your supporting document below.
+    </span>
+  );
+
   const employedHasValue = subGt0("employed", "annualSalaryPaye");
   const selfEmployedHasValue =
     subGt0("selfEmployed", "grossSalaried") ||
@@ -314,6 +322,7 @@ function ParentIncomeColumn({
     subGt0("selfEmployed", "dividends") ||
     subGt0("selfEmployed", "otherInvestmentIncome");
   const otherBenefitsHasValue =
+    subGt0("benefits", "childBenefit") ||
     subGt0("benefits", "childWorkingTaxCredit") ||
     subGt0("benefits", "esa") ||
     subGt0("benefits", "pipOrDla") ||
@@ -345,13 +354,13 @@ function ParentIncomeColumn({
                   "employed.p60DocumentId",
                   "P60",
                   `P60 (dated ${taxYear.p60DateLabel})`,
-                  "Upload your P60, or the March payslip below — at least one is required."
+                  "Upload your P60 for the period above."
                 )}
                 {doc(
                   "employed.marchPayslipDocumentId",
                   "MARCH_PAYSLIP",
                   taxYear.marchPayslipLabel,
-                  "Upload your most recent March payslip, or the P60 above — at least one is required."
+                  "Upload your payslip for the month above."
                 )}
               </div>
             ) : undefined
@@ -370,7 +379,7 @@ function ParentIncomeColumn({
               "selfEmployed.sa302DocumentId",
               "SA302",
               `SA302 (tax year ${taxYear.sa302TaxYearLabel})`,
-              "Required when self-employed income is declared."
+              `SA302 for the tax year ${taxYear.sa302TaxYearLabel}* (* if your financial year is between April and October, please report your self-employed income one year in arrears, so upload your SA302 for the previous tax year)`
             )}
           </GroupEvidenceRow>
         )}
@@ -388,8 +397,7 @@ function ParentIncomeColumn({
                 {doc(
                   "benefits.ucMonthlyDocumentIds.0",
                   "UC_MONTHLY",
-                  "3 monthly UC payment documents",
-                  "Upload your three most recent monthly UC payment statements."
+                  "3 monthly UC detailed payment calculations (not just the front page)"
                 )}
               </div>
             ) : undefined
@@ -409,16 +417,46 @@ function ParentIncomeColumn({
           prefix={prefix}
           path="benefits.childBenefit"
           label="Child Benefit (number only)"
-          evidence={<span className="text-xs text-slate-400">not required</span>}
+          evidence={subGt0("benefits", "childBenefit") ? uploadHint : undefined}
         />
-        <IncomeRow prefix={prefix} path="benefits.childWorkingTaxCredit" label="Child / Working Tax Credit" />
-        <IncomeRow prefix={prefix} path="benefits.esa" label="Employment & Support Allowance (ESA)" />
-        <IncomeRow prefix={prefix} path="benefits.pipOrDla" label="Disability Allowance or PIP" />
-        <IncomeRow prefix={prefix} path="benefits.carersAllowance" label="Carer's Allowance" />
-        <IncomeRow prefix={prefix} path="benefits.childcareSupport" label="Childcare Support" />
-        <IncomeRow prefix={prefix} path="benefits.other" label="Other benefits" />
+        <IncomeRow
+          prefix={prefix}
+          path="benefits.childWorkingTaxCredit"
+          label="Child / Working Tax Credit"
+          evidence={subGt0("benefits", "childWorkingTaxCredit") ? uploadHint : undefined}
+        />
+        <IncomeRow
+          prefix={prefix}
+          path="benefits.esa"
+          label="Employment & Support Allowance (ESA)"
+          evidence={subGt0("benefits", "esa") ? uploadHint : undefined}
+        />
+        <IncomeRow
+          prefix={prefix}
+          path="benefits.pipOrDla"
+          label="Disability Allowance or PIP"
+          evidence={subGt0("benefits", "pipOrDla") ? uploadHint : undefined}
+        />
+        <IncomeRow
+          prefix={prefix}
+          path="benefits.carersAllowance"
+          label="Carer's Allowance"
+          evidence={subGt0("benefits", "carersAllowance") ? uploadHint : undefined}
+        />
+        <IncomeRow
+          prefix={prefix}
+          path="benefits.childcareSupport"
+          label="Childcare Support"
+          evidence={subGt0("benefits", "childcareSupport") ? uploadHint : undefined}
+        />
+        <IncomeRow
+          prefix={prefix}
+          path="benefits.other"
+          label="Other benefits"
+          evidence={subGt0("benefits", "other") ? uploadHint : undefined}
+        />
         {otherBenefitsHasValue && (
-          <GroupEvidenceRow label="Evidence of declared benefits — tax credits / ESA / PIP / Carer's / childcare / other (not Child Benefit)">
+          <GroupEvidenceRow label="Evidence of declared benefits — upload your supporting documents here">
             {doc("benefits.otherBenefitsDocumentId", "OTHER_BENEFITS", "Evidence of declared benefits")}
           </GroupEvidenceRow>
         )}

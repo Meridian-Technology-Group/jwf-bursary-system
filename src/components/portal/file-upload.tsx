@@ -114,6 +114,10 @@ export type FileUploadProps = SingleFileUploadProps | MultiFileUploadProps;
 
 const ACCEPTED_MIME = ["application/pdf", "image/jpeg", "image/png"] as const;
 const ACCEPTED_EXTENSIONS = ".pdf, .jpg, .jpeg, .png";
+const WORD_MIME = [
+  "application/msword",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+] as const;
 const MAX_SIZE_BYTES = 20 * 1024 * 1024; // 20 MB
 const MAX_CONCURRENT_UPLOADS = 5;
 
@@ -130,6 +134,12 @@ function validateFile(file: File): string | null {
     return "File too large — maximum 20 MB";
   }
   if (!(ACCEPTED_MIME as readonly string[]).includes(file.type)) {
+    if (
+      (WORD_MIME as readonly string[]).includes(file.type) ||
+      /\.docx?$/i.test(file.name)
+    ) {
+      return "Word documents can't be accepted. Please save or print your document as a PDF, or take a photo of it (JPG or PNG), and upload that instead.";
+    }
     return "Unsupported file type — please upload PDF, JPG, or PNG";
   }
   return null;

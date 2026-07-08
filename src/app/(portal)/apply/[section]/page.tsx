@@ -48,13 +48,11 @@ const REASSESSMENT_SECTION_ORDER: ApplicationSectionType[] = SECTION_ORDER.filte
   (s) => !HIDDEN_REASSESSMENT_SECTIONS.includes(s)
 );
 
-// Wizard page-header titles. Identical to the canonical (review) titles EXCEPT
-// for FAMILY_ID, which the wizard renders as "Details of Child — Identification"
-// (vs "Family Identification" on review). This one-key divergence is a copy
-// decision for product to reconcile — see PR-5; it is NOT merged silently here.
+// Wizard page-header titles. Now identical to the canonical (review) titles —
+// FAMILY_ID renders as "Family Identification" in both places (product
+// reconciled the earlier "Details of Child — Identification" divergence).
 const SECTION_TITLES: Record<ApplicationSectionType, string> = {
   ...CANONICAL_SECTION_TITLES,
-  FAMILY_ID: "Details of Child — Identification",
 };
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
@@ -222,6 +220,9 @@ export default async function SectionPage({ params }: PageProps) {
       applicationSchool={application.school}
       lockedSchool={application.school}
       applicationChildName={application.childName}
+      applicationGuardianName={[user.firstName, user.lastName]
+        .filter(Boolean)
+        .join(" ")}
       academicYear={application.round?.academicYear ?? null}
       documentMap={documentMap}
       childFullName={childFullName}

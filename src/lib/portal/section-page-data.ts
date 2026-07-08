@@ -21,7 +21,7 @@ import {
  * Cross-section reads per section:
  *   - DEPENDENT_CHILDREN reads CHILD_DETAILS childFullName.
  *   - CHILD_DETAILS reads PARENT_DETAILS parent1Contact (address).
- *   - DECLARATION reads PARENT_DETAILS isSoleParent.
+ *   - DECLARATION and ASSETS_LIABILITIES read PARENT_DETAILS isSoleParent.
  *   - PARENTS_INCOME reads PARENT_DETAILS isSoleParent / relationshipStatus /
  *     per-parent employment statuses.
  */
@@ -82,8 +82,9 @@ export async function loadSectionPageData(
   let parent1Status: string | undefined;
   let parent2Status: string | undefined;
   let relationshipStatus: string | undefined;
-  // DECLARATION needs isSoleParent to decide whether to show the P2 tick.
-  if (sectionType === "DECLARATION") {
+  // DECLARATION needs isSoleParent to decide whether to show the P2 tick;
+  // ASSETS_LIABILITIES needs it to decide whether to show the Parent 2 block.
+  if (sectionType === "DECLARATION" || sectionType === "ASSETS_LIABILITIES") {
     const parentSection = await getSectionData(
       tx,
       applicationId,

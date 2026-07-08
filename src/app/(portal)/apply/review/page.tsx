@@ -439,19 +439,22 @@ export default async function ReviewPage() {
 
   // Build data map from sections
   const sectionDataMap = new Map<ApplicationSectionType, unknown>();
-  // Section completeness comes from the persisted application_sections.isComplete
-  // flag (data saved + server-side validated on Save and Continue), NOT from the
-  // document-gap computation, which treats skipped optional uploads as incomplete.
+  // Section completeness = saved (application_sections.isComplete) AND no
+  // error-severity gaps — same rule the sidebar uses. isComplete alone is not
+  // enough: a saved section can still have outstanding mandatory items (e.g. a
+  // required identity document), which must not count as fully complete.
   const completeMap = new Map<ApplicationSectionType, boolean>();
   for (const s of application.sections) {
     sectionDataMap.set(s.section as ApplicationSectionType, s.data);
     completeMap.set(s.section as ApplicationSectionType, s.isComplete);
   }
+  const isSectionFullyValid = (s: ApplicationSectionType) =>
+    completeMap.get(s) === true && (gapMap.get(s)?.length ?? 0) === 0;
 
-  const completedCount = SECTION_ORDER.filter((s) => completeMap.get(s) === true).length;
+  const completedCount = SECTION_ORDER.filter(isSectionFullyValid).length;
 
   // Progress mirrors the "sections fully complete" counter so the bar and the
-  // N-of-10 figure agree — both read is_complete, not the document-gap source.
+  // N-of-10 figure agree — both use the gap-aware fully-valid rule above.
   const progressPct =
     SECTION_ORDER.length > 0
       ? parseFloat(((completedCount / SECTION_ORDER.length) * 100).toFixed(1))
@@ -573,7 +576,10 @@ export default async function ReviewPage() {
 
         <div className="space-y-4">
           {SUMMARY_SECTIONS.map((sectionType, idx) => {
-            const isFullyValid = completeMap.get(sectionType) === true;
+            // Match the sidebar: "Complete" only when saved AND no error gaps.
+            // isComplete alone let a section show green here while the sidebar /
+            // validation summary flagged outstanding mandatory items.
+            const isFullyValid = isSectionFullyValid(sectionType);
             const isStarted =
               completeMap.get(sectionType) === true ||
               startedMap.get(sectionType) === true;
