@@ -7,6 +7,11 @@
  * the file body and confirm it matches one of the allowed magic signatures.
  *
  * See docs/security-audit.md §2.10.
+ *
+ * The allowed signature set here (PDF/JPEG/PNG) must be kept in sync BY HAND
+ * with the declared-MIME allowlist in src/lib/uploads/accepted-types.ts
+ * (item 14, Story 14.4) — this module intentionally does not import that one,
+ * since it works on raw bytes rather than declared/claimed types.
  */
 
 export type SniffedContentType = "application/pdf" | "image/jpeg" | "image/png";

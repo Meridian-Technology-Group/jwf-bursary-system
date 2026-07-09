@@ -45,6 +45,16 @@ import {
   useUploadEndpoints,
   type UploadEndpoints,
 } from "@/components/portal/upload-endpoints";
+import {
+  ACCEPTED_MIME,
+  ACCEPTED_EXTENSIONS,
+  ACCEPTED_FORMATS_LABEL,
+  MAX_SIZE_MB,
+  MAX_SIZE_BYTES,
+  isWordDocument,
+  UNSUPPORTED_TYPE_MESSAGE,
+  WORD_DOCUMENT_MESSAGE,
+} from "@/lib/uploads/accepted-types";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -111,14 +121,9 @@ export interface MultiFileUploadProps extends FileUploadBaseProps {
 export type FileUploadProps = SingleFileUploadProps | MultiFileUploadProps;
 
 // ─── Constants ────────────────────────────────────────────────────────────────
+// ACCEPTED_MIME / ACCEPTED_EXTENSIONS / MAX_SIZE_BYTES / Word detection are all
+// imported from the shared allowlist module (item 14, Story 14.4) — see above.
 
-const ACCEPTED_MIME = ["application/pdf", "image/jpeg", "image/png"] as const;
-const ACCEPTED_EXTENSIONS = ".pdf, .jpg, .jpeg, .png";
-const WORD_MIME = [
-  "application/msword",
-  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-] as const;
-const MAX_SIZE_BYTES = 20 * 1024 * 1024; // 20 MB
 const MAX_CONCURRENT_UPLOADS = 5;
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -131,16 +136,13 @@ function formatBytes(bytes: number): string {
 
 function validateFile(file: File): string | null {
   if (file.size > MAX_SIZE_BYTES) {
-    return "File too large — maximum 20 MB";
+    return `File too large — maximum ${MAX_SIZE_MB} MB`;
   }
-  if (!(ACCEPTED_MIME as readonly string[]).includes(file.type)) {
-    if (
-      (WORD_MIME as readonly string[]).includes(file.type) ||
-      /\.docx?$/i.test(file.name)
-    ) {
-      return "Word documents can't be accepted. Please save or print your document as a PDF, or take a photo of it (JPG or PNG), and upload that instead.";
+  if (!ACCEPTED_MIME.includes(file.type)) {
+    if (isWordDocument(file.name, file.type)) {
+      return WORD_DOCUMENT_MESSAGE;
     }
-    return "Unsupported file type — please upload PDF, JPG, or PNG";
+    return UNSUPPORTED_TYPE_MESSAGE;
   }
   return null;
 }
@@ -794,7 +796,7 @@ function DropZone({
       </button>
 
       <p className="mt-2 text-xs text-slate-400">
-        PDF, JPG, or PNG — max 20 MB
+        {ACCEPTED_FORMATS_LABEL} — max {MAX_SIZE_MB} MB
         {multiple ? " each" : ""}
       </p>
     </div>

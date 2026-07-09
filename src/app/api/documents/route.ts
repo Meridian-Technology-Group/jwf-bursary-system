@@ -28,9 +28,14 @@ import { sniffContentType } from "@/lib/storage/sniff";
 import { ensurePrimaryContributor } from "@/lib/db/queries/contributors";
 import { logError } from "@/lib/log";
 import { ApplicationContributorRole } from "@prisma/client";
-
-const ACCEPTED_MIME = ["application/pdf", "image/jpeg", "image/png"];
-const MAX_SIZE_BYTES = 20 * 1024 * 1024; // 20 MB
+import {
+  ACCEPTED_MIME,
+  MAX_SIZE_MB,
+  MAX_SIZE_BYTES,
+  isWordDocument,
+  UNSUPPORTED_TYPE_MESSAGE,
+  WORD_DOCUMENT_MESSAGE,
+} from "@/lib/uploads/accepted-types";
 
 const SECONDARY_NAMESPACE = "secondary";
 
@@ -72,13 +77,20 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   // ── File validation ────────────────────────────────────────────────────────
   if (file.size > MAX_SIZE_BYTES) {
     return NextResponse.json(
-      { error: "File too large — maximum 20 MB" },
+      { error: `File too large — maximum ${MAX_SIZE_MB} MB` },
       { status: 422 }
     );
   }
+  // Word (item 14, Story 14.2): checked BEFORE the generic allowlist rejection
+  // so the parent gets the specific convert-to-PDF guidance rather than the
+  // generic message. This is a defence-in-depth backstop to the client-side
+  // check in file-upload.tsx — the authoritative one for this endpoint.
+  if (isWordDocument(file.name, file.type)) {
+    return NextResponse.json({ error: WORD_DOCUMENT_MESSAGE }, { status: 422 });
+  }
   if (!ACCEPTED_MIME.includes(file.type)) {
     return NextResponse.json(
-      { error: "Unsupported file type — please upload PDF, JPG, or PNG" },
+      { error: UNSUPPORTED_TYPE_MESSAGE },
       { status: 422 }
     );
   }
@@ -88,8 +100,13 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   const headerBuf = Buffer.from(await file.slice(0, 8).arrayBuffer());
   const { contentType: verifiedContentType } = sniffContentType(headerBuf);
   if (!verifiedContentType) {
+    // Catches e.g. a Word file renamed to .pdf with a spoofed Content-Type —
+    // isWordDocument() above can't detect that case (nothing about the
+    // filename/declared MIME looks like Word), so it falls through to here.
+    // Surfaced as the same shared generic message so the parent still learns
+    // the accepted formats (item 14, Story 14.1's last acceptance criterion).
     return NextResponse.json(
-      { error: "File contents do not match an allowed type (PDF, JPG, or PNG)" },
+      { error: UNSUPPORTED_TYPE_MESSAGE },
       { status: 422 }
     );
   }

@@ -36,12 +36,21 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { ALL_DOCUMENT_SLOTS, humaniseSlot } from "@/lib/documents/slots";
+import {
+  ACCEPTED_MIME,
+  ACCEPTED_EXTENSIONS,
+  ACCEPTED_FORMATS_LABEL,
+  MAX_SIZE_MB,
+  MAX_SIZE_BYTES,
+  isWordDocument,
+  UNSUPPORTED_TYPE_MESSAGE,
+  WORD_DOCUMENT_MESSAGE,
+} from "@/lib/uploads/accepted-types";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
-
-const ACCEPTED_MIME = ["application/pdf", "image/jpeg", "image/png"];
-const MAX_SIZE_MB = 20;
-const MAX_SIZE_BYTES = MAX_SIZE_MB * 1024 * 1024;
+// Allowlist/size/Word-detection all come from the shared module above (item 14,
+// Story 14.4) — this was a fourth, previously undiscovered duplicate of the
+// same constants (alongside both API routes and file-upload.tsx).
 
 // ─── Props ────────────────────────────────────────────────────────────────────
 
@@ -76,7 +85,11 @@ export function AdminUpload({ applicationId }: AdminUploadProps) {
 
     // Client-side validation
     if (!ACCEPTED_MIME.includes(file.type)) {
-      setFileError("Only PDF, JPEG, and PNG files are accepted.");
+      setFileError(
+        isWordDocument(file.name, file.type)
+          ? WORD_DOCUMENT_MESSAGE
+          : UNSUPPORTED_TYPE_MESSAGE
+      );
       setSelectedFile(null);
       e.target.value = "";
       return;
@@ -199,7 +212,7 @@ export function AdminUpload({ applicationId }: AdminUploadProps) {
             ref={fileInputRef}
             id="admin-upload-file"
             type="file"
-            accept=".pdf,.jpg,.jpeg,.png"
+            accept={ACCEPTED_EXTENSIONS}
             onChange={handleFileChange}
             disabled={isUploading}
             className="block w-full text-sm text-slate-600
@@ -210,7 +223,7 @@ export function AdminUpload({ applicationId }: AdminUploadProps) {
               disabled:cursor-not-allowed disabled:opacity-50"
           />
           <p className="text-xs text-slate-400">
-            PDF, JPEG, or PNG — max {MAX_SIZE_MB} MB
+            {ACCEPTED_FORMATS_LABEL} — max {MAX_SIZE_MB} MB
           </p>
         </div>
 
