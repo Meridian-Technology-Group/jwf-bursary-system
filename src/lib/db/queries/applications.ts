@@ -22,6 +22,7 @@ import type {
   ApplicationType,
   AssessmentStatus,
   AssessmentOutcome,
+  BursaryAccountStatus,
   Document,
   Assessment,
   Profile,
@@ -62,6 +63,14 @@ export interface ApplicationListItem {
   assignedToId: string | null;
   round: Pick<Round, "id" | "academicYear">;
   secondParent: SecondParentIndicator;
+  /**
+   * The rolling BursaryAccount this application is linked to, or null when none
+   * exists yet (a NEW application only gains an account on AWARD). Drives the
+   * queue's "Withdraw account" action availability.
+   */
+  bursaryAccountId: string | null;
+  /** Status of the linked account (null when there is no account). */
+  bursaryAccountStatus: BursaryAccountStatus | null;
 }
 
 export interface ListApplicationsFilters {
@@ -162,8 +171,12 @@ export async function listApplications(
       submittedAt: true,
       isReassessment: true,
       assignedToId: true,
+      bursaryAccountId: true,
       round: {
         select: { id: true, academicYear: true },
+      },
+      bursaryAccount: {
+        select: { status: true },
       },
       // Only the SECONDARY contributor (at most one) drives the indicator.
       contributors: {
@@ -182,7 +195,7 @@ export async function listApplications(
   });
 
   return applications.map((a) => {
-    const { contributors, assessment, ...rest } = a;
+    const { contributors, assessment, bursaryAccount, ...rest } = a;
     const secondary = contributors[0];
     let secondParent: SecondParentIndicator = "NONE";
     if (secondary) {
@@ -199,6 +212,7 @@ export async function listApplications(
       assessmentStatus: assessment?.status ?? null,
       outcome: assessment?.outcome ?? null,
       secondParent,
+      bursaryAccountStatus: bursaryAccount?.status ?? null,
     };
   });
 }
