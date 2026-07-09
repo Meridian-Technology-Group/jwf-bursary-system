@@ -13,26 +13,34 @@ interface ApplicationDetailTabLinkProps {
   label: string;
   href: string;
   isPlaceholder?: boolean;
+  /** When true the tab is inert (no navigation) and shows `disabledReason`. */
+  disabled?: boolean;
+  /** Tooltip explaining why the tab is disabled. */
+  disabledReason?: string;
 }
 
 export function ApplicationDetailTabLink({
   label,
   href,
   isPlaceholder,
+  disabled,
+  disabledReason,
 }: ApplicationDetailTabLinkProps) {
   const pathname = usePathname();
 
   // Exact match for the detail root (/applications/[id]) to avoid matching all tabs
   const isActive = pathname === href;
 
-  if (isPlaceholder) {
+  // A gated tab (e.g. Assessment before the form is submitted) renders inert
+  // with an explanatory tooltip instead of silently redirecting on click.
+  if (isPlaceholder || disabled) {
     return (
       <span
         className={cn(
           "inline-flex items-center border-b-2 border-transparent px-4 py-3 text-sm font-medium text-slate-400 cursor-not-allowed",
           "whitespace-nowrap"
         )}
-        title="Coming soon"
+        title={disabled ? disabledReason ?? "Unavailable" : "Coming soon"}
         aria-disabled="true"
       >
         {label}

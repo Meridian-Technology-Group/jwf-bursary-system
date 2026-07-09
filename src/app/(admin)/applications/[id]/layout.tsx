@@ -47,9 +47,14 @@ interface TabItem {
   label: string;
   href: string;
   isPlaceholder?: boolean;
+  disabled?: boolean;
+  disabledReason?: string;
 }
 
-function getTabItems(applicationId: string): TabItem[] {
+function getTabItems(
+  applicationId: string,
+  { assessmentGated }: { assessmentGated: boolean }
+): TabItem[] {
   return [
     {
       label: "Applicant Data",
@@ -58,6 +63,11 @@ function getTabItems(applicationId: string): TabItem[] {
     {
       label: "Assessment",
       href: `/applications/${applicationId}/assessment`,
+      // B1 gate: the assessment workspace redirects back here until the form is
+      // submitted. Render the tab inert with an explanation rather than letting
+      // the click silently bounce (which reads as the tab being "stuck").
+      disabled: assessmentGated,
+      disabledReason: "Available once the applicant submits their form",
     },
     {
       label: "Recommendation",
@@ -145,7 +155,18 @@ export default async function ApplicationDetailLayout({
     redirect("/admin");
   }
 
-  const tabs = getTabItems(params.id);
+  // Review phase drives both the primary actions bar and the tab gating. It is
+  // DERIVED from the lifecycle columns (Epic 01 PR-6a), not the deprecated fused
+  // `applications.status`, and mirrors the gate in the assessment workspace page.
+  const reviewPhase = deriveReviewPhase({
+    formStatus: application.formStatus,
+    assessmentStatus: application.assessment?.status ?? null,
+    outcome: application.assessment?.outcome ?? null,
+  });
+
+  const tabs = getTabItems(params.id, {
+    assessmentGated: reviewPhase === "PRE_SUBMISSION",
+  });
 
   // Secondary "Manage" affordances are demoted beneath the primary outcome
   // actions. Role gating is unchanged from the original layout:
@@ -229,11 +250,7 @@ export default async function ApplicationDetailLayout({
           deprecated fused `applications.status`. */}
       <ApplicationActions
         applicationId={application.id}
-        status={deriveReviewPhase({
-          formStatus: application.formStatus,
-          assessmentStatus: application.assessment?.status ?? null,
-          outcome: application.assessment?.outcome ?? null,
-        })}
+        status={reviewPhase}
         documents={application.documents}
       />
 
@@ -296,6 +313,8 @@ export default async function ApplicationDetailLayout({
               label={tab.label}
               href={tab.href}
               isPlaceholder={tab.isPlaceholder}
+              disabled={tab.disabled}
+              disabledReason={tab.disabledReason}
             />
           ))}
         </nav>
@@ -315,16 +334,22 @@ function TabLink({
   label,
   href,
   isPlaceholder,
+  disabled,
+  disabledReason,
 }: {
   label: string;
   href: string;
   isPlaceholder?: boolean;
+  disabled?: boolean;
+  disabledReason?: string;
 }) {
   return (
     <ApplicationDetailTabLink
       label={label}
       href={href}
       isPlaceholder={isPlaceholder}
+      disabled={disabled}
+      disabledReason={disabledReason}
     />
   );
 }
