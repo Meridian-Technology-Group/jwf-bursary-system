@@ -190,6 +190,12 @@ export default async function RoundDetailPage({
                   </span>
                 </span>
               )}
+              <span>
+                Default submission-by:{" "}
+                <span className="font-medium text-slate-700">
+                  {formatDate(round.defaultSubmissionDeadline)}
+                </span>
+              </span>
             </div>
           </div>
 
@@ -204,6 +210,11 @@ export default async function RoundDetailPage({
             decisionDate={
               round.decisionDate
                 ? round.decisionDate.toISOString().slice(0, 10)
+                : ""
+            }
+            defaultSubmissionDeadline={
+              round.defaultSubmissionDeadline
+                ? round.defaultSubmissionDeadline.toISOString().slice(0, 10)
                 : ""
             }
           />

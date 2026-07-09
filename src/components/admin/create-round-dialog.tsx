@@ -47,6 +47,10 @@ const schema = z
     openDate: z.string().min(1, "Open date is required"),
     closeDate: z.string().min(1, "Close date is required"),
     decisionDate: z.string().optional(),
+    // Item 12: optional round-level default submission-by date. No cross-field
+    // refinement — a round with no default is valid, and the default may sit
+    // before or after closeDate (e.g. a grace period), so this is permissive.
+    defaultSubmissionDeadline: z.string().optional(),
   })
   .refine(
     (data) =>
@@ -85,6 +89,7 @@ export function CreateRoundDialog() {
       openDate: "",
       closeDate: "",
       decisionDate: "",
+      defaultSubmissionDeadline: "",
     },
   });
 
@@ -104,6 +109,9 @@ export function CreateRoundDialog() {
     formData.set("closeDate", values.closeDate);
     if (values.decisionDate) {
       formData.set("decisionDate", values.decisionDate);
+    }
+    if (values.defaultSubmissionDeadline) {
+      formData.set("defaultSubmissionDeadline", values.defaultSubmissionDeadline);
     }
 
     startTransition(async () => {
@@ -216,6 +224,31 @@ export function CreateRoundDialog() {
                   <FormControl>
                     <Input type="date" {...field} disabled={isPending} />
                   </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            {/* Default submission-by date (optional, Item 12) */}
+            <FormField
+              control={form.control}
+              name="defaultSubmissionDeadline"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>
+                    Default submission-by date{" "}
+                    <span className="text-xs font-normal text-slate-400">
+                      (optional)
+                    </span>
+                  </FormLabel>
+                  <FormControl>
+                    <Input type="date" {...field} disabled={isPending} />
+                  </FormControl>
+                  <p className="text-xs text-slate-400">
+                    Every application in this round inherits this deadline
+                    unless it has its own override. Leave blank for no
+                    round-wide default.
+                  </p>
                   <FormMessage />
                 </FormItem>
               )}

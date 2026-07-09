@@ -22,6 +22,8 @@ export interface RoundWithCounts {
   openDate: Date;
   closeDate: Date;
   decisionDate: Date | null;
+  /** Round-level default submission-by date (Item 12); null = no round default. */
+  defaultSubmissionDeadline: Date | null;
   status: RoundStatus;
   createdAt: Date;
   counts: {
@@ -135,6 +137,7 @@ export async function createRound(
     openDate: Date;
     closeDate: Date;
     decisionDate?: Date;
+    defaultSubmissionDeadline?: Date;
   }
 ): Promise<Round> {
   return tx.round.create({
@@ -143,6 +146,7 @@ export async function createRound(
       openDate: data.openDate,
       closeDate: data.closeDate,
       decisionDate: data.decisionDate ?? null,
+      defaultSubmissionDeadline: data.defaultSubmissionDeadline ?? null,
       status: RoundStatus.DRAFT,
     },
   });
@@ -159,7 +163,15 @@ export async function updateRound(
   tx: Tx,
   id: string,
   data: Partial<
-    Pick<Round, "academicYear" | "openDate" | "closeDate" | "decisionDate" | "status">
+    Pick<
+      Round,
+      | "academicYear"
+      | "openDate"
+      | "closeDate"
+      | "decisionDate"
+      | "defaultSubmissionDeadline"
+      | "status"
+    >
   >
 ): Promise<Round> {
   return tx.round.update({

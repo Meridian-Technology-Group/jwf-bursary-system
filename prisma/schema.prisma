@@ -43,6 +43,17 @@ model Round {
   openDate        DateTime         @map("open_date") @db.Date
   closeDate       DateTime         @map("close_date") @db.Date
   decisionDate    DateTime?        @map("decision_date") @db.Date
+  /// Round-level default submission-by date (Item 12, date-only, optional).
+  /// Every application in the round inherits this unless it has its own
+  /// `Application.submissionDeadlineAt` override. Derived (not copied) at read
+  /// time by `effectiveSubmissionDeadline()`
+  /// (src/lib/rounds/submission-deadline.ts), which resolves the full chain:
+  ///   application.submissionDeadlineAt (override)
+  ///     ?? endOfDay(round.defaultSubmissionDeadline)  (THIS)
+  ///     ?? endOfDay(round.closeDate)                   (fallback — D-1)
+  /// NULL means the round has no default; applications without their own
+  /// override then fall back to the close-date fallback above.
+  defaultSubmissionDeadline DateTime? @map("default_submission_deadline") @db.Date
   status          RoundStatus      @default(DRAFT)
   createdAt       DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
   applications    Application[]

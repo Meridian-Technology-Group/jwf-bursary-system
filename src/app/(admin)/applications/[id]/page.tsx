@@ -349,7 +349,7 @@ export default async function ApplicantDataPage({ params }: Props) {
   const isAdmin = user.role === Role.ADMIN;
   const effective = effectiveSubmissionDeadline(
     { submissionDeadlineAt: application.submissionDeadlineAt },
-    { closeDate: application.round.closeDate }
+    application.round
   );
 
   // ── Edit on behalf (CR-001) ─────────────────────────────────────────────────
@@ -475,8 +475,13 @@ export default async function ApplicantDataPage({ params }: Props) {
               : null
           }
           roundCloseDate={application.round.closeDate.toISOString()}
+          roundDefaultDeadline={
+            application.round.defaultSubmissionDeadline
+              ? application.round.defaultSubmissionDeadline.toISOString()
+              : null
+          }
           effectiveDeadline={effective.deadline.toISOString()}
-          isOverride={effective.isOverride}
+          source={effective.source}
         />
       )}
 

@@ -969,8 +969,9 @@ export async function gdprDeleteApplicantAction(
  *
  * - `deadlineIso` is an ISO 8601 instant (from a datetime-local input, converted
  *   client-side) granting THIS applicant a later/earlier submit-by date than the
- *   round close. Passing `null` (or empty) CLEARS the override, reverting the
- *   application to the round-level close date.
+ *   round default/close. Passing `null` (or empty) CLEARS the override,
+ *   reverting the application to the round's default deadline (Item 12), or the
+ *   round close date if the round has no default.
  * - The effective deadline is derived everywhere via
  *   `effectiveSubmissionDeadline()` (src/lib/rounds/submission-deadline.ts);
  *   this action only persists the raw override.

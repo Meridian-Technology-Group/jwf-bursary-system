@@ -41,6 +41,12 @@ const RoundSchema = z
     openDate: z.string().min(1, "Open date is required"),
     closeDate: z.string().min(1, "Close date is required"),
     decisionDate: z.string().optional(),
+    // Item 12: round-level default submission-by date. Optional — a round with
+    // no default simply has none (applications fall back to closeDate, D-1).
+    // No refinement against openDate/closeDate: the Foundation may legitimately
+    // want a default before or after closeDate (e.g. a grace period past close),
+    // so this is deliberately permissive.
+    defaultSubmissionDeadline: z.string().optional(),
   })
   .refine(
     (data) => new Date(data.closeDate) > new Date(data.openDate),
@@ -76,6 +82,8 @@ export async function createRoundAction(
     openDate: formData.get("openDate") as string,
     closeDate: formData.get("closeDate") as string,
     decisionDate: (formData.get("decisionDate") as string) || undefined,
+    defaultSubmissionDeadline:
+      (formData.get("defaultSubmissionDeadline") as string) || undefined,
   };
 
   const parsed = RoundSchema.safeParse(raw);
@@ -86,7 +94,8 @@ export async function createRoundAction(
     };
   }
 
-  const { academicYear, openDate, closeDate, decisionDate } = parsed.data;
+  const { academicYear, openDate, closeDate, decisionDate, defaultSubmissionDeadline } =
+    parsed.data;
 
   try {
     await withUserContext(user.id, user.role as RlsRole, async (tx) => {
@@ -95,6 +104,9 @@ export async function createRoundAction(
         openDate: new Date(openDate),
         closeDate: new Date(closeDate),
         decisionDate: decisionDate ? new Date(decisionDate) : undefined,
+        defaultSubmissionDeadline: defaultSubmissionDeadline
+          ? new Date(defaultSubmissionDeadline)
+          : undefined,
       });
 
       await createAuditLog(tx, {
@@ -103,7 +115,12 @@ export async function createRoundAction(
         entityType: AUDIT_ENTITY_TYPES.Round,
         entityId: round.id,
         context: `Created round ${academicYear}`,
-        metadata: { academicYear, openDate, closeDate },
+        metadata: {
+          academicYear,
+          openDate,
+          closeDate,
+          defaultSubmissionDeadline: defaultSubmissionDeadline ?? null,
+        },
       });
     });
 
@@ -144,6 +161,8 @@ export async function updateRoundAction(
     openDate: formData.get("openDate") as string,
     closeDate: formData.get("closeDate") as string,
     decisionDate: (formData.get("decisionDate") as string) || undefined,
+    defaultSubmissionDeadline:
+      (formData.get("defaultSubmissionDeadline") as string) || undefined,
   };
 
   const parsed = RoundSchema.safeParse(raw);
@@ -154,7 +173,8 @@ export async function updateRoundAction(
     };
   }
 
-  const { academicYear, openDate, closeDate, decisionDate } = parsed.data;
+  const { academicYear, openDate, closeDate, decisionDate, defaultSubmissionDeadline } =
+    parsed.data;
 
   try {
     await withUserContext(user.id, user.role as RlsRole, async (tx) => {
@@ -163,6 +183,9 @@ export async function updateRoundAction(
         openDate: new Date(openDate),
         closeDate: new Date(closeDate),
         decisionDate: decisionDate ? new Date(decisionDate) : null,
+        defaultSubmissionDeadline: defaultSubmissionDeadline
+          ? new Date(defaultSubmissionDeadline)
+          : null,
       });
 
       await createAuditLog(tx, {
@@ -171,7 +194,18 @@ export async function updateRoundAction(
         entityType: AUDIT_ENTITY_TYPES.Round,
         entityId: id,
         context: `Updated round ${academicYear}`,
-        metadata: { academicYear, openDate, closeDate },
+        // decisionDate + defaultSubmissionDeadline were missing from this
+        // metadata (Item 12 plan note) — added here so the audit trail on an
+        // update covers every field the dialog can change, matching 12.1's
+        // "audit entry records who changed it and when" AC and 12.3's "single
+        // round-level audit entry" (no per-application entries on cascade).
+        metadata: {
+          academicYear,
+          openDate,
+          closeDate,
+          decisionDate: decisionDate ?? null,
+          defaultSubmissionDeadline: defaultSubmissionDeadline ?? null,
+        },
       });
     });
 
