@@ -38,6 +38,19 @@ function schoolShort(school: string): string {
   return school === "TRINITY" ? "Trinity" : "Whitgift";
 }
 
+/**
+ * Split a stored `childName` into first / last for the two-column list view.
+ * The register holds the child as a single string, so we treat the first
+ * whitespace-delimited token as the first name and the remainder as the last
+ * name. A single-token name leaves the last column blank.
+ */
+function splitChildName(childName: string): { first: string; last: string } {
+  const parts = childName.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return { first: "", last: "" };
+  const [first, ...rest] = parts;
+  return { first, last: rest.join(" ") };
+}
+
 function fmtDob(dob: Date | null): string {
   if (!dob) return "—";
   return new Date(dob).toLocaleDateString("en-GB", {
@@ -157,7 +170,8 @@ export function ContactsTable({
                 <tr>
                   {[
                     "Parent",
-                    "Child",
+                    "Child first",
+                    "Child last",
                     "DOB",
                     "School",
                     "Entry year",
@@ -175,7 +189,9 @@ export function ContactsTable({
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 bg-white">
-                {filtered.map((c) => (
+                {filtered.map((c) => {
+                  const child = splitChildName(c.childName);
+                  return (
                   <tr key={c.id} className="hover:bg-slate-50">
                     <td className="px-4 py-3 text-sm text-slate-700">
                       <div className="font-medium">
@@ -185,7 +201,10 @@ export function ContactsTable({
                       <div className="text-xs text-slate-400">{c.email}</div>
                     </td>
                     <td className="whitespace-nowrap px-4 py-3 text-sm text-slate-600">
-                      {c.childName}
+                      {child.first || "—"}
+                    </td>
+                    <td className="whitespace-nowrap px-4 py-3 text-sm text-slate-600">
+                      {child.last || "—"}
                     </td>
                     <td className="whitespace-nowrap px-4 py-3 text-sm text-slate-500">
                       {fmtDob(c.childDob)}
@@ -247,7 +266,8 @@ export function ContactsTable({
                       </div>
                     </td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           </div>
