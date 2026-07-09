@@ -249,12 +249,15 @@ financial figures, the bursary reference, dates, and the assessment synopsis.
 **Asked for:** The bursary reference should be **editable at any point**, with no
 state-gating.
 
-**Decided — ADMIN only** (ASSESSOR/VIEWER read-only), enforced server-side.
+**Decided:** **ADMIN only** (ASSESSOR/VIEWER read-only), enforced server-side.
+References are **required** (no blank), **case-insensitive** for uniqueness, and
+**allow whitespace + special characters** (preserved verbatim, not normalised).
 
 **To do:**
 - Add an editable reference field (detail page and/or inline on the list).
 - Server action to update `applications.reference` regardless of lifecycle state.
-- Uniqueness validation + audit entry on change.
+- Case-insensitive uniqueness validation (e.g. unique index on `lower(reference)`)
+  + audit entry on change.
 
 ---
 

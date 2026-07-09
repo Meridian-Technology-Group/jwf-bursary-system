@@ -36,8 +36,8 @@ application's current state.
   server-side, not just in the UI.
 - Requires a server action to update `applications.reference` with no
   state guard.
-- Reference may be blank/unassigned on some records — editing must support
-  setting a value where none exists, not only changing an existing one.
+- **Decided — references are required:** an edit cannot save a blank/empty
+  reference (rejected with a validation message).
 
 ## Story 11.2 — Reference uniqueness is validated on save
 **As a** staff member editing a reference, **I want** the system to reject a
@@ -54,16 +54,19 @@ reference stays unique and unambiguous across the system.
   reference unchanged, then it is not treated as a duplicate of itself.
 - [ ] Uniqueness is enforced at the data layer (constraint), not only in the UI,
   so concurrent edits cannot create two identical references.
-- [ ] Assumption: uniqueness is case-insensitive and trims surrounding
-  whitespace. ⚠️ Confirm exact matching rules and whether a format/pattern is
-  required for the reference.
+- [ ] **Decided — matching is case-insensitive:** two references that differ only
+  in letter case are treated as duplicates (e.g. "ABC-1" collides with "abc-1").
+- [ ] **Decided — no format restriction:** whitespace and special characters are
+  permitted and are preserved verbatim (not stripped or normalised away); they
+  are significant, so matching is case-insensitive only, not whitespace-folded.
+- [ ] **Decided — references are required:** a blank/empty reference is rejected;
+  there is no "no reference" state to exclude from the uniqueness check.
 
 **Notes / dependencies**
-- Confirm whether empty/null references are permitted; if multiple applications
-  may legitimately have no reference, the uniqueness constraint must ignore
-  null/blank values.
-- A DB-level unique index may require a migration — ship it in the same PR per
-  CLAUDE.md migration discipline.
+- References are mandatory and unique (case-insensitive). No null/blank values to
+  special-case in the constraint.
+- A case-insensitive unique index (e.g. on `lower(reference)`) will require a
+  migration — ship it in the same PR per CLAUDE.md migration discipline.
 
 ## Story 11.3 — Reference changes are captured in the audit trail
 **As an** ADMIN reviewing history, **I want** every change to a bursary
