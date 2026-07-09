@@ -11,8 +11,11 @@ import { withUserContext, type RlsRole } from "@/lib/db/prisma";
 import {
   listApplications,
   listRounds,
+  getApplicationNames,
   type ListApplicationsFilters,
 } from "@/lib/db/queries/applications";
+import { createAuditLog } from "@/lib/audit/log";
+import { AUDIT_ACTIONS, AUDIT_ENTITY_TYPES } from "@/lib/audit/actions";
 import { getRoundWatchlist } from "@/lib/db/queries/round-watchlist";
 import { getActiveRound } from "@/lib/db/queries/reports";
 import { getActiveBursaryHolders } from "@/lib/db/queries/invitations";
@@ -105,7 +108,7 @@ export default async function QueuePage({
   if (school) applicationFilters.school = school;
   if (undecided) applicationFilters.undecided = true;
 
-  const { applications, rounds, assessors, reassessRoundYear } =
+  const { applications, names, rounds, assessors, reassessRoundYear } =
     await withUserContext(
     profile.id,
     profile.role as RlsRole,
@@ -163,14 +166,48 @@ export default async function QueuePage({
         listRounds(tx),
         profile.role === Role.ADMIN ? listAssessors(tx) : Promise.resolve([]),
       ]);
-      return { applications, rounds, assessors, reassessRoundYear };
+
+      // Lead applicant name + email are shown as first-class columns (they are
+      // no longer behind a per-session reveal toggle). Fetch them for exactly
+      // the applications the viewer can see and write ONE audit entry per page
+      // load so the GDPR name-disclosure trail is preserved.
+      const nameRows =
+        applications.length > 0
+          ? await getApplicationNames(
+              tx,
+              applications.map((a) => a.id)
+            )
+          : [];
+      if (nameRows.length > 0) {
+        await createAuditLog(tx, {
+          userId: profile.id,
+          action: AUDIT_ACTIONS.NAME_REVEAL,
+          entityType: AUDIT_ENTITY_TYPES.Application,
+          context: "Applications list — lead applicant names shown",
+          metadata: {
+            applicationIds: nameRows.map((n) => n.id),
+            count: nameRows.length,
+          },
+        });
+      }
+      const names = nameRows.map((n) => ({
+        id: n.id,
+        leadApplicantName:
+          [n.leadApplicant.firstName, n.leadApplicant.lastName]
+            .filter(Boolean)
+            .join(" ") || n.leadApplicant.email,
+        leadApplicantEmail: n.leadApplicant.email,
+      }));
+
+      return { applications, names, rounds, assessors, reassessRoundYear };
     }
   );
 
-  // Seed values for the client table UI (simple filters only).
+  // Seed values for the client table UI (simple filters only). The status
+  // multi-select was removed from the list UI; a `?status=` drill-in still
+  // filters server-side and is surfaced by the `activeFilter` banner below.
   const initialRound = roundId;
   const initialSchool = school;
-  const initialStatuses = status ? [status] : undefined;
 
   // Plain-English descriptor of the active filter for the dismissible banner.
   // The re-assessment-eligible drill-in owns the banner when active (it is the
@@ -211,12 +248,12 @@ export default async function QueuePage({
       {/* Data table */}
       <ApplicationTable
         applications={applications}
+        names={names}
         rounds={rounds}
         assessors={assessors}
         userRole={profile.role}
         initialRound={initialRound}
         initialSchool={initialSchool}
-        initialStatuses={initialStatuses}
         activeFilter={activeFilter}
         reassessEligibleActive={reassessEligible}
         reassessTargetRound={reassessRoundYear}
