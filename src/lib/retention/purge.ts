@@ -17,6 +17,8 @@
  *        d. delete ApplicationSection rows
  *        e. delete Document DB rows
  *        f. ANONYMISE the Application (childName/childDob) — never hard-deleted
+ *        f2. scrub the lead's Contact rows + BursaryAccount child identity
+ *            (item 10.5 residue-gap fix; values from scrub-map.ts)
  *        g. delete the lead's Invitation rows (by createdBy + by email)
  *        h. NULL AuditLog.userId for the lead (NEVER delete audit rows —
  *           audit_logs is append-only; deletion fails 42501 and rolls back)
@@ -42,6 +44,12 @@ import {
   type SecondaryContributorForGdpr,
   type SecondaryProfileLinkDecision,
 } from "@/lib/db/queries/secondary-gdpr";
+import {
+  APPLICATION_CHILD_SCRUB,
+  BURSARY_ACCOUNT_CHILD_SCRUB,
+  CONTACT_SCRUB,
+  profileScrubData,
+} from "@/lib/retention/scrub-map";
 
 /** The application + relations the cascade needs. Mirrors the action's fetch. */
 export interface PurgeableApplication {
@@ -154,7 +162,21 @@ export async function purgeApplication(
     // f. Anonymise Application (never hard-deleted — preserves reference lineage)
     await tx.application.update({
       where: { id: applicationId },
-      data: { childName: "[Child Removed]", childDob: null },
+      data: { ...APPLICATION_CHILD_SCRUB },
+    });
+
+    // f2. Item 10.5 residue-gap fixes (previously missed by this cascade):
+    //     the contact register holds a full second copy of the family's PII,
+    //     and the bursary account carries the child's name/DOB. Profile-scoped
+    //     intent ⇒ scrub EVERY contact and account of this lead (all children;
+    //     the person is being forgotten), values from the shared scrub map.
+    await tx.contact.updateMany({
+      where: { profileId: leadApplicantId },
+      data: { ...CONTACT_SCRUB, archivedAt: new Date() },
+    });
+    await tx.bursaryAccount.updateMany({
+      where: { leadApplicantId },
+      data: { ...BURSARY_ACCOUNT_CHILD_SCRUB },
     });
 
     // g. Delete Invitation records linked to this lead applicant
@@ -173,17 +195,10 @@ export async function purgeApplication(
       data: { userId: null },
     });
 
-    // i. Anonymise the lead Profile
-    const anonymisedEmail = `[deleted-${leadApplicantId}]@removed.invalid`;
+    // i. Anonymise the lead Profile (values from the shared scrub map)
     await tx.profile.update({
       where: { id: leadApplicantId },
-      data: {
-        firstName: null,
-        lastName: null,
-        phone: null,
-        email: anonymisedEmail,
-        role: "DELETED",
-      },
+      data: profileScrubData(leadApplicantId),
     });
 
     // j. Dual-parent secondary erasure.
@@ -198,13 +213,7 @@ export async function purgeApplication(
         });
         await tx.profile.update({
           where: { id: secondary.profileId },
-          data: {
-            firstName: null,
-            lastName: null,
-            phone: null,
-            email: `[deleted-${secondary.profileId}]@removed.invalid`,
-            role: "DELETED",
-          },
+          data: profileScrubData(secondary.profileId),
         });
       } else {
         await tx.invitation.deleteMany({
