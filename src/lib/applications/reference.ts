@@ -32,3 +32,24 @@ export async function generateApplicationReference(
 
   return `${schoolPrefix}-${yearSuffix}-${String(existing + 1).padStart(4, "0")}`;
 }
+
+// ─── Reference edit validation (item 11) ───────────────────────────────────────
+
+export type ReferenceValidationResult =
+  | { valid: true }
+  | { valid: false; error: string };
+
+/**
+ * Validates a candidate bursary reference for an edit (Story 11.1/11.2).
+ *
+ * References are required and have no format restriction — whitespace and
+ * special characters are significant and preserved verbatim, so this only
+ * rejects a value that is empty/whitespace-only. It does NOT trim the value
+ * for storage; the caller persists `value` exactly as given.
+ */
+export function validateReferenceInput(value: string): ReferenceValidationResult {
+  if (value.trim() === "") {
+    return { valid: false, error: "Bursary reference cannot be blank." };
+  }
+  return { valid: true };
+}
