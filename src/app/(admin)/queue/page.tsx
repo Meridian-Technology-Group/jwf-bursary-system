@@ -29,6 +29,13 @@ import {
   ALL_REVIEW_PHASES,
   type ReviewPhase,
 } from "@/lib/applications/queue-filter";
+import { deriveReviewPhase } from "@/lib/applications/status";
+import { REVIEW_PHASE_LABEL } from "@/lib/applications/review-phase-labels";
+import {
+  londonStartOfDayUtc,
+  londonEndOfDayUtc,
+  formatLondonDateString,
+} from "@/lib/datetime";
 
 export const metadata = {
   title: "Applications",
@@ -67,6 +74,33 @@ function parseSchool(
   return raw && SCHOOLS.has(raw) ? (raw as School) : undefined;
 }
 
+// Received-date range (Item 7.1). A plain `YYYY-MM-DD` calendar-date string —
+// the client always produces this (from a `<input type="date">`), but the URL
+// is user-editable, so malformed values are ignored rather than crashing.
+const DATE_PARAM_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+
+function parseDateParam(value: string | string[] | undefined): string | undefined {
+  const raw = firstValue(value);
+  return raw && DATE_PARAM_PATTERN.test(raw) ? raw : undefined;
+}
+
+/**
+ * Serialises the current search params back to a query string. Passed to the
+ * client table so the received-date filter (7.1) can preserve every other
+ * active param when it navigates, without a client-side `useSearchParams()`
+ * call (which would require wrapping the table in a Suspense boundary).
+ */
+function buildQueryString(params: SearchParams): string {
+  const usp = new URLSearchParams();
+  for (const [key, value] of Object.entries(params)) {
+    if (value === undefined) continue;
+    for (const v of Array.isArray(value) ? value : [value]) {
+      usp.append(key, v);
+    }
+  }
+  return usp.toString();
+}
+
 // Each derived flag maps to exactly one watchlist rule whose deduped `appIds`
 // define the drill-in set (keeps the queue identical to the lane's count).
 const DERIVED_RULE_BY_FLAG: Record<string, WatchlistRuleId> = {
@@ -89,6 +123,17 @@ export default async function QueuePage({
   const status = parseStatus(params.status);
   const school = parseSchool(params.school);
   const undecided = isTruthyFlag(params.undecided);
+
+  // Received-date range (Item 7.1). Parsed as Europe/London calendar dates;
+  // an inverted range from a hand-edited URL is silently ignored (not
+  // applied) rather than erroring — the filter bar's own client-side
+  // validation is what stops a valid session from ever producing one.
+  const submittedFromParam = parseDateParam(params.submittedFrom);
+  const submittedToParam = parseDateParam(params.submittedTo);
+  const submittedRangeValid =
+    !submittedFromParam ||
+    !submittedToParam ||
+    submittedFromParam <= submittedToParam;
   // Re-assessment-eligible drill-in: ADMIN-only. Shows the prior-round winning
   // applications linked to bursary holders who are eligible to be invited into
   // the open round (cross-round is intended).
@@ -107,6 +152,12 @@ export default async function QueuePage({
   if (status) applicationFilters.reviewPhases = [status];
   if (school) applicationFilters.school = school;
   if (undecided) applicationFilters.undecided = true;
+  if (submittedRangeValid && submittedFromParam) {
+    applicationFilters.submittedFrom = londonStartOfDayUtc(submittedFromParam);
+  }
+  if (submittedRangeValid && submittedToParam) {
+    applicationFilters.submittedTo = londonEndOfDayUtc(submittedToParam);
+  }
 
   const { applications, names, rounds, assessors, reassessRoundYear } =
     await withUserContext(
@@ -199,15 +250,41 @@ export default async function QueuePage({
         leadApplicantEmail: n.leadApplicant.email,
       }));
 
-      return { applications, names, rounds, assessors, reassessRoundYear };
+      // Status column (Item 1.1): derive each row's review phase server-side
+      // via the same `deriveReviewPhase` the detail page uses, so the list and
+      // detail page always agree. Computed here (not in the query layer) since
+      // it's a presentational concern of this one list, not of every
+      // `listApplications` caller.
+      const applicationsWithPhase = applications.map((app) => ({
+        ...app,
+        reviewPhase: deriveReviewPhase({
+          formStatus: app.formStatus,
+          assessmentStatus: app.assessmentStatus,
+          outcome: app.outcome,
+        }),
+      }));
+
+      return {
+        applications: applicationsWithPhase,
+        names,
+        rounds,
+        assessors,
+        reassessRoundYear,
+      };
     }
   );
 
-  // Seed values for the client table UI (simple filters only). The status
-  // multi-select was removed from the list UI; a `?status=` drill-in still
-  // filters server-side and is surfaced by the `activeFilter` banner below.
+  // Seed values for the client table UI (simple filters only). The `?status=`
+  // drill-in still filters server-side and is surfaced by the `activeFilter`
+  // banner below; the client-side status MULTI-select (1.3) is independent
+  // client-only state, not seeded from this param.
   const initialRound = roundId;
   const initialSchool = school;
+  // Only seed the date inputs with a range that was actually applied — an
+  // invalid (from > to) hand-edited URL shows blank inputs rather than a
+  // filter that silently isn't in effect.
+  const initialSubmittedFrom = submittedRangeValid ? submittedFromParam : undefined;
+  const initialSubmittedTo = submittedRangeValid ? submittedToParam : undefined;
 
   // Plain-English descriptor of the active filter for the dismissible banner.
   // The re-assessment-eligible drill-in owns the banner when active (it is the
@@ -228,6 +305,8 @@ export default async function QueuePage({
         undecided,
         activeDerivedFlags,
         rounds,
+        submittedFrom: initialSubmittedFrom,
+        submittedTo: initialSubmittedTo,
       });
 
   return (
@@ -254,6 +333,9 @@ export default async function QueuePage({
         userRole={profile.role}
         initialRound={initialRound}
         initialSchool={initialSchool}
+        initialSubmittedFrom={initialSubmittedFrom}
+        initialSubmittedTo={initialSubmittedTo}
+        currentQueryString={buildQueryString(params)}
         activeFilter={activeFilter}
         reassessEligibleActive={reassessEligible}
         reassessTargetRound={reassessRoundYear}
@@ -270,16 +352,6 @@ const DERIVED_LABELS: Record<string, string> = {
   awaitingOutcome: "Awaiting outcome",
 };
 
-const STATUS_LABELS: Record<ReviewPhase, string> = {
-  PRE_SUBMISSION: "Pre-submission",
-  SUBMITTED: "Submitted",
-  NOT_STARTED: "Not started",
-  PAUSED: "Paused",
-  COMPLETED: "Completed",
-  QUALIFIES: "Qualifies",
-  DOES_NOT_QUALIFY: "Does not qualify",
-};
-
 const SCHOOL_LABELS: Record<School, string> = {
   TRINITY: "Trinity",
   WHITGIFT: "Whitgift",
@@ -292,6 +364,8 @@ function describeActiveFilter({
   undecided,
   activeDerivedFlags,
   rounds,
+  submittedFrom,
+  submittedTo,
 }: {
   roundId: string | undefined;
   status: ReviewPhase | undefined;
@@ -299,6 +373,9 @@ function describeActiveFilter({
   undecided: boolean;
   activeDerivedFlags: string[];
   rounds: { id: string; academicYear: string }[];
+  /** Received-date range (Item 7.1), as the applied `YYYY-MM-DD` strings. */
+  submittedFrom?: string;
+  submittedTo?: string;
 }): { label: string; clearHref: string } | undefined {
   const parts: string[] = [];
 
@@ -314,10 +391,18 @@ function describeActiveFilter({
     }
   } else {
     if (undecided) parts.push("Undecided");
-    if (status) parts.push(STATUS_LABELS[status]);
+    if (status) parts.push(REVIEW_PHASE_LABEL[status]);
   }
 
   if (school) parts.push(SCHOOL_LABELS[school]);
+
+  if (submittedFrom || submittedTo) {
+    const fromLabel = submittedFrom
+      ? formatLondonDateString(submittedFrom)
+      : "the start";
+    const toLabel = submittedTo ? formatLondonDateString(submittedTo) : "now";
+    parts.push(`Received ${fromLabel} – ${toLabel}`);
+  }
 
   if (parts.length === 0) return undefined;
 

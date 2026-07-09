@@ -58,6 +58,7 @@ import type {
 import type { Tx } from "@/lib/db/prisma";
 import { createAuditLog } from "@/lib/audit/log";
 import { AUDIT_ACTIONS, AUDIT_ENTITY_TYPES } from "@/lib/audit/actions";
+import type { ReviewPhase } from "@/lib/applications/queue-filter";
 
 // ───────────────────────────────────────────────────────────────────────────
 // Review phase — the application-detail review-track vocabulary
@@ -78,15 +79,13 @@ import { AUDIT_ACTIONS, AUDIT_ENTITY_TYPES } from "@/lib/audit/actions";
  *   COMPLETED        assessment completed, no outcome yet
  *   QUALIFIES        outcome AWARDED or QUALIFIES_NOT_AWARDED
  *   DOES_NOT_QUALIFY outcome DOES_NOT_QUALIFY
+ *
+ * Canonical definition lives in `queue-filter.ts` (client-import-safe, zero
+ * server-only dependencies) — re-exported here (see the import above) so this
+ * module's many existing consumers are unaffected. Do not redefine it in a
+ * second place (Item 1.1's consolidation).
  */
-export type ReviewPhase =
-  | "PRE_SUBMISSION"
-  | "SUBMITTED"
-  | "NOT_STARTED"
-  | "PAUSED"
-  | "COMPLETED"
-  | "QUALIFIES"
-  | "DOES_NOT_QUALIFY";
+export type { ReviewPhase };
 
 /** The lifecycle facts `deriveReviewPhase` reasons over. */
 export interface LifecycleStatusInput {

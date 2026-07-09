@@ -45,6 +45,7 @@ import {
 } from "@/app/(admin)/applications/[id]/actions";
 import type { Document } from "@prisma/client";
 import type { ReviewPhase } from "@/lib/applications/status";
+import { REVIEW_PHASE_LABEL } from "@/lib/applications/review-phase-labels";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -221,7 +222,7 @@ export function ApplicationActions({
               aria-hidden="true"
             />
             <span className="text-sm text-slate-500">
-              {STATUS_LABEL[status]}
+              {REVIEW_PHASE_LABEL[status]}
             </span>
           </div>
 
@@ -359,14 +360,3 @@ export function ApplicationActions({
   );
 }
 
-// ─── Helpers ─────────────────────────────────────────────────────────────────
-
-const STATUS_LABEL: Record<ReviewPhase, string> = {
-  PRE_SUBMISSION: "Pre-submission",
-  SUBMITTED: "Awaiting review",
-  NOT_STARTED: "Review in progress",
-  PAUSED: "Paused — awaiting documents",
-  COMPLETED: "Assessment complete",
-  QUALIFIES: "Qualifies",
-  DOES_NOT_QUALIFY: "Does not qualify",
-};
