@@ -30,11 +30,12 @@ status column and the `StatusFilter` popover entirely (along with the legacy
 `DOES_NOT_QUALIFY` labels). Status now only appears on the application detail
 page. No deadline column was added.
 
+**Decided:** status **returns to the list**.
+
 **To do:**
-- Decide whether status belongs back on the list (meeting asked for it) or stays
-  on the detail page only. If it returns, render it from the derived review-phase
-  projection (`deriveReviewPhase` / `matchesReviewPhase`), **not** the dropped
-  fused `applications.status` enum, using the agreed flow-diagram vocabulary.
+- Restore the status column, rendered from the derived review-phase projection
+  (`deriveReviewPhase` / `matchesReviewPhase`), **not** the dropped fused
+  `applications.status` enum, using the agreed flow-diagram vocabulary.
 - Add a **deadline** column showing the per-application submission-by date
   (falls back to the round-level default — see item 12).
 - Consider re-adding a status filter keyed off the same derived phase values.
@@ -124,9 +125,9 @@ reason to be confirmed):
 - Add management for the reasons in admin Settings (a new tab or an extension of
   an existing settings tab), ADMIN-only: add/remove reasons and toggle
   `purgeOnClose`, with an audit entry on change.
-- **Open question:** the earlier notes mentioned a free-text "other" option; the
-  latest instruction specifies a dropdown only. Confirm with Charlotte whether a
-  free-text fallback is still wanted before building.
+- **Decided — dropdown only, no free text** anywhere. The reason is always chosen
+  from the admin-configured dropdown; each value carries its `purgeOnClose`
+  toggle. (Charlotte still to send the full reason list + which reasons purge.)
 
 ---
 
@@ -242,6 +243,8 @@ financial figures, the bursary reference, dates, and the assessment synopsis.
 **Asked for:** The bursary reference should be **editable at any point**, with no
 state-gating.
 
+**Decided — ADMIN only** (ASSESSOR/VIEWER read-only), enforced server-side.
+
 **To do:**
 - Add an editable reference field (detail page and/or inline on the list).
 - Server action to update `applications.reference` regardless of lifecycle state.
@@ -255,6 +258,9 @@ state-gating.
 **Asked for:** A **round-level default** submission-by (deadline) date that is
 inherited by all applications in that round, with the **per-application override**
 still available.
+
+**Decided — date-only** (no time-of-day); per-application deadline is **inherit or
+override** only (simple nullable date, no "explicitly none" opt-out).
 
 **To do:**
 - Add a default-deadline field to the `Round` model/settings (schema migration —

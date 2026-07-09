@@ -7,31 +7,33 @@ lifecycle, with no state-gating. Edits must be validated for uniqueness and
 recorded in the audit trail.
 
 ## Story 11.1 — Edit the bursary reference regardless of lifecycle state
-**As a** staff member (ADMIN or ASSESSOR), **I want** to edit an application's
+**As an** ADMIN, **I want** to edit an application's
 bursary reference at any point in its lifecycle, **so that** I can correct or
 assign the reference whenever the need arises, without being blocked by the
 application's current state.
 
 **Acceptance criteria**
 - [ ] Given an application in any lifecycle state (e.g. draft, submitted,
-  received, under assessment, recommended, decided, withdrawn, archived), when a
-  permitted staff member opens the reference field, then it is editable and
+  received, under assessment, recommended, decided, withdrawn, archived), when an
+  ADMIN opens the reference field, then it is editable and
   saving succeeds.
-- [ ] Given a permitted staff member, when they change the reference and save,
+- [ ] Given an ADMIN, when they change the reference and save,
   then the new value is persisted to `applications.reference` and shown on the
   detail page (and list, if surfaced there) immediately.
 - [ ] Given the reference is edited, then no lifecycle transition is triggered
   and no existing assessment, recommendation, or outcome is discarded or altered
   as a side effect.
 - [ ] Given an application in a terminal/locked state where other fields are
-  read-only, when a permitted staff member edits the reference, then the edit is
+  read-only, when an ADMIN edits the reference, then the edit is
   still allowed (the reference is explicitly exempt from state-gating).
 - [ ] The reference can be edited from the application detail page; inline edit
   on the list is optional (nice-to-have) and not required for this story.
+- [ ] Given an ASSESSOR or VIEWER, when they view the reference, then it is
+  read-only (no edit control offered), and any server-side update is rejected.
 
 **Notes / dependencies**
-- Assumption: editable by **ADMIN and ASSESSOR**; **VIEWER** is read-only.
-  ⚠️ Confirm with client whether ASSESSOR should be permitted or ADMIN-only.
+- **Decided — ADMIN only.** ASSESSOR and VIEWER are read-only. Enforced
+  server-side, not just in the UI.
 - Requires a server action to update `applications.reference` with no
   state guard.
 - Reference may be blank/unassigned on some records — editing must support

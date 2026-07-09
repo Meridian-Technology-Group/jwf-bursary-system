@@ -16,7 +16,7 @@ Each Round should carry a default submission-by (deadline) date that every appli
 
 **Notes / dependencies**
 - Requires a nullable default-deadline field on the `Round` model — ship the schema migration in the same PR (CLAUDE.md migration discipline; additive/nullable, author SQL via `migrate diff --script`).
-- Date-only value (no time-of-day) unless the client asks otherwise — confirm with Charlotte.
+- **Decided — date-only** value (no time-of-day).
 
 ## Story 12.2 — Applications inherit the round default; per-application override
 **As an** ASSESSOR or ADMIN, **I want** an application to show its round's default deadline unless I set an override, **so that** I only touch the deadline on the exceptions.
@@ -30,7 +30,7 @@ Each Round should carry a default submission-by (deadline) date that every appli
 
 **Notes / dependencies**
 - Effective deadline = per-application override if set, else round default. This is the single derivation consumed by items 1 (deadline column) and 7 (submission-by date filter).
-- "Override not set" must be genuinely distinct from "override explicitly cleared to none" if the client wants an application to be able to opt out of the round default — see open question in 12.3.
+- **Decided — two states only: inherit or override.** A per-application deadline is a simple nullable date: unset ⇒ inherit the round default; set ⇒ override. There is **no** "explicitly none" opt-out (no tri-state).
 
 ## Story 12.3 — Changing the round default propagates predictably
 **As an** ADMIN, **I want** predictable behaviour when I change or clear a round's default deadline, **so that** applications update as expected and overrides are respected.
@@ -43,4 +43,4 @@ Each Round should carry a default submission-by (deadline) date that every appli
 
 **Notes / dependencies**
 - **Intended behaviour:** the round default is inherited by reference (derived at read time), not snapshotted onto each application at creation. This makes "change the round default" affect all non-overridden applications at once — the behaviour the client asked for.
-- **Open question:** should an application be able to explicitly opt out of the round default (a "no deadline for this one" override that is distinct from "not set")? If yes, the per-application deadline needs a tri-state (unset / explicit date / explicitly none) rather than a simple nullable date. Confirm with Charlotte before building; default to the simpler nullable model unless she needs the opt-out.
+- **Decided — no opt-out.** The per-application deadline is a simple nullable date (inherit or override, per 12.2). There is no "explicitly none" state, so no tri-state is needed.

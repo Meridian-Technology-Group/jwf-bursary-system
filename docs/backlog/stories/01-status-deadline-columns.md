@@ -16,7 +16,7 @@ The client asked for the status column to be restored (using the agreed flow-dia
 - [ ] Given a VIEWER, When they open the list, Then they can see the status column read-only (no state-changing controls introduced by this story).
 
 **Notes / dependencies**
-- **Open question (do not silently resolve):** the item flags a genuine decision — does status return to the list at all, or stay detail-page-only? These stories assume "yes, it returns" per the meeting ask; confirm with Charlotte before build. If the answer is "detail page only", 1.1 and 1.3 are dropped and only 1.2 (deadline) proceeds.
+- **Decided:** status **returns to the list** (confirmed). All three stories (1.1–1.3) proceed.
 - Must render from the derived review-phase projection; the fused `applications.status` column and `ApplicationStatus` enum were dropped in the Epic 01 cutover — do not reintroduce them.
 - No schema change expected (phase is derived).
 - Read-only presentation only; per-row/bulk state actions are items 2 and 3.
@@ -46,6 +46,6 @@ The client asked for the status column to be restored (using the agreed flow-dia
 - [ ] Given the status filter, When combined with other active filters (e.g. tab, assessor, date filters from item 7), Then filters compose (AND) rather than override one another.
 
 **Notes / dependencies**
-- Item flags this as "Consider re-adding" — lower priority than 1.1/1.2 and contingent on the same open question (does status return to the list at all).
+- With status confirmed back on the list (see 1.1), the filter is a natural follow-on. Lower priority than 1.1/1.2 but no longer contingent on any open question.
 - Must key off the derived phase values, not the dropped fused enum or the old `StatusFilter` popover's legacy vocabulary; the removed popover can be a UI reference but not its value set.
 - Should follow the existing filter-bar pattern and compose cleanly with item 7's date-range filters.

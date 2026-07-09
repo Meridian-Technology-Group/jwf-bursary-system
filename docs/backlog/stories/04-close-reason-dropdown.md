@@ -66,6 +66,6 @@ When an application is closed, the user must pick a reason from an admin-configu
 - Depends on Story 4.1/4.2 storing the reason against the application.
 - Aligns with item 1 (Applications-list columns) — the reason column sits alongside any restored status/deadline columns.
 
-## Open questions (confirm before building)
-- **Free-text "other" option:** earlier notes mentioned a free-text "other" reason; the latest instruction specifies a dropdown only. Confirm with Charlotte whether a free-text fallback is still wanted before building. (Not resolved here.)
-- **Full reason list + per-reason purge toggles:** Charlotte to send the complete list of reasons and confirm which ones should purge on close.
+## Decisions & open questions
+- **Decided — dropdown only, no free text:** there is **no** free-text "other" option anywhere. The reason is always chosen from the admin-configured dropdown. The dropdown is admin-configurable (add/remove) and each value carries a "purge on close" toggle (see Story 4.3).
+- **Open — full reason list + per-reason purge toggles:** Charlotte to send the complete list of reasons and confirm which ones should purge on close. Current pre-populated defaults ("Declined by the school", "Relocation", "Accepting another school offer") are placeholders until then.
