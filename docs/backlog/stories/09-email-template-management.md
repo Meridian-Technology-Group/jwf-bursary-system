@@ -2,6 +2,12 @@
 
 > Source: `docs/backlog/post-demo-change-list.md` — item 9. Status: Not started.
 
+**Decided:** admins can create **fully custom** templates (add / edit / delete),
+in addition to editing the built-in system templates (which stay non-deletable).
+This requires the schema change described in Story 9.1 (a template identity that
+isn't the fixed `EmailTemplateType` enum, plus a system-vs-custom flag and
+soft-delete). All four stories below proceed.
+
 Today the Email Templates settings tab only lets admins **edit** the content
 (subject/body) of a fixed set of templates that are seeded via the
 `*_seed_email_templates` migration and keyed one-to-one to the

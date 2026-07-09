@@ -208,6 +208,12 @@ just edit existing ones.
 Note: `email_templates` are seeded via the `*_seed_email_templates` migration
 (single source of truth per CLAUDE.md).
 
+**Decided — fully custom templates.** Admins can add/edit/delete their own custom
+templates; the ~15 built-in system templates remain edit-only (non-deletable).
+Needs a schema change: template identity decoupled from the `EmailTemplateType`
+enum + a system-vs-custom flag + soft-delete (so re-seeds don't resurrect deleted
+rows).
+
 **To do:**
 - Add create/delete UI to the Email Templates settings tab.
 - Server actions for insert/delete with validation (prevent deleting templates
