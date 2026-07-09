@@ -28,6 +28,7 @@ import { createClient } from "@supabase/supabase-js";
 
 import { councilTaxDefaults, familyTypeConfigs, schoolFees } from "./seed-data/reference";
 import { reasonCodes } from "./seed-data/reason-codes";
+import { closeReasons } from "./seed-data/close-reasons";
 
 // Eyeball-confirm the target before any writes. Print the project ref only
 // (the URL subdomain), never the full URL or any secret.
@@ -112,6 +113,23 @@ async function seedReasonCodes(): Promise<void> {
   log(`Upserted ${reasonCodes.length} reason codes`);
 }
 
+async function seedCloseReasons(): Promise<void> {
+  section("Close reasons");
+  // No numeric code like reason_codes — label is the natural key here, so
+  // upsert matches on it (see close_reasons_label_key in the migration).
+  for (const cr of closeReasons) {
+    await prisma.closeReason.upsert({
+      where: { label: cr.label },
+      create: cr,
+      update: {
+        purgeOnClose: cr.purgeOnClose,
+        sortOrder: cr.sortOrder,
+      },
+    });
+  }
+  log(`Upserted ${closeReasons.length} close reasons`);
+}
+
 async function ensureDocumentsBucket(): Promise<void> {
   section("Storage: documents bucket");
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -140,6 +158,7 @@ async function printSummary(): Promise<void> {
     ["School fee records", await prisma.schoolFees.count()],
     ["Council tax defaults", await prisma.councilTaxDefault.count()],
     ["Reason codes", await prisma.reasonCode.count()],
+    ["Close reasons", await prisma.closeReason.count()],
     ["Email templates (migration-managed)", await prisma.emailTemplate.count()],
   ];
   console.log("");
@@ -156,6 +175,7 @@ async function main(): Promise<void> {
   await seedSchoolFees();
   await seedCouncilTaxDefaults();
   await seedReasonCodes();
+  await seedCloseReasons();
   await ensureDocumentsBucket();
   await printSummary();
 

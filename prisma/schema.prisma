@@ -509,6 +509,27 @@ model CouncilTaxDefault {
   @@map("council_tax_defaults")
 }
 
+/// Reference: Reasons an application/bursary account can be closed for
+/// (item 4.3). Drives the unified close action (items 2/4): `purgeOnClose`
+/// decides whether closing with this reason purges the applicant's PII
+/// (item 10) or retains all data under the normal retention policy. Reasons
+/// are soft-deactivated via `isDeprecated` — never hard-deleted — so a
+/// closed application recorded against a reason keeps showing that reason's
+/// label even after it is removed from the picker (Story 4.4). No relation
+/// to Application yet; the FK arrives with the close action itself (A3).
+model CloseReason {
+  id           String   @id @default(uuid()) @db.Uuid
+  /// Unique natural key (close_reasons_label_key) — the idempotent
+  /// seed upserts by label; there is no numeric code like reason_codes.
+  label        String   @unique
+  purgeOnClose Boolean  @default(false) @map("purge_on_close")
+  isDeprecated Boolean  @default(false) @map("is_deprecated")
+  sortOrder    Int      @map("sort_order")
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@map("close_reasons")
+}
+
 /// Admin-managed lead-applicant contact: the pre-application record of a
 /// family (parent + child + school + entry year + address). Exists
 /// independently of any Application; it is the source from which an

@@ -326,6 +326,36 @@ export async function getAllReasonCodes(tx: Tx): Promise<ReasonCodeRow[]> {
   }));
 }
 
+// ─── Close Reasons ────────────────────────────────────────────────────────────
+
+export interface CloseReasonRow {
+  id: string;
+  label: string;
+  purgeOnClose: boolean;
+  isDeprecated: boolean;
+  sortOrder: number;
+  createdAt: Date;
+}
+
+/**
+ * Returns ALL close reasons including deprecated ones.
+ * Ordered by sortOrder ascending.
+ */
+export async function getAllCloseReasons(tx: Tx): Promise<CloseReasonRow[]> {
+  const rows = await tx.closeReason.findMany({
+    orderBy: { sortOrder: "asc" },
+  });
+
+  return rows.map((row) => ({
+    id: row.id,
+    label: row.label,
+    purgeOnClose: row.purgeOnClose,
+    isDeprecated: row.isDeprecated,
+    sortOrder: row.sortOrder,
+    createdAt: row.createdAt,
+  }));
+}
+
 // ─── Email Templates ──────────────────────────────────────────────────────────
 
 export interface EmailTemplateRow {
