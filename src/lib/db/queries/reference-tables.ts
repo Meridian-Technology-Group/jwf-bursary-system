@@ -625,6 +625,37 @@ export async function getLifestyleSqueezeBands(tx: Tx): Promise<LifestyleSqueeze
   );
 }
 
+// ─── CALC-11 — Gap Reasons (Appendix E) ────────────────────────────────────
+
+export interface GapReasonRow {
+  id: string;
+  code: number;
+  label: string;
+  isDeprecated: boolean;
+  sortOrder: number;
+  createdAt: Date;
+}
+
+/**
+ * Returns ALL gap reasons including deprecated ones, ordered by sortOrder
+ * ascending. Mirrors `getAllReasonCodes` exactly — GapReason has the same
+ * shape and the same deprecate-never-delete convention.
+ */
+export async function getAllGapReasons(tx: Tx): Promise<GapReasonRow[]> {
+  const rows = await tx.gapReason.findMany({
+    orderBy: { sortOrder: "asc" },
+  });
+
+  return rows.map((row) => ({
+    id: row.id,
+    code: row.code,
+    label: row.label,
+    isDeprecated: row.isDeprecated,
+    sortOrder: row.sortOrder,
+    createdAt: row.createdAt,
+  }));
+}
+
 // ─── CALC-07 — ReferenceBundle assembly for the v2 engine ─────────────────
 //
 // Assembles the single `ReferenceBundle` (src/lib/assessment/v2/types.ts) the

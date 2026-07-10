@@ -139,6 +139,21 @@ export const AUDIT_ACTIONS = {
   SETTINGS_EMAIL_TEMPLATE_CREATE: "SETTINGS_EMAIL_TEMPLATE_CREATE",
   SETTINGS_EMAIL_TEMPLATE_DELETE: "SETTINGS_EMAIL_TEMPLATE_DELETE",
 
+  // CALC-11 — settings editors for the CALC-01 reference tables. Every one of
+  // these is a whole-generation "create new version" insert (never an
+  // update-in-place), except the gap-reason create/update pair which mirrors
+  // reason_codes exactly.
+  SETTINGS_NOTIONAL_COST_CONFIG_VERSION_CREATE: "SETTINGS_NOTIONAL_COST_CONFIG_VERSION_CREATE",
+  SETTINGS_FAMILY_CATEGORY_META_VERSION_CREATE: "SETTINGS_FAMILY_CATEGORY_META_VERSION_CREATE",
+  SETTINGS_AFFORDABILITY_BAND_VERSION_CREATE: "SETTINGS_AFFORDABILITY_BAND_VERSION_CREATE",
+  SETTINGS_INCOME_CATEGORY_BAND_VERSION_CREATE: "SETTINGS_INCOME_CATEGORY_BAND_VERSION_CREATE",
+  SETTINGS_PROPERTY_EQUITY_BAND_VERSION_CREATE: "SETTINGS_PROPERTY_EQUITY_BAND_VERSION_CREATE",
+  SETTINGS_FINANCIAL_EQUITY_BAND_VERSION_CREATE: "SETTINGS_FINANCIAL_EQUITY_BAND_VERSION_CREATE",
+  SETTINGS_DEBT_RATIO_BAND_VERSION_CREATE: "SETTINGS_DEBT_RATIO_BAND_VERSION_CREATE",
+  SETTINGS_LIFESTYLE_SQUEEZE_BAND_VERSION_CREATE: "SETTINGS_LIFESTYLE_SQUEEZE_BAND_VERSION_CREATE",
+  SETTINGS_GAP_REASON_CREATE: "SETTINGS_GAP_REASON_CREATE",
+  SETTINGS_GAP_REASON_UPDATE: "SETTINGS_GAP_REASON_UPDATE",
+
   // Bulk email wizard (item 8) — one row per attempted recipient send.
   BULK_EMAIL_SENT: "BULK_EMAIL_SENT",
 
@@ -185,6 +200,17 @@ export const AUDIT_ENTITY_TYPES = {
   EmailTemplate: "EmailTemplate",
   BursaryAccount: "BursaryAccount",
   BursaryScheduleEntry: "BursaryScheduleEntry",
+
+  // CALC-11 — reference tables introduced by CALC-01/CALC-02.
+  NotionalCostConfig: "NotionalCostConfig",
+  FamilyCategoryMeta: "FamilyCategoryMeta",
+  AffordabilityBand: "AffordabilityBand",
+  IncomeCategoryBand: "IncomeCategoryBand",
+  PropertyEquityBand: "PropertyEquityBand",
+  FinancialEquityBand: "FinancialEquityBand",
+  DebtRatioBand: "DebtRatioBand",
+  LifestyleSqueezeBand: "LifestyleSqueezeBand",
+  GapReason: "GapReason",
 } as const;
 
 export type AuditEntityType =

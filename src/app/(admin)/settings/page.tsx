@@ -1,13 +1,15 @@
 /**
- * WP-19: Admin Settings — Reference Data Management
+ * WP-19 + CALC-11: Admin Settings — Reference Data Management
  *
- * Six tabs:
- *   1. Family Types     — notional rent, utilities, food costs per category
- *   2. School Fees      — annual fees per school
- *   3. Council Tax      — Band D Croydon default
- *   4. Reason Codes     — full CRUD + deprecation
- *   5. Close Reasons    — full CRUD + purge-on-close toggle + deprecation (item 4.3)
- *   6. Email Templates  — subject + body editor with merge field hints
+ * Eight tabs:
+ *   1. Family Types      — notional rent, utilities, food costs per category
+ *   2. School Fees       — annual fees per school
+ *   3. Council Tax       — Band D Croydon default
+ *   4. Notional Costs    — CALC-01 NotionalCostConfig matrix + FamilyCategoryMeta
+ *   5. Benchmark Bands   — CALC-01 profiling bands (Appendix B, C.1–C.5)
+ *   6. Reason Codes      — full CRUD + deprecation, plus Gap Reasons (Appendix E)
+ *   7. Close Reasons     — full CRUD + purge-on-close toggle + deprecation (item 4.3)
+ *   8. Email Templates   — subject + body editor with merge field hints
  */
 
 import { requireRole, Role } from "@/lib/auth/roles";
@@ -17,8 +19,17 @@ import {
   getSchoolFees,
   getCouncilTaxDefault,
   getAllReasonCodes,
+  getAllGapReasons,
   getAllCloseReasons,
   getAllEmailTemplates,
+  getNotionalCostConfigs,
+  getFamilyCategoryMetas,
+  getAffordabilityBands,
+  getIncomeCategoryBands,
+  getPropertyEquityBands,
+  getFinancialEquityBands,
+  getDebtRatioBands,
+  getLifestyleSqueezeBands,
 } from "@/lib/db/queries/reference-tables";
 import {
   Tabs,
@@ -37,8 +48,11 @@ import { FamilyTypeRow } from "@/components/admin/settings/family-type-form";
 import { SchoolFeesRow } from "@/components/admin/settings/school-fees-form";
 import { CouncilTaxForm } from "@/components/admin/settings/council-tax-form";
 import { ReasonCodeTable } from "@/components/admin/settings/reason-code-table";
+import { GapReasonTable } from "@/components/admin/settings/gap-reason-table";
 import { CloseReasonTable } from "@/components/admin/settings/close-reason-table";
 import { EmailTemplateEditor } from "@/components/admin/settings/email-template-editor";
+import { NotionalCostTab } from "@/components/admin/settings/notional-cost-tab";
+import { BenchmarkBandsTab } from "@/components/admin/settings/benchmark-bands-tab";
 
 export const metadata = {
   title: "Settings",
@@ -72,16 +86,34 @@ export default async function SettingsPage() {
     schoolFees,
     councilTax,
     reasonCodes,
+    gapReasons,
     closeReasons,
     emailTemplates,
+    notionalCosts,
+    familyCategoryMetas,
+    affordabilityBands,
+    incomeCategoryBands,
+    propertyEquityBands,
+    financialEquityBands,
+    debtRatioBands,
+    lifestyleSqueezeBands,
   ] = await withUserContext(user.id, user.role as RlsRole, (tx) =>
     Promise.all([
       getFamilyTypeConfigs(tx),
       getSchoolFees(tx),
       getCouncilTaxDefault(tx),
       getAllReasonCodes(tx),
+      getAllGapReasons(tx),
       getAllCloseReasons(tx),
       getAllEmailTemplates(tx),
+      getNotionalCostConfigs(tx),
+      getFamilyCategoryMetas(tx),
+      getAffordabilityBands(tx),
+      getIncomeCategoryBands(tx),
+      getPropertyEquityBands(tx),
+      getFinancialEquityBands(tx),
+      getDebtRatioBands(tx),
+      getLifestyleSqueezeBands(tx),
     ])
   );
 
@@ -97,7 +129,7 @@ export default async function SettingsPage() {
 
       {/* Tabs */}
       <Tabs defaultValue="family-types" className="space-y-6">
-        <TabsList className="grid w-full grid-cols-6 h-auto gap-0 bg-slate-100 p-1 rounded-lg">
+        <TabsList className="grid w-full grid-cols-4 sm:grid-cols-8 h-auto gap-0 bg-slate-100 p-1 rounded-lg">
           <TabsTrigger
             value="family-types"
             className="text-xs sm:text-sm rounded-md"
@@ -115,6 +147,18 @@ export default async function SettingsPage() {
             className="text-xs sm:text-sm rounded-md"
           >
             Council Tax
+          </TabsTrigger>
+          <TabsTrigger
+            value="notional-costs"
+            className="text-xs sm:text-sm rounded-md"
+          >
+            Notional Costs
+          </TabsTrigger>
+          <TabsTrigger
+            value="benchmark-bands"
+            className="text-xs sm:text-sm rounded-md"
+          >
+            Benchmark Bands
           </TabsTrigger>
           <TabsTrigger
             value="reason-codes"
@@ -229,6 +273,38 @@ export default async function SettingsPage() {
           </div>
         </TabsContent>
 
+        {/* ── Tab: Notional Costs (CALC-11) ──────────────────────────────── */}
+        <TabsContent value="notional-costs">
+          <div className="rounded-xl border border-slate-200 bg-white p-6">
+            <SectionHeader
+              title="Notional Costs"
+              description="The CALC-01 notional cost-of-living figures per family category feeding the v2 notional-spend engine. Creating a new version inserts a whole new generation of rows — the current version is kept, never mutated."
+            />
+            <NotionalCostTab
+              notionalCosts={notionalCosts}
+              familyCategoryMetas={familyCategoryMetas}
+            />
+          </div>
+        </TabsContent>
+
+        {/* ── Tab: Benchmark Bands (CALC-11) ─────────────────────────────── */}
+        <TabsContent value="benchmark-bands">
+          <div className="rounded-xl border border-slate-200 bg-white p-6">
+            <SectionHeader
+              title="Benchmark Bands"
+              description="The CALC-01 profiling band tables (Appendix B, C.1–C.5) driving the affordability grid and the income/property/financial/debt/lifestyle-squeeze categorisations. Creating a new version inserts a whole new generation of rows."
+            />
+            <BenchmarkBandsTab
+              affordabilityBands={affordabilityBands}
+              incomeCategoryBands={incomeCategoryBands}
+              propertyEquityBands={propertyEquityBands}
+              financialEquityBands={financialEquityBands}
+              debtRatioBands={debtRatioBands}
+              lifestyleSqueezeBands={lifestyleSqueezeBands}
+            />
+          </div>
+        </TabsContent>
+
         {/* ── Tab 4: Reason Codes ─────────────────────────────────────────── */}
         <TabsContent value="reason-codes">
           <div className="rounded-xl border border-slate-200 bg-white p-6">
@@ -237,6 +313,13 @@ export default async function SettingsPage() {
               description="Codes used in assessment recommendations to explain year-on-year changes. Deprecated codes are hidden from assessors but retained for historical records."
             />
             <ReasonCodeTable reasonCodes={reasonCodes} />
+          </div>
+          <div className="mt-6 rounded-xl border border-slate-200 bg-white p-6">
+            <SectionHeader
+              title="Gap Reasons"
+              description="Reasons for a gap between the recommended (min-of-three) and confirmed payable fees (Appendix E), required whenever a recommendation's gap amount is non-zero. Same deprecate-never-delete convention as reason codes."
+            />
+            <GapReasonTable gapReasons={gapReasons} />
           </div>
         </TabsContent>
 

@@ -18,13 +18,41 @@ import { AUDIT_ACTIONS, AUDIT_ENTITY_TYPES } from "@/lib/audit/actions";
 import { withUserContext, type RlsRole } from "@/lib/db/prisma";
 import { isLockedEmailTemplateType } from "@/lib/email/locked-types";
 import { DEFAULT_CUSTOM_TEMPLATE_MERGE_FIELDS } from "@/lib/email/template-defaults";
-import type { School, EmailTemplateType } from "@prisma/client";
+import { validateBandSet, type ValidatableBand } from "@/lib/settings/band-set-validation";
+import { isDuplicateEffectiveFrom } from "@/lib/settings/reference-versioning";
+import type { School, EmailTemplateType, NotionalCostType } from "@prisma/client";
+import { NotionalCostType as NotionalCostTypeEnum } from "@prisma/client";
 
 // ─── Result type ──────────────────────────────────────────────────────────────
 
 export type SettingsActionResult =
   | { success: true }
   | { success: false; error: string };
+
+// ─── CALC-11 shared helpers ───────────────────────────────────────────────
+//
+// Every "create new version" action for the CALC-01 reference tables takes
+// the same two form fields: `rows` (a JSON-encoded array of the whole
+// generation, admin-edited in the settings UI) and `effectiveFrom` (an
+// `<input type="date">` value). These helpers parse both, uniformly.
+
+/** Parses the JSON-encoded `rows` field. Returns `null` on any parse failure. */
+function parseRowsJson<T>(raw: FormDataEntryValue | null): T[] | null {
+  if (typeof raw !== "string" || !raw.trim()) return null;
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? (parsed as T[]) : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Parses an `<input type="date">` value ("YYYY-MM-DD") to a UTC-midnight Date. */
+function parseEffectiveFrom(raw: FormDataEntryValue | null): Date | null {
+  if (typeof raw !== "string" || !raw.trim()) return null;
+  const date = new Date(`${raw}T00:00:00.000Z`);
+  return isNaN(date.getTime()) ? null : date;
+}
 
 // ─── Family Type Config ───────────────────────────────────────────────────────
 
@@ -606,5 +634,654 @@ export async function setEmailTemplateEnabledAction(
   } catch (err) {
     console.error("[setEmailTemplateEnabledAction]", err);
     return { success: false, error: "Failed to update email template status." };
+  }
+}
+
+// ─── CALC-11 — Notional Cost Config (whole-generation version) ───────────
+//
+// Unlike FamilyTypeConfig/SchoolFees (one row edited at a time), the eight
+// notional-cost lines × six family categories are versioned TOGETHER as one
+// generation (see `latestGeneration` in reference-tables.ts) — the settings
+// UI submits the whole edited matrix and this action inserts it as one new
+// `effectiveFrom`, never touching the previous generation's rows.
+
+interface NotionalCostConfigRowInput {
+  category: number;
+  costType: string;
+  amount: number;
+}
+
+export async function createNotionalCostConfigVersionAction(
+  formData: FormData
+): Promise<SettingsActionResult> {
+  try {
+    const user = await requireRole([Role.ADMIN]);
+
+    const rows = parseRowsJson<NotionalCostConfigRowInput>(formData.get("rows"));
+    const effectiveFrom = parseEffectiveFrom(formData.get("effectiveFrom"));
+
+    if (!rows || rows.length === 0) {
+      return { success: false, error: "At least one notional cost row is required." };
+    }
+    if (!effectiveFrom) {
+      return { success: false, error: "A valid effective date is required." };
+    }
+
+    const validCostTypes = new Set<string>(Object.values(NotionalCostTypeEnum));
+    for (const row of rows) {
+      if (
+        !Number.isInteger(row.category) ||
+        row.category < 1 ||
+        !validCostTypes.has(row.costType) ||
+        typeof row.amount !== "number" ||
+        isNaN(row.amount) ||
+        row.amount < 0
+      ) {
+        return { success: false, error: "Every row needs a valid category, cost type, and non-negative amount." };
+      }
+    }
+
+    const result = await withUserContext(user.id, user.role as RlsRole, async (tx) => {
+      const existing = await tx.notionalCostConfig.findMany({ select: { effectiveFrom: true } });
+      if (isDuplicateEffectiveFrom(effectiveFrom, existing.map((e) => e.effectiveFrom))) {
+        return {
+          success: false,
+          error: "A notional cost version already exists for that effective date.",
+        } as const;
+      }
+
+      await tx.notionalCostConfig.createMany({
+        data: rows.map((row) => ({
+          category: row.category,
+          costType: row.costType as NotionalCostType,
+          amount: row.amount,
+          effectiveFrom,
+        })),
+      });
+
+      await createAuditLog(tx, {
+        userId: user.id,
+        action: AUDIT_ACTIONS.SETTINGS_NOTIONAL_COST_CONFIG_VERSION_CREATE,
+        entityType: AUDIT_ENTITY_TYPES.NotionalCostConfig,
+        entityId: user.id,
+        context: `Created a new notional cost config version (${rows.length} rows) effective ${effectiveFrom.toISOString().slice(0, 10)}`,
+        metadata: { effectiveFrom: effectiveFrom.toISOString(), rowCount: rows.length },
+      });
+
+      return { success: true } as const;
+    });
+
+    if (!result.success) return result;
+
+    revalidatePath("/settings");
+    return { success: true };
+  } catch (err) {
+    console.error("[createNotionalCostConfigVersionAction]", err);
+    const msg = err instanceof Error ? err.message : "";
+    if (msg.includes("Unique constraint")) {
+      return { success: false, error: "A notional cost version already exists for that effective date." };
+    }
+    return { success: false, error: "Failed to create notional cost config version." };
+  }
+}
+
+// ─── CALC-11 — Family Category Meta (whole-generation version) ───────────
+
+interface FamilyCategoryMetaRowInput {
+  category: number;
+  familyMembers: number;
+  schoolAgeChildren: number;
+  description: string;
+}
+
+export async function createFamilyCategoryMetaVersionAction(
+  formData: FormData
+): Promise<SettingsActionResult> {
+  try {
+    const user = await requireRole([Role.ADMIN]);
+
+    const rows = parseRowsJson<FamilyCategoryMetaRowInput>(formData.get("rows"));
+    const effectiveFrom = parseEffectiveFrom(formData.get("effectiveFrom"));
+
+    if (!rows || rows.length === 0) {
+      return { success: false, error: "At least one family category row is required." };
+    }
+    if (!effectiveFrom) {
+      return { success: false, error: "A valid effective date is required." };
+    }
+
+    for (const row of rows) {
+      if (
+        !Number.isInteger(row.category) ||
+        row.category < 1 ||
+        !Number.isInteger(row.familyMembers) ||
+        row.familyMembers < 1 ||
+        !Number.isInteger(row.schoolAgeChildren) ||
+        row.schoolAgeChildren < 0 ||
+        !row.description?.trim()
+      ) {
+        return {
+          success: false,
+          error: "Every row needs a valid category, family member count, school-age children count, and description.",
+        };
+      }
+    }
+
+    const result = await withUserContext(user.id, user.role as RlsRole, async (tx) => {
+      const existing = await tx.familyCategoryMeta.findMany({ select: { effectiveFrom: true } });
+      if (isDuplicateEffectiveFrom(effectiveFrom, existing.map((e) => e.effectiveFrom))) {
+        return {
+          success: false,
+          error: "A family category meta version already exists for that effective date.",
+        } as const;
+      }
+
+      await tx.familyCategoryMeta.createMany({
+        data: rows.map((row) => ({
+          category: row.category,
+          familyMembers: row.familyMembers,
+          schoolAgeChildren: row.schoolAgeChildren,
+          description: row.description.trim(),
+          effectiveFrom,
+        })),
+      });
+
+      await createAuditLog(tx, {
+        userId: user.id,
+        action: AUDIT_ACTIONS.SETTINGS_FAMILY_CATEGORY_META_VERSION_CREATE,
+        entityType: AUDIT_ENTITY_TYPES.FamilyCategoryMeta,
+        entityId: user.id,
+        context: `Created a new family category meta version (${rows.length} rows) effective ${effectiveFrom.toISOString().slice(0, 10)}`,
+        metadata: { effectiveFrom: effectiveFrom.toISOString(), rowCount: rows.length },
+      });
+
+      return { success: true } as const;
+    });
+
+    if (!result.success) return result;
+
+    revalidatePath("/settings");
+    return { success: true };
+  } catch (err) {
+    console.error("[createFamilyCategoryMetaVersionAction]", err);
+    const msg = err instanceof Error ? err.message : "";
+    if (msg.includes("Unique constraint")) {
+      return { success: false, error: "A family category meta version already exists for that effective date." };
+    }
+    return { success: false, error: "Failed to create family category meta version." };
+  }
+}
+
+// ─── CALC-11 — Benchmark band tables (whole-generation version) ──────────
+//
+// The six band tables (Appendix B, C.1–C.5) share one shape: every row in
+// the new generation is validated as a SET via `validateBandSet` (ceiling ≥
+// floor, no duplicate ceilings, contiguous with no gap/overlap) before any
+// row is inserted — a single bad row fails the whole version, exactly like
+// the existing "insert, never mutate" convention for one-row tables.
+
+/** Runs `validateBandSet` and returns a `SettingsActionResult`-shaped early exit, or null if valid. */
+function checkBandSet(
+  bands: ValidatableBand[],
+  options?: { epsilon?: number }
+): SettingsActionResult | null {
+  const result = validateBandSet(bands, options);
+  if (!result.valid) {
+    return { success: false, error: result.errors.join(" ") };
+  }
+  return null;
+}
+
+interface AffordabilityBandRowInput {
+  bandFloor: number;
+  bandCeiling: number;
+  basePct: number;
+}
+
+export async function createAffordabilityBandVersionAction(
+  formData: FormData
+): Promise<SettingsActionResult> {
+  try {
+    const user = await requireRole([Role.ADMIN]);
+
+    const rows = parseRowsJson<AffordabilityBandRowInput>(formData.get("rows"));
+    const effectiveFrom = parseEffectiveFrom(formData.get("effectiveFrom"));
+    if (!rows || rows.length === 0) return { success: false, error: "At least one band row is required." };
+    if (!effectiveFrom) return { success: false, error: "A valid effective date is required." };
+
+    // Unlike the other five band tables (which touch exactly at the seam —
+    // one row's ceiling equals the next row's floor), the affordability grid
+    // is discrete whole-pound bands where the next band starts at ceiling+1
+    // (Appendix B: …29,000 | 29,001–32,000…) — a wider epsilon accommodates
+    // that £1 step without masking a genuine gap of, say, £1,000+.
+    const bandError = checkBandSet(
+      rows.map((r) => ({ floor: r.bandFloor, ceiling: r.bandCeiling })),
+      { epsilon: 1 }
+    );
+    if (bandError) return bandError;
+
+    const result = await withUserContext(user.id, user.role as RlsRole, async (tx) => {
+      const existing = await tx.affordabilityBand.findMany({ select: { effectiveFrom: true } });
+      if (isDuplicateEffectiveFrom(effectiveFrom, existing.map((e) => e.effectiveFrom))) {
+        return { success: false, error: "An affordability band version already exists for that effective date." } as const;
+      }
+
+      await tx.affordabilityBand.createMany({
+        data: rows.map((r) => ({
+          bandFloor: r.bandFloor,
+          bandCeiling: r.bandCeiling,
+          basePct: r.basePct,
+          effectiveFrom,
+        })),
+      });
+
+      await createAuditLog(tx, {
+        userId: user.id,
+        action: AUDIT_ACTIONS.SETTINGS_AFFORDABILITY_BAND_VERSION_CREATE,
+        entityType: AUDIT_ENTITY_TYPES.AffordabilityBand,
+        entityId: user.id,
+        context: `Created a new affordability band version (${rows.length} rows) effective ${effectiveFrom.toISOString().slice(0, 10)}`,
+        metadata: { effectiveFrom: effectiveFrom.toISOString(), rowCount: rows.length },
+      });
+
+      return { success: true } as const;
+    });
+
+    if (!result.success) return result;
+    revalidatePath("/settings");
+    return { success: true };
+  } catch (err) {
+    console.error("[createAffordabilityBandVersionAction]", err);
+    const msg = err instanceof Error ? err.message : "";
+    if (msg.includes("Unique constraint")) {
+      return { success: false, error: "An affordability band version already exists for that effective date." };
+    }
+    return { success: false, error: "Failed to create affordability band version." };
+  }
+}
+
+interface IncomeCategoryBandRowInput {
+  bandFloor: number | null;
+  bandCeiling: number | null;
+  category: number;
+  feesBenchmarkPct: number;
+}
+
+export async function createIncomeCategoryBandVersionAction(
+  formData: FormData
+): Promise<SettingsActionResult> {
+  try {
+    const user = await requireRole([Role.ADMIN]);
+
+    const rows = parseRowsJson<IncomeCategoryBandRowInput>(formData.get("rows"));
+    const effectiveFrom = parseEffectiveFrom(formData.get("effectiveFrom"));
+    if (!rows || rows.length === 0) return { success: false, error: "At least one band row is required." };
+    if (!effectiveFrom) return { success: false, error: "A valid effective date is required." };
+
+    const bandError = checkBandSet(rows.map((r) => ({ floor: r.bandFloor, ceiling: r.bandCeiling })));
+    if (bandError) return bandError;
+
+    const result = await withUserContext(user.id, user.role as RlsRole, async (tx) => {
+      const existing = await tx.incomeCategoryBand.findMany({ select: { effectiveFrom: true } });
+      if (isDuplicateEffectiveFrom(effectiveFrom, existing.map((e) => e.effectiveFrom))) {
+        return { success: false, error: "An income category band version already exists for that effective date." } as const;
+      }
+
+      await tx.incomeCategoryBand.createMany({
+        data: rows.map((r) => ({
+          bandFloor: r.bandFloor,
+          bandCeiling: r.bandCeiling,
+          category: r.category,
+          feesBenchmarkPct: r.feesBenchmarkPct,
+          effectiveFrom,
+        })),
+      });
+
+      await createAuditLog(tx, {
+        userId: user.id,
+        action: AUDIT_ACTIONS.SETTINGS_INCOME_CATEGORY_BAND_VERSION_CREATE,
+        entityType: AUDIT_ENTITY_TYPES.IncomeCategoryBand,
+        entityId: user.id,
+        context: `Created a new income category band version (${rows.length} rows) effective ${effectiveFrom.toISOString().slice(0, 10)}`,
+        metadata: { effectiveFrom: effectiveFrom.toISOString(), rowCount: rows.length },
+      });
+
+      return { success: true } as const;
+    });
+
+    if (!result.success) return result;
+    revalidatePath("/settings");
+    return { success: true };
+  } catch (err) {
+    console.error("[createIncomeCategoryBandVersionAction]", err);
+    const msg = err instanceof Error ? err.message : "";
+    if (msg.includes("Unique constraint")) {
+      return { success: false, error: "An income category band version already exists for that effective date." };
+    }
+    return { success: false, error: "Failed to create income category band version." };
+  }
+}
+
+interface PropertyEquityBandRowInput {
+  bandFloor: number | null;
+  bandCeiling: number | null;
+  category: number;
+}
+
+export async function createPropertyEquityBandVersionAction(
+  formData: FormData
+): Promise<SettingsActionResult> {
+  try {
+    const user = await requireRole([Role.ADMIN]);
+
+    const rows = parseRowsJson<PropertyEquityBandRowInput>(formData.get("rows"));
+    const effectiveFrom = parseEffectiveFrom(formData.get("effectiveFrom"));
+    if (!rows || rows.length === 0) return { success: false, error: "At least one band row is required." };
+    if (!effectiveFrom) return { success: false, error: "A valid effective date is required." };
+
+    const bandError = checkBandSet(rows.map((r) => ({ floor: r.bandFloor, ceiling: r.bandCeiling })));
+    if (bandError) return bandError;
+
+    const result = await withUserContext(user.id, user.role as RlsRole, async (tx) => {
+      const existing = await tx.propertyEquityBand.findMany({ select: { effectiveFrom: true } });
+      if (isDuplicateEffectiveFrom(effectiveFrom, existing.map((e) => e.effectiveFrom))) {
+        return { success: false, error: "A property equity band version already exists for that effective date." } as const;
+      }
+
+      await tx.propertyEquityBand.createMany({
+        data: rows.map((r) => ({
+          bandFloor: r.bandFloor,
+          bandCeiling: r.bandCeiling,
+          category: r.category,
+          effectiveFrom,
+        })),
+      });
+
+      await createAuditLog(tx, {
+        userId: user.id,
+        action: AUDIT_ACTIONS.SETTINGS_PROPERTY_EQUITY_BAND_VERSION_CREATE,
+        entityType: AUDIT_ENTITY_TYPES.PropertyEquityBand,
+        entityId: user.id,
+        context: `Created a new property equity band version (${rows.length} rows) effective ${effectiveFrom.toISOString().slice(0, 10)}`,
+        metadata: { effectiveFrom: effectiveFrom.toISOString(), rowCount: rows.length },
+      });
+
+      return { success: true } as const;
+    });
+
+    if (!result.success) return result;
+    revalidatePath("/settings");
+    return { success: true };
+  } catch (err) {
+    console.error("[createPropertyEquityBandVersionAction]", err);
+    const msg = err instanceof Error ? err.message : "";
+    if (msg.includes("Unique constraint")) {
+      return { success: false, error: "A property equity band version already exists for that effective date." };
+    }
+    return { success: false, error: "Failed to create property equity band version." };
+  }
+}
+
+interface FinancialEquityBandRowInput {
+  bandFloor: number | null;
+  bandCeiling: number | null;
+  label: string;
+}
+
+export async function createFinancialEquityBandVersionAction(
+  formData: FormData
+): Promise<SettingsActionResult> {
+  try {
+    const user = await requireRole([Role.ADMIN]);
+
+    const rows = parseRowsJson<FinancialEquityBandRowInput>(formData.get("rows"));
+    const effectiveFrom = parseEffectiveFrom(formData.get("effectiveFrom"));
+    if (!rows || rows.length === 0) return { success: false, error: "At least one band row is required." };
+    if (!effectiveFrom) return { success: false, error: "A valid effective date is required." };
+
+    const bandError = checkBandSet(rows.map((r) => ({ floor: r.bandFloor, ceiling: r.bandCeiling })));
+    if (bandError) return bandError;
+    if (rows.some((r) => !r.label?.trim())) {
+      return { success: false, error: "Every row needs a label." };
+    }
+
+    const result = await withUserContext(user.id, user.role as RlsRole, async (tx) => {
+      const existing = await tx.financialEquityBand.findMany({ select: { effectiveFrom: true } });
+      if (isDuplicateEffectiveFrom(effectiveFrom, existing.map((e) => e.effectiveFrom))) {
+        return { success: false, error: "A financial equity band version already exists for that effective date." } as const;
+      }
+
+      await tx.financialEquityBand.createMany({
+        data: rows.map((r) => ({
+          bandFloor: r.bandFloor,
+          bandCeiling: r.bandCeiling,
+          label: r.label.trim(),
+          effectiveFrom,
+        })),
+      });
+
+      await createAuditLog(tx, {
+        userId: user.id,
+        action: AUDIT_ACTIONS.SETTINGS_FINANCIAL_EQUITY_BAND_VERSION_CREATE,
+        entityType: AUDIT_ENTITY_TYPES.FinancialEquityBand,
+        entityId: user.id,
+        context: `Created a new financial equity band version (${rows.length} rows) effective ${effectiveFrom.toISOString().slice(0, 10)}`,
+        metadata: { effectiveFrom: effectiveFrom.toISOString(), rowCount: rows.length },
+      });
+
+      return { success: true } as const;
+    });
+
+    if (!result.success) return result;
+    revalidatePath("/settings");
+    return { success: true };
+  } catch (err) {
+    console.error("[createFinancialEquityBandVersionAction]", err);
+    const msg = err instanceof Error ? err.message : "";
+    if (msg.includes("Unique constraint")) {
+      return { success: false, error: "A financial equity band version already exists for that effective date." };
+    }
+    return { success: false, error: "Failed to create financial equity band version." };
+  }
+}
+
+interface DebtRatioBandRowInput {
+  ratioFloor: number | null;
+  ratioCeiling: number | null;
+  minRepaymentMonths: number | null;
+  statusLabel: string;
+}
+
+export async function createDebtRatioBandVersionAction(
+  formData: FormData
+): Promise<SettingsActionResult> {
+  try {
+    const user = await requireRole([Role.ADMIN]);
+
+    const rows = parseRowsJson<DebtRatioBandRowInput>(formData.get("rows"));
+    const effectiveFrom = parseEffectiveFrom(formData.get("effectiveFrom"));
+    if (!rows || rows.length === 0) return { success: false, error: "At least one band row is required." };
+    if (!effectiveFrom) return { success: false, error: "A valid effective date is required." };
+
+    const bandError = checkBandSet(rows.map((r) => ({ floor: r.ratioFloor, ceiling: r.ratioCeiling })));
+    if (bandError) return bandError;
+    if (rows.some((r) => !r.statusLabel?.trim())) {
+      return { success: false, error: "Every row needs a status label." };
+    }
+
+    const result = await withUserContext(user.id, user.role as RlsRole, async (tx) => {
+      const existing = await tx.debtRatioBand.findMany({ select: { effectiveFrom: true } });
+      if (isDuplicateEffectiveFrom(effectiveFrom, existing.map((e) => e.effectiveFrom))) {
+        return { success: false, error: "A debt ratio band version already exists for that effective date." } as const;
+      }
+
+      await tx.debtRatioBand.createMany({
+        data: rows.map((r) => ({
+          ratioFloor: r.ratioFloor,
+          ratioCeiling: r.ratioCeiling,
+          minRepaymentMonths: r.minRepaymentMonths,
+          statusLabel: r.statusLabel.trim(),
+          effectiveFrom,
+        })),
+      });
+
+      await createAuditLog(tx, {
+        userId: user.id,
+        action: AUDIT_ACTIONS.SETTINGS_DEBT_RATIO_BAND_VERSION_CREATE,
+        entityType: AUDIT_ENTITY_TYPES.DebtRatioBand,
+        entityId: user.id,
+        context: `Created a new debt ratio band version (${rows.length} rows) effective ${effectiveFrom.toISOString().slice(0, 10)}`,
+        metadata: { effectiveFrom: effectiveFrom.toISOString(), rowCount: rows.length },
+      });
+
+      return { success: true } as const;
+    });
+
+    if (!result.success) return result;
+    revalidatePath("/settings");
+    return { success: true };
+  } catch (err) {
+    console.error("[createDebtRatioBandVersionAction]", err);
+    const msg = err instanceof Error ? err.message : "";
+    if (msg.includes("Unique constraint")) {
+      return { success: false, error: "A debt ratio band version already exists for that effective date." };
+    }
+    return { success: false, error: "Failed to create debt ratio band version." };
+  }
+}
+
+interface LifestyleSqueezeBandRowInput {
+  ratioFloor: number | null;
+  ratioCeiling: number | null;
+  statusLabel: string;
+}
+
+export async function createLifestyleSqueezeBandVersionAction(
+  formData: FormData
+): Promise<SettingsActionResult> {
+  try {
+    const user = await requireRole([Role.ADMIN]);
+
+    const rows = parseRowsJson<LifestyleSqueezeBandRowInput>(formData.get("rows"));
+    const effectiveFrom = parseEffectiveFrom(formData.get("effectiveFrom"));
+    if (!rows || rows.length === 0) return { success: false, error: "At least one band row is required." };
+    if (!effectiveFrom) return { success: false, error: "A valid effective date is required." };
+
+    const bandError = checkBandSet(rows.map((r) => ({ floor: r.ratioFloor, ceiling: r.ratioCeiling })));
+    if (bandError) return bandError;
+    if (rows.some((r) => !r.statusLabel?.trim())) {
+      return { success: false, error: "Every row needs a status label." };
+    }
+
+    const result = await withUserContext(user.id, user.role as RlsRole, async (tx) => {
+      const existing = await tx.lifestyleSqueezeBand.findMany({ select: { effectiveFrom: true } });
+      if (isDuplicateEffectiveFrom(effectiveFrom, existing.map((e) => e.effectiveFrom))) {
+        return { success: false, error: "A lifestyle squeeze band version already exists for that effective date." } as const;
+      }
+
+      await tx.lifestyleSqueezeBand.createMany({
+        data: rows.map((r) => ({
+          ratioFloor: r.ratioFloor,
+          ratioCeiling: r.ratioCeiling,
+          statusLabel: r.statusLabel.trim(),
+          effectiveFrom,
+        })),
+      });
+
+      await createAuditLog(tx, {
+        userId: user.id,
+        action: AUDIT_ACTIONS.SETTINGS_LIFESTYLE_SQUEEZE_BAND_VERSION_CREATE,
+        entityType: AUDIT_ENTITY_TYPES.LifestyleSqueezeBand,
+        entityId: user.id,
+        context: `Created a new lifestyle squeeze band version (${rows.length} rows) effective ${effectiveFrom.toISOString().slice(0, 10)}`,
+        metadata: { effectiveFrom: effectiveFrom.toISOString(), rowCount: rows.length },
+      });
+
+      return { success: true } as const;
+    });
+
+    if (!result.success) return result;
+    revalidatePath("/settings");
+    return { success: true };
+  } catch (err) {
+    console.error("[createLifestyleSqueezeBandVersionAction]", err);
+    const msg = err instanceof Error ? err.message : "";
+    if (msg.includes("Unique constraint")) {
+      return { success: false, error: "A lifestyle squeeze band version already exists for that effective date." };
+    }
+    return { success: false, error: "Failed to create lifestyle squeeze band version." };
+  }
+}
+
+// ─── CALC-11 — Gap Reasons ────────────────────────────────────────────────
+//
+// Mirrors upsertReasonCodeAction exactly: create new or update existing by
+// id, soft-deprecate via isDeprecated, never delete.
+
+export async function upsertGapReasonAction(
+  formData: FormData
+): Promise<SettingsActionResult> {
+  try {
+    const user = await requireRole([Role.ADMIN]);
+
+    const id = (formData.get("id") as string) || null;
+    const codeRaw = formData.get("code") as string;
+    const label = (formData.get("label") as string)?.trim();
+    const isDeprecated = formData.get("isDeprecated") === "true";
+    const sortOrderRaw = formData.get("sortOrder") as string;
+
+    const code = parseInt(codeRaw, 10);
+    const sortOrder = parseInt(sortOrderRaw, 10);
+
+    if (!label || isNaN(code)) {
+      return { success: false, error: "Code and label are required." };
+    }
+
+    await withUserContext(user.id, user.role as RlsRole, async (tx) => {
+      let gapReason;
+      if (id) {
+        gapReason = await tx.gapReason.update({
+          where: { id },
+          data: {
+            code,
+            label,
+            isDeprecated,
+            sortOrder: isNaN(sortOrder) ? code : sortOrder,
+          },
+        });
+      } else {
+        gapReason = await tx.gapReason.create({
+          data: {
+            code,
+            label,
+            isDeprecated: false,
+            sortOrder: isNaN(sortOrder) ? code : sortOrder,
+          },
+        });
+      }
+
+      await createAuditLog(tx, {
+        userId: user.id,
+        action: id
+          ? AUDIT_ACTIONS.SETTINGS_GAP_REASON_UPDATE
+          : AUDIT_ACTIONS.SETTINGS_GAP_REASON_CREATE,
+        entityType: AUDIT_ENTITY_TYPES.GapReason,
+        entityId: gapReason.id,
+        context: id
+          ? `Updated gap reason ${code}: ${label}`
+          : `Created gap reason ${code}: ${label}`,
+        metadata: { code, label, isDeprecated },
+      });
+    });
+
+    revalidatePath("/settings");
+    return { success: true };
+  } catch (err) {
+    console.error("[upsertGapReasonAction]", err);
+    const msg = err instanceof Error ? err.message : "";
+    if (msg.includes("Unique constraint")) {
+      return { success: false, error: "A gap reason with that number already exists." };
+    }
+    return { success: false, error: "Failed to save gap reason." };
   }
 }
