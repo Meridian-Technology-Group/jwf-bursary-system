@@ -124,6 +124,9 @@ export const AUDIT_ACTIONS = {
   SETTINGS_EMAIL_TEMPLATE_CREATE: "SETTINGS_EMAIL_TEMPLATE_CREATE",
   SETTINGS_EMAIL_TEMPLATE_DELETE: "SETTINGS_EMAIL_TEMPLATE_DELETE",
 
+  // Bulk email wizard (item 8) — one row per attempted recipient send.
+  BULK_EMAIL_SENT: "BULK_EMAIL_SENT",
+
   // GDPR / retention
   GDPR_DELETION: "GDPR_DELETION",
   /** Automatic tiered-retention purge run by the purge-expired cron (Epic 10). */
@@ -269,6 +272,7 @@ const ACTION_COLOUR: Partial<Record<AuditAction, string>> = {
   [AUDIT_ACTIONS.SCHEDULE_REGENERATED]: "bg-blue-500",
   [AUDIT_ACTIONS.SCHEDULE_SHOW_ON_PORTAL_TOGGLED]: "bg-blue-500",
   [AUDIT_ACTIONS.BURSARY_ACCOUNT_WITHDRAWN]: "bg-red-400",
+  [AUDIT_ACTIONS.BULK_EMAIL_SENT]: "bg-blue-500",
 };
 
 /**
