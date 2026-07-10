@@ -28,6 +28,19 @@ export interface ExportRow {
   reasonCodes: string;
   flags: string;
   outcome: string;
+  /**
+   * CALC-12 — v2-only fields (min-of-three / gap tracking, CALC-06/08). All
+   * null/blank for v1 rows, which never populate these columns.
+   */
+  recommendedPayableFees: number | null;
+  confirmedPayableFees: number | null;
+  gapAmount: number | null;
+  /** Gap reasons as comma-separated "code – label" strings (mirrors `reasonCodes`). */
+  gapReasons: string;
+  /** `Assessment.debtStatusLabel` (v2 only). */
+  debtStatus: string;
+  /** `Assessment.lifestyleSqueezeLabel` (v2 only). */
+  lifestyleSqueezeLabel: string;
 }
 
 // ─── Query ────────────────────────────────────────────────────────────────────
@@ -61,6 +74,9 @@ export async function getExportRows(
         select: {
           outcome: true,
           synopsis: true,
+          // CALC-12: v2-only snapshot fields, null for v1 assessments.
+          debtStatusLabel: true,
+          lifestyleSqueezeLabel: true,
           recommendation: {
             select: {
               familySynopsis: true,
@@ -72,6 +88,11 @@ export async function getExportRows(
               monthlyPayableFees: true,
               dishonestyFlag: true,
               creditRiskFlag: true,
+              // CALC-12: v2 min-of-three / gap-tracking fields (CALC-06/08),
+              // null for v1 recommendations.
+              recommendedPayableFees: true,
+              confirmedPayableFees: true,
+              gapAmount: true,
               reasonCodes: {
                 select: {
                   reasonCode: {
@@ -85,6 +106,19 @@ export async function getExportRows(
                   reasonCode: { sortOrder: "asc" },
                 },
               },
+              gapReasons: {
+                select: {
+                  gapReason: {
+                    select: {
+                      code: true,
+                      label: true,
+                    },
+                  },
+                },
+                orderBy: {
+                  gapReason: { sortOrder: "asc" },
+                },
+              },
             },
           },
         },
@@ -93,55 +127,106 @@ export async function getExportRows(
     orderBy: { reference: "asc" },
   });
 
-  return rows.map((app): ExportRow => {
-    const rec = app.assessment?.recommendation;
-    const outcome = app.assessment?.outcome ?? null;
+  return rows.map(mapExportRow);
+}
 
-    // Split childName into first/last (stored as a single string)
-    const nameParts = (app.childName ?? "").trim().split(/\s+/);
-    const childFirstName = nameParts[0] ?? "";
-    const childLastName = nameParts.slice(1).join(" ");
+// ─── Row mapping (pure — exported for unit testing) ──────────────────────────
 
-    // Reason codes as comma-separated "code – label" strings
-    const reasonCodes = (rec?.reasonCodes ?? [])
-      .map(({ reasonCode }) => `${reasonCode.code} – ${reasonCode.label}`)
-      .join(", ");
+/** The shape `getExportRows`' Prisma query resolves to, per application row. */
+export interface ExportRowSource {
+  reference: string;
+  childName: string | null;
+  school: string;
+  assessment: {
+    outcome: AssessmentOutcome | null;
+    synopsis: string | null;
+    debtStatusLabel: string | null;
+    lifestyleSqueezeLabel: string | null;
+    recommendation: {
+      familySynopsis: string | null;
+      accommodationStatus: string | null;
+      incomeCategory: string | null;
+      propertyCategory: number | null;
+      bursaryAward: unknown;
+      yearlyPayableFees: unknown;
+      monthlyPayableFees: unknown;
+      dishonestyFlag: boolean;
+      creditRiskFlag: boolean;
+      recommendedPayableFees: unknown;
+      confirmedPayableFees: unknown;
+      gapAmount: unknown;
+      reasonCodes: { reasonCode: { code: number; label: string } }[];
+      gapReasons: { gapReason: { code: number; label: string } }[];
+    } | null;
+  } | null;
+}
 
-    // Flags
-    const flagList: string[] = [];
-    if (rec?.dishonestyFlag) flagList.push("Dishonesty");
-    if (rec?.creditRiskFlag) flagList.push("Credit Risk");
-    const flags = flagList.join(", ");
+/** Converts a Prisma Decimal (or number/string) to a plain number, or null. */
+function decimalToNumber(value: unknown): number | null {
+  return value != null ? Number(value) : null;
+}
 
-    // Outcome label
-    const outcomeLabel = formatOutcome(outcome);
+/**
+ * Maps one application row (with its assessment/recommendation) to a flat
+ * `ExportRow`. Pure — no DB access — so it is unit-testable directly against
+ * fixture shapes for both a v1 and a v2 row.
+ */
+export function mapExportRow(app: ExportRowSource): ExportRow {
+  const rec = app.assessment?.recommendation;
+  const outcome = app.assessment?.outcome ?? null;
 
-    return {
-      reference: app.reference,
-      childFirstName,
-      childLastName,
-      school: app.school,
-      // Epic 06: prefer the legacy recommendation synopsis for historical rows;
-      // fall back to the single Assessment.synopsis for newer assessments.
-      familySynopsis:
-        rec?.familySynopsis ?? app.assessment?.synopsis ?? "",
-      accommodationType: rec?.accommodationStatus ?? "",
-      incomeCategory: rec?.incomeCategory ?? "",
-      propertyCategory:
-        rec?.propertyCategory != null ? String(rec.propertyCategory) : "",
-      bursaryAward:
-        rec?.bursaryAward != null ? Number(rec.bursaryAward) : null,
-      yearlyPayableFees:
-        rec?.yearlyPayableFees != null ? Number(rec.yearlyPayableFees) : null,
-      monthlyPayableFees:
-        rec?.monthlyPayableFees != null
-          ? Number(rec.monthlyPayableFees)
-          : null,
-      reasonCodes,
-      flags,
-      outcome: outcomeLabel,
-    };
-  });
+  // Split childName into first/last (stored as a single string)
+  const nameParts = (app.childName ?? "").trim().split(/\s+/);
+  const childFirstName = nameParts[0] ?? "";
+  const childLastName = nameParts.slice(1).join(" ");
+
+  // Reason codes as comma-separated "code – label" strings
+  const reasonCodes = (rec?.reasonCodes ?? [])
+    .map(({ reasonCode }) => `${reasonCode.code} – ${reasonCode.label}`)
+    .join(", ");
+
+  // CALC-12: gap reasons, same "code – label" join as reasonCodes. Empty for
+  // v1 rows (no gapReasons relation ever populated) and for v2 rows with no
+  // material gap.
+  const gapReasons = (rec?.gapReasons ?? [])
+    .map(({ gapReason }) => `${gapReason.code} – ${gapReason.label}`)
+    .join(", ");
+
+  // Flags
+  const flagList: string[] = [];
+  if (rec?.dishonestyFlag) flagList.push("Dishonesty");
+  if (rec?.creditRiskFlag) flagList.push("Credit Risk");
+  const flags = flagList.join(", ");
+
+  // Outcome label
+  const outcomeLabel = formatOutcome(outcome);
+
+  return {
+    reference: app.reference,
+    childFirstName,
+    childLastName,
+    school: app.school,
+    // Epic 06: prefer the legacy recommendation synopsis for historical rows;
+    // fall back to the single Assessment.synopsis for newer assessments.
+    familySynopsis: rec?.familySynopsis ?? app.assessment?.synopsis ?? "",
+    accommodationType: rec?.accommodationStatus ?? "",
+    incomeCategory: rec?.incomeCategory ?? "",
+    propertyCategory:
+      rec?.propertyCategory != null ? String(rec.propertyCategory) : "",
+    bursaryAward: decimalToNumber(rec?.bursaryAward),
+    yearlyPayableFees: decimalToNumber(rec?.yearlyPayableFees),
+    monthlyPayableFees: decimalToNumber(rec?.monthlyPayableFees),
+    reasonCodes,
+    flags,
+    outcome: outcomeLabel,
+    // CALC-12: v2-only columns — blank/null for v1 rows.
+    recommendedPayableFees: decimalToNumber(rec?.recommendedPayableFees),
+    confirmedPayableFees: decimalToNumber(rec?.confirmedPayableFees),
+    gapAmount: decimalToNumber(rec?.gapAmount),
+    gapReasons,
+    debtStatus: app.assessment?.debtStatusLabel ?? "",
+    lifestyleSqueezeLabel: app.assessment?.lifestyleSqueezeLabel ?? "",
+  };
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
