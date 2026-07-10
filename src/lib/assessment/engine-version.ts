@@ -10,6 +10,17 @@
 export type AssessmentEngineVersion = 'v1' | 'v2'
 
 /**
+ * CALC-14: the single source of truth for the `calculationVersion` every NEW
+ * assessment row should be stamped with. CALC-08 cut the primary
+ * `beginAssessmentAction` → `createAssessment` path over to v2; this constant
+ * lets every OTHER assessment-creation call site (`ensureAssessmentRow` on the
+ * app-detail "Begin Review" track, and any future one) share the same default
+ * instead of re-declaring the magic number `2`. Bump this — and this alone —
+ * when a future engine cutover happens.
+ */
+export const CURRENT_CALCULATION_VERSION = 2
+
+/**
  * Chooses the engine for an assessment from its `calculationVersion` stamp
  * (CALC-02). Only an explicit `2` selects v2; everything else (1, null,
  * undefined — pre-CALC-02 rows) stays on v1.
