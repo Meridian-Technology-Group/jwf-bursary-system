@@ -93,6 +93,7 @@ import {
   bulkMarkActiveAction,
 } from "@/app/(admin)/applications/[id]/actions";
 import { bulkReassessmentInviteFromApplicationsAction } from "@/app/(admin)/invitations/actions";
+import { BulkEmailWizardAction } from "@/components/admin/bulk-email-wizard";
 
 import type { ApplicationListItem } from "@/lib/db/queries/applications";
 import {
@@ -628,6 +629,21 @@ function BulkToolbar({
           run={run}
           reasons={closeReasons}
           onActionComplete={onActionComplete}
+        />
+      ),
+    },
+    {
+      id: "send-email",
+      render: ({ selectedIds, isPending }) => (
+        // Deliberately NOT wired through the shared `run` — this is a
+        // multi-step wizard whose dialog must stay open across the send and
+        // result phases. `onActionComplete` (clears selection + refreshes)
+        // is called only when the admin dismisses the result view; see the
+        // component's file header for why calling it earlier breaks the flow.
+        <BulkEmailWizardAction
+          selectedIds={selectedIds}
+          triggerDisabled={isPending}
+          onDone={onActionComplete}
         />
       ),
     },

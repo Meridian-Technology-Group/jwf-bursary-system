@@ -45,36 +45,13 @@ import {
   upsertEmailTemplateAction,
 } from "@/app/(admin)/settings/actions";
 import { isLockedEmailTemplateType } from "@/lib/email/locked-types";
+import { emailTemplateLabel } from "@/lib/email/template-labels";
 import type { EmailTemplateRow } from "@/lib/db/queries/reference-tables";
-import type { EmailTemplateType } from "@prisma/client";
 
-// ─── Template display labels (system templates only — customs use `name`) ────
-
-const TEMPLATE_LABELS: Record<EmailTemplateType, string> = {
-  INVITATION: "Invitation",
-  CONFIRMATION: "Submission Confirmation",
-  MISSING_DOCS: "Missing Documents",
-  OUTCOME_QUALIFIES: "Outcome — Qualifies (legacy)",
-  OUTCOME_DNQ: "Outcome — Declined",
-  OUTCOME_AWARDED: "Outcome — Awarded",
-  OUTCOME_QUALIFIES_NOT_AWARDED: "Outcome — Qualifies, Not Awarded",
-  REASSESSMENT: "Reassessment",
-  REMINDER: "Reminder",
-  INVITE_STAFF: "Staff Invitation",
-  MISSING_DOCS_RESPONDED: "Missing Documents — Applicant Responded",
-  SECONDARY_PARENT_INVITE: "Second Parent — Invitation",
-  SECONDARY_PARENT_REMINDER: "Second Parent — Reminder",
-  SECONDARY_PARENT_RECEIVED: "Second Parent — Information Received",
-  APPLICATION_RESTART_REQUIRED: "Application Rejected — Restart Required",
-  APPLICATION_EDITED_ON_BEHALF: "Application Edited on Your Behalf",
-};
-
-function templateLabel(tpl: EmailTemplateRow): string {
-  if (tpl.isSystem && tpl.type) {
-    return TEMPLATE_LABELS[tpl.type] ?? tpl.type;
-  }
-  return tpl.name ?? "Untitled template";
-}
+// templateLabel is a thin local alias so the rest of this file (and its
+// existing call sites) doesn't need renaming — the shared implementation
+// lives in template-labels.ts (also used by the bulk Send Email wizard).
+const templateLabel = emailTemplateLabel;
 
 // ─── Merge field hints ────────────────────────────────────────────────────────
 
