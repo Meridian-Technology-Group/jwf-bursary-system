@@ -9,6 +9,7 @@ import {
   completeAssessmentRow,
   pauseAssessmentRow,
 } from "@/lib/applications/status";
+import { CURRENT_CALCULATION_VERSION } from "@/lib/assessment/engine-version";
 import type {
   Assessment,
   AssessmentEarner,
@@ -204,17 +205,23 @@ export async function getAssessment(
  * 4-stage calculator (v1 form/engine, untouched), `2` = the full notional
  * model (v2 form + engine).
  *
- * CALC-08 CUTOVER: the default is now `2`. The recommendation screen became
- * v2-aware in this package (it branches on `calculationVersion` and reads the
- * v2 snapshot columns), so every NEW assessment is v2 end-to-end. In-flight
- * v1 assessments keep their `1` stamp and recompute/render identically. The
- * explicit parameter stays so tests can still exercise the v1 path directly.
+ * CALC-08 CUTOVER: the default is now `CURRENT_CALCULATION_VERSION` (2). The
+ * recommendation screen became v2-aware in this package (it branches on
+ * `calculationVersion` and reads the v2 snapshot columns), so every NEW
+ * assessment is v2 end-to-end. In-flight v1 assessments keep their `1` stamp
+ * and recompute/render identically. The explicit parameter stays so tests can
+ * still exercise the v1 path directly.
+ *
+ * CALC-14: the default is sourced from `engine-version.ts`'s shared constant
+ * rather than a locally-declared `2` — `ensureAssessmentRow` (the OTHER
+ * assessment-creation path, on the app-detail "Begin Review" track) stamps
+ * from the same constant so both paths cut over together.
  */
 export async function createAssessment(
   tx: Tx,
   applicationId: string,
   assessorId: string,
-  calculationVersion: number = 2
+  calculationVersion: number = CURRENT_CALCULATION_VERSION
 ): Promise<AssessmentWithRelations> {
   const assessment = await tx.assessment.create({
     data: {

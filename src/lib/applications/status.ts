@@ -59,6 +59,7 @@ import type { Tx } from "@/lib/db/prisma";
 import { createAuditLog } from "@/lib/audit/log";
 import { AUDIT_ACTIONS, AUDIT_ENTITY_TYPES } from "@/lib/audit/actions";
 import type { ReviewPhase } from "@/lib/applications/queue-filter";
+import { CURRENT_CALCULATION_VERSION } from "@/lib/assessment/engine-version";
 
 // ───────────────────────────────────────────────────────────────────────────
 // Review phase — the application-detail review-track vocabulary
@@ -382,6 +383,14 @@ export function assertSubmittedAtUnset(submittedAt: Date | null | undefined): vo
  * assessment in scope; PR-6a unifies them onto the assessment lifecycle, so they
  * need the row to exist. `assessorId` is the staff member performing the action
  * (used only when creating). Idempotent — never overwrites an existing row.
+ *
+ * CALC-14: this is the SECOND assessment-creation path (the app-detail
+ * "Begin Review" track, reached via `beginReview`/`resumeReview` below) —
+ * distinct from `createAssessment` in `db/queries/assessments.ts` (the
+ * "Begin Assessment" wizard track). Both must stamp the same
+ * `calculationVersion` default so a row's engine doesn't depend on which
+ * button the assessor clicked; it is sourced from the shared
+ * `CURRENT_CALCULATION_VERSION` constant, not a locally-declared magic number.
  */
 async function ensureAssessmentRow(
   tx: Tx,
@@ -398,6 +407,7 @@ async function ensureAssessmentRow(
     data: {
       applicationId,
       assessorId,
+      calculationVersion: CURRENT_CALCULATION_VERSION,
       status: ASSESSMENT_INITIAL_STATUS,
       scholarshipPct: 0,
       vatRate: 20,

@@ -16,8 +16,11 @@ import {
   discardAssessment,
   reopenAssessmentForMaterialChange,
   refreshFormStatus,
+  beginReview,
+  resumeReview,
 } from "../status";
 import { AUDIT_ACTIONS, AUDIT_ENTITY_TYPES } from "@/lib/audit/actions";
+import { CURRENT_CALCULATION_VERSION } from "@/lib/assessment/engine-version";
 
 describe("status service — review-phase derivation (PR-6a)", () => {
   it("projects the lifecycle columns onto the 7-value review phase (backfill table)", () => {
@@ -383,6 +386,63 @@ describe("status service — discardAssessment (D-G6/D3 invalidation primitive)"
     expect(discarded).toBe(false);
     expect(tx.assessment.update).not.toHaveBeenCalled();
     expect(tx.auditLog.create).not.toHaveBeenCalled();
+  });
+});
+
+describe("status service — ensureAssessmentRow via beginReview/resumeReview (CALC-14)", () => {
+  /**
+   * Fake tx exposing the assessment surface `ensureAssessmentRow` +
+   * `beginReview`/`resumeReview` use. Mirrors the `discardAssessment` fake tx
+   * above but adds `create` since these paths (unlike `discardAssessment`) can
+   * create the row.
+   */
+  function makeTx(existing: { id: string; status: string } | null) {
+    return {
+      assessment: {
+        findUnique: vi.fn(async () => existing),
+        create: vi.fn(async (args: { data: Record<string, unknown> }) => ({
+          id: "asmt-new",
+          status: args.data.status,
+        })),
+        update: vi.fn(async () => ({})),
+      },
+    };
+  }
+
+  it("beginReview creates a new assessment row stamped with CURRENT_CALCULATION_VERSION (not the schema's v1 default)", async () => {
+    const tx = makeTx(null);
+    const id = await beginReview(tx as never, "app-1", "assessor-1");
+
+    expect(id).toBe("asmt-new");
+    expect(tx.assessment.create).toHaveBeenCalledTimes(1);
+    const arg = tx.assessment.create.mock.calls[0]![0] as {
+      data: Record<string, unknown>;
+    };
+    expect(arg.data).toMatchObject({
+      applicationId: "app-1",
+      assessorId: "assessor-1",
+      calculationVersion: CURRENT_CALCULATION_VERSION,
+    });
+    expect(arg.data.calculationVersion).toBe(2);
+  });
+
+  it("resumeReview also creates via the same v2-stamped path when no row exists yet", async () => {
+    const tx = makeTx(null);
+    await resumeReview(tx as never, "app-1", "assessor-1");
+
+    expect(tx.assessment.create).toHaveBeenCalledTimes(1);
+    const arg = tx.assessment.create.mock.calls[0]![0] as {
+      data: Record<string, unknown>;
+    };
+    expect(arg.data.calculationVersion).toBe(CURRENT_CALCULATION_VERSION);
+  });
+
+  it("does NOT re-create (or re-stamp) an existing assessment row", async () => {
+    const tx = makeTx({ id: "asmt-existing", status: "NOT_STARTED" });
+    const id = await beginReview(tx as never, "app-1", "assessor-1");
+
+    expect(id).toBe("asmt-existing");
+    expect(tx.assessment.create).not.toHaveBeenCalled();
   });
 });
 
