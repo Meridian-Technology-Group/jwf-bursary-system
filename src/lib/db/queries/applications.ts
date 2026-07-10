@@ -80,6 +80,8 @@ export interface ApplicationListItem {
   bursaryAccountId: string | null;
   /** Status of the linked account (null when there is no account). */
   bursaryAccountStatus: BursaryAccountStatus | null;
+  /** Unified close marker (item 2) — non-null means CLOSED. */
+  closedAt: Date | null;
 }
 
 export interface ListApplicationsFilters {
@@ -329,6 +331,7 @@ export async function listApplications(
       isReassessment: true,
       assignedToId: true,
       bursaryAccountId: true,
+      closedAt: true,
       round: {
         select: {
           id: true,
@@ -428,6 +431,8 @@ export type ApplicationWithDetails = Omit<
   documents: Document[];
   assessment: Assessment | null;
   leadApplicant: Pick<Profile, "id">;
+  /** Close reason (item 2) for the closed banner; null when not closed. */
+  closeReason: { id: string; label: string; purgeOnClose: boolean } | null;
 };
 
 /**
@@ -461,6 +466,11 @@ export async function getApplicationWithDetails(
       archivedAt: true,
       submittedAt: true,
       submissionDeadlineAt: true,
+      closedAt: true,
+      closedById: true,
+      closeReasonId: true,
+      purgedAt: true,
+      closeReason: { select: { id: true, label: true, purgeOnClose: true } },
       createdAt: true,
       updatedAt: true,
       round: true,

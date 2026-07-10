@@ -21,6 +21,7 @@ import { getActiveRound } from "@/lib/db/queries/reports";
 import { getActiveBursaryHolders } from "@/lib/db/queries/invitations";
 import { RoundStatus } from "@prisma/client";
 import { listAssessors } from "@/lib/db/queries/profiles";
+import { getAllCloseReasons } from "@/lib/db/queries/reference-tables";
 import type { WatchlistRuleId } from "@/lib/db/queries/round-watchlist";
 import { ApplicationTable } from "@/components/admin/application-table";
 import { InternalRequestDialog } from "@/components/admin/internal-request-dialog";
@@ -174,7 +175,14 @@ export default async function QueuePage({
     applicationFilters.deadlineTo = deadlineToParam;
   }
 
-  const { applications, names, rounds, assessors, reassessRoundYear } =
+  const {
+    applications,
+    names,
+    rounds,
+    assessors,
+    closeReasons,
+    reassessRoundYear,
+  } =
     await withUserContext(
     profile.id,
     profile.role as RlsRole,
@@ -226,11 +234,15 @@ export default async function QueuePage({
         applicationFilters.ids = [];
       }
 
-      // Assessor list only needed for the ADMIN bulk-assign dropdown.
-      const [applications, rounds, assessors] = await Promise.all([
+      // Assessor list only needed for the ADMIN bulk-assign dropdown; close
+      // reasons only for the ADMIN-only per-row Close action (item 2/4.1).
+      const [applications, rounds, assessors, closeReasons] = await Promise.all([
         listApplications(tx, applicationFilters),
         listRounds(tx),
         profile.role === Role.ADMIN ? listAssessors(tx) : Promise.resolve([]),
+        profile.role === Role.ADMIN
+          ? getAllCloseReasons(tx)
+          : Promise.resolve([]),
       ]);
 
       // Lead applicant name + email are shown as first-class columns (they are
@@ -269,7 +281,8 @@ export default async function QueuePage({
       // via the same `deriveReviewPhase` the detail page uses, so the list and
       // detail page always agree. Computed here (not in the query layer) since
       // it's a presentational concern of this one list, not of every
-      // `listApplications` caller.
+      // `listApplications` caller. `closedAt` participates so a unified close
+      // (item 2) projects to CLOSED with top precedence.
       //
       // Deadline column (Item 1.2): same treatment, via the ONE shared
       // `effectiveSubmissionDeadline()` helper (Epic 03 / Item 12/D-1) — do
@@ -280,6 +293,7 @@ export default async function QueuePage({
           formStatus: app.formStatus,
           assessmentStatus: app.assessmentStatus,
           outcome: app.outcome,
+          closedAt: app.closedAt,
         }),
         effectiveDeadline: effectiveSubmissionDeadline(
           { submissionDeadlineAt: app.submissionDeadlineAt },
@@ -292,6 +306,7 @@ export default async function QueuePage({
         names,
         rounds,
         assessors,
+        closeReasons,
         reassessRoundYear,
       };
     }
@@ -368,6 +383,13 @@ export default async function QueuePage({
         activeFilter={activeFilter}
         reassessEligibleActive={reassessEligible}
         reassessTargetRound={reassessRoundYear}
+        closeReasons={closeReasons
+          .filter((r) => !r.isDeprecated)
+          .map((r) => ({
+            id: r.id,
+            label: r.label,
+            purgeOnClose: r.purgeOnClose,
+          }))}
       />
     </div>
   );

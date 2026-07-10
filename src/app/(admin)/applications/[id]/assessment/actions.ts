@@ -96,6 +96,7 @@ async function checkSubmittedGate(
     where: { id: applicationId },
     select: {
       formStatus: true,
+      closedAt: true,
       assessment: { select: { status: true, outcome: true } },
     },
   });
@@ -106,6 +107,7 @@ async function checkSubmittedGate(
     formStatus: app.formStatus,
     assessmentStatus: app.assessment?.status ?? null,
     outcome: app.assessment?.outcome ?? null,
+    closedAt: app.closedAt,
   });
   if (phase === "PRE_SUBMISSION") {
     return { ok: false, reason: NOT_SUBMITTED_GATE_MESSAGE };

@@ -21,6 +21,7 @@ model Profile {
   updatedAt               DateTime                 @updatedAt @map("updated_at") @db.Timestamptz(6)
   assignedApplications    Application[]            @relation("ApplicationAssignee")
   applicationsAsLead      Application[]            @relation("ApplicationLeadApplicant")
+  applicationsClosed      Application[]            @relation("ApplicationClosedBy")
   assessmentsAsOwner      Assessment[]             @relation("AssessmentAssessor")
   auditLogs               AuditLog[]
   bursaryAccounts         BursaryAccount[]
@@ -166,6 +167,18 @@ model Application {
   /// doc deadline, Epic 01) and from Round.closeDate (round-level intake
   /// window). Read via effectiveSubmissionDeadline() — never compared raw.
   submissionDeadlineAt DateTime?                @map("submission_deadline_at") @db.Timestamptz(6)
+  /// Unified Closed state (item 2). NULL ⇒ not closed. Set exactly once by
+  /// `closeApplication` (never rewritten — the original close is immutable,
+  /// mirroring BursaryAccount.closedAt). closedAt != null takes precedence
+  /// over every other derived review phase (CLOSED wins). A close always
+  /// carries a close reason; the reason's purgeOnClose flag decides whether
+  /// the close also anonymised PII (purgedAt below).
+  closedAt             DateTime?                @map("closed_at") @db.Timestamptz(6)
+  closedById           String?                  @map("closed_by") @db.Uuid
+  closeReasonId        String?                  @map("close_reason_id") @db.Uuid
+  /// Stamped when the reason-driven close purge (item 10) ran for this
+  /// application — the idempotency gate: a second close/purge attempt no-ops.
+  purgedAt             DateTime?                @map("purged_at") @db.Timestamptz(6)
   createdAt            DateTime                 @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt            DateTime                 @updatedAt @map("updated_at") @db.Timestamptz(6)
   assignedToId         String?                  @map("assigned_to_id") @db.Uuid
@@ -174,6 +187,8 @@ model Application {
   bursaryAccount       BursaryAccount?          @relation(fields: [bursaryAccountId], references: [id])
   contact              Contact?                 @relation(fields: [contactId], references: [id])
   leadApplicant        Profile                  @relation("ApplicationLeadApplicant", fields: [leadApplicantId], references: [id])
+  closedBy             Profile?                 @relation("ApplicationClosedBy", fields: [closedById], references: [id], onDelete: SetNull)
+  closeReason          CloseReason?             @relation(fields: [closeReasonId], references: [id], onDelete: Restrict)
   round                Round                    @relation(fields: [roundId], references: [id])
   assessment           Assessment?
   documents            Document[]
@@ -541,6 +556,7 @@ model CloseReason {
   isDeprecated Boolean  @default(false) @map("is_deprecated")
   sortOrder    Int      @map("sort_order")
   createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  applications Application[]
 
   @@map("close_reasons")
 }

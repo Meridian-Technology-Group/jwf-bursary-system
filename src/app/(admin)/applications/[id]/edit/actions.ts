@@ -131,6 +131,7 @@ export async function saveSectionOnBehalf(
           select: {
             reference: true,
             formStatus: true,
+            closedAt: true,
             assessment: { select: { status: true, outcome: true } },
           },
         });
@@ -142,6 +143,7 @@ export async function saveSectionOnBehalf(
           formStatus: application.formStatus,
           assessmentStatus: application.assessment?.status ?? null,
           outcome: application.assessment?.outcome ?? null,
+          closedAt: application.closedAt,
         });
         if (!canEditOnBehalf(phase)) {
           return {
@@ -463,6 +465,7 @@ export async function submitApplicationOnBehalf(
           where: { id: applicationId },
           select: {
             formStatus: true,
+            closedAt: true,
             childName: true,
             leadApplicantId: true,
             leadApplicant: {

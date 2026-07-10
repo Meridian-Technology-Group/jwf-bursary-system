@@ -58,6 +58,7 @@ export default async function EditOnBehalfLayout({ children, params }: Props) {
         select: {
           reference: true,
           formStatus: true,
+          closedAt: true,
           applicationType: true,
           isReassessment: true,
           assessment: {
@@ -74,6 +75,7 @@ export default async function EditOnBehalfLayout({ children, params }: Props) {
     formStatus: application.formStatus,
     assessmentStatus: application.assessment?.status ?? null,
     outcome: application.assessment?.outcome ?? null,
+    closedAt: application.closedAt,
   });
   if (!canEditOnBehalf(phase)) {
     redirect(`/applications/${params.id}`);

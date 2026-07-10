@@ -79,6 +79,8 @@ import type { ReviewPhase } from "@/lib/applications/queue-filter";
  *   COMPLETED        assessment completed, no outcome yet
  *   QUALIFIES        outcome AWARDED or QUALIFIES_NOT_AWARDED
  *   DOES_NOT_QUALIFY outcome DOES_NOT_QUALIFY
+ *   CLOSED           unified terminal state (item 2) — closedAt != null,
+ *                    TOP precedence over every other phase
  *
  * Canonical definition lives in `queue-filter.ts` (client-import-safe, zero
  * server-only dependencies) — re-exported here (see the import above) so this
@@ -92,6 +94,8 @@ export interface LifecycleStatusInput {
   formStatus: ApplicationFormStatus;
   assessmentStatus: AssessmentStatus | null;
   outcome: AssessmentOutcome | null;
+  /** Unified close marker (item 2) — non-null wins over everything else. */
+  closedAt: Date | null;
 }
 
 /**
@@ -100,7 +104,8 @@ export interface LifecycleStatusInput {
  * application-detail gating, round counts, reports) now funnels through, so the
  * intent of the old fused enum is preserved in one place.
  *
- * Mirrors the PR-2 backfill table exactly:
+ * Mirrors the PR-2 backfill table exactly, with the item-2 CLOSED rule on top:
+ *   closedAt set                       → CLOSED (wins over everything)
  *   outcome set                        → QUALIFIES / DOES_NOT_QUALIFY
  *   assessment COMPLETED               → COMPLETED
  *   assessment PAUSED                  → PAUSED
@@ -109,8 +114,9 @@ export interface LifecycleStatusInput {
  *   form not SUBMITTED                 → PRE_SUBMISSION
  */
 export function deriveReviewPhase(input: LifecycleStatusInput): ReviewPhase {
-  const { formStatus, assessmentStatus, outcome } = input;
+  const { formStatus, assessmentStatus, outcome, closedAt } = input;
 
+  if (closedAt != null) return "CLOSED";
   if (outcome != null) {
     return outcome === "DOES_NOT_QUALIFY" ? "DOES_NOT_QUALIFY" : "QUALIFIES";
   }

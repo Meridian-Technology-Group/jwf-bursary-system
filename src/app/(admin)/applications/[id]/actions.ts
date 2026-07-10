@@ -36,6 +36,8 @@ import {
   purgeApplication,
   buildPurgeAuditMetadata,
 } from "@/lib/retention/purge";
+import { deleteAuthUsersPostCommit } from "@/lib/retention/close-purge";
+import { closeApplicationCore } from "@/lib/applications/close";
 import {
   beginReview,
   resumeReview,
@@ -68,6 +70,7 @@ async function fetchApplicationForStatus(tx: Tx, applicationId: string) {
       id: true,
       reference: true,
       formStatus: true,
+      closedAt: true,
       childName: true,
       school: true,
       leadApplicant: {
@@ -86,6 +89,7 @@ async function fetchApplicationForStatus(tx: Tx, applicationId: string) {
 /** The derived review phase for a fetched application (lifecycle-column based). */
 function reviewPhaseOf(application: {
   formStatus: import("@prisma/client").ApplicationFormStatus;
+  closedAt: Date | null;
   assessment: {
     status: import("@prisma/client").AssessmentStatus;
     outcome: import("@prisma/client").AssessmentOutcome | null;
@@ -95,6 +99,7 @@ function reviewPhaseOf(application: {
     formStatus: application.formStatus,
     assessmentStatus: application.assessment?.status ?? null,
     outcome: application.assessment?.outcome ?? null,
+    closedAt: application.closedAt,
   });
 }
 
@@ -377,6 +382,7 @@ export async function rejectAndRestartApplication(
           bursaryAccountId: true,
           custodyArrangement: true,
           formStatus: true,
+          closedAt: true,
           leadApplicant: {
             select: { email: true, firstName: true, lastName: true },
           },
@@ -393,6 +399,7 @@ export async function rejectAndRestartApplication(
         formStatus: application.formStatus,
         assessmentStatus: application.assessment?.status ?? null,
         outcome: application.assessment?.outcome ?? null,
+        closedAt: application.closedAt,
       });
 
       // Reject only before a final outcome. A decided/completed application must
@@ -857,6 +864,7 @@ export async function gdprDeleteApplicantAction(
           reference: true,
           submittedAt: true,
           archivedAt: true,
+          closedAt: true,
           leadApplicantId: true,
           documents: { select: { id: true, storagePath: true } },
           assessment: {
@@ -885,6 +893,7 @@ export async function gdprDeleteApplicantAction(
     const evaluation = isPurgeable(
       {
         outcome: application.assessment?.outcome ?? null,
+        closedAt: application.closedAt,
         archivedAt: application.archivedAt,
         submittedAt: application.submittedAt,
       },
@@ -1121,5 +1130,52 @@ export async function updateApplicationReferenceAction(
     }
     console.error("[updateApplicationReferenceAction]", err);
     return { success: false, error: message };
+  }
+}
+
+// ─── closeApplicationAction (item 2 — the unified close) ───────────────────────
+
+/**
+ * Closes an application into the single terminal Closed state (item 2) under
+ * an admin-configured close reason (item 4.1). ADMIN-only. Delegates to
+ * `closeApplicationCore` — the same core the A4 bulk close loops — inside one
+ * admin-context transaction (the purge touches RLS-protected tables), then
+ * performs the post-commit auth-user deletions the purge may have queued.
+ */
+export async function closeApplicationAction(
+  applicationId: string,
+  closeReasonId: string
+): Promise<ActionResult> {
+  try {
+    const user = await requireRole([Role.ADMIN]);
+
+    if (!closeReasonId || typeof closeReasonId !== "string") {
+      return { success: false, error: "A close reason is required." };
+    }
+
+    const result = await withAdminContext((tx) =>
+      closeApplicationCore(
+        tx,
+        { applicationId, closeReasonId, actorId: user.id },
+        { deleteDocument }
+      )
+    );
+
+    if (!result.success) return result;
+
+    // Post-commit: auth-user deletion is external to Postgres (non-fatal —
+    // failures are logged; the data-side purge has already committed).
+    if (result.authUsersToDelete.length > 0) {
+      await deleteAuthUsersPostCommit(result.authUsersToDelete, {
+        deleteAuthUser: (uid) =>
+          createSupabaseAdminClient().auth.admin.deleteUser(uid),
+      });
+    }
+
+    revalidateApplicationPaths(applicationId);
+    return { success: true };
+  } catch (err) {
+    console.error("[closeApplicationAction]", err);
+    return { success: false, error: "Failed to close the application." };
   }
 }

@@ -79,6 +79,7 @@ export default async function EditSectionPage({ params }: PageProps) {
           school: true,
           childName: true,
           formStatus: true,
+          closedAt: true,
           isReassessment: true,
           applicationType: true,
           leadApplicantId: true,
@@ -97,6 +98,7 @@ export default async function EditSectionPage({ params }: PageProps) {
     formStatus: application.formStatus,
     assessmentStatus: application.assessment?.status ?? null,
     outcome: application.assessment?.outcome ?? null,
+    closedAt: application.closedAt,
   });
   if (!canEditOnBehalf(phase)) {
     redirect(`/applications/${params.id}`);

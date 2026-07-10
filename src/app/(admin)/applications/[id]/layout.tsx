@@ -21,11 +21,14 @@ import {
   OutcomeBadge,
 } from "@/components/shared/lifecycle-badges";
 import { deriveReviewPhase } from "@/lib/applications/status";
+import { formatLondonDate } from "@/lib/datetime";
+import { getAllCloseReasons } from "@/lib/db/queries/reference-tables";
 import { ApplicationActions } from "@/components/admin/application-actions";
 import { AssignAssessorSelect } from "@/components/admin/assign-assessor-select";
 import { GdprDeleteAction } from "@/components/admin/gdpr-delete-action";
 import { AddSecondParentCard } from "@/components/admin/add-second-parent-card";
 import { EditReferenceDialog } from "@/components/admin/edit-reference-dialog";
+import { CloseApplicationDialog } from "@/components/admin/close-application-dialog";
 
 function SchoolBadge({ school }: { school: "WHITGIFT" | "TRINITY" }) {
   if (school === "WHITGIFT") {
@@ -101,12 +104,17 @@ export default async function ApplicationDetailLayout({
     secondary,
     secondaryOverride,
     priorYearSecondary,
+    closeReasons,
   } = await withUserContext(
     user.id,
     user.role as RlsRole,
     async (tx) => {
       const app = await getApplicationWithDetails(tx, params.id);
       const asrs = user.role === Role.ADMIN ? await listAssessors(tx) : [];
+
+      // Active close reasons for the ADMIN-only Close card (item 2/4.1).
+      const reasons =
+        user.role === Role.ADMIN ? await getAllCloseReasons(tx) : [];
 
       // ASSESSORs may only access applications assigned to them
       let ok = true;
@@ -144,6 +152,13 @@ export default async function ApplicationDetailLayout({
         secondary: sec,
         secondaryOverride: overrideRow?.secondaryParentOverride ?? false,
         priorYearSecondary: prior,
+        closeReasons: reasons
+          .filter((r) => !r.isDeprecated)
+          .map((r) => ({
+            id: r.id,
+            label: r.label,
+            purgeOnClose: r.purgeOnClose,
+          })),
       };
     }
   );
@@ -163,6 +178,7 @@ export default async function ApplicationDetailLayout({
     formStatus: application.formStatus,
     assessmentStatus: application.assessment?.status ?? null,
     outcome: application.assessment?.outcome ?? null,
+    closedAt: application.closedAt,
   });
 
   const tabs = getTabItems(params.id, {
@@ -180,6 +196,10 @@ export default async function ApplicationDetailLayout({
     user.role === Role.ASSESSOR ||
     Boolean(secondary);
   const showManageCard = canManageGdpr || showSecondParent;
+
+  // Unified close (item 2): ADMIN-only, never re-offered once closed.
+  const isClosed = application.closedAt != null;
+  const canClose = user.role === Role.ADMIN && !isClosed;
 
   return (
     <div className="space-y-4">
@@ -253,6 +273,33 @@ export default async function ApplicationDetailLayout({
         </div>
       </div>
 
+      {/* Closed banner (item 2) — the single terminal state. Shown on every
+          tab; the reason, date and purge outcome are the record Story 2.1
+          requires visible. Actor attribution lives on the History tab. */}
+      {isClosed && (
+        <div
+          className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-xl border border-rose-200 bg-rose-50 px-6 py-3"
+          role="status"
+        >
+          <span className="text-sm font-semibold text-rose-800">Closed</span>
+          {application.closeReason && (
+            <span className="text-sm text-rose-700">
+              {application.closeReason.label}
+            </span>
+          )}
+          {application.closedAt && (
+            <span className="text-sm text-rose-600">
+              {formatLondonDate(application.closedAt)}
+            </span>
+          )}
+          <span className="text-xs text-rose-600">
+            {application.purgedAt
+              ? "Personal data was removed when this application was closed."
+              : "All data is retained under the retention policy."}
+          </span>
+        </div>
+      )}
+
       {/* WP-15: Primary outcome actions — the prominent decision surface.
           Hidden for terminal statuses (handled inside the component). The review
           phase is DERIVED from the lifecycle columns (Epic 01 PR-6a), not the
@@ -295,6 +342,28 @@ export default async function ApplicationDetailLayout({
                     : null
                 }
               />
+            )}
+
+            {/* Unified close (item 2) — ADMIN only; replaces the old Decline /
+                Withdraw-account paths. Hidden once closed (no double-close). */}
+            {canClose && (
+              <div className="flex items-start justify-between gap-4 px-6 py-4">
+                <div>
+                  <p className="text-sm font-medium text-slate-700">
+                    Close application
+                  </p>
+                  <p className="mt-0.5 text-xs text-slate-500">
+                    Move this application to its single terminal Closed state.
+                    The close reason decides whether personal data is retained
+                    or removed; a live bursary account is closed with it.
+                  </p>
+                </div>
+                <CloseApplicationDialog
+                  applicationId={application.id}
+                  reference={application.reference}
+                  reasons={closeReasons}
+                />
+              </div>
             )}
 
             {/* B7: GDPR right-to-erasure — ADMIN only. The server action also
