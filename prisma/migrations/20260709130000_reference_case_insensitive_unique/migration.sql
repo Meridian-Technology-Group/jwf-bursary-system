@@ -1,0 +1,35 @@
+-- =============================================================================
+-- JWF Bursary System — Case-insensitive uniqueness for bursary reference (item 11)
+-- =============================================================================
+-- Story: docs/backlog/stories/11-editable-bursary-reference.md — Story 11.2.
+--
+-- The bursary reference on `applications` is now freely editable by an ADMIN at
+-- any point in the lifecycle (no state-gating). Story 11.2 requires uniqueness
+-- to be enforced case-insensitively at the data layer — "ABC-1" collides with
+-- "abc-1" — so concurrent edits cannot create two references that differ only
+-- in case. Format is unrestricted (whitespace/special characters permitted and
+-- preserved verbatim); only the comparison is case-insensitive, not
+-- whitespace-folded.
+--
+-- This is a raw functional index — Prisma's schema language cannot express a
+-- `lower(column)` unique index, so it ships here rather than in schema.prisma
+-- (see the comment next to `Application.reference` in prisma/schema.prisma).
+-- The existing case-sensitive `@unique` on `applications.reference` is left in
+-- place; it is now redundant given this stricter index but harmless alongside
+-- it (Postgres is happy to have both).
+--
+-- Duplicate check before shipping (server action's pre-check + this index both
+-- assume no pre-existing case-insensitive dupes):
+--   SELECT lower(reference), count(*) FROM applications
+--   GROUP BY lower(reference) HAVING count(*) > 1;
+-- Nonprod: checked clean 2026-07-09 (0 rows) and re-checked clean 2026-07-10
+-- immediately before authoring this migration (0 rows) — safe to apply via CI
+-- on merge to staging (.github/workflows/db-push.yml).
+-- Prod: NOT YET CHECKED — a permission gate blocked running this query against
+-- supabase-prod on the night of 2026-07-09. **Run the same query against prod
+-- before promoting staging → main** and resolve any collisions (e.g. by
+-- appending a disambiguating suffix to one of the duplicates) before this
+-- migration is allowed to apply there.
+-- =============================================================================
+
+CREATE UNIQUE INDEX "applications_reference_lower_key" ON "applications" (lower("reference"));
