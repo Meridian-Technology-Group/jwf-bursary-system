@@ -1,12 +1,13 @@
 /**
  * WP-19: Admin Settings — Reference Data Management
  *
- * Five tabs:
+ * Six tabs:
  *   1. Family Types     — notional rent, utilities, food costs per category
  *   2. School Fees      — annual fees per school
  *   3. Council Tax      — Band D Croydon default
  *   4. Reason Codes     — full CRUD + deprecation
- *   5. Email Templates  — subject + body editor with merge field hints
+ *   5. Close Reasons    — full CRUD + purge-on-close toggle + deprecation (item 4.3)
+ *   6. Email Templates  — subject + body editor with merge field hints
  */
 
 import { requireRole, Role } from "@/lib/auth/roles";
@@ -16,6 +17,7 @@ import {
   getSchoolFees,
   getCouncilTaxDefault,
   getAllReasonCodes,
+  getAllCloseReasons,
   getAllEmailTemplates,
 } from "@/lib/db/queries/reference-tables";
 import {
@@ -35,6 +37,7 @@ import { FamilyTypeRow } from "@/components/admin/settings/family-type-form";
 import { SchoolFeesRow } from "@/components/admin/settings/school-fees-form";
 import { CouncilTaxForm } from "@/components/admin/settings/council-tax-form";
 import { ReasonCodeTable } from "@/components/admin/settings/reason-code-table";
+import { CloseReasonTable } from "@/components/admin/settings/close-reason-table";
 import { EmailTemplateEditor } from "@/components/admin/settings/email-template-editor";
 
 export const metadata = {
@@ -64,16 +67,23 @@ export default async function SettingsPage() {
   const user = await requireRole([Role.ADMIN]);
 
   // Parallel data fetches
-  const [familyTypeConfigs, schoolFees, councilTax, reasonCodes, emailTemplates] =
-    await withUserContext(user.id, user.role as RlsRole, (tx) =>
-      Promise.all([
-        getFamilyTypeConfigs(tx),
-        getSchoolFees(tx),
-        getCouncilTaxDefault(tx),
-        getAllReasonCodes(tx),
-        getAllEmailTemplates(tx),
-      ])
-    );
+  const [
+    familyTypeConfigs,
+    schoolFees,
+    councilTax,
+    reasonCodes,
+    closeReasons,
+    emailTemplates,
+  ] = await withUserContext(user.id, user.role as RlsRole, (tx) =>
+    Promise.all([
+      getFamilyTypeConfigs(tx),
+      getSchoolFees(tx),
+      getCouncilTaxDefault(tx),
+      getAllReasonCodes(tx),
+      getAllCloseReasons(tx),
+      getAllEmailTemplates(tx),
+    ])
+  );
 
   return (
     <div className="space-y-6">
@@ -87,7 +97,7 @@ export default async function SettingsPage() {
 
       {/* Tabs */}
       <Tabs defaultValue="family-types" className="space-y-6">
-        <TabsList className="grid w-full grid-cols-5 h-auto gap-0 bg-slate-100 p-1 rounded-lg">
+        <TabsList className="grid w-full grid-cols-6 h-auto gap-0 bg-slate-100 p-1 rounded-lg">
           <TabsTrigger
             value="family-types"
             className="text-xs sm:text-sm rounded-md"
@@ -111,6 +121,12 @@ export default async function SettingsPage() {
             className="text-xs sm:text-sm rounded-md"
           >
             Reason Codes
+          </TabsTrigger>
+          <TabsTrigger
+            value="close-reasons"
+            className="text-xs sm:text-sm rounded-md"
+          >
+            Close Reasons
           </TabsTrigger>
           <TabsTrigger
             value="email-templates"
@@ -224,7 +240,18 @@ export default async function SettingsPage() {
           </div>
         </TabsContent>
 
-        {/* ── Tab 5: Email Templates ──────────────────────────────────────── */}
+        {/* ── Tab 5: Close Reasons ────────────────────────────────────────── */}
+        <TabsContent value="close-reasons">
+          <div className="rounded-xl border border-slate-200 bg-white p-6">
+            <SectionHeader
+              title="Close Reasons"
+              description="Reasons offered when closing an application. The purge-on-close toggle decides whether closing with that reason purges the applicant's data or retains it under the normal retention policy. Deprecated reasons are hidden from the close dropdown but retained for historical records."
+            />
+            <CloseReasonTable closeReasons={closeReasons} />
+          </div>
+        </TabsContent>
+
+        {/* ── Tab 6: Email Templates ──────────────────────────────────────── */}
         <TabsContent value="email-templates">
           <div className="rounded-xl border border-slate-200 bg-white p-6">
             <SectionHeader

@@ -258,6 +258,94 @@ export async function upsertReasonCodeAction(
   }
 }
 
+// ─── Close Reasons ────────────────────────────────────────────────────────────
+
+/**
+ * Upserts a close reason (create new or update existing by id).
+ * Also handles the purgeOnClose toggle and deprecation via isDeprecated.
+ */
+export async function upsertCloseReasonAction(
+  formData: FormData
+): Promise<SettingsActionResult> {
+  try {
+    const user = await requireRole([Role.ADMIN]);
+
+    const id = (formData.get("id") as string) || null;
+    const label = (formData.get("label") as string)?.trim();
+    const purgeOnClose = formData.get("purgeOnClose") === "true";
+    const isDeprecated = formData.get("isDeprecated") === "true";
+    const sortOrderRaw = formData.get("sortOrder") as string;
+    const sortOrder = parseInt(sortOrderRaw, 10);
+
+    if (!label) {
+      return { success: false, error: "A label is required." };
+    }
+
+    const result = await withUserContext(user.id, user.role as RlsRole, async (tx) => {
+      // Case-insensitive duplicate-label guard — the DB unique index is
+      // case-sensitive, so this pre-check is what actually stops "Relocation"
+      // and "relocation" from coexisting as separate dropdown entries.
+      const existing = await tx.closeReason.findFirst({
+        where: { label: { equals: label, mode: "insensitive" } },
+      });
+      if (existing && existing.id !== id) {
+        return { success: false, error: "A close reason with that label already exists." } as const;
+      }
+
+      let closeReason;
+      if (id) {
+        closeReason = await tx.closeReason.update({
+          where: { id },
+          data: {
+            label,
+            purgeOnClose,
+            isDeprecated,
+            sortOrder: isNaN(sortOrder) ? 0 : sortOrder,
+          },
+        });
+      } else {
+        closeReason = await tx.closeReason.create({
+          data: {
+            label,
+            purgeOnClose,
+            isDeprecated: false,
+            sortOrder: isNaN(sortOrder) ? 0 : sortOrder,
+          },
+        });
+      }
+
+      await createAuditLog(tx, {
+        userId: user.id,
+        action: id
+          ? AUDIT_ACTIONS.SETTINGS_CLOSE_REASON_UPDATE
+          : AUDIT_ACTIONS.SETTINGS_CLOSE_REASON_CREATE,
+        entityType: AUDIT_ENTITY_TYPES.CloseReason,
+        entityId: closeReason.id,
+        context: id
+          ? `Updated close reason: ${label}`
+          : `Created close reason: ${label}`,
+        metadata: { label, purgeOnClose, isDeprecated },
+      });
+
+      return { success: true } as const;
+    });
+
+    if (!result.success) {
+      return result;
+    }
+
+    revalidatePath("/settings");
+    return { success: true };
+  } catch (err) {
+    console.error("[upsertCloseReasonAction]", err);
+    const msg = err instanceof Error ? err.message : "";
+    if (msg.includes("Unique constraint")) {
+      return { success: false, error: "A close reason with that label already exists." };
+    }
+    return { success: false, error: "Failed to save close reason." };
+  }
+}
+
 // ─── Email Templates ──────────────────────────────────────────────────────────
 
 /**
