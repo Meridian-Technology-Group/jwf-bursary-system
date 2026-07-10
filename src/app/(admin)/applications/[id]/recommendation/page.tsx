@@ -30,15 +30,24 @@ import { getAssessment } from "@/lib/db/queries/assessments";
 import {
   getRecommendation,
   getReasonCodes,
+  getGapReasons,
+  getLastRecommendationPayable,
 } from "@/lib/db/queries/recommendations";
 import { getSiblingLinks } from "@/lib/db/queries/siblings";
 import { mergeHistoricReasonCodeOptions } from "@/lib/reason-codes/merge-options";
 import { buildOptionScenarios } from "@/lib/assessment/recommendation-options";
+import { selectEngineVersion } from "@/lib/assessment/engine-version";
+import { selectLastPayableFees } from "@/lib/assessment/recommendation-v2";
 import {
   RecommendationForm,
   type SerialisedRecommendation,
   type SiblingContextRow,
 } from "@/components/admin/recommendation-form";
+import {
+  RecommendationFormV2,
+  type SerialisedRecommendationV2,
+  type V2AssessmentSnapshot,
+} from "@/components/admin/recommendation-form-v2";
 import type { OptionScenario } from "@/lib/assessment/recommendation-options";
 import type { ReasonCodeOption } from "@/components/admin/reason-code-selector";
 
@@ -100,20 +109,145 @@ export default async function RecommendationPage({ params }: Props) {
     );
   }
 
-  // ── Assessment COMPLETED — load recommendation, reason codes, siblings ─────
+  // ── Assessment COMPLETED — dispatch v1 vs v2 by the calculation stamp ──────
+  const engineVersion = selectEngineVersion(assessment.calculationVersion);
 
-  const [recommendation, reasonCodes, siblingLinks] = await withUserContext(
-    user.id,
-    user.role as RlsRole,
-    (tx) =>
-      Promise.all([
-        getRecommendation(tx, assessment.id),
-        getReasonCodes(tx),
-        application.bursaryAccountId
-          ? getSiblingLinks(tx, application.bursaryAccountId)
-          : Promise.resolve([]),
-      ])
+  // ── Assessment COMPLETED — load recommendation, reason codes, siblings ─────
+  // (plus, for v2, gap reasons + the previous recommendation's payable fees).
+
+  const [
+    recommendation,
+    reasonCodes,
+    siblingLinks,
+    gapReasonRows,
+    lastRecPayable,
+  ] = await withUserContext(user.id, user.role as RlsRole, (tx) =>
+    Promise.all([
+      getRecommendation(tx, assessment.id),
+      getReasonCodes(tx),
+      application.bursaryAccountId
+        ? getSiblingLinks(tx, application.bursaryAccountId)
+        : Promise.resolve([]),
+      engineVersion === "v2" ? getGapReasons(tx) : Promise.resolve([]),
+      engineVersion === "v2" && application.bursaryAccountId
+        ? getLastRecommendationPayable(
+            tx,
+            application.bursaryAccountId,
+            application.roundId
+          )
+        : Promise.resolve(null),
+    ])
   );
+
+  // Serialise reason codes. `getReasonCodes` returns only active
+  // (non-deprecated) codes so the picker never offers a retired one for NEW
+  // selections — but a recommendation saved before CALC-09 may already link a
+  // now-deprecated code. Merge those in (by id) so the selector still shows
+  // its label instead of silently hiding a previously-recorded reason.
+  const linkedReasonCodes = recommendation
+    ? recommendation.reasonCodes.map((rc) => rc.reasonCode)
+    : [];
+  const serialisedReasonCodes: ReasonCodeOption[] = mergeHistoricReasonCodeOptions(
+    reasonCodes,
+    linkedReasonCodes
+  ).map((rc) => ({
+    id: rc.id,
+    code: rc.code,
+    label: rc.label,
+  }));
+
+  // ── Sibling context (read-only) — the linked accounts and absorbed fees the
+  // calc already consumed, surfaced at decision time (Epic 08 §5.1c). The
+  // current child's own account is excluded from the context list. Shared v1/v2.
+  const siblingContext: SiblingContextRow[] = siblingLinks
+    .filter((l) => l.bursaryAccountId !== application.bursaryAccountId)
+    .map((l) => ({
+      reference: l.bursaryAccount.reference,
+      childName: l.bursaryAccount.childName,
+      school: l.bursaryAccount.school,
+      priorityOrder: l.priorityOrder,
+      absorbedPayableFees: l.bursaryAccount.latestPayableFees,
+    }));
+
+  // ── v2 recommendation surface (CALC-08) ────────────────────────────────────
+  // Branch at the page level: v2 assessments render the min-of-three / gap
+  // surface off the persisted snapshot columns; v1 falls through unchanged.
+  if (engineVersion === "v2") {
+    // Merge historic gap reasons (same pattern as reason codes) so a saved gap
+    // reason that has since been deprecated still renders its label.
+    const linkedGapReasons = recommendation
+      ? recommendation.gapReasons.map((gr) => gr.gapReason)
+      : [];
+    const serialisedGapReasons: ReasonCodeOption[] = mergeHistoricReasonCodeOptions(
+      gapReasonRows,
+      linkedGapReasons
+    ).map((gr) => ({ id: gr.id, code: gr.code, label: gr.label }));
+
+    const snapshot: V2AssessmentSnapshot = {
+      actualRemainingDi: toNumber(assessment.actualRemainingDi),
+      theoreticalBenchmarkDi: toNumber(assessment.theoreticalBenchmarkDi),
+      affordabilityAdjustedDi: toNumber(assessment.affordabilityAdjustedDi),
+      recommendedPayableFees: toNumber(assessment.recommendedPayableFees),
+      annualFees: toNumber(assessment.annualFees),
+      nextYearAnnualFees: toNumber(assessment.nextYearAnnualFees),
+      vatRate: toNumber(assessment.vatRate),
+      scholarshipPct: toNumber(assessment.scholarshipPct),
+      incomeCategory: assessment.incomeCategory,
+      propertyCategoryDerived: assessment.propertyCategoryDerived,
+      propertyEquityCategory: assessment.propertyEquityCategory,
+      financialEquityLabel: assessment.financialEquityLabel,
+      debtStatusLabel: assessment.debtStatusLabel,
+      lifestyleSqueezeRatio: toNumber(assessment.lifestyleSqueezeRatio),
+      lifestyleSqueezeLabel: assessment.lifestyleSqueezeLabel,
+      dishonestyFlag: assessment.dishonestyFlag,
+    };
+
+    const serialisedRecommendationV2: SerialisedRecommendationV2 | null =
+      recommendation
+        ? {
+            bursaryAward: toNumber(recommendation.bursaryAward),
+            scholarshipAward: toNumber(recommendation.scholarshipAward),
+            confirmedPayableFees: toNumber(recommendation.confirmedPayableFees),
+            scholarshipValueInclVat: toNumber(
+              recommendation.scholarshipValueInclVat
+            ),
+            bursarySpendBeforeVat: toNumber(recommendation.bursarySpendBeforeVat),
+            gapAmount: toNumber(recommendation.gapAmount),
+            lastPayableFees: toNumber(recommendation.lastPayableFees),
+            selectedReasonCodeIds: recommendation.reasonCodes.map(
+              (rc) => rc.reasonCode.id
+            ),
+            selectedGapReasonIds: recommendation.gapReasons.map(
+              (gr) => gr.gapReason.id
+            ),
+          }
+        : null;
+
+    // Last payable fees: a previously-saved value on the recommendation wins;
+    // otherwise derive from the account's previous recommendation.
+    const lastPayableFees =
+      serialisedRecommendationV2?.lastPayableFees ??
+      selectLastPayableFees(lastRecPayable);
+
+    return (
+      <div className="space-y-4">
+        <RecommendationFormV2
+          applicationId={params.id}
+          assessmentId={assessment.id}
+          assessmentOutcome={assessment.outcome}
+          synopsis={assessment.synopsis}
+          snapshot={snapshot}
+          recommendation={serialisedRecommendationV2}
+          reasonCodes={serialisedReasonCodes}
+          gapReasons={serialisedGapReasons}
+          lastPayableFees={lastPayableFees}
+          siblingContext={siblingContext}
+        />
+      </div>
+    );
+  }
+
+  // ── v1 recommendation surface (unchanged) ──────────────────────────────────
 
   // Serialise recommendation for the client boundary
   const serialisedRecommendation: SerialisedRecommendation | null =
@@ -138,23 +272,6 @@ export default async function RecommendationPage({ params }: Props) {
         }
       : null;
 
-  // Serialise reason codes. `getReasonCodes` returns only active
-  // (non-deprecated) codes so the picker never offers a retired one for NEW
-  // selections — but a recommendation saved before CALC-09 may already link a
-  // now-deprecated code. Merge those in (by id) so the selector still shows
-  // its label instead of silently hiding a previously-recorded reason.
-  const linkedReasonCodes = recommendation
-    ? recommendation.reasonCodes.map((rc) => rc.reasonCode)
-    : [];
-  const serialisedReasonCodes: ReasonCodeOption[] = mergeHistoricReasonCodeOptions(
-    reasonCodes,
-    linkedReasonCodes
-  ).map((rc) => ({
-    id: rc.id,
-    code: rc.code,
-    label: rc.label,
-  }));
-
   // Assessment values pre-populate the form (read-only display)
   const assessmentValues = {
     bursaryAward: toNumber(assessment.bursaryAward),
@@ -163,19 +280,6 @@ export default async function RecommendationPage({ params }: Props) {
     dishonestyFlag: assessment.dishonestyFlag,
     creditRiskFlag: assessment.creditRiskFlag,
   };
-
-  // ── Sibling context (read-only) — the linked accounts and absorbed fees the
-  // calc already consumed, surfaced at decision time (Epic 08 §5.1c). The
-  // current child's own account is excluded from the context list.
-  const siblingContext: SiblingContextRow[] = siblingLinks
-    .filter((l) => l.bursaryAccountId !== application.bursaryAccountId)
-    .map((l) => ({
-      reference: l.bursaryAccount.reference,
-      childName: l.bursaryAccount.childName,
-      school: l.bursaryAccount.school,
-      priorityOrder: l.priorityOrder,
-      absorbedPayableFees: l.bursaryAccount.latestPayableFees,
-    }));
 
   // ── Options comparison — projected from the pure engine over the assessment's
   // own figures (Epic 08 §5.1c). No new maths; one engine call per scenario so

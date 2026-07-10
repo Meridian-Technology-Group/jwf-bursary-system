@@ -74,7 +74,10 @@ import type { AssessmentOutcome } from "@prisma/client";
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 /** The 3-value award decision (Epic 08 / Epic 01 outcome). */
-type AwardDecision = "AWARDED" | "QUALIFIES_NOT_AWARDED" | "DOES_NOT_QUALIFY";
+export type AwardDecision =
+  | "AWARDED"
+  | "QUALIFIES_NOT_AWARDED"
+  | "DOES_NOT_QUALIFY";
 
 export interface SerialisedRecommendation {
   id: string;
@@ -130,7 +133,7 @@ export interface RecommendationFormProps {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-function formatCurrency(value: number | null | undefined): string {
+export function formatCurrency(value: number | null | undefined): string {
   if (value == null) return "—";
   return new Intl.NumberFormat("en-GB", {
     style: "currency",
@@ -143,7 +146,7 @@ function formatCurrency(value: number | null | undefined): string {
 const PROPERTY_THRESHOLD = 8;
 
 /** An outcome already recorded makes the decision terminal (synopsis excepted). */
-function isTerminalOutcome(outcome: AssessmentOutcome | null): boolean {
+export function isTerminalOutcome(outcome: AssessmentOutcome | null): boolean {
   return (
     outcome === "AWARDED" ||
     outcome === "QUALIFIES_NOT_AWARDED" ||
@@ -155,7 +158,7 @@ function isTerminalOutcome(outcome: AssessmentOutcome | null): boolean {
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
-function RedFlagBanner({
+export function RedFlagBanner({
   icon: Icon,
   title,
   description,
@@ -199,7 +202,7 @@ function PropertyAdvisoryBanner() {
   );
 }
 
-function ReadOnlyBanner({ outcome }: { outcome: AssessmentOutcome }) {
+export function ReadOnlyBanner({ outcome }: { outcome: AssessmentOutcome }) {
   return (
     <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
       <OutcomeBadge outcome={outcome} />
@@ -213,7 +216,7 @@ function ReadOnlyBanner({ outcome }: { outcome: AssessmentOutcome }) {
 
 // ─── Award decision metadata ───────────────────────────────────────────────────
 
-const AWARD_DECISIONS: Record<
+export const AWARD_DECISIONS: Record<
   AwardDecision,
   {
     label: string;
@@ -249,7 +252,7 @@ const AWARD_DECISIONS: Record<
   },
 };
 
-interface AwardDialogProps {
+export interface AwardDialogProps {
   open: boolean;
   decision: AwardDecision | null;
   scholarshipAward: number | null;
@@ -259,7 +262,7 @@ interface AwardDialogProps {
   onCancel: () => void;
 }
 
-function AwardDialog({
+export function AwardDialog({
   open,
   decision,
   scholarshipAward,
@@ -318,7 +321,7 @@ function AwardDialog({
 
 // ─── Sibling context panel ──────────────────────────────────────────────────────
 
-function SiblingContextPanel({ rows }: { rows: SiblingContextRow[] }) {
+export function SiblingContextPanel({ rows }: { rows: SiblingContextRow[] }) {
   if (rows.length === 0) return null;
   return (
     <Card>
