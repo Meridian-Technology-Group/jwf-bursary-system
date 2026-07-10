@@ -25,6 +25,11 @@ import type {
   PropertyAssetsRecord,
   DebtsRecord,
 } from "@/types/assessment-v2";
+import {
+  buildYoyFinancialsTable,
+  type YoyFinancialsInputRow,
+  type YoyFinancialsTableRow,
+} from "@/lib/assessment/yoy-financials";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -101,6 +106,10 @@ export interface AssessmentSaveInput {
   // Manual adjustment
   manualAdjustment?: number;
   manualAdjustmentReason?: string;
+
+  // CALC-10 — "Assessor's wizard" forward-looking note (v2 form; see
+  // watch-out-notes.ts for the next-assessment read path). `null` clears it.
+  watchOutNotes?: string | null;
 
   // Flags
   dishonestyFlag?: boolean;
@@ -263,6 +272,8 @@ export async function saveAssessment(
     updateData.manualAdjustment = assessmentFields.manualAdjustment;
   if (assessmentFields.manualAdjustmentReason !== undefined)
     updateData.manualAdjustmentReason = assessmentFields.manualAdjustmentReason;
+  if (assessmentFields.watchOutNotes !== undefined)
+    updateData.watchOutNotes = assessmentFields.watchOutNotes;
   if (assessmentFields.dishonestyFlag !== undefined)
     updateData.dishonestyFlag = assessmentFields.dishonestyFlag;
   if (assessmentFields.creditRiskFlag !== undefined)
@@ -512,4 +523,77 @@ export async function pauseAssessment(
   });
   await pauseAssessmentRow(tx, assessmentId, current.status);
   return tx.assessment.findUniqueOrThrow({ where: { id: assessmentId } });
+}
+
+// ─── getYoyFinancialsRows (CALC-10) ─────────────────────────────────────────────
+
+function decimalToNumber(
+  value: Prisma.Decimal | string | number | null | undefined
+): number | null {
+  if (value == null) return null;
+  const n = typeof value === "number" ? value : parseFloat(value.toString());
+  return Number.isNaN(n) ? null : n;
+}
+
+/**
+ * CALC-10 — YoY financials history table (read-only projection, no new write
+ * path; implementation-plan.md §CALC-10). Loads every COMPLETED assessment
+ * for the bursary account across applications/rounds and projects them
+ * through the pure `buildYoyFinancialsTable`
+ * (src/lib/assessment/yoy-financials.ts). Works for both
+ * `calculationVersion` 1 and 2 rows — v1 rows simply carry null
+ * property-equity/debt-exposure/squeeze-label cells (that module's
+ * null-safety notes).
+ */
+export async function getYoyFinancialsRows(
+  tx: Tx,
+  bursaryAccountId: string
+): Promise<YoyFinancialsTableRow[]> {
+  const applications = await tx.application.findMany({
+    where: {
+      bursaryAccountId,
+      assessment: { status: "COMPLETED" },
+    },
+    select: {
+      id: true,
+      reference: true,
+      round: { select: { academicYear: true } },
+      assessment: {
+        select: {
+          completedAt: true,
+          totalHouseholdNetIncome: true,
+          yearlyDebtExposure: true,
+          lifestyleSqueezeLabel: true,
+          property: {
+            select: {
+              cashSavings: true,
+              isasPepsShares: true,
+              propertyAssets: true,
+            },
+          },
+        },
+      },
+    },
+  });
+
+  const rows: YoyFinancialsInputRow[] = applications
+    .filter(
+      (app): app is typeof app & { assessment: NonNullable<typeof app.assessment> } =>
+        app.assessment !== null
+    )
+    .map((app) => ({
+      applicationId: app.id,
+      applicationReference: app.reference,
+      academicYear: app.round.academicYear,
+      completedAt: app.assessment.completedAt,
+      totalHouseholdNetIncome: decimalToNumber(app.assessment.totalHouseholdNetIncome),
+      cashSavings: decimalToNumber(app.assessment.property?.cashSavings ?? null),
+      isasPepsShares: decimalToNumber(app.assessment.property?.isasPepsShares ?? null),
+      propertyAssets:
+        (app.assessment.property?.propertyAssets ?? null) as PropertyAssetsRecord | null,
+      yearlyDebtExposure: decimalToNumber(app.assessment.yearlyDebtExposure),
+      lifestyleSqueezeLabel: app.assessment.lifestyleSqueezeLabel,
+    }));
+
+  return buildYoyFinancialsTable(rows);
 }

@@ -29,6 +29,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Select,
@@ -87,6 +88,8 @@ export interface SerialisedAssessmentV2 {
   feeInsuranceAnnual: number | null;
   behindOnFees: boolean | null;
   dishonestyFlag: boolean;
+  /** CALC-10 — "Assessor's wizard" forward-looking note for next year's assessor. */
+  watchOutNotes: string | null;
   earners: SerialisedEarnerV2[];
   property: {
     propertyAssets: PropertyAssetsRecord | null;
@@ -325,6 +328,7 @@ export function AssessmentFormV2({
   );
   const [behindOnFees, setBehindOnFees] = React.useState<boolean>(assessment.behindOnFees ?? false);
   const [dishonestyFlag, setDishonestyFlag] = React.useState<boolean>(assessment.dishonestyFlag);
+  const [watchOutNotes, setWatchOutNotes] = React.useState<string>(assessment.watchOutNotes ?? "");
 
   // school-age children default from FamilyCategoryMeta, overridable (CALC-07).
   const metaDefaultChildren = React.useMemo(
@@ -474,6 +478,7 @@ export function AssessmentFormV2({
       feeInsuranceAnnual,
       behindOnFees,
       dishonestyFlag,
+      watchOutNotes: watchOutNotes.trim().length > 0 ? watchOutNotes : null,
       ...snapshot,
       earnersV2,
       propertyV2: {
@@ -513,6 +518,7 @@ export function AssessmentFormV2({
     feeInsuranceAnnual,
     behindOnFees,
     dishonestyFlag,
+    watchOutNotes,
     propertyAssets,
     portfolioType,
     debts,
@@ -1044,6 +1050,32 @@ export function AssessmentFormV2({
           Credit risk is derived from the debt module (see the profiling strip); it is no longer a manual
           flag for v2 assessments.
         </p>
+      </FormSection>
+
+      {/* F. Assessor's wizard (CALC-10) — forward-looking notes for NEXT
+          year's assessor, rendered as a prominent callout on the account's
+          next assessment (see the top of the assessment page). Distinct from
+          the synopsis (this year's narrative), which is docked below the
+          workspace. */}
+      <FormSection title="F. Assessor's Wizard" defaultOpen={false}>
+        <FieldRow
+          label="Things to look out for with this family"
+          htmlFor="v2-watch-out-notes"
+          hint="Forward-looking notes for next year's assessor — surfaced as a callout when this account's next assessment begins."
+        >
+          <Textarea
+            id="v2-watch-out-notes"
+            value={watchOutNotes}
+            disabled={isReadOnly}
+            onChange={(e) => {
+              setWatchOutNotes(e.target.value);
+              scheduleAutoSave();
+            }}
+            placeholder="e.g. income is seasonal and dips sharply over the summer; watch for the second mortgage renewal in 2027."
+            rows={4}
+            className="resize-y text-sm"
+          />
+        </FieldRow>
       </FormSection>
     </div>
   );

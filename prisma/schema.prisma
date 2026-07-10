@@ -80,6 +80,10 @@ model BursaryAccount {
   /// before the schedule landed.
   scheduleYears        Int?                   @map("schedule_years")
   benchmarkPayableFees Decimal?               @map("benchmark_payable_fees") @db.Decimal(10, 2)
+  /// CALC-10 — recipient's fees-account code (workbook §3.16 "Assessor's
+  /// wizard" admin page), e.g. the school finance system's billing reference
+  /// for this account. Free-text, ADMIN/ASSESSOR-editable, additive/nullable.
+  feesAccountCode      String?                @map("fees_account_code")
   leadApplicantId      String                 @map("lead_applicant_id") @db.Uuid
   status               BursaryAccountStatus   @default(ACTIVE)
   closedAt             DateTime?              @map("closed_at") @db.Timestamptz(6)
@@ -397,6 +401,13 @@ model Assessment {
   /// permissive). Backfilled from the eight legacy boxes (those columns are
   /// retained, read-only, until the 08 cutover). Additive + nullable.
   synopsis                      String?               @map("synopsis")
+  /// CALC-10 — "Assessor's wizard — things to look out for with this family"
+  /// (workbook §3.16). Forward-looking notes for NEXT year's assessor,
+  /// distinct from `synopsis` (this year's narrative). On the account's next
+  /// assessment, the most recent COMPLETED assessment's notes for the same
+  /// `BursaryAccount` render as a prominent callout (see
+  /// `src/lib/assessment/watch-out-notes.ts`). Additive/nullable.
+  watchOutNotes                 String?               @map("watch_out_notes")
   propertyCategory              Int?                  @map("property_category")
   propertyExceedsThreshold      Boolean               @default(false) @map("property_exceeds_threshold")
   dishonestyFlag                Boolean               @default(false) @map("dishonesty_flag")
