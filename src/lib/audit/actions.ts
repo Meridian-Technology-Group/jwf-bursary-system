@@ -30,6 +30,10 @@ export const AUDIT_ACTIONS = {
   APPLICATION_RESUMED: "APPLICATION_RESUMED",
   /** Full rejection: rejected application hard-deleted + a fresh one created (restart). */
   APPLICATION_REJECTED_RESTART: "APPLICATION_REJECTED_RESTART",
+  /** Unified close (item 2): the single terminal state, reason-driven. */
+  APPLICATION_CLOSED: "APPLICATION_CLOSED",
+  /** Reason-driven close purge (item 10): PII anonymised, financials kept. */
+  APPLICATION_PURGED: "APPLICATION_PURGED",
   INTERNAL_REQUEST_CREATED: "INTERNAL_REQUEST_CREATED",
   MISSING_DOCS_RESPONDED: "MISSING_DOCS_RESPONDED",
   NAME_REVEAL: "NAME_REVEAL",
@@ -270,6 +274,8 @@ const ACTION_COLOUR: Partial<Record<AuditAction, string>> = {
   [AUDIT_ACTIONS.SCHEDULE_REGENERATED]: "bg-blue-500",
   [AUDIT_ACTIONS.SCHEDULE_SHOW_ON_PORTAL_TOGGLED]: "bg-blue-500",
   [AUDIT_ACTIONS.BURSARY_ACCOUNT_WITHDRAWN]: "bg-red-400",
+  [AUDIT_ACTIONS.APPLICATION_CLOSED]: "bg-red-400",
+  [AUDIT_ACTIONS.APPLICATION_PURGED]: "bg-red-400",
 };
 
 /**

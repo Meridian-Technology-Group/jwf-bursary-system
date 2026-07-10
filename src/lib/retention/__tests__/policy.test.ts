@@ -15,6 +15,7 @@ function app(overrides: Partial<RetentionApplication> = {}): RetentionApplicatio
     outcome: null,
     archivedAt: null,
     submittedAt: null,
+    closedAt: null,
     ...overrides,
   };
 }
@@ -233,5 +234,54 @@ describe("notYetPurgeableMessage", () => {
   it("explains a non-terminal application", () => {
     const r = isPurgeable(app(), null, NOW);
     expect(notYetPurgeableMessage(r)).toMatch(/no final outcome/i);
+  });
+});
+
+// ─── Item 2: closed-without-outcome tier ──────────────────────────────────────
+
+describe("isPurgeable — closed tier (item 2)", () => {
+  it("a closed application with no outcome ages on the closed tier from closedAt", () => {
+    const closedLongAgo = new Date(NOW.getTime());
+    closedLongAgo.setDate(closedLongAgo.getDate() - 31);
+    const evaluation = isPurgeable(
+      app({ closedAt: closedLongAgo }),
+      null,
+      NOW,
+      DEFAULT_RETENTION_POLICY
+    );
+    expect(evaluation.tier).toBe("closed");
+    expect(evaluation.purgeable).toBe(true);
+  });
+
+  it("a freshly-closed application is inside its grace window", () => {
+    const closedYesterday = new Date(NOW.getTime());
+    closedYesterday.setDate(closedYesterday.getDate() - 1);
+    const evaluation = isPurgeable(
+      app({ closedAt: closedYesterday }),
+      null,
+      NOW,
+      DEFAULT_RETENTION_POLICY
+    );
+    expect(evaluation.tier).toBe("closed");
+    expect(evaluation.purgeable).toBe(false);
+  });
+
+  it("a closed application WITH an outcome uses its outcome tier, not closed", () => {
+    const evaluation = isPurgeable(
+      app({
+        outcome: "AWARDED",
+        closedAt: new Date("2020-01-01T00:00:00Z"),
+      }),
+      account({ status: "CLOSED", closedAt: new Date("2018-01-01T00:00:00Z") }),
+      NOW,
+      DEFAULT_RETENTION_POLICY
+    );
+    expect(evaluation.tier).toBe("awarded");
+  });
+
+  it("in-flight (not closed, no outcome) remains never-purgeable", () => {
+    const evaluation = isPurgeable(app({}), null, NOW, DEFAULT_RETENTION_POLICY);
+    expect(evaluation.tier).toBeNull();
+    expect(evaluation.purgeable).toBe(false);
   });
 });

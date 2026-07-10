@@ -64,6 +64,7 @@ export async function listRounds(tx: Tx): Promise<RoundWithCounts[]> {
       applications: {
         select: {
           formStatus: true,
+          closedAt: true,
           assessment: { select: { status: true, outcome: true } },
         },
       },
@@ -94,6 +95,7 @@ export async function getRound(tx: Tx, id: string): Promise<RoundDetail | null> 
       applications: {
         select: {
           formStatus: true,
+          closedAt: true,
           school: true,
           assessment: { select: { status: true, outcome: true } },
         },
@@ -193,6 +195,7 @@ export async function closeRound(tx: Tx, id: string): Promise<Round> {
  */
 function reviewPhaseFor(app: {
   formStatus: import("@prisma/client").ApplicationFormStatus;
+  closedAt: Date | null;
   assessment: {
     status: import("@prisma/client").AssessmentStatus;
     outcome: import("@prisma/client").AssessmentOutcome | null;
@@ -202,6 +205,7 @@ function reviewPhaseFor(app: {
     formStatus: app.formStatus,
     assessmentStatus: app.assessment?.status ?? null,
     outcome: app.assessment?.outcome ?? null,
+    closedAt: app.closedAt,
   });
 }
 

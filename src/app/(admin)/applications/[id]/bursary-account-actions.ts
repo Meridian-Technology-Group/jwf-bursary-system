@@ -38,6 +38,12 @@ export type WithdrawBursaryAccountResult =
  * Allowed in ANY state — no schedule, document, or lifecycle gate. Idempotent:
  * a CLOSED account stays CLOSED and `closedAt` is never rewritten.
  */
+/**
+ * @deprecated Item 2 (unified close): the UI affordances that called this were
+ * replaced by `closeApplication` / CloseApplicationDialog, which closes the
+ * application AND its live account under a structured close reason. Kept for
+ * any in-flight callers; do not add new call sites.
+ */
 export async function withdrawBursaryAccount(
   input: WithdrawBursaryAccountInput
 ): Promise<WithdrawBursaryAccountResult> {

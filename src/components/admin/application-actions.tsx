@@ -150,11 +150,13 @@ export function ApplicationActions({
     "QUALIFIES" | "DOES_NOT_QUALIFY" | null
   >(null);
 
-  // Hide the bar for terminal or pre-active statuses
+  // Hide the bar for terminal or pre-active statuses (CLOSED = unified
+  // terminal state, item 2 — no state-changing actions on a closed application)
   if (
     status === "PRE_SUBMISSION" ||
     status === "QUALIFIES" ||
-    status === "DOES_NOT_QUALIFY"
+    status === "DOES_NOT_QUALIFY" ||
+    status === "CLOSED"
   ) {
     return null;
   }
@@ -369,4 +371,5 @@ const STATUS_LABEL: Record<ReviewPhase, string> = {
   COMPLETED: "Assessment complete",
   QUALIFIES: "Qualifies",
   DOES_NOT_QUALIFY: "Does not qualify",
+  CLOSED: "Closed",
 };

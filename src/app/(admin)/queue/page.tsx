@@ -21,6 +21,7 @@ import { getActiveRound } from "@/lib/db/queries/reports";
 import { getActiveBursaryHolders } from "@/lib/db/queries/invitations";
 import { RoundStatus } from "@prisma/client";
 import { listAssessors } from "@/lib/db/queries/profiles";
+import { getAllCloseReasons } from "@/lib/db/queries/reference-tables";
 import type { WatchlistRuleId } from "@/lib/db/queries/round-watchlist";
 import { ApplicationTable } from "@/components/admin/application-table";
 import { InternalRequestDialog } from "@/components/admin/internal-request-dialog";
@@ -108,7 +109,14 @@ export default async function QueuePage({
   if (school) applicationFilters.school = school;
   if (undecided) applicationFilters.undecided = true;
 
-  const { applications, names, rounds, assessors, reassessRoundYear } =
+  const {
+    applications,
+    names,
+    rounds,
+    assessors,
+    closeReasons,
+    reassessRoundYear,
+  } =
     await withUserContext(
     profile.id,
     profile.role as RlsRole,
@@ -160,11 +168,15 @@ export default async function QueuePage({
         applicationFilters.ids = [];
       }
 
-      // Assessor list only needed for the ADMIN bulk-assign dropdown.
-      const [applications, rounds, assessors] = await Promise.all([
+      // Assessor list only needed for the ADMIN bulk-assign dropdown; close
+      // reasons only for the ADMIN-only per-row Close action (item 2/4.1).
+      const [applications, rounds, assessors, closeReasons] = await Promise.all([
         listApplications(tx, applicationFilters),
         listRounds(tx),
         profile.role === Role.ADMIN ? listAssessors(tx) : Promise.resolve([]),
+        profile.role === Role.ADMIN
+          ? getAllCloseReasons(tx)
+          : Promise.resolve([]),
       ]);
 
       // Lead applicant name + email are shown as first-class columns (they are
@@ -199,7 +211,14 @@ export default async function QueuePage({
         leadApplicantEmail: n.leadApplicant.email,
       }));
 
-      return { applications, names, rounds, assessors, reassessRoundYear };
+      return {
+        applications,
+        names,
+        rounds,
+        assessors,
+        closeReasons,
+        reassessRoundYear,
+      };
     }
   );
 
@@ -257,6 +276,13 @@ export default async function QueuePage({
         activeFilter={activeFilter}
         reassessEligibleActive={reassessEligible}
         reassessTargetRound={reassessRoundYear}
+        closeReasons={closeReasons
+          .filter((r) => !r.isDeprecated)
+          .map((r) => ({
+            id: r.id,
+            label: r.label,
+            purgeOnClose: r.purgeOnClose,
+          }))}
       />
     </div>
   );
@@ -278,6 +304,7 @@ const STATUS_LABELS: Record<ReviewPhase, string> = {
   COMPLETED: "Completed",
   QUALIFIES: "Qualifies",
   DOES_NOT_QUALIFY: "Does not qualify",
+  CLOSED: "Closed",
 };
 
 const SCHOOL_LABELS: Record<School, string> = {
