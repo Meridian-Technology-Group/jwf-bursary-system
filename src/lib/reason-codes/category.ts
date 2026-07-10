@@ -1,35 +1,52 @@
 /**
- * Epic 08 — single source of truth for the reason-code numeric-range → category
+ * Epic 08 / CALC-09 — single source of truth for the reason-code → category
  * grouping. Both the recommendation selector (`reason-code-selector.tsx`,
  * `groupReasonCodes`) and the settings table (`settings/reason-code-table.tsx`,
- * `getCategory`) previously hard-coded the SAME 1–9 / 10–19 / 20–29 / 30–39
- * buckets independently. When the real paperwork codes land (Decision D4) the
- * grouping may change; keeping one util means the swap touches one place and both
- * UIs stay in lockstep — they can never drift to wrong/`Other` headings.
+ * `getCategory`) consume this util so the two UIs can never drift.
  *
- * D4 swap path: when Charlotte supplies the real codes + their intended
- * grouping, edit ONLY this file (or extend it with a code→category lookup) and
- * re-seed via `seed:reference`. The placeholders keep working until then.
+ * CALC-09 (decision D4): the placeholder codes 1–35 are deprecated and the
+ * client's definitive year-on-year list is seeded as DB codes 101–136, where
+ * the workbook's own display number is `code − 100` (it also prefixes each
+ * label). Grouping is therefore by display number:
+ *
+ *   1–7    Circumstances            (first assessment, no change, family
+ *                                    member changes, divorce, bereavement,
+ *                                    illness)
+ *   8–21   Income & Employment
+ *   22–27  Property & Assets
+ *   28–31  Documentation & Compliance
+ *   33–36  Fees & Adjustments
+ *   else   Other                    (incl. display 32 "Other")
+ *
+ * Legacy codes (< 100) — the deprecated placeholders — bucket under
+ * "Legacy (deprecated)", kept LAST in the ordered heading list. They never
+ * appear in the selection picker (it is fed only active codes); the bucket
+ * exists for settings/management views that show deprecated rows.
  */
 
 /** Stable category keys (ordered) used to bucket reason codes. */
 export const REASON_CODE_CATEGORIES = [
-  { key: "income", label: "Income", range: "1 – 9" },
-  { key: "property", label: "Property & Assets", range: "10 – 19" },
-  { key: "family", label: "Family Circumstances", range: "20 – 29" },
-  { key: "risk", label: "Risk Flags", range: "30 – 39" },
+  { key: "circumstances", label: "Circumstances", range: "1 – 7" },
+  { key: "income", label: "Income & Employment", range: "8 – 21" },
+  { key: "property", label: "Property & Assets", range: "22 – 27" },
+  { key: "documentation", label: "Documentation & Compliance", range: "28 – 31" },
+  { key: "fees", label: "Fees & Adjustments", range: "33 – 36" },
   { key: "other", label: "Other", range: "" },
+  { key: "legacy", label: "Legacy (deprecated)", range: "" },
 ] as const;
 
 export type ReasonCodeCategoryKey =
   (typeof REASON_CODE_CATEGORIES)[number]["key"];
 
-/** The category key for a reason code's numeric value. */
+/** The category key for a reason code's numeric (DB) value. */
 export function categoryKeyForCode(code: number): ReasonCodeCategoryKey {
-  if (code >= 1 && code <= 9) return "income";
-  if (code >= 10 && code <= 19) return "property";
-  if (code >= 20 && code <= 29) return "family";
-  if (code >= 30 && code <= 39) return "risk";
+  if (code < 100) return "legacy";
+  const display = code - 100;
+  if (display >= 1 && display <= 7) return "circumstances";
+  if (display >= 8 && display <= 21) return "income";
+  if (display >= 22 && display <= 27) return "property";
+  if (display >= 28 && display <= 31) return "documentation";
+  if (display >= 33 && display <= 36) return "fees";
   return "other";
 }
 
@@ -42,9 +59,10 @@ export function categoryForCode(code: number): string {
 }
 
 /**
- * The selector's group heading for a reason code — "1 – 9: Income" etc. (the
- * range-prefixed form the recommendation selector renders). The "Other" bucket
- * has no range prefix.
+ * The selector's group heading for a reason code — "1 – 7: Circumstances"
+ * etc. (the range-prefixed form the recommendation selector renders; ranges
+ * are the workbook DISPLAY numbers, i.e. DB code − 100). The "Other" and
+ * "Legacy (deprecated)" buckets have no range prefix.
  */
 export function groupHeadingForCode(code: number): string {
   const key = categoryKeyForCode(code);

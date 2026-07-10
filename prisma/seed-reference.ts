@@ -111,6 +111,12 @@ async function seedCouncilTaxDefaults(): Promise<void> {
 
 async function seedReasonCodes(): Promise<void> {
   section("Reason codes");
+  // CALC-09 (D4): the seed data marks the original 35 placeholders
+  // `isDeprecated: true` and appends the client's definitive 36-code list
+  // (codes 101-136). Update touches `isDeprecated` + `label` (not just
+  // `sortOrder`) so a re-run against staging/prod deprecates the
+  // placeholders in place without deleting/mutating the rows historic
+  // recommendations still reference by ID.
   for (const rc of reasonCodes) {
     await prisma.reasonCode.upsert({
       where: { code: rc.code },
@@ -118,6 +124,7 @@ async function seedReasonCodes(): Promise<void> {
       update: {
         label: rc.label,
         sortOrder: rc.sortOrder,
+        isDeprecated: rc.isDeprecated,
       },
     });
   }

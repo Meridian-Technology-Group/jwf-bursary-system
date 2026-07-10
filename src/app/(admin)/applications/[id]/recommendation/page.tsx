@@ -32,6 +32,7 @@ import {
   getReasonCodes,
 } from "@/lib/db/queries/recommendations";
 import { getSiblingLinks } from "@/lib/db/queries/siblings";
+import { mergeHistoricReasonCodeOptions } from "@/lib/reason-codes/merge-options";
 import { buildOptionScenarios } from "@/lib/assessment/recommendation-options";
 import {
   RecommendationForm,
@@ -137,8 +138,18 @@ export default async function RecommendationPage({ params }: Props) {
         }
       : null;
 
-  // Serialise reason codes
-  const serialisedReasonCodes: ReasonCodeOption[] = reasonCodes.map((rc) => ({
+  // Serialise reason codes. `getReasonCodes` returns only active
+  // (non-deprecated) codes so the picker never offers a retired one for NEW
+  // selections — but a recommendation saved before CALC-09 may already link a
+  // now-deprecated code. Merge those in (by id) so the selector still shows
+  // its label instead of silently hiding a previously-recorded reason.
+  const linkedReasonCodes = recommendation
+    ? recommendation.reasonCodes.map((rc) => rc.reasonCode)
+    : [];
+  const serialisedReasonCodes: ReasonCodeOption[] = mergeHistoricReasonCodeOptions(
+    reasonCodes,
+    linkedReasonCodes
+  ).map((rc) => ({
     id: rc.id,
     code: rc.code,
     label: rc.label,
