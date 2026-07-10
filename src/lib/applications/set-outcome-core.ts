@@ -85,7 +85,16 @@ async function fetchApplicationForOutcome(tx: Tx, applicationId: string) {
         select: { academicYear: true, openDate: true, closeDate: true },
       },
       assessment: {
-        select: { id: true, status: true, outcome: true, yearlyPayableFees: true },
+        select: {
+          id: true,
+          status: true,
+          outcome: true,
+          // CALC-08: the account benchmark walks recommendation confirmed →
+          // v2 recommended snapshot → legacy yearly (see account-promotion.ts).
+          yearlyPayableFees: true,
+          recommendedPayableFees: true,
+          recommendation: { select: { confirmedPayableFees: true } },
+        },
       },
     },
   });

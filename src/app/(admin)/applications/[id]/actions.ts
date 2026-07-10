@@ -1259,9 +1259,17 @@ export async function bulkMarkActiveAction(
               select: {
                 status: true,
                 outcome: true,
+                // CALC-08: the account benchmark walks recommendation
+                // confirmed → v2 recommended snapshot → legacy yearly
+                // (see account-promotion.ts).
                 yearlyPayableFees: true,
+                recommendedPayableFees: true,
                 recommendation: {
-                  select: { bursaryAward: true, scholarshipAward: true },
+                  select: {
+                    bursaryAward: true,
+                    scholarshipAward: true,
+                    confirmedPayableFees: true,
+                  },
                 },
               },
             },
