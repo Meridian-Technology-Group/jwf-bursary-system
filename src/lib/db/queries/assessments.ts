@@ -195,19 +195,17 @@ export async function getAssessment(
  * 4-stage calculator (v1 form/engine, untouched), `2` = the full notional
  * model (v2 form + engine).
  *
- * ⚠️ v2 STAMP GATED UNTIL CALC-08. The default stays `1` so a new assessment
- * on staging (the client-testing env) still completes into a recommendation
- * screen that understands its outputs — the recommendation screen is not yet
- * v2-aware. CALC-08 (recommendation screen v2) flips this default to `2` in
- * the same PR that makes the downstream screen v2-aware; until then the v2
- * form ships dark. The explicit parameter stays so tests (and CALC-08) can
- * exercise the v2 creation path directly.
+ * CALC-08 CUTOVER: the default is now `2`. The recommendation screen became
+ * v2-aware in this package (it branches on `calculationVersion` and reads the
+ * v2 snapshot columns), so every NEW assessment is v2 end-to-end. In-flight
+ * v1 assessments keep their `1` stamp and recompute/render identically. The
+ * explicit parameter stays so tests can still exercise the v1 path directly.
  */
 export async function createAssessment(
   tx: Tx,
   applicationId: string,
   assessorId: string,
-  calculationVersion: number = 1
+  calculationVersion: number = 2
 ): Promise<AssessmentWithRelations> {
   const assessment = await tx.assessment.create({
     data: {
