@@ -116,6 +116,14 @@ interface AssessmentFormV2Props {
   referenceBundle: ReferenceBundle;
   prefill: AssessmentV2Prefill;
   defaultAnnualFees: number;
+  /**
+   * CALC-08: the fee-year-resolved NEXT-year gross fee for the school/round
+   * (null when no next-year fee row exists yet). Persisted on every save as
+   * the assessment's `nextYearAnnualFees` snapshot so the v2 recommendation's
+   * award summary works against the real next-year figure instead of falling
+   * back to the current-year fee.
+   */
+  defaultNextYearAnnualFees?: number | null;
   applicationEntryYear: number | null;
   applicationEntryYearGroup: EntryYearGroupCode | null;
   siblingPayableFees?: number[];
@@ -219,6 +227,7 @@ export function AssessmentFormV2({
   referenceBundle,
   prefill,
   defaultAnnualFees,
+  defaultNextYearAnnualFees = null,
   applicationEntryYear,
   applicationEntryYearGroup,
   siblingPayableFees = [],
@@ -452,6 +461,10 @@ export function AssessmentFormV2({
     const payload: AssessmentSaveInput = {
       familyTypeCategory,
       annualFees,
+      // CALC-08: snapshot the fee-year-resolved next-year gross fee so the
+      // recommendation's award summary (resolveNextYearFees) uses the real
+      // next-year figure; explicit null is a valid clear when none exists.
+      nextYearAnnualFees: defaultNextYearAnnualFees,
       schoolingYearsRemaining,
       rentAddBackType,
       multiPropertyRentAddBack,
@@ -490,6 +503,7 @@ export function AssessmentFormV2({
     parent2,
     familyTypeCategory,
     annualFees,
+    defaultNextYearAnnualFees,
     schoolingYearsRemaining,
     rentAddBackType,
     multiPropertyRentAddBack,

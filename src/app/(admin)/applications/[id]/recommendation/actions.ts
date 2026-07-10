@@ -22,6 +22,10 @@ import {
   type AwardDecision,
 } from "@/lib/applications/set-outcome-core";
 import type { AwardFigures } from "@/lib/applications/account-promotion";
+import {
+  computeGapAmount,
+  gapReasonSelectionValid,
+} from "@/lib/assessment/recommendation-v2";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -47,14 +51,17 @@ export async function saveRecommendationAction(
       user.id,
       user.role as RlsRole,
       async (tx) => {
-        // Resolve the application and its assessment
+        // Resolve the application and its assessment (incl. the v2 snapshot's
+        // recommended payable fees — the authoritative gap baseline).
         const application = await tx.application.findUnique({
           where: { id: applicationId },
           select: {
             id: true,
             roundId: true,
             bursaryAccountId: true,
-            assessment: { select: { id: true } },
+            assessment: {
+              select: { id: true, recommendedPayableFees: true },
+            },
           },
         });
 
@@ -71,8 +78,46 @@ export async function saveRecommendationAction(
 
         const assessmentId = application.assessment.id;
 
+        // CALC-08 — AUTHORITATIVE award/gap figures. The client's
+        // `recommendedPayableFees`/`gapAmount` are never trusted: when a
+        // confirmed figure is being saved (a v2 save), the recommended figure
+        // is re-read from the assessment's persisted snapshot, the gap is
+        // recomputed from it, and the gap-reason rule is validated against
+        // THAT gap. A v1 save (no confirmed figure) persists neither.
+        let saveData: SaveRecommendationData;
+        if (data.confirmedPayableFees != null) {
+          const snapshotRecommended =
+            application.assessment.recommendedPayableFees != null
+              ? Number(application.assessment.recommendedPayableFees)
+              : 0;
+          const serverGap = computeGapAmount(
+            data.confirmedPayableFees,
+            snapshotRecommended
+          );
+          if (!gapReasonSelectionValid(serverGap, data.gapReasonIds ?? [])) {
+            return {
+              success: false as const,
+              error:
+                "Select at least one reason for the gap between the recommended and confirmed payable fees.",
+            };
+          }
+          saveData = {
+            ...data,
+            recommendedPayableFees: snapshotRecommended,
+            gapAmount: serverGap,
+          };
+        } else {
+          // No confirmed figure ⇒ nothing to gap-track; drop any client-sent
+          // v2 gap figures rather than persisting unverified values.
+          saveData = {
+            ...data,
+            recommendedPayableFees: undefined,
+            gapAmount: undefined,
+          };
+        }
+
         await upsertRecommendation(tx, assessmentId, {
-          ...data,
+          ...saveData,
           roundId: application.roundId,
           bursaryAccountId: application.bursaryAccountId,
         });

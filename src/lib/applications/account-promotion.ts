@@ -45,7 +45,18 @@ export interface PromotionApplication {
   leadApplicantId: string;
   /** Award round — academicYear + the date anchors for the forward schedule. */
   round: { academicYear: string; openDate: Date | null; closeDate: Date | null };
-  assessment: { yearlyPayableFees: unknown } | null;
+  /**
+   * CALC-08: the account benchmark walks recommendation `confirmedPayableFees`
+   * → assessment `recommendedPayableFees` (v2 snapshot) → legacy
+   * `assessment.yearlyPayableFees` (the v2 pipeline no longer writes the
+   * legacy column). The extra fields are optional so narrower callers keep
+   * compiling; absent means "no v2 figure".
+   */
+  assessment: {
+    yearlyPayableFees: unknown;
+    recommendedPayableFees?: unknown;
+    recommendation?: { confirmedPayableFees: unknown } | null;
+  } | null;
 }
 
 export interface PromotionResult {
@@ -117,10 +128,17 @@ export async function promoteToActiveAccount(
     application.entryYear ??
     parseInt(application.round.academicYear.slice(0, 4), 10);
 
+  // CALC-08 fallback walk (mirrors `selectLastPayableFees`): a v2 assessment
+  // leaves the legacy `yearlyPayableFees` null, so prefer the recommendation's
+  // confirmed figure, then the assessment's v2 recommended snapshot, then the
+  // legacy column (v1 rows).
+  const benchmarkSource =
+    application.assessment?.recommendation?.confirmedPayableFees ??
+    application.assessment?.recommendedPayableFees ??
+    application.assessment?.yearlyPayableFees ??
+    null;
   const benchmarkPayableFees =
-    application.assessment?.yearlyPayableFees != null
-      ? (application.assessment.yearlyPayableFees as never)
-      : null;
+    benchmarkSource != null ? (benchmarkSource as never) : null;
 
   const account = await tx.bursaryAccount.create({
     data: {

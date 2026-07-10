@@ -63,7 +63,7 @@ function makeFakeTx(application: Record<string, unknown>) {
       update: vi.fn(async () => ({})),
     },
     bursaryAccount: {
-      create: vi.fn(async () => ({
+      create: vi.fn(async (_args: { data: Record<string, unknown> }) => ({
         id: "account-1",
         entryYearGroup: "Y7",
         firstAssessmentYear: "2025/2026",
@@ -171,6 +171,60 @@ describe("setApplicationOutcome (shared core, Epic 08)", () => {
     expect(result).toEqual({ success: true });
     expect(fakeTx.bursaryAccount.create).toHaveBeenCalledTimes(1);
     expect(fakeTx.recommendation.updateMany).not.toHaveBeenCalled();
+  });
+
+  it("AWARDED (v2): account benchmark falls back to the recommendation's confirmed fees when the legacy column is null (CALC-08)", async () => {
+    // A v2 assessment leaves the legacy yearlyPayableFees null — the benchmark
+    // must walk recommendation.confirmedPayableFees → assessment
+    // recommendedPayableFees → legacy (account-promotion.ts).
+    fakeTx = makeFakeTx(
+      baseApplication({
+        assessment: {
+          id: "assess-1",
+          status: "COMPLETED",
+          yearlyPayableFees: null,
+          recommendedPayableFees: 12000,
+          recommendation: { confirmedPayableFees: 15676 },
+        },
+      })
+    );
+
+    const result = await setApplicationOutcome("app-1", "AWARDED", {
+      bursaryAward: 12000,
+      scholarshipAward: null,
+    });
+
+    expect(result).toEqual({ success: true });
+    expect(fakeTx.bursaryAccount.create).toHaveBeenCalledTimes(1);
+    const createArg = fakeTx.bursaryAccount.create.mock.calls[0]![0] as unknown as {
+      data: { benchmarkPayableFees: unknown };
+    };
+    expect(createArg.data.benchmarkPayableFees).toBe(15676);
+  });
+
+  it("AWARDED (v2, no confirmed figure): benchmark falls back to the assessment's recommended snapshot", async () => {
+    fakeTx = makeFakeTx(
+      baseApplication({
+        assessment: {
+          id: "assess-1",
+          status: "COMPLETED",
+          yearlyPayableFees: null,
+          recommendedPayableFees: 12000,
+          recommendation: { confirmedPayableFees: null },
+        },
+      })
+    );
+
+    const result = await setApplicationOutcome("app-1", "AWARDED", {
+      bursaryAward: 12000,
+      scholarshipAward: null,
+    });
+
+    expect(result).toEqual({ success: true });
+    const createArg = fakeTx.bursaryAccount.create.mock.calls[0]![0] as unknown as {
+      data: { benchmarkPayableFees: unknown };
+    };
+    expect(createArg.data.benchmarkPayableFees).toBe(12000);
   });
 
   it("AWARDED is idempotent: continues an existing account, no new account", async () => {

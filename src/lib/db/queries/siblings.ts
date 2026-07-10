@@ -20,7 +20,14 @@ export interface SiblingLinkRow {
     childName: string;
     school: string;
     reference: string;
-    /** yearlyPayableFees from the most recent completed assessment, or null */
+    /**
+     * The most recent assessed payable-fees figure for this sibling, or null.
+     * CALC-08: sourced with the same fallback walk as `selectLastPayableFees`
+     * — recommendation `confirmedPayableFees` → recommendation
+     * `recommendedPayableFees` → legacy `assessment.yearlyPayableFees` — so a
+     * v2-assessed sibling (whose legacy column is null) still contributes to
+     * sequential income absorption.
+     */
     latestPayableFees: number | null;
   };
 }
@@ -39,8 +46,12 @@ export interface BursaryAccountSearchResult {
  * Returns all sibling links for the family group that contains the given
  * bursary account. Results are ordered by priorityOrder ascending.
  *
- * Each result includes the latest completed assessment's yearlyPayableFees
- * so the assessment form can use it for sequential income absorption.
+ * Each result includes the sibling's latest assessed payable-fees figure so
+ * the assessment form can use it for sequential income absorption. CALC-08:
+ * the figure walks recommendation `confirmedPayableFees` →
+ * `recommendedPayableFees` → legacy `assessment.yearlyPayableFees` (the v2
+ * pipeline no longer writes the legacy column, so a v2-assessed sibling's
+ * fees live on its Recommendation).
  *
  * Returns an empty array when the account has no sibling links.
  */
@@ -72,16 +83,37 @@ export async function getSiblingLinks(
           school: true,
           reference: true,
           applications: {
+            // A fee figure can live on the legacy assessment column (v1) OR on
+            // the recommendation's v2 columns — match whichever is present so
+            // the most recent assessed application is found for both engines.
             where: {
-              assessment: {
-                yearlyPayableFees: { not: null },
-              },
+              OR: [
+                { assessment: { yearlyPayableFees: { not: null } } },
+                {
+                  assessment: {
+                    recommendation: { confirmedPayableFees: { not: null } },
+                  },
+                },
+                {
+                  assessment: {
+                    recommendation: { recommendedPayableFees: { not: null } },
+                  },
+                },
+              ],
             },
             orderBy: { submittedAt: "desc" },
             take: 1,
             select: {
               assessment: {
-                select: { yearlyPayableFees: true },
+                select: {
+                  yearlyPayableFees: true,
+                  recommendation: {
+                    select: {
+                      confirmedPayableFees: true,
+                      recommendedPayableFees: true,
+                    },
+                  },
+                },
               },
             },
           },
@@ -91,8 +123,14 @@ export async function getSiblingLinks(
   });
 
   return links.map((link) => {
-    const latestApp = link.bursaryAccount.applications[0];
-    const rawFees = latestApp?.assessment?.yearlyPayableFees ?? null;
+    const latestAssessment = link.bursaryAccount.applications[0]?.assessment;
+    // CALC-08 fallback walk (mirrors `selectLastPayableFees`): confirmed →
+    // recommended → legacy yearly.
+    const rawFees =
+      latestAssessment?.recommendation?.confirmedPayableFees ??
+      latestAssessment?.recommendation?.recommendedPayableFees ??
+      latestAssessment?.yearlyPayableFees ??
+      null;
     const latestPayableFees =
       rawFees !== null ? Number(rawFees) : null;
 

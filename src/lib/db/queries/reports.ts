@@ -412,6 +412,11 @@ export async function getSchoolComparison(
         select: {
           bursaryAward: true,
           monthlyPayableFees: true,
+          // CALC-08: v2 assessments leave the legacy columns null; the
+          // recommendation carries the confirmed figures instead.
+          recommendation: {
+            select: { bursaryAward: true, monthlyPayableFees: true },
+          },
         },
       },
     },
@@ -437,12 +442,21 @@ export async function getSchoolComparison(
 
     if (app.assessment) {
       entry.assessed++;
-      entry.totalAward += app.assessment.bursaryAward
-        ? Number(app.assessment.bursaryAward)
-        : 0;
-      entry.totalMonthly += app.assessment.monthlyPayableFees
-        ? Number(app.assessment.monthlyPayableFees)
-        : 0;
+      // CALC-08: prefer the recommendation's figures (populated for v2, and
+      // for v1 once a recommendation is saved), falling back to the legacy
+      // assessment columns for v1 rows without a recommendation.
+      // NOTE: `bursaryAward` mixes VAT bases across engine versions — v1's is
+      // the engine-derived award, v2's is the assessor-entered after-VAT
+      // figure. The aggregation tolerates the mix for now; CALC-12 (outputs
+      // alignment) may refine the basis.
+      const award =
+        app.assessment.recommendation?.bursaryAward ??
+        app.assessment.bursaryAward;
+      const monthly =
+        app.assessment.recommendation?.monthlyPayableFees ??
+        app.assessment.monthlyPayableFees;
+      entry.totalAward += award ? Number(award) : 0;
+      entry.totalMonthly += monthly ? Number(monthly) : 0;
     }
   }
 

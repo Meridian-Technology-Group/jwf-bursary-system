@@ -574,6 +574,7 @@ export default async function AssessmentPage({ params }: Props) {
           referenceBundle={resolved.bundle}
           prefill={prefill}
           defaultAnnualFees={configs.annualFees}
+          defaultNextYearAnnualFees={configs.nextYearAnnualFees}
           applicationEntryYear={application.entryYear}
           applicationEntryYearGroup={
             application.entryYearGroup as EntryYearGroupCode | null
