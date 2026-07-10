@@ -17,6 +17,7 @@ import { createAuditLog } from "@/lib/audit/log";
 import { AUDIT_ACTIONS, AUDIT_ENTITY_TYPES } from "@/lib/audit/actions";
 import { withUserContext, type RlsRole } from "@/lib/db/prisma";
 import { isLockedEmailTemplateType } from "@/lib/email/locked-types";
+import { DEFAULT_CUSTOM_TEMPLATE_MERGE_FIELDS } from "@/lib/email/template-defaults";
 import type { School, EmailTemplateType } from "@prisma/client";
 
 // ─── Result type ──────────────────────────────────────────────────────────────
@@ -259,23 +260,6 @@ export async function upsertReasonCodeAction(
 }
 
 // ─── Email Templates ──────────────────────────────────────────────────────────
-
-/**
- * Merge fields given to every new custom template (resolved decision D-5 in
- * docs/backlog/stories/09-email-template-management.md): the subset of merge
- * fields common to (nearly) every system template, excluding
- * `registration_link` which only ever applies to the two invite templates.
- * Bare names (no `{{ }}`) to match the storage convention used by
- * `prisma/seed-data/email-templates.ts` and read by `send.ts`.
- */
-export const DEFAULT_CUSTOM_TEMPLATE_MERGE_FIELDS = [
-  "applicant_name",
-  "child_name",
-  "reference",
-  "school",
-  "academic_year",
-  "deadline",
-];
 
 /**
  * Resolves the `where` clause used to address a single email template row.
