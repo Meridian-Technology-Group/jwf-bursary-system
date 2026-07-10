@@ -73,6 +73,13 @@ export interface ApplicationListItem {
   bursaryAccountStatus: BursaryAccountStatus | null;
   /** Unified close marker (item 2) — non-null means CLOSED. */
   closedAt: Date | null;
+  /**
+   * The close reason label recorded at close time (item 4.4), or null when
+   * the application is not closed. Read through the FK, so it survives the
+   * reason later being deprecated — not re-looked-up from the live reason
+   * list.
+   */
+  closeReasonLabel: string | null;
 }
 
 export interface ListApplicationsFilters {
@@ -175,6 +182,10 @@ export async function listApplications(
       assignedToId: true,
       bursaryAccountId: true,
       closedAt: true,
+      // Item 4.4 — read through the FK so the originally-recorded label
+      // survives the reason later being deprecated (soft-deactivated, never
+      // hard-deleted — see the CloseReason model).
+      closeReason: { select: { label: true } },
       round: {
         select: { id: true, academicYear: true },
       },
@@ -198,7 +209,7 @@ export async function listApplications(
   });
 
   return applications.map((a) => {
-    const { contributors, assessment, bursaryAccount, ...rest } = a;
+    const { contributors, assessment, bursaryAccount, closeReason, ...rest } = a;
     const secondary = contributors[0];
     let secondParent: SecondParentIndicator = "NONE";
     if (secondary) {
@@ -216,6 +227,7 @@ export async function listApplications(
       outcome: assessment?.outcome ?? null,
       secondParent,
       bursaryAccountStatus: bursaryAccount?.status ?? null,
+      closeReasonLabel: closeReason?.label ?? null,
     };
   });
 }

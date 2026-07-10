@@ -41,6 +41,7 @@ import {
   UserPlus,
   Mail,
   RefreshCw,
+  CheckCircle2,
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { formatLondonDate } from "@/lib/datetime";
@@ -78,7 +79,11 @@ import { cn } from "@/lib/utils";
 
 import { ApplicationRowActions } from "@/components/admin/application-row-actions";
 import type { CloseReasonOption } from "@/components/admin/close-application-dialog";
-import { bulkAssignApplicationsAction } from "@/app/(admin)/applications/[id]/actions";
+import { BulkCloseDialog } from "@/components/admin/bulk-close-dialog";
+import {
+  bulkAssignApplicationsAction,
+  bulkMarkActiveAction,
+} from "@/app/(admin)/applications/[id]/actions";
 import { bulkReassessmentInviteFromApplicationsAction } from "@/app/(admin)/invitations/actions";
 
 import type { ApplicationListItem } from "@/lib/db/queries/applications";
@@ -310,11 +315,106 @@ function ReassessmentBulkAction({
   );
 }
 
+/**
+ * Bulk "Mark as Active" (Story 3.1) — the school's OFFERED decision, direct
+ * activation per D-4 (no outcome write, no email). Non-destructive, so a
+ * lightweight confirm is enough (no reason, no purge-aware warning — that's
+ * the Close action's job below).
+ */
+function MarkActiveBulkAction({
+  selectedIds,
+  isPending,
+  run,
+  onFeedback,
+  onActionComplete,
+}: {
+  selectedIds: string[];
+  isPending: boolean;
+  run: (fn: () => Promise<void>) => void;
+  onFeedback: (feedback: BulkFeedback) => void;
+  onActionComplete: () => void;
+}) {
+  const [open, setOpen] = React.useState(false);
+  const count = selectedIds.length;
+
+  const handleConfirm = () => {
+    setOpen(false);
+    run(async () => {
+      const result = await bulkMarkActiveAction(selectedIds);
+      if (result.success) {
+        onFeedback({
+          kind: result.skipped.length > 0 ? "error" : "success",
+          message: `Activated ${result.succeeded} · skipped ${result.skipped.length}`,
+        });
+        if (result.succeeded > 0) onActionComplete();
+      } else {
+        onFeedback({
+          kind: "error",
+          message: result.error ?? "Bulk activation failed.",
+        });
+      }
+    });
+  };
+
+  return (
+    <>
+      <Button
+        variant="outline"
+        size="sm"
+        disabled={isPending || count === 0}
+        onClick={() => setOpen(true)}
+        className="h-8 shrink-0 whitespace-nowrap border-green-200 bg-white text-xs text-green-700 hover:bg-green-50"
+      >
+        {isPending ? (
+          <Loader2
+            className="mr-1.5 h-3 w-3 shrink-0 animate-spin"
+            aria-hidden="true"
+          />
+        ) : (
+          <CheckCircle2 className="mr-1.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+        )}
+        Mark as Active
+      </Button>
+
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>
+              Mark {count} application{count === 1 ? "" : "s"} active
+            </DialogTitle>
+            <DialogDescription>
+              Activates the bursary account for each selected application (or
+              continues an existing one) and attaches the forward schedule.
+              <span className="mt-2 block text-xs text-slate-500">
+                Applications that are closed, not yet fully assessed, or that
+                already have a recorded outcome are skipped.
+              </span>
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={handleConfirm}
+              className="bg-green-600 text-white hover:bg-green-700"
+            >
+              Confirm
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+}
+
 interface BulkToolbarProps {
   selectedIds: string[];
   assessors: AssessorOption[];
   reassessTargetRound: string | null;
   reassessTargetRoundId: string | null;
+  /** Active close reasons for the bulk Close dialog (item 4.1/4.2). */
+  closeReasons: CloseReasonOption[];
   onClear: () => void;
   onActionComplete: () => void;
   onFeedback: (feedback: BulkFeedback) => void;
@@ -325,6 +425,7 @@ function BulkToolbar({
   assessors,
   reassessTargetRound,
   reassessTargetRoundId,
+  closeReasons,
   onClear,
   onActionComplete,
   onFeedback,
@@ -418,6 +519,30 @@ function BulkToolbar({
           targetRound={reassessTargetRound}
           targetRoundId={reassessTargetRoundId}
           onFeedback={onFeedback}
+          onActionComplete={onActionComplete}
+        />
+      ),
+    },
+    {
+      id: "mark-active",
+      render: ({ selectedIds, isPending, run }) => (
+        <MarkActiveBulkAction
+          selectedIds={selectedIds}
+          isPending={isPending}
+          run={run}
+          onFeedback={onFeedback}
+          onActionComplete={onActionComplete}
+        />
+      ),
+    },
+    {
+      id: "bulk-close",
+      render: ({ selectedIds, isPending, run }) => (
+        <BulkCloseDialog
+          selectedIds={selectedIds}
+          isPending={isPending}
+          run={run}
+          reasons={closeReasons}
           onActionComplete={onActionComplete}
         />
       ),
@@ -641,6 +766,17 @@ export function ApplicationTable({
           return dateA - dateB;
         },
       }),
+      columnHelper.accessor("closeReasonLabel", {
+        header: "Close reason",
+        cell: (info) => {
+          const label = info.getValue();
+          return label ? (
+            <span className="text-slate-700">{label}</span>
+          ) : (
+            <span className="text-slate-400">—</span>
+          );
+        },
+      }),
       columnHelper.display({
         id: "actions",
         header: "",
@@ -821,6 +957,7 @@ export function ApplicationTable({
           assessors={assessors}
           reassessTargetRound={reassessTargetRound}
           reassessTargetRoundId={selectedRound !== "all" ? selectedRound : null}
+          closeReasons={closeReasons}
           onClear={handleClearSelection}
           onActionComplete={handleBulkComplete}
           onFeedback={setBulkFeedback}
