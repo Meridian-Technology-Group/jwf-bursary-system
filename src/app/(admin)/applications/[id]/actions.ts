@@ -38,6 +38,7 @@ import {
 } from "@/lib/retention/purge";
 import { deleteAuthUsersPostCommit } from "@/lib/retention/close-purge";
 import { closeApplicationCore } from "@/lib/applications/close";
+import { promoteToActiveAccount } from "@/lib/applications/account-promotion";
 import {
   beginReview,
   resumeReview,
@@ -1177,5 +1178,294 @@ export async function closeApplicationAction(
   } catch (err) {
     console.error("[closeApplicationAction]", err);
     return { success: false, error: "Failed to close the application." };
+  }
+}
+
+// ─── bulkMarkActiveAction (item 3 — the school's OFFERED decision) ─────────────
+
+/** Hard cap on how many applications a single bulk activation may touch. */
+const BULK_MARK_ACTIVE_MAX = 500;
+
+export interface BulkResultRow {
+  id: string;
+  reference: string;
+  reason: string;
+}
+
+export interface BulkMarkActiveResult {
+  success: boolean;
+  succeeded: number;
+  skipped: BulkResultRow[];
+  error?: string;
+}
+
+/**
+ * Marks MANY applications active in one pass — the bulk counterpart of the
+ * per-row "Move to active bursary" item (Story 3.1). Per D-4 (resolved
+ * 2026-07-09): direct activation, no outcome write, no outcome email. Calls
+ * `promoteToActiveAccount` DIRECTLY, the same primitive the per-row path (and
+ * the AWARDED outcome path) uses — no forked activation logic.
+ *
+ * Gate per row (mirrors `ApplicationRowActions`'s `canDecide`): not closed,
+ * assessment COMPLETED, no outcome already recorded. Invalid rows are skipped
+ * and reported; the batch never fails as a whole (Story 3.1's AC).
+ *
+ * ADMIN only. Runs the whole batch inside ONE `withAdminContext` transaction
+ * (mirrors `bulkAssignApplicationsAction`'s single-tx shape) — activation is a
+ * light write (account create/continue + schedule), unlike bulk close, which
+ * may purge and therefore isolates each row into its own transaction.
+ */
+export async function bulkMarkActiveAction(
+  applicationIds: string[]
+): Promise<BulkMarkActiveResult> {
+  try {
+    const user = await requireRole([Role.ADMIN]);
+
+    const ids = Array.from(new Set(applicationIds.filter(Boolean)));
+    if (ids.length === 0) {
+      return { success: true, succeeded: 0, skipped: [] };
+    }
+    if (ids.length > BULK_MARK_ACTIVE_MAX) {
+      return {
+        success: false,
+        succeeded: 0,
+        skipped: [],
+        error: `Cannot activate more than ${BULK_MARK_ACTIVE_MAX} applications at once.`,
+      };
+    }
+
+    const { succeeded, skipped } = await withAdminContext(async (tx) => {
+      let succeeded = 0;
+      const skipped: BulkResultRow[] = [];
+
+      for (const applicationId of ids) {
+        const application = await tx.application.findUnique({
+          where: { id: applicationId },
+          select: {
+            id: true,
+            reference: true,
+            school: true,
+            childName: true,
+            childDob: true,
+            entryYear: true,
+            entryYearGroup: true,
+            bursaryAccountId: true,
+            leadApplicantId: true,
+            closedAt: true,
+            round: {
+              select: { academicYear: true, openDate: true, closeDate: true },
+            },
+            assessment: {
+              select: {
+                status: true,
+                outcome: true,
+                yearlyPayableFees: true,
+                recommendation: {
+                  select: { bursaryAward: true, scholarshipAward: true },
+                },
+              },
+            },
+          },
+        });
+
+        if (!application) {
+          skipped.push({
+            id: applicationId,
+            reference: applicationId,
+            reason: "Application not found.",
+          });
+          continue;
+        }
+        // Gate mirrors ApplicationRowActions' `canDecide` exactly — not
+        // closed, assessment finished in full, no outcome already recorded.
+        if (application.closedAt != null) {
+          skipped.push({
+            id: applicationId,
+            reference: application.reference,
+            reason: "Application is closed.",
+          });
+          continue;
+        }
+        if (application.assessment?.status !== "COMPLETED") {
+          skipped.push({
+            id: applicationId,
+            reference: application.reference,
+            reason: "The assessment is not yet complete.",
+          });
+          continue;
+        }
+        if (application.assessment.outcome != null) {
+          skipped.push({
+            id: applicationId,
+            reference: application.reference,
+            reason: "An outcome has already been recorded.",
+          });
+          continue;
+        }
+
+        // The Recommendation interface requires award figures but they are
+        // not stored on the account (see account-promotion.ts) — pass
+        // through whatever is on record (nulls when no recommendation exists
+        // yet), exactly as the AWARDED outcome path does.
+        const recommendation = application.assessment.recommendation;
+        const awards = {
+          bursaryAward:
+            recommendation?.bursaryAward != null
+              ? Number(recommendation.bursaryAward)
+              : null,
+          scholarshipAward:
+            recommendation?.scholarshipAward != null
+              ? Number(recommendation.scholarshipAward)
+              : null,
+        };
+
+        const result = await promoteToActiveAccount(tx, application, awards);
+
+        await createAuditLog(tx, {
+          userId: user.id,
+          action: AUDIT_ACTIONS.APPLICATION_MARKED_ACTIVE,
+          entityType: AUDIT_ENTITY_TYPES.Application,
+          entityId: applicationId,
+          context: `Application ${application.reference} marked active`,
+          metadata: {
+            accountId: result.bursaryAccountId,
+            created: result.created,
+            reference: application.reference,
+          },
+        });
+
+        succeeded += 1;
+      }
+
+      return { succeeded, skipped };
+    });
+
+    revalidatePath("/queue");
+
+    return { success: true, succeeded, skipped };
+  } catch (err) {
+    console.error("[bulkMarkActiveAction]", err);
+    return {
+      success: false,
+      succeeded: 0,
+      skipped: [],
+      error: "Failed to activate applications.",
+    };
+  }
+}
+
+// ─── bulkCloseApplicationsAction (item 3 — one batch-wide close reason) ────────
+
+/** Hard cap on how many applications a single bulk close may touch. */
+const BULK_CLOSE_MAX = 500;
+
+export interface BulkCloseResult {
+  success: boolean;
+  succeeded: number;
+  skipped: BulkResultRow[];
+  error?: string;
+}
+
+/**
+ * Closes MANY applications under ONE batch-wide close reason (Story 3.2).
+ * Loops `closeApplicationCore` — the SAME core the per-row `closeApplicationAction`
+ * calls — so per-row and bulk share one close path (Story 3.2's AC); no forked
+ * close logic. Reason enforcement (must exist, must be active) and the
+ * reason-driven purge (item 10) are entirely the core's responsibility.
+ *
+ * Each row runs in its OWN `withAdminContext` transaction — a purge-triggering
+ * reason applied across up to 500 rows in one giant transaction is a hazard
+ * (long-held locks, one failure rolling back an otherwise-successful batch), so
+ * rows are isolated and skip-and-report independently (Story 3.2's AC: the
+ * batch never fails as a whole). Post-commit auth-user deletion runs after
+ * EACH row's transaction commits, mirroring the per-row action exactly.
+ *
+ * ADMIN only.
+ */
+export async function bulkCloseApplicationsAction(
+  applicationIds: string[],
+  closeReasonId: string
+): Promise<BulkCloseResult> {
+  try {
+    const user = await requireRole([Role.ADMIN]);
+
+    if (!closeReasonId || typeof closeReasonId !== "string") {
+      return {
+        success: false,
+        succeeded: 0,
+        skipped: [],
+        error: "A close reason is required.",
+      };
+    }
+
+    const ids = Array.from(new Set(applicationIds.filter(Boolean)));
+    if (ids.length === 0) {
+      return { success: true, succeeded: 0, skipped: [] };
+    }
+    if (ids.length > BULK_CLOSE_MAX) {
+      return {
+        success: false,
+        succeeded: 0,
+        skipped: [],
+        error: `Cannot close more than ${BULK_CLOSE_MAX} applications at once.`,
+      };
+    }
+
+    // References for skip reporting — `closeApplicationCore`'s failure path
+    // doesn't carry one (e.g. "not found" has none to give), so resolve them
+    // up front in a single read rather than threading it through the core.
+    const referenceRows = await withAdminContext((tx) =>
+      tx.application.findMany({
+        where: { id: { in: ids } },
+        select: { id: true, reference: true },
+      })
+    );
+    const referenceById = new Map(referenceRows.map((r) => [r.id, r.reference]));
+
+    let succeeded = 0;
+    const skipped: BulkResultRow[] = [];
+
+    for (const applicationId of ids) {
+      const result = await withAdminContext((tx) =>
+        closeApplicationCore(
+          tx,
+          { applicationId, closeReasonId, actorId: user.id },
+          { deleteDocument }
+        )
+      );
+
+      if (!result.success) {
+        skipped.push({
+          id: applicationId,
+          reference: referenceById.get(applicationId) ?? applicationId,
+          reason: result.error,
+        });
+        continue;
+      }
+
+      // Post-commit: auth-user deletion is external to Postgres (non-fatal —
+      // failures are logged; this row's data-side purge has already
+      // committed). Runs after EACH row's own transaction, not the whole batch.
+      if (result.authUsersToDelete.length > 0) {
+        await deleteAuthUsersPostCommit(result.authUsersToDelete, {
+          deleteAuthUser: (uid) =>
+            createSupabaseAdminClient().auth.admin.deleteUser(uid),
+        });
+      }
+
+      succeeded += 1;
+    }
+
+    revalidatePath("/queue");
+
+    return { success: true, succeeded, skipped };
+  } catch (err) {
+    console.error("[bulkCloseApplicationsAction]", err);
+    return {
+      success: false,
+      succeeded: 0,
+      skipped: [],
+      error: "Failed to close applications.",
+    };
   }
 }
