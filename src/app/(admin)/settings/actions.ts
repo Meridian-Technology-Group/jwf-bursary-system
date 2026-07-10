@@ -349,8 +349,178 @@ export async function upsertCloseReasonAction(
 // ─── Email Templates ──────────────────────────────────────────────────────────
 
 /**
- * Updates the subject and body for an email template.
- * Uses upsert to ensure the row exists.
+ * Merge fields given to every new custom template (resolved decision D-5 in
+ * docs/backlog/stories/09-email-template-management.md): the subset of merge
+ * fields common to (nearly) every system template, excluding
+ * `registration_link` which only ever applies to the two invite templates.
+ * Bare names (no `{{ }}`) to match the storage convention used by
+ * `prisma/seed-data/email-templates.ts` and read by `send.ts`.
+ */
+export const DEFAULT_CUSTOM_TEMPLATE_MERGE_FIELDS = [
+  "applicant_name",
+  "child_name",
+  "reference",
+  "school",
+  "academic_year",
+  "deadline",
+];
+
+/**
+ * Resolves the `where` clause used to address a single email template row.
+ * System templates are still keyed by `type` (the enum invariant every
+ * `findUnique({ where: { type } })` send-path call relies on); custom
+ * templates have `type: null` so they must be addressed by `id` instead.
+ * Prefers `id` when both are present.
+ */
+function emailTemplateWhere(
+  id: string | null,
+  type: string | null
+): { id: string } | { type: EmailTemplateType } {
+  if (id) return { id };
+  return { type: type as EmailTemplateType };
+}
+
+export type CreateEmailTemplateResult =
+  | { success: true; id: string }
+  | { success: false; error: string };
+
+/**
+ * Creates a new custom (admin-authored) email template. System templates are
+ * never created this way — they come from the `*_seed_email_templates`
+ * migrations (Story 9.4).
+ */
+export async function createEmailTemplateAction(
+  formData: FormData
+): Promise<CreateEmailTemplateResult> {
+  try {
+    const user = await requireRole([Role.ADMIN]);
+
+    const name = (formData.get("name") as string)?.trim();
+    const subject = (formData.get("subject") as string)?.trim();
+    const body = (formData.get("body") as string)?.trim();
+
+    if (!name || !subject || !body) {
+      return { success: false, error: "Name, subject, and body are required." };
+    }
+
+    let createdId: string | null = null;
+
+    await withUserContext(user.id, user.role as RlsRole, async (tx) => {
+      // Case-insensitive duplicate-name pre-check among active custom templates.
+      const existing = await tx.emailTemplate.findFirst({
+        where: {
+          isSystem: false,
+          deletedAt: null,
+          name: { equals: name, mode: "insensitive" },
+        },
+      });
+      if (existing) {
+        throw new Error("DUPLICATE_TEMPLATE_NAME");
+      }
+
+      const template = await tx.emailTemplate.create({
+        data: {
+          name,
+          type: null,
+          isSystem: false,
+          subject,
+          body,
+          enabled: true,
+          mergeFields: DEFAULT_CUSTOM_TEMPLATE_MERGE_FIELDS,
+          createdBy: user.id,
+          updatedBy: user.id,
+        },
+      });
+      createdId = template.id;
+
+      await createAuditLog(tx, {
+        userId: user.id,
+        action: AUDIT_ACTIONS.SETTINGS_EMAIL_TEMPLATE_CREATE,
+        entityType: AUDIT_ENTITY_TYPES.EmailTemplate,
+        entityId: template.id,
+        context: `Created custom email template: ${name}`,
+        metadata: { id: template.id, name },
+      });
+    });
+
+    revalidatePath("/settings");
+    return { success: true, id: createdId! };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "";
+    if (msg === "DUPLICATE_TEMPLATE_NAME" || msg.includes("Unique constraint")) {
+      return {
+        success: false,
+        error: "A template with that name already exists.",
+      };
+    }
+    console.error("[createEmailTemplateAction]", err);
+    return { success: false, error: "Failed to create email template." };
+  }
+}
+
+/**
+ * Soft-deletes a custom email template (sets `deletedAt`). System templates
+ * can never be deleted here — Story 9.3's guard is enforced server-side
+ * regardless of what the UI shows, keyed off the row's own `isSystem` flag
+ * (not client-supplied data).
+ */
+export async function deleteEmailTemplateAction(
+  formData: FormData
+): Promise<SettingsActionResult> {
+  try {
+    const user = await requireRole([Role.ADMIN]);
+
+    const id = (formData.get("id") as string)?.trim();
+    if (!id) {
+      return { success: false, error: "Template id is required." };
+    }
+
+    await withUserContext(user.id, user.role as RlsRole, async (tx) => {
+      const existing = await tx.emailTemplate.findUnique({ where: { id } });
+      if (!existing || existing.deletedAt) {
+        throw new Error("TEMPLATE_NOT_FOUND");
+      }
+      if (existing.isSystem) {
+        throw new Error("SYSTEM_TEMPLATE_UNDELETABLE");
+      }
+
+      const deleted = await tx.emailTemplate.update({
+        where: { id },
+        data: { deletedAt: new Date(), updatedBy: user.id },
+      });
+
+      await createAuditLog(tx, {
+        userId: user.id,
+        action: AUDIT_ACTIONS.SETTINGS_EMAIL_TEMPLATE_DELETE,
+        entityType: AUDIT_ENTITY_TYPES.EmailTemplate,
+        entityId: deleted.id,
+        context: `Deleted custom email template: ${deleted.name ?? deleted.id}`,
+        metadata: { id: deleted.id, name: deleted.name },
+      });
+    });
+
+    revalidatePath("/settings");
+    return { success: true };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "";
+    if (msg === "SYSTEM_TEMPLATE_UNDELETABLE") {
+      return {
+        success: false,
+        error: "System templates cannot be deleted.",
+      };
+    }
+    if (msg === "TEMPLATE_NOT_FOUND") {
+      return { success: false, error: "Template not found." };
+    }
+    console.error("[deleteEmailTemplateAction]", err);
+    return { success: false, error: "Failed to delete email template." };
+  }
+}
+
+/**
+ * Updates the subject and body for an email template. Addresses the row by
+ * `id` when provided (required for custom, type-less templates) and falls
+ * back to `type` otherwise (system templates — preserves prior call sites).
  */
 export async function upsertEmailTemplateAction(
   formData: FormData
@@ -358,17 +528,18 @@ export async function upsertEmailTemplateAction(
   try {
     const user = await requireRole([Role.ADMIN]);
 
-    const type = formData.get("type") as EmailTemplateType;
+    const id = (formData.get("id") as string) || null;
+    const type = (formData.get("type") as string) || null;
     const subject = (formData.get("subject") as string)?.trim();
     const body = (formData.get("body") as string)?.trim();
 
-    if (!type || !subject || !body) {
-      return { success: false, error: "Template type, subject, and body are required." };
+    if ((!id && !type) || !subject || !body) {
+      return { success: false, error: "Template, subject, and body are required." };
     }
 
     await withUserContext(user.id, user.role as RlsRole, async (tx) => {
       const template = await tx.emailTemplate.update({
-        where: { type },
+        where: emailTemplateWhere(id, type),
         data: {
           subject,
           body,
@@ -381,8 +552,8 @@ export async function upsertEmailTemplateAction(
         action: AUDIT_ACTIONS.SETTINGS_EMAIL_TEMPLATE_UPDATE,
         entityType: AUDIT_ENTITY_TYPES.EmailTemplate,
         entityId: template.id,
-        context: `Updated email template: ${type}`,
-        metadata: { type, subject },
+        context: `Updated email template: ${template.type ?? template.name}`,
+        metadata: { type: template.type, name: template.name, subject },
       });
     });
 
@@ -395,14 +566,15 @@ export async function upsertEmailTemplateAction(
 }
 
 /**
- * Enables or disables a single email template type.
+ * Enables or disables a single email template.
  *
  * When disabled, the send chokepoint (`src/lib/email/send.ts`) short-circuits
  * to a success-shaped no-op for that type. Locked types (INVITATION /
- * INVITE_STAFF) carry functional registration links and may never be
- * disabled — rejected here (defense-in-depth) using the shared
+ * INVITE_STAFF / APPLICATION_RESTART_REQUIRED) carry functional links and may
+ * never be disabled — rejected here (defense-in-depth) using the shared
  * LOCKED_EMAIL_TEMPLATE_TYPES set, the same source of truth the UI uses to
- * render their switches as locked.
+ * render their switches as locked. Custom (type-less) templates are never
+ * locked, so the check is skipped when only `id` is supplied.
  */
 export async function setEmailTemplateEnabledAction(
   formData: FormData
@@ -410,15 +582,16 @@ export async function setEmailTemplateEnabledAction(
   try {
     const user = await requireRole([Role.ADMIN]);
 
-    const type = formData.get("type") as EmailTemplateType;
+    const id = (formData.get("id") as string) || null;
+    const type = (formData.get("type") as string) || null;
     const enabled = formData.get("enabled") === "true";
 
-    if (!type) {
-      return { success: false, error: "Template type is required." };
+    if (!id && !type) {
+      return { success: false, error: "Template is required." };
     }
 
     // Defense-in-depth: never persist a disabled state for a locked type.
-    if (!enabled && isLockedEmailTemplateType(type)) {
+    if (!enabled && type && isLockedEmailTemplateType(type as EmailTemplateType)) {
       return {
         success: false,
         error: `${type} is required and cannot be disabled — it carries the registration link.`,
@@ -427,7 +600,7 @@ export async function setEmailTemplateEnabledAction(
 
     await withUserContext(user.id, user.role as RlsRole, async (tx) => {
       const template = await tx.emailTemplate.update({
-        where: { type },
+        where: emailTemplateWhere(id, type),
         data: {
           enabled,
           updatedBy: user.id,
@@ -439,8 +612,8 @@ export async function setEmailTemplateEnabledAction(
         action: AUDIT_ACTIONS.UPDATE_EMAIL_TEMPLATE_ENABLED,
         entityType: AUDIT_ENTITY_TYPES.EmailTemplate,
         entityId: template.id,
-        context: `${enabled ? "Enabled" : "Disabled"} email template: ${type}`,
-        metadata: { type, enabled },
+        context: `${enabled ? "Enabled" : "Disabled"} email template: ${template.type ?? template.name}`,
+        metadata: { type: template.type, name: template.name, enabled },
       });
     });
 
