@@ -122,6 +122,30 @@ describe("resolveNextYearFees", () => {
       usingCurrentYearFee: true,
     });
   });
+
+  it("a v2 snapshot with nextYearAnnualFees persisted drives the award summary with NO fallback (CALC-08 fix 5)", () => {
+    // The v2 assessment save now persists the fee-year-resolved next-year fee
+    // (assessment-form-v2 `defaultNextYearAnnualFees` → `nextYearAnnualFees`),
+    // so the recommendation must use it — `usingCurrentYearFee: false` is what
+    // suppresses the amber "current-year fee" note in the UI.
+    const resolved = resolveNextYearFees({
+      nextYearAnnualFees: 31450,
+      annualFees: 30240,
+    });
+    expect(resolved.usingCurrentYearFee).toBe(false);
+
+    const summary = deriveRecommendationAward({
+      nextYearFees: resolved.fees,
+      scholarshipPct: 10,
+      bursaryAwardAfterVat: 12000,
+      confirmedPayableFees: 15676,
+      recommendedPayableFees: 12000,
+      vatRate: 20,
+    });
+    // Derived against the NEXT-year fee (31450), not the current-year 30240.
+    expect(summary.scholarshipValueInclVat).toBe(3774); // 31450 × 10% × 1.2
+    expect(summary.payableFeesNextYear).toBe(15676); // 31450 − 3774 − 12000
+  });
 });
 
 describe("deriveRecommendationAward (awardSummary wiring)", () => {
