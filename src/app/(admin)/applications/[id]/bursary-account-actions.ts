@@ -97,3 +97,59 @@ export async function withdrawBursaryAccount(
     return { success: false, error: "Failed to withdraw the bursary account." };
   }
 }
+
+// ─── updateFeesAccountCodeAction (CALC-10) ────────────────────────────────────
+
+/**
+ * CALC-10 — recipient's fees-account code (workbook §3.16 "Assessor's
+ * wizard" admin page). A small free-text field on the bursary account,
+ * ADMIN/ASSESSOR-editable, no lifecycle-state gate. Also displayed
+ * (read-only) on the assessment page's header context. Blank input clears
+ * the field (stored as `null`).
+ */
+export async function updateFeesAccountCodeAction(
+  accountId: string,
+  applicationId: string,
+  feesAccountCode: string
+): Promise<{ success: true } | { success: false; error: string }> {
+  try {
+    const user = await requireRole([Role.ADMIN, Role.ASSESSOR]);
+    const value = feesAccountCode.trim().length > 0 ? feesAccountCode.trim() : null;
+
+    const result = await withUserContext(user.id, user.role as RlsRole, async (tx) => {
+      const account = await tx.bursaryAccount.findUnique({
+        where: { id: accountId },
+        select: { id: true, reference: true },
+      });
+      if (!account) {
+        return { success: false as const, error: "Bursary account not found." };
+      }
+
+      await tx.bursaryAccount.update({
+        where: { id: accountId },
+        data: { feesAccountCode: value },
+      });
+
+      await createAuditLog(tx, {
+        userId: user.id,
+        action: AUDIT_ACTIONS.BURSARY_ACCOUNT_FEES_CODE_UPDATED,
+        entityType: AUDIT_ENTITY_TYPES.BursaryAccount,
+        entityId: account.id,
+        context: `Fees account code updated for ${account.reference}`,
+        metadata: { accountId: account.id, feesAccountCode: value },
+      });
+
+      return { success: true as const };
+    });
+
+    if (!result.success) return result;
+
+    revalidatePath(`/applications/${applicationId}`);
+    revalidatePath(`/applications/${applicationId}/assessment`);
+
+    return { success: true };
+  } catch (err) {
+    console.error("[updateFeesAccountCodeAction]", err);
+    return { success: false, error: "Failed to update the fees account code." };
+  }
+}

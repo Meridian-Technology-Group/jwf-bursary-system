@@ -21,7 +21,11 @@ import { deriveReviewPhase } from "@/lib/applications/status";
 import { canEditOnBehalf } from "@/lib/applications/edit-on-behalf";
 import { getSiblingLinks } from "@/lib/db/queries/siblings";
 import { getScheduleForAccount, type ScheduleEntryRow } from "@/lib/db/queries/schedule";
+import { getYoyFinancialsRows } from "@/lib/db/queries/assessments";
+import type { YoyFinancialsTableRow } from "@/lib/assessment/yoy-financials";
 import { ScheduleGrid } from "@/components/admin/schedule-grid";
+import { FeesAccountCodeField } from "@/components/admin/fees-account-code-field";
+import { YoyFinancialsTable } from "@/components/admin/yoy-financials-table";
 import {
   Card,
   CardContent,
@@ -301,6 +305,8 @@ export default async function ApplicantDataPage({ params }: Props) {
     contributors,
     scheduleEntries,
     accountStatus,
+    feesAccountCode,
+    yoyRows,
   } = await withUserContext(user.id, user.role as RlsRole, async (tx) => {
     const app = await getApplicationWithDetails(tx, params.id);
     if (!app)
@@ -311,6 +317,8 @@ export default async function ApplicantDataPage({ params }: Props) {
         contributors: [],
         scheduleEntries: [] as ScheduleEntryRow[],
         accountStatus: null as BursaryAccountStatus | null,
+        feesAccountCode: null as string | null,
+        yoyRows: [] as YoyFinancialsTableRow[],
       };
     const siblings = app.bursaryAccountId
       ? await getSiblingLinks(tx, app.bursaryAccountId)
@@ -321,9 +329,14 @@ export default async function ApplicantDataPage({ params }: Props) {
     const account = app.bursaryAccountId
       ? await tx.bursaryAccount.findUnique({
           where: { id: app.bursaryAccountId },
-          select: { status: true },
+          select: { status: true, feesAccountCode: true },
         })
       : null;
+    // CALC-10 — YoY financials history (read-only projection over the
+    // account's COMPLETED assessments; no new write path).
+    const yoy = app.bursaryAccountId
+      ? await getYoyFinancialsRows(tx, app.bursaryAccountId)
+      : [];
     const revealed = await getApplicationNamesForReveal(tx, app.id, user.id);
     const ctribs = await getApplicationContributors(tx, params.id);
     return {
@@ -333,6 +346,8 @@ export default async function ApplicantDataPage({ params }: Props) {
       contributors: ctribs,
       scheduleEntries: schedule,
       accountStatus: account?.status ?? null,
+      feesAccountCode: account?.feesAccountCode ?? null,
+      yoyRows: yoy,
     };
   });
 
@@ -426,6 +441,17 @@ export default async function ApplicantDataPage({ params }: Props) {
             No application sections have been submitted yet.
           </p>
         </div>
+
+        {/* CALC-10 — fees account code + YoY financials history */}
+        {bursaryAccountId && (
+          <AccountAdminSection
+            accountId={bursaryAccountId}
+            applicationId={application.id}
+            feesAccountCode={feesAccountCode}
+            yoyRows={yoyRows}
+            canEdit={isAssessor}
+          />
+        )}
 
         {/* Forward schedule — shown when the account is linked (Epic 10) */}
         {bursaryAccountId && (
@@ -547,6 +573,17 @@ export default async function ApplicantDataPage({ params }: Props) {
         );
       })}
 
+      {/* CALC-10 — fees account code + YoY financials history */}
+      {bursaryAccountId && (
+        <AccountAdminSection
+          accountId={bursaryAccountId}
+          applicationId={application.id}
+          feesAccountCode={feesAccountCode}
+          yoyRows={yoyRows}
+          canEdit={isAssessor}
+        />
+      )}
+
       {/* Forward schedule — only when the application has a bursary account (Epic 10) */}
       {bursaryAccountId && (
         <ScheduleGrid
@@ -616,6 +653,51 @@ function SiblingSection({
           />
         )}
       </div>
+    </section>
+  );
+}
+
+// ─── Account Admin Section (CALC-10) ───────────────────────────────────────────
+
+interface AccountAdminSectionProps {
+  accountId: string;
+  applicationId: string;
+  feesAccountCode: string | null;
+  yoyRows: YoyFinancialsTableRow[];
+  /** ADMIN/ASSESSOR can edit the fees account code; VIEWER sees read-only text. */
+  canEdit: boolean;
+}
+
+function AccountAdminSection({
+  accountId,
+  applicationId,
+  feesAccountCode,
+  yoyRows,
+  canEdit,
+}: AccountAdminSectionProps) {
+  return (
+    <section
+      aria-labelledby="account-admin-heading"
+      className="space-y-3 rounded-xl border border-slate-200 bg-white p-5 shadow-sm"
+    >
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h2
+          id="account-admin-heading"
+          className="text-sm font-semibold text-slate-700"
+        >
+          Account Admin
+        </h2>
+        <FeesAccountCodeField
+          accountId={accountId}
+          applicationId={applicationId}
+          feesAccountCode={feesAccountCode}
+          readOnly={!canEdit}
+        />
+      </div>
+
+      {/* CALC-10 — YoY financials history table, mirroring the workbook's
+          per-assessment-year comparison (gap-analysis.md §2.2 rows 195–203). */}
+      <YoyFinancialsTable rows={yoyRows} />
     </section>
   );
 }

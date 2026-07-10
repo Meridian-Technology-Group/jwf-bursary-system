@@ -11,6 +11,11 @@ import { ApplicationContributorRole } from "@prisma/client";
 import { generateApplicationReference } from "@/lib/applications/reference";
 import { applicationCreateData } from "@/lib/applications/status";
 import { ensurePrimaryContributor } from "@/lib/db/queries/contributors";
+import {
+  selectPreviousWatchOutNotes,
+  type WatchOutCandidate,
+  type WatchOutSelection,
+} from "@/lib/assessment/watch-out-notes";
 
 // ─── Section types that are pre-populated from the previous year ─────────────
 
@@ -531,4 +536,51 @@ export async function getPriorYearSecondaryContributor(
     firstName: priorSecondary.profile.firstName,
     lastName: priorSecondary.profile.lastName,
   };
+}
+
+// ─── getPreviousWatchOutNotes (CALC-10) ────────────────────────────────────────
+
+/**
+ * "Assessor's wizard — things to look out for with this family" read path
+ * (implementation-plan.md §CALC-10). Loads every assessment linked to the
+ * bursary account and hands them to the pure selector
+ * (`src/lib/assessment/watch-out-notes.ts`), which picks the most recently
+ * COMPLETED assessment (excluding the current application) that left a
+ * non-blank note.
+ *
+ * Returns `null` when the account has no bursary account id, no other
+ * completed assessment, or none of them left a note.
+ */
+export async function getPreviousWatchOutNotes(
+  tx: Tx,
+  bursaryAccountId: string,
+  currentApplicationId: string
+): Promise<WatchOutSelection | null> {
+  const applications = await tx.application.findMany({
+    where: {
+      bursaryAccountId,
+      assessment: { isNot: null },
+    },
+    select: {
+      id: true,
+      round: { select: { academicYear: true } },
+      assessment: {
+        select: { status: true, completedAt: true, watchOutNotes: true },
+      },
+    },
+  });
+
+  const candidates: WatchOutCandidate[] = applications
+    .filter((app): app is typeof app & { assessment: NonNullable<typeof app.assessment> } =>
+      app.assessment !== null
+    )
+    .map((app) => ({
+      applicationId: app.id,
+      academicYear: app.round.academicYear,
+      status: app.assessment.status,
+      completedAt: app.assessment.completedAt,
+      watchOutNotes: app.assessment.watchOutNotes,
+    }));
+
+  return selectPreviousWatchOutNotes(candidates, currentApplicationId);
 }

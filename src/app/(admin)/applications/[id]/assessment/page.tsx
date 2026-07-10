@@ -55,11 +55,15 @@ import type {
 } from "@/types/application";
 import type { EntryYearGroupCode } from "@/lib/assessment/schooling-years";
 import { feeYearLabels } from "@/lib/assessment/fee-year";
-import { getPreviousAssessment } from "@/lib/db/queries/reassessment";
+import {
+  getPreviousAssessment,
+  getPreviousWatchOutNotes,
+} from "@/lib/db/queries/reassessment";
 import { getSiblingLinks } from "@/lib/db/queries/siblings";
 import { withUserContext, type RlsRole } from "@/lib/db/prisma";
 import { YearComparison } from "@/components/admin/year-comparison";
 import { BenchmarkDisplay } from "@/components/admin/benchmark-display";
+import { FeesAccountCodeField } from "@/components/admin/fees-account-code-field";
 import { SplitScreen } from "@/components/admin/split-screen";
 import { AssessmentForm, type SerialisedAssessment } from "@/components/admin/assessment-form";
 import { AssessmentSynopsis } from "@/components/admin/assessment-synopsis";
@@ -69,7 +73,7 @@ import { deriveReviewPhase } from "@/lib/applications/status";
 import { BeginAssessmentButton } from "@/components/admin/begin-assessment-button";
 import { SecondParentGate } from "@/components/admin/second-parent-gate";
 import { DocumentListClient } from "@/components/admin/document-list-client";
-import { ClipboardList } from "lucide-react";
+import { ClipboardList, Lightbulb } from "lucide-react";
 
 export const metadata = {
   title: "Assessment",
@@ -145,6 +149,77 @@ async function ReassessmentContext({
         current={current}
         currentAcademicYear={academicYear}
       />
+    </div>
+  );
+}
+
+// ─── Account context bar (CALC-10) ─────────────────────────────────────────────
+
+interface AccountContextBarProps {
+  applicationId: string;
+  bursaryAccountId: string;
+  user: CurrentUser;
+}
+
+/**
+ * CALC-10 — fees account code (read-only header context) + the "Assessor's
+ * wizard" callout: the most recently COMPLETED assessment's `watchOutNotes`
+ * for this bursary account, excluding the current application. Renders
+ * nothing when there is neither a fees account code nor a previous note to
+ * show, so it never adds empty chrome to the page.
+ */
+async function AccountContextBar({
+  applicationId,
+  bursaryAccountId,
+  user,
+}: AccountContextBarProps) {
+  const [account, watchOut] = await withUserContext(
+    user.id,
+    user.role as RlsRole,
+    (tx) =>
+      Promise.all([
+        tx.bursaryAccount.findUnique({
+          where: { id: bursaryAccountId },
+          select: { feesAccountCode: true },
+        }),
+        getPreviousWatchOutNotes(tx, bursaryAccountId, applicationId),
+      ])
+  );
+
+  const feesAccountCode = account?.feesAccountCode ?? null;
+  if (!feesAccountCode && !watchOut) return null;
+
+  return (
+    <div className="mb-5 space-y-3">
+      {feesAccountCode && (
+        <FeesAccountCodeField
+          accountId={bursaryAccountId}
+          applicationId={applicationId}
+          feesAccountCode={feesAccountCode}
+          readOnly
+        />
+      )}
+
+      {watchOut && (
+        <div
+          role="note"
+          aria-label="Assessor's wizard"
+          className="flex items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3"
+        >
+          <Lightbulb
+            className="mt-0.5 h-4 w-4 shrink-0 text-amber-600"
+            aria-hidden="true"
+          />
+          <div>
+            <p className="text-sm font-semibold text-amber-900">
+              Assessor&apos;s wizard — from {watchOut.academicYear}
+            </p>
+            <p className="mt-1 whitespace-pre-wrap text-sm text-amber-800">
+              {watchOut.watchOutNotes}
+            </p>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -255,6 +330,15 @@ export default async function AssessmentPage({ params }: Props) {
   if (!assessment) {
     return (
       <div className="space-y-5">
+        {/* CALC-10 — fees account code + assessor's-wizard callout */}
+        {bursaryAccountId && (
+          <AccountContextBar
+            applicationId={params.id}
+            bursaryAccountId={bursaryAccountId}
+            user={user}
+          />
+        )}
+
         {/* Re-assessment context (if applicable) */}
         {isReassessment && bursaryAccountId && (
           <ReassessmentContext
@@ -548,6 +632,7 @@ export default async function AssessmentPage({ params }: Props) {
         feeInsuranceAnnual: toNumber(assessment.feeInsuranceAnnual),
         behindOnFees: assessment.behindOnFees,
         dishonestyFlag: assessment.dishonestyFlag,
+        watchOutNotes: assessment.watchOutNotes,
         earners: assessment.earners
           .filter((e) => e.earnerLabel === "PARENT_1" || e.earnerLabel === "PARENT_2")
           .map((e) => ({
@@ -619,6 +704,15 @@ export default async function AssessmentPage({ params }: Props) {
 
   return (
     <div className="space-y-5">
+      {/* CALC-10 — fees account code + assessor's-wizard callout */}
+      {bursaryAccountId && (
+        <AccountContextBar
+          applicationId={params.id}
+          bursaryAccountId={bursaryAccountId}
+          user={user}
+        />
+      )}
+
       {/* Re-assessment context (if applicable) */}
       {isReassessment && bursaryAccountId && (
         <ReassessmentContext
