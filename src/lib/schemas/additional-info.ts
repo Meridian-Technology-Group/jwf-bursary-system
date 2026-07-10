@@ -9,7 +9,7 @@ export const additionalInfoSchema = z.object({
   additionalNarrative: z
     .string()
     .trim()
-    .max(3000, "Additional information must be under 3,000 characters")
+    .max(10000, "Additional information must be under 10,000 characters")
     .optional(),
   additionalDocumentIds: z.array(z.string()).default([]),
 });

@@ -29,6 +29,7 @@ import { ConditionalField } from "@/components/portal/form-fields/conditional-fi
 import { CountryCombobox } from "@/components/portal/form-fields/country-combobox";
 import { FileUpload } from "@/components/portal/file-upload";
 import type { ChildDetailsFormValues } from "@/lib/schemas/child-details";
+import { CHILD_TITLES } from "@/lib/schemas/child-details";
 import type { UploadedDocument } from "@/components/portal/file-upload";
 import type { DocumentMeta } from "@/lib/db/queries/applications";
 
@@ -133,22 +134,77 @@ export function ChildDetailsForm({
           Child information
         </legend>
 
-        <FormField
-          control={control}
-          name="childFullName"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>
-                Child&rsquo;s full name{" "}
-                <span className="text-error-600" aria-hidden="true">*</span>
-              </FormLabel>
-              <FormControl>
-                <Input placeholder="Enter child's full legal name" {...field} />
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-[8rem_1fr_1fr]">
+          <FormField
+            control={control}
+            name="childTitle"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Title</FormLabel>
+                <Select
+                  onValueChange={field.onChange}
+                  value={field.value ?? ""}
+                >
+                  <FormControl>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select..." />
+                    </SelectTrigger>
+                  </FormControl>
+                  <SelectContent>
+                    {CHILD_TITLES.map((t) => (
+                      <SelectItem key={t.value} value={t.value}>
+                        {t.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+
+          <FormField
+            control={control}
+            name="childFirstName"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>
+                  First name{" "}
+                  <span className="text-error-600" aria-hidden="true">*</span>
+                </FormLabel>
+                <FormControl>
+                  <Input
+                    placeholder="Enter first name(s)"
+                    {...field}
+                    value={field.value ?? ""}
+                  />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+
+          <FormField
+            control={control}
+            name="childSurname"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>
+                  Surname{" "}
+                  <span className="text-error-600" aria-hidden="true">*</span>
+                </FormLabel>
+                <FormControl>
+                  <Input
+                    placeholder="Enter surname"
+                    {...field}
+                    value={field.value ?? ""}
+                  />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+        </div>
 
         <FormField
           control={control}
@@ -185,10 +241,31 @@ export function ChildDetailsForm({
           required
         />
 
+        <FormField
+          control={control}
+          name="placeOfBirthCity"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>
+                Place of birth — town / city{" "}
+                <span className="text-error-600" aria-hidden="true">*</span>
+              </FormLabel>
+              <FormControl>
+                <Input
+                  placeholder="Enter town or city of birth"
+                  {...field}
+                  value={field.value ?? ""}
+                />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+
         <CountryCombobox
           control={control}
           name="placeOfBirth"
-          label="Place of birth"
+          label="Place of birth — country"
           placeholder="Select country of birth..."
           required
         />

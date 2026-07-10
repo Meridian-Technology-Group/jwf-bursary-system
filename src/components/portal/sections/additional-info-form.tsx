@@ -40,7 +40,7 @@ interface AdditionalInfoFormProps {
 export function AdditionalInfoForm({ applicationId, documentMap }: AdditionalInfoFormProps) {
   const { control, watch, setValue, getValues } = useFormContext<AdditionalInfoFormValues>();
   const narrative = watch("additionalNarrative") ?? "";
-  const maxChars = 3000;
+  const maxChars = 10000;
 
   const additionalIds = useWatch({ control, name: "additionalDocumentIds" }) ?? [];
   const initialAdditional = React.useRef(getValues("additionalDocumentIds") ?? []);

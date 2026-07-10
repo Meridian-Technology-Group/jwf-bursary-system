@@ -72,7 +72,6 @@ export const assetsLiabilitiesSchema = z
     }),
     publicTransportMonthly: currencyField.optional(), // Q6
     otherPossessionsValue: currencyField, // Q7
-    otherNonFinancialAssetsValue: currencyField, // Q8
 
     // ── FINANCIAL ASSETS & DEBT ─────────────────────────────────────────────────
     totalCashBalance: currencyField, // Q9
