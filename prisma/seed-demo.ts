@@ -256,6 +256,7 @@ async function seedEmailTemplates(): Promise<void> {
     await prisma.emailTemplate.create({
       data: {
         type: tmpl.type,
+        isSystem: true,
         subject: tmpl.subject,
         body: tmpl.body,
         mergeFields: tmpl.mergeFields,

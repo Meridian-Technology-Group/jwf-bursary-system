@@ -27,6 +27,7 @@ model Profile {
   bursaryAccounts         BursaryAccount[]
   documentsUploaded       Document[]
   emailTemplateUpdates    EmailTemplate[]
+  emailTemplatesCreated   EmailTemplate[]          @relation("EmailTemplateCreator")
   invitationsCreated      Invitation[]             @relation("InvitationCreator")
   staffInvitationsCreated StaffInvitation[]        @relation("StaffInvitationCreator")
   contributorLinks        ApplicationContributor[] @relation("ContributorProfile")
@@ -681,16 +682,38 @@ model StaffInvitation {
 }
 
 /// Configurable email templates with merge fields.
+/// System templates (`isSystem: true`) are seeded via the
+/// `*_seed_email_templates` migrations and keyed one-to-one to
+/// `EmailTemplateType` (`type` NOT NULL, `@unique`) — every send-path
+/// `findUnique({ where: { type } })` call depends on that invariant.
+/// Custom templates (`isSystem: false`, admin-created) carry `type: null`
+/// and are identified by `name` instead; the unique index on `type` still
+/// holds because Postgres treats NULLs as distinct. `name` uniqueness among
+/// ACTIVE custom templates is enforced by a partial index
+/// (`email_templates_name_active_key`, case-insensitive, `name IS NOT NULL
+/// AND deleted_at IS NULL`) defined in raw SQL — not expressible in the
+/// Prisma schema DSL.
 model EmailTemplate {
-  id          String            @id @default(uuid()) @db.Uuid
-  type        EmailTemplateType @unique
+  id          String             @id @default(uuid()) @db.Uuid
+  type        EmailTemplateType? @unique
+  /// Admin-facing label for a custom template. Null for system templates
+  /// (those are labelled via TEMPLATE_LABELS keyed off `type` in the UI).
+  name        String?
   subject     String
   body        String
-  enabled     Boolean           @default(true) @map("enabled")
-  mergeFields Json              @map("merge_fields")
-  updatedBy   String?           @map("updated_by") @db.Uuid
-  updatedAt   DateTime          @updatedAt @map("updated_at") @db.Timestamptz(6)
-  updater     Profile?          @relation(fields: [updatedBy], references: [id])
+  enabled     Boolean            @default(true) @map("enabled")
+  mergeFields Json               @map("merge_fields")
+  /// True for the 16 seeded system templates; false for admin-created ones.
+  isSystem    Boolean            @default(true) @map("is_system")
+  /// Soft-delete tombstone for custom templates (system templates are
+  /// non-deletable — see setEmailTemplateEnabledAction / deleteEmailTemplateAction).
+  /// A re-run of the seed migration and getAllEmailTemplates both respect this.
+  deletedAt   DateTime?          @map("deleted_at") @db.Timestamptz(6)
+  createdBy   String?            @map("created_by") @db.Uuid
+  updatedBy   String?            @map("updated_by") @db.Uuid
+  updatedAt   DateTime           @updatedAt @map("updated_at") @db.Timestamptz(6)
+  creator     Profile?           @relation("EmailTemplateCreator", fields: [createdBy], references: [id])
+  updater     Profile?           @relation(fields: [updatedBy], references: [id])
 
   @@map("email_templates")
 }

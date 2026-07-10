@@ -360,7 +360,9 @@ export async function getAllCloseReasons(tx: Tx): Promise<CloseReasonRow[]> {
 
 export interface EmailTemplateRow {
   id: string;
-  type: EmailTemplateType;
+  type: EmailTemplateType | null;
+  name: string | null;
+  isSystem: boolean;
   subject: string;
   body: string;
   enabled: boolean;
@@ -369,16 +371,22 @@ export interface EmailTemplateRow {
 }
 
 /**
- * Returns all email templates ordered by type.
+ * Returns all non-deleted email templates: system templates first (ordered by
+ * type, matching the fixed EmailTemplateType enum order used elsewhere),
+ * then custom templates ordered by name. Soft-deleted custom templates
+ * (`deletedAt` set) are excluded — see Story 9.4.
  */
 export async function getAllEmailTemplates(tx: Tx): Promise<EmailTemplateRow[]> {
   const rows = await tx.emailTemplate.findMany({
-    orderBy: { type: "asc" },
+    where: { deletedAt: null },
+    orderBy: [{ isSystem: "desc" }, { type: "asc" }, { name: "asc" }],
   });
 
   return rows.map((row) => ({
     id: row.id,
     type: row.type,
+    name: row.name,
+    isSystem: row.isSystem,
     subject: row.subject,
     body: row.body,
     enabled: row.enabled,
