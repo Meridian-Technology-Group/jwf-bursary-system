@@ -32,6 +32,14 @@ import {
 export interface SaveRecommendationData
   extends Omit<UpsertRecommendationInput, "roundId" | "bursaryAccountId"> {
   reasonCodeIds?: string[];
+  /**
+   * CALC-16 — the assessor-entered scholarship % (0–100). Lives on
+   * `Assessment.scholarshipPct`, not the Recommendation row, so it is written
+   * back to the assessment (same transaction) rather than passed through to
+   * `upsertRecommendation`. Undefined/null ⇒ no write (v1 saves never send
+   * this field and must not touch the assessment's scholarship %).
+   */
+  scholarshipPct?: number | null;
 }
 
 // ─── Save Recommendation ──────────────────────────────────────────────────────
@@ -125,6 +133,17 @@ export async function saveRecommendationAction(
             recommendedPayableFees: undefined,
             gapAmount: undefined,
           };
+        }
+
+        // CALC-16 — persist the entered scholarship % onto the Assessment row
+        // it actually lives on. Without this the v2 form's Scholarship (%)
+        // input reads back as 0 on reload (only the derived £ value was ever
+        // saved, on the Recommendation), and re-saving would zero it out.
+        if (data.scholarshipPct != null) {
+          await tx.assessment.update({
+            where: { id: assessmentId },
+            data: { scholarshipPct: data.scholarshipPct },
+          });
         }
 
         await upsertRecommendation(tx, assessmentId, {

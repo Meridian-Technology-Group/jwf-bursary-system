@@ -349,6 +349,10 @@ export function RecommendationFormV2({
       scholarshipValueInclVat: summary.scholarshipValueInclVat,
       bursarySpendBeforeVat: summary.bursarySpendBeforeVat,
       gapReasonIds: selectedGapReasonIds,
+      // CALC-16 — persist the entered % back onto Assessment.scholarshipPct
+      // (the v1 column this form derives from) so it round-trips on reload
+      // instead of resetting to 0 and silently zeroing on the next save.
+      scholarshipPct,
     };
 
     const result = await saveRecommendationAction(applicationId, payload);
@@ -547,6 +551,11 @@ export function RecommendationFormV2({
                 selectedIds={selectedGapReasonIds}
                 onChange={setSelectedGapReasonIds}
                 disabled={isReadOnly}
+                // CALC-16 — gap_reasons (codes 1–10) is a separate taxonomy
+                // from reason_codes; the YoY category grouping would bucket
+                // every one of these under "Legacy (deprecated)".
+                grouped={false}
+                flatGroupLabel="Reasons for gap"
               />
               {!gapValid && (
                 <p className="text-xs text-red-600" role="alert">
