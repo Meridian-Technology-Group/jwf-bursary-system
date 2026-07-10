@@ -28,6 +28,7 @@ import { createClient } from "@supabase/supabase-js";
 
 import { councilTaxDefaults, familyTypeConfigs, schoolFees } from "./seed-data/reference";
 import { reasonCodes } from "./seed-data/reason-codes";
+import { gapReasons } from "./seed-data/gap-reasons";
 import { closeReasons } from "./seed-data/close-reasons";
 import {
   notionalCostConfigs,
@@ -121,6 +122,21 @@ async function seedReasonCodes(): Promise<void> {
     });
   }
   log(`Upserted ${reasonCodes.length} reason codes`);
+}
+
+async function seedGapReasons(): Promise<void> {
+  section("Gap reasons (CALC-02)");
+  for (const gr of gapReasons) {
+    await prisma.gapReason.upsert({
+      where: { code: gr.code },
+      create: gr,
+      update: {
+        label: gr.label,
+        sortOrder: gr.sortOrder,
+      },
+    });
+  }
+  log(`Upserted ${gapReasons.length} gap reasons`);
 }
 
 async function seedCloseReasons(): Promise<void> {
@@ -318,6 +334,7 @@ async function printSummary(): Promise<void> {
     ["School fee records", await prisma.schoolFees.count()],
     ["Council tax defaults", await prisma.councilTaxDefault.count()],
     ["Reason codes", await prisma.reasonCode.count()],
+    ["Gap reasons", await prisma.gapReason.count()],
     ["Close reasons", await prisma.closeReason.count()],
     ["Email templates (migration-managed)", await prisma.emailTemplate.count()],
     ["Notional cost configs", await prisma.notionalCostConfig.count()],
@@ -343,6 +360,7 @@ async function main(): Promise<void> {
   await seedSchoolFees();
   await seedCouncilTaxDefaults();
   await seedReasonCodes();
+  await seedGapReasons();
   await seedCloseReasons();
   await seedNotionalCostConfigs();
   await seedFamilyCategoryMetas();
