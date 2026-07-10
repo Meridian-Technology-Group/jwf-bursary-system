@@ -85,6 +85,7 @@ import Link from "next/link";
 import { cn } from "@/lib/utils";
 
 import { ApplicationRowActions } from "@/components/admin/application-row-actions";
+import type { CloseReasonOption } from "@/components/admin/close-application-dialog";
 import { bulkAssignApplicationsAction } from "@/app/(admin)/applications/[id]/actions";
 import { bulkReassessmentInviteFromApplicationsAction } from "@/app/(admin)/invitations/actions";
 
@@ -183,6 +184,11 @@ interface ApplicationTableProps {
    */
   reassessEligibleActive?: boolean;
   /**
+   * Active close reasons for the per-row Close dialog (item 4.1). Only
+   * populated for ADMIN — the Close action is ADMIN-only (Story 2.1).
+   */
+  closeReasons?: CloseReasonOption[];
+  /**
    * Academic year of the open round re-assessment invites would target, or null
    * when there is no open round. Surfaced in the bulk-invite confirmation.
    */
@@ -219,6 +225,9 @@ const REVIEW_PHASE_BADGE_STYLES: Record<ReviewPhase, string> = {
   COMPLETED: "bg-green-50 text-green-700",
   QUALIFIES: "bg-emerald-50 text-emerald-700",
   DOES_NOT_QUALIFY: "bg-neutral-100 text-neutral-500",
+  // Item 2's unified terminal state — same neutral treatment as the legacy
+  // DOES_NOT_QUALIFY row it converges with.
+  CLOSED: "bg-neutral-100 text-neutral-500",
 };
 
 /** Status column badge (Item 1.1) — read-only; same wording as the detail page. */
@@ -544,6 +553,7 @@ export function ApplicationTable({
   activeFilter,
   reassessEligibleActive = false,
   reassessTargetRound = null,
+  closeReasons = [],
 }: ApplicationTableProps) {
   const router = useRouter();
 
@@ -840,8 +850,9 @@ export function ApplicationTable({
                 formStatus={row.formStatus}
                 assessmentStatus={row.assessmentStatus}
                 outcome={row.outcome}
-                bursaryAccountId={row.bursaryAccountId}
-                bursaryAccountStatus={row.bursaryAccountStatus}
+                closedAt={row.closedAt}
+                isAdmin={userRole === "ADMIN"}
+                closeReasons={closeReasons}
               />
             </div>
           );

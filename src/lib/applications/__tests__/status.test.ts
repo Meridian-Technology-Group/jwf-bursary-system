@@ -27,6 +27,7 @@ describe("status service — review-phase derivation (PR-6a)", () => {
         formStatus: "IN_PROGRESS",
         assessmentStatus: null,
         outcome: null,
+        closedAt: null,
       })
     ).toBe("PRE_SUBMISSION");
     // submitted, no assessment / NOT_STARTED → SUBMITTED (awaiting review)
@@ -35,6 +36,7 @@ describe("status service — review-phase derivation (PR-6a)", () => {
         formStatus: "SUBMITTED",
         assessmentStatus: null,
         outcome: null,
+        closedAt: null,
       })
     ).toBe("SUBMITTED");
     expect(
@@ -42,6 +44,7 @@ describe("status service — review-phase derivation (PR-6a)", () => {
         formStatus: "SUBMITTED",
         assessmentStatus: "NOT_STARTED",
         outcome: null,
+        closedAt: null,
       })
     ).toBe("SUBMITTED");
     // assessment IN_PROGRESS → NOT_STARTED (review in progress)
@@ -50,6 +53,7 @@ describe("status service — review-phase derivation (PR-6a)", () => {
         formStatus: "SUBMITTED",
         assessmentStatus: "IN_PROGRESS",
         outcome: null,
+        closedAt: null,
       })
     ).toBe("NOT_STARTED");
     // assessment PAUSED → PAUSED
@@ -58,6 +62,7 @@ describe("status service — review-phase derivation (PR-6a)", () => {
         formStatus: "SUBMITTED",
         assessmentStatus: "PAUSED",
         outcome: null,
+        closedAt: null,
       })
     ).toBe("PAUSED");
     // assessment COMPLETED, no outcome → COMPLETED
@@ -66,6 +71,7 @@ describe("status service — review-phase derivation (PR-6a)", () => {
         formStatus: "SUBMITTED",
         assessmentStatus: "COMPLETED",
         outcome: null,
+        closedAt: null,
       })
     ).toBe("COMPLETED");
     // outcomes → QUALIFIES / DOES_NOT_QUALIFY
@@ -74,6 +80,7 @@ describe("status service — review-phase derivation (PR-6a)", () => {
         formStatus: "SUBMITTED",
         assessmentStatus: "COMPLETED",
         outcome: "AWARDED",
+        closedAt: null,
       })
     ).toBe("QUALIFIES");
     expect(
@@ -81,6 +88,7 @@ describe("status service — review-phase derivation (PR-6a)", () => {
         formStatus: "SUBMITTED",
         assessmentStatus: "COMPLETED",
         outcome: "QUALIFIES_NOT_AWARDED",
+        closedAt: null,
       })
     ).toBe("QUALIFIES");
     expect(
@@ -88,6 +96,7 @@ describe("status service — review-phase derivation (PR-6a)", () => {
         formStatus: "SUBMITTED",
         assessmentStatus: "COMPLETED",
         outcome: "DOES_NOT_QUALIFY",
+        closedAt: null,
       })
     ).toBe("DOES_NOT_QUALIFY");
   });
@@ -440,5 +449,51 @@ describe("status service — reopenAssessmentForMaterialChange (soft send-back)"
     );
     expect(res).toEqual({ formStatus: "IN_PROGRESS", assessmentDiscarded: false });
     expect(tx.application.update).toHaveBeenCalledTimes(1);
+  });
+});
+
+// ─── Item 2: CLOSED phase precedence ─────────────────────────────────────────
+
+import { deriveReviewPhase as derive } from "../status";
+
+describe("deriveReviewPhase — CLOSED (item 2)", () => {
+  const closedAt = new Date("2026-07-01T00:00:00Z");
+
+  it("closedAt wins over every other lifecycle state", () => {
+    expect(
+      derive({
+        formStatus: "SUBMITTED",
+        assessmentStatus: "COMPLETED",
+        outcome: "AWARDED",
+        closedAt,
+      })
+    ).toBe("CLOSED");
+    expect(
+      derive({
+        formStatus: "IN_PROGRESS",
+        assessmentStatus: null,
+        outcome: null,
+        closedAt,
+      })
+    ).toBe("CLOSED");
+    expect(
+      derive({
+        formStatus: "SUBMITTED",
+        assessmentStatus: "PAUSED",
+        outcome: null,
+        closedAt,
+      })
+    ).toBe("CLOSED");
+  });
+
+  it("null closedAt leaves the existing mapping untouched", () => {
+    expect(
+      derive({
+        formStatus: "SUBMITTED",
+        assessmentStatus: "COMPLETED",
+        outcome: "AWARDED",
+        closedAt: null,
+      })
+    ).toBe("QUALIFIES");
   });
 });

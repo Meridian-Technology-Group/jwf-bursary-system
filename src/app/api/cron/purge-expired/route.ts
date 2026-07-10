@@ -84,7 +84,12 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     const candidates = await withAdminContext((tx) =>
       tx.application.findMany({
         where: {
-          assessment: { outcome: { in: TERMINAL_OUTCOMES } },
+          OR: [
+            { assessment: { outcome: { in: TERMINAL_OUTCOMES } } },
+            // Item 2: a unified close with no outcome is terminal too — it
+            // ages on the `closed` retention tier from applications.closed_at.
+            { closedAt: { not: null } },
+          ],
           // Skip rows already anonymised by a prior purge.
           childName: { not: "[Child Removed]" },
         },
@@ -96,6 +101,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
           leadApplicantId: true,
           submittedAt: true,
           archivedAt: true,
+          closedAt: true,
           documents: { select: { id: true, storagePath: true } },
           assessment: {
             select: {
@@ -118,6 +124,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
             outcome: app.assessment?.outcome ?? null,
             archivedAt: app.archivedAt,
             submittedAt: app.submittedAt,
+            closedAt: app.closedAt,
           },
           app.bursaryAccount
             ? {
@@ -137,6 +144,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
           outcome: app.assessment?.outcome ?? null,
           archivedAt: app.archivedAt,
           submittedAt: app.submittedAt,
+          closedAt: app.closedAt,
         },
         app.bursaryAccount
           ? { status: app.bursaryAccount.status, closedAt: app.bursaryAccount.closedAt }

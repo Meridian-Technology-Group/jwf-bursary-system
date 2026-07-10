@@ -28,4 +28,7 @@ export const REVIEW_PHASE_LABEL: Record<ReviewPhase, string> = {
   COMPLETED: "Assessment complete",
   QUALIFIES: "Active",
   DOES_NOT_QUALIFY: "Closed",
+  // Item 2's real unified terminal state — converges with the legacy
+  // DOES_NOT_QUALIFY wording above, per the flow-map vocabulary.
+  CLOSED: "Closed",
 };

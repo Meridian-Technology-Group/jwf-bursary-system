@@ -184,6 +184,7 @@ export default async function AssessmentPage({ params }: Props) {
     formStatus: application.formStatus,
     assessmentStatus: assessment?.status ?? null,
     outcome: assessment?.outcome ?? null,
+    closedAt: application.closedAt,
   });
   if (reviewPhase === "PRE_SUBMISSION") {
     redirect(`/applications/${params.id}`);

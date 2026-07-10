@@ -26,10 +26,16 @@ import type {
 } from "@prisma/client";
 
 /**
- * The 7-value review-phase vocabulary the queue filter speaks. Names match the
- * old fused `ApplicationStatus` enum verbatim so URL params (`?status=PAUSED`),
- * the multi-select labels and cockpit drill-in links read unchanged. This is a
- * DERIVED projection of the lifecycle columns, not a stored column.
+ * The review-phase vocabulary the queue filter speaks. The original 7 names
+ * match the old fused `ApplicationStatus` enum verbatim so URL params
+ * (`?status=PAUSED`), the multi-select labels and cockpit drill-in links read
+ * unchanged. This is a DERIVED projection of the lifecycle columns, not a
+ * stored column.
+ *
+ * CLOSED (item 2) is the 8th value: the unified terminal state, derived from
+ * `applications.closed_at`. It takes TOP precedence — a closed application is
+ * CLOSED regardless of its form/assessment/outcome columns, and every other
+ * phase requires `closedAt == null`, so the phases stay mutually exclusive.
  */
 export type ReviewPhase =
   | "PRE_SUBMISSION"
@@ -38,9 +44,10 @@ export type ReviewPhase =
   | "PAUSED"
   | "COMPLETED"
   | "QUALIFIES"
-  | "DOES_NOT_QUALIFY";
+  | "DOES_NOT_QUALIFY"
+  | "CLOSED";
 
-/** Every review phase, in canonical (old-enum) order. */
+/** Every review phase, in canonical (old-enum, then CLOSED) order. */
 export const ALL_REVIEW_PHASES: ReviewPhase[] = [
   "PRE_SUBMISSION",
   "SUBMITTED",
@@ -49,6 +56,7 @@ export const ALL_REVIEW_PHASES: ReviewPhase[] = [
   "COMPLETED",
   "QUALIFIES",
   "DOES_NOT_QUALIFY",
+  "CLOSED",
 ];
 
 /** Minimal lifecycle facts a row exposes for client-side phase matching. */
@@ -56,6 +64,8 @@ export interface ReviewPhaseFacts {
   formStatus: ApplicationFormStatus;
   assessmentStatus: AssessmentStatus | null;
   outcome: AssessmentOutcome | null;
+  /** Unified close marker (item 2) — non-null wins over everything else. */
+  closedAt: Date | null;
 }
 
 /**
@@ -75,7 +85,13 @@ export function matchesReviewPhase(
   facts: ReviewPhaseFacts,
   phase: ReviewPhase
 ): boolean {
-  const { formStatus, assessmentStatus, outcome } = facts;
+  const { formStatus, assessmentStatus, outcome, closedAt } = facts;
+
+  // CLOSED wins over everything; every other phase requires "not closed" so
+  // the phases stay mutually exclusive (a closed application matches ONLY
+  // CLOSED, whatever its lifecycle columns say).
+  if (phase === "CLOSED") return closedAt != null;
+  if (closedAt != null) return false;
 
   switch (phase) {
     case "QUALIFIES":
@@ -109,24 +125,35 @@ export function matchesReviewPhase(
  */
 function reviewPhaseFragment(phase: ReviewPhase): Prisma.ApplicationWhereInput {
   switch (phase) {
+    case "CLOSED":
+      return { closedAt: { not: null } };
     case "QUALIFIES":
       return {
+        closedAt: null,
         assessment: {
           is: { outcome: { in: ["AWARDED", "QUALIFIES_NOT_AWARDED"] } },
         },
       };
     case "DOES_NOT_QUALIFY":
-      return { assessment: { is: { outcome: "DOES_NOT_QUALIFY" } } };
+      return { closedAt: null, assessment: { is: { outcome: "DOES_NOT_QUALIFY" } } };
     case "COMPLETED":
       return {
+        closedAt: null,
         assessment: { is: { outcome: null, status: "COMPLETED" } },
       };
     case "PAUSED":
-      return { assessment: { is: { outcome: null, status: "PAUSED" } } };
+      return {
+        closedAt: null,
+        assessment: { is: { outcome: null, status: "PAUSED" } },
+      };
     case "NOT_STARTED":
-      return { assessment: { is: { outcome: null, status: "IN_PROGRESS" } } };
+      return {
+        closedAt: null,
+        assessment: { is: { outcome: null, status: "IN_PROGRESS" } },
+      };
     case "SUBMITTED":
       return {
+        closedAt: null,
         formStatus: "SUBMITTED",
         OR: [
           { assessment: { is: null } },
@@ -134,7 +161,7 @@ function reviewPhaseFragment(phase: ReviewPhase): Prisma.ApplicationWhereInput {
         ],
       };
     case "PRE_SUBMISSION":
-      return { formStatus: { not: "SUBMITTED" } };
+      return { closedAt: null, formStatus: { not: "SUBMITTED" } };
   }
 }
 
@@ -158,6 +185,9 @@ export function reviewPhaseWhere(
  */
 export function undecidedWhere(): Prisma.ApplicationWhereInput {
   return {
+    // A closed application is decided by definition (item 2), whatever its
+    // assessment columns say.
+    closedAt: null,
     OR: [{ assessment: { is: null } }, { assessment: { is: { outcome: null } } }],
   };
 }

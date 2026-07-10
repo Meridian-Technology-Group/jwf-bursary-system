@@ -18,7 +18,15 @@
  *   | Declined (DOES_NOT_QUALIFY)      | grace   | archivedAt → submittedAt|
  *   | Qualifies-not-awarded            | 6 years | submittedAt             |
  *   | Awarded                          | 7 years | account.closedAt        |
+ *   | Closed, no outcome (item 2)      | grace   | application.closedAt    |
  *   | In-flight (no terminal outcome)  | never   | —                       |
+ *
+ * The "closed" tier (item 2, unified close): an application closed via the
+ * reason-driven close with NO assessment outcome is terminal — it must not sit
+ * outside retention forever. It ages on a short grace window from its own
+ * closedAt (default = the declined grace; DPO to confirm alongside D6). An
+ * application that is closed AND has an outcome uses its outcome tier — the
+ * outcome anchors are the legally-motivated ones.
  *
  * The horizons are CONFIGURABLE via environment variables (so the DPO can
  * re-cut them without a code deploy) and fall back to the table above. The env
@@ -34,7 +42,11 @@
 import type { AssessmentOutcome, BursaryAccountStatus } from "@prisma/client";
 
 /** Where a retention window is measured from. */
-export type RetentionAnchor = "archivedAt" | "submittedAt" | "closedAt";
+export type RetentionAnchor =
+  | "archivedAt"
+  | "submittedAt"
+  | "closedAt"
+  | "applicationClosedAt";
 
 /** A single tier of the policy. */
 export interface RetentionTier {
@@ -53,6 +65,8 @@ export interface RetentionPolicy {
   qualifiesNotAwarded: RetentionTier;
   /** Awarded — anchored from account close, not first submission. */
   awarded: RetentionTier;
+  /** Unified close with no outcome (item 2) — grace from application close. */
+  closed: RetentionTier;
 }
 
 /**
@@ -65,6 +79,9 @@ export const DEFAULT_RETENTION_POLICY: RetentionPolicy = {
   declined: { amount: 30, unit: "days", anchor: "archivedAt" },
   qualifiesNotAwarded: { amount: 6, unit: "years", anchor: "submittedAt" },
   awarded: { amount: 7, unit: "years", anchor: "closedAt" },
+  // Item 2: closed-without-outcome mirrors the declined grace by default;
+  // DPO to confirm the figure alongside the D6 sign-off.
+  closed: { amount: 30, unit: "days", anchor: "applicationClosedAt" },
 };
 
 /** Parse a positive-integer env override, falling back to `fallback`. */
@@ -113,6 +130,13 @@ export function getRetentionPolicy(): RetentionPolicy {
         DEFAULT_RETENTION_POLICY.awarded.amount
       ),
     },
+    closed: {
+      ...DEFAULT_RETENTION_POLICY.closed,
+      amount: intFromEnv(
+        "RETENTION_CLOSED_GRACE_DAYS",
+        DEFAULT_RETENTION_POLICY.closed.amount
+      ),
+    },
   };
 }
 
@@ -121,6 +145,8 @@ export interface RetentionApplication {
   outcome: AssessmentOutcome | null;
   archivedAt: Date | null;
   submittedAt: Date | null;
+  /** Unified close marker (item 2); anchors the `closed` tier. */
+  closedAt: Date | null;
 }
 
 /** The minimal account shape the policy reasons over (null when none). */
@@ -170,6 +196,8 @@ function resolveAnchorDate(
       return application.submittedAt ?? null;
     case "closedAt":
       return account?.closedAt ?? null;
+    case "applicationClosedAt":
+      return application.closedAt ?? null;
   }
 }
 
@@ -215,10 +243,15 @@ export function isPurgeable(
     case "AWARDED":
       tierKey = "awarded";
       break;
-    // Legacy pre-3-value rows ("QUALIFIES") and null are NOT terminal here:
-    // they predate the award split and must be remapped (Epic 01 PR-6
-    // prerequisite) before they can be tiered. Treat as in-flight → never purge.
+    // Legacy pre-3-value rows ("QUALIFIES") and null are NOT terminal via the
+    // outcome — but a unified close (item 2) IS terminal: a closed application
+    // with no outcome ages on the `closed` tier from its own closedAt.
+    // Otherwise treat as in-flight → never purge.
     default:
+      if (application.closedAt != null) {
+        tierKey = "closed";
+        break;
+      }
       return notTerminal;
   }
 

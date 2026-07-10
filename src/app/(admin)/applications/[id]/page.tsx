@@ -361,6 +361,7 @@ export default async function ApplicantDataPage({ params }: Props) {
     formStatus: application.formStatus,
     assessmentStatus: application.assessment?.status ?? null,
     outcome: application.assessment?.outcome ?? null,
+    closedAt: application.closedAt,
   });
   const showEditOnBehalf =
     canEditOnBehalf(reviewPhase) &&
@@ -434,7 +435,6 @@ export default async function ApplicantDataPage({ params }: Props) {
             canManage={user.role === Role.ADMIN}
             accountId={bursaryAccountId}
             accountStatus={accountStatus ?? "ACTIVE"}
-            canWithdraw={isAssessor}
           />
         )}
 
@@ -555,7 +555,6 @@ export default async function ApplicantDataPage({ params }: Props) {
           canManage={user.role === Role.ADMIN}
           accountId={bursaryAccountId}
           accountStatus={accountStatus ?? "ACTIVE"}
-          canWithdraw={isAssessor}
         />
       )}
 
