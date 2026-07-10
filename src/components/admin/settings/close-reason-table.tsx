@@ -8,7 +8,7 @@
 
 import * as React from "react";
 import { useTransition } from "react";
-import { Plus, Pencil, X, Check, Loader2 } from "lucide-react";
+import { Plus, Pencil, X, Check, Loader2, HelpCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -21,6 +21,12 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { upsertCloseReasonAction } from "@/app/(admin)/settings/actions";
 import type { CloseReasonRow } from "@/lib/db/queries/reference-tables";
 
@@ -115,7 +121,6 @@ function EditableRow({ row }: EditableRowProps) {
               </Badge>
             )}
           </div>
-          <p className="mt-1 max-w-xs text-xs text-slate-400">{PURGE_HELPER_TEXT}</p>
         </TableCell>
         <TableCell>
           {row.isDeprecated ? (
@@ -194,7 +199,6 @@ function EditableRow({ row }: EditableRowProps) {
             aria-label="Purge on close"
           />
         </div>
-        <p className="mt-1 max-w-xs text-xs text-slate-400">{PURGE_HELPER_TEXT}</p>
       </TableCell>
       <TableCell />
       <TableCell>
@@ -294,7 +298,6 @@ function AddCloseReasonRow({
           className={PURGE_SWITCH_CLASS}
           aria-label="Purge on close"
         />
-        <p className="mt-1 max-w-xs text-xs text-slate-400">{PURGE_HELPER_TEXT}</p>
       </TableCell>
       <TableCell />
       <TableCell>
@@ -355,7 +358,8 @@ export function CloseReasonTable({ closeReasons }: CloseReasonTableProps) {
     closeReasons.reduce((max, cr) => Math.max(max, cr.sortOrder), 0) + 1;
 
   return (
-    <div className="space-y-3">
+    <TooltipProvider delayDuration={100}>
+      <div className="space-y-3">
       {/* Toolbar */}
       <div className="flex items-center justify-between gap-3">
         <div className="flex items-center gap-1 rounded-lg border border-slate-200 bg-white p-0.5">
@@ -392,7 +396,25 @@ export function CloseReasonTable({ closeReasons }: CloseReasonTableProps) {
           <TableHeader>
             <TableRow className="bg-slate-50">
               <TableHead className="text-xs">Label</TableHead>
-              <TableHead className="w-64 text-xs">Purge on Close</TableHead>
+              <TableHead className="w-64 text-xs">
+                <span className="inline-flex items-center gap-1">
+                  Purge on Close
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <button
+                        type="button"
+                        className="text-slate-400 hover:text-slate-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-full"
+                        aria-label="What does Purge on Close do?"
+                      >
+                        <HelpCircle className="h-3.5 w-3.5" aria-hidden="true" />
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent className="max-w-xs">
+                      {PURGE_HELPER_TEXT}
+                    </TooltipContent>
+                  </Tooltip>
+                </span>
+              </TableHead>
               <TableHead className="w-28 text-xs">Status</TableHead>
               <TableHead className="w-36 text-xs">Actions</TableHead>
             </TableRow>
@@ -425,6 +447,7 @@ export function CloseReasonTable({ closeReasons }: CloseReasonTableProps) {
         {closeReasons.filter((cr) => !cr.isDeprecated).length} active,{" "}
         {closeReasons.filter((cr) => cr.isDeprecated).length} deprecated
       </p>
-    </div>
+      </div>
+    </TooltipProvider>
   );
 }
