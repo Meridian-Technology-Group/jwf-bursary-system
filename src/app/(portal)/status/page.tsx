@@ -72,6 +72,7 @@ export default async function StatusPage() {
               academicYear: true,
               decisionDate: true,
               closeDate: true,
+              defaultSubmissionDeadline: true,
             },
           },
           assessment: {
@@ -94,7 +95,7 @@ export default async function StatusPage() {
   const deadline = isDraft
     ? getDeadlineStatus(
         { submissionDeadlineAt: application.submissionDeadlineAt },
-        { closeDate: application.round.closeDate }
+        application.round
       )
     : null;
 

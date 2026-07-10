@@ -46,6 +46,10 @@ const schema = z
     openDate: z.string().min(1, "Open date is required"),
     closeDate: z.string().min(1, "Close date is required"),
     decisionDate: z.string().optional(),
+    // Item 12: optional round-level default submission-by date. No cross-field
+    // refinement — a round with no default is valid, and the default may sit
+    // before or after closeDate (e.g. a grace period), so this is permissive.
+    defaultSubmissionDeadline: z.string().optional(),
   })
   .refine(
     (data) =>
@@ -75,6 +79,8 @@ export interface EditRoundDialogProps {
   openDate: string;
   closeDate: string;
   decisionDate: string;
+  /** ISO yyyy-MM-dd, or "" when the round has no default (Item 12). */
+  defaultSubmissionDeadline: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }
@@ -86,6 +92,7 @@ export function EditRoundDialog({
   openDate,
   closeDate,
   decisionDate,
+  defaultSubmissionDeadline,
   open,
   onOpenChange,
 }: EditRoundDialogProps) {
@@ -95,13 +102,13 @@ export function EditRoundDialog({
 
   const form = useForm<FormValues>({
     resolver: zodResolver(schema),
-    defaultValues: { openDate, closeDate, decisionDate },
+    defaultValues: { openDate, closeDate, decisionDate, defaultSubmissionDeadline },
   });
 
   function handleOpenChange(next: boolean) {
     onOpenChange(next);
     if (!next) {
-      form.reset({ openDate, closeDate, decisionDate });
+      form.reset({ openDate, closeDate, decisionDate, defaultSubmissionDeadline });
       setServerError(null);
     }
   }
@@ -114,6 +121,9 @@ export function EditRoundDialog({
     formData.set("openDate", values.openDate);
     formData.set("closeDate", values.closeDate);
     if (values.decisionDate) formData.set("decisionDate", values.decisionDate);
+    if (values.defaultSubmissionDeadline) {
+      formData.set("defaultSubmissionDeadline", values.defaultSubmissionDeadline);
+    }
 
     startTransition(async () => {
       const result = await updateRoundAction(roundId, formData);
@@ -195,6 +205,30 @@ export function EditRoundDialog({
                   <FormControl>
                     <Input type="date" {...field} disabled={isPending} />
                   </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <FormField
+              control={form.control}
+              name="defaultSubmissionDeadline"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>
+                    Default submission-by date{" "}
+                    <span className="text-xs font-normal text-slate-400">
+                      (optional)
+                    </span>
+                  </FormLabel>
+                  <FormControl>
+                    <Input type="date" {...field} disabled={isPending} />
+                  </FormControl>
+                  <p className="text-xs text-slate-400">
+                    Every application in this round inherits this deadline
+                    unless it has its own override. Clear the field and save to
+                    remove the round default.
+                  </p>
                   <FormMessage />
                 </FormItem>
               )}

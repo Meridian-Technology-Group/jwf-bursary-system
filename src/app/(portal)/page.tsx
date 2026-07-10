@@ -170,17 +170,17 @@ export default async function PortalDashboardPage() {
               if (app.formStatus !== "SUBMITTED") {
                 const round = await tx.round.findUnique({
                   where: { id: app.roundId },
-                  select: { closeDate: true },
+                  select: { closeDate: true, defaultSubmissionDeadline: true },
                 });
                 if (round) {
                   const { deadline } = effectiveSubmissionDeadline(
                     { submissionDeadlineAt: app.submissionDeadlineAt },
-                    { closeDate: round.closeDate }
+                    round
                   );
                   deadlineIso = deadline.toISOString();
                   deadlinePast = isSubmissionDeadlinePassed(
                     { submissionDeadlineAt: app.submissionDeadlineAt },
-                    { closeDate: round.closeDate }
+                    round
                   );
                 }
               }

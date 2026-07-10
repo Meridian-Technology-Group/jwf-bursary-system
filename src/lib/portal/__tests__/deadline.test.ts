@@ -6,7 +6,10 @@ import {
   CLOSING_SOON_HOURS,
 } from "@/lib/portal/deadline";
 
-const round = { closeDate: new Date("2026-06-30T00:00:00.000Z") };
+const round = {
+  closeDate: new Date("2026-06-30T00:00:00.000Z"),
+  defaultSubmissionDeadline: null,
+};
 
 describe("getDeadlineStatus (Epic 05 §3.2)", () => {
   it("uses the per-application override when set (instant verbatim)", () => {

@@ -25,16 +25,20 @@ import {
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { setSubmissionDeadlineAction } from "@/app/(admin)/applications/[id]/actions";
+import type { SubmissionDeadlineSource } from "@/lib/rounds/submission-deadline";
 
 interface SubmissionDeadlineCardProps {
   applicationId: string;
   /** Current per-application override as an ISO string, or null. */
   submissionDeadlineAt: string | null;
-  /** The round close date (ISO) shown as the inherited fallback. */
+  /** The round close date (ISO) shown as the ultimate fallback. */
   roundCloseDate: string;
-  /** Pre-computed effective deadline (ISO) + whether it is an override. */
+  /** The round's default submission-by date (ISO), or null (Item 12). */
+  roundDefaultDeadline: string | null;
+  /** Pre-computed effective deadline (ISO). */
   effectiveDeadline: string;
-  isOverride: boolean;
+  /** Which tier produced `effectiveDeadline` — drives the provenance label. */
+  source: SubmissionDeadlineSource;
 }
 
 /** Converts an ISO instant to the `datetime-local` input value (local time). */
@@ -62,8 +66,9 @@ export function SubmissionDeadlineCard({
   applicationId,
   submissionDeadlineAt,
   roundCloseDate,
+  roundDefaultDeadline,
   effectiveDeadline,
-  isOverride,
+  source,
 }: SubmissionDeadlineCardProps) {
   const router = useRouter();
   const [value, setValue] = useState<string>(toLocalInput(submissionDeadlineAt));
@@ -106,9 +111,14 @@ export function SubmissionDeadlineCard({
           <span className="font-medium text-slate-800">
             {formatDisplay(effectiveDeadline)}
           </span>{" "}
-          {isOverride ? (
+          {source === "override" ? (
             <span className="rounded-full bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-700">
               Override
+            </span>
+          ) : source === "roundDefault" ? (
+            <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-500">
+              From round default
+              {roundDefaultDeadline && ` (${formatDisplay(roundDefaultDeadline)})`}
             </span>
           ) : (
             <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-500">

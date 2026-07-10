@@ -106,14 +106,14 @@ export default async function SectionPage({ params }: PageProps) {
     (tx) =>
       tx.round.findUnique({
         where: { id: application.roundId },
-        select: { closeDate: true },
+        select: { closeDate: true, defaultSubmissionDeadline: true },
       })
   );
   if (
     deadlineRound &&
     isSubmissionDeadlinePassed(
       { submissionDeadlineAt: application.submissionDeadlineAt },
-      { closeDate: deadlineRound.closeDate }
+      deadlineRound
     )
   ) {
     redirect("/status");
