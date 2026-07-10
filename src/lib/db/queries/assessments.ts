@@ -191,18 +191,23 @@ export async function getAssessment(
  * Creates a new Assessment record with NOT_STARTED status.
  * Initialises empty earner records for PARENT_1 and PARENT_2.
  *
- * CALC-07: new assessments are stamped `calculationVersion: 2` so they are
- * dispatched to the full notional model (engine v2). Every pre-existing
- * assessment keeps `calculationVersion: 1` (the column default) and continues
- * to render/recompute on the untouched v1 path. The default parameter keeps the
- * two call sites (begin + proceed-without-second-parent) on v2 with no
- * signature change while remaining overridable for tests.
+ * CALC-07: `calculationVersion` dispatches the engine — `1` = the abridged
+ * 4-stage calculator (v1 form/engine, untouched), `2` = the full notional
+ * model (v2 form + engine).
+ *
+ * ⚠️ v2 STAMP GATED UNTIL CALC-08. The default stays `1` so a new assessment
+ * on staging (the client-testing env) still completes into a recommendation
+ * screen that understands its outputs — the recommendation screen is not yet
+ * v2-aware. CALC-08 (recommendation screen v2) flips this default to `2` in
+ * the same PR that makes the downstream screen v2-aware; until then the v2
+ * form ships dark. The explicit parameter stays so tests (and CALC-08) can
+ * exercise the v2 creation path directly.
  */
 export async function createAssessment(
   tx: Tx,
   applicationId: string,
   assessorId: string,
-  calculationVersion: number = 2
+  calculationVersion: number = 1
 ): Promise<AssessmentWithRelations> {
   const assessment = await tx.assessment.create({
     data: {

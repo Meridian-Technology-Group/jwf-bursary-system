@@ -6,7 +6,10 @@ import {
   derivePortfolioType,
   assetsToSavings,
   assetsToTransport,
+  isIncomeRecordEmpty,
+  shouldEnableSecondEarner,
 } from '../prefill'
+import { calculateHouseholdNetIncome } from '../income'
 import type { AssetsLiabilitiesData, ParentIncomeRecord } from '@/types/application'
 
 // ─── parentIncomeToAssessorRecord ──────────────────────────────────────────
@@ -193,5 +196,74 @@ describe('assetsToTransport', () => {
   })
   it('both false for null assets', () => {
     expect(assetsToTransport(null)).toEqual({ usesCar: false, usesPublicTransport: false })
+  })
+})
+
+// ─── Second-earner derivation (review fix #1) ───────────────────────────────
+
+describe('isIncomeRecordEmpty', () => {
+  it('true for null/undefined and for a bare placeholder record', () => {
+    expect(isIncomeRecordEmpty(null)).toBe(true)
+    expect(isIncomeRecordEmpty(undefined)).toBe(true)
+    expect(isIncomeRecordEmpty({ total: 0, documentsConfirmed: false })).toBe(true)
+  })
+
+  it('false when any income sub-block is present — even at £0', () => {
+    expect(
+      isIncomeRecordEmpty({ employed: { annualSalaryPaye: 0 }, total: 0, documentsConfirmed: false })
+    ).toBe(false)
+  })
+
+  it('false when a nonzero total is carried without sub-blocks', () => {
+    expect(isIncomeRecordEmpty({ total: 12_000, documentsConfirmed: false })).toBe(false)
+  })
+})
+
+describe('shouldEnableSecondEarner', () => {
+  const empty = { total: 0, documentsConfirmed: false }
+  const populated = { employed: { annualSalaryPaye: 18_000 }, total: 18_000, documentsConfirmed: false }
+
+  it('locked on when a submitted secondary forces two-earner mode', () => {
+    expect(shouldEnableSecondEarner(true, null, empty)).toBe(true)
+  })
+
+  it('enabled by a populated STORED Parent 2 record', () => {
+    expect(shouldEnableSecondEarner(false, populated, empty)).toBe(true)
+  })
+
+  it('enabled by a populated PREFILL Parent 2 record (single-primary submission with parent2Income)', () => {
+    expect(shouldEnableSecondEarner(false, null, populated)).toBe(true)
+  })
+
+  it('disabled when there is no forced mode and both records are empty', () => {
+    expect(shouldEnableSecondEarner(false, empty, empty)).toBe(false)
+    expect(shouldEnableSecondEarner(false, null, null)).toBe(false)
+  })
+})
+
+describe('regression — single-primary submission with parent2Income (review blocker #1)', () => {
+  it('household income includes BOTH parents when Parent 2 came from the primary submission', () => {
+    // A two-parent household applying via ONE primary submission: Parent 2's
+    // income lives in the primary's parent2Income — no secondary contributor.
+    const submittedParent1: ParentIncomeRecord = {
+      employed: { annualSalaryPaye: 30_000 },
+      total: 0,
+      documentsConfirmed: true,
+    }
+    const submittedParent2: ParentIncomeRecord = {
+      employed: { annualSalaryPaye: 18_000 },
+      total: 0,
+      documentsConfirmed: true,
+    }
+
+    const p1 = parentIncomeToAssessorRecord(submittedParent1)
+    const p2 = parentIncomeToAssessorRecord(submittedParent2)
+
+    // The prefilled Parent 2 record must enable the second earner (no forced mode)…
+    expect(shouldEnableSecondEarner(false, null, p2)).toBe(true)
+
+    // …and the engine must then sum BOTH earners — the pre-fix behaviour
+    // (Parent 2 silently discarded) would have yielded 30,000.
+    expect(calculateHouseholdNetIncome([p1, p2])).toBe(48_000)
   })
 })

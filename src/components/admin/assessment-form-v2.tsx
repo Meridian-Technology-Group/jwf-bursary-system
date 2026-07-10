@@ -47,7 +47,11 @@ import { getNotionalCostAmount, getFamilyCategoryMeta } from "@/lib/assessment/r
 import { calculateSchoolingYearsRemainingFromEntry, type EntryYearGroupCode } from "@/lib/assessment/schooling-years";
 import { calculateDerivedSavings } from "@/lib/assessment/stage2-assets";
 import { applyFamilyTypeDefaults, type OverridableField } from "@/lib/assessment/auto-populate";
-import { useAssessmentCalculationV2 } from "@/hooks/use-assessment-calculation-v2";
+import { shouldEnableSecondEarner } from "@/lib/assessment/v2/prefill";
+import {
+  useAssessmentCalculationV2,
+  runAssessmentV2,
+} from "@/hooks/use-assessment-calculation-v2";
 import { EarnerFormV2, CurrencyInput } from "@/components/admin/earner-form-v2";
 import { AssessmentCalcStripV2 } from "@/components/admin/assessment-calc-strip-v2";
 import {
@@ -139,8 +143,6 @@ const MULTI_PROPERTY_HELPER =
   "OR (2) an additional property generates rental income; OR (3) additional properties collectively " +
   "hold substantial equity. Assessor judgement (assumption CALC-A7).";
 
-const EMPTY_INCOME: AssessorIncomeRecord = { total: 0, documentsConfirmed: false };
-
 function fmtMoney(v: number | null | undefined): string {
   if (v == null) return "—";
   return new Intl.NumberFormat("en-GB", { style: "currency", currency: "GBP", minimumFractionDigits: 2 }).format(v);
@@ -227,9 +229,23 @@ export function AssessmentFormV2({
   const router = useRouter();
   const isReadOnly = readOnlyProp || assessment.status === "COMPLETED";
 
-  // Two-earner mode: forced by a submitted secondary, unless the assessor has
-  // overridden to proceed without them. Otherwise single-earner.
-  const twoEarner = forceTwoEarner && !secondaryParentOverride;
+  // Two-earner mode (review fix #1 — data-driven, never contributor-only):
+  //  - LOCKED ON while a submitted secondary contributor exists with no
+  //    proceed-without-second-parent override.
+  //  - Otherwise ENABLED whenever the stored PARENT_2 record or the prefilled
+  //    `parent2Income` (two-parent household submitted by a single primary)
+  //    carries income data — a populated Parent 2 record is never silently
+  //    discarded.
+  //  - PLUS a manual assessor toggle (below, section B), mirroring v1's
+  //    sole-parent-toggle philosophy — covering e.g. the override-but-still-
+  //    two-earner case.
+  const forcedTwoEarner = forceTwoEarner && !secondaryParentOverride;
+  const storedParent2Detail =
+    assessment.earners.find((e) => e.earnerLabel === "PARENT_2")?.incomeDetail ?? null;
+  const [secondEarnerEnabled, setSecondEarnerEnabled] = React.useState<boolean>(() =>
+    shouldEnableSecondEarner(forcedTwoEarner, storedParent2Detail, prefill.parent2Income)
+  );
+  const twoEarner = forcedTwoEarner || secondEarnerEnabled;
 
   // ── State: family / fees / schooling ────────────────────────────────────────
   const [familyTypeCategory, setFamilyTypeCategory] = React.useState<number>(
@@ -286,8 +302,11 @@ export function AssessmentFormV2({
   const [debts, setDebts] = React.useState<DebtsRecord>(
     assessment.property?.debts ?? prefill.debts
   );
+  // Portfolio type is persisted inside the property_assets JSONB (review fix
+  // #3): stored-first so an assessor override survives reloads instead of
+  // reverting to the parent-derived prefill.
   const [portfolioType, setPortfolioType] = React.useState<PropertyPortfolioType>(
-    prefill.portfolioType
+    assessment.property?.propertyAssets?.portfolioType ?? prefill.portfolioType
   );
   const [cashSavings, setCashSavings] = React.useState<number>(
     Number(assessment.property?.cashSavings ?? prefill.cashSavings) || 0
@@ -388,33 +407,39 @@ export function AssessmentFormV2({
       schoolingYearsRemaining
     );
 
+    // Review fix #4: recompute SYNCHRONOUSLY from the current input at save
+    // time instead of reading the debounced hook output — Complete/Pause
+    // clicked inside the 150 ms debounce window must persist the calc for the
+    // data on screen, never a pre-edit stale one.
+    const freshOutput = runAssessmentV2(input, referenceBundle);
+
     // Snapshot the orchestrator output 1:1 onto the v2 columns (only when it
     // computed — leave nulls otherwise so a half-entered row isn't misleading).
-    const snapshot: Partial<AssessmentSaveInput> = output
+    const snapshot: Partial<AssessmentSaveInput> = freshOutput
       ? {
-          totalHouseholdNetIncome: output.householdNetIncome,
-          notionalEssentials: output.notionalEssentials,
-          notionalCar: output.notionalCar,
-          notionalPublicTransport: output.notionalPublicTransport,
-          notionalJwfAllowance: output.notionalJwfAllowance,
-          notionalSavingsBenchmark: output.notionalSavingsBenchmark,
-          savingsTestNumber: output.savingsTestNumber,
-          totalNotionalSpend: output.totalNotionalSpend,
-          ndiAfterNotionalSpend: output.ndiAfterNotionalSpend,
-          derivedYearlyDebtRepayments: output.derivedYearlyDebtRepayments,
-          yearlyDebtExposure: output.yearlyDebtExposure,
-          debtOverNdiRatio: output.debtOverNdiRatio,
-          debtStatusLabel: output.debtStatusLabel,
-          incomeCategory: output.incomeCategory,
-          propertyCategoryDerived: output.propertyCategoryDerived,
-          propertyEquityCategory: output.propertyEquityCategory,
-          financialEquityLabel: output.financialEquityLabel,
-          lifestyleSqueezeRatio: output.lifestyleSqueezeRatio,
-          lifestyleSqueezeLabel: output.lifestyleSqueezeLabel,
-          actualRemainingDi: output.actualRemainingDi,
-          theoreticalBenchmarkDi: output.theoreticalBenchmarkDi,
-          affordabilityAdjustedDi: output.affordabilityAdjustedDi,
-          recommendedPayableFees: output.recommendedPayableFees,
+          totalHouseholdNetIncome: freshOutput.householdNetIncome,
+          notionalEssentials: freshOutput.notionalEssentials,
+          notionalCar: freshOutput.notionalCar,
+          notionalPublicTransport: freshOutput.notionalPublicTransport,
+          notionalJwfAllowance: freshOutput.notionalJwfAllowance,
+          notionalSavingsBenchmark: freshOutput.notionalSavingsBenchmark,
+          savingsTestNumber: freshOutput.savingsTestNumber,
+          totalNotionalSpend: freshOutput.totalNotionalSpend,
+          ndiAfterNotionalSpend: freshOutput.ndiAfterNotionalSpend,
+          derivedYearlyDebtRepayments: freshOutput.derivedYearlyDebtRepayments,
+          yearlyDebtExposure: freshOutput.yearlyDebtExposure,
+          debtOverNdiRatio: freshOutput.debtOverNdiRatio,
+          debtStatusLabel: freshOutput.debtStatusLabel,
+          incomeCategory: freshOutput.incomeCategory,
+          propertyCategoryDerived: freshOutput.propertyCategoryDerived,
+          propertyEquityCategory: freshOutput.propertyEquityCategory,
+          financialEquityLabel: freshOutput.financialEquityLabel,
+          lifestyleSqueezeRatio: freshOutput.lifestyleSqueezeRatio,
+          lifestyleSqueezeLabel: freshOutput.lifestyleSqueezeLabel,
+          actualRemainingDi: freshOutput.actualRemainingDi,
+          theoreticalBenchmarkDi: freshOutput.theoreticalBenchmarkDi,
+          affordabilityAdjustedDi: freshOutput.affordabilityAdjustedDi,
+          recommendedPayableFees: freshOutput.recommendedPayableFees,
         }
       : {};
 
@@ -439,7 +464,9 @@ export function AssessmentFormV2({
       ...snapshot,
       earnersV2,
       propertyV2: {
-        propertyAssets,
+        // Review fix #3: the assessor's portfolio-type selection is persisted
+        // inside the property_assets JSONB so it survives reloads.
+        propertyAssets: { ...propertyAssets, portfolioType },
         debts,
         cashSavings,
         isasPepsShares,
@@ -454,7 +481,8 @@ export function AssessmentFormV2({
     else setSaveError(result.error);
   }, [
     isReadOnly,
-    output,
+    input,
+    referenceBundle,
     assessment.id,
     applicationId,
     twoEarner,
@@ -472,6 +500,7 @@ export function AssessmentFormV2({
     behindOnFees,
     dishonestyFlag,
     propertyAssets,
+    portfolioType,
     debts,
     cashSavings,
     isasPepsShares,
@@ -489,6 +518,10 @@ export function AssessmentFormV2({
 
   const handleComplete = async () => {
     setIsCompleting(true);
+    // Review fix #4: cancel any pending debounced auto-save, then persist a
+    // synchronously recomputed snapshot (handleSave recomputes from `input`)
+    // so the completed row provably matches the data on screen.
+    if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
     await handleSave();
     const result = await completeAssessmentAction(assessment.id, applicationId);
     setIsCompleting(false);
@@ -498,6 +531,8 @@ export function AssessmentFormV2({
 
   const handlePause = async () => {
     setIsPausing(true);
+    // Review fix #4 — same flush-before-persist as Complete.
+    if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
     await handleSave();
     const result = await pauseAssessmentAction(assessment.id, applicationId);
     setIsPausing(false);
@@ -524,7 +559,11 @@ export function AssessmentFormV2({
   };
 
   // ── Property/debt field helpers ─────────────────────────────────────────────
-  const setPropertyField = (slot: keyof PropertyAssetsRecord, key: "value" | "mortgageBalance", val: number) => {
+  const setPropertyField = (
+    slot: "home" | "second" | "other",
+    key: "value" | "mortgageBalance",
+    val: number
+  ) => {
     setPropertyAssets((prev) => ({ ...prev, [slot]: { ...prev[slot], [key]: val } }));
   };
   const setDebtField = (key: keyof DebtsRecord, val: number) => {
@@ -682,6 +721,27 @@ export function AssessmentFormV2({
             }}
           />
         </div>
+
+        {/* Second-earner toggle (review fix #1) — assessor-controlled unless a
+            submitted secondary contributor locks two-earner mode ON. */}
+        <label className="flex items-center gap-2">
+          <Checkbox
+            checked={twoEarner}
+            disabled={isReadOnly || forcedTwoEarner}
+            onCheckedChange={(c) => {
+              setSecondEarnerEnabled(c === true);
+              scheduleAutoSave();
+            }}
+            aria-label="Include a second earner (Parent 2)"
+          />
+          <span className="text-xs text-slate-600">
+            Include a second earner (Parent 2)
+            {forcedTwoEarner && (
+              <span className="text-slate-400"> — locked: the second parent has submitted</span>
+            )}
+          </span>
+        </label>
+
         {twoEarner && (
           <div className="rounded-lg border border-slate-100 p-3">
             <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Parent 2</p>

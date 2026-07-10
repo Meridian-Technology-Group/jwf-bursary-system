@@ -150,3 +150,52 @@ export function assetsToTransport(assets: AssetsLiabilitiesData | null | undefin
     usesPublicTransport: assets.usesPublicTransport === true,
   }
 }
+
+// ─── Second-earner derivation (CALC-07 review fix #1) ───────────────────────
+
+const INCOME_SUB_BLOCKS = [
+  'employed',
+  'selfEmployed',
+  'benefits',
+  'unemployed',
+  'retired',
+  'divorcedSeparated',
+  'thirdParty',
+] as const
+
+/**
+ * True when an assessor income record carries NO income data — no sub-block
+ * present and a zero total. Used to decide whether a Parent 2 record is real
+ * (must never be silently discarded) or just an empty placeholder.
+ */
+export function isIncomeRecordEmpty(rec: AssessorIncomeRecord | null | undefined): boolean {
+  if (!rec) return true
+  const hasBlock = INCOME_SUB_BLOCKS.some(
+    (key) => (rec as unknown as Record<string, unknown>)[key] != null,
+  )
+  return !hasBlock && num(rec.total) === 0
+}
+
+/**
+ * Whether the v2 form should render/sum a second earner. Data-driven, NOT
+ * merely contributor-driven: two-parent households applying via a single
+ * primary submission put Parent 2's income in the primary's `parent2Income`,
+ * so a populated stored/prefilled Parent 2 record enables the second earner
+ * even when no secondary contributor exists. The assessor can additionally
+ * toggle it manually in the form (mirroring v1's sole-parent-toggle
+ * philosophy); this derives only the initial/forced state.
+ *
+ * @param forceTwoEarner  A SUBMITTED secondary contributor with no override —
+ *                        second earner locked ON.
+ * @param storedParent2   The persisted PARENT_2 `income_detail`, if any.
+ * @param prefillParent2  The Parent 2 record pre-filled from the submission.
+ */
+export function shouldEnableSecondEarner(
+  forceTwoEarner: boolean,
+  storedParent2: AssessorIncomeRecord | null | undefined,
+  prefillParent2: AssessorIncomeRecord | null | undefined,
+): boolean {
+  if (forceTwoEarner) return true
+  if (!isIncomeRecordEmpty(storedParent2)) return true
+  return !isIncomeRecordEmpty(prefillParent2)
+}
