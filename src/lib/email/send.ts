@@ -24,8 +24,11 @@ import type { EmailTemplateType } from "./types";
  * Resolve the configured "from" address.
  * Falls back to a safe default if the env var is missing so that the module
  * does not crash during testing when the variable is not set.
+ *
+ * Exported so the bulk "Send Email" wizard (item 8) can surface the sending
+ * address to admins on Step 2 before they confirm a batch send.
  */
-function fromAddress(): string {
+export function fromAddress(): string {
   return (
     process.env.RESEND_FROM_EMAIL ??
     "bursary@updates.meridiantech.group"
