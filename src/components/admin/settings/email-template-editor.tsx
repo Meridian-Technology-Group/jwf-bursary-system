@@ -2,17 +2,21 @@
 
 /**
  * Email template editor.
- * Dropdown to select template type, then edit subject + body with merge field hints.
+ * Dropdown to select a template (system or custom), then edit subject + body
+ * with merge field hints. ADMIN-only "Add template" affordance creates a
+ * custom template; custom templates can also be soft-deleted (system
+ * templates cannot — Story 9.3).
  */
 
 import * as React from "react";
 import { useTransition } from "react";
-import { Loader2 } from "lucide-react";
+import { Loader2, Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
+import { Badge } from "@/components/ui/badge";
 import {
   Select,
   SelectContent,
@@ -21,12 +25,22 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import {
   Tooltip,
   TooltipContent,
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import {
+  createEmailTemplateAction,
+  deleteEmailTemplateAction,
   setEmailTemplateEnabledAction,
   upsertEmailTemplateAction,
 } from "@/app/(admin)/settings/actions";
@@ -34,7 +48,7 @@ import { isLockedEmailTemplateType } from "@/lib/email/locked-types";
 import type { EmailTemplateRow } from "@/lib/db/queries/reference-tables";
 import type { EmailTemplateType } from "@prisma/client";
 
-// ─── Template display labels ──────────────────────────────────────────────────
+// ─── Template display labels (system templates only — customs use `name`) ────
 
 const TEMPLATE_LABELS: Record<EmailTemplateType, string> = {
   INVITATION: "Invitation",
@@ -54,6 +68,13 @@ const TEMPLATE_LABELS: Record<EmailTemplateType, string> = {
   APPLICATION_RESTART_REQUIRED: "Application Rejected — Restart Required",
   APPLICATION_EDITED_ON_BEHALF: "Application Edited on Your Behalf",
 };
+
+function templateLabel(tpl: EmailTemplateRow): string {
+  if (tpl.isSystem && tpl.type) {
+    return TEMPLATE_LABELS[tpl.type] ?? tpl.type;
+  }
+  return tpl.name ?? "Untitled template";
+}
 
 // ─── Merge field hints ────────────────────────────────────────────────────────
 
@@ -82,8 +103,8 @@ interface EmailTemplateEditorProps {
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export function EmailTemplateEditor({ templates }: EmailTemplateEditorProps) {
-  const [selectedType, setSelectedType] = React.useState<EmailTemplateType | "">(
-    templates.length > 0 ? templates[0].type : ""
+  const [selectedId, setSelectedId] = React.useState<string>(
+    templates.length > 0 ? templates[0].id : ""
   );
   const [subject, setSubject] = React.useState("");
   const [body, setBody] = React.useState("");
@@ -93,21 +114,17 @@ export function EmailTemplateEditor({ templates }: EmailTemplateEditorProps) {
   const [saved, setSaved] = React.useState(false);
   const [isPending, startTransition] = useTransition();
   const [isToggling, startToggleTransition] = useTransition();
+  const [isDeleting, startDeleteTransition] = useTransition();
 
-  const isLocked = selectedType
-    ? isLockedEmailTemplateType(selectedType as EmailTemplateType)
-    : false;
+  const [addOpen, setAddOpen] = React.useState(false);
+  const [deleteOpen, setDeleteOpen] = React.useState(false);
+
+  const selected = templates.find((t) => t.id === selectedId) ?? null;
+  const isLocked = selected?.type ? isLockedEmailTemplateType(selected.type) : false;
 
   // Sync editor state when selection changes
   React.useEffect(() => {
-    if (!selectedType) {
-      setSubject("");
-      setBody("");
-      setMergeFields([]);
-      setEnabled(true);
-      return;
-    }
-    const tpl = templates.find((t) => t.type === selectedType);
+    const tpl = templates.find((t) => t.id === selectedId);
     if (tpl) {
       setSubject(tpl.subject);
       setBody(tpl.body);
@@ -116,22 +133,23 @@ export function EmailTemplateEditor({ templates }: EmailTemplateEditorProps) {
     } else {
       setSubject("");
       setBody("");
-      setMergeFields(COMMON_MERGE_FIELDS);
+      setMergeFields([]);
       setEnabled(true);
     }
     setSaved(false);
     setError(null);
-  }, [selectedType, templates]);
+  }, [selectedId, templates]);
 
   function handleToggleEnabled(next: boolean) {
-    if (!selectedType || isLocked) return;
+    if (!selected || isLocked) return;
     setError(null);
     setSaved(false);
     // Optimistic update; reverted on failure.
     const previous = enabled;
     setEnabled(next);
     const fd = new FormData();
-    fd.set("type", selectedType);
+    fd.set("id", selected.id);
+    if (selected.type) fd.set("type", selected.type);
     fd.set("enabled", String(next));
 
     startToggleTransition(async () => {
@@ -144,11 +162,12 @@ export function EmailTemplateEditor({ templates }: EmailTemplateEditorProps) {
   }
 
   function handleSave() {
-    if (!selectedType) return;
+    if (!selected) return;
     setError(null);
     setSaved(false);
     const fd = new FormData();
-    fd.set("type", selectedType);
+    fd.set("id", selected.id);
+    if (selected.type) fd.set("type", selected.type);
     fd.set("subject", subject);
     fd.set("body", body);
 
@@ -162,38 +181,72 @@ export function EmailTemplateEditor({ templates }: EmailTemplateEditorProps) {
     });
   }
 
+  function handleDelete() {
+    if (!selected) return;
+    setError(null);
+    const fd = new FormData();
+    fd.set("id", selected.id);
+
+    startDeleteTransition(async () => {
+      const result = await deleteEmailTemplateAction(fd);
+      if (result.success) {
+        setDeleteOpen(false);
+        setSelectedId(templates.find((t) => t.id !== selected.id)?.id ?? "");
+      } else {
+        setError(result.error);
+        setDeleteOpen(false);
+      }
+    });
+  }
+
   // Displayed merge fields: from template or common fallback
   const displayMergeFields =
     mergeFields.length > 0 ? mergeFields : COMMON_MERGE_FIELDS;
 
   return (
     <div className="space-y-5 max-w-2xl">
-      {/* Template selector */}
-      <div className="space-y-1.5">
-        <Label htmlFor="templateType" className="text-sm font-medium">
-          Template
-        </Label>
-        <Select
-          value={selectedType}
-          onValueChange={(v) => {
-            setSelectedType(v as EmailTemplateType);
-            setSaved(false);
-          }}
+      {/* Template selector + add */}
+      <div className="flex items-end gap-3">
+        <div className="space-y-1.5">
+          <Label htmlFor="templateId" className="text-sm font-medium">
+            Template
+          </Label>
+          <Select
+            value={selectedId}
+            onValueChange={(v) => {
+              setSelectedId(v);
+              setSaved(false);
+            }}
+          >
+            <SelectTrigger id="templateId" className="w-72">
+              <SelectValue placeholder="Select a template..." />
+            </SelectTrigger>
+            <SelectContent>
+              {templates.map((tpl) => (
+                <SelectItem key={tpl.id} value={tpl.id}>
+                  <span className="flex items-center gap-2">
+                    {templateLabel(tpl)}
+                    <Badge variant={tpl.isSystem ? "secondary" : "outline"} className="text-[10px]">
+                      {tpl.isSystem ? "System" : "Custom"}
+                    </Badge>
+                  </span>
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <Button
+          type="button"
+          variant="outline"
+          className="gap-2"
+          onClick={() => setAddOpen(true)}
         >
-          <SelectTrigger id="templateType" className="w-72">
-            <SelectValue placeholder="Select a template..." />
-          </SelectTrigger>
-          <SelectContent>
-            {templates.map((tpl) => (
-              <SelectItem key={tpl.type} value={tpl.type}>
-                {TEMPLATE_LABELS[tpl.type] ?? tpl.type}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+          <Plus className="h-4 w-4" aria-hidden="true" />
+          Add template
+        </Button>
       </div>
 
-      {selectedType && (
+      {selected && (
         <>
           {/* Enable / disable toggle */}
           <div className="flex items-start justify-between gap-4 rounded-lg border border-slate-200 bg-white px-4 py-3">
@@ -295,7 +348,7 @@ export function EmailTemplateEditor({ templates }: EmailTemplateEditorProps) {
             </p>
           </div>
 
-          {/* Save */}
+          {/* Save / Delete */}
           <div className="flex items-center gap-3">
             <Button
               onClick={handleSave}
@@ -307,6 +360,17 @@ export function EmailTemplateEditor({ templates }: EmailTemplateEditorProps) {
               )}
               Save Template
             </Button>
+            {!selected.isSystem && (
+              <Button
+                type="button"
+                variant="outline"
+                className="gap-2 text-red-600 border-red-200 hover:bg-red-50 hover:text-red-700"
+                onClick={() => setDeleteOpen(true)}
+              >
+                <Trash2 className="h-4 w-4" aria-hidden="true" />
+                Delete
+              </Button>
+            )}
             {saved && (
               <p className="text-sm text-emerald-600 font-medium" role="status">
                 Template saved
@@ -321,6 +385,151 @@ export function EmailTemplateEditor({ templates }: EmailTemplateEditorProps) {
           )}
         </>
       )}
+
+      <AddTemplateDialog open={addOpen} onOpenChange={setAddOpen} onCreated={setSelectedId} />
+
+      {selected && (
+        <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle>Delete &ldquo;{templateLabel(selected)}&rdquo;?</DialogTitle>
+              <DialogDescription>
+                This will permanently remove this template from every template
+                picker. This action cannot be undone.
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter>
+              <Button
+                variant="outline"
+                onClick={() => setDeleteOpen(false)}
+                disabled={isDeleting}
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="destructive"
+                onClick={handleDelete}
+                disabled={isDeleting}
+              >
+                {isDeleting ? "Deleting..." : "Delete Template"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
     </div>
+  );
+}
+
+// ─── Add template dialog ───────────────────────────────────────────────────────
+
+interface AddTemplateDialogProps {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onCreated: (id: string) => void;
+}
+
+function AddTemplateDialog({ open, onOpenChange, onCreated }: AddTemplateDialogProps) {
+  const [name, setName] = React.useState("");
+  const [subject, setSubject] = React.useState("");
+  const [body, setBody] = React.useState("");
+  const [error, setError] = React.useState<string | null>(null);
+  const [isPending, startTransition] = useTransition();
+
+  React.useEffect(() => {
+    if (open) {
+      setName("");
+      setSubject("");
+      setBody("");
+      setError(null);
+    }
+  }, [open]);
+
+  function handleCreate() {
+    setError(null);
+    const fd = new FormData();
+    fd.set("name", name);
+    fd.set("subject", subject);
+    fd.set("body", body);
+
+    startTransition(async () => {
+      const result = await createEmailTemplateAction(fd);
+      if (result.success) {
+        onOpenChange(false);
+        onCreated(result.id);
+      } else {
+        setError(result.error);
+      }
+    });
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle>Add a custom email template</DialogTitle>
+          <DialogDescription>
+            Create a reusable template for bulk sends or ad hoc communication.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-4">
+          <div className="space-y-1.5">
+            <Label htmlFor="newTemplateName" className="text-sm font-medium">
+              Name
+            </Label>
+            <Input
+              id="newTemplateName"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="e.g. Round Opening Reminder"
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="newTemplateSubject" className="text-sm font-medium">
+              Subject Line
+            </Label>
+            <Input
+              id="newTemplateSubject"
+              value={subject}
+              onChange={(e) => setSubject(e.target.value)}
+              placeholder="Enter email subject..."
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="newTemplateBody" className="text-sm font-medium">
+              Body
+            </Label>
+            <Textarea
+              id="newTemplateBody"
+              value={body}
+              onChange={(e) => setBody(e.target.value)}
+              rows={8}
+              className="font-mono text-sm leading-relaxed resize-y"
+              placeholder="Enter email body text..."
+            />
+          </div>
+          {error && (
+            <p className="text-sm text-red-600" role="alert">
+              {error}
+            </p>
+          )}
+        </div>
+
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={isPending}>
+            Cancel
+          </Button>
+          <Button
+            onClick={handleCreate}
+            disabled={isPending || !name.trim() || !subject.trim() || !body.trim()}
+            className="bg-primary-800 hover:bg-primary-700 gap-2"
+          >
+            {isPending && <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />}
+            Create Template
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
