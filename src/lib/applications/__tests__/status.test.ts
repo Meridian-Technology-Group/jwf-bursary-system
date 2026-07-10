@@ -11,6 +11,8 @@ import {
   defaultPausedUntil,
   PAUSE_WINDOW_DAYS,
   pauseAssessmentRow,
+  completeAssessmentRow,
+  AssessmentSnapshotMissingError,
   assertSubmittedAtUnset,
   SUBMITTED_AT_IMMUTABLE_MESSAGE,
   discardAssessment,
@@ -555,5 +557,67 @@ describe("deriveReviewPhase — CLOSED (item 2)", () => {
         closedAt: null,
       })
     ).toBe("QUALIFIES");
+  });
+});
+
+// ─── CALC-15: completeAssessmentRow — v2 snapshot guard ──────────────────────
+
+describe("completeAssessmentRow — v2 snapshot guard (CALC-15)", () => {
+  /**
+   * Fake tx exposing the assessment surface `completeAssessmentRow` uses: the
+   * pre-flight snapshot read (`findUniqueOrThrow`) and the status-flip write.
+   */
+  function makeTx(snapshot: {
+    calculationVersion: number;
+    totalHouseholdNetIncome: number | null;
+  }) {
+    return {
+      assessment: {
+        findUniqueOrThrow: vi.fn(async () => snapshot),
+        update: vi.fn(async () => ({})),
+      },
+    };
+  }
+
+  it("REJECTS completing a v2 assessment whose snapshot was never saved (null totalHouseholdNetIncome)", async () => {
+    const tx = makeTx({
+      calculationVersion: CURRENT_CALCULATION_VERSION,
+      totalHouseholdNetIncome: null,
+    });
+
+    await expect(
+      completeAssessmentRow(tx as never, "asmt-1", "IN_PROGRESS")
+    ).rejects.toBeInstanceOf(AssessmentSnapshotMissingError);
+    expect(tx.assessment.update).not.toHaveBeenCalled();
+  });
+
+  it("ALLOWS completing a v2 assessment with a persisted snapshot", async () => {
+    const tx = makeTx({
+      calculationVersion: CURRENT_CALCULATION_VERSION,
+      totalHouseholdNetIncome: 45000,
+    });
+
+    await completeAssessmentRow(tx as never, "asmt-1", "IN_PROGRESS");
+    expect(tx.assessment.update).toHaveBeenCalledWith({
+      where: { id: "asmt-1" },
+      data: { status: "COMPLETED", completedAt: expect.any(Date) },
+    });
+  });
+
+  it("does NOT guard a v1 assessment (calculationVersion 1) even with a null total", async () => {
+    const tx = makeTx({ calculationVersion: 1, totalHouseholdNetIncome: null });
+
+    await completeAssessmentRow(tx as never, "asmt-1", "IN_PROGRESS");
+    expect(tx.assessment.update).toHaveBeenCalledTimes(1);
+  });
+
+  it("still tolerates a NOT_STARTED source (pre-existing behaviour) when the v2 snapshot IS present", async () => {
+    const tx = makeTx({
+      calculationVersion: CURRENT_CALCULATION_VERSION,
+      totalHouseholdNetIncome: 12000,
+    });
+
+    await completeAssessmentRow(tx as never, "asmt-1", "NOT_STARTED");
+    expect(tx.assessment.update).toHaveBeenCalledTimes(1);
   });
 });

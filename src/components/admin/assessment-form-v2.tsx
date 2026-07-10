@@ -61,6 +61,8 @@ import {
   pauseAssessmentAction,
 } from "@/app/(admin)/applications/[id]/assessment/actions";
 import type { AssessmentSaveInput } from "@/lib/db/queries/assessments";
+import { reduceSaveError, canProceedAfterSave, type SaveOutcome } from "@/lib/assessment/v2/save-gate";
+import { toast } from "@/hooks/use-toast";
 
 // ─── Serialised (Decimal→number) shapes handed in from the server component ────
 
@@ -408,10 +410,16 @@ export function AssessmentFormV2({
   const [saveError, setSaveError] = React.useState<string | null>(null);
   const [lastSaved, setLastSaved] = React.useState<Date | null>(null);
 
-  const handleSave = React.useCallback(async () => {
-    if (isReadOnly) return;
+  // CALC-15 — returns whether the save round-trip SUCCEEDED so callers
+  // (Complete/Pause, below) can gate the status flip on it instead of firing
+  // it and forgetting the result. The "last save failed" banner (`saveError`)
+  // is driven by the same outcome via `reduceSaveError`, which only ever
+  // CLEARS it on success — it is never optimistically cleared beforehand, so
+  // it stays visible across the "Saving…" window of a retry until a save
+  // actually succeeds.
+  const handleSave = React.useCallback(async (): Promise<boolean> => {
+    if (isReadOnly) return true;
     setIsSaving(true);
-    setSaveError(null);
 
     const derivedSavings = calculateDerivedSavings(
       cashSavings,
@@ -495,8 +503,25 @@ export function AssessmentFormV2({
 
     const result = await saveAssessmentAction(assessment.id, applicationId, payload);
     setIsSaving(false);
-    if (result.success) setLastSaved(new Date());
-    else setSaveError(result.error);
+
+    const outcome: SaveOutcome = result.success
+      ? { success: true }
+      : { success: false, error: result.error };
+    setSaveError(reduceSaveError(outcome));
+
+    if (outcome.success) {
+      setLastSaved(new Date());
+    } else {
+      // CALC-15 — surface the failure visibly: a stale/broken save must never
+      // pass silently. Toast is transient; the inline banner (rendered from
+      // `saveError`, above) persists until the next successful save.
+      toast({
+        variant: "destructive",
+        title: "Save failed",
+        description: `${outcome.error} Your changes were NOT saved.`,
+      });
+    }
+    return canProceedAfterSave(outcome);
   }, [
     isReadOnly,
     input,
@@ -542,22 +567,44 @@ export function AssessmentFormV2({
     // synchronously recomputed snapshot (handleSave recomputes from `input`)
     // so the completed row provably matches the data on screen.
     if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
-    await handleSave();
+    // CALC-15 — save-gated: Complete must NEVER fire when the save it depends
+    // on failed (that is exactly how a stale-client save failure previously
+    // produced a COMPLETED assessment with a null v2 snapshot). handleSave
+    // has already surfaced the failure (toast + persistent banner); bail out
+    // here without touching status.
+    const saved = await handleSave();
+    if (!saved) {
+      setIsCompleting(false);
+      return;
+    }
     const result = await completeAssessmentAction(assessment.id, applicationId);
     setIsCompleting(false);
-    if (result.success) router.refresh();
-    else setSaveError(result.error);
+    if (result.success) {
+      router.refresh();
+    } else {
+      setSaveError(result.error);
+      toast({ variant: "destructive", title: "Complete failed", description: result.error });
+    }
   };
 
   const handlePause = async () => {
     setIsPausing(true);
     // Review fix #4 — same flush-before-persist as Complete.
     if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
-    await handleSave();
+    // CALC-15 — same save-gating as Complete: never pause over a failed save.
+    const saved = await handleSave();
+    if (!saved) {
+      setIsPausing(false);
+      return;
+    }
     const result = await pauseAssessmentAction(assessment.id, applicationId);
     setIsPausing(false);
-    if (result.success) router.refresh();
-    else setSaveError(result.error);
+    if (result.success) {
+      router.refresh();
+    } else {
+      setSaveError(result.error);
+      toast({ variant: "destructive", title: "Pause failed", description: result.error });
+    }
   };
 
   // ── Family-type change: refresh non-overridden school-age children default ──
@@ -621,8 +668,11 @@ export function AssessmentFormV2({
           </span>
           {lastSaved && <span>Saved {lastSaved.toLocaleTimeString("en-GB")}</span>}
           {saveError && (
-            <span className="flex items-center gap-1 text-error-600" role="alert">
-              <AlertTriangle className="h-3.5 w-3.5" aria-hidden="true" /> {saveError}
+            // CALC-15 — persistent until a save succeeds (see `reduceSaveError`);
+            // never silently cleared by a subsequent in-flight save attempt.
+            <span className="flex items-center gap-1 font-medium text-error-600" role="alert">
+              <AlertTriangle className="h-3.5 w-3.5" aria-hidden="true" />
+              Last save failed — data NOT saved. {saveError}
             </span>
           )}
         </div>
