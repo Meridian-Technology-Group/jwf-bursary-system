@@ -28,6 +28,7 @@ import {
 import { InviteFromContactDialog } from "./invite-from-contact-dialog";
 import { archiveContactAction } from "@/app/(admin)/contacts/actions";
 import type { ContactListItem } from "@/lib/db/queries/contacts";
+import { ADULT_TITLES, titleLabel } from "@/lib/contacts/titles";
 
 interface RoundOption {
   id: string;
@@ -39,16 +40,23 @@ function schoolShort(school: string): string {
 }
 
 /**
- * Split a stored `childName` into first / last for the two-column list view.
- * The register holds the child as a single string, so we treat the first
- * whitespace-delimited token as the first name and the remainder as the last
- * name. A single-token name leaves the last column blank.
+ * Fallback split of a stored `childName` for legacy rows saved before the name
+ * was split into dedicated first/surname columns. The last whitespace-delimited
+ * token becomes the surname and the remainder the first name.
  */
 function splitChildName(childName: string): { first: string; last: string } {
   const parts = childName.trim().split(/\s+/).filter(Boolean);
   if (parts.length === 0) return { first: "", last: "" };
-  const [first, ...rest] = parts;
-  return { first, last: rest.join(" ") };
+  if (parts.length === 1) return { first: "", last: parts[0] };
+  return { first: parts.slice(0, -1).join(" "), last: parts[parts.length - 1] };
+}
+
+/** Resolve a contact's child first/last, preferring the split columns. */
+function childNameParts(c: ContactListItem): { first: string; last: string } {
+  if (c.childFirstName !== null || c.childLastName !== null) {
+    return { first: c.childFirstName ?? "", last: c.childLastName ?? "" };
+  }
+  return splitChildName(c.childName);
 }
 
 function fmtDob(dob: Date | null): string {
@@ -63,13 +71,17 @@ function fmtDob(dob: Date | null): string {
 function toFormValues(c: ContactListItem & {
   phone: string | null;
 }): ContactFormValues {
+  const child = childNameParts(c);
   return {
     id: c.id,
+    title: c.title ?? "",
     firstName: c.firstName ?? "",
     lastName: c.lastName,
     email: c.email,
     phone: c.phone ?? "",
-    childName: c.childName,
+    childTitle: c.childTitle ?? "",
+    childFirstName: child.first,
+    childLastName: child.last,
     childDob: c.childDob
       ? new Date(c.childDob).toISOString().slice(0, 10)
       : "",
@@ -111,7 +123,14 @@ export function ContactsTable({
     const q = query.trim().toLowerCase();
     if (!q) return contacts;
     return contacts.filter((c) =>
-      [c.firstName, c.lastName, c.email, c.childName]
+      [
+        c.firstName,
+        c.lastName,
+        c.email,
+        c.childName,
+        c.childFirstName,
+        c.childLastName,
+      ]
         .filter(Boolean)
         .some((v) => (v as string).toLowerCase().includes(q))
     );
@@ -190,13 +209,14 @@ export function ContactsTable({
               </thead>
               <tbody className="divide-y divide-slate-100 bg-white">
                 {filtered.map((c) => {
-                  const child = splitChildName(c.childName);
+                  const child = childNameParts(c);
                   return (
                   <tr key={c.id} className="hover:bg-slate-50">
                     <td className="px-4 py-3 text-sm text-slate-700">
                       <div className="font-medium">
-                        {[c.firstName, c.lastName].filter(Boolean).join(" ") ||
-                          "—"}
+                        {[titleLabel(c.title, ADULT_TITLES), c.firstName, c.lastName]
+                          .filter(Boolean)
+                          .join(" ") || "—"}
                       </div>
                       <div className="text-xs text-slate-400">{c.email}</div>
                     </td>

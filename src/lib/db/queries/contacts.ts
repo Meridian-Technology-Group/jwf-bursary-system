@@ -19,10 +19,14 @@ import type { Contact, EntryYearGroup, School } from "@prisma/client";
 /** A contact row plus the derived register state for the table UI. */
 export interface ContactListItem {
   id: string;
+  title: string | null;
   firstName: string | null;
   lastName: string;
   email: string;
   phone: string | null;
+  childTitle: string | null;
+  childFirstName: string | null;
+  childLastName: string | null;
   childName: string;
   childDob: Date | null;
   school: School;
@@ -44,10 +48,14 @@ export interface ContactListItem {
 }
 
 export interface ContactWriteData {
+  title?: string | null;
   firstName?: string | null;
   lastName: string;
   email: string;
   phone?: string | null;
+  childTitle?: string | null;
+  childFirstName?: string | null;
+  childLastName?: string | null;
   childName: string;
   childDob?: Date | null;
   school: School;
@@ -82,10 +90,14 @@ export async function listContacts(
 
   return rows.map((c) => ({
     id: c.id,
+    title: c.title,
     firstName: c.firstName,
     lastName: c.lastName,
     email: c.email,
     phone: c.phone,
+    childTitle: c.childTitle,
+    childFirstName: c.childFirstName,
+    childLastName: c.childLastName,
     childName: c.childName,
     childDob: c.childDob,
     school: c.school,
@@ -127,10 +139,14 @@ export async function createContact(
 ): Promise<Contact> {
   return tx.contact.create({
     data: {
+      title: data.title ?? null,
       firstName: data.firstName ?? null,
       lastName: data.lastName,
       email: data.email,
       phone: data.phone ?? null,
+      childTitle: data.childTitle ?? null,
+      childFirstName: data.childFirstName ?? null,
+      childLastName: data.childLastName ?? null,
       childName: data.childName,
       childDob: data.childDob ?? null,
       school: data.school,
@@ -158,10 +174,14 @@ export async function updateContact(
   return tx.contact.update({
     where: { id },
     data: {
+      title: data.title ?? null,
       firstName: data.firstName ?? null,
       lastName: data.lastName,
       email: data.email,
       phone: data.phone ?? null,
+      childTitle: data.childTitle ?? null,
+      childFirstName: data.childFirstName ?? null,
+      childLastName: data.childLastName ?? null,
       childName: data.childName,
       childDob: data.childDob ?? null,
       school: data.school,

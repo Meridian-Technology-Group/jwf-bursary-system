@@ -45,14 +45,18 @@ import {
   createContactAction,
   updateContactAction,
 } from "@/app/(admin)/contacts/actions";
+import { ADULT_TITLES, CHILD_TITLES } from "@/lib/contacts/titles";
 
 export interface ContactFormValues {
   id?: string;
+  title: string;
   firstName: string;
   lastName: string;
   email: string;
   phone: string;
-  childName: string;
+  childTitle: string;
+  childFirstName: string;
+  childLastName: string;
   childDob: string;
   school: "TRINITY" | "WHITGIFT" | "";
   entryYear: string;
@@ -65,11 +69,14 @@ export interface ContactFormValues {
 }
 
 const schema = z.object({
+  title: z.string().optional(),
   firstName: z.string().optional(),
   lastName: z.string().min(1, "Parent surname is required"),
   email: z.string().email("A valid email address is required"),
   phone: z.string().optional(),
-  childName: z.string().min(1, "Child's name is required"),
+  childTitle: z.string().optional(),
+  childFirstName: z.string().optional(),
+  childLastName: z.string().min(1, "Child's surname is required"),
   childDob: z.string().optional(),
   school: z.enum(["TRINITY", "WHITGIFT"], { error: "A school is required" }),
   entryYear: z
@@ -87,11 +94,14 @@ const schema = z.object({
 type Values = z.infer<typeof schema>;
 
 const EMPTY: ContactFormValues = {
+  title: "",
   firstName: "",
   lastName: "",
   email: "",
   phone: "",
-  childName: "",
+  childTitle: "",
+  childFirstName: "",
+  childLastName: "",
   childDob: "",
   school: "",
   entryYear: "",
@@ -148,11 +158,14 @@ export function ContactFormDialog({
   function onSubmit(values: Values) {
     setServerError(null);
     const fd = new FormData();
+    if (values.title) fd.set("title", values.title);
     if (values.firstName) fd.set("firstName", values.firstName);
     fd.set("lastName", values.lastName);
     fd.set("email", values.email);
     if (values.phone) fd.set("phone", values.phone);
-    fd.set("childName", values.childName);
+    if (values.childTitle) fd.set("childTitle", values.childTitle);
+    if (values.childFirstName) fd.set("childFirstName", values.childFirstName);
+    fd.set("childLastName", values.childLastName);
     if (values.childDob) fd.set("childDob", values.childDob);
     fd.set("school", values.school);
     fd.set("entryYear", values.entryYear);
@@ -202,6 +215,34 @@ export function ContactFormDialog({
                 Lead applicant (parent)
               </legend>
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <FormField
+                  control={form.control}
+                  name="title"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Title</FormLabel>
+                      <Select
+                        onValueChange={field.onChange}
+                        value={field.value ?? ""}
+                        disabled={isPending}
+                      >
+                        <FormControl>
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select title" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          {ADULT_TITLES.map((t) => (
+                            <SelectItem key={t.value} value={t.value}>
+                              {t.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
                 <FormField
                   control={form.control}
                   name="firstName"
@@ -269,11 +310,52 @@ export function ContactFormDialog({
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <FormField
                   control={form.control}
-                  name="childName"
+                  name="childTitle"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Title</FormLabel>
+                      <Select
+                        onValueChange={field.onChange}
+                        value={field.value ?? ""}
+                        disabled={isPending}
+                      >
+                        <FormControl>
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select title" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          {CHILD_TITLES.map((t) => (
+                            <SelectItem key={t.value} value={t.value}>
+                              {t.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="childFirstName"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>First name</FormLabel>
+                      <FormControl>
+                        <Input {...field} disabled={isPending} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="childLastName"
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>
-                        Child&apos;s name <span className="text-red-500">*</span>
+                        Surname <span className="text-red-500">*</span>
                       </FormLabel>
                       <FormControl>
                         <Input {...field} disabled={isPending} />

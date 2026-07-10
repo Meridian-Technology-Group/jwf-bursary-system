@@ -133,7 +133,11 @@ function childDetailsRows(raw: unknown): SummaryRow[] {
         : "—",
     },
     { label: "Current school", value: d.currentSchool || "—" },
-    { label: "Place of birth", value: d.placeOfBirth || "—" },
+    {
+      label: "Place of birth",
+      value:
+        [d.placeOfBirthCity, d.placeOfBirth].filter(Boolean).join(", ") || "—",
+    },
   ];
   if (!d.sameAddressAsParent1 && d.childAddress) {
     rows.push({
@@ -335,7 +339,6 @@ function assetsRows(raw: unknown): SummaryRow[] {
     (d.residenceValue ?? 0) +
     (d.carValue ?? 0) +
     (d.otherPossessionsValue ?? 0) +
-    (d.otherNonFinancialAssetsValue ?? 0) +
     (d.totalCashBalance ?? 0) +
     (d.investmentsValue ?? 0) +
     otherProperties.reduce((sum, p) => sum + (p.value ?? 0), 0);

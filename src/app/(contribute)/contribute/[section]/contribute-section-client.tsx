@@ -116,7 +116,6 @@ function getDefaultValues(
         carOwnership: undefined,
         usesPublicTransport: undefined,
         otherPossessionsValue: 0,
-        otherNonFinancialAssetsValue: 0,
         totalCashBalance: 0,
         investmentsValue: 0,
         parent1CurrentAccountDocumentIds: [],

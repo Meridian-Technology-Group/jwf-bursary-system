@@ -22,12 +22,20 @@ export interface ChildDetailsData {
   school: School;
   /** Year group the child enters at (Y6/Y7/Y9/Y12/Other). Per §4 spec. */
   entryYearGroup: EntryYearGroup;
-  /** Child's full legal name */
+  /** Child's title (Master/Miss/Mr/Ms/Other) — optional */
+  childTitle?: string;
+  /** Child's first name(s) */
+  childFirstName: string;
+  /** Child's surname */
+  childSurname: string;
+  /** Child's full legal name — derived from first name + surname on write */
   childFullName: string;
   /** Gender */
   gender: string;
   /** ISO date string YYYY-MM-DD */
   dateOfBirth: string;
+  /** Town or city of birth */
+  placeOfBirthCity: string;
   /** Country of birth */
   placeOfBirth: string;
   /** Document slot ID for birth certificate */
@@ -429,7 +437,6 @@ export interface AssetsLiabilitiesData {
   usesPublicTransport: boolean;
   publicTransportMonthly?: number;
   otherPossessionsValue: number;
-  otherNonFinancialAssetsValue: number;
   // Financial assets & debt
   totalCashBalance: number;
   investmentsValue: number;

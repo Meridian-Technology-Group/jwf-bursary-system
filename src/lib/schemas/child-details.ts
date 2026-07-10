@@ -14,6 +14,52 @@ const reqString = (minLen: number, message: string) =>
     z.string().min(minLen, message)
   );
 
+/**
+ * Child title options. Children are typically addressed as Master/Miss, with
+ * Mr/Ms available for older applicants and Other as the escape hatch. Stored as
+ * a plain string (the Select constrains the value) and OPTIONAL.
+ */
+export const CHILD_TITLES = [
+  { value: "MASTER", label: "Master" },
+  { value: "MISS", label: "Miss" },
+  { value: "MR", label: "Mr" },
+  { value: "MS", label: "Ms" },
+  { value: "OTHER", label: "Other" },
+] as const;
+
+/**
+ * Join a title/first/surname triple into the single `childFullName` string that
+ * downstream consumers (review, summary, dependent-children prefill, etc.) read.
+ * Title is intentionally excluded so the stored full name stays a plain name.
+ */
+export function composeChildFullName(
+  firstName?: string | null,
+  surname?: string | null
+): string {
+  return [firstName, surname]
+    .map((s) => (s ?? "").trim())
+    .filter(Boolean)
+    .join(" ");
+}
+
+/**
+ * Split a legacy single `childFullName` into { firstName, surname } for seeding
+ * the split fields. The last whitespace-delimited token becomes the surname and
+ * everything before it the first name; a single token becomes the first name.
+ */
+export function splitChildFullName(full?: string | null): {
+  firstName: string;
+  surname: string;
+} {
+  const parts = (full ?? "").trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return { firstName: "", surname: "" };
+  if (parts.length === 1) return { firstName: parts[0], surname: "" };
+  return {
+    firstName: parts.slice(0, -1).join(" "),
+    surname: parts[parts.length - 1],
+  };
+}
+
 export const childAddressSchema = z.object({
   addressLine1: reqString(1, "Address line 1 is required"),
   addressLine2: z.string().optional(),
@@ -41,10 +87,13 @@ export const childDetailsSchema = z
     // captured on the parent form, so it is optional here. Any value carried in a
     // legacy draft is preserved on read.
     entryYearGroup: entryYearGroupSchema.optional(),
-    childFullName: z.preprocess(
-      (v) => (v == null ? "" : v),
-      z.string().min(2, "Child's full name is required").max(120, "Name is too long")
-    ),
+    childTitle: z.string().optional(),
+    childFirstName: reqString(1, "Child's first name is required"),
+    childSurname: reqString(1, "Child's surname is required"),
+    // Derived on write (see `.transform` below) from first name + surname. Kept
+    // in the stored blob for the many downstream consumers that read a single
+    // childFullName string; not entered directly on the form.
+    childFullName: z.string().optional(),
     gender: reqString(1, "Please select a gender"),
     dateOfBirth: z.preprocess(
       (v) => (v == null ? "" : v),
@@ -53,7 +102,8 @@ export const childDetailsSchema = z
         .min(1, "Date of birth is required")
         .regex(/^\d{4}-\d{2}-\d{2}$/, "Date must be in YYYY-MM-DD format")
     ),
-    placeOfBirth: reqString(1, "Place of birth is required"),
+    placeOfBirthCity: reqString(1, "Town or city of birth is required"),
+    placeOfBirth: reqString(1, "Country of birth is required"),
     birthCertificateDocumentId: z.string().optional(),
     sameAddressAsParent1: z.boolean(),
     // childAddress is validated manually below so the conditionally-hidden
@@ -115,6 +165,12 @@ export const childDetailsSchema = z
         path: ["childAddress", "postcode"],
       });
     }
-  });
+  })
+  // Keep the derived single-string childFullName in sync on every save so the
+  // downstream consumers that read it stay correct regardless of the entry flow.
+  .transform((data) => ({
+    ...data,
+    childFullName: composeChildFullName(data.childFirstName, data.childSurname),
+  }));
 
 export type ChildDetailsFormValues = z.infer<typeof childDetailsSchema>;

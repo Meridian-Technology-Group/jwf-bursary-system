@@ -42,7 +42,7 @@ import { AdditionalInfoForm } from "@/components/portal/sections/additional-info
 import { DeclarationForm } from "@/components/portal/sections/declaration-form";
 
 // Schemas
-import { childDetailsSchema } from "@/lib/schemas/child-details";
+import { childDetailsSchema, splitChildFullName } from "@/lib/schemas/child-details";
 import { familyIdSchema } from "@/lib/schemas/family-id";
 import { parentDetailsSchema } from "@/lib/schemas/parent-details";
 import { dependentChildrenSchema } from "@/lib/schemas/dependent-children";
@@ -190,6 +190,31 @@ function getDefaultValues(
   }
 
   if (existingData && typeof existingData === "object") {
+    // Back-compat: a CHILD_DETAILS draft saved before the name was split into
+    // title/first/surname holds only `childFullName`. Seed the split fields from
+    // it so the rebuilt form renders and re-validates the legacy value.
+    if (sectionType === "CHILD_DETAILS") {
+      const d = existingData as {
+        childFirstName?: string;
+        childSurname?: string;
+        childFullName?: string;
+        placeOfBirthCity?: string;
+      };
+      if (
+        d.childFirstName === undefined &&
+        d.childSurname === undefined &&
+        d.childFullName
+      ) {
+        const { firstName, surname } = splitChildFullName(d.childFullName);
+        return {
+          ...existingData,
+          childFirstName: firstName,
+          childSurname: surname,
+          placeOfBirthCity: d.placeOfBirthCity ?? "",
+        };
+      }
+      return existingData;
+    }
     // Back-compat: an in-flight PARENTS_INCOME draft may hold the LEGACY flat
     // shape. Normalise each parent record into the new status-driven shape so
     // the rebuilt form can render and re-validate it (Epic 02 §5.1).
@@ -236,18 +261,24 @@ function getDefaultValues(
   }
 
   switch (sectionType) {
-    case "CHILD_DETAILS":
+    case "CHILD_DETAILS": {
+      const seededName = splitChildFullName(seed.applicationChildName);
       return {
         school: seed.applicationSchool,
         entryYearGroup: undefined,
+        childTitle: "",
+        childFirstName: seededName.firstName,
+        childSurname: seededName.surname,
         childFullName: seed.applicationChildName ?? "",
         gender: "",
         dateOfBirth: "",
+        placeOfBirthCity: "",
         placeOfBirth: "",
         sameAddressAsParent1: true,
         currentSchool: "",
         currentSchoolStartDate: "",
       };
+    }
     case "PARENT_DETAILS":
       return {
         isSoleParent: undefined,
@@ -273,7 +304,7 @@ function getDefaultValues(
         propertyOwnership: undefined, residenceValue: 0, hasMortgage: undefined,
         hasOtherProperties: undefined, otherProperties: [], hasChargingOrder: undefined,
         carOwnership: undefined, usesPublicTransport: undefined,
-        otherPossessionsValue: 0, otherNonFinancialAssetsValue: 0,
+        otherPossessionsValue: 0,
         totalCashBalance: 0, investmentsValue: 0,
         parent1CurrentAccountDocumentIds: [], parent1SavingsAccountDocumentIds: [],
         parent1InvestmentDocumentIds: [], hasPersonalDebt: undefined,

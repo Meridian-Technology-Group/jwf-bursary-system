@@ -44,11 +44,18 @@ const optionalString = z
  * write 202 or 20255; the contact register is curated by hand, not imported.
  */
 const ContactSchema = z.object({
+  title: optionalString,
   firstName: optionalString,
   lastName: z.string().trim().min(1, "Parent surname is required").max(120),
   email: z.string().trim().email("A valid email address is required"),
   phone: optionalString,
-  childName: z.string().trim().min(1, "Child's name is required").max(200),
+  childTitle: optionalString,
+  childFirstName: optionalString,
+  childLastName: z
+    .string()
+    .trim()
+    .min(1, "Child's surname is required")
+    .max(120),
   // YYYY-MM-DD from a <input type="date">, optional.
   childDob: z
     .string()
@@ -83,11 +90,14 @@ export interface ContactActionResult {
 
 function rawFromFormData(formData: FormData) {
   return {
+    title: (formData.get("title") as string) || undefined,
     firstName: (formData.get("firstName") as string) || undefined,
     lastName: (formData.get("lastName") as string) || "",
     email: (formData.get("email") as string) || "",
     phone: (formData.get("phone") as string) || undefined,
-    childName: (formData.get("childName") as string) || "",
+    childTitle: (formData.get("childTitle") as string) || undefined,
+    childFirstName: (formData.get("childFirstName") as string) || undefined,
+    childLastName: (formData.get("childLastName") as string) || "",
     childDob: (formData.get("childDob") as string) || undefined,
     school: (formData.get("school") as string) || undefined,
     entryYear: (formData.get("entryYear") as string) || undefined,
@@ -106,15 +116,30 @@ function parseDob(dob: string | undefined): Date | null {
   return new Date(`${dob}T00:00:00.000Z`);
 }
 
+/** Derive the single-string child name backing store from the split fields. */
+function composeChildName(
+  firstName: string | undefined,
+  lastName: string
+): string {
+  return [firstName, lastName]
+    .map((s) => (s ?? "").trim())
+    .filter(Boolean)
+    .join(" ");
+}
+
 function toWriteData(
   parsed: z.infer<typeof ContactSchema>
 ): ContactWriteData {
   return {
+    title: parsed.title ?? null,
     firstName: parsed.firstName ?? null,
     lastName: parsed.lastName,
     email: parsed.email,
     phone: parsed.phone ?? null,
-    childName: parsed.childName,
+    childTitle: parsed.childTitle ?? null,
+    childFirstName: parsed.childFirstName ?? null,
+    childLastName: parsed.childLastName,
+    childName: composeChildName(parsed.childFirstName, parsed.childLastName),
     childDob: parseDob(parsed.childDob),
     school: parsed.school,
     entryYear: parsed.entryYear,

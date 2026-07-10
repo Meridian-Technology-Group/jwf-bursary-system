@@ -572,14 +572,21 @@ model Contact {
   id String @id @default(uuid()) @db.Uuid
 
   // Parent (lead applicant) — identity & reachability. lastName required.
+  title     String? @map("title")
   firstName String? @map("first_name")
   lastName  String  @map("last_name")
   email     String  @map("email")
   phone     String? @map("phone")
 
   // Child — name (required) + DOB form the per-child identity key (twins).
-  childName String    @map("child_name")
-  childDob  DateTime? @map("child_dob") @db.Date
+  // `childName` is the derived single-string backing store (first + surname)
+  // kept for existing consumers (invitations, applications); the split
+  // title/first/surname fields are the entry fields.
+  childTitle     String?   @map("child_title")
+  childFirstName String?   @map("child_first_name")
+  childLastName  String?   @map("child_last_name")
+  childName      String    @map("child_name")
+  childDob       DateTime? @map("child_dob") @db.Date
 
   // School & year — set by admin, LOCKED for the parent (D1).
   school         School

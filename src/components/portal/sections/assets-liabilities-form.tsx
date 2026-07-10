@@ -563,20 +563,12 @@ export function AssetsLiabilitiesForm({
           />
         </ConditionalField>
 
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <CurrencyInput
-            control={control}
-            name="otherPossessionsValue"
-            label="Value of other possessions including home contents"
-            required
-          />
-          <CurrencyInput
-            control={control}
-            name="otherNonFinancialAssetsValue"
-            label="Approximate value of any other non-financial assets"
-            required
-          />
-        </div>
+        <CurrencyInput
+          control={control}
+          name="otherPossessionsValue"
+          label="Value of other possessions including home contents"
+          required
+        />
       </fieldset>
 
       <hr className="border-slate-200" />

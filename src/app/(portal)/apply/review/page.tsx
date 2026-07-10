@@ -95,7 +95,6 @@ function totalAssets(d: AssetsLiabilitiesData): number {
     (d.residenceValue ?? 0) +
     (d.carValue ?? 0) +
     (d.otherPossessionsValue ?? 0) +
-    (d.otherNonFinancialAssetsValue ?? 0) +
     (d.totalCashBalance ?? 0) +
     (d.investmentsValue ?? 0) +
     otherProperties.reduce((sum, p) => sum + (p.value ?? 0), 0)
@@ -141,7 +140,11 @@ function renderChildDetails(raw: unknown): SummaryRow[] {
       value: d.entryYearGroup ? ENTRY_YEAR_GROUP_LABELS[d.entryYearGroup] ?? d.entryYearGroup : "—",
     },
     { label: "Current school", value: d.currentSchool || "—" },
-    { label: "Place of birth", value: d.placeOfBirth || "—" },
+    {
+      label: "Place of birth",
+      value:
+        [d.placeOfBirthCity, d.placeOfBirth].filter(Boolean).join(", ") || "—",
+    },
   ];
   if (!d.sameAddressAsParent1 && d.childAddress) {
     rows.push({
