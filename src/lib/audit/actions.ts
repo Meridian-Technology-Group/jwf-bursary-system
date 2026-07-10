@@ -34,6 +34,12 @@ export const AUDIT_ACTIONS = {
   APPLICATION_CLOSED: "APPLICATION_CLOSED",
   /** Reason-driven close purge (item 10): PII anonymised, financials kept. */
   APPLICATION_PURGED: "APPLICATION_PURGED",
+  /**
+   * The school's OFFERED decision (D-4): activates the rolling BursaryAccount
+   * (creates or re-activates it) and attaches the forward schedule. No outcome
+   * is written — this is lifecycle-only, direct activation (item 3).
+   */
+  APPLICATION_MARKED_ACTIVE: "APPLICATION_MARKED_ACTIVE",
   INTERNAL_REQUEST_CREATED: "INTERNAL_REQUEST_CREATED",
   MISSING_DOCS_RESPONDED: "MISSING_DOCS_RESPONDED",
   NAME_REVEAL: "NAME_REVEAL",
@@ -280,6 +286,7 @@ const ACTION_COLOUR: Partial<Record<AuditAction, string>> = {
   [AUDIT_ACTIONS.UPDATE_REFERENCE]: "bg-blue-500",
   [AUDIT_ACTIONS.APPLICATION_CLOSED]: "bg-red-400",
   [AUDIT_ACTIONS.APPLICATION_PURGED]: "bg-red-400",
+  [AUDIT_ACTIONS.APPLICATION_MARKED_ACTIVE]: "bg-green-500",
 };
 
 /**
