@@ -31,6 +31,18 @@ interface ReasonCodeSelectorProps {
   selectedIds: string[];
   onChange: (selectedIds: string[]) => void;
   disabled?: boolean;
+  /**
+   * CALC-16 — the YoY category grouping (`groupHeadingForCode`) buckets any
+   * code < 100 under "Legacy (deprecated)": correct for the `reason_codes`
+   * taxonomy (whose 1–35 placeholders really are deprecated legacy rows), but
+   * wrong for any other taxonomy sharing this selector — e.g. `gap_reasons`,
+   * whose 10 codes (1–10) are the CURRENT, non-deprecated list. Set `false`
+   * to skip the category grouping and render a single flat group instead.
+   * Defaults to `true` (the reason-codes behaviour).
+   */
+  grouped?: boolean;
+  /** Heading shown for the single group when `grouped` is false. */
+  flatGroupLabel?: string;
 }
 
 // ─── Group helpers ─────────────────────────────────────────────────────────────
@@ -40,10 +52,22 @@ interface ReasonCodeSelectorProps {
  * mapping lives in the shared `categoryForCode` util (Epic 08) so the selector
  * and the settings table can never drift — and the real codes (D4) swap in by
  * editing one place.
+ *
+ * CALC-16: when `grouped` is false, the category mapping is skipped entirely
+ * and every code renders under one flat group (`flatGroupLabel`) — for
+ * taxonomies (e.g. gap_reasons) that don't share the reason_codes numbering
+ * the YoY category rule assumes.
  */
-function groupReasonCodes(
-  codes: ReasonCodeOption[]
+export function groupReasonCodes(
+  codes: ReasonCodeOption[],
+  options: { grouped?: boolean; flatGroupLabel?: string } = {}
 ): Array<{ groupLabel: string; codes: ReasonCodeOption[] }> {
+  const { grouped = true, flatGroupLabel = "Reasons" } = options;
+
+  if (!grouped) {
+    return codes.length > 0 ? [{ groupLabel: flatGroupLabel, codes }] : [];
+  }
+
   const buckets: Record<string, ReasonCodeOption[]> = {};
 
   for (const rc of codes) {
@@ -71,6 +95,8 @@ export function ReasonCodeSelector({
   selectedIds,
   onChange,
   disabled = false,
+  grouped = true,
+  flatGroupLabel = "Reasons",
 }: ReasonCodeSelectorProps) {
   const [isOpen, setIsOpen] = React.useState(false);
 
@@ -80,8 +106,8 @@ export function ReasonCodeSelector({
   );
 
   const groups = React.useMemo(
-    () => groupReasonCodes(reasonCodes),
-    [reasonCodes]
+    () => groupReasonCodes(reasonCodes, { grouped, flatGroupLabel }),
+    [reasonCodes, grouped, flatGroupLabel]
   );
 
   function handleToggle(id: string, checked: boolean) {
