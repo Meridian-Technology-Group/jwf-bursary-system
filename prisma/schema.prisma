@@ -320,6 +320,11 @@ model Assessment {
   applicationId                 String                @unique @map("application_id") @db.Uuid
   assessorId                    String                @map("assessor_id") @db.Uuid
   familyTypeCategory            Int?                  @map("family_type_category")
+  /// CALC-02 — dispatches v1 vs v2 engine (architecture decision #1). `1` = the
+  /// existing abridged 4-stage calculator (default, untouched); `2` = the full
+  /// notional model (CALC-03..06), stamped at assessment creation from CALC-07
+  /// onward. Every engine call site branches on this value.
+  calculationVersion            Int                   @default(1) @map("calculation_version")
   notionalRent                  Decimal?              @map("notional_rent") @db.Decimal(10, 2)
   utilityCosts                  Decimal?              @map("utility_costs") @db.Decimal(10, 2)
   foodCosts                     Decimal?              @map("food_costs") @db.Decimal(10, 2)
@@ -330,6 +335,42 @@ model Assessment {
   netAssetsYearlyValuation      Decimal?              @map("net_assets_yearly_valuation") @db.Decimal(10, 2)
   hndiAfterNs                   Decimal?              @map("hndi_after_ns") @db.Decimal(10, 2)
   requiredBursary               Decimal?              @map("required_bursary") @db.Decimal(10, 2)
+  /// CALC-02 — v2 notional toggles/inputs (all nullable; v1 assessments never
+  /// set these). `rentAddBackType` replaces v1's binary `isMortgageFree` add-back
+  /// for v2 (CALC-03 §notional-spend); the other flags gate their respective
+  /// notional deduction lines. See implementation-plan.md §CALC-02.
+  rentAddBackType               RentAddBackType?      @map("rent_add_back_type")
+  multiPropertyRentAddBack      Boolean?              @map("multi_property_rent_add_back")
+  councilTaxSupport             Boolean?              @map("council_tax_support")
+  usesCar                       Boolean?              @map("uses_car")
+  usesPublicTransport           Boolean?              @map("uses_public_transport")
+  feeInsuranceAnnual            Decimal?              @map("fee_insurance_annual") @db.Decimal(10, 2)
+  behindOnFees                  Boolean?              @map("behind_on_fees")
+  /// CALC-02 — v2 snapshot columns (CALC-03..06 outputs). All nullable; only
+  /// populated for `calculationVersion: 2` assessments. `debtOverNdiRatio` and
+  /// `lifestyleSqueezeRatio` carry extra decimal precision (ratios, not £).
+  notionalEssentials            Decimal?              @map("notional_essentials") @db.Decimal(10, 2)
+  notionalCar                   Decimal?              @map("notional_car") @db.Decimal(10, 2)
+  notionalPublicTransport       Decimal?              @map("notional_public_transport") @db.Decimal(10, 2)
+  notionalJwfAllowance          Decimal?              @map("notional_jwf_allowance") @db.Decimal(10, 2)
+  notionalSavingsBenchmark      Decimal?              @map("notional_savings_benchmark") @db.Decimal(10, 2)
+  savingsTestNumber             Decimal?              @map("savings_test_number") @db.Decimal(10, 2)
+  totalNotionalSpend            Decimal?              @map("total_notional_spend") @db.Decimal(10, 2)
+  ndiAfterNotionalSpend         Decimal?              @map("ndi_after_notional_spend") @db.Decimal(10, 2)
+  derivedYearlyDebtRepayments   Decimal?              @map("derived_yearly_debt_repayments") @db.Decimal(10, 2)
+  yearlyDebtExposure            Decimal?              @map("yearly_debt_exposure") @db.Decimal(10, 2)
+  debtOverNdiRatio              Decimal?              @map("debt_over_ndi_ratio") @db.Decimal(10, 4)
+  debtStatusLabel               String?               @map("debt_status_label")
+  incomeCategory                Int?                  @map("income_category")
+  propertyCategoryDerived       Int?                  @map("property_category_derived")
+  propertyEquityCategory        Int?                  @map("property_equity_category")
+  financialEquityLabel          String?               @map("financial_equity_label")
+  lifestyleSqueezeRatio         Decimal?              @map("lifestyle_squeeze_ratio") @db.Decimal(10, 4)
+  lifestyleSqueezeLabel         String?               @map("lifestyle_squeeze_label")
+  actualRemainingDi             Decimal?              @map("actual_remaining_di") @db.Decimal(10, 2)
+  theoreticalBenchmarkDi        Decimal?              @map("theoretical_benchmark_di") @db.Decimal(10, 2)
+  affordabilityAdjustedDi       Decimal?              @map("affordability_adjusted_di") @db.Decimal(10, 2)
+  recommendedPayableFees        Decimal?              @map("recommended_payable_fees") @db.Decimal(10, 2)
   grossFees                     Decimal?              @map("gross_fees") @db.Decimal(10, 2)
   scholarshipPct                Decimal?              @default(0) @map("scholarship_pct") @db.Decimal(5, 2)
   bursaryAward                  Decimal?              @map("bursary_award") @db.Decimal(10, 2)
@@ -393,6 +434,11 @@ model AssessmentEarner {
   benefitsExcluded       Decimal          @default(0) @map("benefits_excluded") @db.Decimal(10, 2)
   benefitsExcludedDetail Json             @default("{}") @map("benefits_excluded_detail")
   totalIncome            Decimal          @default(0) @map("total_income") @db.Decimal(10, 2)
+  /// CALC-02 — v2 status-driven sub-table record (`AssessorIncomeRecord`,
+  /// src/types/assessment-v2.ts), mirroring the parent-form `ParentIncomeRecord`
+  /// pattern (architecture decision #2). Nullable/additive; the 6 legacy numeric
+  /// buckets above remain untouched and keep powering v1.
+  incomeDetail           Json?            @map("income_detail")
   createdAt              DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt              DateTime         @updatedAt @map("updated_at") @db.Timestamptz(6)
   assessment             Assessment       @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
@@ -412,6 +458,13 @@ model AssessmentProperty {
   isasPepsShares            Decimal    @default(0) @map("isas_peps_shares") @db.Decimal(10, 2)
   schoolAgeChildrenCount    Int        @default(1) @map("school_age_children_count")
   derivedSavingsAnnualTotal Decimal    @default(0) @map("derived_savings_annual_total") @db.Decimal(10, 2)
+  /// CALC-02 — v2 itemised JSONB (`PropertyAssetsRecord`, src/types/assessment-v2.ts):
+  /// `{ home: {value, mortgageBalance}, second: {...}, other: {...} }` (aggregate
+  /// "other" per workbook C101/C102). Nullable/additive.
+  propertyAssets            Json?      @map("property_assets")
+  /// CALC-02 — v2 itemised JSONB (`DebtsRecord`, src/types/assessment-v2.ts):
+  /// `{ creditCards, loans, leaseBalances, schoolFeesOwedOrOther }`. Nullable/additive.
+  debts                     Json?
   createdAt                 DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt                 DateTime   @updatedAt @map("updated_at") @db.Timestamptz(6)
   assessment                Assessment @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
@@ -434,32 +487,41 @@ model AssessmentChecklist {
 
 /// Structured recommendation output per assessment.
 model Recommendation {
-  id                  String                     @id @default(uuid()) @db.Uuid
-  assessmentId        String                     @unique @map("assessment_id") @db.Uuid
-  bursaryAccountId    String?                    @map("bursary_account_id") @db.Uuid
-  roundId             String                     @map("round_id") @db.Uuid
-  familySynopsis      String?                    @map("family_synopsis")
-  accommodationStatus String?                    @map("accommodation_status")
-  incomeCategory      String?                    @map("income_category")
-  propertyCategory    Int?                       @map("property_category")
-  bursaryAward        Decimal?                   @map("bursary_award") @db.Decimal(10, 2)
+  id                      String                     @id @default(uuid()) @db.Uuid
+  assessmentId            String                     @unique @map("assessment_id") @db.Uuid
+  bursaryAccountId        String?                    @map("bursary_account_id") @db.Uuid
+  roundId                 String                     @map("round_id") @db.Uuid
+  familySynopsis          String?                    @map("family_synopsis")
+  accommodationStatus     String?                    @map("accommodation_status")
+  incomeCategory          String?                    @map("income_category")
+  propertyCategory        Int?                       @map("property_category")
+  bursaryAward            Decimal?                   @map("bursary_award") @db.Decimal(10, 2)
   /// Distinct merit/academic scholarship award (£), recorded alongside the
   /// means-tested bursary award (Epic 08, Decision D9). Additive/nullable —
   /// NULL means no scholarship award was recorded for this recommendation.
   /// The 0–100 Assessment.scholarshipPct remains the fee-calculation lever; this
   /// is the recorded £ figure the rolling account carries forward (Epic 10).
-  scholarshipAward    Decimal?                   @map("scholarship_award") @db.Decimal(10, 2)
-  yearlyPayableFees   Decimal?                   @map("yearly_payable_fees") @db.Decimal(10, 2)
-  monthlyPayableFees  Decimal?                   @map("monthly_payable_fees") @db.Decimal(10, 2)
-  dishonestyFlag      Boolean                    @default(false) @map("dishonesty_flag")
-  creditRiskFlag      Boolean                    @default(false) @map("credit_risk_flag")
-  summary             String?
-  createdAt           DateTime                   @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt           DateTime                   @updatedAt @map("updated_at") @db.Timestamptz(6)
-  reasonCodes         RecommendationReasonCode[]
-  assessment          Assessment                 @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
-  bursaryAccount      BursaryAccount?            @relation(fields: [bursaryAccountId], references: [id])
-  round               Round                      @relation(fields: [roundId], references: [id])
+  scholarshipAward        Decimal?                   @map("scholarship_award") @db.Decimal(10, 2)
+  yearlyPayableFees       Decimal?                   @map("yearly_payable_fees") @db.Decimal(10, 2)
+  monthlyPayableFees      Decimal?                   @map("monthly_payable_fees") @db.Decimal(10, 2)
+  dishonestyFlag          Boolean                    @default(false) @map("dishonesty_flag")
+  creditRiskFlag          Boolean                    @default(false) @map("credit_risk_flag")
+  summary                 String?
+  /// CALC-02 — v2 min-of-three award + gap tracking (CALC-06, CALC-08). All
+  /// nullable/additive; null for every v1 recommendation.
+  recommendedPayableFees  Decimal?                   @map("recommended_payable_fees") @db.Decimal(10, 2)
+  confirmedPayableFees    Decimal?                   @map("confirmed_payable_fees") @db.Decimal(10, 2)
+  gapAmount               Decimal?                   @map("gap_amount") @db.Decimal(10, 2)
+  lastPayableFees         Decimal?                   @map("last_payable_fees") @db.Decimal(10, 2)
+  scholarshipValueInclVat Decimal?                   @map("scholarship_value_incl_vat") @db.Decimal(10, 2)
+  bursarySpendBeforeVat   Decimal?                   @map("bursary_spend_before_vat") @db.Decimal(10, 2)
+  createdAt               DateTime                   @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt               DateTime                   @updatedAt @map("updated_at") @db.Timestamptz(6)
+  reasonCodes             RecommendationReasonCode[]
+  gapReasons              RecommendationGapReason[]
+  assessment              Assessment                 @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+  bursaryAccount          BursaryAccount?            @relation(fields: [bursaryAccountId], references: [id])
+  round                   Round                      @relation(fields: [roundId], references: [id])
 
   @@map("recommendations")
 }
@@ -486,6 +548,33 @@ model RecommendationReasonCode {
 
   @@id([recommendationId, reasonCodeId])
   @@map("recommendation_reason_codes")
+}
+
+/// CALC-02 — Reference: reasons for a gap between the recommended (min-of-three)
+/// and confirmed payable fees (Appendix E). Mirrors `ReasonCode`'s shape exactly.
+model GapReason {
+  id              String                    @id @default(uuid()) @db.Uuid
+  code            Int                       @unique
+  label           String
+  isDeprecated    Boolean                   @default(false) @map("is_deprecated")
+  sortOrder       Int                       @map("sort_order")
+  createdAt       DateTime                  @default(now()) @map("created_at") @db.Timestamptz(6)
+  recommendations RecommendationGapReason[]
+
+  @@map("gap_reasons")
+}
+
+/// Junction table: Recommendation ↔ GapReason. Required (≥1) whenever a
+/// recommendation's `gapAmount` is non-zero (CALC-08). Mirrors
+/// `RecommendationReasonCode`.
+model RecommendationGapReason {
+  recommendationId String         @map("recommendation_id") @db.Uuid
+  gapReasonId      String         @map("gap_reason_id") @db.Uuid
+  gapReason        GapReason      @relation(fields: [gapReasonId], references: [id])
+  recommendation   Recommendation @relation(fields: [recommendationId], references: [id], onDelete: Cascade)
+
+  @@id([recommendationId, gapReasonId])
+  @@map("recommendation_gap_reasons")
 }
 
 /// Links bursary accounts as siblings for sequential income absorption.
@@ -1075,4 +1164,15 @@ enum NotionalCostType {
   JWF_ALLOWANCE
   NOTIONAL_SAVINGS
   SAVINGS_CUSHION
+}
+
+/// CALC-02 — v2 rent notional add-back type (workbook C57), replacing v1's
+/// binary `Assessment.isMortgageFree`-style reliance for v2 assessments.
+/// NONE = no add-back; FULL_MORTGAGE_FREE / FULL_RENT_FREE = +100% add-back;
+/// PARTIAL_LOWER_RENT = +25% add-back (assessor judges which applies).
+enum RentAddBackType {
+  NONE
+  FULL_MORTGAGE_FREE
+  FULL_RENT_FREE
+  PARTIAL_LOWER_RENT
 }
