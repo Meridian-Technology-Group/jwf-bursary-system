@@ -388,6 +388,15 @@ export interface PreviousAssessmentSnapshot {
 /**
  * Returns the assessment from the previous year for a given bursary account.
  * Used in the admin year-on-year comparison component.
+ *
+ * CALC-12: a v2 assessment never writes the legacy `assessment.bursaryAward` /
+ * `yearlyPayableFees` / `monthlyPayableFees` columns directly (those are
+ * v1-only outputs of `calculator.ts`) — the v2 confirmed figures are
+ * dual-written onto `Recommendation` instead (`recommendation-form-v2.tsx`).
+ * Without a fallback, a previous-year v2 assessment showed blank "—" rows here.
+ * Same fallback-walk pattern as `getSchoolComparison` / `account-promotion.ts`:
+ * prefer the recommendation's (dual-written, always-current) figure, then the
+ * legacy assessment column (v1 rows, or a v2 row with no recommendation yet).
  */
 export async function getPreviousAssessment(
   tx: Tx,
@@ -415,6 +424,13 @@ export async function getPreviousAssessment(
           yearlyPayableFees: true,
           monthlyPayableFees: true,
           schoolingYearsRemaining: true,
+          recommendation: {
+            select: {
+              bursaryAward: true,
+              yearlyPayableFees: true,
+              monthlyPayableFees: true,
+            },
+          },
         },
       },
     },
@@ -423,6 +439,7 @@ export async function getPreviousAssessment(
   if (!previous?.assessment) return null;
 
   const a = previous.assessment;
+  const rec = a.recommendation;
   return {
     applicationReference: previous.reference,
     academicYear: previous.round.academicYear,
@@ -431,9 +448,11 @@ export async function getPreviousAssessment(
     hndiAfterNs: a.hndiAfterNs?.toString() ?? null,
     requiredBursary: a.requiredBursary?.toString() ?? null,
     grossFees: a.grossFees?.toString() ?? null,
-    bursaryAward: a.bursaryAward?.toString() ?? null,
-    yearlyPayableFees: a.yearlyPayableFees?.toString() ?? null,
-    monthlyPayableFees: a.monthlyPayableFees?.toString() ?? null,
+    bursaryAward: (rec?.bursaryAward ?? a.bursaryAward)?.toString() ?? null,
+    yearlyPayableFees:
+      (rec?.yearlyPayableFees ?? a.yearlyPayableFees)?.toString() ?? null,
+    monthlyPayableFees:
+      (rec?.monthlyPayableFees ?? a.monthlyPayableFees)?.toString() ?? null,
     schoolingYearsRemaining: a.schoolingYearsRemaining ?? null,
   };
 }

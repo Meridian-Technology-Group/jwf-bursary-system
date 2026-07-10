@@ -45,6 +45,28 @@ const COLUMNS: ColumnDef[] = [
   { header: "Reason Codes", key: "reasonCodes", width: 50 },
   { header: "Flags", key: "flags", width: 24 },
   { header: "Outcome", key: "outcome", width: 20 },
+  // CALC-12: v2-only columns (full notional model). Blank for v1 rows.
+  {
+    header: "Recommended Payable Fees",
+    key: "recommendedPayableFees",
+    width: 24,
+    numFmt: '£#,##0.00',
+  },
+  {
+    header: "Confirmed Payable Fees",
+    key: "confirmedPayableFees",
+    width: 24,
+    numFmt: '£#,##0.00',
+  },
+  {
+    header: "Gap Amount",
+    key: "gapAmount",
+    width: 18,
+    numFmt: '£#,##0.00',
+  },
+  { header: "Gap Reasons", key: "gapReasons", width: 50 },
+  { header: "Debt Status", key: "debtStatus", width: 22 },
+  { header: "Lifestyle Squeeze", key: "lifestyleSqueezeLabel", width: 22 },
 ];
 
 // Design tokens
@@ -113,6 +135,12 @@ export async function buildXlsxBuffer(rows: ExportRow[]): Promise<Buffer> {
       reasonCodes: row.reasonCodes,
       flags: row.flags,
       outcome: row.outcome,
+      recommendedPayableFees: row.recommendedPayableFees,
+      confirmedPayableFees: row.confirmedPayableFees,
+      gapAmount: row.gapAmount,
+      gapReasons: row.gapReasons,
+      debtStatus: row.debtStatus,
+      lifestyleSqueezeLabel: row.lifestyleSqueezeLabel,
     });
 
     // Apply number formats to financial columns
