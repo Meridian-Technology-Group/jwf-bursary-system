@@ -120,12 +120,15 @@ interface NameData {
 }
 
 /**
- * An `ApplicationListItem` plus its server-derived review phase (Item 1.1) —
- * computed once in `queue/page.tsx` via `deriveReviewPhase`, the same helper
- * the detail page uses, so the two surfaces always agree.
+ * An `ApplicationListItem` plus its server-derived review phase (Item 1.1)
+ * and effective submission deadline (Item 1.2) — both computed once in
+ * `queue/page.tsx` via the shared `deriveReviewPhase` / `effectiveSubmissionDeadline`
+ * helpers, the same ones the detail page uses, so every surface agrees.
  */
 export type ApplicationListItemWithPhase = ApplicationListItem & {
   reviewPhase: ReviewPhase;
+  /** The effective submission-by date (override ?? round default ?? round close). */
+  effectiveDeadline: Date;
 };
 
 interface ApplicationRow extends ApplicationListItemWithPhase {
@@ -157,11 +160,16 @@ interface ApplicationTableProps {
   initialSubmittedFrom?: string;
   /** Seed the "Received to" date input (Item 7.1), `YYYY-MM-DD`. */
   initialSubmittedTo?: string;
+  /** Seed the "Submission-by from" date input (Item 7.2), `YYYY-MM-DD`. */
+  initialDeadlineFrom?: string;
+  /** Seed the "Submission-by to" date input (Item 7.2), `YYYY-MM-DD`. */
+  initialDeadlineTo?: string;
   /**
    * The current URL's query string (no leading `?`), as seen by the server
    * component. Used to preserve every other active filter when the
-   * received-date range navigates (Item 7.1) — avoids a client-side
-   * `useSearchParams()` call, which would require a Suspense boundary.
+   * received-date or submission-by range navigates (Items 7.1/7.2) — avoids a
+   * client-side `useSearchParams()` call, which would require a Suspense
+   * boundary.
    */
   currentQueryString?: string;
   /**
@@ -254,6 +262,16 @@ function formatSubmittedDate(date: Date | null): React.ReactNode {
       </span>
     </span>
   );
+}
+
+/**
+ * Deadline column (Item 1.2). `effectiveDeadline` is typed non-null (the D-1
+ * chain always resolves to at least `round.closeDate`), so the em-dash below
+ * is a defensive fallback only — not an expected path.
+ */
+function formatDeadlineDate(date: Date | null | undefined): React.ReactNode {
+  if (!date) return <span className="text-slate-400">—</span>;
+  return <span className="text-slate-700">{formatLondonDate(new Date(date))}</span>;
 }
 
 // ─── Bulk-action toolbar ────────────────────────────────────────────────────────
@@ -520,6 +538,8 @@ export function ApplicationTable({
   initialSchool,
   initialSubmittedFrom,
   initialSubmittedTo,
+  initialDeadlineFrom,
+  initialDeadlineTo,
   currentQueryString,
   activeFilter,
   reassessEligibleActive = false,
@@ -554,9 +574,19 @@ export function ApplicationTable({
   const [submittedTo, setSubmittedTo] = React.useState(
     initialSubmittedTo ?? ""
   );
-  const [dateRangeError, setDateRangeError] = React.useState<string | null>(
-    null
+  const [receivedRangeError, setReceivedRangeError] = React.useState<
+    string | null
+  >(null);
+
+  // Submission-by (deadline) range (Item 7.2) — same server-side navigation
+  // pattern as the received-date range above, independently clearable.
+  const [deadlineFrom, setDeadlineFrom] = React.useState(
+    initialDeadlineFrom ?? ""
   );
+  const [deadlineTo, setDeadlineTo] = React.useState(initialDeadlineTo ?? "");
+  const [deadlineRangeError, setDeadlineRangeError] = React.useState<
+    string | null
+  >(null);
 
   // Table state
   const [sorting, setSorting] = React.useState<SortingState>([]);
@@ -626,19 +656,40 @@ export function ApplicationTable({
   // Received-date range (Item 7.1) — a real navigation (unlike round/school/
   // status, which re-filter the already-fetched rows client-side) so
   // `listApplications` re-runs server-side with the new bounds. Preserves
-  // every other current query param (roundId/school/status/reassessEligible
-  // etc.) so this filter composes without clobbering the others.
+  // every other current query param (roundId/school/status/reassessEligible/
+  // deadlineFrom/deadlineTo etc.) so this filter composes without clobbering
+  // the others, and is clearable independently of the deadline range below.
   function applyReceivedDateFilter(nextFrom: string, nextTo: string) {
     if (nextFrom && nextTo && nextFrom > nextTo) {
-      setDateRangeError("'Received from' must be on or before 'Received to'.");
+      setReceivedRangeError(
+        "'Received from' must be on or before 'Received to'."
+      );
       return;
     }
-    setDateRangeError(null);
+    setReceivedRangeError(null);
     const nextParams = new URLSearchParams(currentQueryString ?? "");
     if (nextFrom) nextParams.set("submittedFrom", nextFrom);
     else nextParams.delete("submittedFrom");
     if (nextTo) nextParams.set("submittedTo", nextTo);
     else nextParams.delete("submittedTo");
+    router.replace(`/queue?${nextParams.toString()}`);
+  }
+
+  // Submission-by (deadline) range (Item 7.2) — same server-side navigation
+  // pattern, independently clearable from the received-date range above.
+  function applyDeadlineRangeFilter(nextFrom: string, nextTo: string) {
+    if (nextFrom && nextTo && nextFrom > nextTo) {
+      setDeadlineRangeError(
+        "'Submission-by from' must be on or before 'Submission-by to'."
+      );
+      return;
+    }
+    setDeadlineRangeError(null);
+    const nextParams = new URLSearchParams(currentQueryString ?? "");
+    if (nextFrom) nextParams.set("deadlineFrom", nextFrom);
+    else nextParams.delete("deadlineFrom");
+    if (nextTo) nextParams.set("deadlineTo", nextTo);
+    else nextParams.delete("deadlineTo");
     router.replace(`/queue?${nextParams.toString()}`);
   }
 
@@ -747,6 +798,19 @@ export function ApplicationTable({
             : 0;
           const dateB = b.original.submittedAt
             ? new Date(b.original.submittedAt).getTime()
+            : 0;
+          return dateA - dateB;
+        },
+      }),
+      columnHelper.accessor("effectiveDeadline", {
+        header: "Submission-by",
+        cell: (info) => formatDeadlineDate(info.getValue()),
+        sortingFn: (a, b) => {
+          const dateA = a.original.effectiveDeadline
+            ? new Date(a.original.effectiveDeadline).getTime()
+            : 0;
+          const dateB = b.original.effectiveDeadline
+            ? new Date(b.original.effectiveDeadline).getTime()
             : 0;
           return dateA - dateB;
         },
@@ -975,9 +1039,48 @@ export function ApplicationTable({
               className="h-9 w-[150px] border-neutral-200 bg-white text-sm"
             />
           </div>
-          {dateRangeError && (
+          {receivedRangeError && (
             <span role="alert" className="text-xs text-red-600">
-              {dateRangeError}
+              {receivedRangeError}
+            </span>
+          )}
+        </div>
+
+        {/* Submission-by (deadline) range (Item 7.2) — server-side, independently clearable */}
+        <div className="flex flex-col gap-1">
+          <div className="flex items-center gap-1.5">
+            <span className="text-xs font-medium text-slate-500">
+              Submission-by
+            </span>
+            <Input
+              type="date"
+              aria-label="Submission-by from"
+              value={deadlineFrom}
+              max={deadlineTo || undefined}
+              onChange={(e) => {
+                setDeadlineFrom(e.target.value);
+                applyDeadlineRangeFilter(e.target.value, deadlineTo);
+              }}
+              className="h-9 w-[150px] border-neutral-200 bg-white text-sm"
+            />
+            <span className="text-xs text-slate-400" aria-hidden="true">
+              –
+            </span>
+            <Input
+              type="date"
+              aria-label="Submission-by to"
+              value={deadlineTo}
+              min={deadlineFrom || undefined}
+              onChange={(e) => {
+                setDeadlineTo(e.target.value);
+                applyDeadlineRangeFilter(deadlineFrom, e.target.value);
+              }}
+              className="h-9 w-[150px] border-neutral-200 bg-white text-sm"
+            />
+          </div>
+          {deadlineRangeError && (
+            <span role="alert" className="text-xs text-red-600">
+              {deadlineRangeError}
             </span>
           )}
         </div>

@@ -31,6 +31,7 @@ import {
 } from "@/lib/applications/queue-filter";
 import { deriveReviewPhase } from "@/lib/applications/status";
 import { REVIEW_PHASE_LABEL } from "@/lib/applications/review-phase-labels";
+import { effectiveSubmissionDeadline } from "@/lib/rounds/submission-deadline";
 import {
   londonStartOfDayUtc,
   londonEndOfDayUtc,
@@ -134,6 +135,14 @@ export default async function QueuePage({
     !submittedFromParam ||
     !submittedToParam ||
     submittedFromParam <= submittedToParam;
+
+  // Submission-by (deadline) range (Item 7.2) — same parsing/validation
+  // approach as the received-date range above.
+  const deadlineFromParam = parseDateParam(params.deadlineFrom);
+  const deadlineToParam = parseDateParam(params.deadlineTo);
+  const deadlineRangeValid =
+    !deadlineFromParam || !deadlineToParam || deadlineFromParam <= deadlineToParam;
+
   // Re-assessment-eligible drill-in: ADMIN-only. Shows the prior-round winning
   // applications linked to bursary holders who are eligible to be invited into
   // the open round (cross-round is intended).
@@ -157,6 +166,12 @@ export default async function QueuePage({
   }
   if (submittedRangeValid && submittedToParam) {
     applicationFilters.submittedTo = londonEndOfDayUtc(submittedToParam);
+  }
+  if (deadlineRangeValid && deadlineFromParam) {
+    applicationFilters.deadlineFrom = deadlineFromParam;
+  }
+  if (deadlineRangeValid && deadlineToParam) {
+    applicationFilters.deadlineTo = deadlineToParam;
   }
 
   const { applications, names, rounds, assessors, reassessRoundYear } =
@@ -255,6 +270,10 @@ export default async function QueuePage({
       // detail page always agree. Computed here (not in the query layer) since
       // it's a presentational concern of this one list, not of every
       // `listApplications` caller.
+      //
+      // Deadline column (Item 1.2): same treatment, via the ONE shared
+      // `effectiveSubmissionDeadline()` helper (Epic 03 / Item 12/D-1) — do
+      // not re-derive the override/round-default/close-date chain here.
       const applicationsWithPhase = applications.map((app) => ({
         ...app,
         reviewPhase: deriveReviewPhase({
@@ -262,6 +281,10 @@ export default async function QueuePage({
           assessmentStatus: app.assessmentStatus,
           outcome: app.outcome,
         }),
+        effectiveDeadline: effectiveSubmissionDeadline(
+          { submissionDeadlineAt: app.submissionDeadlineAt },
+          app.round
+        ).deadline,
       }));
 
       return {
@@ -285,6 +308,8 @@ export default async function QueuePage({
   // filter that silently isn't in effect.
   const initialSubmittedFrom = submittedRangeValid ? submittedFromParam : undefined;
   const initialSubmittedTo = submittedRangeValid ? submittedToParam : undefined;
+  const initialDeadlineFrom = deadlineRangeValid ? deadlineFromParam : undefined;
+  const initialDeadlineTo = deadlineRangeValid ? deadlineToParam : undefined;
 
   // Plain-English descriptor of the active filter for the dismissible banner.
   // The re-assessment-eligible drill-in owns the banner when active (it is the
@@ -307,6 +332,8 @@ export default async function QueuePage({
         rounds,
         submittedFrom: initialSubmittedFrom,
         submittedTo: initialSubmittedTo,
+        deadlineFrom: initialDeadlineFrom,
+        deadlineTo: initialDeadlineTo,
       });
 
   return (
@@ -335,6 +362,8 @@ export default async function QueuePage({
         initialSchool={initialSchool}
         initialSubmittedFrom={initialSubmittedFrom}
         initialSubmittedTo={initialSubmittedTo}
+        initialDeadlineFrom={initialDeadlineFrom}
+        initialDeadlineTo={initialDeadlineTo}
         currentQueryString={buildQueryString(params)}
         activeFilter={activeFilter}
         reassessEligibleActive={reassessEligible}
@@ -366,6 +395,8 @@ function describeActiveFilter({
   rounds,
   submittedFrom,
   submittedTo,
+  deadlineFrom,
+  deadlineTo,
 }: {
   roundId: string | undefined;
   status: ReviewPhase | undefined;
@@ -376,6 +407,9 @@ function describeActiveFilter({
   /** Received-date range (Item 7.1), as the applied `YYYY-MM-DD` strings. */
   submittedFrom?: string;
   submittedTo?: string;
+  /** Submission-by (deadline) range (Item 7.2), as the applied `YYYY-MM-DD` strings. */
+  deadlineFrom?: string;
+  deadlineTo?: string;
 }): { label: string; clearHref: string } | undefined {
   const parts: string[] = [];
 
@@ -402,6 +436,14 @@ function describeActiveFilter({
       : "the start";
     const toLabel = submittedTo ? formatLondonDateString(submittedTo) : "now";
     parts.push(`Received ${fromLabel} – ${toLabel}`);
+  }
+
+  if (deadlineFrom || deadlineTo) {
+    const fromLabel = deadlineFrom
+      ? formatLondonDateString(deadlineFrom)
+      : "the start";
+    const toLabel = deadlineTo ? formatLondonDateString(deadlineTo) : "now";
+    parts.push(`Submission-by ${fromLabel} – ${toLabel}`);
   }
 
   if (parts.length === 0) return undefined;

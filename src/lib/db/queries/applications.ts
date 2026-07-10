@@ -10,6 +10,7 @@ import {
   undecidedWhere,
   type ReviewPhase,
 } from "@/lib/applications/queue-filter";
+import { londonStartOfDayUtc, londonEndOfDayUtc } from "@/lib/datetime";
 import type {
   School,
   Application,
@@ -59,9 +60,17 @@ export interface ApplicationListItem {
   outcome: AssessmentOutcome | null;
   entryYear: number | null;
   submittedAt: Date | null;
+  /** Per-application submission deadline override (Epic 03); null = inherit. */
+  submissionDeadlineAt: Date | null;
   isReassessment: boolean;
   assignedToId: string | null;
-  round: Pick<Round, "id" | "academicYear">;
+  /**
+   * Carries `closeDate` + `defaultSubmissionDeadline` (Item 12) alongside the
+   * round identity fields so callers can compute the effective deadline via
+   * `effectiveSubmissionDeadline()` (src/lib/rounds/submission-deadline.ts)
+   * without a second query.
+   */
+  round: Pick<Round, "id" | "academicYear" | "closeDate" | "defaultSubmissionDeadline">;
   secondParent: SecondParentIndicator;
   /**
    * The rolling BursaryAccount this application is linked to, or null when none
@@ -112,6 +121,17 @@ export interface ListApplicationsFilters {
    */
   submittedFrom?: Date;
   submittedTo?: Date;
+  /**
+   * Submission-by (deadline) range filter (Item 7.2) — plain `YYYY-MM-DD`
+   * calendar-date strings (NOT pre-converted instants, unlike
+   * `submittedFrom`/`submittedTo` above — see `effectiveDeadlineRangeWhere`
+   * for why the three-tier effective-deadline chain needs two different
+   * conversions of the same bound). Matches each application's EFFECTIVE
+   * deadline (override ?? round default ?? round close date — Item 12/D-1),
+   * the same chain `effectiveSubmissionDeadline()` computes.
+   */
+  deadlineFrom?: string;
+  deadlineTo?: string;
 }
 
 /**
@@ -136,6 +156,91 @@ export function submittedDateRangeWhere(
       ...(to ? { lte: to } : {}),
     },
   };
+}
+
+/**
+ * Builds the Prisma where-fragment for the submission-by (deadline) range
+ * filter (Item 7.2), matching the SAME three-tier chain
+ * `effectiveSubmissionDeadline()` computes (src/lib/rounds/submission-deadline.ts,
+ * Item 12/D-1): `application.submissionDeadlineAt` (override) ?? round's
+ * `defaultSubmissionDeadline` ?? round's `closeDate`. Only the first tier that
+ * is SET applies for a given row — a round default, if present, is checked
+ * INSTEAD OF closeDate, never in addition (matches the helper's precedence).
+ *
+ * `from`/`to` are plain `YYYY-MM-DD` calendar-date strings. The three tiers
+ * need two different conversions of the same bound:
+ *
+ *   - Override tier (`submissionDeadlineAt`, a `timestamptz` — an explicit
+ *     instant an admin chose, verbatim, possibly with a time-of-day):
+ *     compared against the UTC INSTANT bounds of the London calendar day
+ *     (`londonStartOfDayUtc`/`londonEndOfDayUtc`), exactly like the
+ *     received-date filter (7.1) compares `submittedAt`. An instant `X`
+ *     falls in `[from, to]` iff `X`'s LONDON CALENDAR DATE is within
+ *     `[from, to]` — which is exactly what testing `X` against those two
+ *     instant bounds does, regardless of the server runtime's own timezone.
+ *   - Round-default / close-date tiers (`@db.Date` columns — pure calendar
+ *     dates with no time-of-day at all): compared DIRECTLY against `from`/`to`
+ *     as calendar-date values (UTC-midnight `Date`s, exactly how Prisma always
+ *     represents a `@db.Date` field), with NO end-of-day shift. This
+ *     sidesteps the end-of-day-instant arithmetic entirely for these two
+ *     tiers — "does this deadline DATE fall within `[from, to]`" is a plain
+ *     date-vs-date comparison, and it provably agrees with whatever instant
+ *     `effectiveSubmissionDeadline()`'s `endOfDay()` shift produces for
+ *     display: shifting a date to its last millisecond never changes WHICH
+ *     calendar date it belongs to, so filtering on the date is equivalent to
+ *     filtering on the (shifted) instant, without needing to replicate the
+ *     shift's timezone assumptions here.
+ *
+ * A row with neither an override, nor a round default, nor (impossible in
+ * practice — `closeDate` is required) a close date is excluded automatically
+ * whenever a bound is active, via the same null gte/lte semantics as 7.1.
+ */
+export function effectiveDeadlineRangeWhere(
+  from: string | undefined,
+  to: string | undefined
+): Prisma.ApplicationWhereInput | undefined {
+  if (!from && !to) return undefined;
+
+  const instantFrom = from ? londonStartOfDayUtc(from) : undefined;
+  const instantTo = to ? londonEndOfDayUtc(to) : undefined;
+  // Calendar-date literals for the two `@db.Date` tiers — UTC midnight, the
+  // same representation Prisma uses for `@db.Date` fields (no time-of-day).
+  const dateFrom = from ? new Date(`${from}T00:00:00.000Z`) : undefined;
+  const dateTo = to ? new Date(`${to}T00:00:00.000Z`) : undefined;
+
+  const overrideInRange: Prisma.ApplicationWhereInput = {
+    submissionDeadlineAt: {
+      ...(instantFrom ? { gte: instantFrom } : {}),
+      ...(instantTo ? { lte: instantTo } : {}),
+    },
+  };
+
+  // Only reached when there's no override (D-1 precedence: override wins).
+  const roundDefaultInRange: Prisma.ApplicationWhereInput = {
+    submissionDeadlineAt: null,
+    round: {
+      defaultSubmissionDeadline: {
+        ...(dateFrom ? { gte: dateFrom } : {}),
+        ...(dateTo ? { lte: dateTo } : {}),
+      },
+    },
+  };
+
+  // Only reached when there's no override AND no round default — a round
+  // with a default set never falls through to closeDate, even if the
+  // default itself is out of range (matches the helper's strict precedence).
+  const closeDateInRange: Prisma.ApplicationWhereInput = {
+    submissionDeadlineAt: null,
+    round: {
+      defaultSubmissionDeadline: null,
+      closeDate: {
+        ...(dateFrom ? { gte: dateFrom } : {}),
+        ...(dateTo ? { lte: dateTo } : {}),
+      },
+    },
+  };
+
+  return { OR: [overrideInRange, roundDefaultInRange, closeDateInRange] };
 }
 
 /**
@@ -198,6 +303,14 @@ export async function listApplications(
     and.push(submittedWhere);
   }
 
+  const deadlineWhere = effectiveDeadlineRangeWhere(
+    filters.deadlineFrom,
+    filters.deadlineTo
+  );
+  if (deadlineWhere) {
+    and.push(deadlineWhere);
+  }
+
   if (and.length > 0) {
     where.AND = and;
   }
@@ -212,11 +325,17 @@ export async function listApplications(
       applicationType: true,
       entryYear: true,
       submittedAt: true,
+      submissionDeadlineAt: true,
       isReassessment: true,
       assignedToId: true,
       bursaryAccountId: true,
       round: {
-        select: { id: true, academicYear: true },
+        select: {
+          id: true,
+          academicYear: true,
+          closeDate: true,
+          defaultSubmissionDeadline: true,
+        },
       },
       bursaryAccount: {
         select: { status: true },
