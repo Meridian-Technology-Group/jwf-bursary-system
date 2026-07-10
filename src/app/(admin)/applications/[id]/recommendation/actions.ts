@@ -86,10 +86,21 @@ export async function saveRecommendationAction(
         // THAT gap. A v1 save (no confirmed figure) persists neither.
         let saveData: SaveRecommendationData;
         if (data.confirmedPayableFees != null) {
-          const snapshotRecommended =
-            application.assessment.recommendedPayableFees != null
-              ? Number(application.assessment.recommendedPayableFees)
-              : 0;
+          // CALC-15 — a null snapshot must NEVER be treated as an implicit £0
+          // recommended figure: that silently computes a gap against a number
+          // the engine never produced (exactly what happened when a stale
+          // save left a COMPLETED v2 assessment with null snapshot columns).
+          // Reject outright and tell the assessor to reopen and re-save.
+          if (application.assessment.recommendedPayableFees == null) {
+            return {
+              success: false as const,
+              error:
+                "This assessment's calculation snapshot is incomplete (recommended payable fees is missing). Reopen the assessment and re-save it before recording a recommendation.",
+            };
+          }
+          const snapshotRecommended = Number(
+            application.assessment.recommendedPayableFees
+          );
           const serverGap = computeGapAmount(
             data.confirmedPayableFees,
             snapshotRecommended

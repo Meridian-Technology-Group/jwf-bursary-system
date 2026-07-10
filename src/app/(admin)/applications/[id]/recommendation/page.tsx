@@ -21,7 +21,7 @@
  */
 
 import { notFound } from "next/navigation";
-import { ClipboardCheck } from "lucide-react";
+import { ClipboardCheck, AlertTriangle } from "lucide-react";
 import type { Decimal } from "@prisma/client/runtime/library";
 import { requireRole, Role } from "@/lib/auth/roles";
 import { withUserContext, type RlsRole } from "@/lib/db/prisma";
@@ -111,6 +111,32 @@ export default async function RecommendationPage({ params }: Props) {
 
   // ── Assessment COMPLETED — dispatch v1 vs v2 by the calculation stamp ──────
   const engineVersion = selectEngineVersion(assessment.calculationVersion);
+
+  // ── CALC-15 — refuse a null v2 snapshot ─────────────────────────────────────
+  // A COMPLETED v2 assessment should always carry its persisted snapshot (the
+  // server-side complete guard now enforces this going forward), but a row
+  // completed before that guard existed — e.g. via the stale-client save
+  // failure this hardens against — can still have `recommendedPayableFees`
+  // null. Never fall through to rendering the form with an implicit £0 leg;
+  // show a clear remediation callout instead.
+  if (engineVersion === "v2" && assessment.recommendedPayableFees == null) {
+    return (
+      <div className="flex flex-col items-center justify-center gap-5 rounded-xl border border-dashed border-amber-300 bg-amber-50 px-6 py-16 text-center shadow-sm">
+        <AlertTriangle className="h-12 w-12 text-amber-400" aria-hidden="true" />
+        <div>
+          <p className="text-base font-semibold text-amber-900">
+            Assessment snapshot incomplete
+          </p>
+          <p className="mt-1.5 max-w-md text-sm text-amber-700">
+            This assessment is marked COMPLETED but its calculation snapshot
+            was never saved (recommended payable fees is missing) — likely a
+            failed save. Reopen the assessment and re-save it before recording
+            a recommendation.
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   // ── Assessment COMPLETED — load recommendation, reason codes, siblings ─────
   // (plus, for v2, gap reasons + the previous recommendation's payable fees).

@@ -34,6 +34,7 @@ import type { AssessmentSaveInput } from "@/lib/db/queries/assessments";
 import {
   startAssessmentIfNotStarted,
   deriveReviewPhase,
+  AssessmentSnapshotMissingError,
 } from "@/lib/applications/status";
 import { getSecondaryContributor } from "@/lib/db/queries/contributors";
 import { createAuditLog } from "@/lib/audit/log";
@@ -375,6 +376,13 @@ export async function completeAssessmentAction(
     return { success: true };
   } catch (err) {
     console.error("[completeAssessmentAction]", err);
+    // CALC-15 — surface the specific "snapshot missing" reason (rather than
+    // the generic message below) so the assessor knows to re-save, not just
+    // retry blindly. Should be unreachable via the normal UI (the form now
+    // save-gates Complete client-side) — this is the server-side backstop.
+    if (err instanceof AssessmentSnapshotMissingError) {
+      return { success: false, error: err.message };
+    }
     return { success: false, error: "Failed to complete assessment." };
   }
 }

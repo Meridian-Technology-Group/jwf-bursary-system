@@ -59,7 +59,7 @@ import type { Tx } from "@/lib/db/prisma";
 import { createAuditLog } from "@/lib/audit/log";
 import { AUDIT_ACTIONS, AUDIT_ENTITY_TYPES } from "@/lib/audit/actions";
 import type { ReviewPhase } from "@/lib/applications/queue-filter";
-import { CURRENT_CALCULATION_VERSION } from "@/lib/assessment/engine-version";
+import { CURRENT_CALCULATION_VERSION, selectEngineVersion } from "@/lib/assessment/engine-version";
 
 // ───────────────────────────────────────────────────────────────────────────
 // Review phase — the application-detail review-track vocabulary
@@ -678,6 +678,14 @@ export function defaultPausedUntil(from: Date = new Date()): Date {
 export const ASSESSMENT_INITIAL_STATUS: AssessmentStatus = "NOT_STARTED";
 
 /**
+ * CALC-15 — thrown by `completeAssessmentRow` when a v2 assessment has no
+ * persisted calculation snapshot. Distinct from the generic illegal-transition
+ * `Error` so callers that want to surface the specific reason (rather than a
+ * generic "failed to complete" string) can `instanceof`-check for it.
+ */
+export class AssessmentSnapshotMissingError extends Error {}
+
+/**
  * Complete an assessment row: status → COMPLETED + completedAt. Validates the
  * transition. Used by both the assessor-workspace track and the
  * application-detail review track (`markReviewComplete`).
@@ -693,6 +701,29 @@ export async function completeAssessmentRow(
   if (from !== "NOT_STARTED" && !isLegalAssessmentTransition(from, "COMPLETED")) {
     throw new Error(`Illegal assessment transition ${from} → COMPLETED`);
   }
+
+  // CALC-15 — defence in depth: a v2 assessment must have its calculation
+  // snapshot persisted before it can be marked COMPLETED. Client-side gating
+  // (assessment-form-v2's save-before-complete) is the first line of defence;
+  // this guard is the backstop for ANY caller of this primitive (a stale
+  // Prisma client, a retried request racing a failed save, the
+  // application-detail "mark complete" track, etc.) — it must never be
+  // possible to produce a COMPLETED v2 assessment whose snapshot columns are
+  // all null, because the recommendation screen then treats the missing
+  // `recommendedPayableFees` as an implicit £0.
+  const current = await tx.assessment.findUniqueOrThrow({
+    where: { id: assessmentId },
+    select: { calculationVersion: true, totalHouseholdNetIncome: true },
+  });
+  if (
+    selectEngineVersion(current.calculationVersion) === "v2" &&
+    current.totalHouseholdNetIncome == null
+  ) {
+    throw new AssessmentSnapshotMissingError(
+      "This assessment's calculation snapshot has not been saved. Save the assessment data before completing it."
+    );
+  }
+
   await tx.assessment.update({
     where: { id: assessmentId },
     data: { status: "COMPLETED", completedAt: new Date() },
