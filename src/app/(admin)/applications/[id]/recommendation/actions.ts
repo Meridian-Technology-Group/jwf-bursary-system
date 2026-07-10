@@ -22,6 +22,7 @@ import {
   type AwardDecision,
 } from "@/lib/applications/set-outcome-core";
 import type { AwardFigures } from "@/lib/applications/account-promotion";
+import { gapReasonSelectionValid } from "@/lib/assessment/recommendation-v2";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -42,6 +43,17 @@ export async function saveRecommendationAction(
 ): Promise<{ success: true } | { success: false; error: string }> {
   try {
     const user = await requireRole([Role.ADMIN, Role.ASSESSOR]);
+
+    // CALC-08 — authoritative gap-reason rule (mirrors the client's submit
+    // gating): a material recommended→confirmed gap requires ≥1 gap reason.
+    // For v1 saves `gapAmount` is undefined, so this always passes.
+    if (!gapReasonSelectionValid(data.gapAmount, data.gapReasonIds ?? [])) {
+      return {
+        success: false,
+        error:
+          "Select at least one reason for the gap between the recommended and confirmed payable fees.",
+      };
+    }
 
     const result = await withUserContext(
       user.id,
