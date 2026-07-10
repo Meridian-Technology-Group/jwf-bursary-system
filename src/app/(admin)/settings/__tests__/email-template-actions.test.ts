@@ -34,8 +34,8 @@ vi.mock("@/lib/db/prisma", () => ({
 import {
   createEmailTemplateAction,
   deleteEmailTemplateAction,
-  DEFAULT_CUSTOM_TEMPLATE_MERGE_FIELDS,
 } from "../actions";
+import { DEFAULT_CUSTOM_TEMPLATE_MERGE_FIELDS } from "@/lib/email/template-defaults";
 
 function makeFakeTx(overrides: Record<string, unknown> = {}) {
   return {
