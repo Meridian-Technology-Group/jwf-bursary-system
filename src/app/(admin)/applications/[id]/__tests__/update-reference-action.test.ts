@@ -85,7 +85,7 @@ describe("updateApplicationReferenceAction (item 11)", () => {
     });
 
     expect(auditMock).toHaveBeenCalledTimes(1);
-    const [, entry] = auditMock.mock.calls[0] as [unknown, {
+    const [, entry] = auditMock.mock.calls[0] as unknown as [unknown, {
       action: string;
       entityType: string;
       entityId: string;

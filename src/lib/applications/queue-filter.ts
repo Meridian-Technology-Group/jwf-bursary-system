@@ -161,3 +161,63 @@ export function undecidedWhere(): Prisma.ApplicationWhereInput {
     OR: [{ assessment: { is: null } }, { assessment: { is: { outcome: null } } }],
   };
 }
+
+// ─── Client-side queue row filter (Items 1.1 / 1.3) ────────────────────────
+
+/**
+ * The facts the client-side queue filter bar predicates over. `reviewPhase` is
+ * pre-derived server-side (via `deriveReviewPhase`) and carried on the row —
+ * this module stays free of that server-only import.
+ */
+export interface QueueRowFilterFacts {
+  reviewPhase: ReviewPhase;
+  round: { id: string };
+  school: string;
+  reference: string;
+  leadApplicantName?: string;
+  leadApplicantEmail?: string;
+}
+
+export interface QueueRowFilters {
+  /** A round id, or "all"/undefined for no round filter. */
+  roundId?: string;
+  /** A School value, or "all"/undefined for no school filter. */
+  school?: string;
+  /** Selected review-phase values (Item 1.3); empty/absent = no status filter. */
+  statuses?: ReviewPhase[];
+  searchText?: string;
+}
+
+/**
+ * Client-side predicate composing the Applications list's filter bar
+ * (round + school + status + search) with logical AND (Item 1.3's AC). Pure
+ * and DOM-free so it is unit-testable without rendering the table; the tab
+ * split (new / rolling) is applied separately, over these already-filtered
+ * rows, so composing with the tab is automatic.
+ */
+export function matchesQueueFilters(
+  row: QueueRowFilterFacts,
+  filters: QueueRowFilters
+): boolean {
+  if (filters.roundId && filters.roundId !== "all" && row.round.id !== filters.roundId) {
+    return false;
+  }
+  if (filters.school && filters.school !== "all" && row.school !== filters.school) {
+    return false;
+  }
+  if (
+    filters.statuses &&
+    filters.statuses.length > 0 &&
+    !filters.statuses.includes(row.reviewPhase)
+  ) {
+    return false;
+  }
+  if (filters.searchText) {
+    const q = filters.searchText.toLowerCase();
+    const matchRef = row.reference.toLowerCase().includes(q);
+    const matchName = row.leadApplicantName?.toLowerCase().includes(q) ?? false;
+    const matchEmail = row.leadApplicantEmail?.toLowerCase().includes(q) ?? false;
+    if (!matchRef && !matchName && !matchEmail) return false;
+  }
+  return true;
+}

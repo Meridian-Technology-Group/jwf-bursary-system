@@ -101,6 +101,41 @@ export interface ListApplicationsFilters {
    * lifecycle filter, not a watchlist rule.
    */
   undecided?: boolean;
+  /**
+   * Received-date range filter (Item 7.1) — inclusive UTC instant bounds on
+   * `submittedAt`. Callers convert a Europe/London calendar-date input via
+   * `londonStartOfDayUtc`/`londonEndOfDayUtc` (src/lib/datetime.ts) before
+   * passing it here so a boundary day is fully included regardless of
+   * GMT/BST. An application with no `submittedAt` (not yet submitted) is
+   * excluded automatically whenever either bound is set — Prisma/SQL never
+   * matches a `gte`/`lte` comparison against NULL.
+   */
+  submittedFrom?: Date;
+  submittedTo?: Date;
+}
+
+/**
+ * Builds the Prisma where-fragment for the received-date range filter (Item
+ * 7.1), mirroring the story's inclusive from/to semantics:
+ *   - neither bound set  → `undefined` (no filter)
+ *   - only `from`        → `submittedAt >= from` (open upper bound)
+ *   - only `to`          → `submittedAt <= to` (open lower bound)
+ *   - both               → `submittedAt` between `from` and `to` inclusive
+ * A row with a null `submittedAt` never satisfies a `gte`/`lte` comparison, so
+ * unsubmitted applications are excluded automatically whenever a bound is
+ * active — no explicit `not: null` needed.
+ */
+export function submittedDateRangeWhere(
+  from: Date | undefined,
+  to: Date | undefined
+): Prisma.ApplicationWhereInput | undefined {
+  if (!from && !to) return undefined;
+  return {
+    submittedAt: {
+      ...(from ? { gte: from } : {}),
+      ...(to ? { lte: to } : {}),
+    },
+  };
 }
 
 /**
@@ -153,6 +188,14 @@ export async function listApplications(
 
   if (filters.undecided) {
     and.push(undecidedWhere());
+  }
+
+  const submittedWhere = submittedDateRangeWhere(
+    filters.submittedFrom,
+    filters.submittedTo
+  );
+  if (submittedWhere) {
+    and.push(submittedWhere);
   }
 
   if (and.length > 0) {

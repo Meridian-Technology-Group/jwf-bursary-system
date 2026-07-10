@@ -64,6 +64,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Dialog,
@@ -81,6 +89,12 @@ import { bulkAssignApplicationsAction } from "@/app/(admin)/applications/[id]/ac
 import { bulkReassessmentInviteFromApplicationsAction } from "@/app/(admin)/invitations/actions";
 
 import type { ApplicationListItem } from "@/lib/db/queries/applications";
+import {
+  ALL_REVIEW_PHASES,
+  matchesQueueFilters,
+  type ReviewPhase,
+} from "@/lib/applications/queue-filter";
+import { REVIEW_PHASE_LABEL } from "@/lib/applications/review-phase-labels";
 import type { School, Role } from "@prisma/client";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -105,14 +119,23 @@ interface NameData {
   leadApplicantEmail: string;
 }
 
-interface ApplicationRow extends ApplicationListItem {
+/**
+ * An `ApplicationListItem` plus its server-derived review phase (Item 1.1) —
+ * computed once in `queue/page.tsx` via `deriveReviewPhase`, the same helper
+ * the detail page uses, so the two surfaces always agree.
+ */
+export type ApplicationListItemWithPhase = ApplicationListItem & {
+  reviewPhase: ReviewPhase;
+};
+
+interface ApplicationRow extends ApplicationListItemWithPhase {
   names?: NameData;
 }
 
 type TabKey = "new" | "rolling";
 
 interface ApplicationTableProps {
-  applications: ApplicationListItem[];
+  applications: ApplicationListItemWithPhase[];
   /** Lead applicant names + emails, keyed by application id (always shown). */
   names: ApplicantNameEntry[];
   rounds: RoundOption[];
@@ -130,6 +153,17 @@ interface ApplicationTableProps {
   initialRound?: string;
   /** Seed the school dropdown from a drill-in URL (defaults to "all"). */
   initialSchool?: string;
+  /** Seed the "Received from" date input (Item 7.1), `YYYY-MM-DD`. */
+  initialSubmittedFrom?: string;
+  /** Seed the "Received to" date input (Item 7.1), `YYYY-MM-DD`. */
+  initialSubmittedTo?: string;
+  /**
+   * The current URL's query string (no leading `?`), as seen by the server
+   * component. Used to preserve every other active filter when the
+   * received-date range navigates (Item 7.1) — avoids a client-side
+   * `useSearchParams()` call, which would require a Suspense boundary.
+   */
+  currentQueryString?: string;
   /**
    * When present, render a dismissible banner above the table describing the
    * server-side filter applied via the URL, with a "Clear filters" link.
@@ -160,6 +194,35 @@ function SchoolBadge({ school }: { school: School }) {
   return (
     <span className="inline-flex items-center rounded-full bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-700">
       Trinity
+    </span>
+  );
+}
+
+// Colours loosely mirror the raw lifecycle badges in
+// `components/shared/lifecycle-badges.tsx` (in-progress = amber/orange,
+// complete = green), with QUALIFIES/DOES_NOT_QUALIFY recoloured to match their
+// D-3 "Active"/"Closed" state-map wording rather than the legacy
+// qualify/not-qualify implication.
+const REVIEW_PHASE_BADGE_STYLES: Record<ReviewPhase, string> = {
+  PRE_SUBMISSION: "bg-neutral-100 text-neutral-600",
+  SUBMITTED: "bg-blue-50 text-blue-700",
+  NOT_STARTED: "bg-orange-50 text-orange-700",
+  PAUSED: "bg-yellow-50 text-yellow-700",
+  COMPLETED: "bg-green-50 text-green-700",
+  QUALIFIES: "bg-emerald-50 text-emerald-700",
+  DOES_NOT_QUALIFY: "bg-neutral-100 text-neutral-500",
+};
+
+/** Status column badge (Item 1.1) — read-only; same wording as the detail page. */
+function ReviewPhaseBadge({ phase }: { phase: ReviewPhase }) {
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium",
+        REVIEW_PHASE_BADGE_STYLES[phase]
+      )}
+    >
+      {REVIEW_PHASE_LABEL[phase]}
     </span>
   );
 }
@@ -455,6 +518,9 @@ export function ApplicationTable({
   userRole,
   initialRound,
   initialSchool,
+  initialSubmittedFrom,
+  initialSubmittedTo,
+  currentQueryString,
   activeFilter,
   reassessEligibleActive = false,
   reassessTargetRound = null,
@@ -470,8 +536,27 @@ export function ApplicationTable({
   const [selectedSchool, setSelectedSchool] = React.useState<string>(
     initialSchool ?? "all"
   );
+  // Status multi-select (Item 1.3) — client-side only, composes (AND) with the
+  // other filters below. Independent of the `?status=` server drill-in.
+  const [selectedStatuses, setSelectedStatuses] = React.useState<ReviewPhase[]>(
+    []
+  );
   const [searchText, setSearchText] = React.useState("");
   const [activeTab, setActiveTab] = React.useState<TabKey>("new");
+
+  // Received-date range (Item 7.1) — server-side; changing either date
+  // navigates (router.replace) so `listApplications` re-runs with the new
+  // bounds. Seeded from the URL so the inputs reflect whatever was actually
+  // applied (an invalid hand-edited range renders blank — see queue/page.tsx).
+  const [submittedFrom, setSubmittedFrom] = React.useState(
+    initialSubmittedFrom ?? ""
+  );
+  const [submittedTo, setSubmittedTo] = React.useState(
+    initialSubmittedTo ?? ""
+  );
+  const [dateRangeError, setDateRangeError] = React.useState<string | null>(
+    null
+  );
 
   // Table state
   const [sorting, setSorting] = React.useState<SortingState>([]);
@@ -497,7 +582,7 @@ export function ApplicationTable({
   React.useEffect(() => {
     setRowSelection({});
     setBulkFeedback(null);
-  }, [selectedRound, selectedSchool, searchText, activeTab]);
+  }, [selectedRound, selectedSchool, selectedStatuses, searchText, activeTab]);
 
   // Derived rows with names merged in.
   const rows: ApplicationRow[] = React.useMemo(() => {
@@ -507,27 +592,55 @@ export function ApplicationTable({
     }));
   }, [applications, nameMap]);
 
-  // Shared (round / school / search) filtering — applied before the tab split.
+  // Shared (round / school / status / search) filtering — applied before the
+  // tab split, so composing with the tab is automatic. The received-date
+  // range (7.1) is NOT filtered here — it's applied server-side (see
+  // `applyReceivedDateFilter` below), so these rows are already scoped to it.
   const filteredRows = React.useMemo(() => {
-    return rows.filter((row) => {
-      if (selectedRound !== "all" && row.round.id !== selectedRound)
-        return false;
-      if (selectedSchool !== "all" && row.school !== selectedSchool)
-        return false;
-      if (searchText) {
-        const q = searchText.toLowerCase();
-        const matchRef = row.reference.toLowerCase().includes(q);
-        const matchName = row.names?.leadApplicantName
-          .toLowerCase()
-          .includes(q);
-        const matchEmail = row.names?.leadApplicantEmail
-          .toLowerCase()
-          .includes(q);
-        if (!matchRef && !matchName && !matchEmail) return false;
-      }
-      return true;
-    });
-  }, [rows, selectedRound, selectedSchool, searchText]);
+    return rows.filter((row) =>
+      matchesQueueFilters(
+        {
+          round: row.round,
+          school: row.school,
+          reviewPhase: row.reviewPhase,
+          reference: row.reference,
+          leadApplicantName: row.names?.leadApplicantName,
+          leadApplicantEmail: row.names?.leadApplicantEmail,
+        },
+        {
+          roundId: selectedRound,
+          school: selectedSchool,
+          statuses: selectedStatuses,
+          searchText,
+        }
+      )
+    );
+  }, [rows, selectedRound, selectedSchool, selectedStatuses, searchText]);
+
+  function toggleStatus(phase: ReviewPhase, checked: boolean) {
+    setSelectedStatuses((prev) =>
+      checked ? [...prev, phase] : prev.filter((p) => p !== phase)
+    );
+  }
+
+  // Received-date range (Item 7.1) — a real navigation (unlike round/school/
+  // status, which re-filter the already-fetched rows client-side) so
+  // `listApplications` re-runs server-side with the new bounds. Preserves
+  // every other current query param (roundId/school/status/reassessEligible
+  // etc.) so this filter composes without clobbering the others.
+  function applyReceivedDateFilter(nextFrom: string, nextTo: string) {
+    if (nextFrom && nextTo && nextFrom > nextTo) {
+      setDateRangeError("'Received from' must be on or before 'Received to'.");
+      return;
+    }
+    setDateRangeError(null);
+    const nextParams = new URLSearchParams(currentQueryString ?? "");
+    if (nextFrom) nextParams.set("submittedFrom", nextFrom);
+    else nextParams.delete("submittedFrom");
+    if (nextTo) nextParams.set("submittedTo", nextTo);
+    else nextParams.delete("submittedTo");
+    router.replace(`/queue?${nextParams.toString()}`);
+  }
 
   // Tab split by application type.
   const { newRows, rollingRows } = React.useMemo(() => {
@@ -592,6 +705,10 @@ export function ApplicationTable({
       columnHelper.accessor("school", {
         header: "School",
         cell: (info) => <SchoolBadge school={info.getValue()} />,
+      }),
+      columnHelper.accessor("reviewPhase", {
+        header: "Status",
+        cell: (info) => <ReviewPhaseBadge phase={info.getValue()} />,
       }),
       columnHelper.display({
         id: "leadApplicant",
@@ -751,6 +868,50 @@ export function ApplicationTable({
           </SelectContent>
         </Select>
 
+        {/* Status multi-select (Item 1.3) — client-side, composes with the rest */}
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              variant="outline"
+              size="sm"
+              className={cn(
+                "h-9 shrink-0 whitespace-nowrap border-neutral-200 bg-white text-sm",
+                selectedStatuses.length > 0
+                  ? "border-primary-300 bg-primary-50 text-primary-800 hover:bg-primary-100"
+                  : "text-slate-600 hover:bg-neutral-50"
+              )}
+            >
+              <Filter className="mr-1.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+              Status
+              {selectedStatuses.length > 0 && (
+                <span className="ml-1.5 rounded-full bg-primary-200 px-1.5 text-[11px] text-primary-900">
+                  {selectedStatuses.length}
+                </span>
+              )}
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" className="w-56">
+            {ALL_REVIEW_PHASES.map((phase) => (
+              <DropdownMenuCheckboxItem
+                key={phase}
+                checked={selectedStatuses.includes(phase)}
+                onSelect={(e) => e.preventDefault()}
+                onCheckedChange={(checked) => toggleStatus(phase, checked)}
+              >
+                {REVIEW_PHASE_LABEL[phase]}
+              </DropdownMenuCheckboxItem>
+            ))}
+            {selectedStatuses.length > 0 && (
+              <>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onSelect={() => setSelectedStatuses([])}>
+                  Clear status filter
+                </DropdownMenuItem>
+              </>
+            )}
+          </DropdownMenuContent>
+        </DropdownMenu>
+
         {/* Re-assessment-eligible toggle (ADMIN only, URL-driven server filter) */}
         {bulkEnabled && (
           <Button
@@ -783,6 +944,43 @@ export function ApplicationTable({
           onChange={(e) => setSearchText(e.target.value)}
           className="h-9 w-[240px] border-neutral-200 bg-white text-sm placeholder:text-slate-400"
         />
+
+        {/* Received-date range (Item 7.1) — server-side, navigates on change */}
+        <div className="flex flex-col gap-1">
+          <div className="flex items-center gap-1.5">
+            <span className="text-xs font-medium text-slate-500">Received</span>
+            <Input
+              type="date"
+              aria-label="Received from"
+              value={submittedFrom}
+              max={submittedTo || undefined}
+              onChange={(e) => {
+                setSubmittedFrom(e.target.value);
+                applyReceivedDateFilter(e.target.value, submittedTo);
+              }}
+              className="h-9 w-[150px] border-neutral-200 bg-white text-sm"
+            />
+            <span className="text-xs text-slate-400" aria-hidden="true">
+              –
+            </span>
+            <Input
+              type="date"
+              aria-label="Received to"
+              value={submittedTo}
+              min={submittedFrom || undefined}
+              onChange={(e) => {
+                setSubmittedTo(e.target.value);
+                applyReceivedDateFilter(submittedFrom, e.target.value);
+              }}
+              className="h-9 w-[150px] border-neutral-200 bg-white text-sm"
+            />
+          </div>
+          {dateRangeError && (
+            <span role="alert" className="text-xs text-red-600">
+              {dateRangeError}
+            </span>
+          )}
+        </div>
       </div>
 
       {/* Section tabs: New applications vs Rolling-over bursaries */}
