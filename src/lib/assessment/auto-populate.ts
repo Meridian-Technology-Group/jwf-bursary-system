@@ -17,7 +17,11 @@ export type OverridableField =
   | 'notionalRent'
   | 'utilityCosts'
   | 'foodCosts'
-  | 'councilTax';
+  | 'councilTax'
+  // CALC-07 — the v2 form's only family-type-derived overridable input: the
+  // school-age-children count defaults from `FamilyCategoryMeta` per category but
+  // the assessor can override it. v1 never passes this key, so v1 is unaffected.
+  | 'schoolAgeChildrenCount';
 
 /**
  * Given the new reference defaults for the selected family type and the set of
@@ -56,7 +60,7 @@ export function applyFamilyTypeDefaults<
  */
 export function deriveOverriddenFields(
   stored: Partial<Record<OverridableField, number | null | undefined>>,
-  defaults: Record<OverridableField, number>,
+  defaults: Partial<Record<OverridableField, number>>,
 ): Set<OverridableField> {
   const set = new Set<OverridableField>();
   (Object.keys(defaults) as OverridableField[]).forEach((key) => {

@@ -64,6 +64,9 @@ export const propertyAssetsRecordSchema = z.object({
   home: propertyAssetItemSchema.optional(),
   second: propertyAssetItemSchema.optional(),
   other: propertyAssetItemSchema.optional(),
+  // CALC-07 — the assessor's persisted portfolio-type selection (mirrors
+  // `PropertyPortfolioType` in src/lib/assessment/v2/profiling.ts).
+  portfolioType: z.enum(["RENTING", "SINGLE", "DOUBLE", "MULTIPLE"]).optional(),
 });
 
 export type PropertyAssetsRecordFormValues = z.infer<typeof propertyAssetsRecordSchema>;

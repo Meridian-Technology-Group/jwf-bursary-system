@@ -60,11 +60,19 @@ export interface PropertyAssetItem {
  * is an aggregate across every additional property beyond `home`/`second`
  * (workbook C101/C102) — the assessor does not itemise a third-and-beyond
  * property individually.
+ *
+ * CALC-07: `portfolioType` persists the assessor's portfolio-type selection
+ * (pre-derived from the submitted assets, overridable). Stored inside this
+ * JSONB so the override survives reloads instead of reverting to the derived
+ * prefill. The literal union mirrors `PropertyPortfolioType`
+ * (src/lib/assessment/v2/profiling.ts) verbatim — declared inline to keep this
+ * types module engine-import-free.
  */
 export interface PropertyAssetsRecord {
   home?: PropertyAssetItem;
   second?: PropertyAssetItem;
   other?: PropertyAssetItem;
+  portfolioType?: "RENTING" | "SINGLE" | "DOUBLE" | "MULTIPLE";
 }
 
 /**

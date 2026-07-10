@@ -15,6 +15,7 @@
  */
 
 import { notFound, redirect } from "next/navigation";
+import type { ReactNode } from "react";
 import type { Decimal } from "@prisma/client/runtime/library";
 import { requireRole, Role, type CurrentUser } from "@/lib/auth/roles";
 import {
@@ -24,7 +25,35 @@ import {
 import { getApplicationContributors } from "@/lib/db/queries/contributors";
 import { buildContributorLabelMap } from "@/lib/contributors/dual-view";
 import { getAssessment } from "@/lib/db/queries/assessments";
-import { getConfigsForAssessment } from "@/lib/db/queries/reference-tables";
+import {
+  getConfigsForAssessment,
+  getReferenceBundleRows,
+} from "@/lib/db/queries/reference-tables";
+import { resolveReferenceBundle } from "@/lib/assessment/v2/reference-bundle";
+import { selectEngineVersion } from "@/lib/assessment/engine-version";
+import {
+  parentIncomeToAssessorRecord,
+  assetsToPropertyAssets,
+  assetsToDebts,
+  derivePortfolioType,
+  assetsToSavings,
+  assetsToTransport,
+} from "@/lib/assessment/v2/prefill";
+import {
+  AssessmentFormV2,
+  type SerialisedAssessmentV2,
+  type AssessmentV2Prefill,
+} from "@/components/admin/assessment-form-v2";
+import type {
+  AssessorIncomeRecord,
+  PropertyAssetsRecord,
+  DebtsRecord,
+} from "@/types/assessment-v2";
+import type {
+  ParentsIncomeData,
+  AssetsLiabilitiesData,
+} from "@/types/application";
+import type { EntryYearGroupCode } from "@/lib/assessment/schooling-years";
 import { feeYearLabels } from "@/lib/assessment/fee-year";
 import { getPreviousAssessment } from "@/lib/db/queries/reassessment";
 import { getSiblingLinks } from "@/lib/db/queries/siblings";
@@ -329,6 +358,39 @@ export default async function AssessmentPage({ params }: Props) {
     }
   );
 
+  // ── CALC-07 — engine dispatch. v1 assessments keep the OLD form/engine/save
+  // path byte-for-byte; only `calculationVersion: 2` assessments get the v2
+  // form. The branch lives here at the page level (implementation-plan §CALC-07).
+  const engineVersion = selectEngineVersion(assessment.calculationVersion);
+
+  // For v2, additionally load the ReferenceBundle for the round's academic year
+  // and the family's submitted income/assets sections (for first-load pre-fill).
+  const v2Sources =
+    engineVersion === "v2"
+      ? await withUserContext(user.id, user.role as RlsRole, async (tx) => {
+          const rows = await getReferenceBundleRows(tx);
+          const primaryId = primaryContributor?.id;
+          const [incomeSec, assetsSec] = primaryId
+            ? await Promise.all([
+                getSectionData(tx, application.id, "PARENTS_INCOME", primaryId),
+                getSectionData(tx, application.id, "ASSETS_LIABILITIES", primaryId),
+              ])
+            : [null, null];
+          // A submitted second parent supplies Parent 2's income from their own
+          // PARENTS_INCOME section; otherwise the primary's parent2Income is used.
+          const secondaryIncomeSec =
+            hasSubmittedSecondary && secondaryContributor
+              ? await getSectionData(
+                  tx,
+                  application.id,
+                  "PARENTS_INCOME",
+                  secondaryContributor.id
+                )
+              : null;
+          return { rows, incomeSec, assetsSec, secondaryIncomeSec };
+        })
+      : null;
+
   // Normalise assessment data: convert all Decimal → number for client.
   // This avoids Prisma Decimal objects crossing the server/client boundary.
   const serialisedAssessment: SerialisedAssessment = {
@@ -418,25 +480,131 @@ export default async function AssessmentPage({ params }: Props) {
   const forceTwoEarner =
     hasSubmittedSecondary && !serialisedAssessment.secondaryParentOverride;
 
-  // Build the form panel
-  const formPanel = (
-    <AssessmentForm
-      assessment={serialisedAssessment}
-      applicationId={params.id}
-      school={application.school}
-      applicationEntryYear={application.entryYear}
-      applicationEntryYearGroup={application.entryYearGroup}
-      familyTypeConfigs={configs.familyTypeConfigs}
-      defaultAnnualFees={configs.annualFees}
-      defaultNextYearAnnualFees={configs.nextYearAnnualFees}
-      currentFeeYearLabel={feeYearLabels(round.academicYear).current ?? undefined}
-      nextFeeYearLabel={feeYearLabels(round.academicYear).next ?? undefined}
-      defaultCouncilTax={configs.councilTax}
-      siblingPayableFees={siblingPayableFees}
-      forceTwoEarner={forceTwoEarner}
-      secondaryParentOverride={serialisedAssessment.secondaryParentOverride}
-    />
-  );
+  // Build the form panel — v1 (untouched) or v2 (full notional model).
+  let formPanel: ReactNode;
+  if (engineVersion === "v2" && v2Sources) {
+    const resolved = resolveReferenceBundle(v2Sources.rows);
+
+    if (!resolved.isComplete) {
+      // Fail-soft: reference data not yet seeded on this environment. Render a
+      // clear callout instead of crashing (expected on nonprod until
+      // `seed:reference` has run) — implementation-plan §CALC-07 item 2.
+      formPanel = (
+        <div className="flex h-full flex-col items-center justify-center gap-4 rounded-xl border border-dashed border-amber-300 bg-amber-50 px-6 py-16 text-center">
+          <ClipboardList className="h-12 w-12 text-amber-300" aria-hidden="true" />
+          <div>
+            <p className="text-base font-semibold text-amber-800">
+              Reference data not seeded
+            </p>
+            <p className="mx-auto mt-1.5 max-w-md text-sm text-amber-700">
+              The v2 calculation needs the notional-cost and profiling reference
+              tables, which are not yet populated on this environment. An
+              administrator must run <code>npm run seed:reference</code> before this
+              assessment can be calculated.
+            </p>
+            <p className="mt-3 text-xs text-amber-600">
+              Missing: {resolved.missingTables.join(", ")}
+            </p>
+          </div>
+        </div>
+      );
+    } else {
+      const incomeData = (v2Sources.incomeSec?.data ?? null) as ParentsIncomeData | null;
+      const assetsData = (v2Sources.assetsSec?.data ?? null) as AssetsLiabilitiesData | null;
+      const secondaryIncomeData = (v2Sources.secondaryIncomeSec?.data ??
+        null) as ParentsIncomeData | null;
+
+      const savings = assetsToSavings(assetsData);
+      const transport = assetsToTransport(assetsData);
+      const prefill: AssessmentV2Prefill = {
+        parent1Income: parentIncomeToAssessorRecord(incomeData?.parent1Income),
+        parent2Income: parentIncomeToAssessorRecord(
+          secondaryIncomeData?.parent1Income ?? incomeData?.parent2Income
+        ),
+        propertyAssets: assetsToPropertyAssets(assetsData),
+        debts: assetsToDebts(assetsData),
+        portfolioType: derivePortfolioType(assetsData),
+        cashSavings: savings.cashSavings,
+        isasPepsShares: savings.isasPepsShares,
+        usesCar: transport.usesCar,
+        usesPublicTransport: transport.usesPublicTransport,
+      };
+
+      const serialisedV2: SerialisedAssessmentV2 = {
+        id: assessment.id,
+        applicationId: assessment.applicationId,
+        calculationVersion: assessment.calculationVersion,
+        status: assessment.status,
+        familyTypeCategory: assessment.familyTypeCategory,
+        annualFees: toNumber(assessment.annualFees),
+        schoolingYearsRemaining: assessment.schoolingYearsRemaining,
+        scholarshipPct: toNumber(assessment.scholarshipPct),
+        vatRate: toNumber(assessment.vatRate),
+        rentAddBackType: assessment.rentAddBackType,
+        multiPropertyRentAddBack: assessment.multiPropertyRentAddBack,
+        councilTaxSupport: assessment.councilTaxSupport,
+        usesCar: assessment.usesCar,
+        usesPublicTransport: assessment.usesPublicTransport,
+        feeInsuranceAnnual: toNumber(assessment.feeInsuranceAnnual),
+        behindOnFees: assessment.behindOnFees,
+        dishonestyFlag: assessment.dishonestyFlag,
+        earners: assessment.earners
+          .filter((e) => e.earnerLabel === "PARENT_1" || e.earnerLabel === "PARENT_2")
+          .map((e) => ({
+            earnerLabel: e.earnerLabel as "PARENT_1" | "PARENT_2",
+            employmentStatus: e.employmentStatus,
+            incomeDetail: (e.incomeDetail ?? null) as AssessorIncomeRecord | null,
+          })),
+        property: assessment.property
+          ? {
+              propertyAssets:
+                (assessment.property.propertyAssets ?? null) as PropertyAssetsRecord | null,
+              debts: (assessment.property.debts ?? null) as DebtsRecord | null,
+              cashSavings: toNumber(assessment.property.cashSavings),
+              isasPepsShares: toNumber(assessment.property.isasPepsShares),
+              schoolAgeChildrenCount: assessment.property.schoolAgeChildrenCount,
+            }
+          : null,
+      };
+
+      formPanel = (
+        <AssessmentFormV2
+          assessment={serialisedV2}
+          applicationId={params.id}
+          referenceBundle={resolved.bundle}
+          prefill={prefill}
+          defaultAnnualFees={configs.annualFees}
+          applicationEntryYear={application.entryYear}
+          applicationEntryYearGroup={
+            application.entryYearGroup as EntryYearGroupCode | null
+          }
+          siblingPayableFees={siblingPayableFees}
+          forceTwoEarner={forceTwoEarner}
+          secondaryParentOverride={serialisedAssessment.secondaryParentOverride}
+          readOnly={isViewer}
+        />
+      );
+    }
+  } else {
+    formPanel = (
+      <AssessmentForm
+        assessment={serialisedAssessment}
+        applicationId={params.id}
+        school={application.school}
+        applicationEntryYear={application.entryYear}
+        applicationEntryYearGroup={application.entryYearGroup}
+        familyTypeConfigs={configs.familyTypeConfigs}
+        defaultAnnualFees={configs.annualFees}
+        defaultNextYearAnnualFees={configs.nextYearAnnualFees}
+        currentFeeYearLabel={feeYearLabels(round.academicYear).current ?? undefined}
+        nextFeeYearLabel={feeYearLabels(round.academicYear).next ?? undefined}
+        defaultCouncilTax={configs.councilTax}
+        siblingPayableFees={siblingPayableFees}
+        forceTwoEarner={forceTwoEarner}
+        secondaryParentOverride={serialisedAssessment.secondaryParentOverride}
+      />
+    );
+  }
 
   // Build the document panel (left side of split-screen).
   // The client component owns its own toolbar / empty state. When a second

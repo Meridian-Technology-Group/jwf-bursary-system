@@ -17,7 +17,14 @@ import type {
   EarnerLabel,
   EmploymentStatus,
   AssessmentStatus,
+  RentAddBackType,
+  Prisma,
 } from "@prisma/client";
+import type {
+  AssessorIncomeRecord,
+  PropertyAssetsRecord,
+  DebtsRecord,
+} from "@/types/assessment-v2";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -42,6 +49,35 @@ export interface PropertySaveInput {
   isMortgageFree: boolean;
   additionalPropertyCount: number;
   additionalPropertyIncome: number;
+  cashSavings: number;
+  isasPepsShares: number;
+  schoolAgeChildrenCount: number;
+  derivedSavingsAnnualTotal: number;
+}
+
+/**
+ * CALC-07 — one v2 earner's captured record. `incomeDetail` is the
+ * status-driven JSONB (`AssessorIncomeRecord`); the legacy numeric buckets are
+ * NOT written for v2 earners (they stay at their column defaults) — the v2
+ * income calc reads `incomeDetail`. `employmentStatus` is retained because the
+ * column is non-null; the v2 form maps the dominant declared status onto it for
+ * back-compat display only.
+ */
+export interface EarnerV2SaveInput {
+  earnerLabel: EarnerLabel;
+  employmentStatus: EmploymentStatus;
+  incomeDetail: AssessorIncomeRecord;
+}
+
+/**
+ * CALC-07 — v2 property/savings/debt capture. `propertyAssets` and `debts` are
+ * the itemised JSONB records; the savings + school-age-children columns are the
+ * existing v1 columns (reused unchanged). `isMortgageFree`/`additionalProperty*`
+ * are left at defaults for v2 (superseded by `rentAddBackType` + `propertyAssets`).
+ */
+export interface PropertyV2SaveInput {
+  propertyAssets: PropertyAssetsRecord;
+  debts: DebtsRecord;
   cashSavings: number;
   isasPepsShares: number;
   schoolAgeChildrenCount: number;
@@ -89,9 +125,46 @@ export interface AssessmentSaveInput {
   // Status
   status?: AssessmentStatus;
 
-  // Relations
+  // Relations (v1)
   earners?: EarnerSaveInput[];
   property?: PropertySaveInput;
+
+  // ── CALC-07 — v2 notional toggles/inputs ──────────────────────────────────
+  rentAddBackType?: RentAddBackType;
+  multiPropertyRentAddBack?: boolean;
+  councilTaxSupport?: boolean;
+  usesCar?: boolean;
+  usesPublicTransport?: boolean;
+  feeInsuranceAnnual?: number;
+  behindOnFees?: boolean;
+
+  // ── CALC-07 — v2 snapshot columns (orchestrator output maps 1:1) ──────────
+  notionalEssentials?: number;
+  notionalCar?: number;
+  notionalPublicTransport?: number;
+  notionalJwfAllowance?: number;
+  notionalSavingsBenchmark?: number;
+  savingsTestNumber?: number;
+  totalNotionalSpend?: number;
+  ndiAfterNotionalSpend?: number;
+  derivedYearlyDebtRepayments?: number;
+  yearlyDebtExposure?: number;
+  debtOverNdiRatio?: number;
+  debtStatusLabel?: string | null;
+  incomeCategory?: number | null;
+  propertyCategoryDerived?: number | null;
+  propertyEquityCategory?: number | null;
+  financialEquityLabel?: string | null;
+  lifestyleSqueezeRatio?: number | null;
+  lifestyleSqueezeLabel?: string | null;
+  actualRemainingDi?: number;
+  theoreticalBenchmarkDi?: number;
+  affordabilityAdjustedDi?: number;
+  recommendedPayableFees?: number;
+
+  // ── CALC-07 — v2 relations ────────────────────────────────────────────────
+  earnersV2?: EarnerV2SaveInput[];
+  propertyV2?: PropertyV2SaveInput;
 }
 
 // ─── Queries ──────────────────────────────────────────────────────────────────
@@ -117,16 +190,30 @@ export async function getAssessment(
 /**
  * Creates a new Assessment record with NOT_STARTED status.
  * Initialises empty earner records for PARENT_1 and PARENT_2.
+ *
+ * CALC-07: `calculationVersion` dispatches the engine — `1` = the abridged
+ * 4-stage calculator (v1 form/engine, untouched), `2` = the full notional
+ * model (v2 form + engine).
+ *
+ * ⚠️ v2 STAMP GATED UNTIL CALC-08. The default stays `1` so a new assessment
+ * on staging (the client-testing env) still completes into a recommendation
+ * screen that understands its outputs — the recommendation screen is not yet
+ * v2-aware. CALC-08 (recommendation screen v2) flips this default to `2` in
+ * the same PR that makes the downstream screen v2-aware; until then the v2
+ * form ships dark. The explicit parameter stays so tests (and CALC-08) can
+ * exercise the v2 creation path directly.
  */
 export async function createAssessment(
   tx: Tx,
   applicationId: string,
-  assessorId: string
+  assessorId: string,
+  calculationVersion: number = 1
 ): Promise<AssessmentWithRelations> {
   const assessment = await tx.assessment.create({
     data: {
       applicationId,
       assessorId,
+      calculationVersion,
       status: ASSESSMENT_INITIAL_STATUS,
       scholarshipPct: 0,
       vatRate: 20,
@@ -151,7 +238,7 @@ export async function saveAssessment(
   assessmentId: string,
   data: AssessmentSaveInput
 ): Promise<AssessmentWithRelations> {
-  const { earners, property, ...assessmentFields } = data;
+  const { earners, property, earnersV2, propertyV2, ...assessmentFields } = data;
 
   // Build the update payload — only defined fields
   const updateData: Record<string, unknown> = {};
@@ -209,6 +296,47 @@ export async function saveAssessment(
     updateData.nextYearMonthlyPayableFees = assessmentFields.nextYearMonthlyPayableFees;
   if (assessmentFields.status !== undefined)
     updateData.status = assessmentFields.status;
+
+  // ── CALC-07 — v2 toggles + snapshot columns ───────────────────────────────
+  // Every field is written only when explicitly provided (partial update), the
+  // same discipline as the v1 fields above. A v1 save never sets any of these,
+  // so v1 rows are byte-identical to before. `null` is a valid clear for the
+  // nullable label/category fields.
+  const v2ScalarKeys = [
+    "rentAddBackType",
+    "multiPropertyRentAddBack",
+    "councilTaxSupport",
+    "usesCar",
+    "usesPublicTransport",
+    "feeInsuranceAnnual",
+    "behindOnFees",
+    "notionalEssentials",
+    "notionalCar",
+    "notionalPublicTransport",
+    "notionalJwfAllowance",
+    "notionalSavingsBenchmark",
+    "savingsTestNumber",
+    "totalNotionalSpend",
+    "ndiAfterNotionalSpend",
+    "derivedYearlyDebtRepayments",
+    "yearlyDebtExposure",
+    "debtOverNdiRatio",
+    "debtStatusLabel",
+    "incomeCategory",
+    "propertyCategoryDerived",
+    "propertyEquityCategory",
+    "financialEquityLabel",
+    "lifestyleSqueezeRatio",
+    "lifestyleSqueezeLabel",
+    "actualRemainingDi",
+    "theoreticalBenchmarkDi",
+    "affordabilityAdjustedDi",
+    "recommendedPayableFees",
+  ] as const;
+  for (const key of v2ScalarKeys) {
+    const value = (assessmentFields as Record<string, unknown>)[key];
+    if (value !== undefined) updateData[key] = value;
+  }
 
   // All mutations execute within the caller's RLS-aware transaction.
   // Update assessment fields
@@ -282,6 +410,61 @@ export async function saveAssessment(
         isasPepsShares: property.isasPepsShares,
         schoolAgeChildrenCount: property.schoolAgeChildrenCount,
         derivedSavingsAnnualTotal: property.derivedSavingsAnnualTotal,
+      },
+    });
+  }
+
+  // ── CALC-07 — v2 earners (status-driven JSONB) ────────────────────────────
+  // Writes `incomeDetail` per earner. The legacy numeric buckets are left at
+  // their column defaults for v2 earners (the v2 income calc reads the JSONB);
+  // `totalIncome` is set from the JSONB sum for a sensible back-compat display.
+  if (earnersV2 && earnersV2.length > 0) {
+    for (const earner of earnersV2) {
+      const incomeDetailJson = earner.incomeDetail as unknown as Prisma.InputJsonValue;
+      const totalIncome = Number(earner.incomeDetail.total ?? 0);
+      await tx.assessmentEarner.upsert({
+        where: {
+          assessmentId_earnerLabel: {
+            assessmentId,
+            earnerLabel: earner.earnerLabel,
+          },
+        },
+        update: {
+          employmentStatus: earner.employmentStatus,
+          incomeDetail: incomeDetailJson,
+          totalIncome,
+        },
+        create: {
+          assessmentId,
+          earnerLabel: earner.earnerLabel,
+          employmentStatus: earner.employmentStatus,
+          incomeDetail: incomeDetailJson,
+          totalIncome,
+        },
+      });
+    }
+  }
+
+  // ── CALC-07 — v2 property/debt (itemised JSONB) ───────────────────────────
+  if (propertyV2) {
+    await tx.assessmentProperty.upsert({
+      where: { assessmentId },
+      update: {
+        propertyAssets: propertyV2.propertyAssets as unknown as Prisma.InputJsonValue,
+        debts: propertyV2.debts as unknown as Prisma.InputJsonValue,
+        cashSavings: propertyV2.cashSavings,
+        isasPepsShares: propertyV2.isasPepsShares,
+        schoolAgeChildrenCount: propertyV2.schoolAgeChildrenCount,
+        derivedSavingsAnnualTotal: propertyV2.derivedSavingsAnnualTotal,
+      },
+      create: {
+        assessmentId,
+        propertyAssets: propertyV2.propertyAssets as unknown as Prisma.InputJsonValue,
+        debts: propertyV2.debts as unknown as Prisma.InputJsonValue,
+        cashSavings: propertyV2.cashSavings,
+        isasPepsShares: propertyV2.isasPepsShares,
+        schoolAgeChildrenCount: propertyV2.schoolAgeChildrenCount,
+        derivedSavingsAnnualTotal: propertyV2.derivedSavingsAnnualTotal,
       },
     });
   }
