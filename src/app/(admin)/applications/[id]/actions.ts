@@ -44,6 +44,7 @@ import {
   deriveReviewPhase,
   reopenAssessmentForMaterialChange,
 } from "@/lib/applications/status";
+import { validateReferenceInput } from "@/lib/applications/reference";
 
 import { AUDIT_ACTIONS, AUDIT_ENTITY_TYPES } from "@/lib/audit/actions";
 
@@ -1031,6 +1032,94 @@ export async function setSubmissionDeadlineAction(
     const message =
       err instanceof Error ? err.message : "Failed to set submission deadline.";
     console.error("[setSubmissionDeadlineAction]", err);
+    return { success: false, error: message };
+  }
+}
+
+// ─── updateApplicationReferenceAction (item 11 — editable bursary reference) ──
+
+/**
+ * Updates an application's bursary reference. ADMIN-only, no lifecycle-state
+ * gate — the reference is explicitly exempt from state-gating (Story 11.1) and
+ * can be changed in any state, including archived/closed. Never touches any
+ * assessment, recommendation, or outcome.
+ *
+ * - The value is stored VERBATIM — no trimming/normalisation. Whitespace and
+ *   special characters are significant (Story 11.2, decided); only emptiness
+ *   after trim is rejected.
+ * - Re-saving the current value (case-sensitively identical) is a no-op — no
+ *   write, no audit entry.
+ * - Uniqueness is case-insensitive (Story 11.2): a pre-check inside the
+ *   transaction returns a friendly error naming the conflicting application,
+ *   and the `applications_reference_lower_key` functional unique index
+ *   (migration 20260709130000_reference_case_insensitive_unique) catches any
+ *   race the pre-check misses.
+ * - Audited as `UPDATE_REFERENCE` only on success, capturing { from, to }.
+ */
+export async function updateApplicationReferenceAction(
+  applicationId: string,
+  newReference: string
+): Promise<ActionResult> {
+  const user = await requireRole([Role.ADMIN]);
+
+  const validation = validateReferenceInput(newReference);
+  if (!validation.valid) {
+    return { success: false, error: validation.error };
+  }
+
+  try {
+    await withUserContext(user.id, user.role as RlsRole, async (tx) => {
+      const app = await tx.application.findUnique({
+        where: { id: applicationId },
+        select: { id: true, reference: true },
+      });
+      if (!app) throw new Error("Application not found.");
+
+      // Unchanged (case-sensitively identical) — nothing to persist or audit.
+      if (app.reference === newReference) return;
+
+      const conflict = await tx.application.findFirst({
+        where: {
+          reference: { equals: newReference, mode: "insensitive" },
+          id: { not: applicationId },
+        },
+        select: { reference: true },
+      });
+      if (conflict) {
+        throw new Error(
+          `"${conflict.reference}" is already in use by another application.`
+        );
+      }
+
+      await tx.application.update({
+        where: { id: applicationId },
+        data: { reference: newReference },
+      });
+
+      await createAuditLog(tx, {
+        userId: user.id,
+        action: AUDIT_ACTIONS.UPDATE_REFERENCE,
+        entityType: AUDIT_ENTITY_TYPES.Application,
+        entityId: applicationId,
+        context: `Changed bursary reference from "${app.reference}" to "${newReference}"`,
+        metadata: { from: app.reference, to: newReference },
+      });
+    });
+
+    revalidatePath(`/applications/${applicationId}`);
+    revalidatePath("/queue");
+
+    return { success: true };
+  } catch (err) {
+    let message =
+      err instanceof Error ? err.message : "Failed to update reference.";
+    // Unique constraint violation race on the case-insensitive functional
+    // index — mirrors createRoundAction's message-matching pattern
+    // (src/app/(admin)/rounds/actions.ts).
+    if (message.includes("Unique constraint")) {
+      message = "That reference is already in use by another application.";
+    }
+    console.error("[updateApplicationReferenceAction]", err);
     return { success: false, error: message };
   }
 }

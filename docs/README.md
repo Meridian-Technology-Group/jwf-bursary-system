@@ -18,7 +18,7 @@ set stays small and trustworthy. Git history preserves the full record.
 |---|---|---|
 | [`product/`](product/) | Foundation, product | Requirements (`prd/`) and the assessment model spreadsheet — *what* the system must do. |
 | [`engineering/`](engineering/) | Developers | Technical design (`tdd/`) and the data-model / API / repo-structure / open-source-manifest references — *how* it's built. |
-| [`operations/`](operations/) | Ops / on-call | Deployment, environment config, backup/restore, incident response, and hypercare runbooks — how to *run* it in production. |
+| [`operations/`](operations/) | Ops / on-call | Deployment, environment config, backup/restore, incident response, hypercare runbooks, and Resend domain/DNS setup — how to *run* it in production. |
 | [`guides/`](guides/) | End users | The [applicant](guides/applicant-guide.md) and [admin/assessor](guides/admin-assessor-guide.md) user guides, plus the step-by-step [`walkthroughs/`](guides/walkthroughs/) for every workflow. |
 | [`quality/`](quality/) | Assurance, Foundation | The contractual acceptance [parity test](quality/parity-test/) (Schedule 1 §3). Completed point-in-time assessments are in [`archive/quality/`](archive/quality/). |
 | [`contract/`](contract/) | Foundation, delivery | The Master Services Agreement and the Feature Verification Checklist (the sign-off spine). |
@@ -43,7 +43,8 @@ set stays small and trustworthy. Git history preserves the full record.
 The MSA Schedule 1 §4 documentation deliverables are **complete**: the two
 [`guides/*-guide.md`](guides/) user guides; the [`operations/`](operations/)
 runbooks (deployment, environment variables, backup/restore, incident response,
-hypercare); and the engineering references
+hypercare, [Resend domain/DNS setup](operations/resend-domain-setup.md)); and
+the engineering references
 ([data-model](engineering/data-model.md), [API reference](engineering/api-reference.md),
 [repo structure](engineering/repo-structure.md),
 [open-source manifest](engineering/open-source-manifest.md)).

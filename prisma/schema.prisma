@@ -125,6 +125,10 @@ model BursaryScheduleEntry {
 /// One application per child per round.
 model Application {
   id                   String                   @id @default(uuid()) @db.Uuid
+  /// Freely editable by ADMIN at any lifecycle stage (item 11). Case-insensitive
+  /// uniqueness is ALSO enforced via a raw `lower(reference)` unique index
+  /// (migration 20260709130000_reference_case_insensitive_unique) — Prisma
+  /// cannot express a functional index, so it isn't visible here.
   reference            String                   @unique
   roundId              String                   @map("round_id") @db.Uuid
   bursaryAccountId     String?                  @map("bursary_account_id") @db.Uuid

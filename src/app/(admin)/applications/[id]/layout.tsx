@@ -25,6 +25,7 @@ import { ApplicationActions } from "@/components/admin/application-actions";
 import { AssignAssessorSelect } from "@/components/admin/assign-assessor-select";
 import { GdprDeleteAction } from "@/components/admin/gdpr-delete-action";
 import { AddSecondParentCard } from "@/components/admin/add-second-parent-card";
+import { EditReferenceDialog } from "@/components/admin/edit-reference-dialog";
 
 function SchoolBadge({ school }: { school: "WHITGIFT" | "TRINITY" }) {
   if (school === "WHITGIFT") {
@@ -202,8 +203,16 @@ export default async function ApplicationDetailLayout({
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
             <div className="flex flex-wrap items-center gap-3 mb-1">
-              <h1 className="font-mono text-2xl font-semibold text-primary-900">
+              <h1 className="flex items-center gap-1 font-mono text-2xl font-semibold text-primary-900">
                 {application.reference}
+                {/* item 11: reference is freely editable by ADMIN at any
+                    lifecycle stage; ASSESSOR/VIEWER see it as plain text. */}
+                {user.role === Role.ADMIN && (
+                  <EditReferenceDialog
+                    applicationId={application.id}
+                    currentReference={application.reference}
+                  />
+                )}
               </h1>
               <SchoolBadge school={application.school} />
             </div>
