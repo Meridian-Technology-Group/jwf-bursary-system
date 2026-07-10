@@ -540,6 +540,155 @@ model CouncilTaxDefault {
   @@map("council_tax_defaults")
 }
 
+/// CALC-01 — Reference: notional cost-of-living figures per family category
+/// (Appendix A), versioned by `effectiveFrom` like the other reference tables.
+/// Feeds the v2 notional-spend engine (CALC-03); `costType` picks out which
+/// line of the workbook's notional block this row is (rent, council tax,
+/// essentials composite, car, public transport, JWF allowance, the notional
+/// savings benchmark, and the savings-cushion allowance shown for context).
+model NotionalCostConfig {
+  id            String           @id @default(uuid()) @db.Uuid
+  category      Int
+  costType      NotionalCostType @map("cost_type")
+  amount        Decimal          @db.Decimal(10, 2)
+  effectiveFrom DateTime         @map("effective_from") @db.Date
+  createdAt     DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@unique([category, costType, effectiveFrom])
+  @@map("notional_cost_configs")
+}
+
+/// CALC-01 — Reference: family-category metadata (Appendix A row 1) — the
+/// household shape each of the 6 notional-cost categories represents. Feeds
+/// the default `schoolAgeChildrenCount` used by `calculateDerivedSavings`
+/// (v1, reused as-is in v2) when not overridden by the assessor.
+model FamilyCategoryMeta {
+  id                String   @id @default(uuid()) @db.Uuid
+  category          Int
+  familyMembers     Int      @map("family_members")
+  schoolAgeChildren Int      @map("school_age_children")
+  description       String
+  effectiveFrom     DateTime @map("effective_from") @db.Date
+  createdAt         DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@unique([category, effectiveFrom])
+  @@map("family_category_metas")
+}
+
+/// CALC-01 — Reference: affordability grid (Appendix B) driving the
+/// "affordability-adjusted DI" leg of the min-of-three award rule (CALC-06).
+/// `basePct` is the category-1 base percentage; the category adjustment
+/// (`basePct − 0.5 × (category−1)`) is applied by the engine, not stored here.
+/// Every row in this table has a real, non-null `bandFloor`/`bandCeiling` —
+/// the grid's own outside-range handling (≤£27k / >£105k, assumption
+/// CALC-A6) is implemented in the CALC-06 award engine, not as sentinel rows
+/// here. See `src/lib/assessment/reference-bands.ts` for the shared band
+/// resolution convention (floor-inclusive, ceiling-inclusive, ties broken
+/// toward the lower band).
+model AffordabilityBand {
+  id            String   @id @default(uuid()) @db.Uuid
+  bandFloor     Decimal  @map("band_floor") @db.Decimal(10, 2)
+  bandCeiling   Decimal  @map("band_ceiling") @db.Decimal(10, 2)
+  basePct       Decimal  @map("base_pct") @db.Decimal(5, 2)
+  effectiveFrom DateTime @map("effective_from") @db.Date
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@unique([bandFloor, effectiveFrom])
+  @@map("affordability_bands")
+}
+
+/// CALC-01 — Reference: income-category bands + fees-benchmark % (Appendix
+/// C.1; merges PROFILING tables 1 + 6 — same bands). `bandFloor`/`bandCeiling`
+/// are nullable to represent the open-ended bottom (<27,000) and top
+/// (≥120,000) bands. Bands are floor-inclusive, CEILING-EXCLUSIVE per the
+/// appendix's own note — the one table that differs from the other bands'
+/// inclusive/inclusive convention; see `reference-bands.ts`. The
+/// 1,2,3,4,5,6,7,7,8,7,8 category tail (category 7 reappearing after 8) is the
+/// workbook's own anomaly, preserved verbatim per assumption CALC-A1.
+model IncomeCategoryBand {
+  id               String   @id @default(uuid()) @db.Uuid
+  bandFloor        Decimal? @map("band_floor") @db.Decimal(10, 2)
+  bandCeiling      Decimal? @map("band_ceiling") @db.Decimal(10, 2)
+  category         Int
+  feesBenchmarkPct Decimal  @map("fees_benchmark_pct") @db.Decimal(5, 2)
+  effectiveFrom    DateTime @map("effective_from") @db.Date
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@unique([bandCeiling, effectiveFrom])
+  @@map("income_category_bands")
+}
+
+/// CALC-01 — Reference: property-equity category bands (Appendix C.2).
+/// `bandFloor` null on the bottom (no/negative equity → category 1);
+/// `bandCeiling` null on the top (>£1.6m → category 12). Floor-inclusive,
+/// ceiling-inclusive; see `reference-bands.ts`.
+model PropertyEquityBand {
+  id            String   @id @default(uuid()) @db.Uuid
+  bandFloor     Decimal? @map("band_floor") @db.Decimal(12, 2)
+  bandCeiling   Decimal? @map("band_ceiling") @db.Decimal(12, 2)
+  category      Int
+  effectiveFrom DateTime @map("effective_from") @db.Date
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@unique([bandCeiling, effectiveFrom])
+  @@map("property_equity_bands")
+}
+
+/// CALC-01 — Reference: financial-equity labels (Appendix C.3). The workbook
+/// carries a genuine isolated single-point band ("0 → no debt, no equity")
+/// wedged between "<0 → in debt" and "0–50k → some savings"; represented here
+/// with the "in debt" row's `bandCeiling` set one penny below zero (-0.01) so
+/// the £0.00-exactly row resolves unambiguously to "no debt, no equity" — the
+/// only band table needing this penny-epsilon (money is genuinely quantised
+/// to the penny, so this isn't a fudge). See `reference-bands.ts`.
+model FinancialEquityBand {
+  id            String   @id @default(uuid()) @db.Uuid
+  bandFloor     Decimal? @map("band_floor") @db.Decimal(12, 2)
+  bandCeiling   Decimal? @map("band_ceiling") @db.Decimal(12, 2)
+  label         String
+  effectiveFrom DateTime @map("effective_from") @db.Date
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@unique([bandCeiling, effectiveFrom])
+  @@map("financial_equity_bands")
+}
+
+/// CALC-01 — Reference: debt-over-NDI ratio bands (Appendix C.4), normalised
+/// to non-overlapping ranges per assumption CALC-A3 (the workbook's own
+/// 0.1–1/0.3–1/0.5–1/0.8–1 all shared a common upper bound of 1). `ratioFloor`
+/// null on the bottom (≤0 → zero debt); `ratioCeiling` null on the top (>10).
+/// `minRepaymentMonths` is null only for the "n/a" zero-debt row; the "<1mo"
+/// row is stored as 0. Floor-inclusive, ceiling-inclusive; see
+/// `reference-bands.ts`.
+model DebtRatioBand {
+  id                 String   @id @default(uuid()) @db.Uuid
+  ratioFloor         Decimal? @map("ratio_floor") @db.Decimal(7, 4)
+  ratioCeiling       Decimal? @map("ratio_ceiling") @db.Decimal(7, 4)
+  minRepaymentMonths Int?     @map("min_repayment_months")
+  statusLabel        String   @map("status_label")
+  effectiveFrom      DateTime @map("effective_from") @db.Date
+  createdAt          DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@unique([ratioCeiling, effectiveFrom])
+  @@map("debt_ratio_bands")
+}
+
+/// CALC-01 — Reference: lifestyle-squeeze ratio bands (Appendix C.5), stored
+/// as percentage points (100 = 100%) to match the appendix's own "%" labels.
+/// `ratioCeiling` null on the top (>170%). Floor-inclusive, ceiling-inclusive;
+/// see `reference-bands.ts`.
+model LifestyleSqueezeBand {
+  id            String   @id @default(uuid()) @db.Uuid
+  ratioFloor    Decimal? @map("ratio_floor") @db.Decimal(6, 2)
+  ratioCeiling  Decimal? @map("ratio_ceiling") @db.Decimal(6, 2)
+  statusLabel   String   @map("status_label")
+  effectiveFrom DateTime @map("effective_from") @db.Date
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@unique([ratioCeiling, effectiveFrom])
+  @@map("lifestyle_squeeze_bands")
+}
+
 /// Reference: Reasons an application/bursary account can be closed for
 /// (item 4.3). Drives the unified close action (items 2/4): `purgeOnClose`
 /// decides whether closing with this reason purges the applicant's PII
@@ -913,4 +1062,17 @@ enum ScheduleEntryStatus {
   SCHEDULED
   RECEIVED
   COMPLETE
+}
+
+/// CALC-01 — the eight notional cost-of-living lines the v2 engine's
+/// notional-spend module (CALC-03) reads per family category (Appendix A).
+enum NotionalCostType {
+  RENT
+  COUNCIL_TAX
+  ESSENTIALS
+  CAR
+  PUBLIC_TRANSPORT
+  JWF_ALLOWANCE
+  NOTIONAL_SAVINGS
+  SAVINGS_CUSHION
 }
