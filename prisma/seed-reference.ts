@@ -29,6 +29,16 @@ import { createClient } from "@supabase/supabase-js";
 import { councilTaxDefaults, familyTypeConfigs, schoolFees } from "./seed-data/reference";
 import { reasonCodes } from "./seed-data/reason-codes";
 import { closeReasons } from "./seed-data/close-reasons";
+import {
+  notionalCostConfigs,
+  familyCategoryMetas,
+  affordabilityBands,
+  incomeCategoryBands,
+  propertyEquityBands,
+  financialEquityBands,
+  debtRatioBands,
+  lifestyleSqueezeBands,
+} from "./seed-data/profiling-reference";
 
 // Eyeball-confirm the target before any writes. Print the project ref only
 // (the URL subdomain), never the full URL or any secret.
@@ -130,6 +140,156 @@ async function seedCloseReasons(): Promise<void> {
   log(`Upserted ${closeReasons.length} close reasons`);
 }
 
+async function seedNotionalCostConfigs(): Promise<void> {
+  section("Notional cost configs (CALC-01)");
+  for (const cfg of notionalCostConfigs) {
+    await prisma.notionalCostConfig.upsert({
+      where: {
+        category_costType_effectiveFrom: {
+          category: cfg.category,
+          costType: cfg.costType,
+          effectiveFrom: cfg.effectiveFrom,
+        },
+      },
+      create: cfg,
+      update: { amount: cfg.amount },
+    });
+  }
+  log(`Upserted ${notionalCostConfigs.length} notional cost configs`);
+}
+
+async function seedFamilyCategoryMetas(): Promise<void> {
+  section("Family category metas (CALC-01)");
+  for (const meta of familyCategoryMetas) {
+    await prisma.familyCategoryMeta.upsert({
+      where: { category_effectiveFrom: { category: meta.category, effectiveFrom: meta.effectiveFrom } },
+      create: meta,
+      update: {
+        familyMembers: meta.familyMembers,
+        schoolAgeChildren: meta.schoolAgeChildren,
+        description: meta.description,
+      },
+    });
+  }
+  log(`Upserted ${familyCategoryMetas.length} family category metas`);
+}
+
+async function seedAffordabilityBands(): Promise<void> {
+  section("Affordability bands (CALC-01)");
+  // bandFloor is never null in this table — a real compound unique upsert works.
+  for (const band of affordabilityBands) {
+    await prisma.affordabilityBand.upsert({
+      where: { bandFloor_effectiveFrom: { bandFloor: band.bandFloor, effectiveFrom: band.effectiveFrom } },
+      create: band,
+      update: { bandCeiling: band.bandCeiling, basePct: band.basePct },
+    });
+  }
+  log(`Upserted ${affordabilityBands.length} affordability bands`);
+}
+
+// The remaining five band tables each have exactly one row with a NULL
+// bandCeiling/ratioCeiling (the open-ended top band). Postgres treats NULLs
+// as distinct in a unique index, so a compound-unique Prisma `upsert` can't
+// reliably target that one row — same limitation `seedCouncilTaxDefaults`
+// already works around above. findFirst + manual create/update sidesteps it
+// (Prisma's `where` filter DOES translate `ceiling: null` to `IS NULL`
+// correctly for a plain query, it's only upsert's underlying constraint match
+// that's affected).
+
+async function seedIncomeCategoryBands(): Promise<void> {
+  section("Income category bands (CALC-01)");
+  for (const band of incomeCategoryBands) {
+    const existing = await prisma.incomeCategoryBand.findFirst({
+      where: { effectiveFrom: band.effectiveFrom, bandCeiling: band.bandCeiling },
+    });
+    if (existing) {
+      await prisma.incomeCategoryBand.update({
+        where: { id: existing.id },
+        data: { bandFloor: band.bandFloor, category: band.category, feesBenchmarkPct: band.feesBenchmarkPct },
+      });
+    } else {
+      await prisma.incomeCategoryBand.create({ data: band });
+    }
+  }
+  log(`Upserted ${incomeCategoryBands.length} income category bands`);
+}
+
+async function seedPropertyEquityBands(): Promise<void> {
+  section("Property equity bands (CALC-01)");
+  for (const band of propertyEquityBands) {
+    const existing = await prisma.propertyEquityBand.findFirst({
+      where: { effectiveFrom: band.effectiveFrom, bandCeiling: band.bandCeiling },
+    });
+    if (existing) {
+      await prisma.propertyEquityBand.update({
+        where: { id: existing.id },
+        data: { bandFloor: band.bandFloor, category: band.category },
+      });
+    } else {
+      await prisma.propertyEquityBand.create({ data: band });
+    }
+  }
+  log(`Upserted ${propertyEquityBands.length} property equity bands`);
+}
+
+async function seedFinancialEquityBands(): Promise<void> {
+  section("Financial equity bands (CALC-01)");
+  for (const band of financialEquityBands) {
+    const existing = await prisma.financialEquityBand.findFirst({
+      where: { effectiveFrom: band.effectiveFrom, bandCeiling: band.bandCeiling },
+    });
+    if (existing) {
+      await prisma.financialEquityBand.update({
+        where: { id: existing.id },
+        data: { bandFloor: band.bandFloor, label: band.label },
+      });
+    } else {
+      await prisma.financialEquityBand.create({ data: band });
+    }
+  }
+  log(`Upserted ${financialEquityBands.length} financial equity bands`);
+}
+
+async function seedDebtRatioBands(): Promise<void> {
+  section("Debt ratio bands (CALC-01)");
+  for (const band of debtRatioBands) {
+    const existing = await prisma.debtRatioBand.findFirst({
+      where: { effectiveFrom: band.effectiveFrom, ratioCeiling: band.ratioCeiling },
+    });
+    if (existing) {
+      await prisma.debtRatioBand.update({
+        where: { id: existing.id },
+        data: {
+          ratioFloor: band.ratioFloor,
+          minRepaymentMonths: band.minRepaymentMonths,
+          statusLabel: band.statusLabel,
+        },
+      });
+    } else {
+      await prisma.debtRatioBand.create({ data: band });
+    }
+  }
+  log(`Upserted ${debtRatioBands.length} debt ratio bands`);
+}
+
+async function seedLifestyleSqueezeBands(): Promise<void> {
+  section("Lifestyle squeeze bands (CALC-01)");
+  for (const band of lifestyleSqueezeBands) {
+    const existing = await prisma.lifestyleSqueezeBand.findFirst({
+      where: { effectiveFrom: band.effectiveFrom, ratioCeiling: band.ratioCeiling },
+    });
+    if (existing) {
+      await prisma.lifestyleSqueezeBand.update({
+        where: { id: existing.id },
+        data: { ratioFloor: band.ratioFloor, statusLabel: band.statusLabel },
+      });
+    } else {
+      await prisma.lifestyleSqueezeBand.create({ data: band });
+    }
+  }
+  log(`Upserted ${lifestyleSqueezeBands.length} lifestyle squeeze bands`);
+}
+
 async function ensureDocumentsBucket(): Promise<void> {
   section("Storage: documents bucket");
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -160,6 +320,14 @@ async function printSummary(): Promise<void> {
     ["Reason codes", await prisma.reasonCode.count()],
     ["Close reasons", await prisma.closeReason.count()],
     ["Email templates (migration-managed)", await prisma.emailTemplate.count()],
+    ["Notional cost configs", await prisma.notionalCostConfig.count()],
+    ["Family category metas", await prisma.familyCategoryMeta.count()],
+    ["Affordability bands", await prisma.affordabilityBand.count()],
+    ["Income category bands", await prisma.incomeCategoryBand.count()],
+    ["Property equity bands", await prisma.propertyEquityBand.count()],
+    ["Financial equity bands", await prisma.financialEquityBand.count()],
+    ["Debt ratio bands", await prisma.debtRatioBand.count()],
+    ["Lifestyle squeeze bands", await prisma.lifestyleSqueezeBand.count()],
   ];
   console.log("");
   for (const [label, count] of rows) {
@@ -176,6 +344,14 @@ async function main(): Promise<void> {
   await seedCouncilTaxDefaults();
   await seedReasonCodes();
   await seedCloseReasons();
+  await seedNotionalCostConfigs();
+  await seedFamilyCategoryMetas();
+  await seedAffordabilityBands();
+  await seedIncomeCategoryBands();
+  await seedPropertyEquityBands();
+  await seedFinancialEquityBands();
+  await seedDebtRatioBands();
+  await seedLifestyleSqueezeBands();
   await ensureDocumentsBucket();
   await printSummary();
 
