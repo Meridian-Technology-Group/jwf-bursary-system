@@ -624,3 +624,69 @@ export async function getLifestyleSqueezeBands(tx: Tx): Promise<LifestyleSqueeze
     })),
   );
 }
+
+// ─── CALC-07 — ReferenceBundle assembly for the v2 engine ─────────────────
+//
+// Assembles the single `ReferenceBundle` (src/lib/assessment/v2/types.ts) the
+// v2 engine consumes, from the eight CALC-01 fetchers above. Each fetcher
+// already resolves "latest effective" (latest row per key / newest generation);
+// there is no per-date anchor on these fetchers as merged, so the bundle is the
+// current effective reference set. School fees stay year-anchored via the
+// existing `getConfigsForAssessment` path (Round.academicYear) — they are NOT
+// part of `ReferenceBundle`, which carries only the notional/profiling tables.
+//
+// FAIL-SOFT: the v2 assessor page must render a "reference data not seeded"
+// callout — never crash — when a reference table is empty (the expected state on
+// nonprod until `seed:reference` is run). `resolveReferenceBundle` (a pure
+// helper, unit-tested) reports exactly which tables are missing so the callout
+// can name them; the DB read here just fetches the rows.
+
+/** The eight reference-table row sets, as fetched (before completeness checks). */
+export interface ReferenceBundleRows {
+  notionalCosts: NotionalCostConfigRow[];
+  familyCategoryMetas: FamilyCategoryMetaRow[];
+  affordabilityBands: AffordabilityBandRow[];
+  incomeCategoryBands: IncomeCategoryBandRow[];
+  propertyEquityBands: PropertyEquityBandRow[];
+  financialEquityBands: FinancialEquityBandRow[];
+  debtRatioBands: DebtRatioBandRow[];
+  lifestyleSqueezeBands: LifestyleSqueezeBandRow[];
+}
+
+/**
+ * Fetches every reference-table row set needed for the v2 engine in one round
+ * trip. Pure resolution/completeness lives in `resolveReferenceBundle`
+ * (src/lib/assessment/v2/reference-bundle.ts) so it can be unit-tested without a DB.
+ */
+export async function getReferenceBundleRows(tx: Tx): Promise<ReferenceBundleRows> {
+  const [
+    notionalCosts,
+    familyCategoryMetas,
+    affordabilityBands,
+    incomeCategoryBands,
+    propertyEquityBands,
+    financialEquityBands,
+    debtRatioBands,
+    lifestyleSqueezeBands,
+  ] = await Promise.all([
+    getNotionalCostConfigs(tx),
+    getFamilyCategoryMetas(tx),
+    getAffordabilityBands(tx),
+    getIncomeCategoryBands(tx),
+    getPropertyEquityBands(tx),
+    getFinancialEquityBands(tx),
+    getDebtRatioBands(tx),
+    getLifestyleSqueezeBands(tx),
+  ]);
+
+  return {
+    notionalCosts,
+    familyCategoryMetas,
+    affordabilityBands,
+    incomeCategoryBands,
+    propertyEquityBands,
+    financialEquityBands,
+    debtRatioBands,
+    lifestyleSqueezeBands,
+  };
+}
