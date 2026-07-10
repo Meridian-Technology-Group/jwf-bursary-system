@@ -40,11 +40,11 @@ model Profile {
 
 /// An assessment cycle for one academic year.
 model Round {
-  id              String           @id @default(uuid()) @db.Uuid
-  academicYear    String           @unique @map("academic_year")
-  openDate        DateTime         @map("open_date") @db.Date
-  closeDate       DateTime         @map("close_date") @db.Date
-  decisionDate    DateTime?        @map("decision_date") @db.Date
+  id                        String           @id @default(uuid()) @db.Uuid
+  academicYear              String           @unique @map("academic_year")
+  openDate                  DateTime         @map("open_date") @db.Date
+  closeDate                 DateTime         @map("close_date") @db.Date
+  decisionDate              DateTime?        @map("decision_date") @db.Date
   /// Round-level default submission-by date (Item 12, date-only, optional).
   /// Every application in the round inherits this unless it has its own
   /// `Application.submissionDeadlineAt` override. Derived (not copied) at read
@@ -55,12 +55,12 @@ model Round {
   ///     ?? endOfDay(round.closeDate)                   (fallback — D-1)
   /// NULL means the round has no default; applications without their own
   /// override then fall back to the close-date fallback above.
-  defaultSubmissionDeadline DateTime? @map("default_submission_deadline") @db.Date
-  status          RoundStatus      @default(DRAFT)
-  createdAt       DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
-  applications    Application[]
-  invitations     Invitation[]
-  recommendations Recommendation[]
+  defaultSubmissionDeadline DateTime?        @map("default_submission_deadline") @db.Date
+  status                    RoundStatus      @default(DRAFT)
+  createdAt                 DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+  applications              Application[]
+  invitations               Invitation[]
+  recommendations           Recommendation[]
 
   @@map("rounds")
 }
@@ -549,14 +549,14 @@ model CouncilTaxDefault {
 /// label even after it is removed from the picker (Story 4.4). No relation
 /// to Application yet; the FK arrives with the close action itself (A3).
 model CloseReason {
-  id           String   @id @default(uuid()) @db.Uuid
+  id           String        @id @default(uuid()) @db.Uuid
   /// Unique natural key (close_reasons_label_key) — the idempotent
   /// seed upserts by label; there is no numeric code like reason_codes.
-  label        String   @unique
-  purgeOnClose Boolean  @default(false) @map("purge_on_close")
-  isDeprecated Boolean  @default(false) @map("is_deprecated")
-  sortOrder    Int      @map("sort_order")
-  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  label        String        @unique
+  purgeOnClose Boolean       @default(false) @map("purge_on_close")
+  isDeprecated Boolean       @default(false) @map("is_deprecated")
+  sortOrder    Int           @map("sort_order")
+  createdAt    DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
   applications Application[]
 
   @@map("close_reasons")
