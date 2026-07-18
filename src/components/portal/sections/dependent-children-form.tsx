@@ -253,6 +253,10 @@ export function DependentChildrenForm({ childFullName }: { childFullName?: strin
                 step={1}
                 className="w-24"
                 {...field}
+                onFocus={(e) => {
+                  const el = e.currentTarget;
+                  requestAnimationFrame(() => el.select());
+                }}
                 onChange={(e) =>
                   field.onChange(parseInt(e.target.value, 10) || 0)
                 }

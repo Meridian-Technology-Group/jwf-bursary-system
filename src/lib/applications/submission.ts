@@ -31,6 +31,8 @@ import { createAuditLog } from "@/lib/audit/log";
 import { submitApplicationData } from "@/lib/applications/status";
 import { getSectionGapStatuses, type SectionGap } from "@/lib/portal/section-gaps";
 import { SECTION_ORDER } from "@/lib/portal/sections";
+import { familyIdConsistencyIssues } from "@/lib/schemas/family-id";
+import { isTwoParentHousehold } from "@/lib/schemas/parent-details";
 import { isSubmissionDeadlinePassed } from "@/lib/rounds/submission-deadline";
 import { mirrorApplicationToSchedule } from "@/lib/bursary-accounts/lifecycle";
 import { TERMS_AND_CONDITIONS_VERSION } from "@/lib/portal/terms";
@@ -240,15 +242,61 @@ export async function submitApplicationCore(
     gs.gaps.filter((g) => g.severity === "error")
   );
 
-  if (errorGaps.length > 0) {
+  // ── Cross-section Family Identification consistency (per-section schema is
+  // scoped to one section, so the child-count / partner-adult rules are also
+  // enforced HERE where every section's data is in hand). Only runs when the
+  // FAMILY_ID section carries members (skipped for rolling-over re-assessments
+  // where it is hidden). Mirrors makeFamilyIdSchema exactly. ─────────────────
+  const sectionData = new Map(
+    application.sections.map((s) => [s.section, s.data])
+  );
+  const familyIdData = sectionData.get("FAMILY_ID") as {
+    familyMembers?: { role?: string; memberType?: string }[];
+  } | null;
+  const crossSectionGaps: SubmitBlockedByGapsError["gaps"] = [];
+  if (Array.isArray(familyIdData?.familyMembers)) {
+    const depData = sectionData.get("DEPENDENT_CHILDREN") as {
+      numberOfDependentChildren?: number;
+      children?: unknown[];
+    } | null;
+    const dependentChildrenCount =
+      typeof depData?.numberOfDependentChildren === "number"
+        ? depData.numberOfDependentChildren
+        : Array.isArray(depData?.children)
+          ? depData!.children!.length
+          : undefined;
+    const parentData = sectionData.get("PARENT_DETAILS") as {
+      isSoleParent?: boolean;
+      relationshipStatus?: string;
+    } | null;
+    for (const issue of familyIdConsistencyIssues(familyIdData!.familyMembers!, {
+      dependentChildrenCount,
+      requiresPartnerAdult: isTwoParentHousehold({
+        isSoleParent: parentData?.isSoleParent,
+        relationshipStatus: parentData?.relationshipStatus,
+      }),
+    })) {
+      crossSectionGaps.push({
+        id: issue.id,
+        sectionType: "FAMILY_ID",
+        label: issue.message,
+        fieldRef: "familyMembers",
+      });
+    }
+  }
+
+  if (errorGaps.length > 0 || crossSectionGaps.length > 0) {
     const payload: SubmitBlockedByGapsError = {
       code: "GAPS_BLOCKING_SUBMISSION",
-      gaps: errorGaps.map((g) => ({
-        id: g.id,
-        sectionType: g.sectionType,
-        label: g.label,
-        fieldRef: g.fieldRef,
-      })),
+      gaps: [
+        ...errorGaps.map((g) => ({
+          id: g.id,
+          sectionType: g.sectionType,
+          label: g.label,
+          fieldRef: g.fieldRef,
+        })),
+        ...crossSectionGaps,
+      ],
     };
     // Encode the structured payload as a JSON string inside the Error message
     // so the client-side catch block can parse and display it.

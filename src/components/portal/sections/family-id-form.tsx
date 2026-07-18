@@ -19,6 +19,13 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { YesNoToggle } from "@/components/portal/form-fields/yes-no-toggle";
 import { ConditionalField } from "@/components/portal/form-fields/conditional-field";
 import { FileUpload } from "@/components/portal/file-upload";
@@ -32,6 +39,19 @@ interface FamilyIdFormProps {
   documentMap?: Record<string, DocumentMeta>;
 }
 
+type DocumentType =
+  | "BRITISH_PASSPORT"
+  | "SETTLED_STATUS"
+  | "ILR_VISA"
+  | "OTHER";
+
+const DOCUMENT_TYPE_OPTIONS: { value: DocumentType; label: string }[] = [
+  { value: "BRITISH_PASSPORT", label: "British passport" },
+  { value: "SETTLED_STATUS", label: "Settled Status" },
+  { value: "ILR_VISA", label: "ILR VISA status" },
+  { value: "OTHER", label: "Other" },
+];
+
 export function FamilyIdForm({ applicationId, documentMap }: FamilyIdFormProps) {
   const { control, setValue } = useFormContext<FamilyIdFormValues>();
   const { fields, append, remove } = useFieldArray({
@@ -42,18 +62,25 @@ export function FamilyIdForm({ applicationId, documentMap }: FamilyIdFormProps) 
   const [dialogOpen, setDialogOpen] = React.useState(false);
   const [memberName, setMemberName] = React.useState("");
   const [memberType, setMemberType] = React.useState<"CHILD" | "ADULT" | "">("");
+  const [relationship, setRelationship] = React.useState("");
+  const [documentType, setDocumentType] = React.useState<DocumentType | "">("");
 
   function handleAdd() {
-    if (!memberName.trim() || !memberType) return;
+    if (!memberName.trim() || !memberType || !relationship.trim() || !documentType)
+      return;
     append({
       id: crypto.randomUUID(),
       familyMemberName: memberName.trim(),
       role: "OTHER",
       memberType,
-      isBritishCitizen: true,
+      relationshipToApplicant: relationship.trim(),
+      documentType,
+      isBritishCitizen: documentType === "BRITISH_PASSPORT",
     });
     setMemberName("");
     setMemberType("");
+    setRelationship("");
+    setDocumentType("");
     setDialogOpen(false);
   }
 
@@ -61,10 +88,15 @@ export function FamilyIdForm({ applicationId, documentMap }: FamilyIdFormProps) 
     <div className="space-y-6">
       <div className="rounded-md bg-primary-50 border border-primary-200 p-4">
         <p className="text-sm text-primary-800">
-          <strong>Note:</strong> The child and the parent / guardian named on your
-          application are listed below and each needs an identity document. You
-          can also add any other dependent children or dependent elderly family
-          members.
+          In this section, we will need the details and evidence of the
+          indefinite leave to remain in the UK status for every member of the
+          household (please include all children, even older ones who may be at
+          Uni but still financially dependent; do not include older children who
+          are financially independent and who have left the family home.)
+        </p>
+        <p className="mt-3 text-sm text-primary-800">
+          Please enter their relationship status to the bursary applicant (i.e.
+          mother, father, brother, sister)
         </p>
       </div>
 
@@ -139,6 +171,39 @@ export function FamilyIdForm({ applicationId, documentMap }: FamilyIdFormProps) 
                 ))}
               </div>
             </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="member-relationship">
+                Relationship to the bursary applicant{" "}
+                <span className="text-error-600">*</span>
+              </Label>
+              <Input
+                id="member-relationship"
+                value={relationship}
+                onChange={(e) => setRelationship(e.target.value)}
+                placeholder="e.g. mother, father, brother, sister"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="member-document-type">
+                Which document are you uploading?{" "}
+                <span className="text-error-600">*</span>
+              </Label>
+              <Select
+                value={documentType}
+                onValueChange={(v) => setDocumentType(v as DocumentType)}
+              >
+                <SelectTrigger id="member-document-type">
+                  <SelectValue placeholder="Select a document" />
+                </SelectTrigger>
+                <SelectContent>
+                  {DOCUMENT_TYPE_OPTIONS.map((opt) => (
+                    <SelectItem key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
           </div>
           <DialogFooter>
             <Button
@@ -151,7 +216,12 @@ export function FamilyIdForm({ applicationId, documentMap }: FamilyIdFormProps) 
             <Button
               type="button"
               onClick={handleAdd}
-              disabled={!memberName.trim() || !memberType}
+              disabled={
+                !memberName.trim() ||
+                !memberType ||
+                !relationship.trim() ||
+                !documentType
+              }
             >
               Save
             </Button>

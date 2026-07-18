@@ -43,8 +43,11 @@ import { DeclarationForm } from "@/components/portal/sections/declaration-form";
 
 // Schemas
 import { childDetailsSchema, splitChildFullName } from "@/lib/schemas/child-details";
-import { familyIdSchema } from "@/lib/schemas/family-id";
-import { parentDetailsSchema } from "@/lib/schemas/parent-details";
+import { familyIdSchema, makeFamilyIdSchema } from "@/lib/schemas/family-id";
+import {
+  parentDetailsSchema,
+  isTwoParentHousehold,
+} from "@/lib/schemas/parent-details";
 import { dependentChildrenSchema } from "@/lib/schemas/dependent-children";
 import { dependentElderlySchema } from "@/lib/schemas/dependent-elderly";
 import { otherInfoSchema } from "@/lib/schemas/other-info";
@@ -84,6 +87,8 @@ interface SectionPageClientProps {
   parent2EmploymentStatus?: string;
   /** Relationship status from PARENT_DETAILS — drives the divorced/separated sub-table. */
   relationshipStatus?: string;
+  /** Declared dependent-children count (for FAMILY_ID cross-section consistency). */
+  dependentChildrenCount?: number;
   backHref: string;
   nextHref: string;
   /** Optional override for the primary button label (e.g. "Review and Submit"). */
@@ -362,10 +367,10 @@ function SectionFormContent({
     case "DEPENDENT_CHILDREN": return <DependentChildrenForm childFullName={childFullName} />;
     case "DEPENDENT_ELDERLY": return <DependentElderlyForm applicationId={applicationId} documentMap={documentMap} />;
     case "OTHER_INFO": return <OtherInfoForm applicationId={applicationId} documentMap={documentMap} />;
-    case "PARENTS_INCOME": return <ParentsIncomeForm isSoleParent={isSoleParent} applicationId={applicationId} documentMap={documentMap} academicYear={academicYear} parent1EmploymentStatus={parent1EmploymentStatus} parent2EmploymentStatus={parent2EmploymentStatus} relationshipStatus={relationshipStatus} />;
-    case "ASSETS_LIABILITIES": return <AssetsLiabilitiesForm isSoleParent={isSoleParent} applicationId={applicationId} documentMap={documentMap} />;
+    case "PARENTS_INCOME": return <ParentsIncomeForm isSoleParent={isTwoParentHousehold({ isSoleParent, relationshipStatus }) ? false : isSoleParent} applicationId={applicationId} documentMap={documentMap} academicYear={academicYear} parent1EmploymentStatus={parent1EmploymentStatus} parent2EmploymentStatus={parent2EmploymentStatus} relationshipStatus={relationshipStatus} />;
+    case "ASSETS_LIABILITIES": return <AssetsLiabilitiesForm isSoleParent={isTwoParentHousehold({ isSoleParent, relationshipStatus }) ? false : isSoleParent} applicationId={applicationId} documentMap={documentMap} />;
     case "ADDITIONAL_INFO": return <AdditionalInfoForm applicationId={applicationId} documentMap={documentMap} />;
-    case "DECLARATION": return <DeclarationForm isSoleParent={isSoleParent} />;
+    case "DECLARATION": return <DeclarationForm isSoleParent={isTwoParentHousehold({ isSoleParent, relationshipStatus }) ? false : isSoleParent} />;
     default: return null;
   }
 }
@@ -403,6 +408,7 @@ export function SectionPageClient({
   parent1EmploymentStatus,
   parent2EmploymentStatus,
   relationshipStatus,
+  dependentChildrenCount,
   backHref,
   nextHref,
   nextLabel,
@@ -413,7 +419,19 @@ export function SectionPageClient({
   saveOverride,
   onBehalf = false,
 }: SectionPageClientProps) {
-  const schema = getSectionSchema(sectionType);
+  // FAMILY_ID validates against sibling sections (dependent-children count and
+  // the household relationship), so its schema is built with that context;
+  // every other section uses its static schema.
+  const schema =
+    sectionType === "FAMILY_ID"
+      ? makeFamilyIdSchema({
+          dependentChildrenCount,
+          requiresPartnerAdult: isTwoParentHousehold({
+            isSoleParent,
+            relationshipStatus,
+          }),
+        })
+      : getSectionSchema(sectionType);
   const defaultValues = getDefaultValues(sectionType, existingData, {
     applicationSchool,
     applicationChildName,

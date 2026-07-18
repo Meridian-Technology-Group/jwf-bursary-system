@@ -11,9 +11,9 @@ export const rentAgreementSchema = z.enum(
   { message: "Please select your rent arrangement" }
 );
 
-/** Q5 — car ownership vs lease. */
-export const carOwnershipSchema = z.enum(["OWN", "LEASE"] as const, {
-  message: "Please select whether you own or lease a car",
+/** Q5 — car ownership vs lease (or neither). */
+export const carOwnershipSchema = z.enum(["OWN", "LEASE", "NEITHER"] as const, {
+  message: "Please select whether you own, lease, or have neither",
 });
 
 /** Q2 — an additional owned property. */

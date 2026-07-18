@@ -206,7 +206,35 @@ export const custodyArrangementSchema = z.enum(
   { message: "Please select the custody arrangement" }
 );
 
-export const parentDetailsSchema = z
+/**
+ * Relationship statuses that imply a two-parent household (a resident partner
+ * who is the child's other parent). Selecting any of these opens both parents'
+ * details and both income columns regardless of the sole-parent answer, and
+ * resolves the contradiction of "sole parent = yes" coexisting with a coupled
+ * status.
+ */
+export const COUPLED_RELATIONSHIP_STATUSES = [
+  "MARRIED",
+  "CIVIL_PARTNERSHIP",
+  "COHABITING",
+] as const;
+
+/**
+ * A household is treated as two-parent when the applicant is explicitly NOT a
+ * sole parent, OR when their current relationship status with the child's other
+ * parent is married / civil partnership / cohabiting.
+ */
+export function isTwoParentHousehold(input: {
+  isSoleParent?: boolean | null;
+  relationshipStatus?: string | null;
+}): boolean {
+  if (input.isSoleParent === false) return true;
+  return (COUPLED_RELATIONSHIP_STATUSES as readonly string[]).includes(
+    input.relationshipStatus ?? ""
+  );
+}
+
+const parentDetailsObject = z
   .object({
     isSoleParent: z.boolean(),
     relationshipStatus: relationshipStatusSchema,
@@ -237,13 +265,28 @@ export const parentDetailsSchema = z
     parent1Employment: parentEmploymentSchema,
     parent2Contact: z.any().optional(),
     parent2Employment: z.any().optional(),
-  })
-  .superRefine((data, ctx) => {
+  });
+
+/**
+ * Parent 2 validation, factored so the portal (primary applicant) schema can
+ * require the second parent whenever the household is two-parent — including a
+ * coupled relationship status picked alongside sole-parent = yes — while the
+ * secondary-parent contribute flow (which forces isSoleParent=true and never
+ * shows the Parent 2 block) keys the requirement on the sole-parent flag alone.
+ */
+function refineParentDetails(requireSecondParentWhenCoupled: boolean) {
+  return (
+    data: z.infer<typeof parentDetailsObject>,
+    ctx: z.RefinementCtx
+  ) => {
     // UK postcode validation for parent 1
     validateContactPostcode(data.parent1Contact, ctx, "parent1Contact");
 
-    // Skip parent 2 validation entirely when sole parent
-    if (data.isSoleParent) return;
+    // Skip parent 2 validation entirely for a single-parent household.
+    const twoParent = requireSecondParentWhenCoupled
+      ? isTwoParentHousehold(data)
+      : data.isSoleParent === false;
+    if (!twoParent) return;
 
     // ── Validate parent 2 contact ─────────────────────────────────────────
     if (!isPopulatedObject(data.parent2Contact)) {
@@ -284,6 +327,21 @@ export const parentDetailsSchema = z
         }
       }
     }
-  });
+  };
+}
+
+/** Portal (primary applicant) schema — two-parent when sole=no OR coupled. */
+export const parentDetailsSchema = parentDetailsObject.superRefine(
+  refineParentDetails(true)
+);
+
+/**
+ * Secondary-parent (dual-parent invite) schema — the second parent only ever
+ * supplies their own details, so Parent 2 is never required regardless of the
+ * relationship status they select.
+ */
+export const secondaryParentDetailsSchema = parentDetailsObject.superRefine(
+  refineParentDetails(false)
+);
 
 export type ParentDetailsFormValues = z.infer<typeof parentDetailsSchema>;

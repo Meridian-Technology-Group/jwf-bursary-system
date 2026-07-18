@@ -34,7 +34,10 @@ import { YesNoToggle } from "@/components/portal/form-fields/yes-no-toggle";
 import { ConditionalField } from "@/components/portal/form-fields/conditional-field";
 import { CountryCombobox } from "@/components/portal/form-fields/country-combobox";
 import { FileUpload, type UploadedDocument } from "@/components/portal/file-upload";
-import type { ParentDetailsFormValues } from "@/lib/schemas/parent-details";
+import {
+  isTwoParentHousehold,
+  type ParentDetailsFormValues,
+} from "@/lib/schemas/parent-details";
 import type { DocumentMeta } from "@/lib/db/queries/applications";
 import {
   deriveHouseholdScenario,
@@ -821,6 +824,14 @@ export function ParentDetailsForm({
   const isSeparatedOrDivorced =
     relationshipStatus === "SEPARATED" || relationshipStatus === "DIVORCED";
 
+  // Two-parent household: show Parent/Guardian 2 when the applicant is not a
+  // sole parent OR has a coupled relationship status (married / civil
+  // partnership / cohabiting), regardless of the sole-parent answer. Always
+  // suppressed for the second parent's own contribute flow.
+  const showSecondParent =
+    !secondaryMode &&
+    isTwoParentHousehold({ isSoleParent, relationshipStatus });
+
   // Whether the household-questions box has anything to show for the current
   // relationship status / facets. When false the box is not rendered at all, so
   // it collapses to nothing rather than leaving an empty grey panel.
@@ -841,9 +852,9 @@ export function ParentDetailsForm({
             name="isSoleParent"
             label="Are you applying as a sole parent / guardian?"
             description={
-              isSoleParent
-                ? "Only sections relevant to you will be displayed."
-                : "Both sections will appear for you and your partner to fill in."
+              showSecondParent
+                ? "Both sections will appear for you and your partner to fill in."
+                : "Only sections relevant to you will be displayed."
             }
             required
           />
@@ -857,7 +868,8 @@ export function ParentDetailsForm({
         render={({ field }) => (
           <FormItem className="space-y-3">
             <FormLabel>
-              Relationship status <span className="text-error-600">*</span>
+              Current relationship status with the child on the application&apos;s
+              other parent <span className="text-error-600">*</span>
             </FormLabel>
             <FormControl>
               <RadioGroup
@@ -1031,8 +1043,8 @@ export function ParentDetailsForm({
         documentMap={documentMap}
       />
 
-      {/* Parent 2 — conditional on not sole parent */}
-      <ConditionalField show={isSoleParent === false}>
+      {/* Parent 2 — shown for a two-parent household (sole=no OR coupled status) */}
+      <ConditionalField show={showSecondParent}>
         <hr className="border-slate-200" />
         <ParentContactFields prefix="parent2Contact" parentLabel="Parent / Guardian 2" />
         <ParentEmploymentFields

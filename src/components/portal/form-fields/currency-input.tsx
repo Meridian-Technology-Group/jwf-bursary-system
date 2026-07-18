@@ -24,17 +24,23 @@ import {
 import { cn } from "@/lib/utils";
 
 /** Strip everything but digits and keep at most one decimal point. */
-function sanitizeCurrency(input: string): string {
+export function sanitizeCurrency(input: string): string {
   let s = input.replace(/[^\d.]/g, "");
   const firstDot = s.indexOf(".");
   if (firstDot !== -1) {
     s = s.slice(0, firstDot + 1) + s.slice(firstDot + 1).replace(/\./g, "");
   }
-  return s;
+  // Strip leading zeros from the integer part so typing after a default "0"
+  // (e.g. "0" then "15000") doesn't accumulate as "015,000". A lone "0" and a
+  // leading zero before a decimal point ("0.5") are preserved.
+  const dot = s.indexOf(".");
+  const intPart = (dot === -1 ? s : s.slice(0, dot)).replace(/^0+(?=\d)/, "");
+  const rest = dot === -1 ? "" : s.slice(dot);
+  return intPart + rest;
 }
 
 /** Format a sanitized/numeric value with thousands separators for display. */
-function formatCurrencyDisplay(value: unknown): string {
+export function formatCurrencyDisplay(value: unknown): string {
   if (value === "" || value === null || value === undefined) return "";
   const raw = sanitizeCurrency(String(value));
   if (raw === "") return "";
@@ -186,6 +192,14 @@ function CurrencyControl<
                 : undefined
           }
           value={display}
+          onFocus={(e) => {
+            // Select the whole value on focus so the default "0" (or an existing
+            // amount) is replaced by the first keystroke instead of having to be
+            // manually deleted first. rAF works around mobile browsers that
+            // reset the selection immediately after the focus event.
+            const el = e.target;
+            requestAnimationFrame(() => el.select());
+          }}
           onChange={(e) => {
             const el = e.target;
             const typed = el.value;

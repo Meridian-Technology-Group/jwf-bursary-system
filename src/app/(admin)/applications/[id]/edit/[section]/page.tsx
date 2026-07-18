@@ -145,6 +145,7 @@ export default async function EditSectionPage({ params }: PageProps) {
     parent1Status,
     parent2Status,
     relationshipStatus,
+    dependentChildrenCount,
     parent1Address,
   } = await withUserContext(user.id, user.role as RlsRole, (tx) =>
     loadSectionPageData(tx, params.id, sectionType, primaryContributorId)
@@ -191,6 +192,7 @@ export default async function EditSectionPage({ params }: PageProps) {
       parent1EmploymentStatus={parent1Status}
       parent2EmploymentStatus={parent2Status}
       relationshipStatus={relationshipStatus}
+      dependentChildrenCount={dependentChildrenCount}
       nextLabel={nextLabel}
       backHref={backHref}
       nextHref={nextHref}

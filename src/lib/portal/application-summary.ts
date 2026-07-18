@@ -119,19 +119,32 @@ const SUMMARY_SECTION_ORDER = [
 
 // ─── Per-section row builders ───────────────────────────────────────────────
 
-function childDetailsRows(raw: unknown): SummaryRow[] {
+function childDetailsRows(
+  raw: unknown,
+  entry?: { entryYear?: number | null; entryYearGroup?: string | null }
+): SummaryRow[] {
   const d = parseSafe<ChildDetailsData>(raw);
   if (!d) return [];
+  // The entry year is locked admin-side at the invite and lives on the
+  // Application record (calendar year, e.g. 2027) — it is no longer captured on
+  // the parent form, so prefer it and fall back to any legacy value in the
+  // section blob. The year-group is shown alongside when known.
+  const groupCode = entry?.entryYearGroup ?? d.entryYearGroup;
+  const groupLabel = groupCode
+    ? ENTRY_YEAR_GROUP_LABELS[groupCode as keyof typeof ENTRY_YEAR_GROUP_LABELS] ??
+      groupCode
+    : undefined;
+  const entryYear = entry?.entryYear ?? undefined;
+  const yearOfEntry = entryYear
+    ? groupLabel
+      ? `${entryYear} (${groupLabel})`
+      : String(entryYear)
+    : groupLabel ?? "—";
   const rows: SummaryRow[] = [
     { label: "Name", value: d.childFullName || "—" },
     { label: "Date of birth", value: fmtDate(d.dateOfBirth) },
     { label: "School applying for", value: fmtSchool(d.school) },
-    {
-      label: "Year of entry",
-      value: d.entryYearGroup
-        ? ENTRY_YEAR_GROUP_LABELS[d.entryYearGroup] ?? d.entryYearGroup
-        : "—",
-    },
+    { label: "Year of entry", value: yearOfEntry },
     { label: "Current school", value: d.currentSchool || "—" },
     {
       label: "Place of birth",
@@ -225,10 +238,11 @@ function dependentChildren(raw: unknown): {
     rows,
     table: {
       caption: "Dependent children",
-      columns: ["Name", "Date registered", "Named on application"],
+      columns: ["Name", "School", "School address", "Named on application"],
       rows: children.map((c) => [
         c.name || "—",
-        fmtDate(c.dependentStatusDate),
+        c.school || "—",
+        c.schoolAddress || "—",
         c.isNamedChild ? "Yes" : "No",
       ]),
     },
@@ -454,6 +468,10 @@ export interface SummaryInput {
   sections: { section: string; data: unknown }[];
   /** All documents uploaded against the application. */
   documents: { slot: string; filename: string }[];
+  /** Entry calendar year, locked admin-side at the invite (Application column). */
+  entryYear?: number | null;
+  /** Entry year-group, locked admin-side at the invite (Application column). */
+  entryYearGroup?: string | null;
 }
 
 /**
@@ -473,7 +491,10 @@ export function buildSubmittedSummary(input: SummaryInput): SubmittedSummary {
 
     switch (sectionType) {
       case "CHILD_DETAILS":
-        rows = childDetailsRows(raw);
+        rows = childDetailsRows(raw, {
+          entryYear: input.entryYear,
+          entryYearGroup: input.entryYearGroup,
+        });
         break;
       case "FAMILY_ID":
         rows = familyIdRows(raw);

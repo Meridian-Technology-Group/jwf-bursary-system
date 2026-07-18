@@ -165,6 +165,7 @@ export default async function SectionPage({ params }: PageProps) {
     parent1Status,
     parent2Status,
     relationshipStatus,
+    dependentChildrenCount,
     parent1Address,
   } = await withUserContext(user.id, user.role as RlsRole, (tx) =>
     loadSectionPageData(tx, application.id, sectionType, ownerContributorId)
@@ -231,6 +232,7 @@ export default async function SectionPage({ params }: PageProps) {
       parent1EmploymentStatus={parent1Status}
       parent2EmploymentStatus={parent2Status}
       relationshipStatus={relationshipStatus}
+      dependentChildrenCount={dependentChildrenCount}
       nextLabel={nextLabel}
       backHref={backHref}
       nextHref={nextHref}

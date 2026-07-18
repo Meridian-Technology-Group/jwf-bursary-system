@@ -28,7 +28,7 @@ import { ParentDetailsForm } from "@/components/portal/sections/parent-details-f
 import { ParentsIncomeForm } from "@/components/portal/sections/parents-income-form";
 import { AssetsLiabilitiesForm } from "@/components/portal/sections/assets-liabilities-form";
 
-import { parentDetailsSchema } from "@/lib/schemas/parent-details";
+import { secondaryParentDetailsSchema } from "@/lib/schemas/parent-details";
 import { parentsIncomeSchema } from "@/lib/schemas/parents-income";
 import { assetsLiabilitiesSchema } from "@/lib/schemas/assets-liabilities";
 import {
@@ -135,13 +135,13 @@ function getDefaultValues(
 function getSchema(sectionType: ApplicationSectionType) {
   switch (sectionType) {
     case "PARENT_DETAILS":
-      return parentDetailsSchema;
+      return secondaryParentDetailsSchema;
     case "PARENTS_INCOME":
       return parentsIncomeSchema;
     case "ASSETS_LIABILITIES":
       return assetsLiabilitiesSchema;
     default:
-      return parentDetailsSchema;
+      return secondaryParentDetailsSchema;
   }
 }
 

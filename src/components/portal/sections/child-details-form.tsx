@@ -33,7 +33,7 @@ import { CHILD_TITLES } from "@/lib/schemas/child-details";
 import type { UploadedDocument } from "@/components/portal/file-upload";
 import type { DocumentMeta } from "@/lib/db/queries/applications";
 
-const GENDERS = ["Male", "Female", "Prefer not to say", "Other"];
+const GENDERS = ["Male", "Female", "Other"];
 
 const SCHOOL_LABELS: Record<string, string> = {
   TRINITY: "Trinity School",
