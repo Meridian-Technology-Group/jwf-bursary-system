@@ -138,8 +138,10 @@ describe("loadSectionPageData", () => {
       OWNER_ID
     );
     expect(result.isSoleParent).toBe(true);
-    // DECLARATION reads only the flag — no employment/relationship spill-over.
-    expect(result.relationshipStatus).toBeUndefined();
+    // DECLARATION also reads relationshipStatus so a coupled status expands the
+    // Parent 2 signature block even when sole-parent = yes. No employment
+    // spill-over, though.
+    expect(result.relationshipStatus).toBe("MARRIED");
     expect(result.parent1Status).toBeUndefined();
   });
 

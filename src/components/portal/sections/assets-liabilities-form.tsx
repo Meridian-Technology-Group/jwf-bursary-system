@@ -220,6 +220,7 @@ const RENT_AGREEMENT_OPTIONS = [
 const CAR_OWNERSHIP_OPTIONS = [
   { value: "OWN", label: "I own a car / cars" },
   { value: "LEASE", label: "I lease a car / cars" },
+  { value: "NEITHER", label: "I neither own, nor lease a car" },
 ] as const;
 
 export function AssetsLiabilitiesForm({
@@ -259,7 +260,7 @@ export function AssetsLiabilitiesForm({
           render={({ field }) => (
             <FormItem>
               <FormLabel>
-                Do you own or rent your family home?{" "}
+                Do you (and/or your partner) own or rent your family home?{" "}
                 <span className="text-error-600">*</span>
               </FormLabel>
               <Select onValueChange={field.onChange} value={field.value}>
@@ -289,7 +290,7 @@ export function AssetsLiabilitiesForm({
           <YesNoToggle
             control={control}
             name="hasMortgage"
-            label="Do you have a mortgage on your family home?"
+            label="Do you (and/or your partner) have a mortgage on your family home?"
             required
           />
           <ConditionalField show={hasMortgage === true}>
@@ -394,7 +395,7 @@ export function AssetsLiabilitiesForm({
         <YesNoToggle
           control={control}
           name="hasOtherProperties"
-          label="Do you own any other properties besides your family home?"
+          label="Do you (and/or your partner) own any other properties besides your family home?"
           required
         />
         <ConditionalField show={hasOtherProperties === true}>
@@ -435,7 +436,7 @@ export function AssetsLiabilitiesForm({
         <YesNoToggle
           control={control}
           name="hasChargingOrder"
-          label="Do you have any charging order against the property(ies) you own?"
+          label="Do you (and/or your partner) have any charging order against the property(ies) you own?"
           required
         />
         <ConditionalField show={hasChargingOrder === true}>
@@ -500,7 +501,8 @@ export function AssetsLiabilitiesForm({
           render={({ field }) => (
             <FormItem className="space-y-3">
               <FormLabel>
-                Do you own or lease a car? <span className="text-error-600">*</span>
+                Do you (and/or your partner) own or lease a car?{" "}
+                <span className="text-error-600">*</span>
               </FormLabel>
               <FormControl>
                 <RadioGroup
@@ -551,7 +553,7 @@ export function AssetsLiabilitiesForm({
         <YesNoToggle
           control={control}
           name="usesPublicTransport"
-          label="Do you use public transport regularly?"
+          label="Do you (and/or your partner) use public transport regularly?"
           required
         />
         <ConditionalField show={usesPublicTransport === true}>
@@ -676,7 +678,7 @@ export function AssetsLiabilitiesForm({
         <YesNoToggle
           control={control}
           name="hasPersonalDebt"
-          label="Do you have any personal debt (excluding mortgages)?"
+          label="Do you (and/or your partner) have any personal debt (excluding mortgages)?"
           required
         />
         <ConditionalField show={hasPersonalDebt === true}>

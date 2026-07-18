@@ -37,6 +37,25 @@ export const dependentElderlySchema = z
         path: ["elderlyInCareCount"],
       });
     }
+    // The number of in-care entries must match the declared count: declaring 1
+    // or 2 elderly dependants in a care home requires that many full entries
+    // before the section (and the application) can be submitted.
+    if (
+      data.hasElderlyInCare &&
+      typeof data.elderlyInCareCount === "number" &&
+      data.elderlyInCareCount > 0 &&
+      data.elderlyInCare.length !== data.elderlyInCareCount
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `You told us you have ${data.elderlyInCareCount} elderly ${
+          data.elderlyInCareCount === 1 ? "dependant" : "dependants"
+        } in a care home, but ${data.elderlyInCare.length} ${
+          data.elderlyInCare.length === 1 ? "entry has" : "entries have"
+        } been added. Please add details for every elderly dependant in care so the numbers match.`,
+        path: ["elderlyInCare"],
+      });
+    }
     // Per-elder care-home details (workbook §4 Q13): first/surname/care-home
     // name/yearly fees are required for each in-care dependant entered.
     if (data.hasElderlyInCare) {

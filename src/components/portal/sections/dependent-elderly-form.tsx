@@ -82,6 +82,10 @@ export function DependentElderlyForm({
                     min={0}
                     className="w-24"
                     {...field}
+                    onFocus={(e) => {
+                      const el = e.currentTarget;
+                      requestAnimationFrame(() => el.select());
+                    }}
                     onChange={(e) => field.onChange(parseInt(e.target.value, 10) || 0)}
                     value={field.value ?? ""}
                   />
@@ -122,6 +126,10 @@ export function DependentElderlyForm({
                     min={0}
                     className="w-24"
                     {...field}
+                    onFocus={(e) => {
+                      const el = e.currentTarget;
+                      requestAnimationFrame(() => el.select());
+                    }}
                     onChange={(e) => field.onChange(parseInt(e.target.value, 10) || 0)}
                     value={field.value ?? ""}
                   />

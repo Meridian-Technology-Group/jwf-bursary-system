@@ -32,6 +32,21 @@ export const dependentChildrenSchema = z
       return;
     }
 
+    // R3 — the number of children entries must match the declared count. The
+    // named child on the application counts towards the total, so declaring N
+    // requires N full rows (including the named child).
+    if (val.numberOfDependentChildren !== children.length) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `You told us you have ${val.numberOfDependentChildren} dependent ${
+          val.numberOfDependentChildren === 1 ? "child" : "children"
+        }, but ${children.length} ${
+          children.length === 1 ? "has" : "have"
+        } been added. Please add details for every dependent child (including the child named on this application) so the two numbers match.`,
+        path: ["children"],
+      });
+    }
+
     // R2 — exactly one child must have isNamedChild === true
     const namedCount = children.filter((c) => c.isNamedChild === true).length;
 

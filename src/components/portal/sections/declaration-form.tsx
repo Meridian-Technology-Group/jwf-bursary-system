@@ -35,7 +35,7 @@ const DECLARATION_TERMS = [
   "Every bursary award is subject to an annual review, and a new declaration of income and assets must be submitted each year.",
   "Previous years' awards are not re-reviewed as part of the annual review.",
   "I/We will notify the Foundation immediately of any material change in our financial or family circumstances.",
-  "The Foundation may withdraw or reduce an award if the Parent Contract is breached, if requested information is not provided, if a fee balance is carried between terms, or following a positive material change in circumstances.",
+  "The Foundation may withdraw or reduce an award if the Parent Contract is breached, if requested information is not provided or proves to be inaccurate, if a fee balance is carried between terms, or following a positive material change in circumstances.",
   "An award will be withdrawn if false information has been provided, and the full fees will become payable.",
 ];
 

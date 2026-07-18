@@ -406,7 +406,7 @@ export type RentAgreementType =
   | "COUNCIL_NO_RENT"
   | "RELATIVES";
 
-export type CarOwnership = "OWN" | "LEASE";
+export type CarOwnership = "OWN" | "LEASE" | "NEITHER";
 
 export interface AssetsLiabilitiesData {
   // Property
