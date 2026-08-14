@@ -341,15 +341,22 @@ const assetsRules: DocumentRule[] = [
     doc: { docIdPath: "councilTaxDocumentId", slot: "COUNCIL_TAX" },
   },
   // OWN branch — latest main mortgage statement when a mortgage is declared.
+  // Gated on propertyOwnership too: the upload only renders inside the OWN
+  // branch, so without that guard a stale `hasMortgage` left behind by
+  // switching OWN → RENT raises a gap the applicant cannot see or satisfy.
   {
-    kind: "requiredIfTrue",
+    kind: "structural",
     id: "MAIN_MORTGAGE_STATEMENT",
-    truePath: "hasMortgage",
     label: "Your latest mortgage statement is required",
     fieldRef: "mortgageStatementDocumentId",
-    doc: {
-      docIdPath: "mortgageStatementDocumentId",
-      slot: "MAIN_MORTGAGE_STATEMENT",
+    predicate: (blob, uploadedSlots) => {
+      if (blob.propertyOwnership !== "OWN") return true; // branch not shown
+      if (blob.hasMortgage !== true) return true; // not applicable
+      const id = blob.mortgageStatementDocumentId;
+      return (
+        (typeof id === "string" && id.length > 0) ||
+        uploadedSlots.has("MAIN_MORTGAGE_STATEMENT")
+      );
     },
   },
   // RENT branch — tenancy agreement when renting privately or from the council.
@@ -359,6 +366,7 @@ const assetsRules: DocumentRule[] = [
     label: "A tenancy agreement is required for your rent arrangement",
     fieldRef: "tenancyAgreementDocumentId",
     predicate: (blob, uploadedSlots) => {
+      if (blob.propertyOwnership !== "RENT") return true; // branch not shown
       const type = blob.rentAgreementType;
       if (type !== "PRIVATE" && type !== "COUNCIL") return true; // not applicable
       const id = blob.tenancyAgreementDocumentId;
@@ -375,6 +383,7 @@ const assetsRules: DocumentRule[] = [
     label: "A housing benefit letter is required for your rent arrangement",
     fieldRef: "housingBenefitLetterDocumentId",
     predicate: (blob, uploadedSlots) => {
+      if (blob.propertyOwnership !== "RENT") return true; // branch not shown
       if (blob.rentAgreementType !== "COUNCIL_NO_RENT") return true; // not applicable
       const id = blob.housingBenefitLetterDocumentId;
       return (
@@ -391,6 +400,7 @@ const assetsRules: DocumentRule[] = [
       "A letter from your relative is required for your living arrangement",
     fieldRef: "relativeLetterDocumentId",
     predicate: (blob, uploadedSlots) => {
+      if (blob.propertyOwnership !== "RENT") return true; // branch not shown
       if (blob.rentAgreementType !== "RELATIVES") return true; // not applicable
       const id = blob.relativeLetterDocumentId;
       return (
@@ -486,22 +496,33 @@ const assetsRules: DocumentRule[] = [
   },
   // Loan statement AND loan agreement — both required when a credit-agency loan
   // balance is declared (CF-30: the statement is no longer optional, and the
-  // agreement is a new compulsory ask).
+  // agreement is a new compulsory ask). Gated on `hasPersonalDebt` exactly like
+  // CREDIT_CARD_STATEMENT above: both uploads render only inside that branch.
   {
-    kind: "requiredIfValueGt0",
+    kind: "structural",
     id: "LOAN_STATEMENT",
-    valuePaths: ["loansToAgencies"],
     label: "A loan statement is required for the declared loan balance",
     fieldRef: "loanStatementDocumentIds",
-    doc: { docIdPath: "loanStatementDocumentIds", slot: "LOAN_STATEMENT" },
+    predicate: (blob, uploadedSlots) => {
+      if (blob.hasPersonalDebt !== true) return true; // not applicable
+      if (Number(blob.loansToAgencies ?? 0) <= 0) return true; // no balance
+      const ids = blob.loanStatementDocumentIds;
+      if (Array.isArray(ids) && ids.length > 0) return true;
+      return uploadedSlots.has("LOAN_STATEMENT");
+    },
   },
   {
-    kind: "requiredIfValueGt0",
+    kind: "structural",
     id: "LOAN_AGREEMENT",
-    valuePaths: ["loansToAgencies"],
     label: "A loan agreement is required for the declared loan balance",
     fieldRef: "loanAgreementDocumentIds",
-    doc: { docIdPath: "loanAgreementDocumentIds", slot: "LOAN_AGREEMENT" },
+    predicate: (blob, uploadedSlots) => {
+      if (blob.hasPersonalDebt !== true) return true; // not applicable
+      if (Number(blob.loansToAgencies ?? 0) <= 0) return true; // no balance
+      const ids = blob.loanAgreementDocumentIds;
+      if (Array.isArray(ids) && ids.length > 0) return true;
+      return uploadedSlots.has("LOAN_AGREEMENT");
+    },
   },
 ];
 

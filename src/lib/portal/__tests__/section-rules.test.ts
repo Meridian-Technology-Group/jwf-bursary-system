@@ -331,27 +331,40 @@ describe("ASSETS_LIABILITIES", () => {
     ).toEqual(["ASSETS_LIABILITIES:BANK_STATEMENT_CURRENT_PARENT_2"]);
   });
   it("mortgage statement required when hasMortgage, satisfied by the doc", () => {
-    expect(gapIds("ASSETS_LIABILITIES", { ...base, hasMortgage: true })).toEqual([
-      "ASSETS_LIABILITIES:MAIN_MORTGAGE_STATEMENT",
-    ]);
+    expect(
+      gapIds("ASSETS_LIABILITIES", { ...base, propertyOwnership: "OWN", hasMortgage: true })
+    ).toEqual(["ASSETS_LIABILITIES:MAIN_MORTGAGE_STATEMENT"]);
     expect(
       gapIds("ASSETS_LIABILITIES", {
         ...base,
+        propertyOwnership: "OWN",
         hasMortgage: true,
         mortgageStatementDocumentId: "m",
       })
     ).toEqual([]);
   });
   it("rent-arrangement uploads gate by type", () => {
-    expect(gapIds("ASSETS_LIABILITIES", { ...base, rentAgreementType: "PRIVATE" })).toEqual([
-      "ASSETS_LIABILITIES:TENANCY_AGREEMENT",
-    ]);
     expect(
-      gapIds("ASSETS_LIABILITIES", { ...base, rentAgreementType: "COUNCIL_NO_RENT" })
+      gapIds("ASSETS_LIABILITIES", {
+        ...base,
+        propertyOwnership: "RENT",
+        rentAgreementType: "PRIVATE",
+      })
+    ).toEqual(["ASSETS_LIABILITIES:TENANCY_AGREEMENT"]);
+    expect(
+      gapIds("ASSETS_LIABILITIES", {
+        ...base,
+        propertyOwnership: "RENT",
+        rentAgreementType: "COUNCIL_NO_RENT",
+      })
     ).toEqual(["ASSETS_LIABILITIES:HOUSING_BENEFIT_LETTER"]);
-    expect(gapIds("ASSETS_LIABILITIES", { ...base, rentAgreementType: "RELATIVES" })).toEqual([
-      "ASSETS_LIABILITIES:RELATIVE_LETTER",
-    ]);
+    expect(
+      gapIds("ASSETS_LIABILITIES", {
+        ...base,
+        propertyOwnership: "RENT",
+        rentAgreementType: "RELATIVES",
+      })
+    ).toEqual(["ASSETS_LIABILITIES:RELATIVE_LETTER"]);
   });
   it("investment docs required per parent when stocks/bonds declared", () => {
     expect(gapIds("ASSETS_LIABILITIES", { ...base, parent1OwnsInvestments: true })).toEqual([
@@ -402,6 +415,49 @@ describe("ASSETS_LIABILITIES", () => {
     expect(
       gapIds("ASSETS_LIABILITIES", { ...base, hasPersonalDebt: false })
     ).toEqual([]);
+  });
+
+  // ── Invisible-requirement guard ────────────────────────────────────────────
+  // `ConditionalField` hides its children with CSS only — it never unmounts
+  // them — so a value entered in a branch SURVIVES in the saved blob after the
+  // branch is switched off. Every rule whose upload lives inside a branch must
+  // therefore re-check that branch, or it raises a gap pointing at a control
+  // the applicant cannot see, and the section can never be completed (the CF-17
+  // / CF-21 failure mode). These pin the guards.
+  it("stale loan balance raises nothing once personal debt is switched back to no", () => {
+    expect(
+      gapIds("ASSETS_LIABILITIES", {
+        ...base,
+        hasPersonalDebt: false,
+        loansToAgencies: 4000,
+        creditCardBalance: 500,
+      })
+    ).toEqual([]);
+  });
+
+  it("stale hasMortgage raises nothing once the household switches OWN → RENT", () => {
+    expect(
+      gapIds("ASSETS_LIABILITIES", {
+        ...base,
+        propertyOwnership: "RENT",
+        rentAgreementType: "PRIVATE",
+        tenancyAgreementDocumentId: "t",
+        hasMortgage: true,
+      })
+    ).toEqual([]);
+  });
+
+  it("stale rentAgreementType raises nothing once the household switches RENT → OWN", () => {
+    for (const type of ["PRIVATE", "COUNCIL", "COUNCIL_NO_RENT", "RELATIVES"]) {
+      expect(
+        gapIds("ASSETS_LIABILITIES", {
+          ...base,
+          propertyOwnership: "OWN",
+          hasMortgage: false,
+          rentAgreementType: type,
+        })
+      ).toEqual([]);
+    }
   });
 });
 
