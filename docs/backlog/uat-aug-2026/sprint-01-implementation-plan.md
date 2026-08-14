@@ -436,10 +436,43 @@ This supersedes the CP10 "Set Qualifies" item on the calc-v2 staging pass.
 - **Child name displayed beside the reference** on: the admin application table
   (`src/components/admin/application-table.tsx:892`), the application header, the
   assessment header, exports, and outcome emails.
+- **Remove the app-layer uniqueness enforcement too** — dropping the index is
+  not sufficient. `updateApplicationReferenceAction`
+  (`src/app/(admin)/applications/[id]/actions.ts:1071-1118`) performs a
+  case-insensitive `findFirst` pre-check that throws *"X is already in use by
+  another application"*, and its catch block maps `"Unique constraint"` to a
+  second rejection message. Both must go, along with the uniqueness paragraphs
+  in the action's doc comment. Miss this and duplicates stay blocked with the
+  DB constraint gone.
 - Verify the admin search box and the XLSX export behave with duplicate
   references. All joins are on UUID (verified — no FK uses `reference`), so
   duplicates are safe, but any code that *looks up* by reference must be found
   and made non-`findUnique`. Grep for `reference:` in `where` clauses.
+
+**`BursaryAccount.reference` is untouched and unaffected.** Verified: it is
+generated independently by `src/lib/bursary-accounts/reference.ts`
+(`BA-{academicYear}-{seq}`), created once at award
+(`src/lib/applications/account-promotion.ts:119-143`), and never derived from
+or synced with `Application.reference` — `updateApplicationReferenceAction`
+writes `tx.application.update` only. Keeping it unique does not constrain
+D13-1.
+
+> **Open design question (Q5 — raise with Charlotte, does not block the build).**
+> `BursaryAccount.feesAccountCode` already exists (CALC-10, `schema.prisma:84-86`):
+> free-text, ADMIN/ASSESSOR-editable, documented as *"the school finance
+> system's billing reference for this account"*, with a UI at
+> `src/components/admin/fees-account-code-field.tsx`. That is the same stated
+> rationale as D13-1 ("must match the external fees system"). Build C4 as
+> specified — the reference is what renders on lists, exports and emails, which
+> `feesAccountCode` does not — but two free-text external-system codes on one
+> entity chain will diverge in use. Ask whether `feesAccountCode` is now
+> redundant, or whether the two serve different systems.
+
+**Pre-existing, not fixed here:** `generateBursaryAccountReference` derives its
+sequence by counting rows, the same race C4 removes on the application side.
+After C4 it is the only reference generator that can still throw a
+unique-constraint error, under concurrent awards in the same academic year.
+Low probability (awards are batch-sequential today); noted for whoever hits it.
 
 **Done when:** two applications can hold the identical reference
 `TS-SMITH05-Smith, Bob`; the generated default matches the format above; every
@@ -612,6 +645,7 @@ in code; Q3 affects copy only.
 | Q2 | 30 | Loan agreement required always, or only when a loan is declared? | Only when declared | D3 rule kind |
 | Q3 | 27 | Accepts that a parent who loses the one-time PDF must email the team? | Yes | D1 copy |
 | Q4 | 12 | Is the rolling-over deadline one global date per round? | Yes | E1 data model |
+| **Q5** | 04 | `BursaryAccount.feesAccountCode` (CALC-10) already holds "the school finance system's billing reference" — is it now redundant, or do the two codes serve different systems? | Both are kept; the editable reference is what renders on lists/exports/emails | C4 follow-up only — does not block |
 
 Also to send back (no build needed): the CF-08 and CF-11 corrections and the
 CF-23 diagnosis from the epic's "Corrections" section.
