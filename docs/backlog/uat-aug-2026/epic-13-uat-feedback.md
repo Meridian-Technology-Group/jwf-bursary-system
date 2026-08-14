@@ -131,6 +131,15 @@ independently of everything else.
 
 ## Sequencing / PR plan
 
+> **Execution plan:** [`sprint-01-implementation-plan.md`](sprint-01-implementation-plan.md)
+> turns the work packages below into an executable sprint — sized board, branch
+> names, dependency trains, per-WP acceptance criteria, migration summary, test
+> strategy, and a progress tracker. It also records corrections where the code
+> disagreed with this epic's diagnosis (`BursaryAccount.reference` stays unique;
+> `AuditLog.action` is a String, not an enum; the upload client already guards
+> against non-JSON error bodies; the invitation `{{deadline}}` bug has four
+> injection sites, not two).
+
 Branch off `staging` per CLAUDE.md; one PR per WP unless trivially small
 (A5–A8 can pair up). Suggested order: **A1 → A2–A8 → B1 → B2 → C1 → C2 →
 C3+C4 → D1–D4 → E1.** Wave A alone unblocks Charlotte's submission; C1+C2
