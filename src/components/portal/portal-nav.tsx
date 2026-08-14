@@ -20,7 +20,6 @@
  */
 
 import { usePathname } from "next/navigation";
-import Link from "next/link";
 import {
   Home,
   FileText,
@@ -33,6 +32,7 @@ import { cn } from "@/lib/utils";
 import { JwfLogo } from "@/components/brand/jwf-logo";
 import { PortalAccountFooter } from "./portal-account-footer";
 import { RailStepper } from "./rail-stepper";
+import { GuardedLink } from "./guarded-link";
 
 // ─── Nav model (the single source of nav membership) ──────────────────────────
 
@@ -144,7 +144,9 @@ function PortalNavLink({
   // assistive tech with an explicit aria-label rather than a role.
   const highlight = item.highlight === true;
   return (
-    <Link
+    // Guarded (WP B1): leaving the wizard for Home / Documents / Help mid-edit
+    // discarded the section just as a stepper click did.
+    <GuardedLink
       href={item.href}
       aria-label={highlight ? `${item.label}: action needed` : undefined}
       className={cn(
@@ -179,7 +181,7 @@ function PortalNavLink({
         aria-hidden="true"
       />
       <span className="flex-1 truncate">{item.label}</span>
-    </Link>
+    </GuardedLink>
   );
 }
 

@@ -33,6 +33,7 @@ import { hasPortalSchedule } from "@/lib/db/queries/schedule";
 import { PortalNav } from "@/components/portal/portal-nav";
 import { PortalNavMobileHeader } from "@/components/portal/portal-nav-mobile-header";
 import { StepperDataProvider } from "@/components/portal/stepper-data-context";
+import { UnsavedChangesProvider } from "@/components/portal/unsaved-changes-context";
 import { PageLoader } from "@/components/shared/loading";
 import { IdleLogoutWatcher } from "@/components/auth/idle-logout-watcher";
 
@@ -111,6 +112,13 @@ export default async function PortalLayout({
     // the desktop aside is md:fixed (out of flow) and the mobile header is
     // md:hidden, so the row layout is unchanged at md+.
     <div className="flex flex-col md:flex-row min-h-screen bg-canvas-50">
+      {/* The unsaved-changes guard (WP B1). It wraps EVERYTHING below for the
+          same ancestor-side-sibling reason the stepper bridge does: the section
+          form (content branch) publishes its dirty state + in-place save, and
+          the rail's stepper/nav (rail branch) consults it before navigating.
+          The IdleLogoutWatcher sits inside it too, so a forced sign-out flushes
+          the applicant's typing instead of discarding it (CF-15). */}
+      <UnsavedChangesProvider>
       {/* Epic 11 (D20) — optional inactivity logout, applied to the parent
           portal as well as staff. Renders nothing without an authenticated
           user or when the flag is off. */}
@@ -182,6 +190,7 @@ export default async function PortalLayout({
           {/* NO footer here — the apply content segment owns the sticky footer. */}
         </div>
       </StepperDataProvider>
+      </UnsavedChangesProvider>
     </div>
   );
 }

@@ -33,6 +33,7 @@ import {
   CONTRIBUTE_SIDEBAR_SECTIONS,
   type SidebarSection,
 } from "@/components/portal/portal-sidebar-sections";
+import { UnsavedChangesProvider } from "@/components/portal/unsaved-changes-context";
 import { PageLoader } from "@/components/shared/loading";
 
 export const metadata = {
@@ -89,6 +90,11 @@ export default async function ContributeLayout({
 
   return (
     <div className="flex min-h-screen bg-canvas-50">
+      {/* The unsaved-changes guard (WP B1). The second parent navigates the same
+          stepper as the lead applicant, so it loses work the same way; the
+          Provider must wrap BOTH the sidebar (which navigates) and {children}
+          (which holds the form that publishes its dirty state). */}
+      <UnsavedChangesProvider>
       {/* ── Desktop sidebar (hidden on mobile) ─────────────────────────── */}
       <aside className="hidden md:flex md:flex-col md:w-[280px] md:shrink-0 md:fixed md:inset-y-0 md:left-0 md:z-30 bg-white border-r border-slate-200 shadow-xs">
         <PortalDesktopSidebar
@@ -123,6 +129,7 @@ export default async function ContributeLayout({
           </div>
         </main>
       </div>
+      </UnsavedChangesProvider>
     </div>
   );
 }

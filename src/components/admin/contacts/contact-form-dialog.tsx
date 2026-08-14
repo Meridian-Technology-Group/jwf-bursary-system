@@ -83,7 +83,11 @@ const schema = z.object({
     .string()
     .min(1, "Entry year is required")
     .regex(/^\d{4}$/, "Enter a 4-digit year"),
-  entryYearGroup: z.enum(["Y6", "Y7", "Y9", "Y12", "OTHER"]).optional(),
+  // Required as of Q1: the entry year-group is JWF-facing only and the parent
+  // can never supply it, so it must be captured here.
+  entryYearGroup: z.enum(["Y6", "Y7", "Y9", "Y12", "OTHER"], {
+    error: "An entry year group is required",
+  }),
   addressLine1: z.string().optional(),
   addressLine2: z.string().optional(),
   town: z.string().optional(),
@@ -169,7 +173,7 @@ export function ContactFormDialog({
     if (values.childDob) fd.set("childDob", values.childDob);
     fd.set("school", values.school);
     fd.set("entryYear", values.entryYear);
-    if (values.entryYearGroup) fd.set("entryYearGroup", values.entryYearGroup);
+    fd.set("entryYearGroup", values.entryYearGroup);
     if (values.addressLine1) fd.set("addressLine1", values.addressLine1);
     if (values.addressLine2) fd.set("addressLine2", values.addressLine2);
     if (values.town) fd.set("town", values.town);
@@ -443,7 +447,9 @@ export function ContactFormDialog({
                   name="entryYearGroup"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Entry year group</FormLabel>
+                      <FormLabel>
+                        Entry year group <span className="text-red-500">*</span>
+                      </FormLabel>
                       <Select
                         onValueChange={field.onChange}
                         value={field.value ?? ""}

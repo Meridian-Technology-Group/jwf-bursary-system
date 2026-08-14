@@ -33,7 +33,7 @@ import { parentsIncomeSchema } from "@/lib/schemas/parents-income";
 import { assetsLiabilitiesSchema } from "@/lib/schemas/assets-liabilities";
 import { getContributeSectionDefaultValues } from "@/lib/portal/contribute-section-defaults";
 
-import { saveSection } from "../actions";
+import { saveSection, saveSectionDraft } from "../actions";
 
 interface ContributeSectionClientProps {
   sectionType: ApplicationSectionType;
@@ -141,6 +141,25 @@ export function ContributeSectionClient({
     return saveSection(applicationId, sectionType, data);
   }
 
+  /**
+   * The in-place save path (WP B1's guard, and WP B2's autosave). The second
+   * parent hits the same data loss as the lead applicant — the same three
+   * sections, the same long income tables — so the contribute flow gets the
+   * same treatment: a section that validates saves complete, one that does not
+   * is written as a draft rather than discarded.
+   *
+   * This also enrols /contribute in the WP B2 autosave: `SectionForm` debounces
+   * against whatever `onSaveWithoutAdvancing` it is given, and the contribute
+   * `saveSectionDraft` (contribute/actions.ts) is the secondary-scoped twin of
+   * the portal one. No CR-001 provenance is involved on this side — the
+   * assessor edit-on-behalf flow only writes the primary's rows.
+   */
+  async function handleGuardedSave(data: unknown, complete: boolean) {
+    return complete
+      ? saveSection(applicationId, sectionType, data)
+      : saveSectionDraft(applicationId, sectionType, data);
+  }
+
   return (
     <div className="space-y-6">
       <div>
@@ -164,6 +183,7 @@ export function ContributeSectionClient({
           schema={schema as never}
           defaultValues={defaultValues as never}
           onSave={handleSave as never}
+          onSaveWithoutAdvancing={handleGuardedSave as never}
           backHref={backHref}
           nextHref={nextHref}
           nextLabel={nextLabel}

@@ -231,7 +231,8 @@ export function getSectionDefaultValues(
       const seededName = splitChildFullName(seed.applicationChildName);
       return {
         school: seed.applicationSchool,
-        entryYearGroup: undefined,
+        // entryYearGroup deliberately NOT seeded — A6 removed it from the
+        // applicant schema entirely (JWF-facing only, set admin-side).
         childTitle: "",
         childFirstName: seededName.firstName,
         childSurname: seededName.surname,

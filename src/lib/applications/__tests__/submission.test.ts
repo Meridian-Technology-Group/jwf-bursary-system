@@ -68,7 +68,6 @@ function makeApplication(overrides: Record<string, unknown> = {}) {
     childDob: null,
     school: "WHITGIFT",
     entryYear: null,
-    entryYearGroup: null,
     submissionDeadlineAt: null,
     bursaryAccountId: null,
     roundId: "round-1",
@@ -163,6 +162,58 @@ describe("submitApplicationCore", () => {
     expect(updateArg.data.submittedAt).toBeInstanceOf(Date);
     expect(updateArg.data).toHaveProperty("termsAcceptedAt");
     expect(updateArg.data).toHaveProperty("termsVersion");
+  });
+
+  // ── Entry year group is JWF-facing only (Q1, Brian 2026-08-14) ───────────
+  // The applicant cannot enter it, so submit must not read it out of the
+  // CHILD_DETAILS blob nor write the column at all. The entry *calendar* year
+  // is still backfilled from the round.
+  it("never promotes an entryYearGroup out of the CHILD_DETAILS blob", async () => {
+    fakeTx.application.findUnique.mockResolvedValue(
+      makeApplication({
+        entryYear: null,
+        entryYearGroup: null,
+        sections: SECTION_ORDER.map((section) => ({
+          section,
+          isComplete: true,
+          // A legacy draft that still carries the field in its blob.
+          data: section === "CHILD_DETAILS" ? { entryYearGroup: "Y12" } : {},
+        })),
+      })
+    );
+
+    await submitApplicationCore(CORE_INPUT);
+
+    const updateArg = fakeTx.application.update.mock.calls[0]![0] as {
+      data: Record<string, unknown>;
+    };
+    expect(updateArg.data).not.toHaveProperty("entryYearGroup");
+    // The entry calendar year is still derived from the round.
+    expect(updateArg.data.entryYear).toBe(2026);
+  });
+
+  it("never clobbers an admin-set entry year group on submit", async () => {
+    fakeTx.application.findUnique.mockResolvedValue(
+      makeApplication({
+        entryYear: 2024,
+        entryYearGroup: "Y9",
+        sections: SECTION_ORDER.map((section) => ({
+          section,
+          isComplete: true,
+          data: section === "CHILD_DETAILS" ? { entryYearGroup: "Y12" } : {},
+        })),
+      })
+    );
+
+    await submitApplicationCore(CORE_INPUT);
+
+    const updateArg = fakeTx.application.update.mock.calls[0]![0] as {
+      data: Record<string, unknown>;
+    };
+    // Not written at all — so the admin value on the row survives untouched.
+    expect(updateArg.data).not.toHaveProperty("entryYearGroup");
+    // An entry calendar year already set is likewise preserved.
+    expect(updateArg.data.entryYear).toBe(2024);
   });
 
   it("throws the exact completeness-gate message naming the incomplete sections", async () => {

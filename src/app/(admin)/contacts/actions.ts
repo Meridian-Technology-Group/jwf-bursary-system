@@ -69,7 +69,12 @@ const ContactSchema = z.object({
     .int()
     .min(2000, "Enter a valid entry year")
     .max(2100, "Enter a valid entry year"),
-  entryYearGroup: z.nativeEnum(EntryYearGroup).optional(),
+  // MANDATORY as of Q1 (Brian, 2026-08-14). The applicant can no longer supply
+  // an entry year-group anywhere, so the contact — the root of the invite →
+  // application chain — must always carry one.
+  entryYearGroup: z.nativeEnum(EntryYearGroup, {
+    error: () => ({ message: "An entry year group is required" }),
+  }),
   addressLine1: optionalString,
   addressLine2: optionalString,
   town: optionalString,
@@ -143,7 +148,7 @@ function toWriteData(
     childDob: parseDob(parsed.childDob),
     school: parsed.school,
     entryYear: parsed.entryYear,
-    entryYearGroup: parsed.entryYearGroup ?? null,
+    entryYearGroup: parsed.entryYearGroup,
     addressLine1: parsed.addressLine1 ?? null,
     addressLine2: parsed.addressLine2 ?? null,
     town: parsed.town ?? null,

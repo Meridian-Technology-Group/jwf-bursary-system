@@ -43,6 +43,7 @@ import {
   SUBMIT_APPLICATION_LABEL,
 } from "@/lib/portal/declaration-submit";
 import { useSectionSaving } from "./section-saving-context";
+import { useUnsavedChanges } from "./unsaved-changes-context";
 
 /**
  * The one wide section. The footer's button row must track the section CARD's
@@ -73,6 +74,7 @@ export function ApplyFooter() {
   const pathname = usePathname();
   const router = useRouter();
   const { saving, setSubmitIntent } = useSectionSaving();
+  const { requestUnroutedNavigation } = useUnsavedChanges();
 
   // Review owns its own CTA — show no shell footer there.
   if (pathname === "/apply/review") {
@@ -101,10 +103,18 @@ export function ApplyFooter() {
           innerMaxWidth
         )}
       >
-        {/* Back — real handler (router.back), unlike the old dead control. */}
+        {/* Back — real handler (router.back), unlike the old dead control.
+            Routed through the unsaved-changes guard (WP B1): stepping back out
+            of a half-filled section discards it just as thoroughly as a sidebar
+            click did. `requestUnroutedNavigation` returns true when there is
+            nothing to lose; otherwise the guard replays the Back itself. */}
         <button
           type="button"
-          onClick={() => router.back()}
+          onClick={() => {
+            if (requestUnroutedNavigation(() => router.back())) {
+              router.back();
+            }
+          }}
           className={SECONDARY_BUTTON}
         >
           <ChevronLeft className="h-4 w-4" aria-hidden="true" />

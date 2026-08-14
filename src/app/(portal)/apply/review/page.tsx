@@ -25,7 +25,6 @@ import {
   SECTION_TITLES,
   SECTION_TO_SLUG as SECTION_SLUGS,
 } from "@/lib/portal/sections";
-import { ENTRY_YEAR_GROUP_LABELS } from "@/lib/assessment/schooling-years";
 import { PortalPage } from "@/components/portal/portal-page";
 import { cn } from "@/lib/utils";
 import type {
@@ -135,10 +134,8 @@ function renderChildDetails(raw: unknown): SummaryRow[] {
     { label: "Name", value: d.childFullName || "—" },
     { label: "Date of birth", value: fmtDate(d.dateOfBirth) },
     { label: "School applying for", value: fmtSchool(d.school) },
-    {
-      label: "Year of entry",
-      value: d.entryYearGroup ? ENTRY_YEAR_GROUP_LABELS[d.entryYearGroup] ?? d.entryYearGroup : "—",
-    },
+    // No "Year of entry" row: the entry year is JWF-facing only (Q1, Brian
+    // 2026-08-14) and is never shown to the applicant.
     { label: "Current school", value: d.currentSchool || "—" },
     {
       label: "Place of birth",

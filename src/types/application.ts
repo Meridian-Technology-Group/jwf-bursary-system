@@ -20,8 +20,10 @@ export interface ChildAddress {
 export interface ChildDetailsData {
   /** School applying for */
   school: School;
-  /** Year group the child enters at (Y6/Y7/Y9/Y12/Other). Per §4 spec. */
-  entryYearGroup: EntryYearGroup;
+  // NOTE: no entry year / entry year-group. Per Q1 (Brian, 2026-08-14) the entry
+  // year is JWF-facing only — it lives on `Application.entryYear` /
+  // `entryYearGroup`, is set admin-side, and is never captured, validated or
+  // displayed on the applicant side.
   /** Child's title (Master/Miss/Mr/Ms/Other) — optional */
   childTitle?: string;
   /** Child's first name(s) */
@@ -101,13 +103,6 @@ export type EmploymentStatus =
 
 /** Self-employment position (when status === "SELF_EMPLOYED"). */
 export type SelfEmploymentPosition = "DIRECTOR" | "PARTNER" | "SOLE_TRADER";
-
-/**
- * The school year-group the child enters at. Mandated by §4 of the
- * spec; admin-side `Application.entryYear` (calendar Int) is set by the
- * invitation flow and is independent of this field.
- */
-export type EntryYearGroup = "Y6" | "Y7" | "Y9" | "Y12" | "OTHER";
 
 export type ParentTitle = "MR" | "MRS" | "MS" | "MISS" | "DR" | "PROF" | "OTHER";
 

@@ -116,6 +116,16 @@ export async function startApplicationAction(
           };
         }
 
+        // The entry year-group is JWF-facing and admin-set (Q1) — the applicant
+        // cannot supply it here, so a bare invitation that never captured one
+        // is a Foundation-side data gap, not something to prompt the parent for.
+        if (!invitation.entryYearGroup) {
+          return {
+            error:
+              "Your invitation does not have an entry year group assigned. Please contact the Foundation.",
+          };
+        }
+
         const existing = await tx.application.findFirst({
           where: { leadApplicantId: user.id },
           select: { id: true },

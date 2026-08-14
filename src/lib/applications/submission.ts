@@ -137,7 +137,6 @@ export async function submitApplicationCore(
           childDob: true,
           school: true,
           entryYear: true,
-          entryYearGroup: true,
           submissionDeadlineAt: true,
           // Selects which typed round default the deadline guard below reads
           // (E1/D13-8).
@@ -311,27 +310,21 @@ export async function submitApplicationCore(
     throw new Error(JSON.stringify(payload));
   }
 
-  // ── Promote entry year-group + entry calendar year onto the columns ───────
-  // The applicant picks the entry year-group in CHILD_DETAILS (spec §4); it
-  // lives in section JSONB until submit, when we copy it to the first-class
-  // `entryYearGroup` column that the assessment engine + reports read. A new
-  // entrant's entry *calendar* year is the round they're applying to. We never
-  // clobber values already set (e.g. carried into a re-assessment application).
+  // ── Backfill the entry calendar year onto the column ─────────────────────
+  // The entry year-group is JWF-facing ONLY (Q1, Brian 2026-08-14): it is set
+  // admin-side on `Application.entryYearGroup` and is NEVER read out of the
+  // CHILD_DETAILS blob here — the applicant cannot enter it, so there is
+  // nothing to promote and no way for a submit to clobber the admin value.
+  // A new entrant's entry *calendar* year is still derived from the round they
+  // applied to when the column has not been set. Never clobber a value already
+  // set (e.g. carried into a re-assessment application).
   const childDetailsData = application.sections.find(
     (s) => s.section === "CHILD_DETAILS"
-  )?.data as { entryYearGroup?: unknown; dateOfBirth?: unknown } | undefined;
-  const VALID_GROUPS = ["Y6", "Y7", "Y9", "Y12", "OTHER"] as const;
-  const rawGroup = childDetailsData?.entryYearGroup;
-  const childEntryYearGroup =
-    typeof rawGroup === "string" &&
-    (VALID_GROUPS as readonly string[]).includes(rawGroup)
-      ? (rawGroup as (typeof VALID_GROUPS)[number])
-      : null;
+  )?.data as { dateOfBirth?: unknown } | undefined;
   const roundStartYear = Number.parseInt(
     application.round.academicYear.slice(0, 4),
     10
   );
-  const entryYearGroupToPersist = application.entryYearGroup ?? childEntryYearGroup;
   const entryYearToPersist =
     application.entryYear ?? (Number.isNaN(roundStartYear) ? null : roundStartYear);
 
@@ -390,7 +383,8 @@ export async function submitApplicationCore(
               termsAcceptedAt: submittedAt,
               termsVersion: TERMS_AND_CONDITIONS_VERSION,
             }),
-        entryYearGroup: entryYearGroupToPersist,
+        // entryYearGroup is intentionally NOT written here — it is JWF-facing
+        // and admin-set only (Q1). Submitting must never change it.
         entryYear: entryYearToPersist,
         childDob: childDobToPersist,
         custodyArrangement: custodyToPersist,

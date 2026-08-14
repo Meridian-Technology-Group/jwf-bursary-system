@@ -23,7 +23,7 @@ import { SubmitConfirmDialog } from "@/components/portal/submit-confirm-dialog";
 import { useSectionSaving } from "@/components/portal/section-saving-context";
 import { getSectionDefaultValues } from "@/lib/portal/section-defaults";
 import { runSectionSave } from "@/lib/portal/declaration-submit";
-import { saveSection, submitApplication } from "../actions";
+import { saveSection, saveSectionDraft, submitApplication } from "../actions";
 import type { SaveSectionResult } from "../actions";
 
 // Section form components
@@ -273,6 +273,42 @@ export function SectionPageClient({
     );
   }
 
+  /**
+   * The unsaved-changes guard's save path (WP B1). Persists the section where
+   * it stands and returns — it must NOT advance, and on DECLARATION it must NOT
+   * submit: the applicant clicked a stepper link, not "Submit Application".
+   *
+   * A section that validates is saved complete; one that does not is written as
+   * a draft (`isComplete = false`), so the stepper keeps showing it as
+   * outstanding while the applicant's typing survives the navigation. Refusing
+   * to write a half-filled section is exactly the loss this guard exists to
+   * prevent (CF-19).
+   */
+  async function handleGuardedSave(
+    data: unknown,
+    complete: boolean
+  ): Promise<SaveSectionResult> {
+    // CR-001 edit-on-behalf supplies its own role-guarded, audited action and
+    // has no draft equivalent, so an assessor can only save a section that
+    // validates. Their unsaved work is never silently dropped — the guard keeps
+    // them on the page and surfaces the errors.
+    if (saveOverride) {
+      if (!complete) {
+        return {
+          success: false,
+          errors: [
+            "This section can't be saved yet — please fix the highlighted fields first.",
+          ],
+        };
+      }
+      return saveOverride(applicationId, sectionType, data);
+    }
+
+    return complete
+      ? saveSection(applicationId, sectionType, data)
+      : saveSectionDraft(applicationId, sectionType, data);
+  }
+
   // Deep-link target: when the URL has a hash (e.g. #parent1Income.p60DocumentId
   // from the Review page's "Issues to resolve" panel), focus the matching field
   // by its `name` attribute. Form fields use react-hook-form `name` rather than
@@ -365,10 +401,17 @@ export function SectionPageClient({
           schema={schema as never}
           defaultValues={defaultValues as never}
           onSave={handleSave as never}
+          onSaveWithoutAdvancing={handleGuardedSave as never}
           backHref={backHref}
           nextHref={nextHref}
           nextLabel={nextLabel}
           hideInlineNav
+          // WP B2: background drafts are an APPLICANT affordance. The assessor
+          // edit-on-behalf action (`saveOverride`) has no draft equivalent —
+          // `handleGuardedSave` refuses an incomplete section for it — so an
+          // autosave there would fail on a loop and permanently show "Not
+          // saved" on a page that is behaving correctly.
+          autosave={!saveOverride}
         >
           <SectionFormContent
             sectionType={sectionType}

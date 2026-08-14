@@ -25,6 +25,7 @@ import { z } from "zod";
 import {
   ApplicationContributorRole,
   ApplicationContributorStatus,
+  EntryYearGroup,
   InvitationStatus,
   RoundStatus,
   School,
@@ -73,6 +74,12 @@ const InvitationSchema = z.object({
   lastName: z.string().trim().min(1, "A surname is required"),
   childName: z.string().trim().min(1, "The child's name is required"),
   school: z.nativeEnum(School, { error: "A school is required" }),
+  // Q1 (Brian, 2026-08-14): the entry year-group is JWF-facing only — the
+  // applicant can never enter one — so the quick-invite must capture it here or
+  // the application created on acceptance would have no year-group at all.
+  entryYearGroup: z.nativeEnum(EntryYearGroup, {
+    error: () => ({ message: "An entry year group is required" }),
+  }),
   roundId: z.string().uuid("An application round is required"),
 });
 
@@ -127,6 +134,7 @@ export async function createInvitationAction(
     lastName: (formData.get("lastName") as string) || undefined,
     childName: (formData.get("childName") as string) || undefined,
     school: (formData.get("school") as string) || undefined,
+    entryYearGroup: (formData.get("entryYearGroup") as string) || undefined,
     roundId: (formData.get("roundId") as string) || undefined,
   };
 
@@ -138,7 +146,7 @@ export async function createInvitationAction(
     };
   }
 
-  const { email, firstName, lastName, childName, school, roundId } =
+  const { email, firstName, lastName, childName, school, entryYearGroup, roundId } =
     parsed.data;
 
   const effectiveApplicantName = composeApplicantName(firstName, lastName);
@@ -195,6 +203,7 @@ export async function createInvitationAction(
         lastName,
         childName,
         school,
+        entryYearGroup,
         roundId,
         authUserId,
         createdBy: user.id,

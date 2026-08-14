@@ -85,8 +85,6 @@ export async function loadSubmittedApplication(
           termsAcceptedAt: true,
           termsVersion: true,
           submissionPdfDownloadedAt: true,
-          entryYear: true,
-          entryYearGroup: true,
           round: { select: { academicYear: true } },
           sections: {
             where: { ownerContributorId },
@@ -123,8 +121,6 @@ export async function loadSubmittedApplication(
           termsAcceptedAt: true,
           termsVersion: true,
           submissionPdfDownloadedAt: true,
-          entryYear: true,
-          entryYearGroup: true,
           round: { select: { academicYear: true } },
           sections: {
             where: { ownerContributorId: ownerContributorId! },
@@ -155,8 +151,6 @@ type RawApplication = {
   termsAcceptedAt: Date | null;
   termsVersion: string | null;
   submissionPdfDownloadedAt: Date | null;
-  entryYear: number | null;
-  entryYearGroup: string | null;
   round: { academicYear: string };
   sections: { section: string; data: unknown }[];
   documents: { slot: string; filename: string }[];
@@ -177,8 +171,6 @@ function shape(app: RawApplication): LoadedSubmission {
     summary: buildSubmittedSummary({
       sections: app.sections,
       documents: app.documents,
-      entryYear: app.entryYear,
-      entryYearGroup: app.entryYearGroup,
     }),
   };
 }
