@@ -841,7 +841,21 @@ declaration *is* submitting. Decouple:
 **Done when:** saving the declaration does not submit; submitting requires the
 explicit button; the review round-trip loses nothing.
 
-### ⚠️ Needs a decision before the stack merges
+### Decisions taken during the sprint
+
+**D13-1c (Brian, 2026-08-14) — accept F5's DECLARATION behaviour change.**
+Rationale given: *"We are not in production. No legal impact. Do what is
+needed."* No production data exists, so the in-flight-draft consequence below is
+theoretical. Shipped as built; no further action.
+
+**CF-18 (Brian, 2026-08-14) — leave A5 as delivered.** The reported parent-2
+number-entry defect could not be reproduced (the fix shipped in #266 four weeks
+before her test). The three forked focus handlers found along the way are
+consolidated with a guard test. Worth a line in the reply asking her to
+re-confirm on the current preview, but not worth chasing further.
+
+<details>
+<summary>What the DECLARATION change was (retained for the record)</summary>
 
 **F5 closed a silent hole in the DECLARATION rule, which changes behaviour.**
 `DECLARATION`'s `superRefine` detects whether the Parent 2 block is present by
@@ -852,10 +866,11 @@ declaration entirely** — a consent/declaration gap, not merely a bad message.
 Seeding the field makes the intended rule fire.
 
 This is the one place F5 changes behaviour rather than message copy.
-**Recommend accepting it** — a declaration silently not collected is a legal
-exposure, and the rule was always intended to fire — but it is a conscious call,
-and it means some in-flight drafts will now be asked for a declaration they were
-previously let past.
+Accepted per D13-1c. It means some in-flight drafts will now be asked for a
+declaration they were previously let past — immaterial, since nothing is in
+production.
+
+</details>
 
 ### Wave F — discovered during the sprint
 
