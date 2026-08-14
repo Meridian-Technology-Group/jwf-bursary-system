@@ -19,7 +19,10 @@ import type { DocumentMeta } from "@/lib/db/queries/applications";
 import { SectionForm } from "@/components/portal/section-form";
 // ProgressBar removed — progress is shown in the sidebar
 import { PrepopulatedSectionBanner } from "@/components/portal/form-fields/prepopulated-field";
+import { SubmitConfirmDialog } from "@/components/portal/submit-confirm-dialog";
+import { useSectionSaving } from "@/components/portal/section-saving-context";
 import { getSectionDefaultValues } from "@/lib/portal/section-defaults";
+import { runSectionSave } from "@/lib/portal/declaration-submit";
 import { saveSection, submitApplication } from "../actions";
 import type { SaveSectionResult } from "../actions";
 
@@ -88,7 +91,7 @@ interface SectionPageClientProps {
   dependentChildrenCount?: number;
   backHref: string;
   nextHref: string;
-  /** Optional override for the primary button label (e.g. "Review and Submit"). */
+  /** Optional override for the primary button label (e.g. "Submit Application"). */
   nextLabel?: string;
   stepNumber: number;
   totalSteps: number;
@@ -111,8 +114,8 @@ interface SectionPageClientProps {
   ) => Promise<SaveSectionResult>;
   /**
    * True when an assessor is editing on behalf of the applicant (CR-001).
-   * Suppresses the auto-submit after a DECLARATION save — on-behalf
-   * submission is an explicit, separate action.
+   * A DECLARATION save never submits for on-behalf editing — staff submission
+   * is an explicit, separate, audited action in the edit-on-behalf chrome.
    */
   onBehalf?: boolean;
 }
@@ -225,33 +228,49 @@ export function SectionPageClient({
     relationshipStatus,
   });
 
+  // ── Save / submit split (D4, CF-32) ────────────────────────────────────────
+  // Saving the Declaration used to BE submitting. It no longer is: a save is a
+  // save, and submission is a separate, explicitly-confirmed action. Which one
+  // the applicant asked for arrives as the intent armed by `ApplyFooter`; the
+  // decision itself lives in the pure `runSectionSave` so it is unit-testable.
+  const { consumeSubmitIntent } = useSectionSaving();
+
+  // Promise-bridged confirmation: the save awaits the applicant's answer, so
+  // the dialog sits BETWEEN validation and the first write. See
+  // `declaration-submit.ts` for why the gate is here and not on the click.
+  const [confirmingSubmit, setConfirmingSubmit] = React.useState(false);
+  const confirmResolverRef = React.useRef<((value: boolean) => void) | null>(
+    null
+  );
+
+  const requestSubmitConfirmation = React.useCallback(
+    () =>
+      new Promise<boolean>((resolve) => {
+        confirmResolverRef.current = resolve;
+        setConfirmingSubmit(true);
+      }),
+    []
+  );
+
+  const resolveSubmitConfirmation = React.useCallback((confirmed: boolean) => {
+    setConfirmingSubmit(false);
+    const resolve = confirmResolverRef.current;
+    confirmResolverRef.current = null;
+    resolve?.(confirmed);
+  }, []);
+
   async function handleSave(data: unknown) {
     const save = saveOverride ?? saveSection;
-    const result = await save(applicationId, sectionType, data);
-    // On-behalf editing never auto-submits — submission is an explicit,
-    // separate action taken by the assessor (CR-001).
-    if (!result.success || sectionType !== "DECLARATION" || onBehalf) return result;
-
-    // Declaration is the terminal step: after a successful save, submit the
-    // application. submitApplication throws Next's NEXT_REDIRECT on success
-    // (it calls redirect("/submitted")) — that must propagate so the router
-    // can navigate. Any other thrown error is surfaced as a section-form
-    // error so the user sees what went wrong.
-    try {
-      await submitApplication(applicationId);
-    } catch (err) {
-      const digest = (err as { digest?: string } | null)?.digest;
-      if (
-        typeof digest === "string" &&
-        digest.startsWith("NEXT_REDIRECT")
-      ) {
-        throw err;
+    return runSectionSave(
+      { sectionType, intent: consumeSubmitIntent(), onBehalf },
+      {
+        save: () => save(applicationId, sectionType, data),
+        confirmSubmit: requestSubmitConfirmation,
+        // Throws Next's NEXT_REDIRECT on success (redirect("/submitted")).
+        // `runSectionSave` re-throws it so the router can navigate.
+        submit: () => submitApplication(applicationId),
       }
-      const message =
-        err instanceof Error ? err.message : "Submission failed. Please try again.";
-      return { success: false, errors: [message] };
-    }
-    return result;
+    );
   }
 
   // Deep-link target: when the URL has a hash (e.g. #parent1Income.p60DocumentId
@@ -366,6 +385,15 @@ export function SectionPageClient({
           />
         </SectionForm>
       </div>
+
+      {/* The submission gate. Only the Declaration can submit, so only the
+          Declaration mounts it (D4/CF-32). */}
+      {sectionType === "DECLARATION" && !onBehalf && (
+        <SubmitConfirmDialog
+          open={confirmingSubmit}
+          onResolve={resolveSubmitConfirmation}
+        />
+      )}
     </div>
   );
 }
