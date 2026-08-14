@@ -36,6 +36,14 @@ export interface UploadedDocument {
   uploadedAt: string;
   applicationId: string;
   slot: string;
+  /**
+   * CF-28 — set by the presigned confirm leg when these exact bytes are already
+   * on this application under another slot. Non-blocking: the document IS
+   * stored; the widget shows the message so the parent can swap the file if
+   * they picked the wrong one. Duplicates *within* the Universal Credit slots
+   * never reach here — those are refused with a 409.
+   */
+  duplicateWarning?: string | null;
 }
 
 /**

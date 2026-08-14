@@ -351,6 +351,13 @@ model Document {
   mimeType                String                  @map("mime_type")
   fileSize                Int                     @map("file_size")
   storagePath             String                  @map("storage_path")
+  /// CF-28 — sha-256 fingerprint of the stored bytes, computed server-side in
+  /// the confirm leg of the presigned upload flow. Used ONLY to spot the same
+  /// file uploaded twice inside one application (she was sent the same UC
+  /// payment PDF three times). NULL on every row created before this column
+  /// existed, and on the staff multipart path — a NULL simply opts that row out
+  /// of duplicate detection, it is never treated as a match.
+  contentDigest           String?                 @map("content_digest")
   isVerified              Boolean                 @default(false) @map("is_verified")
   uploadedBy              String                  @map("uploaded_by") @db.Uuid
   uploadedByContributorId String?                 @map("uploaded_by_contributor_id") @db.Uuid
@@ -360,6 +367,7 @@ model Document {
   uploadedByContributor   ApplicationContributor? @relation(fields: [uploadedByContributorId], references: [id], onDelete: SetNull)
 
   @@index([applicationId, slot])
+  @@index([applicationId, contentDigest])
   @@index([uploadedByContributorId])
   @@map("documents")
 }

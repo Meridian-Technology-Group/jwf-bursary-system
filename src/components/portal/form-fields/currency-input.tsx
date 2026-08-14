@@ -10,6 +10,10 @@
  * types, while the value stored in form state stays comma-free so Zod's
  * `z.coerce.number` still parses it. Typed or pasted commas (and any stray
  * currency symbols / spaces) are tolerated and stripped.
+ *
+ * Entry behaviour (select-all on focus, no leading-zero accumulation) is NOT
+ * defined here — it comes from `number-entry.ts`, shared with `CountInput`, so
+ * the two cannot drift apart again (CF-18).
  */
 
 import * as React from "react";
@@ -22,6 +26,7 @@ import {
   Controller,
 } from "react-hook-form";
 import { cn } from "@/lib/utils";
+import { selectAllOnFocus, stripLeadingZeros } from "./number-entry";
 
 /** Strip everything but digits and keep at most one decimal point. */
 export function sanitizeCurrency(input: string): string {
@@ -34,7 +39,7 @@ export function sanitizeCurrency(input: string): string {
   // (e.g. "0" then "15000") doesn't accumulate as "015,000". A lone "0" and a
   // leading zero before a decimal point ("0.5") are preserved.
   const dot = s.indexOf(".");
-  const intPart = (dot === -1 ? s : s.slice(0, dot)).replace(/^0+(?=\d)/, "");
+  const intPart = stripLeadingZeros(dot === -1 ? s : s.slice(0, dot));
   const rest = dot === -1 ? "" : s.slice(dot);
   return intPart + rest;
 }
@@ -192,14 +197,7 @@ function CurrencyControl<
                 : undefined
           }
           value={display}
-          onFocus={(e) => {
-            // Select the whole value on focus so the default "0" (or an existing
-            // amount) is replaced by the first keystroke instead of having to be
-            // manually deleted first. rAF works around mobile browsers that
-            // reset the selection immediately after the focus event.
-            const el = e.target;
-            requestAnimationFrame(() => el.select());
-          }}
+          onFocus={selectAllOnFocus}
           onChange={(e) => {
             const el = e.target;
             const typed = el.value;

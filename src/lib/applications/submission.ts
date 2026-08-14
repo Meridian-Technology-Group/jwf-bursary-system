@@ -39,6 +39,7 @@ import { TERMS_AND_CONDITIONS_VERSION } from "@/lib/portal/terms";
 import { logError } from "@/lib/log";
 
 import { AUDIT_ENTITY_TYPES, type AuditAction } from "@/lib/audit/actions";
+import { SUBMISSION_DEADLINE_PASSED_MESSAGE } from "@/lib/applications/submission-error";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -55,6 +56,16 @@ export interface SubmitBlockedByGapsError {
     label: string;
     fieldRef?: string;
   }>;
+}
+
+/**
+ * Thrown when sections are still incomplete. The `.message` is unchanged (staff
+ * surfaces render it verbatim); `incompleteSections` carries the same list in a
+ * structured form so the applicant-facing sanitiser can name the sections in
+ * plain English instead of leaking enum values.
+ */
+export interface SubmitIncompleteSectionsError extends Error {
+  incompleteSections: ApplicationSectionType[];
 }
 
 export interface SubmitApplicationCoreInput {
@@ -213,9 +224,7 @@ export async function submitApplicationCore(
       application.round
     )
   ) {
-    throw new Error(
-      "The submission deadline for this application has passed, so it can no longer be submitted. Forms submitted late cannot be assessed — please contact the Foundation if you believe this is an error."
-    );
+    throw new Error(SUBMISSION_DEADLINE_PASSED_MESSAGE);
   }
 
   // ── Validate all 10 sections are complete ─────────────────────────────────
@@ -229,9 +238,13 @@ export async function submitApplicationCore(
 
   if (incompleteSections.length > 0) {
     const labels = incompleteSections.join(", ");
-    throw new Error(
+    const error = new Error(
       `The following sections are not yet complete: ${labels}. Please complete them before submitting.`
-    );
+    ) as SubmitIncompleteSectionsError;
+    // Same list, structured — the portal turns it into section names the
+    // applicant recognises rather than showing them these enum values (CF-25).
+    error.incompleteSections = incompleteSections;
+    throw error;
   }
 
   // ── Validate no error-severity gaps remain (defence-in-depth) ────────────

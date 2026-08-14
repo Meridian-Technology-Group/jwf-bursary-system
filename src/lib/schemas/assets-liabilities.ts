@@ -94,6 +94,7 @@ export const assetsLiabilitiesSchema = z
     bankOverdraft: currencyField.optional(),
     loansToAgencies: currencyField.optional(),
     loanStatementDocumentIds: z.array(z.string()).default([]),
+    loanAgreementDocumentIds: z.array(z.string()).default([]),
     loansToFriendsFamily: currencyField.optional(),
     schoolFeesOwed: currencyField.optional(),
     otherDebtDocumentIds: z.array(z.string()).default([]),

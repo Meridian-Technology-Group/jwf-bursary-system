@@ -8,7 +8,7 @@
  * When the user has no Application but does have an accepted Invitation, they
  * see an onboarding card to confirm school + child name before entering the
  * form. When there is no invitation at all, a neutral fallback message is
- * shown directing them to contact the Foundation.
+ * shown directing them to the bursary team's email address.
  */
 
 import { redirect } from "next/navigation";
@@ -29,6 +29,7 @@ import { projectFormStatusForApplicant } from "@/components/shared/lifecycle-bad
 import { ApplicationTypeChooser } from "@/app/(portal)/application-type-chooser";
 import { PortalPage } from "@/components/portal/portal-page";
 import { SubmissionCountdown } from "@/components/portal/submission-countdown";
+import { ContactBursaryTeam } from "@/components/portal/contact-bursary-team";
 import {
   effectiveSubmissionDeadline,
   isSubmissionDeadlinePassed,
@@ -572,8 +573,8 @@ export default async function PortalDashboardPage() {
               No invitation found
             </h2>
             <p className="mt-2 text-sm text-slate-500">
-              We can&rsquo;t find an invitation linked to your account. Please
-              contact the Foundation if you believe this is an error.
+              We can&rsquo;t find an invitation linked to your account. If you
+              believe this is an error, <ContactBursaryTeam />.
             </p>
           </div>
 

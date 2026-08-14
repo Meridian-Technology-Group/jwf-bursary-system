@@ -40,6 +40,7 @@ import {
   UploadCloud,
   CheckCircle2,
   AlertCircle,
+  AlertTriangle,
   FileText,
   Eye,
   Trash2,
@@ -207,6 +208,9 @@ function SingleFileUpload({
   >(existingDocument);
   const [errorMessage, setErrorMessage] = React.useState<string>("");
   const [removing, setRemoving] = React.useState(false);
+  // CF-28 — the server accepted the file but recognised the same bytes
+  // elsewhere on this application. Advisory only; never blocks.
+  const [duplicateNotice, setDuplicateNotice] = React.useState<string>("");
 
   // Sync external existingDocument prop (e.g. pre-fetched from server)
   React.useEffect(() => {
@@ -227,6 +231,7 @@ function SingleFileUpload({
     setUploadState("uploading");
     setUploadProgress(0);
     setErrorMessage("");
+    setDuplicateNotice("");
 
     const progressInterval = setInterval(() => {
       setUploadProgress((prev) => Math.min(prev + 10, 85));
@@ -243,6 +248,7 @@ function SingleFileUpload({
         uploadedAt: doc.uploadedAt,
       });
       setUploadState("uploaded");
+      setDuplicateNotice(doc.duplicateWarning ?? "");
       onUploadComplete?.(doc);
     } catch (err) {
       clearInterval(progressInterval);
@@ -261,6 +267,7 @@ function SingleFileUpload({
       onRemove?.(uploadedDoc.id);
       setUploadedDoc(undefined);
       setUploadState("empty");
+      setDuplicateNotice("");
       if (inputRef.current) inputRef.current.value = "";
     } catch (err) {
       const message =
@@ -338,13 +345,16 @@ function SingleFileUpload({
         )}
 
         {uploadState === "uploaded" && uploadedDoc && (
-          <InlineUploadedChip
-            doc={uploadedDoc}
-            disabled={disabled}
-            removing={removing}
-            onView={() => openDocumentUrl(uploadedDoc.id)}
-            onRemove={handleRemove}
-          />
+          <>
+            <InlineUploadedChip
+              doc={uploadedDoc}
+              disabled={disabled}
+              removing={removing}
+              onView={() => openDocumentUrl(uploadedDoc.id)}
+              onRemove={handleRemove}
+            />
+            {duplicateNotice && <DuplicateNotice message={duplicateNotice} />}
+          </>
         )}
 
         {uploadState === "error" && (
@@ -411,13 +421,16 @@ function SingleFileUpload({
       )}
 
       {uploadState === "uploaded" && uploadedDoc && (
-        <UploadedRow
-          doc={uploadedDoc}
-          disabled={disabled}
-          removing={removing}
-          onView={() => openDocumentUrl(uploadedDoc.id)}
-          onRemove={handleRemove}
-        />
+        <>
+          <UploadedRow
+            doc={uploadedDoc}
+            disabled={disabled}
+            removing={removing}
+            onView={() => openDocumentUrl(uploadedDoc.id)}
+            onRemove={handleRemove}
+          />
+          {duplicateNotice && <DuplicateNotice message={duplicateNotice} />}
+        </>
       )}
 
       {uploadState === "error" && (
@@ -464,6 +477,10 @@ function MultiFileUpload({
   );
   const [inflight, setInflight] = React.useState<InflightUpload[]>([]);
   const [removingId, setRemovingId] = React.useState<string | null>(null);
+  // CF-28 — doc id → "these bytes are already on this application" notice.
+  const [duplicateNotices, setDuplicateNotices] = React.useState<
+    Record<string, string>
+  >({});
 
   // Sync external existingDocuments prop (e.g. when documentMap arrives later)
   React.useEffect(() => {
@@ -490,6 +507,12 @@ function MultiFileUpload({
           uploadedAt: doc.uploadedAt,
         },
       ]);
+      if (doc.duplicateWarning) {
+        setDuplicateNotices((prev) => ({
+          ...prev,
+          [doc.id]: doc.duplicateWarning as string,
+        }));
+      }
       onUploadComplete?.(doc);
     } catch (err) {
       const message =
@@ -674,6 +697,9 @@ function MultiFileUpload({
                 onView={() => openDocumentUrl(doc.id)}
                 onRemove={() => handleRemove(doc.id)}
               />
+              {duplicateNotices[doc.id] && (
+                <DuplicateNotice message={duplicateNotices[doc.id]} />
+              )}
             </li>
           ))}
           {inflight.map((u) =>
@@ -699,6 +725,26 @@ function MultiFileUpload({
 }
 
 // ─── Shared sub-components ────────────────────────────────────────────────────
+
+/**
+ * CF-28 — advisory "we've seen these exact bytes on this application already"
+ * note. Amber, not red, and it never replaces the uploaded chip: the document
+ * IS stored and the parent may legitimately be evidencing two lines with one
+ * letter. (Inside the Universal Credit slots the same detection REFUSES the
+ * upload instead, and that surfaces through the normal error path.)
+ * `role="status"` so a screen reader announces it without stealing focus.
+ */
+function DuplicateNotice({ message }: { message: string }) {
+  return (
+    <p
+      role="status"
+      className="mt-1 flex items-start gap-1.5 rounded-md bg-amber-50 px-2 py-1.5 text-[11px] leading-tight text-amber-800"
+    >
+      <AlertTriangle className="mt-px h-3 w-3 shrink-0" aria-hidden="true" />
+      <span>{message}</span>
+    </p>
+  );
+}
 
 interface DropZoneProps {
   label: string;

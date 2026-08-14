@@ -55,6 +55,7 @@ export const ALL_DOCUMENT_SLOTS = [
   // Assets & Liabilities — debt
   "CREDIT_CARD_STATEMENT",
   "LOAN_STATEMENT",
+  "LOAN_AGREEMENT",
   "OTHER_DEBT_DOCUMENT",
 ] as const;
 

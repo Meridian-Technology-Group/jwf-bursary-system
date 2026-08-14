@@ -71,6 +71,7 @@ type ArrayDocField =
   | "parent2InvestmentDocumentIds"
   | "creditCardStatementDocumentIds"
   | "loanStatementDocumentIds"
+  | "loanAgreementDocumentIds"
   | "otherDebtDocumentIds";
 
 /**
@@ -708,8 +709,16 @@ export function AssetsLiabilitiesForm({
           <MultiDocUpload
             field="loanStatementDocumentIds"
             slot="LOAN_STATEMENT"
-            label="Latest loan statement(s) (optional)"
-            hint="Optionally upload your most recent loan statement(s)."
+            label="Latest loan statement(s)"
+            hint="Upload your most recent loan statement(s)."
+            applicationId={applicationId}
+            documentMap={documentMap}
+          />
+          <MultiDocUpload
+            field="loanAgreementDocumentIds"
+            slot="LOAN_AGREEMENT"
+            label="Loan agreement(s)"
+            hint="Upload the loan agreement(s) for the loan balance(s) declared above."
             applicationId={applicationId}
             documentMap={documentMap}
           />

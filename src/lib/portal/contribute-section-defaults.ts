@@ -92,6 +92,8 @@ export function getContributeSectionDefaultValues(
         hasPersonalDebt: undefined,
         creditCardStatementDocumentIds: [],
         loanStatementDocumentIds: [],
+        // D3 (CF-30): the compulsory loan agreement's upload slot.
+        loanAgreementDocumentIds: [],
         otherDebtDocumentIds: [],
         documentsConfirmed: false,
       };

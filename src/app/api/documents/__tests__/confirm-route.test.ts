@@ -68,6 +68,11 @@ vi.mock("@/lib/storage/documents", () => ({
 
 import { POST } from "../confirm/route";
 import {
+  DIGEST_SAMPLE_BYTES,
+  DUPLICATE_UC_MESSAGE,
+  computeContentDigest,
+} from "@/lib/documents/content-digest";
+import {
   issueUploadTicket,
   type UploadTicketClaims,
 } from "@/lib/uploads/upload-ticket";
@@ -99,6 +104,8 @@ function makeFakeTx(
     formStatus?: string;
     leadApplicantId?: string;
     contributor?: { id: string; role: string } | null;
+    /** Rows the CF-28 digest lookup finds on this application. */
+    digestMatches?: { id: string; slot: string; filename: string }[];
   } = {}
 ) {
   return {
@@ -117,6 +124,7 @@ function makeFakeTx(
       ),
     },
     document: {
+      findMany: vi.fn(async () => overrides.digestMatches ?? []),
       create: vi.fn(async ({ data }: { data: Record<string, unknown> }) => ({
         id: "doc-1",
         isVerified: false,
@@ -367,5 +375,142 @@ describe("POST /api/documents/confirm", () => {
 
     expect(response.status).toBe(500);
     expect(deleteDocumentMock).toHaveBeenCalledWith(PRIMARY_PATH);
+  });
+});
+
+// ─── CF-28 — duplicate detection ──────────────────────────────────────────────
+
+/** A ticket for one of the three monthly Universal Credit slots. */
+const UC_CLAIMS: UploadTicketClaims = {
+  ...PRIMARY_CLAIMS,
+  slot: "UC_MONTHLY_2_PARENT_1",
+  storagePath: "documents/app-1/UC_MONTHLY_2_PARENT_1/uuid_uc.pdf",
+  filename: "uc-march.pdf",
+};
+
+describe("POST /api/documents/confirm — duplicate detection (CF-28)", () => {
+  it("stores a digest computed from the bytes the sniff already read", async () => {
+    const response = await POST(
+      confirmRequest(issueUploadTicket(PRIMARY_CLAIMS))
+    );
+    const body = await response.json();
+
+    expect(response.status).toBe(201);
+    expect(body.contentDigest).toBe(
+      computeContentDigest(PDF_HEAD, 12_000_000)
+    );
+
+    // THE point of the design: the object is pulled back exactly once, and that
+    // one read asks for the digest sample (not a second, larger download).
+    expect(readObjectHeadMock).toHaveBeenCalledTimes(1);
+    expect(readObjectHeadMock).toHaveBeenCalledWith(
+      PRIMARY_PATH,
+      DIGEST_SAMPLE_BYTES
+    );
+  });
+
+  it("folds the stored size into the digest, so equal heads of different sizes differ", () => {
+    expect(computeContentDigest(PDF_HEAD, 1_000)).not.toBe(
+      computeContentDigest(PDF_HEAD, 2_000)
+    );
+  });
+
+  it("409s the same file uploaded into a second UC slot, and deletes the orphan", async () => {
+    // Exactly Charlotte's case: one UC payment PDF used for every month.
+    fakeTx = makeFakeTx({
+      digestMatches: [
+        { id: "doc-earlier", slot: "UC_MONTHLY_1_PARENT_1", filename: "uc.pdf" },
+      ],
+    });
+
+    const response = await POST(confirmRequest(issueUploadTicket(UC_CLAIMS)));
+    const body = await response.json();
+
+    expect(response.status).toBe(409);
+    expect(body.error).toBe(DUPLICATE_UC_MESSAGE);
+    expect(deleteDocumentMock).toHaveBeenCalledWith(UC_CLAIMS.storagePath);
+    expect(fakeTx.document.create).not.toHaveBeenCalled();
+  });
+
+  it("only ever compares digests within the one application, never across", async () => {
+    await POST(confirmRequest(issueUploadTicket(UC_CLAIMS)));
+
+    // Equality on a non-null digest is also what makes legacy rows (content_digest
+    // NULL, no backfill) inert: SQL equality never matches NULL, so a
+    // pre-CF-28 document can neither block nor warn about a new upload.
+    expect(fakeTx.document.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          applicationId: "app-1",
+          contentDigest: computeContentDigest(PDF_HEAD, 12_000_000),
+        },
+      })
+    );
+  });
+
+  it("accepts a UC upload whose only digest match sits outside the UC slots", async () => {
+    // One benefits letter can genuinely evidence two lines — warn, never block.
+    fakeTx = makeFakeTx({
+      digestMatches: [
+        {
+          id: "doc-hb",
+          slot: "HOUSING_BENEFIT_PARENT_1",
+          filename: "benefits-letter.pdf",
+        },
+      ],
+    });
+
+    const response = await POST(confirmRequest(issueUploadTicket(UC_CLAIMS)));
+    const body = await response.json();
+
+    expect(response.status).toBe(201);
+    expect(body.duplicateWarning).toContain("benefits-letter.pdf");
+    expect(deleteDocumentMock).not.toHaveBeenCalled();
+  });
+
+  it("warns but stores a duplicate outside the UC slots", async () => {
+    fakeTx = makeFakeTx({
+      digestMatches: [
+        {
+          id: "doc-earlier",
+          slot: "COUNCIL_TAX",
+          filename: "council-tax.pdf",
+        },
+      ],
+    });
+
+    const response = await POST(
+      confirmRequest(issueUploadTicket(PRIMARY_CLAIMS))
+    );
+    const body = await response.json();
+
+    expect(response.status).toBe(201);
+    expect(body.id).toBe("doc-1");
+    expect(body.duplicateWarning).toContain("council-tax.pdf");
+    expect(fakeTx.document.create).toHaveBeenCalled();
+  });
+
+  it("carries no warning when nothing matches", async () => {
+    const response = await POST(
+      confirmRequest(issueUploadTicket(PRIMARY_CLAIMS))
+    );
+    const body = await response.json();
+
+    expect(response.status).toBe(201);
+    expect(body.duplicateWarning).toBeNull();
+  });
+
+  it("still stores the document when the duplicate lookup itself fails", async () => {
+    // Duplicate detection is a convenience; a failing lookup must not cost an
+    // applicant a legitimate upload.
+    fakeTx = makeFakeTx();
+    fakeTx.document.findMany.mockRejectedValue(new Error("lookup exploded"));
+
+    const response = await POST(
+      confirmRequest(issueUploadTicket(PRIMARY_CLAIMS))
+    );
+
+    expect(response.status).toBe(201);
+    expect(fakeTx.document.create).toHaveBeenCalled();
   });
 });
