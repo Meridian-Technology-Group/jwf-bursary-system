@@ -20,9 +20,23 @@ describe("childDetailsSchema — entry-year now admin-side (Epic 02 PR-6, D1)", 
     const r = childDetailsSchema.safeParse(base);
     expect(r.success).toBe(true);
   });
-  it("still accepts a legacy draft that carries entryYearGroup", () => {
+  // Q1 (Brian, 2026-08-14): the entry year-group is JWF-facing only. The
+  // applicant schema must neither declare nor validate it, and a legacy draft
+  // that still carries one must have it STRIPPED rather than parsed back out —
+  // otherwise the blob could travel onward and shadow the admin-set column.
+  it("strips entryYearGroup from a legacy draft instead of accepting it", () => {
     const r = childDetailsSchema.safeParse({ ...base, entryYearGroup: "Y7" });
     expect(r.success).toBe(true);
+    if (r.success) {
+      expect(r.data).not.toHaveProperty("entryYearGroup");
+    }
+  });
+  it("does not reject an out-of-enum entry year group — it is simply not a field", () => {
+    // Proof there is no applicant-side VALIDATION of entry year either: a value
+    // that the old `entryYearGroupSchema` would have rejected parses fine now.
+    const r = childDetailsSchema.safeParse({ ...base, entryYearGroup: "Y99" });
+    expect(r.success).toBe(true);
+    if (r.success) expect(r.data).not.toHaveProperty("entryYearGroup");
   });
   it("still requires the school (locked value pinned into form state)", () => {
     const { school, ...withoutSchool } = base;

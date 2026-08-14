@@ -35,21 +35,35 @@ export interface FirstYearApplicationSource {
   childName: string | null;
   /** Locked entry-year, carried from the contact via the invitation (D1). */
   entryYear?: number | null;
-  entryYearGroup?: EntryYearGroup | null;
+  /**
+   * Locked entry year-group, carried from the contact via the invitation (D1).
+   * REQUIRED as of Q1 (Brian, 2026-08-14): the applicant can no longer supply
+   * an entry year-group anywhere, so the column set here is the SOLE source for
+   * the assessment engine, reports and exports. Declared non-optional (though
+   * nullable) so every call site has to pass it explicitly; a null is rejected
+   * at runtime by `canCreateFirstYearApplication` below.
+   */
+  entryYearGroup: EntryYearGroup | null;
   /** The contact this application is seeded from, when invited from a contact. */
   contactId?: string | null;
 }
 
 /**
  * True when the source carries the minimum set to create the application here
- * (school + childName + roundId). Without it the caller falls back to the
- * portal onboarding card, where the applicant supplies the missing pieces —
- * EXCEPT school/entryYear, which remain locked once the contact fixes them.
+ * (school + childName + roundId + entryYearGroup). Without it the caller falls
+ * back to the portal onboarding card, where the applicant supplies the missing
+ * pieces — EXCEPT school/entry-year, which remain locked once the contact fixes
+ * them and which the applicant can never supply.
  */
 export function canCreateFirstYearApplication(
   source: FirstYearApplicationSource
 ): boolean {
-  return Boolean(source.school && source.childName && source.roundId);
+  return Boolean(
+    source.school &&
+      source.childName &&
+      source.roundId &&
+      source.entryYearGroup
+  );
 }
 
 /**
@@ -66,7 +80,7 @@ export async function createFirstYearApplicationFromSource(
 ): Promise<string> {
   if (!canCreateFirstYearApplication(source)) {
     throw new Error(
-      "Cannot create application: invitation/contact is missing school, child name or round."
+      "Cannot create application: invitation/contact is missing school, child name, round or entry year group."
     );
   }
 
@@ -88,11 +102,12 @@ export async function createFirstYearApplicationFromSource(
       leadApplicantId: source.leadApplicantId,
       school: source.school!,
       childName: source.childName!,
-      // LOCKED entry-year (D1): set from the source, never the parent. Null
-      // when the contact did not capture a year-group (entryYear is required on
-      // a contact, but entryYearGroup is optional).
+      // LOCKED entry-year (D1): set from the source, never the parent. Both are
+      // now MANDATORY admin-side (Q1) — the guard above rejects a source without
+      // an entry year-group, so the column can never be left null on a
+      // freshly-created application.
       entryYear: source.entryYear ?? null,
-      entryYearGroup: source.entryYearGroup ?? null,
+      entryYearGroup: source.entryYearGroup,
       contactId: source.contactId ?? null,
       isReassessment: false,
       ...applicationCreateData("NEW"),

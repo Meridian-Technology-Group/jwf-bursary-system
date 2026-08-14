@@ -40,7 +40,7 @@ function makeTx(createdSpy: (data: unknown) => void) {
 }
 
 describe("canCreateFirstYearApplication", () => {
-  it("true when school + childName + roundId all present", () => {
+  it("true when school + childName + roundId + entryYearGroup all present", () => {
     expect(canCreateFirstYearApplication(complete)).toBe(true);
   });
 
@@ -53,6 +53,15 @@ describe("canCreateFirstYearApplication", () => {
   it("false when round missing", () => {
     expect(
       canCreateFirstYearApplication({ ...complete, roundId: null })
+    ).toBe(false);
+  });
+
+  // Q1 (Brian, 2026-08-14): the applicant can no longer supply an entry
+  // year-group anywhere, so the admin-set column is the SOLE source and an
+  // application must never be created without one.
+  it("false when the entry year group is missing", () => {
+    expect(
+      canCreateFirstYearApplication({ ...complete, entryYearGroup: null })
     ).toBe(false);
   });
 });
@@ -89,16 +98,15 @@ describe("createFirstYearApplicationFromSource (D1 locked school/year)", () => {
     });
   });
 
-  it("writes null entry-year when the source omits it (still locked to source)", async () => {
+  it("writes null entry calendar year when the source omits it (still locked to source)", async () => {
     const tx = makeTx((data) => {
       captured = data as Record<string, unknown>;
     });
     await createFirstYearApplicationFromSource(tx, {
       ...complete,
       entryYear: null,
-      entryYearGroup: null,
     });
-    expect(captured).toMatchObject({ entryYear: null, entryYearGroup: null });
+    expect(captured).toMatchObject({ entryYear: null, entryYearGroup: "Y7" });
   });
 
   it("throws if required locked fields are absent", async () => {
@@ -106,6 +114,19 @@ describe("createFirstYearApplicationFromSource (D1 locked school/year)", () => {
     await expect(
       createFirstYearApplicationFromSource(tx, { ...complete, school: null })
     ).rejects.toThrow(/missing school/i);
+  });
+
+  // An admin-side create without an entry year group is REJECTED (Q1) — the
+  // applicant has no way to supply one later, so a null column would silently
+  // strip the assessment engine of its schooling-years input.
+  it("rejects an admin-side create with no entry year group", async () => {
+    const tx = makeTx(() => {});
+    await expect(
+      createFirstYearApplicationFromSource(tx, {
+        ...complete,
+        entryYearGroup: null,
+      })
+    ).rejects.toThrow(/entry year group/i);
   });
 });
 

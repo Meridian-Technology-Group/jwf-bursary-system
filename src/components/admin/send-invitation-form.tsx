@@ -68,6 +68,11 @@ const schema = z.object({
   lastName: z.string().min(1, "A surname is required"),
   childName: z.string().min(1, "The child's name is required"),
   school: z.enum(["TRINITY", "WHITGIFT"], { error: "A school is required" }),
+  // Q1 (Brian, 2026-08-14): the entry year-group is JWF-facing only and the
+  // parent can never supply it, so the quick invite has to capture it.
+  entryYearGroup: z.enum(["Y6", "Y7", "Y9", "Y12", "OTHER"], {
+    error: "An entry year group is required",
+  }),
   roundId: z
     .string()
     .uuid("An application round is required")
@@ -103,6 +108,7 @@ export function SendInvitationForm({
       lastName: "",
       childName: "",
       school: undefined,
+      entryYearGroup: undefined,
       roundId: defaultRoundId ?? "__none__",
     },
   });
@@ -127,6 +133,7 @@ export function SendInvitationForm({
     if (values.lastName) formData.set("lastName", values.lastName);
     formData.set("childName", values.childName);
     formData.set("school", values.school);
+    formData.set("entryYearGroup", values.entryYearGroup);
     formData.set("roundId", values.roundId);
 
     startTransition(async () => {
@@ -139,6 +146,7 @@ export function SendInvitationForm({
           lastName: "",
           childName: "",
           school: undefined,
+          entryYearGroup: undefined,
           roundId: defaultRoundId ?? "__none__",
         });
         router.refresh();
@@ -173,8 +181,9 @@ export function SendInvitationForm({
         Quick invite a family
       </h2>
       <p className="mb-4 mt-0.5 text-xs text-slate-500">
-        A one-off parent invite. Surname, child name and school are required —
-        the school is locked and the parent cannot change it.
+        A one-off parent invite. Surname, child name, school and entry year
+        group are required — they are locked and the parent cannot see or
+        change them.
       </p>
 
       <Form {...form}>
@@ -292,6 +301,40 @@ export function SendInvitationForm({
                     <SelectContent>
                       <SelectItem value="TRINITY">Trinity School</SelectItem>
                       <SelectItem value="WHITGIFT">Whitgift School</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            {/* Entry year group — JWF-facing only (Q1). Captured here because
+                the parent can never supply it and the application created on
+                acceptance needs it for the assessment engine. */}
+            <FormField
+              control={form.control}
+              name="entryYearGroup"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>
+                    Entry year group <span className="text-red-500">*</span>
+                  </FormLabel>
+                  <Select
+                    onValueChange={field.onChange}
+                    value={field.value ?? ""}
+                    disabled={isPending}
+                  >
+                    <FormControl>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select entry year group" />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                      <SelectItem value="Y6">Year 6</SelectItem>
+                      <SelectItem value="Y7">Year 7</SelectItem>
+                      <SelectItem value="Y9">Year 9</SelectItem>
+                      <SelectItem value="Y12">Year 12</SelectItem>
+                      <SelectItem value="OTHER">Other</SelectItem>
                     </SelectContent>
                   </Select>
                   <FormMessage />

@@ -270,7 +270,6 @@ function getDefaultValues(
       const seededName = splitChildFullName(seed.applicationChildName);
       return {
         school: seed.applicationSchool,
-        entryYearGroup: undefined,
         childTitle: "",
         childFirstName: seededName.firstName,
         childSurname: seededName.surname,

@@ -312,6 +312,10 @@ export async function acceptApplicantInvitationAction(
           roundId: invitation.roundId,
           school: invitation.school,
           childName: invitation.childName,
+          entryYear: invitation.entryYear,
+          // Mandatory as of Q1 — an invitation without a locked entry year-group
+          // cannot produce an application (the applicant can never supply one).
+          entryYearGroup: invitation.entryYearGroup,
         })
       ) {
         // Shared helper stamps the LOCKED school + entry-year (carried on the
