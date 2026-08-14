@@ -43,6 +43,17 @@ export const ACCEPTED_FORMATS_LABEL = "PDF, JPG, or PNG";
 export const MAX_SIZE_MB = 20;
 export const MAX_SIZE_BYTES = MAX_SIZE_MB * 1024 * 1024;
 
+/**
+ * Plain-English copy for a size/capacity rejection (A1, CF-14).
+ *
+ * The presigned upload flow has two legs that can fail on size — our own
+ * `/api/documents/sign` (declared size) and Supabase Storage itself (actual
+ * bytes) — and neither returns a message a parent can act on. Both 413 and 507,
+ * from either leg, collapse to this one sentence so nobody ever sees
+ * `Upload failed (413)` again.
+ */
+export const FILE_TOO_LARGE_MESSAGE = `That file couldn't be uploaded — it may be too large. Maximum ${MAX_SIZE_MB} MB.`;
+
 // ─── Word-document detection (Story 14.1/14.2) ─────────────────────────────────
 
 const WORD_MIME = [

@@ -1,0 +1,371 @@
+import { describe, it, expect, vi, beforeEach } from "vitest";
+
+/**
+ * A1 — `POST /api/documents/confirm`, step 3 of the presigned upload flow.
+ *
+ * This is where the magic-byte sniff lives now (docs/security-audit.md §2.10 —
+ * a standing requirement). Moving the file bytes off the API route must not
+ * lose that property, so the tests that matter most here are the rejection
+ * paths: a spoofed file must be refused AND its orphaned Storage object
+ * deleted, because with the presigned transport the bytes are already in the
+ * bucket by the time we get to look at them.
+ *
+ * Boundary mocks: auth, the RLS context runners and the Storage helpers.
+ * Ticket verification, `authorizeDocumentUpload` and `sniffContentType` all run
+ * for real.
+ */
+
+// ─── Boundary mocks ───────────────────────────────────────────────────────────
+
+const LEAD = {
+  id: "parent-1",
+  role: "APPLICANT",
+  email: "lead@example.test",
+  firstName: "Pat",
+  lastName: "Parent",
+  phone: null,
+};
+
+const SECOND_PARENT = { ...LEAD, id: "parent-2", email: "second@example.test" };
+
+const getCurrentUserMock = vi.fn(async (): Promise<unknown> => LEAD);
+vi.mock("@/lib/auth/roles", async () => {
+  const actual =
+    await vi.importActual<typeof import("@/lib/auth/roles")>("@/lib/auth/roles");
+  return { ...actual, getCurrentUser: () => getCurrentUserMock() };
+});
+
+let fakeTx: ReturnType<typeof makeFakeTx>;
+vi.mock("@/lib/db/prisma", () => ({
+  withUserContext: (_u: string, _r: string, fn: (tx: unknown) => unknown) =>
+    fn(fakeTx),
+  withAdminContext: (fn: (tx: unknown) => unknown) => fn(fakeTx),
+}));
+
+vi.mock("@/lib/db/queries/contributors", () => ({
+  ensurePrimaryContributor: vi.fn(async () => "contributor-primary"),
+}));
+
+const deleteDocumentMock = vi.fn(async () => undefined);
+const getStoredObjectInfoMock = vi.fn(async () => ({
+  size: 12_000_000 as number | null,
+  contentType: "application/pdf" as string | null,
+  error: undefined as string | undefined,
+}));
+const readObjectHeadMock = vi.fn(async () => ({
+  bytes: PDF_HEAD as Buffer | null,
+  error: undefined as string | undefined,
+}));
+
+vi.mock("@/lib/storage/documents", () => ({
+  deleteDocument: (...a: unknown[]) =>
+    (deleteDocumentMock as (...a: unknown[]) => unknown)(...a),
+  getStoredObjectInfo: (...a: unknown[]) =>
+    (getStoredObjectInfoMock as (...a: unknown[]) => unknown)(...a),
+  readObjectHead: (...a: unknown[]) =>
+    (readObjectHeadMock as (...a: unknown[]) => unknown)(...a),
+}));
+
+import { POST } from "../confirm/route";
+import {
+  issueUploadTicket,
+  type UploadTicketClaims,
+} from "@/lib/uploads/upload-ticket";
+import type { NextRequest } from "next/server";
+
+// ─── Fixtures ─────────────────────────────────────────────────────────────────
+
+/** "%PDF-1.7" — a real PDF signature. */
+const PDF_HEAD = Buffer.from("%PDF-1.7\n");
+/** "<!doctype html…" — an HTML payload, the masquerade the sniff exists to stop. */
+const HTML_HEAD = Buffer.from("<!doctype html><script>alert(1)</script>");
+
+const PRIMARY_PATH = "documents/app-1/BIRTH_CERTIFICATE/uuid_cert.pdf";
+const SECONDARY_PATH =
+  "documents/app-1/secondary/BIRTH_CERTIFICATE/uuid_cert.pdf";
+
+const PRIMARY_CLAIMS: UploadTicketClaims = {
+  sub: "parent-1",
+  applicationId: "app-1",
+  slot: "BIRTH_CERTIFICATE",
+  storagePath: PRIMARY_PATH,
+  filename: "cert.pdf",
+  mime: "application/pdf",
+  ns: "primary",
+};
+
+function makeFakeTx(
+  overrides: {
+    formStatus?: string;
+    leadApplicantId?: string;
+    contributor?: { id: string; role: string } | null;
+  } = {}
+) {
+  return {
+    application: {
+      findUnique: vi.fn(async () => ({
+        id: "app-1",
+        leadApplicantId: overrides.leadApplicantId ?? "parent-1",
+        formStatus: overrides.formStatus ?? "IN_PROGRESS",
+      })),
+    },
+    applicationContributor: {
+      findUnique: vi.fn(async () =>
+        overrides.contributor === undefined
+          ? { id: "contributor-primary", role: "PRIMARY" }
+          : overrides.contributor
+      ),
+    },
+    document: {
+      create: vi.fn(async ({ data }: { data: Record<string, unknown> }) => ({
+        id: "doc-1",
+        isVerified: false,
+        uploadedAt: "2026-08-14T10:00:00.000Z",
+        ...data,
+      })),
+    },
+  };
+}
+
+function confirmRequest(uploadTicket: unknown): NextRequest {
+  return new Request("http://localhost/api/documents/confirm", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ uploadTicket }),
+  }) as unknown as NextRequest;
+}
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  process.env.SUPABASE_SERVICE_ROLE_KEY = "test-service-role-key";
+  getCurrentUserMock.mockResolvedValue(LEAD);
+  fakeTx = makeFakeTx();
+  getStoredObjectInfoMock.mockResolvedValue({
+    size: 12_000_000,
+    contentType: "application/pdf",
+    error: undefined,
+  });
+  readObjectHeadMock.mockResolvedValue({ bytes: PDF_HEAD, error: undefined });
+});
+
+// ─── Tests ────────────────────────────────────────────────────────────────────
+
+describe("POST /api/documents/confirm", () => {
+  it("rejects an unauthenticated caller", async () => {
+    getCurrentUserMock.mockResolvedValue(null);
+
+    const response = await POST(
+      confirmRequest(issueUploadTicket(PRIMARY_CLAIMS))
+    );
+
+    expect(response.status).toBe(401);
+    expect(fakeTx.document.create).not.toHaveBeenCalled();
+  });
+
+  it("creates the Document row for a verified 12 MB PDF", async () => {
+    const response = await POST(
+      confirmRequest(issueUploadTicket(PRIMARY_CLAIMS))
+    );
+    const body = await response.json();
+
+    expect(response.status).toBe(201);
+    expect(body).toMatchObject({
+      id: "doc-1",
+      applicationId: "app-1",
+      slot: "BIRTH_CERTIFICATE",
+      filename: "cert.pdf",
+      mimeType: "application/pdf",
+      fileSize: 12_000_000,
+      storagePath: PRIMARY_PATH,
+      uploadedBy: "parent-1",
+      isVerified: false,
+    });
+    expect(deleteDocumentMock).not.toHaveBeenCalled();
+  });
+
+  it("tags a SECONDARY contributor's document with their contributor id", async () => {
+    getCurrentUserMock.mockResolvedValue(SECOND_PARENT);
+    fakeTx = makeFakeTx({
+      leadApplicantId: "parent-1",
+      contributor: { id: "contributor-secondary", role: "SECONDARY" },
+    });
+
+    const response = await POST(
+      confirmRequest(
+        issueUploadTicket({
+          ...PRIMARY_CLAIMS,
+          sub: "parent-2",
+          storagePath: SECONDARY_PATH,
+          ns: "secondary",
+        })
+      )
+    );
+    const body = await response.json();
+
+    expect(response.status).toBe(201);
+    expect(body.storagePath).toBe(SECONDARY_PATH);
+    expect(body.uploadedByContributorId).toBe("contributor-secondary");
+  });
+
+  it("415s a spoofed file and deletes the orphaned object", async () => {
+    // An HTML payload uploaded as `application/pdf`. Nothing before this point
+    // can see it: the filename, the declared MIME and the stored Content-Type
+    // all say PDF. Only the bytes give it away.
+    readObjectHeadMock.mockResolvedValue({ bytes: HTML_HEAD, error: undefined });
+
+    const response = await POST(
+      confirmRequest(issueUploadTicket(PRIMARY_CLAIMS))
+    );
+    const body = await response.json();
+
+    expect(response.status).toBe(415);
+    expect(body.error).toMatch(/Unsupported file type/);
+    expect(deleteDocumentMock).toHaveBeenCalledWith(PRIMARY_PATH);
+    expect(fakeTx.document.create).not.toHaveBeenCalled();
+  });
+
+  it("415s when the bytes are a valid type OTHER than the declared one", async () => {
+    // A real PNG declared as a PDF — sniffs fine on its own, but it is not what
+    // was allowlisted, so the Document row would carry the wrong mimeType.
+    readObjectHeadMock.mockResolvedValue({
+      bytes: Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+      error: undefined,
+    });
+
+    const response = await POST(
+      confirmRequest(issueUploadTicket(PRIMARY_CLAIMS))
+    );
+
+    expect(response.status).toBe(415);
+    expect(deleteDocumentMock).toHaveBeenCalledWith(PRIMARY_PATH);
+  });
+
+  it("415s when the stored Content-Type is not the one declared at sign time", async () => {
+    // The direct PUT lets the client choose this header, and documents are
+    // served inline by default — a stored text/html would be a stored XSS.
+    getStoredObjectInfoMock.mockResolvedValue({
+      size: 1024,
+      contentType: "text/html",
+      error: undefined,
+    });
+
+    const response = await POST(
+      confirmRequest(issueUploadTicket(PRIMARY_CLAIMS))
+    );
+
+    expect(response.status).toBe(415);
+    expect(deleteDocumentMock).toHaveBeenCalledWith(PRIMARY_PATH);
+    expect(fakeTx.document.create).not.toHaveBeenCalled();
+  });
+
+  it("413s when the stored bytes exceed 20 MB despite a smaller declared size", async () => {
+    getStoredObjectInfoMock.mockResolvedValue({
+      size: 25 * 1024 * 1024,
+      contentType: "application/pdf",
+      error: undefined,
+    });
+
+    const response = await POST(
+      confirmRequest(issueUploadTicket(PRIMARY_CLAIMS))
+    );
+    const body = await response.json();
+
+    expect(response.status).toBe(413);
+    expect(body.error).toBe(
+      "That file couldn't be uploaded — it may be too large. Maximum 20 MB."
+    );
+    expect(deleteDocumentMock).toHaveBeenCalledWith(PRIMARY_PATH);
+  });
+
+  it("rejects a forged ticket without touching Storage", async () => {
+    const response = await POST(confirmRequest("not.a.real.ticket"));
+
+    expect(response.status).toBe(400);
+    expect(getStoredObjectInfoMock).not.toHaveBeenCalled();
+    expect(fakeTx.document.create).not.toHaveBeenCalled();
+  });
+
+  it("forbids presenting someone else's ticket", async () => {
+    getCurrentUserMock.mockResolvedValue(SECOND_PARENT);
+    fakeTx = makeFakeTx({
+      leadApplicantId: "parent-1",
+      contributor: { id: "contributor-secondary", role: "SECONDARY" },
+    });
+
+    // A valid ticket, but issued to parent-1.
+    const response = await POST(
+      confirmRequest(issueUploadTicket(PRIMARY_CLAIMS))
+    );
+
+    expect(response.status).toBe(403);
+    expect(fakeTx.document.create).not.toHaveBeenCalled();
+  });
+
+  it("forbids confirming into a namespace the caller no longer owns", async () => {
+    // The ticket claims the PRIMARY namespace, but the caller now resolves as
+    // SECONDARY — their contributor role changed between sign and confirm.
+    getCurrentUserMock.mockResolvedValue(LEAD);
+    fakeTx = makeFakeTx({
+      leadApplicantId: "someone-else",
+      contributor: { id: "contributor-secondary", role: "SECONDARY" },
+    });
+
+    const response = await POST(
+      confirmRequest(issueUploadTicket(PRIMARY_CLAIMS))
+    );
+
+    expect(response.status).toBe(403);
+    expect(deleteDocumentMock).toHaveBeenCalledWith(PRIMARY_PATH);
+    expect(fakeTx.document.create).not.toHaveBeenCalled();
+  });
+
+  it("refuses to attach a document to an application submitted mid-upload", async () => {
+    fakeTx = makeFakeTx({ formStatus: "SUBMITTED" });
+
+    const response = await POST(
+      confirmRequest(issueUploadTicket(PRIMARY_CLAIMS))
+    );
+
+    expect(response.status).toBe(409);
+    expect(deleteDocumentMock).toHaveBeenCalledWith(PRIMARY_PATH);
+    expect(fakeTx.document.create).not.toHaveBeenCalled();
+  });
+
+  it("410s an expired ticket", async () => {
+    const staleTicket = issueUploadTicket(
+      PRIMARY_CLAIMS,
+      Date.now() - 60 * 60 * 1000
+    );
+
+    const response = await POST(confirmRequest(staleTicket));
+
+    expect(response.status).toBe(410);
+    expect(fakeTx.document.create).not.toHaveBeenCalled();
+  });
+
+  it("404s when the client never actually uploaded the bytes", async () => {
+    getStoredObjectInfoMock.mockResolvedValue({
+      size: null,
+      contentType: null,
+      error: "Object not found",
+    });
+
+    const response = await POST(
+      confirmRequest(issueUploadTicket(PRIMARY_CLAIMS))
+    );
+
+    expect(response.status).toBe(404);
+    expect(fakeTx.document.create).not.toHaveBeenCalled();
+  });
+
+  it("deletes the orphaned object when the Document row cannot be written", async () => {
+    fakeTx.document.create.mockRejectedValue(new Error("db down"));
+
+    const response = await POST(
+      confirmRequest(issueUploadTicket(PRIMARY_CLAIMS))
+    );
+
+    expect(response.status).toBe(500);
+    expect(deleteDocumentMock).toHaveBeenCalledWith(PRIMARY_PATH);
+  });
+});

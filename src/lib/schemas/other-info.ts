@@ -1,8 +1,21 @@
 import { z } from "zod";
 
+/**
+ * F5: the three yes/no questions below are REQUIRED and start UNANSWERED — the
+ * form seeds them `undefined` precisely so no answer is presumed. A bare
+ * `z.boolean()` therefore failed its base type check and showed the applicant
+ * the raw "Invalid input: expected boolean, received undefined", naming no
+ * field. Seeding `false` would have been worse (it would answer "No" on their
+ * behalf), so each carries a custom message instead — matching the pattern
+ * already used throughout `assets-liabilities.ts`. Nothing here is more or less
+ * required than before; only the wording the applicant reads has changed.
+ */
 export const otherInfoSchema = z
   .object({
-    hasCOurtOrder: z.boolean(),
+    hasCOurtOrder: z.boolean({
+      error:
+        "Please indicate whether you have a court order for the payment of school fees",
+    }),
     courtOrderTermAmount: z.coerce.number().nonnegative().optional(),
     courtOrderYearAmount: z.coerce.number().nonnegative().optional(),
     courtOrderSchoolYear: z.string().optional(),
@@ -14,13 +27,19 @@ export const otherInfoSchema = z
     maintenanceIsDivorced: z.boolean().optional(),
     maintenanceDecreeAbsoluteDocumentId: z.string().optional(),
     maintenanceAgreementNote: z.string().optional(),
-    hasInsurancePolicy: z.boolean(),
+    hasInsurancePolicy: z.boolean({
+      error:
+        "Please indicate whether you have the benefit of any insurance policies specifically to pay school fees",
+    }),
     insurancePolicyAmount: z.coerce.number().nonnegative().optional(),
     insurancePolicySchoolYear: z.string().optional(),
     insurancePolicyStartDate: z.string().optional(),
     insurancePolicyEndDate: z.string().optional(),
     insurancePolicyDocumentId: z.string().optional(),
-    hasOutstandingFees: z.boolean(),
+    hasOutstandingFees: z.boolean({
+      error:
+        "Please indicate whether any outstanding school fees are owed at any other school",
+    }),
     outstandingFeesSchoolName: z.string().optional(),
     outstandingFeesAmount: z.coerce.number().nonnegative().optional(),
   })

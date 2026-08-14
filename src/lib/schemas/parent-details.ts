@@ -234,9 +234,53 @@ export function isTwoParentHousehold(input: {
   );
 }
 
+/**
+ * CF-13 — should the remarried / new-partnership question be asked?
+ *
+ * The client's matrix (rows = relationship status, columns = sole parent):
+ *
+ * | Relationship status                  | Sole = YES | Sole = NO |
+ * |--------------------------------------|------------|-----------|
+ * | Single, Widowed, Separated, Divorced | ask        | ask       |
+ * | Married, Civil Partnership, Cohabiting | ask      | do NOT ask |
+ *
+ * A coupled status with sole-parent = NO describes a household that already has
+ * a resident partner on the form, so "have you remarried?" is redundant there.
+ * Every other combination can hide a new partner the form has not otherwise
+ * captured, so the question is asked.
+ *
+ * Returns false while no valid relationship status has been chosen — the
+ * question belongs to the status-dependent block and must not flash before it.
+ *
+ * This is the ONLY definition of the matrix; the portal form and the rules-engine
+ * input mapper both call it, so a hidden question can never be answered and can
+ * never feed the engine a stale answer.
+ */
+export function shouldAskRemarriedQuestion(input: {
+  isSoleParent?: boolean | null;
+  relationshipStatus?: string | null;
+}): boolean {
+  const status = input.relationshipStatus ?? "";
+  const isKnownStatus = (
+    relationshipStatusSchema.options as readonly string[]
+  ).includes(status);
+  if (!isKnownStatus) return false;
+
+  const isCoupled = (COUPLED_RELATIONSHIP_STATUSES as readonly string[]).includes(
+    status
+  );
+  return isCoupled ? input.isSoleParent === true : true;
+}
+
 const parentDetailsObject = z
   .object({
-    isSoleParent: z.boolean(),
+    // F5: an UNANSWERED yes/no must not be seeded to `false` — that would
+    // silently answer it — so it carries a custom message instead. Without one,
+    // an untouched toggle produced the raw "expected boolean, received
+    // undefined" that named no field. Same rule/requirement, legible copy.
+    isSoleParent: z.boolean({
+      error: "Please tell us whether you are applying as a sole parent / guardian",
+    }),
     relationshipStatus: relationshipStatusSchema,
     // ── Epic 09 household facets (D15/D16/D17). All optional + additive so
     // existing drafts and immutable submitted blobs validate unchanged; the

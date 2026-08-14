@@ -36,6 +36,7 @@ import {
   SLUG_TO_SECTION,
   SECTION_TITLES as CANONICAL_SECTION_TITLES,
 } from "@/lib/portal/sections";
+import { SUBMIT_APPLICATION_LABEL } from "@/lib/portal/declaration-submit";
 
 // ─── Section metadata ─────────────────────────────────────────────────────────
 // Order / slug maps come from the canonical `@/lib/portal/sections` (single
@@ -205,20 +206,28 @@ export default async function SectionPage({ params }: PageProps) {
 
   // Wizard wiring:
   //   ADDITIONAL_INFO (step 9) → /apply/review
-  //   DECLARATION (step 10)   → /apply/review  (back button returns to review)
+  //   DECLARATION (step 10)   → /apply/review  (both directions: Back returns
+  //                             there, and a plain SAVE now lands there too —
+  //                             that IS the "Review" action of the D4/CF-32
+  //                             split. Submission leaves via the server
+  //                             action's redirect to /submitted, not via this
+  //                             href, so it is unaffected.)
   //   All other sections      → next section slug as usual
   const nextHref =
-    sectionType === "ADDITIONAL_INFO"
+    sectionType === "ADDITIONAL_INFO" || sectionType === "DECLARATION"
       ? "/apply/review"
       : nextSection
         ? `/apply/${SECTION_TO_SLUG[nextSection]}`
         : "/";
 
+  // The Declaration's commit label comes from the shared constant the sticky
+  // footer also reads, so the two can never disagree again (they used to say
+  // "Submit Application" and "Review and Submit" for the same control).
   const nextLabel =
     sectionType === "ADDITIONAL_INFO"
       ? "Review Application"
       : sectionType === "DECLARATION"
-        ? "Submit Application"
+        ? SUBMIT_APPLICATION_LABEL
         : undefined;
 
   return (

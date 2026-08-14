@@ -28,6 +28,11 @@
  * routes but are configurable via UploadEndpointProvider, so the admin
  * edit-on-behalf layout can retarget the widget at the staff endpoints
  * (CR-001). The signed-url GET is shared and stays fixed.
+ *
+ * Two upload transports are supported (see upload-endpoints.tsx): the portal's
+ * presigned three-step flow (A1 — bytes go straight to Supabase Storage, so a
+ * 20 MB file no longer hits Vercel's ~4.5 MB request-body cap) and the staff
+ * path's original single multipart POST.
  */
 
 import * as React from "react";
@@ -55,6 +60,11 @@ import {
   UNSUPPORTED_TYPE_MESSAGE,
   WORD_DOCUMENT_MESSAGE,
 } from "@/lib/uploads/accepted-types";
+import {
+  uploadFile,
+  uploadErrorFrom,
+  type UploadedDocument,
+} from "@/lib/uploads/upload-transport";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -65,16 +75,10 @@ export interface ExistingDocument {
   uploadedAt: string;
 }
 
-export interface UploadedDocument {
-  id: string;
-  filename: string;
-  fileSize: number;
-  mimeType: string;
-  storagePath: string;
-  uploadedAt: string;
-  applicationId: string;
-  slot: string;
-}
+// Re-exported so the many `import type { UploadedDocument } from
+// "@/components/portal/file-upload"` call sites keep working after the
+// transport moved out of this file (A1).
+export type { UploadedDocument };
 
 interface FileUploadBaseProps {
   /** Document slot identifier (e.g. "BIRTH_CERTIFICATE", "P60_PARENT_1") */
@@ -147,32 +151,6 @@ function validateFile(file: File): string | null {
   return null;
 }
 
-async function uploadFile(
-  file: File,
-  applicationId: string,
-  slot: string,
-  endpoints: UploadEndpoints
-): Promise<UploadedDocument> {
-  const formData = new FormData();
-  formData.append("file", file);
-  formData.append("applicationId", applicationId);
-  formData.append("slot", slot);
-
-  const response = await fetch(endpoints.uploadUrl, {
-    method: "POST",
-    body: formData,
-  });
-
-  if (!response.ok) {
-    const body = await response.json().catch(() => ({}));
-    throw new Error(
-      (body as { error?: string }).error ?? `Upload failed (${response.status})`
-    );
-  }
-
-  return (await response.json()) as UploadedDocument;
-}
-
 async function deleteDocument(
   docId: string,
   endpoints: UploadEndpoints
@@ -181,10 +159,7 @@ async function deleteDocument(
     method: "DELETE",
   });
   if (!response.ok) {
-    const body = await response.json().catch(() => ({}));
-    throw new Error(
-      (body as { error?: string }).error ?? `Remove failed (${response.status})`
-    );
+    throw await uploadErrorFrom(response, "Remove failed");
   }
 }
 
