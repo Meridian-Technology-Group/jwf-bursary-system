@@ -163,6 +163,33 @@ async function deleteDocument(
   }
 }
 
+/**
+ * DOM ids for one upload control, unique per rendered instance (F11a).
+ *
+ * These were once derived from the `slot` prop — `file-upload-${slot}`. That
+ * is only safe while no two controls share a slot, and nothing enforced it:
+ * the Family Identification form rendered a "UK Passport" and a "Passport"
+ * upload against `FAMILY_ID_PASSPORT_<i>`, so the page carried two file inputs
+ * with the SAME id. A `<label for>` binds to the FIRST element with that id, so
+ * clicking one control's label opened the other control's file picker and the
+ * file was written to the wrong field — invisibly, because the twin was
+ * collapsed.
+ *
+ * It looked handled and was not: `ConditionalField` collapses with CSS rather
+ * than unmounting, and neither of its guards helps here — `aria-hidden` does
+ * not block activation, and `pointer-events: none` does not apply to
+ * label-for activation, which is not a pointer event on the input.
+ *
+ * `useId` is stable across server and client render, so it is hydration-safe;
+ * it is already the codebase's pattern for this (see `ui/form.tsx`). Keeping
+ * ids per-instance means a future form CANNOT reproduce the collision, whatever
+ * slots it passes.
+ */
+function useUploadControlIds(): { inputId: string; descId: string } {
+  const uid = React.useId();
+  return { inputId: `file-upload-${uid}`, descId: `file-upload-desc-${uid}` };
+}
+
 async function openDocumentUrl(docId: string): Promise<void> {
   const response = await fetch(`/api/documents/${docId}/url`);
   if (response.ok) {
@@ -299,8 +326,8 @@ function SingleFileUpload({
     if (!disabled) inputRef.current?.click();
   }
 
-  const inputId = `file-upload-${slot}`;
-  const descId = `file-upload-desc-${slot}`;
+  // Per-instance, NOT per-slot — see the note above `useUploadControlIds`.
+  const { inputId, descId } = useUploadControlIds();
 
   // ── Inline (spreadsheet) variant ──────────────────────────────────────────
   // One-line control, no block label / drop-zone. The whole element is still a
@@ -622,8 +649,8 @@ function MultiFileUpload({
     if (!disabled) inputRef.current?.click();
   }
 
-  const inputId = `file-upload-${slot}`;
-  const descId = `file-upload-desc-${slot}`;
+  // Per-instance, NOT per-slot — see the note above `useUploadControlIds`.
+  const { inputId, descId } = useUploadControlIds();
 
   return (
     <div className="space-y-1.5">
