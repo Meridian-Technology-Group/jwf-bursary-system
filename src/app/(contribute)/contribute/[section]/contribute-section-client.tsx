@@ -31,10 +31,7 @@ import { AssetsLiabilitiesForm } from "@/components/portal/sections/assets-liabi
 import { secondaryParentDetailsSchema } from "@/lib/schemas/parent-details";
 import { parentsIncomeSchema } from "@/lib/schemas/parents-income";
 import { assetsLiabilitiesSchema } from "@/lib/schemas/assets-liabilities";
-import {
-  isLegacyIncomeRecord,
-  normaliseLegacyIncomeRecord,
-} from "@/lib/portal/income-model";
+import { getContributeSectionDefaultValues } from "@/lib/portal/contribute-section-defaults";
 
 import { saveSection } from "../actions";
 
@@ -56,80 +53,6 @@ interface ContributeSectionClientProps {
   nextLabel?: string;
   stepNumber: number;
   totalSteps: number;
-}
-
-/**
- * Default values for a fresh secondary section. PARENT_DETAILS forces
- * isSoleParent=true so only the single-earner block shows; the income/assets
- * defaults mirror the applicant wizard's parent1-only seed.
- */
-function getDefaultValues(
-  sectionType: ApplicationSectionType,
-  existingData: unknown
-) {
-  if (existingData && typeof existingData === "object") {
-    // Defensive: ensure a previously-saved PARENT_DETAILS row keeps sole-parent
-    // semantics even if it was somehow persisted as false.
-    if (sectionType === "PARENT_DETAILS") {
-      return { ...(existingData as object), isSoleParent: true };
-    }
-    // Back-compat: normalise a legacy flat income draft into the new shape.
-    if (sectionType === "PARENTS_INCOME") {
-      const d = existingData as { parent1Income?: unknown };
-      return {
-        parent1Income: isLegacyIncomeRecord(d.parent1Income)
-          ? normaliseLegacyIncomeRecord(d.parent1Income)
-          : (d.parent1Income ?? { total: 0, documentsConfirmed: false }),
-      };
-    }
-    return existingData;
-  }
-
-  switch (sectionType) {
-    case "PARENT_DETAILS":
-      return {
-        isSoleParent: true,
-        relationshipStatus: undefined,
-        parent1Contact: {
-          title: undefined,
-          firstName: "",
-          lastName: "",
-          addressLine1: "",
-          city: "",
-          postcode: "",
-          country: "",
-        },
-        parent1Employment: { status: undefined },
-      };
-    case "PARENTS_INCOME":
-      return {
-        parent1Income: { total: 0, documentsConfirmed: false },
-      };
-    case "ASSETS_LIABILITIES":
-      return {
-        propertyOwnership: undefined,
-        residenceValue: 0,
-        hasMortgage: undefined,
-        hasOtherProperties: undefined,
-        otherProperties: [],
-        hasChargingOrder: undefined,
-        carOwnership: undefined,
-        usesPublicTransport: undefined,
-        otherPossessionsValue: 0,
-        totalCashBalance: 0,
-        investmentsValue: 0,
-        parent1CurrentAccountDocumentIds: [],
-        parent1SavingsAccountDocumentIds: [],
-        parent1InvestmentDocumentIds: [],
-        hasPersonalDebt: undefined,
-        creditCardStatementDocumentIds: [],
-        loanStatementDocumentIds: [],
-        otherDebtDocumentIds: [],
-        documentsConfirmed: false,
-      };
-    default:
-      return {};
-  }
 }
 
 function getSchema(sectionType: ApplicationSectionType) {
@@ -212,7 +135,7 @@ export function ContributeSectionClient({
   totalSteps,
 }: ContributeSectionClientProps) {
   const schema = getSchema(sectionType);
-  const defaultValues = getDefaultValues(sectionType, existingData);
+  const defaultValues = getContributeSectionDefaultValues(sectionType, existingData);
 
   async function handleSave(data: unknown) {
     return saveSection(applicationId, sectionType, data);

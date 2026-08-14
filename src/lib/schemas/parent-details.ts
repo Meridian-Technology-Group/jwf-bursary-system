@@ -274,7 +274,13 @@ export function shouldAskRemarriedQuestion(input: {
 
 const parentDetailsObject = z
   .object({
-    isSoleParent: z.boolean(),
+    // F5: an UNANSWERED yes/no must not be seeded to `false` — that would
+    // silently answer it — so it carries a custom message instead. Without one,
+    // an untouched toggle produced the raw "expected boolean, received
+    // undefined" that named no field. Same rule/requirement, legible copy.
+    isSoleParent: z.boolean({
+      error: "Please tell us whether you are applying as a sole parent / guardian",
+    }),
     relationshipStatus: relationshipStatusSchema,
     // ── Epic 09 household facets (D15/D16/D17). All optional + additive so
     // existing drafts and immutable submitted blobs validate unchanged; the

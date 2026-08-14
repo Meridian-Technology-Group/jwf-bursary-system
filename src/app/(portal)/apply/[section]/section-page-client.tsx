@@ -19,11 +19,7 @@ import type { DocumentMeta } from "@/lib/db/queries/applications";
 import { SectionForm } from "@/components/portal/section-form";
 // ProgressBar removed — progress is shown in the sidebar
 import { PrepopulatedSectionBanner } from "@/components/portal/form-fields/prepopulated-field";
-import {
-  isLegacyIncomeRecord,
-  normaliseLegacyIncomeRecord,
-} from "@/lib/portal/income-model";
-import { parentDetailsDefaultValues } from "@/lib/portal/parent-details-defaults";
+import { getSectionDefaultValues } from "@/lib/portal/section-defaults";
 import { saveSection, submitApplication } from "../actions";
 import type { SaveSectionResult } from "../actions";
 
@@ -43,7 +39,7 @@ import { AdditionalInfoForm } from "@/components/portal/sections/additional-info
 import { DeclarationForm } from "@/components/portal/sections/declaration-form";
 
 // Schemas
-import { childDetailsSchema, splitChildFullName } from "@/lib/schemas/child-details";
+import { childDetailsSchema } from "@/lib/schemas/child-details";
 import { familyIdSchema, makeFamilyIdSchema } from "@/lib/schemas/family-id";
 import {
   parentDetailsSchema,
@@ -119,216 +115,6 @@ interface SectionPageClientProps {
    * submission is an explicit, separate action.
    */
   onBehalf?: boolean;
-}
-
-interface DefaultValuesSeed {
-  applicationSchool?: "TRINITY" | "WHITGIFT";
-  applicationChildName?: string;
-  applicationGuardianName?: string;
-  isSoleParent?: boolean;
-}
-
-/**
- * FAMILY_ID (Q1): guarantee two locked, always-required rows — the child named
- * on the application (role CHILD) and the applicant / named guardian (role
- * GUARDIAN) — followed by any additional members. Their names are locked to the
- * application source (refreshed on every load); uploaded doc ids are preserved.
- * Legacy rows with no role are treated as OTHER additional members.
- */
-function normaliseFamilyId(
-  existing: unknown,
-  childName: string,
-  guardianName: string
-) {
-  const raw =
-    existing &&
-    typeof existing === "object" &&
-    Array.isArray((existing as { familyMembers?: unknown }).familyMembers)
-      ? ((existing as { familyMembers: unknown[] })
-          .familyMembers as Array<Record<string, unknown>>)
-      : [];
-
-  const find = (role: string) =>
-    raw.find((m) => m && typeof m === "object" && m.role === role);
-  const others = raw
-    .filter(
-      (m) =>
-        m && typeof m === "object" && m.role !== "CHILD" && m.role !== "GUARDIAN"
-    )
-    .map((m) => ({ ...m, role: "OTHER" }));
-
-  const fixedRow = (
-    existingRow: Record<string, unknown> | undefined,
-    role: "CHILD" | "GUARDIAN",
-    name: string,
-    fallbackId: string
-  ) => ({
-    id: (existingRow?.id as string) ?? fallbackId,
-    role,
-    familyMemberName: name, // locked to the application source
-    isBritishCitizen: (existingRow?.isBritishCitizen as boolean) ?? true,
-    ukPassportDocumentId: existingRow?.ukPassportDocumentId as string | undefined,
-    passportDocumentId: existingRow?.passportDocumentId as string | undefined,
-    ilrDocumentId: existingRow?.ilrDocumentId as string | undefined,
-  });
-
-  return {
-    familyMembers: [
-      fixedRow(find("CHILD"), "CHILD", childName, "family-role-child"),
-      fixedRow(find("GUARDIAN"), "GUARDIAN", guardianName, "family-role-guardian"),
-      ...others,
-    ],
-  };
-}
-
-function getDefaultValues(
-  sectionType: ApplicationSectionType,
-  existingData: unknown,
-  seed: DefaultValuesSeed = {}
-) {
-  // FAMILY_ID is normalised the same way whether or not a draft exists (Q1).
-  if (sectionType === "FAMILY_ID") {
-    return normaliseFamilyId(
-      existingData,
-      seed.applicationChildName ?? "",
-      seed.applicationGuardianName ?? ""
-    );
-  }
-
-  if (existingData && typeof existingData === "object") {
-    // Back-compat: a CHILD_DETAILS draft saved before the name was split into
-    // title/first/surname holds only `childFullName`. Seed the split fields from
-    // it so the rebuilt form renders and re-validates the legacy value.
-    if (sectionType === "CHILD_DETAILS") {
-      const d = existingData as {
-        childFirstName?: string;
-        childSurname?: string;
-        childFullName?: string;
-        placeOfBirthCity?: string;
-      };
-      if (
-        d.childFirstName === undefined &&
-        d.childSurname === undefined &&
-        d.childFullName
-      ) {
-        const { firstName, surname } = splitChildFullName(d.childFullName);
-        return {
-          ...existingData,
-          childFirstName: firstName,
-          childSurname: surname,
-          placeOfBirthCity: d.placeOfBirthCity ?? "",
-        };
-      }
-      return existingData;
-    }
-    // Back-compat: an in-flight PARENTS_INCOME draft may hold the LEGACY flat
-    // shape. Normalise each parent record into the new status-driven shape so
-    // the rebuilt form can render and re-validate it (Epic 02 §5.1).
-    if (sectionType === "PARENTS_INCOME") {
-      const d = existingData as {
-        parent1Income?: unknown;
-        parent2Income?: unknown;
-      };
-      return {
-        parent1Income: isLegacyIncomeRecord(d.parent1Income)
-          ? normaliseLegacyIncomeRecord(d.parent1Income)
-          : (d.parent1Income ?? { total: 0, documentsConfirmed: false }),
-        ...(d.parent2Income !== undefined
-          ? {
-              parent2Income: isLegacyIncomeRecord(d.parent2Income)
-                ? normaliseLegacyIncomeRecord(d.parent2Income)
-                : d.parent2Income,
-            }
-          : {}),
-      };
-    }
-    // Back-compat: a legacy DECLARATION draft holds {accepted, signedOnBehalfOf}.
-    // Map it onto the new per-parent P1 fields so the rebuilt form renders it.
-    if (sectionType === "DECLARATION") {
-      const d = existingData as {
-        acceptedParent1?: boolean;
-        signedOnBehalfOfParent1?: string;
-        acceptedParent2?: boolean;
-        signedOnBehalfOfParent2?: string;
-        accepted?: boolean;
-        signedOnBehalfOf?: string;
-      };
-      const hasNew = d.acceptedParent1 !== undefined || d.signedOnBehalfOfParent1 !== undefined;
-      if (hasNew) return existingData;
-      const base = {
-        acceptedParent1: d.accepted ?? false,
-        signedOnBehalfOfParent1: d.signedOnBehalfOf ?? "",
-      };
-      return seed.isSoleParent
-        ? base
-        : { ...base, acceptedParent2: false, signedOnBehalfOfParent2: "" };
-    }
-    return existingData;
-  }
-
-  switch (sectionType) {
-    case "CHILD_DETAILS": {
-      const seededName = splitChildFullName(seed.applicationChildName);
-      return {
-        school: seed.applicationSchool,
-        entryYearGroup: undefined,
-        childTitle: "",
-        childFirstName: seededName.firstName,
-        childSurname: seededName.surname,
-        childFullName: seed.applicationChildName ?? "",
-        gender: "",
-        dateOfBirth: "",
-        placeOfBirthCity: "",
-        placeOfBirth: "",
-        sameAddressAsParent1: true,
-        currentSchool: "",
-        currentSchoolStartDate: "",
-      };
-    }
-    case "PARENT_DETAILS":
-      return parentDetailsDefaultValues();
-    case "DEPENDENT_CHILDREN":
-      return { numberOfDependentChildren: 0, children: [] };
-    case "DEPENDENT_ELDERLY":
-      return { hasElderlyAtHome: undefined, elderlyAtHome: [], hasElderlyInCare: undefined, elderlyInCare: [] };
-    case "OTHER_INFO":
-      return { hasCOurtOrder: undefined, hasInsurancePolicy: undefined, hasOutstandingFees: undefined };
-    case "PARENTS_INCOME":
-      // Status-driven sub-tables (D3). The form seeds the relevant sub-blocks
-      // from the declared employment status and normalises any legacy draft on
-      // load (see parents-income-form.tsx). A minimal record here is enough.
-      return {
-        parent1Income: { total: 0, documentsConfirmed: false },
-      };
-    case "ASSETS_LIABILITIES":
-      return {
-        propertyOwnership: undefined, residenceValue: 0, hasMortgage: undefined,
-        hasOtherProperties: undefined, otherProperties: [], hasChargingOrder: undefined,
-        carOwnership: undefined, usesPublicTransport: undefined,
-        otherPossessionsValue: 0,
-        totalCashBalance: 0, investmentsValue: 0,
-        parent1CurrentAccountDocumentIds: [], parent1SavingsAccountDocumentIds: [],
-        parent1InvestmentDocumentIds: [], hasPersonalDebt: undefined,
-        creditCardStatementDocumentIds: [], loanStatementDocumentIds: [],
-        otherDebtDocumentIds: [], documentsConfirmed: false,
-      };
-    case "ADDITIONAL_INFO":
-      return { additionalNarrative: "", additionalDocumentIds: [] };
-    case "DECLARATION":
-      // Per-parent ticks (Epic 02 PR-5). Seed the P2 fields only for a
-      // dual-parent application so a sole parent's declaration is not blocked by
-      // the P2 superRefine.
-      return seed.isSoleParent
-        ? { acceptedParent1: false, signedOnBehalfOfParent1: "" }
-        : {
-            acceptedParent1: false,
-            signedOnBehalfOfParent1: "",
-            acceptedParent2: false,
-            signedOnBehalfOfParent2: "",
-          };
-    default:
-      return {};
-  }
 }
 
 function SectionFormContent({
@@ -428,11 +214,15 @@ export function SectionPageClient({
           }),
         })
       : getSectionSchema(sectionType);
-  const defaultValues = getDefaultValues(sectionType, existingData, {
+  // `relationshipStatus` is part of the seed because the Parent 2 blocks on
+  // PARENTS_INCOME and DECLARATION mount on `isTwoParentHousehold`, not on
+  // `isSoleParent` alone — see `seedsParentTwo` in section-defaults.ts (F5).
+  const defaultValues = getSectionDefaultValues(sectionType, existingData, {
     applicationSchool,
     applicationChildName,
     applicationGuardianName,
     isSoleParent,
+    relationshipStatus,
   });
 
   async function handleSave(data: unknown) {
