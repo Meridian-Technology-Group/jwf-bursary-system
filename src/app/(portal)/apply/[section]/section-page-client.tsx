@@ -600,6 +600,12 @@ export function SectionPageClient({
           nextHref={nextHref}
           nextLabel={nextLabel}
           hideInlineNav
+          // WP B2: background drafts are an APPLICANT affordance. The assessor
+          // edit-on-behalf action (`saveOverride`) has no draft equivalent —
+          // `handleGuardedSave` refuses an incomplete section for it — so an
+          // autosave there would fail on a loop and permanently show "Not
+          // saved" on a page that is behaving correctly.
+          autosave={!saveOverride}
         >
           <SectionFormContent
             sectionType={sectionType}

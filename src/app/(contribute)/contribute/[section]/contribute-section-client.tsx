@@ -219,10 +219,17 @@ export function ContributeSectionClient({
   }
 
   /**
-   * The unsaved-changes guard's save path (WP B1). The second parent hits the
-   * same stepper-click data loss as the lead applicant, so the contribute flow
-   * gets the same treatment: a section that validates saves complete, one that
-   * does not is written as a draft rather than discarded.
+   * The in-place save path (WP B1's guard, and WP B2's autosave). The second
+   * parent hits the same data loss as the lead applicant — the same three
+   * sections, the same long income tables — so the contribute flow gets the
+   * same treatment: a section that validates saves complete, one that does not
+   * is written as a draft rather than discarded.
+   *
+   * This also enrols /contribute in the WP B2 autosave: `SectionForm` debounces
+   * against whatever `onSaveWithoutAdvancing` it is given, and the contribute
+   * `saveSectionDraft` (contribute/actions.ts) is the secondary-scoped twin of
+   * the portal one. No CR-001 provenance is involved on this side — the
+   * assessor edit-on-behalf flow only writes the primary's rows.
    */
   async function handleGuardedSave(data: unknown, complete: boolean) {
     return complete
