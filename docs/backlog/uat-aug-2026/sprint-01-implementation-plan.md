@@ -244,10 +244,18 @@ Notes:
   (~:150-174) with the three-step flow. Keep `MAX_CONCURRENT_UPLOADS = 5`. Map a
   413/507 from either leg to plain copy ("That file couldn't be uploaded — it
   may be too large. Maximum 20 MB.") rather than `Upload failed (413)`.
-- **CF-20 and CF-24 are investigation items, not assumed fixes.** After the
-  transport lands, reproduce both (re-upload after a data-loss event; a
-  passport rejected for a family member) and either close them as fixed on the
-  PR, or open follow-up WPs with the real diagnosis. Do not close them silently.
+- **CF-20 and CF-24 outcomes (recorded 2026-08-14, PR #271):** CF-20 could not
+  be reproduced → **WP F3**, re-test on preview after B1. CF-24 does **not**
+  reproduce as a transport fault; tracing it found a real latent bug in the
+  passport slots → **WP F2**. Neither is closed.
+- **Stored-XSS vector found and closed during A1.** Supabase stores a
+  client-supplied `Content-Type` verbatim, and `/api/documents/[id]/url` serves
+  documents **inline** — so a `text/html` object declared as `application/pdf`
+  at sign time would have been stored XSS, a risk the old server-side-upload
+  transport did not have. The confirm endpoint now rejects a stored content
+  type that differs from the one allowlisted at sign time, in addition to the
+  magic-byte sniff. This is new attack surface created by moving to presigned
+  uploads — keep both checks.
 
 **Done when:** a 20 MB PDF uploads end-to-end on a preview deploy; a `.pdf`-named
 Word file is still rejected with `WORD_DOCUMENT_MESSAGE` or the sniff 415; the
@@ -485,7 +493,15 @@ recommendation re-confirmation gate is enforced.
 Port v1's `manualAdjustment` + mandatory `manualAdjustmentReason` into the
 calc-v2 form as an income adjustment line, applied **after** earner aggregation
 in `calculateHouseholdNetIncome` (`src/lib/assessment/v2/income.ts:83-86`).
-Surface it in the recommendation snapshot, the PDF, and the XLSX export.
+Surface it in the recommendation snapshot and the XLSX export.
+
+> **Correction (2026-08-14):** this WP originally said "and the PDF". **There is
+> no assessor-side recommendation PDF** — route, renderer and download button
+> were all removed in Epic 08 under D7 as exposing assessor-internal figures
+> (recorded in the header comment of `recommendation/page.tsx:7-9`). The only
+> surviving PDF is the applicant-facing submission PDF, which must **not** carry
+> assessor internals, so the adjustment must not be added to it. If a printable
+> assessor artefact is wanted, that is a separate decision, not part of C2.
 
 - Reason is mandatory whenever the amount is non-zero — enforce in the Zod
   schema, not just the UI.
@@ -553,6 +569,22 @@ This supersedes the CP10 "Set Qualifies" item on the calc-v2 staging pass.
 > `fees_account_code` set** — never used, so the drop needs no backfill. Prod
 > could not be queried (see §8 risks); CALC-10 is not promoted to `main`, so
 > the column is not expected to exist there — **verify before C4b lands.**
+
+> **D13-1b (Brian, 2026-08-14) — name masking is retired.** D13-1a's default
+> reference format embeds the child's name, and the reference renders on the
+> queue and the assessment workspace. That defeats **NM-01..05** (PRD: "child
+> name and lead applicant are hidden by default and revealed via a toggle") and
+> security finding **2.18** (`docs/archive/quality/security-audit.md:438`, UK
+> GDPR Art. 5(1)(c), whose recommendation was explicit that "render-side hiding
+> is not data minimisation"). Presented as a four-way choice; Brian chose:
+> **names are visible — masking is obsolete.**
+>
+> Consequence: C4a's audited `getApplicationChildNameForHeader` stands. But the
+> codebase is now **half-masked and self-contradictory** — `getApplicationWithDetails`
+> still omits names "per finding 2.18", the queue still defaults to masked, and
+> the PRD still specifies the toggle. That inconsistency is a defect in its own
+> right: the next reader cannot tell which behaviour is intended. Retiring it
+> properly is **WP F1** below.
 
 Ships as two PRs.
 
@@ -727,6 +759,25 @@ declaration *is* submitting. Decouple:
 **Done when:** saving the declaration does not submit; submitting requires the
 explicit button; the review round-trip loses nothing.
 
+### Wave F — discovered during the sprint
+
+These were **not** in the epic. Each was found while building a WP and is
+recorded here rather than fixed inline, so the discovering PR stays scoped.
+
+| WP | Source | Change | Size |
+|---|---|---|---|
+| **F1** | D13-1b | **Retire NM-01..05 name masking coherently.** Brian retired masking on 2026-08-14, but the codebase now contradicts itself. Remove the `childName` omission from `getApplicationWithDetails` (`src/lib/db/queries/applications.ts:429-468`) and the "Assessment tab MUST NOT call this" prohibition on `getApplicationNamesForReveal` (~:516); decide whether the queue's masked-by-default toggle stays; update the PRD (`docs/product/prd/04-admin-round-management.md:7`, AC-03) and mark finding 2.18 superseded rather than open. **Decide deliberately whether `NAME_REVEAL` audit rows are still wanted** — if names are simply visible, an audit row per page load is cost without a purpose, and C4a currently writes one on every detail-page load. | M |
+| **F2** | A1 (CF-24) | **Duplicate passport slot loses a document.** `src/components/portal/sections/family-id-form.tsx:354` and `:377` render two uploads ("UK Passport" and "Passport") against the **same slot** while writing to **different fields** (`ukPassportDocumentId` vs `passportDocumentId`). For a non-British family member one of the two can be lost. This — not the 413 — is the likelier cause of CF-24 ("passport not accepted, left that tab unfinished"). Genuine latent data-loss bug. | M |
+
+#### F3 · Confirm CF-20 on preview (not a build)
+
+CF-20 (re-upload error after data loss) **could not be reproduced** during A1.
+The old client rendered every failure as `Upload failed (<status>)`, so the
+original screenshot does not reveal the status code. Reproducing it needs the
+CF-19 data-loss state, which is B1/B2 territory. **Re-test on preview once A1 +
+B1 are deployed**; the new error copy is specific enough to diagnose it if it
+recurs. Do not close CF-20 until that test happens.
+
 ### Wave E — deadlines & invitation email
 
 #### E1 · Type-aware round deadlines · **L** · **migration**
@@ -841,19 +892,19 @@ Update the status column as PRs merge. `—` = not started.
 
 | WP | Status | PR | Notes |
 |---|---|---|---|
-| A1 | — | | |
-| A2 | — | | |
+| A1 | ✅ merged-ready | [#271](https://github.com/Meridian-Technology-Group/jwf-bursary-system/pull/271) | CI green. Deletes the multipart route. Found + fixed a stored-XSS vector (see below) |
+| A2 | in progress | | |
 | A3 | — | | |
 | A4 | — | | |
 | A5 + A7 + A8 | — | | paired PR |
 | A6 | — | | own PR; nonprod backfill already done |
 | B1 | — | | |
 | B2 | — | | |
-| C1 | — | | |
-| C2 | — | | |
-| C3 | — | | |
-| C4a | — | | migration |
-| C4b | — | | migration (column drops) |
+| C1 | ✅ merged-ready | [#269](https://github.com/Meridian-Technology-Group/jwf-bursary-system/pull/269) | CI green. Closed a live authz gap: `saveAssessmentAction` had no server-side status check |
+| C2 | ✅ merged-ready | [#272](https://github.com/Meridian-Technology-Group/jwf-bursary-system/pull/272) | CI green. No recommendation PDF exists — see the C2 correction |
+| C3 | in progress | | |
+| C4a | ✅ merged-ready | [#270](https://github.com/Meridian-Technology-Group/jwf-bursary-system/pull/270) | CI green. Migration authored by hand, unapplied |
+| C4b | in progress | | migration (column drops) |
 | D1 | — | | migration |
 | D2 | — | | migration |
 | D3 | — | | |
