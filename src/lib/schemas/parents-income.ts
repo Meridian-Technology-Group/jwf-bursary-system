@@ -89,24 +89,53 @@ export const parentIncomeRecordSchema = z
     divorcedSeparated: divorcedSeparatedIncomeSchema.optional(),
     thirdParty: thirdPartyIncomeSchema.optional(),
     total: z.coerce.number().nonnegative().default(0),
-    // Explicit acknowledgment required only when the total income is £0 — the
-    // form surfaces a confirmation tick so a £0 return is a deliberate
-    // declaration, not an accidental empty submission.
+    // Exactly ONE acknowledgment is required per parent, and which one depends on
+    // the declared total (see the superRefine below):
+    //
+    //   total  = £0 → `noIncomeConfirmed` — an explicit "no income at all"
+    //                 declaration, so a £0 return is deliberate rather than an
+    //                 accidental empty submission.
+    //   total  > £0 → `documentsConfirmed` — the legibility tick covering the
+    //                 uploads this page asked for.
+    //
+    // CF-21: `documentsConfirmed` used to be an UNCONDITIONAL `refine(v => v === true)`.
+    // That blocked the genuinely-zero-income household: at £0 the form renders no
+    // upload controls at all (every income document rule is `requiredIfValueGt0`),
+    // so the applicant was asked to confirm the legibility of documents that do
+    // not exist — and, because a failing field-level check aborts the object parse
+    // before `superRefine` runs, the £0 declaration they HAD ticked was never even
+    // evaluated. Both ticks are plain booleans here; the requirement is expressed
+    // once, in the superRefine, so the two can never disagree and neither can
+    // short-circuit the other.
     noIncomeConfirmed: z.boolean().optional(),
-    documentsConfirmed: z.boolean().refine((v) => v === true, {
-      message: "You must confirm documents are current and legible",
-    }),
+    documentsConfirmed: z.boolean().default(false),
   })
   .superRefine((data, ctx) => {
-    if (
-      newIncomeTotal(data as Parameters<typeof newIncomeTotal>[0]) === 0 &&
-      data.noIncomeConfirmed !== true
-    ) {
+    const total = newIncomeTotal(data as Parameters<typeof newIncomeTotal>[0]);
+
+    // £0 declared: the no-income tick is the deliberate declaration, and it is
+    // what keeps a blank section distinguishable from an intentional £0 one.
+    // Nothing on the page needed a document, so the legibility tick is not asked
+    // for (the form hides it at £0 to match).
+    if (total === 0) {
+      if (data.noIncomeConfirmed !== true) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message:
+            "Please confirm this parent/guardian received no income or benefit support during the tax year.",
+          path: ["noIncomeConfirmed"],
+        });
+      }
+      return;
+    }
+
+    // Income declared: at least one figure is > £0, so this page did ask for
+    // supporting documents — the legibility tick is mandatory, exactly as before.
+    if (data.documentsConfirmed !== true) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        message:
-          "Please confirm this parent/guardian received no income or benefit support during the tax year.",
-        path: ["noIncomeConfirmed"],
+        message: "You must confirm documents are current and legible",
+        path: ["documentsConfirmed"],
       });
     }
   });

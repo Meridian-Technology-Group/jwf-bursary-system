@@ -6,9 +6,12 @@
  * Epic 02 (D3): the flat 14-line model is replaced with sub-tables keyed by the
  * parent's declared employment status (from PARENT_DETAILS). Each sub-table has
  * its own numeric rows + the required upload(s), a live per-parent TOTAL footer,
- * and a compulsory legibility tick. The workbook's "value > £0 ⇒ upload, except
- * Child Benefit" rule is enforced by the rule engine (section-rules.ts); here we
- * surface the matching upload control when the value is non-zero.
+ * and one compulsory acknowledgment: the legibility tick when the parent declared
+ * income, or the "£0 / no income at all" declaration when they did not (CF-21 —
+ * at £0 the page asks for no documents, so it must not demand a document tick).
+ * The workbook's "value > £0 ⇒ upload, except Child Benefit" rule is enforced by
+ * the rule engine (section-rules.ts); here we surface the matching upload control
+ * when the value is non-zero.
  *
  * Layout (income redesign): every group is ALWAYS open — there are no
  * collapsible disclosures. Each group renders as a dense `Source | Amount (£) |
@@ -277,6 +280,16 @@ function ParentIncomeColumn({
     ensure("retired", { statePension: 0, privatePension: 0 });
     ensure("divorcedSeparated", { maintenanceReceived: 0, sharedCustodyNote: "" });
     ensure("thirdParty", { incomeSupportReceived: 0, supportNote: "" });
+    // Seed both acknowledgment ticks to `false` as well (CF-21). Only Parent 1
+    // got a `documentsConfirmed: false` default from `getDefaultValues`, so
+    // Parent 2's checkboxes mounted with `checked={undefined}` — i.e. UNCONTROLLED
+    // Radix checkboxes, whose state React was not driving. Seeding both keys for
+    // both parents makes the two columns behave identically.
+    for (const tick of ["noIncomeConfirmed", "documentsConfirmed"] as const) {
+      if (cur[tick] === undefined || cur[tick] === null) {
+        setValue(`${prefix}.${tick}` as never, false as never, { shouldDirty: false });
+      }
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [prefix]);
 
@@ -604,28 +617,35 @@ function ParentIncomeColumn({
         />
       )}
 
-      {/* Legibility tick */}
-      <FormField
-        control={control}
-        name={`${prefix}.documentsConfirmed` as never}
-        render={({ field }) => (
-          <FormItem>
-            <div className="flex items-start gap-3 rounded-md border border-slate-200 bg-white p-4">
-              <FormControl>
-                <Checkbox
-                  checked={field.value as boolean}
-                  onCheckedChange={field.onChange}
-                  className="mt-0.5"
-                />
-              </FormControl>
-              <FormLabel className="cursor-pointer font-normal text-slate-700">
-                I confirm all documents on this page are correct and legible.
-              </FormLabel>
-            </div>
-            <FormMessage />
-          </FormItem>
-        )}
-      />
+      {/* Legibility tick — only when this parent declared income. At £0 the page
+          renders no upload controls at all (every income document is required
+          only when its figure is > £0), so asking the applicant to confirm the
+          legibility of documents that do not exist is meaningless — and used to
+          be an unsatisfiable gate on the zero-income path (CF-21). The £0
+          declaration above is the acknowledgment in that case. */}
+      {total > 0 && (
+        <FormField
+          control={control}
+          name={`${prefix}.documentsConfirmed` as never}
+          render={({ field }) => (
+            <FormItem>
+              <div className="flex items-start gap-3 rounded-md border border-slate-200 bg-white p-4">
+                <FormControl>
+                  <Checkbox
+                    checked={field.value as boolean}
+                    onCheckedChange={field.onChange}
+                    className="mt-0.5"
+                  />
+                </FormControl>
+                <FormLabel className="cursor-pointer font-normal text-slate-700">
+                  I confirm all documents on this page are correct and legible.
+                </FormLabel>
+              </div>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+      )}
     </div>
   );
 }

@@ -108,6 +108,55 @@ describe("PARENTS_INCOME (status-driven sub-tables — D3)", () => {
     expect(gapIds("PARENTS_INCOME", { parent1Income: {} })).toEqual([]);
   });
 
+  // CF-21 (A4). The zero-income household's block was diagnosed as a VALIDATION
+  // failure, not a phantom document gap. This pins the other half of that
+  // diagnosis: with every sub-block present for BOTH parents and every figure at
+  // £0 — the exact blob the form's mount-time seeding produces — the document
+  // rules emit nothing, because every PARENTS_INCOME rule is `requiredIfValueGt0`
+  // and no upload control is even rendered at £0. If a future rule is added here
+  // that fires at zero, this test fails and the zero path is blocked again.
+  it("no document rules fire for an all-zero blob — both parents (CF-21)", () => {
+    const zeroSubBlocks = {
+      employed: { annualSalaryPaye: 0 },
+      selfEmployed: {
+        grossSalaried: 0,
+        propertyIncome: 0,
+        dividends: 0,
+        otherInvestmentIncome: 0,
+      },
+      benefits: {
+        universalCredit: 0,
+        housingBenefit: 0,
+        childBenefit: 0,
+        childWorkingTaxCredit: 0,
+        esa: 0,
+        pipOrDla: 0,
+        carersAllowance: 0,
+        childcareSupport: 0,
+        other: 0,
+      },
+      unemployed: {
+        finalGrossPay: 0,
+        redundancy: 0,
+        jsa: 0,
+        grantSupport: 0,
+        leavePay: 0,
+      },
+      retired: { statePension: 0, privatePension: 0 },
+      divorcedSeparated: { maintenanceReceived: 0, sharedCustodyNote: "" },
+      thirdParty: { incomeSupportReceived: 0, supportNote: "" },
+      total: 0,
+      noIncomeConfirmed: true,
+      documentsConfirmed: false,
+    };
+    expect(
+      gapIds("PARENTS_INCOME", {
+        parent1Income: zeroSubBlocks,
+        parent2Income: zeroSubBlocks,
+      })
+    ).toEqual([]);
+  });
+
   it("employed: BOTH P60 and March payslip required when salary > 0, not when 0", () => {
     expect(
       gapIds("PARENTS_INCOME", {
