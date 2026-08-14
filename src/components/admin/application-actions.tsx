@@ -11,10 +11,9 @@
  *   SUBMITTED     → "Begin Review" (→ NOT_STARTED)
  *   NOT_STARTED   → "Request Missing Documents" (→ PAUSED) | "Mark Complete" (→ COMPLETED)
  *   PAUSED        → "Resume Review" (→ NOT_STARTED)
- *   COMPLETED     → "Set Qualifies" (→ QUALIFIES) | "Set Does Not Qualify" (→ DOES_NOT_QUALIFY)
  *
- * Outcome transitions (COMPLETED → QUALIFIES / DOES_NOT_QUALIFY) are considered
- * irreversible and therefore require an inline confirmation step.
+ * COMPLETED has no actions here (Epic 13 C3 / D13-5): the outcome is set solely
+ * by the v2 recommendation form's 3-way decision.
  */
 
 import * as React from "react";
@@ -25,23 +24,13 @@ import {
   ChevronRight,
   Loader2,
   PlayCircle,
-  XCircle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import { MissingDocsDialog } from "@/components/admin/missing-docs-dialog";
 import { RejectRestartDialog } from "@/components/admin/reject-restart-dialog";
 import {
   updateApplicationStatus,
   resumeApplication,
-  setOutcome,
 } from "@/app/(admin)/applications/[id]/actions";
 import type { Document } from "@prisma/client";
 import type { ReviewPhase } from "@/lib/applications/status";
@@ -61,81 +50,6 @@ interface ApplicationActionsProps {
   documents: Document[];
 }
 
-// ─── Outcome confirmation dialog ──────────────────────────────────────────────
-
-interface OutcomeConfirmDialogProps {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  outcome: "QUALIFIES" | "DOES_NOT_QUALIFY";
-  isPending: boolean;
-  onConfirm: () => void;
-}
-
-function OutcomeConfirmDialog({
-  open,
-  onOpenChange,
-  outcome,
-  isPending,
-  onConfirm,
-}: OutcomeConfirmDialogProps) {
-  const isQualifies = outcome === "QUALIFIES";
-
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-sm">
-        <DialogHeader>
-          <DialogTitle className="text-primary-900">
-            Confirm Outcome: {isQualifies ? "Qualifies" : "Does Not Qualify"}
-          </DialogTitle>
-          <DialogDescription>
-            {isQualifies
-              ? "This will mark the application as QUALIFIES and send the outcome email to the applicant. This action cannot be undone."
-              : "This will mark the application as DOES NOT QUALIFY and send the outcome email to the applicant. This action cannot be undone."}
-          </DialogDescription>
-        </DialogHeader>
-
-        <DialogFooter className="gap-2 sm:gap-0">
-          <Button
-            type="button"
-            variant="outline"
-            onClick={() => onOpenChange(false)}
-            disabled={isPending}
-          >
-            Cancel
-          </Button>
-          <Button
-            type="button"
-            onClick={onConfirm}
-            disabled={isPending}
-            className={
-              isQualifies
-                ? "bg-green-600 hover:bg-green-700 text-white gap-2"
-                : "bg-rose-600 hover:bg-rose-700 text-white gap-2"
-            }
-          >
-            {isPending ? (
-              <>
-                <Loader2 className="h-4 w-4 animate-spin" />
-                Saving...
-              </>
-            ) : isQualifies ? (
-              <>
-                <CheckCircle2 className="h-4 w-4" />
-                Confirm Qualifies
-              </>
-            ) : (
-              <>
-                <XCircle className="h-4 w-4" />
-                Confirm Does Not Qualify
-              </>
-            )}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
 // ─── Main component ───────────────────────────────────────────────────────────
 
 export function ApplicationActions({
@@ -147,14 +61,13 @@ export function ApplicationActions({
 
   const [isPending, startTransition] = React.useTransition();
   const [actionError, setActionError] = React.useState<string | null>(null);
-  const [confirmOutcome, setConfirmOutcome] = React.useState<
-    "QUALIFIES" | "DOES_NOT_QUALIFY" | null
-  >(null);
 
   // Hide the bar for terminal or pre-active statuses (CLOSED = unified
   // terminal state, item 2 — no state-changing actions on a closed application)
+  // and for COMPLETED, which no longer has any action here (Epic 13 C3).
   if (
     status === "PRE_SUBMISSION" ||
+    status === "COMPLETED" ||
     status === "QUALIFIES" ||
     status === "DOES_NOT_QUALIFY" ||
     status === "CLOSED"
@@ -196,20 +109,6 @@ export function ApplicationActions({
 
   function handleResumeReview() {
     runAction(() => resumeApplication(applicationId));
-  }
-
-  function handleConfirmOutcome() {
-    if (!confirmOutcome) return;
-    startTransition(async () => {
-      setActionError(null);
-      const result = await setOutcome(applicationId, confirmOutcome);
-      setConfirmOutcome(null);
-      if (!result.success) {
-        setActionError(result.error ?? "An unexpected error occurred.");
-      } else {
-        router.refresh();
-      }
-    });
   }
 
   return (
@@ -309,31 +208,6 @@ export function ApplicationActions({
                 Resume Review
               </Button>
             )}
-
-            {/* COMPLETED → Set Qualifies | Set Does Not Qualify */}
-            {status === "COMPLETED" && (
-              <>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => setConfirmOutcome("DOES_NOT_QUALIFY")}
-                  disabled={isPending}
-                  className="gap-2 border-rose-300 text-rose-700 hover:bg-rose-50 hover:border-rose-400"
-                >
-                  <XCircle className="h-4 w-4" />
-                  Set Does Not Qualify
-                </Button>
-                <Button
-                  size="sm"
-                  onClick={() => setConfirmOutcome("QUALIFIES")}
-                  disabled={isPending}
-                  className="gap-2 bg-green-600 hover:bg-green-700 text-white"
-                >
-                  <CheckCircle2 className="h-4 w-4" />
-                  Set Qualifies
-                </Button>
-              </>
-            )}
           </div>
         </div>
 
@@ -345,19 +219,6 @@ export function ApplicationActions({
           </div>
         )}
       </div>
-
-      {/* Outcome confirmation dialog (outside the actions bar so it overlays cleanly) */}
-      {confirmOutcome && (
-        <OutcomeConfirmDialog
-          open={true}
-          onOpenChange={(open) => {
-            if (!open) setConfirmOutcome(null);
-          }}
-          outcome={confirmOutcome}
-          isPending={isPending}
-          onConfirm={handleConfirmOutcome}
-        />
-      )}
     </>
   );
 }

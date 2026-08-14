@@ -232,7 +232,6 @@ ASSESSOR unless noted; run under `withUserContext` (the GDPR action uses
 | `updateApplicationStatus(id, status, ctx?)` | Generic validated transition | ADMIN/ASSESSOR | — | **`APPLICATION_STATUS_CHANGED`** |
 | `pauseApplication(id, missingSlots[], msg?)` | `→ PAUSED`, request missing docs | ADMIN/ASSESSOR | `MISSING_DOCS` | **`APPLICATION_PAUSED`** |
 | `resumeApplication(id)` | `PAUSED → NOT_STARTED` | ADMIN/ASSESSOR | — | **`APPLICATION_RESUMED`** |
-| `setOutcome(id, outcome)` | `COMPLETED → QUALIFIES \| DOES_NOT_QUALIFY` | ADMIN/ASSESSOR | `OUTCOME_QUALIFIES` / `OUTCOME_DNQ` | **`APPLICATION_OUTCOME_SET`** |
 | `assignApplicationAction(id, assessorId\|null)` | Assign / unassign an assessor | **ADMIN only** | — | **`APPLICATION_ASSESSOR_ASSIGNED`** |
 | `gdprDeleteApplicantAction(id)` | Article-17 erasure cascade (see below) | ADMIN/ASSESSOR | — | **`GDPR_DELETION`** |
 
@@ -380,12 +379,10 @@ import the constants so a typo is a compile error. Keys by area:
   `LEGACY_ACTION_ALIASES` / `LEGACY_ENTITY_TYPE_ALIASES`. When querying the raw
   table directly for reporting, match both the new key and its legacy alias for
   rows written before the change.
-- **Outcome set in two places.** `setOutcome` (applications actions) and
-  `setApplicationOutcomeAction` (recommendation actions) both move an
-  application to QUALIFIES/DOES_NOT_QUALIFY and email — but only the latter
-  creates the `BursaryAccount`, and they use different transition validation
-  and audit keys (`APPLICATION_OUTCOME_SET` vs `application.outcome.set`).
-  Confirm which path the UI invokes for a given flow before changing either.
+- **Outcome is set in exactly one place (Epic 13 C3).** The legacy
+  `setOutcome` applications action and its "Set Qualifies" / "Set Does Not
+  Qualify" buttons were removed; `setApplicationOutcomeAction` (recommendation
+  actions) is now the only writer, and it also creates the `BursaryAccount`.
 - **Rate limiting is auth-only and edge-enforced via Vercel WAF.** The
   fixed-window WAF rule throttles `/login` and `/reset-password` by IP; it does
   not fail open on a missing env var (there is none) — the only failure mode is
