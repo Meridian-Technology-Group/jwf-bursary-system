@@ -120,6 +120,15 @@ for, which is the harmful direction. D3 deliberately left it rather than guess.
 | **F10** | Family-ID slots key off array index | M | Real data-loss shape; see below |
 | **F11b** | Unmount hidden branches | L | **Only if D-A answers "no"** |
 | **F11c** | Render a control whenever it holds data, even off-branch | M | Per-form pattern, not a component change |
+| **F12** | Inline upload variant has no `<label>` | S | Accessibility; see below |
+
+### F12 · The inline upload variant is unlabelled for screen readers
+Found during F11a. `file-upload.tsx` associates a label in the block variant
+(`htmlFor` at ~:401) and the multi-file variant (~:658), but the **inline**
+variant's input (~:348) is `sr-only` with no `<label>` at all — only
+`InlineDropButton` carries an `aria-label`. A screen-reader user reaching the
+input directly gets no accessible name. Pre-existing, unrelated to the F11a
+change that surfaced it, and cheap to fix.
 
 ### F1 · Retire name masking coherently
 The codebase now contradicts itself: `getApplicationWithDetails`
