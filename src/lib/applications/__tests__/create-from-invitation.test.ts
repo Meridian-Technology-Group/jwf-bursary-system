@@ -10,8 +10,9 @@ import { ensurePrimaryContributor } from "@/lib/db/queries/contributors";
 
 // Mock the collaborators so the test exercises only the lock logic + create
 // payload, not the DB.
+// D13-1a: the generator is pure and synchronous — no `Tx`, no sequence count.
 vi.mock("@/lib/applications/reference", () => ({
-  generateApplicationReference: vi.fn(async () => "REF-TEST-0001"),
+  generateApplicationReference: vi.fn(() => "REF-TEST-0001"),
 }));
 vi.mock("@/lib/db/queries/contributors", () => ({
   ensurePrimaryContributor: vi.fn(async () => undefined),

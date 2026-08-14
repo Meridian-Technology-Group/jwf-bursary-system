@@ -8,7 +8,10 @@
 import type { Tx } from "@/lib/db/prisma";
 import type { ApplicationSectionType, Invitation } from "@prisma/client";
 import { ApplicationContributorRole } from "@prisma/client";
-import { generateApplicationReference } from "@/lib/applications/reference";
+import {
+  resolveRolloverReference,
+  type ApplicationReferenceInput,
+} from "@/lib/applications/reference";
 import { applicationCreateData } from "@/lib/applications/status";
 import { ensurePrimaryContributor } from "@/lib/db/queries/contributors";
 import {
@@ -92,6 +95,30 @@ export interface PreviousYearApplication {
 }
 
 /**
+ * The "most recent prior-round application for this account" selector, shared
+ * by `getPreviousYearApplication` and `getPreviousYearReferenceSource` so the
+ * reference a rollover inherits always comes from the same application whose
+ * sections it pre-populates from. Keep the two callers on this one definition.
+ *
+ * PR-6a: "reached submission" is form_status SUBMITTED (the lifecycle
+ * equivalent of the old fused SUBMITTED/COMPLETED/QUALIFIES/DNQ set), not the
+ * deprecated fused applications.status.
+ */
+function previousYearApplicationQuery(
+  bursaryAccountId: string,
+  currentRoundId: string
+) {
+  return {
+    where: {
+      bursaryAccountId,
+      roundId: { not: currentRoundId },
+      formStatus: "SUBMITTED" as const,
+    },
+    orderBy: { submittedAt: "desc" as const },
+  };
+}
+
+/**
  * Returns the most recent application for a bursary account that is NOT in
  * the current round. Includes section data and assessment snapshot for
  * year-on-year comparison.
@@ -102,15 +129,7 @@ export async function getPreviousYearApplication(
   currentRoundId: string
 ): Promise<PreviousYearApplication | null> {
   const application = await tx.application.findFirst({
-    where: {
-      bursaryAccountId,
-      roundId: { not: currentRoundId },
-      // PR-6a: "reached submission" is form_status SUBMITTED (the lifecycle
-      // equivalent of the old fused SUBMITTED/COMPLETED/QUALIFIES/DNQ set), not
-      // the deprecated fused applications.status.
-      formStatus: "SUBMITTED",
-    },
-    orderBy: { submittedAt: "desc" },
+    ...previousYearApplicationQuery(bursaryAccountId, currentRoundId),
     select: {
       id: true,
       reference: true,
@@ -165,6 +184,47 @@ export async function getPreviousYearApplication(
             application.assessment.schoolingYearsRemaining ?? null,
         }
       : null,
+  };
+}
+
+// ─── getPreviousYearReferenceSource ───────────────────────────────────────────
+
+/**
+ * The prior-year application as `resolveRolloverReference` needs to see it: its
+ * current reference plus the four facts that determined its OWN default label.
+ * Recomputing that default and comparing is how an untouched default is told
+ * apart from a human-entered fees-system code (D13-1a, Q5) — no audit lookup,
+ * no extra column.
+ *
+ * Deliberately narrow and separate from `getPreviousYearApplication`, which is
+ * the heavyweight sections+assessment read used by the year-on-year comparison
+ * UI. Both use `previousYearApplicationQuery`, so they always resolve to the
+ * same application.
+ */
+export async function getPreviousYearReferenceSource(
+  tx: Tx,
+  bursaryAccountId: string,
+  currentRoundId: string
+): Promise<(ApplicationReferenceInput & { reference: string }) | null> {
+  const prior = await tx.application.findFirst({
+    ...previousYearApplicationQuery(bursaryAccountId, currentRoundId),
+    select: {
+      reference: true,
+      childName: true,
+      school: true,
+      entryYearGroup: true,
+      round: { select: { academicYear: true } },
+    },
+  });
+
+  if (!prior) return null;
+
+  return {
+    reference: prior.reference,
+    childName: prior.childName,
+    school: prior.school,
+    entryYearGroup: prior.entryYearGroup,
+    academicYear: prior.round.academicYear,
   };
 }
 
@@ -336,11 +396,31 @@ export async function createReassessmentApplicationFromInvitation(
     where: { id: roundId },
     select: { academicYear: true },
   });
-  const reference = await generateApplicationReference(
+
+  // D13-1a / Q5: a ROLLING_OVER application INHERITS the prior year's
+  // reference, because once it has been edited to the external fees-system
+  // code that code is what reconciliation depends on. It is regenerated only
+  // when the prior reference is still the untouched default — inheriting that
+  // verbatim would drag a stale academic year onto the new year's application.
+  // The decision itself is pure (`resolveRolloverReference`); all this does is
+  // feed it the prior application's own reference-defining facts.
+  //
+  // `entryYearGroup` is passed as null on purpose: this create does not persist
+  // one (only `entryYear`), so the label is built from exactly the fields the
+  // row will hold — which is what keeps next year's recompute-and-compare
+  // consistent. Populating `entryYearGroup` on rollovers would also feed the
+  // schooling-years calculation, so it is deliberately left to a separate change.
+  const prior = await getPreviousYearReferenceSource(
     tx,
-    school,
-    round?.academicYear ?? ""
+    bursaryAccountId,
+    roundId
   );
+  const reference = resolveRolloverReference(prior, {
+    childName,
+    school,
+    entryYearGroup: null,
+    academicYear: round?.academicYear,
+  });
 
   const application = await tx.application.create({
     data: {

@@ -75,11 +75,12 @@ export async function createFirstYearApplicationFromSource(
     select: { academicYear: true },
   });
 
-  const reference = await generateApplicationReference(
-    tx,
-    source.school!,
-    round?.academicYear ?? ""
-  );
+  const reference = generateApplicationReference({
+    childName: source.childName,
+    school: source.school,
+    entryYearGroup: source.entryYearGroup,
+    academicYear: round?.academicYear,
+  });
 
   const application = await tx.application.create({
     data: {
@@ -141,8 +142,10 @@ export interface RejectedApplicationSource {
  * rejected application cannot coexist with its replacement, so it is
  * hard-deleted (the row's cascades remove its sections, contributors,
  * documents, assessment and invitations) and the new application REUSES the old
- * `reference` — freed by the delete, and avoiding a sequence collision in the
- * count-based `generateApplicationReference`.
+ * `reference`. The reuse is deliberate continuity, not a uniqueness workaround:
+ * since D13-1a the reference is a non-unique label, so a restart could equally
+ * regenerate one — but the applicant has already been told this reference, and
+ * a restart is the same child in the same round.
  *
  * Storage objects are NOT removed here — the DB cascade only drops the Document
  * rows. The caller captures each `storagePath` BEFORE calling this and deletes
