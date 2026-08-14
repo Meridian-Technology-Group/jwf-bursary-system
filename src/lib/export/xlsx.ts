@@ -18,7 +18,14 @@ interface ColumnDef {
 }
 
 const COLUMNS: ColumnDef[] = [
-  { header: "Reference", key: "reference", width: 18 },
+  // D13-1a: the reference is a free-text label (default
+  // `{Child} – {School} – {Year group} – {Academic year}`, routinely re-edited
+  // to the fees-system code), so it is wide and the child's name follows it as
+  // its own sortable columns. `childFirstName`/`childLastName` were already on
+  // `ExportRow` — they simply had no column.
+  { header: "Reference", key: "reference", width: 44 },
+  { header: "Child First Name", key: "childFirstName", width: 18 },
+  { header: "Child Last Name", key: "childLastName", width: 20 },
   { header: "School", key: "school", width: 12 },
   { header: "Family Synopsis", key: "familySynopsis", width: 40 },
   { header: "Accommodation", key: "accommodationType", width: 22 },
@@ -124,6 +131,8 @@ export async function buildXlsxBuffer(rows: ExportRow[]): Promise<Buffer> {
   rows.forEach((row) => {
     const addedRow = sheet.addRow({
       reference: row.reference,
+      childFirstName: row.childFirstName,
+      childLastName: row.childLastName,
       school: row.school,
       familySynopsis: row.familySynopsis,
       accommodationType: row.accommodationType,

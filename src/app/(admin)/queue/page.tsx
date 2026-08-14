@@ -245,10 +245,10 @@ export default async function QueuePage({
           : Promise.resolve([]),
       ]);
 
-      // Lead applicant name + email are shown as first-class columns (they are
-      // no longer behind a per-session reveal toggle). Fetch them for exactly
-      // the applications the viewer can see and write ONE audit entry per page
-      // load so the GDPR name-disclosure trail is preserved.
+      // Child name + lead applicant name/email are shown as first-class columns
+      // (they are no longer behind a per-session reveal toggle). Fetch them for
+      // exactly the applications the viewer can see and write ONE audit entry
+      // per page load so the GDPR name-disclosure trail is preserved.
       const nameRows =
         applications.length > 0
           ? await getApplicationNames(
@@ -261,7 +261,7 @@ export default async function QueuePage({
           userId: profile.id,
           action: AUDIT_ACTIONS.NAME_REVEAL,
           entityType: AUDIT_ENTITY_TYPES.Application,
-          context: "Applications list — lead applicant names shown",
+          context: "Applications list — child + lead applicant names shown",
           metadata: {
             applicationIds: nameRows.map((n) => n.id),
             count: nameRows.length,
@@ -270,6 +270,10 @@ export default async function QueuePage({
       }
       const names = nameRows.map((n) => ({
         id: n.id,
+        // D13-1a: rendered beside the reference, which is a free-text label and
+        // may have been re-edited to the fees-system code. Already inside the
+        // single NAME_REVEAL audit entry written above.
+        childName: n.childName,
         leadApplicantName:
           [n.leadApplicant.firstName, n.leadApplicant.lastName]
             .filter(Boolean)

@@ -546,6 +546,47 @@ export async function getApplicationNamesForReveal(
   return application;
 }
 
+/**
+ * Fetches JUST the child's name for the application-detail header, writing a
+ * NAME_REVEAL audit entry — the same GDPR trail the queue and the Applicant
+ * Data tab keep.
+ *
+ * Why this exists (Epic 13, D13-1a): `Application.reference` is now a free-text
+ * label that is routinely re-edited to the external fees-system code, at which
+ * point it identifies nothing to a human. The child's name therefore renders
+ * beside the reference on every admin surface — including the assessment
+ * workspace, which previously excluded it. That exclusion is deliberately
+ * retired for the child's name only: the default reference format embeds the
+ * child's name anyway, so withholding it from the header alongside it would be
+ * theatre. Lead-applicant names remain behind `getApplicationNamesForReveal`.
+ *
+ * Returns null when the application does not exist; writes no audit entry in
+ * that case.
+ */
+export async function getApplicationChildNameForHeader(
+  tx: Tx,
+  applicationId: string,
+  userId: string
+): Promise<string | null> {
+  const application = await tx.application.findUnique({
+    where: { id: applicationId },
+    select: { childName: true },
+  });
+
+  if (!application) return null;
+
+  await createAuditLog(tx, {
+    userId,
+    action: AUDIT_ACTIONS.NAME_REVEAL,
+    entityType: AUDIT_ENTITY_TYPES.Application,
+    entityId: applicationId,
+    context: "Application header — child name shown beside the reference",
+    metadata: { applicationId },
+  });
+
+  return application.childName;
+}
+
 // ─── Round list (for filter dropdown) ────────────────────────────────────────
 
 export async function listRounds(

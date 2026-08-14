@@ -10,7 +10,10 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { requireRole, Role } from "@/lib/auth/roles";
-import { getApplicationWithDetails } from "@/lib/db/queries/applications";
+import {
+  getApplicationWithDetails,
+  getApplicationChildNameForHeader,
+} from "@/lib/db/queries/applications";
 import { getSecondaryContributor } from "@/lib/db/queries/contributors";
 import { getPriorYearSecondaryContributor } from "@/lib/db/queries/reassessment";
 import { listAssessors } from "@/lib/db/queries/profiles";
@@ -105,6 +108,7 @@ export default async function ApplicationDetailLayout({
     secondaryOverride,
     priorYearSecondary,
     closeReasons,
+    childName,
   } = await withUserContext(
     user.id,
     user.role as RlsRole,
@@ -145,8 +149,19 @@ export default async function ApplicationDetailLayout({
           ? await getPriorYearSecondaryContributor(tx, params.id)
           : null;
 
+      // D13-1a: the child's name renders beside the reference in the header,
+      // which is shared by every tab (including Assessment). Audited as a
+      // NAME_REVEAL like every other name disclosure. Skipped when the viewer
+      // is an unassigned ASSESSOR — they are about to be redirected, and an
+      // audit entry claiming a disclosure that never rendered would be false.
+      const child =
+        app && ok
+          ? await getApplicationChildNameForHeader(tx, params.id, user.id)
+          : null;
+
       return {
         application: app,
+        childName: child,
         assessors: asrs,
         assignedOk: ok,
         secondary: sec,
@@ -234,6 +249,13 @@ export default async function ApplicationDetailLayout({
                   />
                 )}
               </h1>
+              {/* D13-1a: the reference is a free-text label, routinely re-edited
+                  to the fees-system code, so the child's name sits beside it. */}
+              {childName && (
+                <span className="text-lg font-medium text-slate-600">
+                  {childName}
+                </span>
+              )}
               <SchoolBadge school={application.school} />
             </div>
             <div className="flex flex-wrap items-center gap-3 text-sm text-slate-500">

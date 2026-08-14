@@ -124,7 +124,10 @@ export async function getExportRows(
         },
       },
     },
-    orderBy: { reference: "asc" },
+    // D13-1a: `reference` is no longer unique, so it is not a total order on
+    // its own — two rows sharing a fees-system code would swap places between
+    // exports. `id` breaks the tie so the sheet is byte-stable run to run.
+    orderBy: [{ reference: "asc" }, { id: "asc" }],
   });
 
   return rows.map(mapExportRow);
