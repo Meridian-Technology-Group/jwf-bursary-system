@@ -275,10 +275,11 @@ handler) and apply to parent 2's fields. Do not fork the logic.
 #### A6 · Remove year of entry from applicant input entirely · M
 **CF-23** · **Q1 answered 2026-08-14 (Brian)** · no migration
 
-> **Q1 decision.** Year of entry stays relevant to the *application* but must not
-> be something the applicant can enter, update or change — **including
-> validation**. The `Application.entryYear` / `entryYearGroup` columns, set
-> admin-side, become the sole source.
+> **Q1 decision (Brian, 2026-08-14).** Year of entry is a property of the
+> application but is **JWF-facing only**. The applicant must not be able to
+> enter, update or change it — **including validation** — and must not be shown
+> it either. The `Application.entryYear` / `entryYearGroup` columns, set
+> admin-side, are the sole source and are rendered on admin surfaces only.
 
 The field is already absent from the form UI (`child-details-form.tsx` has no
 `entryYear` reference at all), but residue remains in five places:
@@ -293,13 +294,20 @@ The field is already absent from the form UI (`child-details-form.tsx` has no
   Remove the blob read. **Safe:** the expression is
   `application.entryYearGroup ?? childEntryYearGroup`, so an admin-set column
   already wins and cannot be clobbered.
-- `src/app/(portal)/apply/review/page.tsx:131-140` and
-  `src/app/(portal)/schedule/page.tsx:43` — read the blob for display; switch to
-  the `Application` columns, matching `application-summary.ts:124-147`.
-- `src/lib/portal/application-summary.ts:132` — `entry?.entryYearGroup ??
-  d.entryYearGroup` keeps a blob fallback; drop the fallback.
-  `section-page-client.tsx:273` carries an `entryYearGroup: undefined` shim to
+- **Applicant-facing displays are removed outright, not re-pointed** (JWF-facing
+  only). Drop the "Year of entry" row from `renderChildDetails`
+  (`src/app/(portal)/apply/review/page.tsx:131-140`), from
+  `src/app/(portal)/schedule/page.tsx:43`, and from
+  `src/lib/portal/application-summary.ts:124-147` — the `yearOfEntry` builder
+  and its `entry?.entryYearGroup ?? d.entryYearGroup` blob fallback both go.
+  Verified `application-summary.ts` has **only** applicant-facing consumers
+  (`submitted-summary.tsx`, `submission-loader.ts`, `submission-pdf.tsx`), so
+  removing the row there cannot strip it from an admin screen. It also drops
+  out of the submission PDF, which is correct — that is the applicant's copy.
+- `section-page-client.tsx:273` carries an `entryYearGroup: undefined` shim to
   clear as well.
+- Admin surfaces keep rendering the columns unchanged — the assessment engine
+  (`schooling-years.ts`), reports and exports are unaffected.
 
 **⚠️ This creates a dependency the epic did not anticipate.** Once the blob
 fallback goes, the column is the only source — and **the invite path does not
@@ -308,7 +316,8 @@ require it**: `src/lib/applications/create-from-invitation.ts:95` writes
 optional. The data shows the consequence — on nonprod, **only 8 of 35
 applications have `entry_year_group` set, and 3 of the NULLs are already
 submitted** (checked 2026-08-14). Only `internal-request-dialog.tsx:76` treats
-it as mandatory today.
+it as mandatory today. **The data half is already resolved** (see below); the
+code half is not.
 
 So this WP must also:
 
@@ -317,15 +326,25 @@ So this WP must also:
   `z.enum` treatment `internal-request-dialog.tsx` already uses.
   `src/lib/contacts/contact-helpers.ts:37` already flags a missing entry year in
   its completeness check, so the contact model expects it.
-- **Backfill the existing NULLs** as a data task before the fallback is removed,
-  prioritising the 3 submitted applications. Not a migration — a one-off script
-  or admin edit; confirm the intended values with Charlotte rather than
-  guessing.
+- ~~Backfill the existing NULLs~~ — **DONE on nonprod, 2026-08-14.** All 35
+  applications now carry both columns (was 8/35 group, 12/35 year). Rule used,
+  per Brian's "infer from the round": `entry_year` ← the round's academic-year
+  start (`academicYear.slice(0,4)`, the same rule `submission.ts:322` applies at
+  submit); `entry_year_group` ← `Y7`, the standard senior entry point.
+  `coalesce` guarded, so pre-existing values (`OTHER`, `Y6`, `Y9`, `Y12`) were
+  left untouched. Not production data — prod is unaffected and the columns are
+  not in the prod schema path for this epic.
 
-**Done when:** no applicant-facing schema, type or validation path mentions
-entry year; the review and schedule pages show the admin-set value; a new
-admin-created application cannot be created without one; the nonprod NULLs are
-resolved.
+  > DOB-derivation was considered and rejected: against this data's entry years
+  > it yields out-of-enum groups (Y5/Y8) for 3 of the 5 real rows, and `OTHER`
+  > is worse still — `schooling-years.ts:107` documents that `OTHER` has no
+  > defined total, so it would break the very assessments this backfill exists
+  > to protect. Uniform `Y7` is in-enum and safe. Any specific scenario Charlotte
+  > needs can be set through the admin UI.
+
+**Done when:** no applicant-facing schema, type, validation path **or display**
+mentions entry year; the columns still render on admin surfaces; a new
+admin-created application cannot be created without one.
 
 #### A7 · Plain submission-failure message · S
 **CF-25** · no migration
@@ -772,7 +791,7 @@ the policy ships in the same PR (see §2).
 
 | Q | CF | Question | Answer | Affects |
 |---|---|---|---|---|
-| Q1 | 23 | Is year of entry still parent-entered? | **Remove it from applicant input entirely, including validation.** It stays relevant to the application but must not be applicant-editable; the admin-set columns are the sole source | A6 — grew from S to M, see the invite/backfill dependency there |
+| Q1 | 23 | Is year of entry still parent-entered? | **Remove it from applicant input entirely, including validation — and from applicant-facing display.** It remains a property of the application but is JWF-facing only | A6 — grew from S to M; nonprod backfill already done |
 | Q2 | 30 | Loan agreement always, or only when declared? | **Only when a loan is declared** | D3 — `requiredIfValueGt0` |
 | Q3 | 27 | Accept the one-time-PDF support consequence? | **Build it regardless** | D1 — no client gate |
 | Q4 | 12 | Rolling-over deadline: global per round or per-school? | **One global date per round, defaulting to April** | E1 — two date columns, no per-school structure |
