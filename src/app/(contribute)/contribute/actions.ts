@@ -26,6 +26,7 @@ import { revalidatePath } from "next/cache";
 import { ApplicationSectionType, ApplicationContributorStatus } from "@prisma/client";
 import { getCurrentUser, type CurrentUser } from "@/lib/auth/roles";
 import { sectionSchemaMap } from "@/lib/schemas";
+import { secondaryParentDetailsSchema } from "@/lib/schemas/parent-details";
 import {
   getSectionStatusList,
   getSectionData,
@@ -126,7 +127,16 @@ export async function saveSection(
   }
   const { user, ctx } = resolved;
 
-  const schema = sectionSchemaMap[section];
+  // PARENT_DETAILS must use the SECONDARY schema here, matching what the
+  // contribute client renders and validates against: that form runs in
+  // `secondaryMode`, so the Parent 2 block is never shown. The lead schema in
+  // `sectionSchemaMap` requires Parent 2 for any coupled relationship status,
+  // which would reject the save for fields the contributor's form does not
+  // render — an unresolvable dead end (CF-17 defect class).
+  const schema =
+    section === "PARENT_DETAILS"
+      ? secondaryParentDetailsSchema
+      : sectionSchemaMap[section];
   if (!schema) {
     return { success: false, errors: [`Unknown section: ${section}`] };
   }

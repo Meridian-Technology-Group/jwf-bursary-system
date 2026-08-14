@@ -13,6 +13,7 @@ import { describe, expect, it } from "vitest";
 import {
   COUPLED_RELATIONSHIP_STATUSES,
   parentDetailsSchema,
+  secondaryParentDetailsSchema,
 } from "@/lib/schemas/parent-details";
 
 const contact = {
@@ -87,4 +88,27 @@ describe("CF-17 — Cohabiting validates as Married", () => {
   it("a completed cohabiting household passes the parent/guardian step", () => {
     expect(requiredFieldSet("COHABITING", false, true)).toEqual([]);
   });
+});
+
+/**
+ * The contribute (second parent) flow renders the parent form in
+ * `secondaryMode`, so the Parent 2 block is never shown. Its save action must
+ * therefore validate with the SECONDARY schema — the lead schema would require
+ * Parent 2 for any coupled status, rejecting the save for fields the
+ * contributor's form does not render.
+ */
+describe("secondary schema never requires Parent 2", () => {
+  it.each([...COUPLED_RELATIONSHIP_STATUSES])(
+    "%s is accepted from a second parent with no Parent 2 block",
+    (relationshipStatus) => {
+      const result = secondaryParentDetailsSchema.safeParse({
+        // The contribute flow holds the second parent at sole-parent = true.
+        isSoleParent: true,
+        relationshipStatus,
+        parent1Contact: contact,
+        parent1Employment: employment,
+      });
+      expect(result.success).toBe(true);
+    }
+  );
 });

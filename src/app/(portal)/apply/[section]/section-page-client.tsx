@@ -23,6 +23,7 @@ import {
   isLegacyIncomeRecord,
   normaliseLegacyIncomeRecord,
 } from "@/lib/portal/income-model";
+import { parentDetailsDefaultValues } from "@/lib/portal/parent-details-defaults";
 import { saveSection, submitApplication } from "../actions";
 import type { SaveSectionResult } from "../actions";
 
@@ -285,12 +286,7 @@ function getDefaultValues(
       };
     }
     case "PARENT_DETAILS":
-      return {
-        isSoleParent: undefined,
-        relationshipStatus: undefined,
-        parent1Contact: { title: undefined, firstName: "", lastName: "", addressLine1: "", city: "", postcode: "", country: "" },
-        parent1Employment: { status: undefined },
-      };
+      return parentDetailsDefaultValues();
     case "DEPENDENT_CHILDREN":
       return { numberOfDependentChildren: 0, children: [] };
     case "DEPENDENT_ELDERLY":
