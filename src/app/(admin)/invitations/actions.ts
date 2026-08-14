@@ -44,6 +44,7 @@ import { createAuditLog } from "@/lib/audit/log";
 import { prepopulateReassessment, getPreviousYearApplication } from "@/lib/db/queries/reassessment";
 import { ensurePrimaryContributor } from "@/lib/db/queries/contributors";
 import { applicationCreateData } from "@/lib/applications/status";
+import { generateApplicationReference } from "@/lib/applications/reference";
 import { listOpenRounds } from "@/lib/db/queries/reports";
 
 import { AUDIT_ACTIONS, AUDIT_ENTITY_TYPES } from "@/lib/audit/actions";
@@ -1014,8 +1015,23 @@ export async function createReassessmentApplicationAction(
         return { success: false as const, error: "Bursary account not found." };
       }
 
-      // Generate reference
-      const reference = `REA-${account.reference}-${roundId.slice(0, 8).toUpperCase()}`;
+      // Reference (Epic 13, C4a/C4b). This used to be
+      // `REA-${account.reference}-${roundId.slice(0,8)}` — built from the
+      // bursary account's own `BA-…` code, which no longer exists, and opaque
+      // to everyone who read it. It now uses the same readable default every
+      // other creation path uses ("Bob Smith – Trinity School – Year 6 –
+      // 2027-28"), and stays freely editable afterwards.
+      const round = await tx.round.findUnique({
+        where: { id: roundId },
+        select: { academicYear: true },
+      });
+
+      const reference = generateApplicationReference({
+        childName: account.childName,
+        school: account.school,
+        entryYearGroup: account.entryYearGroup,
+        academicYear: round?.academicYear,
+      });
 
       // Create the re-assessment application
       const application = await tx.application.create({

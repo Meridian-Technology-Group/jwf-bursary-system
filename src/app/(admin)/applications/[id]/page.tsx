@@ -24,7 +24,6 @@ import { getScheduleForAccount, type ScheduleEntryRow } from "@/lib/db/queries/s
 import { getYoyFinancialsRows } from "@/lib/db/queries/assessments";
 import type { YoyFinancialsTableRow } from "@/lib/assessment/yoy-financials";
 import { ScheduleGrid } from "@/components/admin/schedule-grid";
-import { FeesAccountCodeField } from "@/components/admin/fees-account-code-field";
 import { YoyFinancialsTable } from "@/components/admin/yoy-financials-table";
 import {
   Card,
@@ -305,7 +304,6 @@ export default async function ApplicantDataPage({ params }: Props) {
     contributors,
     scheduleEntries,
     accountStatus,
-    feesAccountCode,
     yoyRows,
   } = await withUserContext(user.id, user.role as RlsRole, async (tx) => {
     const app = await getApplicationWithDetails(tx, params.id);
@@ -317,7 +315,6 @@ export default async function ApplicantDataPage({ params }: Props) {
         contributors: [],
         scheduleEntries: [] as ScheduleEntryRow[],
         accountStatus: null as BursaryAccountStatus | null,
-        feesAccountCode: null as string | null,
         yoyRows: [] as YoyFinancialsTableRow[],
       };
     const siblings = app.bursaryAccountId
@@ -329,7 +326,7 @@ export default async function ApplicantDataPage({ params }: Props) {
     const account = app.bursaryAccountId
       ? await tx.bursaryAccount.findUnique({
           where: { id: app.bursaryAccountId },
-          select: { status: true, feesAccountCode: true },
+          select: { status: true },
         })
       : null;
     // CALC-10 — YoY financials history (read-only projection over the
@@ -346,7 +343,6 @@ export default async function ApplicantDataPage({ params }: Props) {
       contributors: ctribs,
       scheduleEntries: schedule,
       accountStatus: account?.status ?? null,
-      feesAccountCode: account?.feesAccountCode ?? null,
       yoyRows: yoy,
     };
   });
@@ -442,16 +438,8 @@ export default async function ApplicantDataPage({ params }: Props) {
           </p>
         </div>
 
-        {/* CALC-10 — fees account code + YoY financials history */}
-        {bursaryAccountId && (
-          <AccountAdminSection
-            accountId={bursaryAccountId}
-            applicationId={application.id}
-            feesAccountCode={feesAccountCode}
-            yoyRows={yoyRows}
-            canEdit={isAssessor}
-          />
-        )}
+        {/* CALC-10 — YoY financials history */}
+        {bursaryAccountId && <AccountAdminSection yoyRows={yoyRows} />}
 
         {/* Forward schedule — shown when the account is linked (Epic 10) */}
         {bursaryAccountId && (
@@ -573,16 +561,8 @@ export default async function ApplicantDataPage({ params }: Props) {
         );
       })}
 
-      {/* CALC-10 — fees account code + YoY financials history */}
-      {bursaryAccountId && (
-        <AccountAdminSection
-          accountId={bursaryAccountId}
-          applicationId={application.id}
-          feesAccountCode={feesAccountCode}
-          yoyRows={yoyRows}
-          canEdit={isAssessor}
-        />
-      )}
+      {/* CALC-10 — YoY financials history */}
+      {bursaryAccountId && <AccountAdminSection yoyRows={yoyRows} />}
 
       {/* Forward schedule — only when the application has a bursary account (Epic 10) */}
       {bursaryAccountId && (
@@ -659,41 +639,29 @@ function SiblingSection({
 
 // ─── Account Admin Section (CALC-10) ───────────────────────────────────────────
 
+/**
+ * Epic 13 (C4b / D13-1a): this section used to pair the fees-account-code
+ * editor with the YoY history. The account no longer exposes any identifier —
+ * reconciliation against the fees system happens on `Application.reference` —
+ * so only the read-only YoY projection remains, and the section needs neither
+ * the account id nor an edit permission.
+ */
 interface AccountAdminSectionProps {
-  accountId: string;
-  applicationId: string;
-  feesAccountCode: string | null;
   yoyRows: YoyFinancialsTableRow[];
-  /** ADMIN/ASSESSOR can edit the fees account code; VIEWER sees read-only text. */
-  canEdit: boolean;
 }
 
-function AccountAdminSection({
-  accountId,
-  applicationId,
-  feesAccountCode,
-  yoyRows,
-  canEdit,
-}: AccountAdminSectionProps) {
+function AccountAdminSection({ yoyRows }: AccountAdminSectionProps) {
   return (
     <section
       aria-labelledby="account-admin-heading"
       className="space-y-3 rounded-xl border border-slate-200 bg-white p-5 shadow-sm"
     >
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2
-          id="account-admin-heading"
-          className="text-sm font-semibold text-slate-700"
-        >
-          Account Admin
-        </h2>
-        <FeesAccountCodeField
-          accountId={accountId}
-          applicationId={applicationId}
-          feesAccountCode={feesAccountCode}
-          readOnly={!canEdit}
-        />
-      </div>
+      <h2
+        id="account-admin-heading"
+        className="text-sm font-semibold text-slate-700"
+      >
+        Account Admin
+      </h2>
 
       {/* CALC-10 — YoY financials history table, mirroring the workbook's
           per-assessment-year comparison (gap-analysis.md §2.2 rows 195–203). */}

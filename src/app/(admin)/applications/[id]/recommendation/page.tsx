@@ -188,7 +188,7 @@ export default async function RecommendationPage({ params }: Props) {
   const siblingContext: SiblingContextRow[] = siblingLinks
     .filter((l) => l.bursaryAccountId !== application.bursaryAccountId)
     .map((l) => ({
-      reference: l.bursaryAccount.reference,
+      bursaryAccountId: l.bursaryAccountId,
       childName: l.bursaryAccount.childName,
       school: l.bursaryAccount.school,
       priorityOrder: l.priorityOrder,

@@ -41,7 +41,8 @@ export interface SiblingListItem {
     id: string;
     childName: string;
     school: string;
-    reference: string;
+    /** D13-1a: replaces the removed account reference as the disambiguator. */
+    entryYear: number;
     latestPayableFees: number | null;
   };
 }
@@ -286,7 +287,9 @@ export function SiblingList({
                   <div className="flex flex-wrap items-center gap-1 mt-0.5 text-xs text-slate-500">
                     <span>{SCHOOL_LABELS[sibling.bursaryAccount.school] ?? sibling.bursaryAccount.school}</span>
                     <ChevronRight className="h-3 w-3 text-slate-300" aria-hidden="true" />
-                    <span>{sibling.bursaryAccount.reference}</span>
+                    {/* D13-1a: no account reference — the entry year sits
+                        beside the school as the disambiguator. */}
+                    <span>Entered {sibling.bursaryAccount.entryYear}</span>
                     {sibling.bursaryAccount.latestPayableFees !== null && (
                       <>
                         <ChevronRight className="h-3 w-3 text-slate-300" aria-hidden="true" />

@@ -167,7 +167,15 @@ export const AUDIT_ACTIONS = {
   SCHEDULE_SHOW_ON_PORTAL_TOGGLED: "SCHEDULE_SHOW_ON_PORTAL_TOGGLED",
   /** Assessor/admin closed (withdrew) a bursary account at account level (gap F1). */
   BURSARY_ACCOUNT_WITHDRAWN: "BURSARY_ACCOUNT_WITHDRAWN",
-  /** CALC-10 — the account's fees-account code field was edited. */
+  /**
+   * CALC-10 — the account's fees-account code field was edited.
+   *
+   * **RETIRED, deliberately kept.** Epic 13 (C4b / D13-1a) dropped
+   * `BursaryAccount.feesAccountCode` and deleted its editor, so nothing writes
+   * this action any more. It stays defined because `audit_logs` is append-only:
+   * historic rows still carry the string, and removing the constant would leave
+   * them unlabelled (and uncoloured) in the audit UI. Do not add new writers.
+   */
   BURSARY_ACCOUNT_FEES_CODE_UPDATED: "BURSARY_ACCOUNT_FEES_CODE_UPDATED",
 } as const;
 

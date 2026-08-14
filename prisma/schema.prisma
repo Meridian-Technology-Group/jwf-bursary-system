@@ -66,9 +66,16 @@ model Round {
 }
 
 /// A persistent account per child, spanning multiple assessment years.
+///
+/// Epic 13, D13-1a: the account is an INTERNAL container for awarded
+/// applicants and exposes NO reference or ID to the user — its identity is
+/// this UUID primary key, and the one user-facing label lives on
+/// `Application.reference`. The former `reference` (`BA-…`) and CALC-10
+/// `feesAccountCode` columns were dropped by
+/// `20260814140000_bursary_account_drop_identifiers`; sibling-picker and
+/// report surfaces show `childName` instead.
 model BursaryAccount {
   id                   String                 @id @default(uuid()) @db.Uuid
-  reference            String                 @unique
   school               School
   childName            String                 @map("child_name")
   childDob             DateTime?              @map("child_dob") @db.Date
@@ -80,10 +87,6 @@ model BursaryAccount {
   /// before the schedule landed.
   scheduleYears        Int?                   @map("schedule_years")
   benchmarkPayableFees Decimal?               @map("benchmark_payable_fees") @db.Decimal(10, 2)
-  /// CALC-10 — recipient's fees-account code (workbook §3.16 "Assessor's
-  /// wizard" admin page), e.g. the school finance system's billing reference
-  /// for this account. Free-text, ADMIN/ASSESSOR-editable, additive/nullable.
-  feesAccountCode      String?                @map("fees_account_code")
   leadApplicantId      String                 @map("lead_applicant_id") @db.Uuid
   status               BursaryAccountStatus   @default(ACTIVE)
   closedAt             DateTime?              @map("closed_at") @db.Timestamptz(6)

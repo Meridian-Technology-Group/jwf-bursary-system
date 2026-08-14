@@ -61,7 +61,7 @@ export async function withdrawBursaryAccount(
       async (tx) => {
         const account = await tx.bursaryAccount.findUnique({
           where: { id: input.accountId },
-          select: { id: true, status: true, reference: true },
+          select: { id: true, status: true, childName: true },
         });
         if (!account) {
           return { success: false as const, error: "Bursary account not found." };
@@ -82,7 +82,10 @@ export async function withdrawBursaryAccount(
           action: AUDIT_ACTIONS.BURSARY_ACCOUNT_WITHDRAWN,
           entityType: AUDIT_ENTITY_TYPES.BursaryAccount,
           entityId: account.id,
-          context: `Bursary account ${account.reference} withdrawn (closed)`,
+          // Epic 13 (D13-1a): the account no longer carries a reference, so
+          // audit context names the child instead — the account's only
+          // human-recognisable identifier.
+          context: `Bursary account for ${account.childName} withdrawn (closed)`,
           metadata: { accountId: account.id, reason },
         });
 
@@ -98,58 +101,17 @@ export async function withdrawBursaryAccount(
   }
 }
 
-// ─── updateFeesAccountCodeAction (CALC-10) ────────────────────────────────────
-
-/**
- * CALC-10 — recipient's fees-account code (workbook §3.16 "Assessor's
- * wizard" admin page). A small free-text field on the bursary account,
- * ADMIN/ASSESSOR-editable, no lifecycle-state gate. Also displayed
- * (read-only) on the assessment page's header context. Blank input clears
- * the field (stored as `null`).
- */
-export async function updateFeesAccountCodeAction(
-  accountId: string,
-  applicationId: string,
-  feesAccountCode: string
-): Promise<{ success: true } | { success: false; error: string }> {
-  try {
-    const user = await requireRole([Role.ADMIN, Role.ASSESSOR]);
-    const value = feesAccountCode.trim().length > 0 ? feesAccountCode.trim() : null;
-
-    const result = await withUserContext(user.id, user.role as RlsRole, async (tx) => {
-      const account = await tx.bursaryAccount.findUnique({
-        where: { id: accountId },
-        select: { id: true, reference: true },
-      });
-      if (!account) {
-        return { success: false as const, error: "Bursary account not found." };
-      }
-
-      await tx.bursaryAccount.update({
-        where: { id: accountId },
-        data: { feesAccountCode: value },
-      });
-
-      await createAuditLog(tx, {
-        userId: user.id,
-        action: AUDIT_ACTIONS.BURSARY_ACCOUNT_FEES_CODE_UPDATED,
-        entityType: AUDIT_ENTITY_TYPES.BursaryAccount,
-        entityId: account.id,
-        context: `Fees account code updated for ${account.reference}`,
-        metadata: { accountId: account.id, feesAccountCode: value },
-      });
-
-      return { success: true as const };
-    });
-
-    if (!result.success) return result;
-
-    revalidatePath(`/applications/${applicationId}`);
-    revalidatePath(`/applications/${applicationId}/assessment`);
-
-    return { success: true };
-  } catch (err) {
-    console.error("[updateFeesAccountCodeAction]", err);
-    return { success: false, error: "Failed to update the fees account code." };
-  }
-}
+// ─── updateFeesAccountCodeAction — REMOVED (Epic 13, C4b / D13-1a) ────────────
+//
+// CALC-10's fees-account code lived on `BursaryAccount.feesAccountCode` so an
+// awarded account could be reconciled against the school finance system. That
+// job now belongs to `Application.reference`, which C4a made free-text and
+// re-editable after award for exactly this purpose — so the column, its editor
+// (`components/admin/fees-account-code-field.tsx`) and this action are gone,
+// along with the column itself (migration
+// `20260814140000_bursary_account_drop_identifiers`).
+//
+// `AUDIT_ACTIONS.BURSARY_ACCOUNT_FEES_CODE_UPDATED` is deliberately KEPT in
+// `src/lib/audit/actions.ts` even though nothing writes it any more: audit_logs
+// is append-only, so historic rows still carry the string and would render
+// unlabelled in the audit UI without it.

@@ -22,9 +22,10 @@ import { cn } from "@/lib/utils";
 
 interface BursaryAccountResult {
   id: string;
-  reference: string;
   childName: string;
   school: string;
+  /** D13-1a: replaces the removed account reference as the disambiguator. */
+  entryYear: number;
   leadApplicantEmail: string;
 }
 
@@ -176,7 +177,7 @@ export function SiblingLinker({
             onChange={(e) => setQuery(e.target.value)}
             onFocus={() => results.length > 0 && setShowDropdown(true)}
             onBlur={() => setTimeout(() => setShowDropdown(false), 200)}
-            placeholder="Search by child name, reference, or email…"
+            placeholder="Search by child name or email…"
             className="pl-9 pr-9"
             aria-label="Search bursary accounts to link as sibling"
           />
@@ -215,10 +216,12 @@ export function SiblingLinker({
                             </span>
                           )}
                         </p>
+                        {/* D13-1a: the account exposes no reference — school +
+                            entry year identify it alongside the child's name. */}
                         <p className="text-xs text-slate-500 truncate">
                           {SCHOOL_LABELS[account.school] ?? account.school}
                           {" · "}
-                          {account.reference}
+                          Entered {account.entryYear}
                         </p>
                         <p className="text-xs text-slate-400 truncate">
                           {account.leadApplicantEmail}
