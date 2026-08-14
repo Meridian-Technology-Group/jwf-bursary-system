@@ -169,18 +169,25 @@ export default async function PortalDashboardPage() {
               if (app.formStatus !== "SUBMITTED") {
                 const round = await tx.round.findUnique({
                   where: { id: app.roundId },
-                  select: { closeDate: true, defaultSubmissionDeadline: true },
+                  select: {
+                    closeDate: true,
+                    // Both typed defaults (E1/D13-8); the resolver branches on
+                    // the application's own type.
+                    defaultSubmissionDeadlineNew: true,
+                    defaultSubmissionDeadlineRolling: true,
+                  },
                 });
                 if (round) {
+                  const deadlineApp = {
+                    submissionDeadlineAt: app.submissionDeadlineAt,
+                    applicationType: app.applicationType,
+                  };
                   const { deadline } = effectiveSubmissionDeadline(
-                    { submissionDeadlineAt: app.submissionDeadlineAt },
+                    deadlineApp,
                     round
                   );
                   deadlineIso = deadline.toISOString();
-                  deadlinePast = isSubmissionDeadlinePassed(
-                    { submissionDeadlineAt: app.submissionDeadlineAt },
-                    round
-                  );
+                  deadlinePast = isSubmissionDeadlinePassed(deadlineApp, round);
                 }
               }
             }

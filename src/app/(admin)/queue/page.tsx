@@ -300,7 +300,10 @@ export default async function QueuePage({
           closedAt: app.closedAt,
         }),
         effectiveDeadline: effectiveSubmissionDeadline(
-          { submissionDeadlineAt: app.submissionDeadlineAt },
+          {
+            submissionDeadlineAt: app.submissionDeadlineAt,
+            applicationType: app.applicationType,
+          },
           app.round
         ).deadline,
       }));

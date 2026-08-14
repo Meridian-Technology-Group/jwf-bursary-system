@@ -40,27 +40,42 @@ model Profile {
 
 /// An assessment cycle for one academic year.
 model Round {
-  id                        String           @id @default(uuid()) @db.Uuid
-  academicYear              String           @unique @map("academic_year")
-  openDate                  DateTime         @map("open_date") @db.Date
-  closeDate                 DateTime         @map("close_date") @db.Date
-  decisionDate              DateTime?        @map("decision_date") @db.Date
-  /// Round-level default submission-by date (Item 12, date-only, optional).
-  /// Every application in the round inherits this unless it has its own
-  /// `Application.submissionDeadlineAt` override. Derived (not copied) at read
-  /// time by `effectiveSubmissionDeadline()`
-  /// (src/lib/rounds/submission-deadline.ts), which resolves the full chain:
+  id                               String           @id @default(uuid()) @db.Uuid
+  academicYear                     String           @unique @map("academic_year")
+  openDate                         DateTime         @map("open_date") @db.Date
+  closeDate                        DateTime         @map("close_date") @db.Date
+  decisionDate                     DateTime?        @map("decision_date") @db.Date
+  /// LEGACY, NO READERS (Epic 13 / E1, D13-8). The single round-level default
+  /// submission-by date, superseded by the two application-type-aware columns
+  /// below. Retained for one release only so E1 can be rolled back without data
+  /// loss; the follow-up PR (E1b) drops it once staging is verified — the same
+  /// two-step precedent as Epic 01 PR-6 / #177. Still WRITTEN (mirrored from
+  /// `defaultSubmissionDeadlineNew`) so a code rollback lands on a sane value,
+  /// but nothing reads it. Do not add a reader.
+  defaultSubmissionDeadline        DateTime?        @map("default_submission_deadline") @db.Date
+  /// Round-level default submission-by date for NEW applications (D13-8,
+  /// date-only, optional). Every `applicationType = NEW` application in the
+  /// round inherits this unless it has its own `Application.submissionDeadlineAt`
+  /// override. Derived (not copied) at read time by
+  /// `effectiveSubmissionDeadline()` (src/lib/rounds/submission-deadline.ts),
+  /// which resolves the full chain:
   ///   application.submissionDeadlineAt (override)
-  ///     ?? endOfDay(round.defaultSubmissionDeadline)  (THIS)
-  ///     ?? endOfDay(round.closeDate)                   (fallback — D-1)
-  /// NULL means the round has no default; applications without their own
-  /// override then fall back to the close-date fallback above.
-  defaultSubmissionDeadline DateTime?        @map("default_submission_deadline") @db.Date
-  status                    RoundStatus      @default(DRAFT)
-  createdAt                 DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
-  applications              Application[]
-  invitations               Invitation[]
-  recommendations           Recommendation[]
+  ///     ?? endOfDay(round default FOR THIS APPLICATION TYPE)  (THIS)
+  ///     ?? endOfDay(round.closeDate)                          (fallback — D-1)
+  /// NULL means the round has no NEW default; those applications fall through
+  /// to the close-date fallback above.
+  defaultSubmissionDeadlineNew     DateTime?        @map("default_submission_deadline_new") @db.Date
+  /// Round-level default submission-by date for ROLLING_OVER (re-assessment)
+  /// applications (D13-8, date-only, optional). Q4 (Brian, 2026-08-14): this is
+  /// ONE GLOBAL date per round, conventionally in April — deliberately NOT
+  /// per-school, so two columns on `Round` are the whole model. Same three-tier
+  /// derivation and same NULL semantics as `defaultSubmissionDeadlineNew`.
+  defaultSubmissionDeadlineRolling DateTime?        @map("default_submission_deadline_rolling") @db.Date
+  status                           RoundStatus      @default(DRAFT)
+  createdAt                        DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+  applications                     Application[]
+  invitations                      Invitation[]
+  recommendations                  Recommendation[]
 
   @@map("rounds")
 }

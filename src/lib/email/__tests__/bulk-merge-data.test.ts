@@ -14,10 +14,12 @@ function makeApp(
     childName: "Jamie Smith",
     school: "TRINITY",
     submissionDeadlineAt: null,
+    applicationType: "NEW",
     round: {
       academicYear: "2026/27",
       closeDate: new Date("2026-09-30T00:00:00.000Z"),
-      defaultSubmissionDeadline: null,
+      defaultSubmissionDeadlineNew: null,
+      defaultSubmissionDeadlineRolling: null,
     },
     leadApplicant: { firstName: "Pat", lastName: "Smith", email: "pat@example.test" },
     ...overrides,
@@ -75,7 +77,8 @@ describe("buildBulkMergeData", () => {
         round: {
           academicYear: "2026/27",
           closeDate: new Date(2026, 8, 30),
-          defaultSubmissionDeadline: null,
+          defaultSubmissionDeadlineNew: null,
+      defaultSubmissionDeadlineRolling: null,
         },
       })
     );
@@ -89,7 +92,8 @@ describe("buildBulkMergeData", () => {
         round: {
           academicYear: "2026/27",
           closeDate: new Date(2026, 8, 30),
-          defaultSubmissionDeadline: null,
+          defaultSubmissionDeadlineNew: null,
+      defaultSubmissionDeadlineRolling: null,
         },
       })
     );

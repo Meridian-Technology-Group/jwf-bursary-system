@@ -35,7 +35,10 @@ import { Button } from "@/components/ui/button";
 import { DocumentChecklist } from "@/components/admin/document-checklist";
 import { AdminUpload } from "@/components/admin/admin-upload";
 import { SubmissionDeadlineCard } from "@/components/admin/submission-deadline-card";
-import { effectiveSubmissionDeadline } from "@/lib/rounds/submission-deadline";
+import {
+  effectiveSubmissionDeadline,
+  roundDefaultForType,
+} from "@/lib/rounds/submission-deadline";
 import { SiblingLinkerCard } from "@/components/admin/sibling-linker";
 import { SiblingListCard } from "@/components/admin/sibling-list";
 import type {
@@ -359,8 +362,18 @@ export default async function ApplicantDataPage({ params }: Props) {
   // this display and Epic 05's parent countdown agree.
   const isAdmin = user.role === Role.ADMIN;
   const effective = effectiveSubmissionDeadline(
-    { submissionDeadlineAt: application.submissionDeadlineAt },
+    {
+      submissionDeadlineAt: application.submissionDeadlineAt,
+      applicationType: application.applicationType,
+    },
     application.round
+  );
+  // The round default that actually applies to THIS application (E1/D13-8) —
+  // NEW and ROLLING_OVER read different columns, so the card must be shown the
+  // one on this application's clock, not "the round default" in the abstract.
+  const roundDefaultDeadline = roundDefaultForType(
+    application.round,
+    application.applicationType
   );
 
   // ── Edit on behalf (CR-001) ─────────────────────────────────────────────────
@@ -490,10 +503,9 @@ export default async function ApplicantDataPage({ params }: Props) {
           }
           roundCloseDate={application.round.closeDate.toISOString()}
           roundDefaultDeadline={
-            application.round.defaultSubmissionDeadline
-              ? application.round.defaultSubmissionDeadline.toISOString()
-              : null
+            roundDefaultDeadline ? roundDefaultDeadline.toISOString() : null
           }
+          applicationType={application.applicationType}
           effectiveDeadline={effective.deadline.toISOString()}
           source={effective.source}
         />

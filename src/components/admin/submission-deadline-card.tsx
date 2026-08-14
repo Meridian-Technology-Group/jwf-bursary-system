@@ -25,7 +25,10 @@ import {
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { setSubmissionDeadlineAction } from "@/app/(admin)/applications/[id]/actions";
-import type { SubmissionDeadlineSource } from "@/lib/rounds/submission-deadline";
+import type {
+  SubmissionDeadlineApplicationType,
+  SubmissionDeadlineSource,
+} from "@/lib/rounds/submission-deadline";
 
 interface SubmissionDeadlineCardProps {
   applicationId: string;
@@ -33,8 +36,14 @@ interface SubmissionDeadlineCardProps {
   submissionDeadlineAt: string | null;
   /** The round close date (ISO) shown as the ultimate fallback. */
   roundCloseDate: string;
-  /** The round's default submission-by date (ISO), or null (Item 12). */
+  /**
+   * The round default that applies to THIS application (ISO), or null. Already
+   * resolved for `applicationType` by the caller (E1/D13-8) — the round holds a
+   * separate date for new and rolling-over applications.
+   */
   roundDefaultDeadline: string | null;
+  /** Which round default the row is on — labels the provenance chip. */
+  applicationType: SubmissionDeadlineApplicationType;
   /** Pre-computed effective deadline (ISO). */
   effectiveDeadline: string;
   /** Which tier produced `effectiveDeadline` — drives the provenance label. */
@@ -67,6 +76,7 @@ export function SubmissionDeadlineCard({
   submissionDeadlineAt,
   roundCloseDate,
   roundDefaultDeadline,
+  applicationType,
   effectiveDeadline,
   source,
 }: SubmissionDeadlineCardProps) {
@@ -117,8 +127,9 @@ export function SubmissionDeadlineCard({
             </span>
           ) : source === "roundDefault" ? (
             <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-500">
-              From round default
-              {roundDefaultDeadline && ` (${formatDisplay(roundDefaultDeadline)})`}
+              From round default (
+              {applicationType === "ROLLING_OVER" ? "rolling over" : "new"})
+              {roundDefaultDeadline && ` — ${formatDisplay(roundDefaultDeadline)}`}
             </span>
           ) : (
             <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-500">

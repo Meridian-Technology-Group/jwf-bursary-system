@@ -139,13 +139,17 @@ export async function submitApplicationCore(
           entryYear: true,
           entryYearGroup: true,
           submissionDeadlineAt: true,
+          // Selects which typed round default the deadline guard below reads
+          // (E1/D13-8).
+          applicationType: true,
           bursaryAccountId: true,
           roundId: true,
           round: {
             select: {
               academicYear: true,
               closeDate: true,
-              defaultSubmissionDeadline: true,
+              defaultSubmissionDeadlineNew: true,
+              defaultSubmissionDeadlineRolling: true,
             },
           },
           sections: {
@@ -196,13 +200,17 @@ export async function submitApplicationCore(
   // ── Deadline lockout (Epic 05 §3.2) ───────────────────────────────────────
   // Server-side enforcement of the per-application submission deadline so a
   // stale tab cannot post after the cut-off. The effective deadline is the ONE
-  // source of truth (Epic 03/12): per-app submissionDeadlineAt ?? round default
-  // ?? round.closeDate, end-of-day. The UI also hides the submit control +
-  // renders read-only, but this guard is authoritative.
+  // source of truth (Epic 03/12/E1): per-app submissionDeadlineAt ?? the round
+  // default FOR THIS APPLICATION TYPE ?? round.closeDate, end-of-day. The UI
+  // also hides the submit control + renders read-only, but this guard is
+  // authoritative.
   if (
     enforceDeadline &&
     isSubmissionDeadlinePassed(
-      { submissionDeadlineAt: application.submissionDeadlineAt },
+      {
+        submissionDeadlineAt: application.submissionDeadlineAt,
+        applicationType: application.applicationType,
+      },
       application.round
     )
   ) {

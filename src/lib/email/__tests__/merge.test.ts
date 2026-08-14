@@ -20,8 +20,12 @@ import type { EmailMergeData } from "../types";
 // subject + body contain zero `{{...}}` tokens, so any drift trips CI.
 
 const callSiteData: Record<string, EmailMergeData> = {
-  // src/app/(admin)/invitations/actions.ts:246, :513
-  // src/app/(admin)/queue/actions.ts:284
+  // src/app/(admin)/invitations/actions.ts — createInvitationAction, resend
+  // src/app/(admin)/contacts/invite-actions.ts — sendInvitationFromContactAction
+  // src/app/(admin)/queue/actions.ts — createInternalRequestAction
+  // E1: `deadline` and `link_expiry` are now two DIFFERENT dates, both supplied
+  // by `invitationDeadlineFields()` — the submission deadline and the token
+  // expiry respectively. They are deliberately unequal in this fixture.
   INVITATION: {
     applicant_name: "Alex Parent",
     child_name: "Sam Parent",
@@ -29,6 +33,7 @@ const callSiteData: Record<string, EmailMergeData> = {
     round_year: "2026/27",
     registration_link: "https://app.example.com/register?token=abc",
     deadline: "01/06/2026",
+    link_expiry: "30/06/2026",
   },
   // src/app/(portal)/apply/actions.ts:377
   CONFIRMATION: {
@@ -82,14 +87,15 @@ const callSiteData: Record<string, EmailMergeData> = {
     reference: "TRI-2026-0044",
     academic_year: "2026/27",
   },
-  // src/app/(admin)/invitations/actions.ts:399
+  // src/app/(admin)/invitations/actions.ts — sendReassessmentInviteForHolder
   REASSESSMENT: {
     applicant_name: "Alex Parent",
     child_name: "Sam Parent",
     school: "Whitgift School",
     round_year: "2026/27",
     registration_link: "https://app.example.com/register?token=abc",
-    deadline: "01/06/2026",
+    deadline: "30/04/2026",
+    link_expiry: "30/06/2026",
   },
   // NOTE: no call site currently sends REMINDER (orphan template — flagged
   // separately in B13 PR). We still assert the seed body resolves cleanly
@@ -121,6 +127,7 @@ const callSiteData: Record<string, EmailMergeData> = {
     round_year: "2026/27",
     registration_link: "https://app.example.com/register?token=abc",
     deadline: "01/06/2026",
+    link_expiry: "30/06/2026",
   },
   // NOTE: no call site sends SECONDARY_PARENT_RECEIVED yet — the secondary
   // portal submit step (PR 4) will. We still assert the seed body resolves

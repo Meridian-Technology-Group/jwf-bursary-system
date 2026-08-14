@@ -29,6 +29,11 @@ import { createSupabaseAdminClient } from "@/lib/auth/supabase-admin";
 import { createProfile } from "@/lib/auth/create-profile";
 import { getAppUrl } from "@/lib/app-url";
 import { createInvitation } from "@/lib/db/queries/invitations";
+import {
+  invitationDeadlineFields,
+  INVITATION_ROUND_DEADLINE_SELECT,
+} from "@/lib/email/invitation-deadline";
+import type { SubmissionDeadlineRound } from "@/lib/rounds/submission-deadline";
 import { ensurePrimaryContributor } from "@/lib/db/queries/contributors";
 import { applicationCreateData } from "@/lib/applications/status";
 
@@ -205,7 +210,12 @@ export async function createInternalRequestAction(
         application: { id: string; reference: string };
         invitationId: string;
         invitationToken: string;
-        round: { id: string; academicYear: string };
+        round: {
+          id: string;
+          academicYear: string;
+          /** Deadline columns for the invitation's {{deadline}} field (E1). */
+          deadline: SubmissionDeadlineRound;
+        };
         expiresAt: Date;
       }
     | { ok: false; error: string };
@@ -214,7 +224,12 @@ export async function createInternalRequestAction(
     result = await withAdminContext(async (tx: Tx) => {
       const round = await tx.round.findUnique({
         where: { id: roundId },
-        select: { id: true, academicYear: true, status: true },
+        select: {
+          id: true,
+          academicYear: true,
+          status: true,
+          ...INVITATION_ROUND_DEADLINE_SELECT,
+        },
       });
 
       if (!round) {
@@ -268,7 +283,16 @@ export async function createInternalRequestAction(
         application,
         invitationId: invitation.id,
         invitationToken: invitation.token,
-        round: { id: round.id, academicYear: round.academicYear },
+        round: {
+          id: round.id,
+          academicYear: round.academicYear,
+          deadline: {
+            closeDate: round.closeDate,
+            defaultSubmissionDeadlineNew: round.defaultSubmissionDeadlineNew,
+            defaultSubmissionDeadlineRolling:
+              round.defaultSubmissionDeadlineRolling,
+          },
+        },
         expiresAt,
       };
     });
@@ -311,7 +335,10 @@ export async function createInternalRequestAction(
     school: schoolLabel,
     round_year: round.academicYear,
     registration_link: `${appUrl}/register?token=${invitationToken}`,
-    deadline: expiresAt.toLocaleDateString("en-GB"),
+    // E1/CF-11: the internal request creates a NEW application, so {{deadline}}
+    // is that round's new-applicant submission deadline; the token expiry moves
+    // to {{link_expiry}}.
+    ...invitationDeadlineFields(round.deadline, "NEW", expiresAt),
   });
 
   if (!emailResult.success) {

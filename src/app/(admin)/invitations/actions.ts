@@ -28,6 +28,7 @@ import {
   InvitationStatus,
   RoundStatus,
   School,
+  type ApplicationType,
 } from "@prisma/client";
 import { requireRole, Role } from "@/lib/auth/roles";
 import {
@@ -39,6 +40,11 @@ import { createSupabaseAdminClient } from "@/lib/auth/supabase-admin";
 import { createProfile } from "@/lib/auth/create-profile";
 import { getAppUrl } from "@/lib/app-url";
 import { sendEmail } from "@/lib/email/send";
+import {
+  invitationDeadlineFields,
+  INVITATION_ROUND_DEADLINE_SELECT,
+} from "@/lib/email/invitation-deadline";
+import type { SubmissionDeadlineRound } from "@/lib/rounds/submission-deadline";
 import { withAdminContext } from "@/lib/db/prisma";
 import { createAuditLog } from "@/lib/audit/log";
 import {
@@ -167,6 +173,9 @@ export async function createInvitationAction(
   let invitationId: string;
   let invitationToken: string;
   let academicYear = "";
+  // Deadline columns for the {{deadline}} merge field (E1) — read inside the
+  // same tx that resolves the academic year, so no extra round query.
+  let deadlineRound: SubmissionDeadlineRound | null = null;
   try {
     const result = await withAdminContext(async (tx) => {
       const profile = await createProfile(tx, {
@@ -193,12 +202,24 @@ export async function createInvitationAction(
       });
 
       let year = "";
+      let roundDeadline: SubmissionDeadlineRound | null = null;
       if (roundId) {
         const round = await tx.round.findUnique({
           where: { id: roundId },
-          select: { academicYear: true },
+          select: {
+            academicYear: true,
+            ...INVITATION_ROUND_DEADLINE_SELECT,
+          },
         });
         year = round?.academicYear ?? "";
+        roundDeadline = round
+          ? {
+              closeDate: round.closeDate,
+              defaultSubmissionDeadlineNew: round.defaultSubmissionDeadlineNew,
+              defaultSubmissionDeadlineRolling:
+                round.defaultSubmissionDeadlineRolling,
+            }
+          : null;
       }
 
       await createAuditLog(tx, {
@@ -219,6 +240,7 @@ export async function createInvitationAction(
         invitationId: inv.id,
         token: inv.token,
         academicYear: year,
+        roundDeadline,
       };
     });
 
@@ -238,6 +260,7 @@ export async function createInvitationAction(
     invitationId = result.invitationId;
     invitationToken = result.token;
     academicYear = result.academicYear;
+    deadlineRound = result.roundDeadline;
   } catch (err) {
     await supabase.auth.admin.deleteUser(authUserId).catch((rollbackErr) => {
       console.error(
@@ -263,7 +286,10 @@ export async function createInvitationAction(
     school: schoolLabel(school),
     round_year: academicYear,
     registration_link: `${appUrl}/register?token=${invitationToken}`,
-    deadline: expiresAt.toLocaleDateString("en-GB"),
+    // E1/CF-11: {{deadline}} is the SUBMISSION deadline for the round this
+    // invitation is for (a fresh invite always starts a NEW application);
+    // {{link_expiry}} carries the token expiry that used to masquerade as it.
+    ...invitationDeadlineFields(deadlineRound, "NEW", expiresAt),
   });
 
   if (!emailResult.success) {
@@ -342,6 +368,12 @@ async function sendReassessmentInviteForHolder(
   ctx: {
     roundId: string;
     academicYear: string;
+    /**
+     * The target round's deadline columns, resolved once by the batch caller —
+     * every holder in a batch shares one round, so this is not re-read per row.
+     * Null only if the round could not be read.
+     */
+    deadlineRound: SubmissionDeadlineRound | null;
     userId: string;
     supabase: ReturnType<typeof createSupabaseAdminClient>;
     appUrl: string;
@@ -432,7 +464,14 @@ async function sendReassessmentInviteForHolder(
       school: schoolLabel(holder.school),
       round_year: academicYear,
       registration_link: `${appUrl}/register?token=${txResult.token}`,
-      deadline: txResult.expiresAt.toLocaleDateString("en-GB"),
+      // E1/CF-12: a re-assessment invitation is by definition ROLLING_OVER, so
+      // {{deadline}} resolves against the round's rolling submission date (the
+      // April one), NOT the 30-day token expiry it used to carry.
+      ...invitationDeadlineFields(
+        ctx.deadlineRound,
+        "ROLLING_OVER",
+        txResult.expiresAt
+      ),
     });
 
     if (emailResult.success) {
@@ -474,17 +513,36 @@ async function runReassessmentInvites(
 
   let eligible: EligibleHolder[] = [];
   let academicYear = "";
+  // Read once for the whole batch — every holder is invited into the SAME
+  // round, so the rolling-over submission deadline is identical for all of
+  // them (E1; Q4: one global rolling date per round).
+  let deadlineRound: SubmissionDeadlineRound | null = null;
   try {
     const loaded = await withAdminContext(async (tx) => {
       const h = await getActiveBursaryHolders(tx, roundId);
       const round = await tx.round.findUnique({
         where: { id: roundId },
-        select: { academicYear: true },
+        select: {
+          academicYear: true,
+          ...INVITATION_ROUND_DEADLINE_SELECT,
+        },
       });
-      return { holders: h, academicYear: round?.academicYear ?? "" };
+      return {
+        holders: h,
+        academicYear: round?.academicYear ?? "",
+        deadlineRound: round
+          ? {
+              closeDate: round.closeDate,
+              defaultSubmissionDeadlineNew: round.defaultSubmissionDeadlineNew,
+              defaultSubmissionDeadlineRolling:
+                round.defaultSubmissionDeadlineRolling,
+            }
+          : null,
+      };
     });
     eligible = loaded.holders;
     academicYear = loaded.academicYear;
+    deadlineRound = loaded.deadlineRound;
   } catch (err) {
     const message =
       err instanceof Error ? err.message : "Failed to load bursary holders";
@@ -508,7 +566,14 @@ async function runReassessmentInvites(
 
   const supabase = createSupabaseAdminClient();
   const appUrl = getAppUrl();
-  const ctx = { roundId, academicYear, userId: user.id, supabase, appUrl };
+  const ctx = {
+    roundId,
+    academicYear,
+    deadlineRound,
+    userId: user.id,
+    supabase,
+    appUrl,
+  };
 
   for (let i = 0; i < holders.length; i++) {
     await sendReassessmentInviteForHolder(holders[i], ctx, result);
@@ -809,7 +874,18 @@ export async function resendInvitationAction(
       tx.invitation.findUnique({
         where: { id: invitationId },
         include: {
-          round: { select: { academicYear: true } },
+          round: {
+            select: {
+              academicYear: true,
+              ...INVITATION_ROUND_DEADLINE_SELECT,
+            },
+          },
+          // A resend must reproduce the ORIGINAL invitation's submission
+          // deadline, so it needs the linked application's own type + override
+          // when there is one (second-parent invites) — E1.
+          application: {
+            select: { applicationType: true, submissionDeadlineAt: true },
+          },
         },
       })
     );
@@ -864,7 +940,16 @@ export async function resendInvitationAction(
       school: schoolLabel(invitation.school),
       round_year: invitation.round?.academicYear ?? "",
       registration_link: `${appUrl}/register?token=${newToken}`,
-      deadline: newExpiresAt.toLocaleDateString("en-GB"),
+      // E1: a resend re-states the SAME submission deadline as the original
+      // send — only {{link_expiry}} moves, because only the token was renewed.
+      // Before this, every resend silently pushed the advertised "deadline"
+      // another 30 days into the future.
+      ...invitationDeadlineFields(
+        invitation.round,
+        invitation.application?.applicationType ?? "NEW",
+        newExpiresAt,
+        invitation.application?.submissionDeadlineAt ?? null
+      ),
     });
 
     if (!emailResult.success) {
@@ -1199,6 +1284,12 @@ export async function addSecondParentAction(
     school: School;
     childName: string;
     academicYear: string;
+    /** Selects which round default the invite's {{deadline}} uses (E1). */
+    applicationType: ApplicationType;
+    /** The application's own submit-by override, when set (E1, tier 1). */
+    submissionDeadlineAt: Date | null;
+    /** The round's deadline columns for tiers 2–3 (E1). */
+    deadlineRound: SubmissionDeadlineRound;
   };
   let existingProfileId: string | null = null;
   try {
@@ -1210,7 +1301,14 @@ export async function addSecondParentAction(
           roundId: true,
           school: true,
           childName: true,
-          round: { select: { academicYear: true } },
+          applicationType: true,
+          submissionDeadlineAt: true,
+          round: {
+            select: {
+              academicYear: true,
+              ...INVITATION_ROUND_DEADLINE_SELECT,
+            },
+          },
           contributors: {
             where: { role: ApplicationContributorRole.SECONDARY },
             select: { id: true },
@@ -1241,6 +1339,14 @@ export async function addSecondParentAction(
           school: app.school,
           childName: app.childName,
           academicYear: app.round.academicYear,
+          applicationType: app.applicationType,
+          submissionDeadlineAt: app.submissionDeadlineAt,
+          deadlineRound: {
+            closeDate: app.round.closeDate,
+            defaultSubmissionDeadlineNew: app.round.defaultSubmissionDeadlineNew,
+            defaultSubmissionDeadlineRolling:
+              app.round.defaultSubmissionDeadlineRolling,
+          },
         },
         existingProfileId: profile?.id ?? null,
       };
@@ -1392,7 +1498,16 @@ export async function addSecondParentAction(
     school: schoolLabel(application.school),
     round_year: application.academicYear,
     registration_link: `${appUrl}/register?token=${invitationToken}`,
-    deadline: expiresAt.toLocaleDateString("en-GB"),
+    // E1: the second parent is contributing to an EXISTING application, so
+    // {{deadline}} is that application's own effective submission deadline —
+    // its override first, else the round default on its type's clock.
+    // Previously the 30-day token expiry.
+    ...invitationDeadlineFields(
+      application.deadlineRound,
+      application.applicationType,
+      expiresAt,
+      application.submissionDeadlineAt
+    ),
   });
 
   if (!emailResult.success) {
