@@ -366,6 +366,43 @@ describe("ASSETS_LIABILITIES", () => {
       gapIds("ASSETS_LIABILITIES", { ...base, hasPersonalDebt: true, creditCardBalance: 0 })
     ).toEqual([]);
   });
+
+  // CF-30. A declared credit-agency loan makes BOTH the statement (previously
+  // labelled optional) and the new agreement compulsory.
+  it("loan statement AND agreement required when a loan balance is declared", () => {
+    expect(
+      gapIds("ASSETS_LIABILITIES", { ...base, hasPersonalDebt: true, loansToAgencies: 4000 })
+    ).toEqual([
+      "ASSETS_LIABILITIES:LOAN_AGREEMENT",
+      "ASSETS_LIABILITIES:LOAN_STATEMENT",
+    ]);
+    expect(
+      gapIds("ASSETS_LIABILITIES", {
+        ...base,
+        hasPersonalDebt: true,
+        loansToAgencies: 4000,
+        loanStatementDocumentIds: ["s"],
+      })
+    ).toEqual(["ASSETS_LIABILITIES:LOAN_AGREEMENT"]);
+    expect(
+      gapIds("ASSETS_LIABILITIES", {
+        ...base,
+        hasPersonalDebt: true,
+        loansToAgencies: 4000,
+        loanStatementDocumentIds: ["s"],
+        loanAgreementDocumentIds: ["a"],
+      })
+    ).toEqual([]);
+  });
+
+  it("no loan documents required when no loan balance is declared", () => {
+    expect(
+      gapIds("ASSETS_LIABILITIES", { ...base, hasPersonalDebt: true, loansToAgencies: 0 })
+    ).toEqual([]);
+    expect(
+      gapIds("ASSETS_LIABILITIES", { ...base, hasPersonalDebt: false })
+    ).toEqual([]);
+  });
 });
 
 describe("no-op when nothing declared", () => {

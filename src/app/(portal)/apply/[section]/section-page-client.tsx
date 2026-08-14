@@ -314,6 +314,7 @@ function getDefaultValues(
         parent1CurrentAccountDocumentIds: [], parent1SavingsAccountDocumentIds: [],
         parent1InvestmentDocumentIds: [], hasPersonalDebt: undefined,
         creditCardStatementDocumentIds: [], loanStatementDocumentIds: [],
+        loanAgreementDocumentIds: [],
         otherDebtDocumentIds: [], documentsConfirmed: false,
       };
     case "ADDITIONAL_INFO":

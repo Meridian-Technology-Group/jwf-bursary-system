@@ -441,6 +441,7 @@ const SECTION_DOC_SLOTS: Record<string, string[]> = {
     "INVESTMENT_PARENT_2",
     "CREDIT_CARD_STATEMENT",
     "LOAN_STATEMENT",
+    "LOAN_AGREEMENT",
     "OTHER_DEBT_DOCUMENT",
     "CAR_LEASE_AGREEMENT",
   ],

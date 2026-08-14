@@ -454,6 +454,7 @@ export interface AssetsLiabilitiesData {
   bankOverdraft?: number;
   loansToAgencies?: number;
   loanStatementDocumentIds: string[];
+  loanAgreementDocumentIds: string[];
   loansToFriendsFamily?: number;
   schoolFeesOwed?: number;
   otherDebtDocumentIds: string[];

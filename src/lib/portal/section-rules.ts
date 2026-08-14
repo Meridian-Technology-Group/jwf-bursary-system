@@ -484,6 +484,25 @@ const assetsRules: DocumentRule[] = [
       return uploadedSlots.has("CREDIT_CARD_STATEMENT");
     },
   },
+  // Loan statement AND loan agreement — both required when a credit-agency loan
+  // balance is declared (CF-30: the statement is no longer optional, and the
+  // agreement is a new compulsory ask).
+  {
+    kind: "requiredIfValueGt0",
+    id: "LOAN_STATEMENT",
+    valuePaths: ["loansToAgencies"],
+    label: "A loan statement is required for the declared loan balance",
+    fieldRef: "loanStatementDocumentIds",
+    doc: { docIdPath: "loanStatementDocumentIds", slot: "LOAN_STATEMENT" },
+  },
+  {
+    kind: "requiredIfValueGt0",
+    id: "LOAN_AGREEMENT",
+    valuePaths: ["loansToAgencies"],
+    label: "A loan agreement is required for the declared loan balance",
+    fieldRef: "loanAgreementDocumentIds",
+    doc: { docIdPath: "loanAgreementDocumentIds", slot: "LOAN_AGREEMENT" },
+  },
 ];
 
 // ─── DEPENDENT_ELDERLY rules ─────────────────────────────────────────────────

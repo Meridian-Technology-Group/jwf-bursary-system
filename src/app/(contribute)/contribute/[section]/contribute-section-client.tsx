@@ -124,6 +124,7 @@ function getDefaultValues(
         hasPersonalDebt: undefined,
         creditCardStatementDocumentIds: [],
         loanStatementDocumentIds: [],
+        loanAgreementDocumentIds: [],
         otherDebtDocumentIds: [],
         documentsConfirmed: false,
       };
