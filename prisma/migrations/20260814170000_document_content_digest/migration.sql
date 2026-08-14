@@ -27,7 +27,7 @@
 -- =============================================================================
 
 ALTER TABLE "documents"
-  ADD COLUMN "content_digest" TEXT;
+  ADD COLUMN IF NOT EXISTS "content_digest" TEXT;
 
-CREATE INDEX "documents_application_id_content_digest_idx"
+CREATE INDEX IF NOT EXISTS "documents_application_id_content_digest_idx"
   ON "documents" ("application_id", "content_digest");
