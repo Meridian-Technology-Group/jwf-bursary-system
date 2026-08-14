@@ -114,7 +114,7 @@ for, which is the harmful direction. D3 deliberately left it rather than guess.
 |---|---|---|---|
 | **F1** | Retire NM-01..05 name masking **coherently** | M | Blocked on D-B and D-C |
 | **F6** | Blank vs deliberate £0 indistinguishable at field level | M | Deferred to sprint 2 — no current symptom |
-| **F7** | `arrayForEach` rules cannot see the section blob | S | One line; see below |
+| ~~**F7**~~ ✅ | `arrayForEach` rules cannot see the section blob | S | **DONE — [#290](https://github.com/Meridian-Technology-Group/jwf-bursary-system/pull/290).** Both rules guarded; class fully closed |
 | **F8** | `INVESTMENT_PARENT_2` stale-branch guard | M | Blocked on D-D |
 | **F9** | Staff multipart uploads store a NULL content digest | S | Hole in duplicate detection on one path |
 | **F10** | Family-ID slots key off array index | M | Real data-loss shape; see below |
@@ -204,6 +204,26 @@ DOM-dependent behaviour cannot be proven by the current suite — the repo has n
 | **CF-20** re-test on preview (**F3**) | A1 | Did not reproduce; needs the CF-19 data-loss state, which B1/B2 now prevent |
 
 ---
+
+## 3a. Check before promoting `staging` → `main`
+
+**Legacy blobs and the new branch guards.** D3's six guards and F7's two use
+`=== true` / `!== true`, matching the `CREDIT_CARD_STATEMENT` precedent. A blob
+saved *before* the branch flag existed — carrying array entries but no flag —
+will therefore now raise **no** gap where previously it raised one. That is the
+*suppression* direction: a document silently not asked for.
+
+- **Nonprod: verified zero.** Queried 2026-08-14 —
+  0 `ASSETS_LIABILITIES` sections with `otherProperties` entries and no
+  `hasOtherProperties`, and 0 `DEPENDENT_ELDERLY` sections with `elderlyInCare`
+  entries and no `hasElderlyInCare` (across 9 and 10 sections respectively).
+  The concern is empirically moot for Charlotte's testing.
+- **Prod: UNVERIFIED**, because the read-only credential is broken (§4). Prod is
+  live and holds real applications, so **run the same two counts against prod
+  before promoting this stack to `main`.** If any legacy blob exists, decide
+  deliberately whether to backfill the flag or accept the suppression.
+
+This is not a blocker for UAT — it is a promotion gate.
 
 ## 4. Infrastructure / process
 
