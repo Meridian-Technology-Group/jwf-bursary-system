@@ -24,7 +24,10 @@
  *   6. exactly one canonical audit row (APPLICATION_OUTCOME_SET) carrying the
  *      chosen outcome + both award figures
  *
- * The thin server-action wrappers keep their existing call signatures.
+ * `setApplicationOutcome` is the module's only entry point. The recommendation
+ * server action calls it with an explicit 3-value decision plus the award
+ * figures. (Epic 13: C3 removed the legacy binary `setOutcome` action, F4 the
+ * `setApplicationOutcomeLegacy` shim it wrapped.)
  */
 
 import { requireRole, Role } from "@/lib/auth/roles";
@@ -138,10 +141,6 @@ async function fetchApplicationForOutcome(tx: Tx, applicationId: string) {
     },
   });
 }
-
-type OutcomeApplication = NonNullable<
-  Awaited<ReturnType<typeof fetchApplicationForOutcome>>
->;
 
 /** The email template that backs each outcome. */
 function templateForOutcome(outcome: AwardDecision): EmailTemplateType {
