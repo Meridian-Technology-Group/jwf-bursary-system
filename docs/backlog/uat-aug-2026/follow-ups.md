@@ -36,6 +36,32 @@ where two branches touched one file: `file-upload.tsx` (D2 + F2), and the three
 siblings off A2 (A3 / A4 / A6). Migrations apply to nonprod automatically on
 merge to `staging`, in stack order.
 
+### ⚠️ Discovered 2026-08-14: previews cannot exercise new-schema pages before merge
+
+The integration preview (**PR #291**) crashes with a server-side exception
+immediately after login. Root cause verified: the preview runs against nonprod,
+and **none of the five new migrations exist there yet** — `db-push.yml` applies
+migrations only on push to `staging`. The dashboard selects E1's
+`default_submission_deadline_new` → Prisma runtime error.
+
+Consequence worth internalising: **every schema-touching PR's Vercel preview in
+this sprint (C4a, C4b, D1, D2, E1 and everything stacked above them) was
+un-browsable on any page selecting new columns.** Local tests/tsc/build pass
+because they never open a DB connection; CI passes for the same reason. The
+browser is the only place this class shows up, and it shows up as an opaque
+digest.
+
+The browser UAT pass (§3) therefore runs **after** #291 merges (CI applies the
+migrations to nonprod in path order), against the staging alias. All migrations
+are now `IF EXISTS`/`IF NOT EXISTS`-guarded — D2's was the one exception and was
+fixed on both the integration branch and PR #288 — so ledger state cannot break
+`migrate deploy`.
+
+Test login for the pass (Brian's own throwaway, password reset via the
+`/add-admin` skill on 2026-08-14): `brian+K7m9Qx2P@meridiantech.group` /
+`Uat-Epic13-Pass-2026!` — owns in-progress `WS-202627-0010`-adjacent fixture
+`WS-202627-0007`. Charlotte's `test3@…` data untouched.
+
 ### Gate 2 — a UAT pass by us first (the highest-value step)
 **Six behaviours are deliberately unverified in a browser** (§3). They are
 exactly the paths she will exercise in her first ten minutes: uploading a large
