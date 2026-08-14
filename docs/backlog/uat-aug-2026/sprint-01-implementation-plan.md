@@ -767,6 +767,7 @@ recorded here rather than fixed inline, so the discovering PR stays scoped.
 | WP | Source | Change | Size |
 |---|---|---|---|
 | **F1** | D13-1b | **Retire NM-01..05 name masking coherently.** Brian retired masking on 2026-08-14, but the codebase now contradicts itself. Remove the `childName` omission from `getApplicationWithDetails` (`src/lib/db/queries/applications.ts:429-468`) and the "Assessment tab MUST NOT call this" prohibition on `getApplicationNamesForReveal` (~:516); decide whether the queue's masked-by-default toggle stays; update the PRD (`docs/product/prd/04-admin-round-management.md:7`, AC-03) and mark finding 2.18 superseded rather than open. **Decide deliberately whether `NAME_REVEAL` audit rows are still wanted** — if names are simply visible, an audit row per page load is cost without a purpose, and C4a currently writes one on every detail-page load. | M |
+| **F4** | C3 | **`setApplicationOutcomeLegacy` is orphaned dead code.** Its only caller was the `setOutcome` server action that C3 deleted, and nothing tests it (`src/lib/applications/set-outcome-core.ts:318`). C3 could not remove it because that file is C1-owned in an ancestor branch. Verified orphaned by `git grep` on the C3 branch — the sole hit is its own definition. Delete it once the stack lands. | S |
 | **F2** | A1 (CF-24) | **Duplicate passport slot loses a document.** `src/components/portal/sections/family-id-form.tsx:354` and `:377` render two uploads ("UK Passport" and "Passport") against the **same slot** while writing to **different fields** (`ukPassportDocumentId` vs `passportDocumentId`). For a non-British family member one of the two can be lost. This — not the 413 — is the likelier cause of CF-24 ("passport not accepted, left that tab unfinished"). Genuine latent data-loss bug. | M |
 
 #### F3 · Confirm CF-20 on preview (not a build)
@@ -893,16 +894,16 @@ Update the status column as PRs merge. `—` = not started.
 | WP | Status | PR | Notes |
 |---|---|---|---|
 | A1 | ✅ merged-ready | [#271](https://github.com/Meridian-Technology-Group/jwf-bursary-system/pull/271) | CI green. Deletes the multipart route. Found + fixed a stored-XSS vector (see below) |
-| A2 | in progress | | |
-| A3 | — | | |
-| A4 | — | | |
+| A2 | ✅ merged-ready | [#274](https://github.com/Meridian-Technology-Group/jwf-bursary-system/pull/274) | Matrix in one place; stale answers cleared live **and** in persisted blobs |
+| A3 | in progress | | |
+| A4 | in progress | | |
 | A5 + A7 + A8 | — | | paired PR |
-| A6 | — | | own PR; nonprod backfill already done |
+| A6 | in progress | | own PR; nonprod backfill already done |
 | B1 | — | | |
 | B2 | — | | |
 | C1 | ✅ merged-ready | [#269](https://github.com/Meridian-Technology-Group/jwf-bursary-system/pull/269) | CI green. Closed a live authz gap: `saveAssessmentAction` had no server-side status check |
 | C2 | ✅ merged-ready | [#272](https://github.com/Meridian-Technology-Group/jwf-bursary-system/pull/272) | CI green. No recommendation PDF exists — see the C2 correction |
-| C3 | in progress | | |
+| C3 | ✅ merged-ready | [#273](https://github.com/Meridian-Technology-Group/jwf-bursary-system/pull/273) | 16 insertions / 180 deletions. Orphaned `setApplicationOutcomeLegacy` → F4 |
 | C4a | ✅ merged-ready | [#270](https://github.com/Meridian-Technology-Group/jwf-bursary-system/pull/270) | CI green. Migration authored by hand, unapplied |
 | C4b | in progress | | migration (column drops) |
 | D1 | — | | migration |
