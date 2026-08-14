@@ -225,6 +225,143 @@ describe("PARENTS_INCOME (status-driven sub-tables — D3)", () => {
     ]);
   });
 
+  // ── CF-28 — the UC monthly rule means "3", not "at least one" ────────────
+  //
+  // The label always promised 3 monthly documents; before D2 a single upload
+  // satisfied it, so applications arrived carrying one month's evidence. The
+  // statement is a separate rule, so Universal Credit needs 4 documents total.
+  it("benefits: two monthly UC documents are NOT enough", () => {
+    expect(
+      gapIds("PARENTS_INCOME", {
+        parent1Income: {
+          benefits: {
+            universalCredit: 1200,
+            ucStatementDocumentId: "stmt",
+            ucMonthlyDocumentIds: ["m1", "m2"],
+          },
+        },
+      })
+    ).toEqual(["PARENTS_INCOME:UC_MONTHLY_PARENT_1"]);
+  });
+
+  it("benefits: three monthly UC documents + the statement clear the section", () => {
+    expect(
+      gapIds("PARENTS_INCOME", {
+        parent1Income: {
+          benefits: {
+            universalCredit: 1200,
+            ucStatementDocumentId: "stmt",
+            ucMonthlyDocumentIds: ["m1", "m2", "m3"],
+          },
+        },
+      })
+    ).toEqual([]);
+  });
+
+  it("benefits: three monthly UC documents do NOT stand in for the statement", () => {
+    expect(
+      gapIds("PARENTS_INCOME", {
+        parent1Income: {
+          benefits: {
+            universalCredit: 1200,
+            ucMonthlyDocumentIds: ["m1", "m2", "m3"],
+          },
+        },
+      })
+    ).toEqual(["PARENTS_INCOME:UC_STATEMENT_PARENT_1"]);
+  });
+
+  it("benefits: the same document id in all three UC monthly entries counts once", () => {
+    // "Could the form detect whether one same document is uploaded three
+    // times?" — at the id level, yes. (Byte-identical *re-uploads* are caught
+    // separately, by the digest check in the confirm route.)
+    expect(
+      gapIds("PARENTS_INCOME", {
+        parent1Income: {
+          benefits: {
+            universalCredit: 1200,
+            ucStatementDocumentId: "stmt",
+            ucMonthlyDocumentIds: ["same", "same", "same"],
+          },
+        },
+      })
+    ).toEqual(["PARENTS_INCOME:UC_MONTHLY_PARENT_1"]);
+  });
+
+  it("benefits: positional gaps (null entries) never count as documents", () => {
+    expect(
+      gapIds("PARENTS_INCOME", {
+        parent1Income: {
+          benefits: {
+            universalCredit: 1200,
+            ucStatementDocumentId: "stmt",
+            ucMonthlyDocumentIds: [null, "m2", null],
+          },
+        },
+      })
+    ).toEqual(["PARENTS_INCOME:UC_MONTHLY_PARENT_1"]);
+  });
+
+  it("benefits: the three UC monthly upload slots satisfy the rule on their own", () => {
+    const blob = {
+      parent1Income: {
+        benefits: { universalCredit: 1200, ucStatementDocumentId: "stmt" },
+      },
+    };
+    // Two of the three repeat slots — still short.
+    expect(
+      gapIds(
+        "PARENTS_INCOME",
+        blob,
+        new Set(["UC_MONTHLY_1_PARENT_1", "UC_MONTHLY_2_PARENT_1"])
+      )
+    ).toEqual(["PARENTS_INCOME:UC_MONTHLY_PARENT_1"]);
+    // All three.
+    expect(
+      gapIds(
+        "PARENTS_INCOME",
+        blob,
+        new Set([
+          "UC_MONTHLY_1_PARENT_1",
+          "UC_MONTHLY_2_PARENT_1",
+          "UC_MONTHLY_3_PARENT_1",
+        ])
+      )
+    ).toEqual([]);
+    // The legacy single slot still counts as one of the three, so a document
+    // uploaded before D2 is not thrown away.
+    expect(
+      gapIds(
+        "PARENTS_INCOME",
+        blob,
+        new Set([
+          "UC_MONTHLY_PARENT_1",
+          "UC_MONTHLY_2_PARENT_1",
+          "UC_MONTHLY_3_PARENT_1",
+        ])
+      )
+    ).toEqual([]);
+  });
+
+  it("benefits: ids and slots are the same uploads, so they do not add up", () => {
+    // 2 saved ids + the same 2 uploads seen as slots must not reach 3.
+    expect(
+      gapIds(
+        "PARENTS_INCOME",
+        {
+          parent1Income: {
+            benefits: {
+              universalCredit: 1200,
+              ucStatementDocumentId: "stmt",
+              ucMonthlyDocumentIds: ["m1", "m2"],
+            },
+          },
+        },
+        new Set(["UC_MONTHLY_1_PARENT_1", "UC_MONTHLY_2_PARENT_1"])
+      )
+    ).toEqual(["PARENTS_INCOME:UC_MONTHLY_PARENT_1"]);
+  });
+
   it("benefits: Child Benefit value alone requires NO upload (workbook exception)", () => {
     expect(
       gapIds("PARENTS_INCOME", {

@@ -44,7 +44,10 @@ export const benefitsIncomeSchema = z.object({
   childcareSupport: currencyField,
   other: currencyField,
   ucStatementDocumentId: docId,
-  ucMonthlyDocumentIds: z.array(z.string()).optional(),
+  // CF-28 — a fixed three-entry repeat block (month 1 / 2 / 3), so entries are
+  // positional and an entry the applicant has not filled yet is `null` rather
+  // than absent. Nullable is what keeps "uploaded month 3 first" saveable.
+  ucMonthlyDocumentIds: z.array(z.string().nullable()).optional(),
   housingBenefitDocumentId: docId,
   otherBenefitsDocumentId: docId,
 });

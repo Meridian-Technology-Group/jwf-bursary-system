@@ -46,6 +46,10 @@ export interface SectionGap {
  * string on the blob (the form mirrors the uploaded doc id into the section
  * data) OR a document exists in the matching upload slot. Either is sufficient,
  * mirroring the legacy evaluators exactly.
+ *
+ * `minCount` generalises that to "at least N documents" for repeat-upload
+ * blocks (the 3 monthly Universal Credit payment documents, CF-28); it defaults
+ * to 1, so every existing rule keeps its exact previous behaviour.
  */
 export interface DocPresence {
   /**
@@ -56,6 +60,26 @@ export interface DocPresence {
   docIdPath: string;
   /** Upload slot string to also check. */
   slot: string;
+  /**
+   * Sibling slots for a repeat-upload block (`UC_MONTHLY_1_PARENT_1`,
+   * `…_2_…`, `…_3_…`). Each present slot counts as one document, so the
+   * uploaded-slot fallback can satisfy a `minCount` > 1 on its own — without
+   * this, a Set of slot names could only ever prove that *some* document
+   * exists, never how many.
+   */
+  slots?: string[];
+  /**
+   * How many DISTINCT documents satisfy the rule. Defaults to 1 (the historical
+   * behaviour: any one id or slot is enough).
+   *
+   * CF-28: the UC monthly rule's label has always promised "3 monthly Universal
+   * Credit payment documents", but the check accepted a single upload — so an
+   * applicant could satisfy it with one file and Charlotte received
+   * applications carrying one month's evidence where three were asked for.
+   * Counting is by DISTINCT id, so the same document id repeated in the array
+   * counts once.
+   */
+  minCount?: number;
 }
 
 interface BaseRule {
@@ -167,16 +191,44 @@ function asNumber(value: unknown): number {
   return 0;
 }
 
+/**
+ * How many documents the blob + slot set can evidence for one `DocPresence`.
+ *
+ * The two sources are two VIEWS of the same uploads (the form mirrors each
+ * uploaded doc id into the blob), so they are combined with `max`, never a sum
+ * — adding them would let 2 real uploads satisfy a minCount of 3.
+ */
+function docCount(
+  blob: Record<string, unknown> | null | undefined,
+  uploadedSlots: Set<string>,
+  doc: DocPresence
+): number {
+  const id = resolvePath(blob, doc.docIdPath);
+  let fromIds = 0;
+  if (typeof id === "string" && id.length > 0) {
+    fromIds = 1;
+  } else if (Array.isArray(id)) {
+    // Distinct ids only: three entries all pointing at one document are one
+    // document (CF-28 — "could the form detect whether one same document is
+    // uploaded three times?"). Byte-level duplicate detection lives in the
+    // upload confirm route; this catches the same *row* being reused.
+    fromIds = new Set(
+      id.filter((x): x is string => typeof x === "string" && x.length > 0)
+    ).size;
+  }
+
+  const slotNames = doc.slots ? [doc.slot, ...doc.slots] : [doc.slot];
+  const fromSlots = slotNames.filter((s) => uploadedSlots.has(s)).length;
+
+  return Math.max(fromIds, fromSlots);
+}
+
 function docPresent(
   blob: Record<string, unknown> | null | undefined,
   uploadedSlots: Set<string>,
   doc: DocPresence
 ): boolean {
-  const id = resolvePath(blob, doc.docIdPath);
-  if (typeof id === "string" && id.length > 0) return true;
-  if (Array.isArray(id) && id.some((x) => typeof x === "string" && x.length > 0))
-    return true;
-  return uploadedSlots.has(doc.slot);
+  return docCount(blob, uploadedSlots, doc) >= (doc.minCount ?? 1);
 }
 
 function pathExists(

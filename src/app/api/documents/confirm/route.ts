@@ -28,6 +28,11 @@
  *      the sniff exists to stop.
  *   5. Magic-byte sniff of the leading bytes, which must match the declared
  *      MIME.
+ *   6. Duplicate detection (CF-28). The leading bytes read for the sniff are
+ *      ALSO hashed — one Range request serves both — and the resulting digest
+ *      is looked up against the other documents on the same application. On a
+ *      UC slot a duplicate is refused (409); anywhere else it is stored and
+ *      reported back as a non-blocking `duplicateWarning`.
  */
 
 import { NextRequest, NextResponse } from "next/server";
@@ -41,6 +46,13 @@ import {
 import { sniffContentType } from "@/lib/storage/sniff";
 import { authorizeDocumentUpload } from "@/lib/documents/upload-authorization";
 import { verifyUploadTicket } from "@/lib/uploads/upload-ticket";
+import {
+  DIGEST_SAMPLE_BYTES,
+  DUPLICATE_UC_MESSAGE,
+  computeContentDigest,
+  duplicateWarningMessage,
+  isUniversalCreditSlot,
+} from "@/lib/documents/content-digest";
 import { logError } from "@/lib/log";
 import {
   MAX_SIZE_BYTES,
@@ -141,7 +153,14 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   }
 
   // ── 5. Magic-byte sniff (docs/security-audit.md §2.10) ─────────────────────
-  const { bytes, error: readError } = await readObjectHead(claims.storagePath);
+  // One Range read, two consumers: the sniff below looks at the first few
+  // bytes, and the CF-28 duplicate fingerprint hashes the whole sample. Asking
+  // for DIGEST_SAMPLE_BYTES instead of the sniff's default 64 costs one 64 KB
+  // request and saves ever downloading the object a second time.
+  const { bytes, error: readError } = await readObjectHead(
+    claims.storagePath,
+    DIGEST_SAMPLE_BYTES
+  );
   if (readError || !bytes) {
     logError("documents/confirm:read-head", readError ?? "No bytes returned");
     await discardOrphan(claims.storagePath);
@@ -165,6 +184,52 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     );
   }
 
+  // ── 6. Duplicate detection (CF-28) ─────────────────────────────────────────
+  // Fingerprint the bytes we already hold — see content-digest.ts for what the
+  // digest covers and why it is a prefix hash rather than a whole-file one.
+  const contentDigest = computeContentDigest(bytes, info.size);
+
+  let duplicateWarning: string | null = null;
+  try {
+    // Scoped to THIS application by the query itself (and by RLS): a digest is
+    // never compared across families.
+    const matches = await withUserContext(
+      user.id,
+      user.role as RlsRole,
+      (tx) =>
+        tx.document.findMany({
+          where: { applicationId: claims.applicationId, contentDigest },
+          select: { id: true, slot: true, filename: true },
+          orderBy: { uploadedAt: "asc" },
+          take: 10,
+        })
+    );
+
+    // Refuse only when the same bytes are already sitting in another Universal
+    // Credit slot — the exact CF-28 case, where "3 monthly UC payments" was
+    // satisfied with one file uploaded three times and the assessor is left
+    // with a single month. Any other repeat is plausible enough (one letter
+    // that genuinely evidences two lines) that blocking it would punish honest
+    // applicants, so it falls through to the warning below.
+    const ucDuplicate = matches.find((m) => isUniversalCreditSlot(m.slot));
+    if (isUniversalCreditSlot(claims.slot) && ucDuplicate) {
+      await discardOrphan(claims.storagePath);
+      return NextResponse.json(
+        { error: DUPLICATE_UC_MESSAGE },
+        { status: 409 }
+      );
+    }
+
+    if (matches.length > 0) {
+      duplicateWarning = duplicateWarningMessage(matches[0].filename);
+    }
+  } catch (err) {
+    // Duplicate detection is a convenience, not a gate: if the lookup fails the
+    // upload still completes (with the digest stored, so a later upload can
+    // still be matched against it).
+    logError("documents/confirm:duplicate-lookup", err);
+  }
+
   // ── Create Prisma Document record ──────────────────────────────────────────
   try {
     const document = await withUserContext(
@@ -179,6 +244,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
             mimeType: verifiedContentType,
             fileSize: info.size ?? bytes.length,
             storagePath: claims.storagePath,
+            contentDigest,
             uploadedBy: user.id,
             uploadedByContributorId: auth.contributorId,
           },
@@ -197,7 +263,9 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         })
     );
 
-    return NextResponse.json(document, { status: 201 });
+    // `duplicateWarning` is additive and null on the happy path, so the client
+    // contract is unchanged for every caller that ignores it.
+    return NextResponse.json({ ...document, duplicateWarning }, { status: 201 });
   } catch (err) {
     // Roll back the storage object on DB failure — with the presigned flow the
     // bytes are already in the bucket, so nothing else would ever reap them.

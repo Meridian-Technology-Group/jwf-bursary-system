@@ -170,16 +170,30 @@ function incomeRules(earner: Earner): DocumentRule[] {
         slot: `UC_STATEMENT${suffix}`,
       },
     },
+    // CF-28 — this label has always said "3", but the check was satisfied by a
+    // single upload, so Charlotte received applications carrying one month's
+    // evidence (sometimes the SAME file three times) where three months were
+    // asked for. `minCount: 3` makes the rule mean what the label says; with
+    // the statement above it, Universal Credit now needs 4 documents in total.
+    // The three sibling slots are the repeat-upload block in the income form;
+    // the legacy single `UC_MONTHLY…` slot stays first in the list so documents
+    // uploaded before this change still count.
     {
       kind: "requiredIfValueGt0",
       id: `UC_MONTHLY${suffix}`,
       onlyIfExistsPath: ben,
       valuePaths: [`${ben}.universalCredit`],
-      label: `${label}: 3 monthly Universal Credit payment documents are required`,
+      label: `${label}: 3 monthly Universal Credit payment documents are required (3 different months)`,
       fieldRef: `${ben}.ucMonthlyDocumentIds`,
       doc: {
         docIdPath: `${ben}.ucMonthlyDocumentIds`,
         slot: `UC_MONTHLY${suffix}`,
+        slots: [
+          `UC_MONTHLY_1${suffix}`,
+          `UC_MONTHLY_2${suffix}`,
+          `UC_MONTHLY_3${suffix}`,
+        ],
+        minCount: 3,
       },
     },
     // Housing Benefit — award letter when HB > 0.

@@ -280,8 +280,11 @@ export interface BenefitsIncome {
   other: number;
   /** UC 12-month statement. */
   ucStatementDocumentId?: string;
-  /** 3 separate detailed monthly UC payment docs. */
-  ucMonthlyDocumentIds?: string[];
+  /**
+   * 3 separate detailed monthly UC payment docs — positional (month 1/2/3), so
+   * an entry not yet uploaded is `null` rather than missing (CF-28).
+   */
+  ucMonthlyDocumentIds?: (string | null)[];
   housingBenefitDocumentId?: string;
   otherBenefitsDocumentId?: string;
 }
