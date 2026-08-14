@@ -71,6 +71,7 @@ import { HouseholdDecisionAid } from "@/components/admin/household-decision-aid"
 import { deriveHouseholdFromSources, type HouseholdSources } from "@/lib/household/from-sections";
 import { deriveReviewPhase } from "@/lib/applications/status";
 import { BeginAssessmentButton } from "@/components/admin/begin-assessment-button";
+import { ReopenAssessmentBanner } from "@/components/admin/reopen-assessment-banner";
 import { SecondParentGate } from "@/components/admin/second-parent-gate";
 import { DocumentListClient } from "@/components/admin/document-list-client";
 import { ClipboardList, Lightbulb } from "lucide-react";
@@ -631,6 +632,9 @@ export default async function AssessmentPage({ params }: Props) {
         usesPublicTransport: assessment.usesPublicTransport,
         feeInsuranceAnnual: toNumber(assessment.feeInsuranceAnnual),
         behindOnFees: assessment.behindOnFees,
+        // Epic 13 / C2 — the manual income-adjustment line.
+        manualAdjustment: toNumber(assessment.manualAdjustment),
+        manualAdjustmentReason: assessment.manualAdjustmentReason,
         dishonestyFlag: assessment.dishonestyFlag,
         watchOutNotes: assessment.watchOutNotes,
         earners: assessment.earners
@@ -721,6 +725,16 @@ export default async function AssessmentPage({ params }: Props) {
           roundId={application.roundId}
           academicYear={round.academicYear}
           user={user}
+        />
+      )}
+
+      {/* Epic 13 / C1 — completed assessments render read-only; say so, and
+          offer the way back while no outcome has been recorded (D13-2). */}
+      {assessment.status === "COMPLETED" && (
+        <ReopenAssessmentBanner
+          assessmentId={assessment.id}
+          applicationId={params.id}
+          canReopen={!isViewer && assessment.outcome == null}
         />
       )}
 

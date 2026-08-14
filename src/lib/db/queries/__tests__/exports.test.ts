@@ -20,6 +20,9 @@ function baseSource(): ExportRowSource {
       synopsis: "A synopsis.",
       debtStatusLabel: null,
       lifestyleSqueezeLabel: null,
+      totalHouseholdNetIncome: 50000,
+      manualAdjustment: 0,
+      manualAdjustmentReason: null,
       recommendation: {
         familySynopsis: "A family synopsis.",
         accommodationStatus: "Renting",
@@ -62,6 +65,11 @@ describe("mapExportRow", () => {
     expect(row.gapReasons).toBe("");
     expect(row.debtStatus).toBe("");
     expect(row.lifestyleSqueezeLabel).toBe("");
+
+    // Epic 13 / C2 — a zero adjustment exports as 0 with a blank reason.
+    expect(row.totalHouseholdNetIncome).toBe(50000);
+    expect(row.manualAdjustment).toBe(0);
+    expect(row.manualAdjustmentReason).toBe("");
   });
 
   it("maps a v2 row — min-of-three, gap tracking, and profiling columns populated", () => {
@@ -74,6 +82,9 @@ describe("mapExportRow", () => {
         synopsis: "v2 synopsis (Recommendation.familySynopsis is null for v2).",
         debtStatusLabel: "Manageable",
         lifestyleSqueezeLabel: "Squeezed",
+        totalHouseholdNetIncome: 72500,
+        manualAdjustment: 12500,
+        manualAdjustmentReason: "Second parent's income added (separated household)",
         recommendation: {
           familySynopsis: null,
           accommodationStatus: null,
@@ -112,6 +123,13 @@ describe("mapExportRow", () => {
     );
     expect(row.debtStatus).toBe("Manageable");
     expect(row.lifestyleSqueezeLabel).toBe("Squeezed");
+
+    // Epic 13 / C2 — the income figure and the adjustment that explains it.
+    expect(row.totalHouseholdNetIncome).toBe(72500);
+    expect(row.manualAdjustment).toBe(12500);
+    expect(row.manualAdjustmentReason).toBe(
+      "Second parent's income added (separated household)"
+    );
 
     // Legacy columns still populated via CALC-08's dual-write, so existing
     // readers (bursaryAward, yearlyPayableFees, monthlyPayableFees) keep working.

@@ -168,13 +168,43 @@ const FORM_TRANSITIONS: Record<ApplicationFormStatus, ApplicationFormStatus[]> =
  * source form invalidates an in-progress/paused assessment, resetting it to
  * NOT_STARTED so it must be re-run (state-model §4/§6.5/§7.2, D-G6/D3). There is
  * deliberately NO COMPLETED → NOT_STARTED edge — a finished assessment is never
- * auto-invalidated in v1 (edit-on-behalf is itself blocked once COMPLETED).
+ * AUTO-invalidated (edit-on-behalf is itself blocked once COMPLETED), so nothing
+ * may silently throw away a completed assessment's work.
+ *
+ * ──────────────────────────────────────────────────────────────────────────
+ * COMPLETED → IN_PROGRESS — the REOPEN exception (Epic 13 / C1, decision D13-2)
+ * ──────────────────────────────────────────────────────────────────────────
+ * COMPLETED was terminal until Epic 13. UAT (CF-10/CF-01) showed assessors are
+ * routinely locked out by their own "Mark complete" click while the assessment
+ * is still demonstrably wrong — with no way back. D13-2 opens ONE deliberate
+ * exit edge, COMPLETED → IN_PROGRESS, owned by `reopenAssessmentRow` and driven
+ * only by `reopenAssessmentAction` (an explicit, audited, human decision).
+ *
+ * The edge is narrow on purpose. Read it together with its gate:
+ *
+ *   - It is REOPEN, not discard: COMPLETED → NOT_STARTED stays illegal, so the
+ *     assessment's data survives the round trip. Only `completedAt` is cleared.
+ *   - It is gated on "no outcome yet". `reopenAssessmentAction` refuses once
+ *     `assessments.outcome` is set (or the application is CLOSED), because a
+ *     decision has by then been communicated to the applicant and may have
+ *     promoted a BursaryAccount. Reopening is allowed only UNTIL an outcome
+ *     exists — the table alone cannot express that, so the guard lives in the
+ *     action and MUST stay there.
+ *   - Outcome-setting re-blocks itself: `canSetOutcome` requires COMPLETED, so a
+ *     reopened assessment must be completed again before any outcome can be set.
+ *   - The existing recommendation is marked stale on reopen (its confirmed
+ *     figure is cleared) so it must be re-confirmed, never silently reused.
+ *
+ * Nothing else may use this edge. A future automatic invalidation of completed
+ * work would need its own decision — do not reach for this one.
  */
 const ASSESSMENT_TRANSITIONS: Record<AssessmentStatus, AssessmentStatus[]> = {
   NOT_STARTED: ["IN_PROGRESS"],
   IN_PROGRESS: ["PAUSED", "COMPLETED", "NOT_STARTED"],
   PAUSED: ["IN_PROGRESS", "COMPLETED", "NOT_STARTED"],
-  COMPLETED: [],
+  // The single exit edge — see the REOPEN exception above. Deliberately does
+  // NOT include NOT_STARTED (that would be a discard) or PAUSED.
+  COMPLETED: ["IN_PROGRESS"],
 };
 
 export function isLegalFormTransition(
@@ -727,6 +757,42 @@ export async function completeAssessmentRow(
   await tx.assessment.update({
     where: { id: assessmentId },
     data: { status: "COMPLETED", completedAt: new Date() },
+  });
+}
+
+/**
+ * REOPEN a completed assessment: status COMPLETED → IN_PROGRESS and clear
+ * `completedAt`. The sole user of the COMPLETED → IN_PROGRESS exception edge
+ * (Epic 13 / C1, D13-2 — see the ASSESSMENT_TRANSITIONS docstring).
+ *
+ * Deliberately narrow:
+ *   - Only COMPLETED is a legal source. Reopening anything else is a caller bug,
+ *     not a no-op, so it throws rather than silently doing nothing.
+ *   - NO assessment data is cleared. Reopen exists so the assessor can
+ *     CORRECT the assessment, not restart it; the discard path
+ *     (`discardAssessment` → NOT_STARTED) is the one that invalidates work, and
+ *     it still refuses a COMPLETED row.
+ *   - `outcome` is NOT cleared, because a reopen must never happen after an
+ *     outcome exists in the first place. That gate lives in
+ *     `reopenAssessmentAction` (it also owns authorisation and the audit row);
+ *     this primitive is only the status writer.
+ */
+export async function reopenAssessmentRow(
+  tx: Tx,
+  assessmentId: string,
+  from: AssessmentStatus
+): Promise<void> {
+  if (from !== "COMPLETED") {
+    throw new Error(
+      `Cannot reopen an assessment that is not completed (status ${from}).`
+    );
+  }
+  if (!isLegalAssessmentTransition(from, "IN_PROGRESS")) {
+    throw new Error(`Illegal assessment transition ${from} → IN_PROGRESS`);
+  }
+  await tx.assessment.update({
+    where: { id: assessmentId },
+    data: { status: "IN_PROGRESS", completedAt: null },
   });
 }
 

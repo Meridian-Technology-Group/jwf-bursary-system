@@ -78,10 +78,37 @@ export function calculateEarnerIncome(detail: AssessorIncomeRecord): number {
 }
 
 /**
- * Household's Overall Net Income (workbook `C40`) — the sum of every
- * earner's income, floored at 0.
+ * Sum of every earner's income BEFORE the manual adjustment and before the
+ * £0 floor — the "earner subtotal" the assessor sees above the adjustment
+ * line. Split out from `calculateHouseholdNetIncome` so the UI/snapshot can
+ * show the aggregate and the adjustment as two separate rows.
  */
-export function calculateHouseholdNetIncome(earners: readonly AssessorIncomeRecord[]): number {
-  const total = earners.reduce((sum, earner) => sum + calculateEarnerIncome(earner), 0)
+export function calculateEarnerAggregateIncome(earners: readonly AssessorIncomeRecord[]): number {
+  return earners.reduce((sum, earner) => sum + calculateEarnerIncome(earner), 0)
+}
+
+/**
+ * Household's Overall Net Income (workbook `C40`) — the sum of every
+ * earner's income PLUS the assessor's manual income adjustment, floored at 0.
+ *
+ * Epic 13 / C2 (D13-3): the adjustment is a single SIGNED income line applied
+ * AFTER earner aggregation and BEFORE the C40 floor, so it participates in
+ * exactly the same £0 floor the earner total does and every downstream leg
+ * (notional spend → NDI → the three award legs) consumes the adjusted figure
+ * with no further wiring. Its primary use is the divorced/separated
+ * parent-2 add-on: a second household's income counted on top of the
+ * calculated figure. Negative values are deliberately allowed so it can
+ * deduct as well as add. It is NOT a per-field override of a calculated cell
+ * — those are explicitly out of scope (D13-3).
+ *
+ * Note this is a different semantic from v1's `manualAdjustment`
+ * (`src/lib/assessment/calculator.ts`), which adjusts PAYABLE FEES at the end
+ * of the chain. The column is shared; only v2 reads it as income.
+ */
+export function calculateHouseholdNetIncome(
+  earners: readonly AssessorIncomeRecord[],
+  manualAdjustment: number = 0,
+): number {
+  const total = calculateEarnerAggregateIncome(earners) + n(manualAdjustment)
   return Math.max(0, total)
 }

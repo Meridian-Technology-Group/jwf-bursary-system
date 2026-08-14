@@ -52,7 +52,10 @@ vi.mock("@/lib/db/prisma", () => ({
   ) => fn(fakeTx),
 }));
 
-import { setApplicationOutcome } from "../set-outcome-core";
+import {
+  setApplicationOutcome,
+  RECOMMENDATION_NOT_RECONFIRMED_MESSAGE,
+} from "../set-outcome-core";
 
 // ─── Fake Prisma transaction client ───────────────────────────────────────────
 
@@ -202,6 +205,11 @@ describe("setApplicationOutcome (shared core, Epic 08)", () => {
     expect(createArg.data.benchmarkPayableFees).toBe(15676);
   });
 
+  // NB (Epic 13 / C1): this fixture leaves `calculationVersion` unset, so it is
+  // a v1 assessment and the re-confirmation gate below does not apply — it is
+  // exercising the benchmark FALLBACK CHAIN, not a v2 decision. A genuinely v2
+  // assessment with a null confirmed figure is now refused; see the
+  // re-confirmation-gate suite at the bottom of this file.
   it("AWARDED (v2, no confirmed figure): benchmark falls back to the assessment's recommended snapshot", async () => {
     fakeTx = makeFakeTx(
       baseApplication({
@@ -285,5 +293,108 @@ describe("setApplicationOutcome (shared core, Epic 08)", () => {
     expect(fakeTx.application.update).not.toHaveBeenCalled();
     expect(fakeTx.bursaryAccount.create).not.toHaveBeenCalled();
     expect(fakeTx.auditLog.create).not.toHaveBeenCalled();
+  });
+});
+
+// ─── Re-confirmation gate after a reopen (Epic 13 / C1, D13-2) ────────────────
+
+describe("setApplicationOutcome — recommendation re-confirmation gate", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("REFUSES a v2 decision whose recommendation has no confirmed payable fees", async () => {
+    // The post-reopen state: reopening cleared confirmedPayableFees, so the
+    // figure behind the award has not been signed off since the correction.
+    fakeTx = makeFakeTx(
+      baseApplication({
+        assessment: {
+          id: "assess-1",
+          status: "COMPLETED",
+          calculationVersion: 2,
+          yearlyPayableFees: null,
+          recommendedPayableFees: 12000,
+          recommendation: { confirmedPayableFees: null },
+        },
+      })
+    );
+
+    const result = await setApplicationOutcome("app-1", "AWARDED", {
+      bursaryAward: 12000,
+      scholarshipAward: null,
+    });
+
+    expect(result).toEqual({
+      success: false,
+      error: RECOMMENDATION_NOT_RECONFIRMED_MESSAGE,
+    });
+    // No account promoted off an unconfirmed number, no outcome, no audit.
+    expect(fakeTx.bursaryAccount.create).not.toHaveBeenCalled();
+    expect(fakeTx.assessment.updateMany).not.toHaveBeenCalled();
+    expect(fakeTx.auditLog.create).not.toHaveBeenCalled();
+  });
+
+  it("allows the decision once the figure is re-confirmed", async () => {
+    fakeTx = makeFakeTx(
+      baseApplication({
+        assessment: {
+          id: "assess-1",
+          status: "COMPLETED",
+          calculationVersion: 2,
+          yearlyPayableFees: null,
+          recommendedPayableFees: 12000,
+          recommendation: { confirmedPayableFees: 15676 },
+        },
+      })
+    );
+
+    const result = await setApplicationOutcome("app-1", "AWARDED", {
+      bursaryAward: 12000,
+      scholarshipAward: null,
+    });
+
+    expect(result).toEqual({ success: true });
+    expect(fakeTx.bursaryAccount.create).toHaveBeenCalledTimes(1);
+  });
+
+  it("exempts an assessment with no recommendation at all (nothing to re-confirm)", async () => {
+    fakeTx = makeFakeTx(
+      baseApplication({
+        assessment: {
+          id: "assess-1",
+          status: "COMPLETED",
+          calculationVersion: 2,
+          yearlyPayableFees: 12000,
+          recommendation: null,
+        },
+      })
+    );
+
+    const result = await setApplicationOutcome("app-1", "QUALIFIES_NOT_AWARDED");
+
+    expect(result).toEqual({ success: true });
+    expect(fakeTx.auditLog.create).toHaveBeenCalledTimes(1);
+  });
+
+  it("exempts v1 assessments entirely (confirmedPayableFees is a v2 field)", async () => {
+    fakeTx = makeFakeTx(
+      baseApplication({
+        assessment: {
+          id: "assess-1",
+          status: "COMPLETED",
+          calculationVersion: 1,
+          yearlyPayableFees: 12000,
+          recommendation: { confirmedPayableFees: null },
+        },
+      })
+    );
+
+    const result = await setApplicationOutcome("app-1", "AWARDED", {
+      bursaryAward: 12000,
+      scholarshipAward: null,
+    });
+
+    expect(result).toEqual({ success: true });
+    expect(fakeTx.bursaryAccount.create).toHaveBeenCalledTimes(1);
   });
 });

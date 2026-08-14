@@ -50,6 +50,10 @@ import { calculateDerivedSavings } from "@/lib/assessment/stage2-assets";
 import { applyFamilyTypeDefaults, type OverridableField } from "@/lib/assessment/auto-populate";
 import { shouldEnableSecondEarner } from "@/lib/assessment/v2/prefill";
 import {
+  isManualAdjustmentApplied,
+  validateManualAdjustment,
+} from "@/lib/assessment/v2/manual-adjustment";
+import {
   useAssessmentCalculationV2,
   runAssessmentV2,
 } from "@/hooks/use-assessment-calculation-v2";
@@ -89,6 +93,12 @@ export interface SerialisedAssessmentV2 {
   usesPublicTransport: boolean | null;
   feeInsuranceAnnual: number | null;
   behindOnFees: boolean | null;
+  /**
+   * Epic 13 / C2 — the SIGNED manual income-adjustment line and its mandatory
+   * reason (`Assessment.manualAdjustment` / `manualAdjustmentReason`).
+   */
+  manualAdjustment: number | null;
+  manualAdjustmentReason: string | null;
   dishonestyFlag: boolean;
   /** CALC-10 — "Assessor's wizard" forward-looking note for next year's assessor. */
   watchOutNotes: string | null;
@@ -289,6 +299,24 @@ export function AssessmentFormV2({
     earnerFromStore("PARENT_2", prefill.parent2Income)
   );
 
+  // ── State: manual income adjustment (Epic 13 / C2, D13-3) ───────────────────
+  // ONE signed line on top of the aggregated earner income — not a per-field
+  // override of any calculated cell. Its reason is mandatory while the amount
+  // is non-zero (same rule server-side, `saveAssessmentAction`).
+  const [manualAdjustment, setManualAdjustment] = React.useState<number>(
+    Number(assessment.manualAdjustment ?? 0) || 0
+  );
+  const [manualAdjustmentReason, setManualAdjustmentReason] = React.useState<string>(
+    assessment.manualAdjustmentReason ?? ""
+  );
+  const manualAdjustmentError = React.useMemo(() => {
+    const result = validateManualAdjustment({
+      amount: manualAdjustment,
+      reason: manualAdjustmentReason,
+    });
+    return result.ok ? null : result.error;
+  }, [manualAdjustment, manualAdjustmentReason]);
+
   // ── State: notional toggles ─────────────────────────────────────────────────
   const [rentAddBackType, setRentAddBackType] = React.useState<RentAddBackType>(
     assessment.rentAddBackType ?? "NONE"
@@ -353,6 +381,7 @@ export function AssessmentFormV2({
     const earners = twoEarner ? [parent1, parent2] : [parent1];
     return {
       earners,
+      manualAdjustment,
       familyTypeCategory,
       rentAddBackType,
       multiPropertyRentAddBack,
@@ -376,6 +405,7 @@ export function AssessmentFormV2({
     twoEarner,
     parent1,
     parent2,
+    manualAdjustment,
     familyTypeCategory,
     rentAddBackType,
     multiPropertyRentAddBack,
@@ -419,6 +449,20 @@ export function AssessmentFormV2({
   // actually succeeds.
   const handleSave = React.useCallback(async (): Promise<boolean> => {
     if (isReadOnly) return true;
+
+    // Epic 13 / C2 — refuse locally before the round-trip so the assessor gets
+    // the message inline instead of a failed save. The server enforces the
+    // same rule regardless (`saveAssessmentAction`); this is the courtesy.
+    if (manualAdjustmentError) {
+      setSaveError(manualAdjustmentError);
+      toast({
+        variant: "destructive",
+        title: "Manual adjustment needs a reason",
+        description: manualAdjustmentError,
+      });
+      return false;
+    }
+
     setIsSaving(true);
 
     const derivedSavings = calculateDerivedSavings(
@@ -485,6 +529,13 @@ export function AssessmentFormV2({
       usesPublicTransport,
       feeInsuranceAnnual,
       behindOnFees,
+      // Epic 13 / C2 — the adjustment line. The reason is cleared alongside a
+      // zeroed amount so a stale explanation can never outlive the figure it
+      // explained.
+      manualAdjustment,
+      manualAdjustmentReason: isManualAdjustmentApplied(manualAdjustment)
+        ? manualAdjustmentReason.trim()
+        : null,
       dishonestyFlag,
       watchOutNotes: watchOutNotes.trim().length > 0 ? watchOutNotes : null,
       ...snapshot,
@@ -542,6 +593,9 @@ export function AssessmentFormV2({
     usesPublicTransport,
     feeInsuranceAnnual,
     behindOnFees,
+    manualAdjustment,
+    manualAdjustmentReason,
+    manualAdjustmentError,
     dishonestyFlag,
     watchOutNotes,
     propertyAssets,
@@ -826,6 +880,65 @@ export function AssessmentFormV2({
             />
           </div>
         )}
+
+        {/* Manual income adjustment (Epic 13 / C2, D13-3) — ONE signed line on
+            top of the aggregated earner income. Not a per-field override. */}
+        <div className="space-y-3 rounded-lg border border-slate-200 bg-slate-50/60 p-3">
+          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+            Manual income adjustment
+          </p>
+          <p className="text-xs text-slate-400">
+            A single signed line added to the household net income (C40) after the earners are
+            totalled. Use a positive figure to add income the calculation cannot see — most often a
+            second parent&apos;s income in a divorced or separated household — or a negative figure
+            to deduct. A reason is required whenever the amount is not zero.
+          </p>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <FieldRow
+              label="Adjustment amount"
+              htmlFor="v2-manual-adjustment"
+              hint="Positive adds to household income; negative deducts."
+            >
+              <CurrencyInput
+                id="v2-manual-adjustment"
+                value={manualAdjustment}
+                disabled={isReadOnly}
+                allowNegative
+                ariaLabel="Manual income adjustment amount"
+                onChange={(v) => setManualAdjustment(v)}
+                onBlur={scheduleAutoSave}
+              />
+            </FieldRow>
+            {isManualAdjustmentApplied(manualAdjustment) && (
+              <FieldRow label="Reason (required)" htmlFor="v2-manual-adjustment-reason">
+                <Input
+                  id="v2-manual-adjustment-reason"
+                  type="text"
+                  value={manualAdjustmentReason}
+                  disabled={isReadOnly}
+                  onChange={(e) => setManualAdjustmentReason(e.target.value)}
+                  onBlur={scheduleAutoSave}
+                  placeholder="e.g. second parent's income added (divorced/separated household)"
+                  aria-invalid={manualAdjustmentError != null}
+                  aria-describedby={
+                    manualAdjustmentError ? "v2-manual-adjustment-error" : undefined
+                  }
+                  className="h-9 border-slate-200 text-sm"
+                />
+              </FieldRow>
+            )}
+          </div>
+          {manualAdjustmentError && (
+            <p
+              id="v2-manual-adjustment-error"
+              role="alert"
+              className="flex items-start gap-1.5 text-xs font-medium text-error-600"
+            >
+              <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+              {manualAdjustmentError}
+            </p>
+          )}
+        </div>
       </FormSection>
 
       {/* C. Notional spend toggles */}

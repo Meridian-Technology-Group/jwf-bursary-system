@@ -94,6 +94,14 @@ export function YoyFinancialsTable({ rows, className }: YoyFinancialsTableProps)
                   <span className={cn("ml-2 text-xs", incomeDelta.className)}>
                     {incomeDelta.text}
                   </span>
+                  {/* Epic 13 / C2 — a year whose income carries an assessor
+                      adjustment says so, so the trend is never unexplained. */}
+                  {row.manualAdjustment != null && row.manualAdjustment !== 0 && (
+                    <span className="block text-xs font-normal text-amber-700">
+                      incl. manual adj. {row.manualAdjustment > 0 ? "+" : "−"}
+                      {formatGBP(Math.abs(row.manualAdjustment))}
+                    </span>
+                  )}
                 </td>
                 <td className="px-3 py-2.5 text-right font-mono tabular-nums text-slate-700">
                   {formatGBP(row.totalCashSavings)}

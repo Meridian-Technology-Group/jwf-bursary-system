@@ -28,7 +28,6 @@ import { sendEmail } from "@/lib/email/send";
 import { humaniseSlot } from "@/lib/documents/slots";
 import { deleteDocument } from "@/lib/storage/documents";
 import { createSupabaseAdminClient } from "@/lib/auth/supabase-admin";
-import { setApplicationOutcomeLegacy } from "@/lib/applications/set-outcome-core";
 import { restartApplicationFromRejection } from "@/lib/applications/create-from-invitation";
 import { getAppUrl } from "@/lib/app-url";
 import { isPurgeable, notYetPurgeableMessage } from "@/lib/retention/policy";
@@ -117,7 +116,7 @@ function revalidateApplicationPaths(applicationId: string) {
 /**
  * General-purpose status transition. Validates the transition, persists it,
  * and writes an audit log. Callers that need email side-effects should use
- * the specialised actions (pauseApplication, resumeApplication, setOutcome).
+ * the specialised actions (pauseApplication, resumeApplication).
  */
 export async function updateApplicationStatus(
   applicationId: string,
@@ -669,29 +668,6 @@ export async function resumeApplication(
     console.error("[resumeApplication]", err);
     return { success: false, error: "Failed to resume application." };
   }
-}
-
-// ─── setOutcome ───────────────────────────────────────────────────────────────
-
-/**
- * Sets the final outcome of a COMPLETED application to QUALIFIES or
- * DOES_NOT_QUALIFY, and sends the appropriate outcome email.
- *
- * Thin wrapper around the shared core in
- * `@/lib/applications/set-outcome-core` (backlog #11) — see that module for
- * the transition validation, idempotent BursaryAccount creation, email and
- * canonical audit write. This entry point revalidates the application-detail
- * paths.
- */
-export async function setOutcome(
-  applicationId: string,
-  outcome: "QUALIFIES" | "DOES_NOT_QUALIFY"
-): Promise<ActionResult> {
-  const result = await setApplicationOutcomeLegacy(applicationId, outcome);
-  if (result.success) {
-    revalidateApplicationPaths(applicationId);
-  }
-  return result;
 }
 
 // ─── assignApplicationAction ──────────────────────────────────────────────────

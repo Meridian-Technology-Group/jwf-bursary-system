@@ -226,6 +226,11 @@ export default async function RecommendationPage({ params }: Props) {
       lifestyleSqueezeRatio: toNumber(assessment.lifestyleSqueezeRatio),
       lifestyleSqueezeLabel: assessment.lifestyleSqueezeLabel,
       dishonestyFlag: assessment.dishonestyFlag,
+      // Epic 13 / C2 — the household income figure the legs were built on and
+      // the manual adjustment (with its mandatory reason) baked into it.
+      totalHouseholdNetIncome: toNumber(assessment.totalHouseholdNetIncome),
+      manualAdjustment: toNumber(assessment.manualAdjustment),
+      manualAdjustmentReason: assessment.manualAdjustmentReason,
     };
 
     const serialisedRecommendationV2: SerialisedRecommendationV2 | null =
