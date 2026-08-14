@@ -9,6 +9,12 @@
  *
  * This is the ONLY automatic writer of CLOSED. Admin manual-close is a separate
  * server action. Closing is idempotent (a CLOSED account stays CLOSED).
+ *
+ * Epic 13 / C1 adds the one sanctioned inverse, `reopenAccountForAssessmentYear`
+ * — used when an assessor reopens a COMPLETED assessment, so the account stops
+ * claiming that year is finished. See its docstring for why un-closing is a
+ * documented exception to the set-once `closedAt` rule rather than a licence to
+ * toggle account state generally.
  */
 
 import type { Tx } from "@/lib/db/prisma";
@@ -61,6 +67,90 @@ export async function closeAccountIfComplete(
     data: { status: "CLOSED", closedAt: now },
   });
   return { closed: true };
+}
+
+export interface ReopenResult {
+  /** True when this call moved the year's schedule entry COMPLETE → RECEIVED. */
+  scheduleEntryReopened: boolean;
+  /** True when this call transitioned the account CLOSED → ACTIVE. */
+  accountReopened: boolean;
+}
+
+/**
+ * Undo the close-on-complete effects of one assessment year — the exact inverse
+ * of the `mirrorApplicationToSchedule({ status: "COMPLETE" })` +
+ * `closeAccountIfComplete` pair that `completeAssessmentAction` runs.
+ *
+ * Called ONLY from the assessment reopen path (Epic 13 / C1, D13-2). When an
+ * assessor reopens a COMPLETED assessment, the account must stop claiming that
+ * year is finished: the year's schedule entry goes COMPLETE → RECEIVED and, if
+ * that completion is what auto-closed the account, the account goes CLOSED →
+ * ACTIVE (restoring the parent's portal access, which is keyed off the account
+ * status — see lib/bursary-accounts/access.ts).
+ *
+ * ⚠️ DELIBERATE EXCEPTION to the set-once `closedAt` rule. Both
+ * `BursaryAccount.closedAt` and the `Application.closedAt` it mirrors are
+ * documented as written exactly once, and every OTHER path honours that: an
+ * account close is a historical fact, not a toggle. This function is the single
+ * sanctioned reversal, and it is narrow enough to stay safe:
+ *   - It only ever reverses an AUTOMATIC close. `closeAccountIfComplete` is the
+ *     only automatic writer of CLOSED; an ADMIN manual close is a separate
+ *     action and a separate decision, so we refuse to reverse a close that
+ *     cannot have come from this year's completion (see the guard below).
+ *   - Its caller is gated on "no outcome set", so nothing downstream of an
+ *     award decision has been communicated or promoted yet.
+ *   - It clears `closedAt` rather than back-dating it: the account is genuinely
+ *     no longer closed, so leaving a stale timestamp would be the lie.
+ * Anything wanting to un-close an account for another reason needs its own
+ * decision — do not generalise this.
+ *
+ * Idempotent: a schedule entry that is not COMPLETE and an account that is not
+ * CLOSED are both left untouched. No-op (all false) when the account has no
+ * schedule entry for that year.
+ */
+export async function reopenAccountForAssessmentYear(
+  tx: Tx,
+  params: { bursaryAccountId: string; academicYear: string }
+): Promise<ReopenResult> {
+  const result: ReopenResult = {
+    scheduleEntryReopened: false,
+    accountReopened: false,
+  };
+
+  const entry = await tx.bursaryScheduleEntry.findFirst({
+    where: {
+      bursaryAccountId: params.bursaryAccountId,
+      academicYear: params.academicYear,
+    },
+    select: { id: true, status: true },
+  });
+
+  if (entry && entry.status === "COMPLETE") {
+    await tx.bursaryScheduleEntry.update({
+      where: { id: entry.id },
+      data: { status: "RECEIVED" },
+    });
+    result.scheduleEntryReopened = true;
+  }
+
+  // Only reverse a close that this year's completion could have caused. If the
+  // year had no COMPLETE entry to reverse, the account's CLOSED state came from
+  // somewhere else (a manual admin close, another year) — leave it alone.
+  if (!result.scheduleEntryReopened) return result;
+
+  const account = await tx.bursaryAccount.findUnique({
+    where: { id: params.bursaryAccountId },
+    select: { status: true },
+  });
+  if (account?.status === "CLOSED") {
+    await tx.bursaryAccount.update({
+      where: { id: params.bursaryAccountId },
+      data: { status: "ACTIVE", closedAt: null },
+    });
+    result.accountReopened = true;
+  }
+
+  return result;
 }
 
 /**

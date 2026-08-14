@@ -86,6 +86,15 @@ model BursaryAccount {
   feesAccountCode      String?                @map("fees_account_code")
   leadApplicantId      String                 @map("lead_applicant_id") @db.Uuid
   status               BursaryAccountStatus   @default(ACTIVE)
+  /// Set when the account closes — normally exactly once, either by an ADMIN
+  /// manual close or automatically by `closeAccountIfComplete` once every
+  /// schedule year is COMPLETE. Treat it as write-once everywhere EXCEPT the
+  /// single documented exception: reopening a COMPLETED assessment
+  /// (`reopenAccountForAssessmentYear`, Epic 13 / C1, D13-2) clears it and
+  /// returns the account to ACTIVE, because the completion that triggered the
+  /// auto-close has itself been withdrawn. That reversal only ever undoes an
+  /// automatic close, and only while no outcome has been set. Nothing else may
+  /// rewrite this field. `Application.closedAt` mirrors this rule.
   closedAt             DateTime?              @map("closed_at") @db.Timestamptz(6)
   createdAt            DateTime               @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt            DateTime               @updatedAt @map("updated_at") @db.Timestamptz(6)
@@ -173,8 +182,11 @@ model Application {
   /// window). Read via effectiveSubmissionDeadline() — never compared raw.
   submissionDeadlineAt DateTime?                @map("submission_deadline_at") @db.Timestamptz(6)
   /// Unified Closed state (item 2). NULL ⇒ not closed. Set exactly once by
-  /// `closeApplication` (never rewritten — the original close is immutable,
-  /// mirroring BursaryAccount.closedAt). closedAt != null takes precedence
+  /// `closeApplication` (never rewritten — the original close is immutable).
+  /// Unlike BursaryAccount.closedAt, which the assessment-reopen path may clear
+  /// (Epic 13 / C1 — see that field's note), this one has NO exception: an
+  /// application close is final, and reopen refuses to run on a closed
+  /// application rather than undoing it. closedAt != null takes precedence
   /// over every other derived review phase (CLOSED wins). A close always
   /// carries a close reason; the reason's purgeOnClose flag decides whether
   /// the close also anonymised PII (purgedAt below).

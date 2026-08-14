@@ -16,6 +16,7 @@ import {
   assertSubmittedAtUnset,
   SUBMITTED_AT_IMMUTABLE_MESSAGE,
   discardAssessment,
+  reopenAssessmentRow,
   reopenAssessmentForMaterialChange,
   refreshFormStatus,
   beginReview,
@@ -174,9 +175,11 @@ describe("status service — assessment lifecycle (strict, PR-4)", () => {
     expect(isLegalAssessmentTransition("NOT_STARTED", "COMPLETED")).toBe(false);
   });
 
-  it("treats COMPLETED as terminal", () => {
+  it("opens exactly one exit edge from COMPLETED — the C1 reopen (D13-2)", () => {
+    // Epic 13 / C1: COMPLETED was terminal; it now has a single exit edge so a
+    // completed-by-mistake assessment can be corrected. IN_PROGRESS only.
+    expect(isLegalAssessmentTransition("COMPLETED", "IN_PROGRESS")).toBe(true);
     expect(isLegalAssessmentTransition("COMPLETED", "PAUSED")).toBe(false);
-    expect(isLegalAssessmentTransition("COMPLETED", "IN_PROGRESS")).toBe(false);
   });
 
   it("allows the discard edges IN_PROGRESS/PAUSED → NOT_STARTED (D-G6/D3)", () => {
@@ -185,8 +188,49 @@ describe("status service — assessment lifecycle (strict, PR-4)", () => {
   });
 
   it("does NOT allow COMPLETED → NOT_STARTED (no auto-invalidation of a finished assessment)", () => {
+    // Still false after C1: reopen preserves the assessment's data (→
+    // IN_PROGRESS); discarding a completed assessment remains illegal.
     expect(isLegalAssessmentTransition("COMPLETED", "NOT_STARTED")).toBe(false);
   });
+});
+
+describe("status service — reopenAssessmentRow (Epic 13 / C1)", () => {
+  function makeTx() {
+    return {
+      assessment: { update: vi.fn(async (_args: unknown) => ({})) },
+    };
+  }
+
+  it("moves COMPLETED → IN_PROGRESS and clears completedAt", async () => {
+    const tx = makeTx();
+    await reopenAssessmentRow(tx as never, "asmt-1", "COMPLETED");
+    expect(tx.assessment.update).toHaveBeenCalledWith({
+      where: { id: "asmt-1" },
+      data: { status: "IN_PROGRESS", completedAt: null },
+    });
+  });
+
+  it("preserves the assessment's data — reopen is not discard", async () => {
+    const tx = makeTx();
+    await reopenAssessmentRow(tx as never, "asmt-1", "COMPLETED");
+    const { data } = tx.assessment.update.mock.calls[0]![0] as unknown as {
+      data: Record<string, unknown>;
+    };
+    // Only the two status fields are touched: no outcome reset, no snapshot
+    // clearing. Correcting an assessment must not throw its figures away.
+    expect(Object.keys(data).sort()).toEqual(["completedAt", "status"]);
+  });
+
+  it.each(["NOT_STARTED", "IN_PROGRESS", "PAUSED"] as const)(
+    "throws (never silently no-ops) when the source is %s",
+    async (from) => {
+      const tx = makeTx();
+      await expect(
+        reopenAssessmentRow(tx as never, "asmt-1", from)
+      ).rejects.toThrow(/not completed/i);
+      expect(tx.assessment.update).not.toHaveBeenCalled();
+    }
+  );
 });
 
 describe("status service — legacy outcome shim", () => {
