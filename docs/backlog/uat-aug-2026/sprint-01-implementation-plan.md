@@ -835,6 +835,29 @@ enough that it is not a surprise.
 Digest computation needs the bytes: compute it in the confirm endpoint from the
 Range/stream already being read for the sniff, so there is one download, not two.
 
+> **Outcomes (2026-08-14, #288):**
+>
+> - **One read, two consumers.** A1's `readObjectHead` (a signed-URL Range
+>   request) was widened from 64 bytes to 64 KB and its buffer now feeds both
+>   `sniffContentType` and the digest. A test asserts it is called exactly once.
+> - **The digest is a prefix hash, deliberately:**
+>   `sha256("<exact stored byte length>:" || first 64 KB)`. Hashing whole files
+>   would pull up to 20 MB back through the route — precisely what the presigned
+>   transport exists to avoid. **For any file under 64 KB (most UC statements)
+>   the "prefix" is the whole file, so the digest is exact**; only larger files
+>   use a true prefix, and those must match on byte length *as well as* the first
+>   64 KB to collide. It is duplicate *detection*, not proof of identity.
+> - **Reject for UC, warn elsewhere.** The reject fires only when the incoming
+>   slot is a UC slot **and** the existing match sits in a UC slot. The same file
+>   in `HOUSING_BENEFIT` then `UC_MONTHLY_2` warns rather than blocks — refusing
+>   it would punish an honest applicant whose one letter evidences two lines.
+> - **⚠️ `ucMonthlyDocumentIds` changed shape** from `string[]` to positional
+>   `(string | null)[]`, normalised to exactly three entries on mount. Existing
+>   nonprod blobs with a single id keep it in position 1 — **spot-check an
+>   in-progress application after this lands.**
+> - Repeat-slot UI and the 409 path are **unit-tested only** — they want a
+>   click-through on the preview deploy.
+
 #### D3 · Loan documents · S
 **CF-30**
 
@@ -944,6 +967,7 @@ recorded here rather than fixed inline, so the discovering PR stays scoped.
 | **F1** | D13-1b | **Retire NM-01..05 name masking coherently.** Brian retired masking on 2026-08-14, but the codebase now contradicts itself. Remove the `childName` omission from `getApplicationWithDetails` (`src/lib/db/queries/applications.ts:429-468`) and the "Assessment tab MUST NOT call this" prohibition on `getApplicationNamesForReveal` (~:516); decide whether the queue's masked-by-default toggle stays; update the PRD (`docs/product/prd/04-admin-round-management.md:7`, AC-03) and mark finding 2.18 superseded rather than open. **Decide deliberately whether `NAME_REVEAL` audit rows are still wanted** — if names are simply visible, an audit row per page load is cost without a purpose, and C4a currently writes one on every detail-page load. | M |
 | **F5** | A4 + A3 | **Unseeded defaults leak raw Zod internals — a defect *class*, not one bug.** A required field absent from a form's `getDefaultValues` stays `undefined`; the base-type check then fails **before** any `refine`/`superRefine` runs, and the banner renders bare Zod text naming no field ("Invalid input: expected string, received undefined"). Two instances found independently on the same day: A4's `documentsConfirmed` seeded for `parent1Income` only (Parent 2's checkbox also mounted uncontrolled), and Charlotte's CF-17 blocker. Two consequences worth fixing generally: **(a)** audit every section form for required fields missing from its defaults, especially in conditionally-rendered blocks; **(b)** make the error banner name the offending field — a pathless error cost hours of diagnosis here and is hostile to applicants, who cannot act on it at all. **Assessed during A3: (b) is NOT cheap** — `flattenErrors` has the path, but turning `parent2Contact.firstName` into copy a parent should read needs a field-label registry spanning every section. Separate PR. A3 removed the *unnamed raw Zod* class; the residual gap is that two parents' identical messages still don't say **which parent**. | M |
 | **F6** | A4 | **Blank and a deliberate £0 are indistinguishable at field level** (pre-existing, not introduced by A4). Every currency cell is seeded to `0` on mount, so "never touched" and "typed 0" are identical in the stored blob; `CurrencyInput` also writes `""` on clear and leaves it `""` on blur, which `z.coerce.number()` turns into `0`. A4 works around it with a per-parent declaration at section level, which is sound — but the underlying ambiguity remains and will bite any future rule that needs to tell the two apart. | M |
+| **F9** | D2 | **The staff multipart upload path stores a NULL digest.** `/api/admin/documents` (edit-on-behalf) is neither duplicate-checked nor checkable against applicant uploads, because D2's digest is computed in the presigned confirm endpoint only. Out of D2's stated scope. Low urgency — staff uploading the same file three times is not the reported problem — but it means duplicate detection has a hole on one path. | S |
 | **F7** | D3 | **`arrayForEach` rules cannot see the section blob.** `OTHER_PROPERTY_MORTGAGE_STATEMENT` has the same stale-branch defect as the six D3 fixed, but its `elementGate` receives only the array element, so it cannot re-check `hasOtherProperties`. Fix by passing the blob as `elementGate`'s second argument — one line in `src/lib/portal/document-rules.ts`. Converting it to `structural` instead would destroy the per-index gap ids existing tests assert, so don't. | S |
 | **F8** | D3 | **`INVESTMENT_PARENT_2` needs a decision, not a guess.** It gates on `parent2OwnsInvestments`, but its control renders under `!isSoleParent` — derived **outside** the section blob, so the rule cannot see it. The sibling's "was it saved" heuristic could wrongly **suppress** a legitimate requirement for a dual-parent household, which is the one direction that causes real harm (a missing document silently not asked for). D3 left it deliberately. Decide how a rule should read state that lives outside its own section. | M |
 | **F4** | C3 | **`setApplicationOutcomeLegacy` is orphaned dead code.** Its only caller was the `setOutcome` server action that C3 deleted, and nothing tests it (`src/lib/applications/set-outcome-core.ts:318`). C3 could not remove it because that file is C1-owned in an ancestor branch. Verified orphaned by `git grep` on the C3 branch — the sole hit is its own definition. Delete it once the stack lands. | S |
@@ -1094,7 +1118,7 @@ Update the status column as PRs merge. `—` = not started.
 | D2 | — | | migration |
 | D3 | ✅ merged-ready | [#284](https://github.com/Meridian-Technology-Group/jwf-bursary-system/pull/284) | CI green. Follow-up commit fixed **6 of 11** stale-branch rules → F7/F8 |
 | D4 | ✅ merged-ready | [#285](https://github.com/Meridian-Technology-Group/jwf-bursary-system/pull/285) | Standardised on "Submit Application". Confirmation fires **after** validation, not on click |
-| D2 | in progress | | migration |
+| D2 | ✅ merged-ready | [#288](https://github.com/Meridian-Technology-Group/jwf-bursary-system/pull/288) | migration. Digest computed off A1's **existing** Range read — no second download |
 | F2 | in progress | | |
 | F4 | ✅ merged-ready | [#286](https://github.com/Meridian-Technology-Group/jwf-bursary-system/pull/286) | One file, −40/+0. Second commit folds in `OutcomeApplication` + a stale docstring it reported |
 | E1 | — | | migration |
