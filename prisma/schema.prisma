@@ -131,11 +131,18 @@ model BursaryScheduleEntry {
 /// One application per child per round.
 model Application {
   id                   String                   @id @default(uuid()) @db.Uuid
-  /// Freely editable by ADMIN at any lifecycle stage (item 11). Case-insensitive
-  /// uniqueness is ALSO enforced via a raw `lower(reference)` unique index
-  /// (migration 20260709130000_reference_case_insensitive_unique) — Prisma
-  /// cannot express a functional index, so it isn't visible here.
-  reference            String                   @unique
+  /// The ONE user-facing label for this application (Epic 13, D13-1a). It is a
+  /// LABEL, NOT AN IDENTITY: identity is `id`, and no FK anywhere points here.
+  /// Defaults to `{Child} – {School} – {Year group} – {Academic year}` (see
+  /// lib/applications/reference.ts) and is freely editable by ADMIN at any
+  /// lifecycle stage, including after award — its primary use is being re-set
+  /// to the external fees-system code (e.g. `TS-SMITH05-Smith, Bob`) for
+  /// reconciliation. **NOT UNIQUE at any layer**: duplicates are legitimate, so
+  /// migration 20260814120000_application_reference_non_unique dropped both the
+  /// `@unique` and the `lower(reference)` unique index and replaced the latter
+  /// with a non-unique functional index (`applications_reference_lower_idx`,
+  /// invisible here — Prisma cannot express a functional index).
+  reference            String
   roundId              String                   @map("round_id") @db.Uuid
   bursaryAccountId     String?                  @map("bursary_account_id") @db.Uuid
   contactId            String?                  @map("contact_id") @db.Uuid

@@ -140,7 +140,12 @@ describe("updateApplicationReferenceAction (item 11)", () => {
     });
   });
 
-  it("rejects a case-insensitive duplicate of another application with a friendly error naming the conflict, and persists nothing", async () => {
+  // ─── D13-1a: the reference is a non-unique label ───────────────────────────
+
+  it("accepts a reference already held by another application — duplicates are legitimate (D13-1a)", async () => {
+    // Another application already holds "ABC-1". Under the old Story 11.2 rule
+    // this was rejected; the reference is now a label edited to match the
+    // external fees system, where two applications may share a code.
     fakeTx = makeFakeTx({
       application: {
         findUnique: vi.fn(async () => ({
@@ -154,24 +159,30 @@ describe("updateApplicationReferenceAction (item 11)", () => {
 
     const res = await updateApplicationReferenceAction("app-1", "abc-1");
 
-    expect(res).toEqual({
-      success: false,
-      error: '"ABC-1" is already in use by another application.',
+    expect(res).toEqual({ success: true });
+    expect(fakeTx.application.update).toHaveBeenCalledWith({
+      where: { id: "app-1" },
+      data: { reference: "abc-1" },
     });
-    expect(fakeTx.application.update).not.toHaveBeenCalled();
-    expect(auditMock).not.toHaveBeenCalled();
+    // The duplicate pre-check is gone entirely — not merely ignored.
+    expect(fakeTx.application.findFirst).not.toHaveBeenCalled();
+    expect(auditMock).toHaveBeenCalledTimes(1);
+  });
 
-    // Duplicate lookup excludes the current application and matches insensitively.
-    expect(fakeTx.application.findFirst).toHaveBeenCalledWith({
-      where: {
-        reference: { equals: "abc-1", mode: "insensitive" },
-        id: { not: "app-1" },
-      },
-      select: { reference: true },
+  it("accepts an external fees-system code verbatim, duplicates and punctuation included", async () => {
+    fakeTx = makeFakeTx();
+    const feesCode = "TS-SMITH05-Smith, Bob";
+
+    const res = await updateApplicationReferenceAction("app-1", feesCode);
+
+    expect(res).toEqual({ success: true });
+    expect(fakeTx.application.update).toHaveBeenCalledWith({
+      where: { id: "app-1" },
+      data: { reference: feesCode },
     });
   });
 
-  it("maps a unique-constraint race at the DB layer to the same friendly error", async () => {
+  it("surfaces an unexpected DB error as-is — there is no unique-constraint remapping left", async () => {
     fakeTx = makeFakeTx({
       application: {
         findUnique: vi.fn(async () => ({
@@ -180,9 +191,7 @@ describe("updateApplicationReferenceAction (item 11)", () => {
         })),
         findFirst: vi.fn(async () => null),
         update: vi.fn(async () => {
-          throw new Error(
-            'Unique constraint failed on the fields: (`applications_reference_lower_key`)'
-          );
+          throw new Error("connection terminated unexpectedly");
         }),
       },
     });
@@ -191,10 +200,56 @@ describe("updateApplicationReferenceAction (item 11)", () => {
 
     expect(res).toEqual({
       success: false,
-      error: "That reference is already in use by another application.",
+      error: "connection terminated unexpectedly",
     });
     expect(auditMock).not.toHaveBeenCalled();
   });
+
+  // ─── Editability is NOT lifecycle-gated (Story 11.1, re-pinned for C1) ─────
+
+  // The reference is explicitly exempt from state-gating: its primary use is
+  // reconciliation against the external fees system AFTER an award, so it must
+  // stay editable in every terminal state. C1 adds new assessment status guards
+  // in this same sprint — this test exists so such a guard cannot silently
+  // start catching the reference edit.
+  it.each([
+    ["closed", { closedAt: new Date("2026-03-01T00:00:00Z"), archivedAt: null }],
+    ["archived", { closedAt: null, archivedAt: new Date("2026-03-01T00:00:00Z") }],
+    [
+      "closed and archived",
+      {
+        closedAt: new Date("2026-03-01T00:00:00Z"),
+        archivedAt: new Date("2026-03-02T00:00:00Z"),
+      },
+    ],
+  ])(
+    "stays editable when the application is %s (no lifecycle gate)",
+    async (_label, lifecycle) => {
+      fakeTx = makeFakeTx({
+        application: {
+          findUnique: vi.fn(async () => ({
+            id: "app-1",
+            reference: "WS-20252026-0001",
+            ...lifecycle,
+          })),
+          findFirst: vi.fn(async () => null),
+          update: vi.fn(async () => ({})),
+        },
+      });
+
+      const res = await updateApplicationReferenceAction(
+        "app-1",
+        "TS-SMITH05-Smith, Bob"
+      );
+
+      expect(res).toEqual({ success: true });
+      expect(fakeTx.application.update).toHaveBeenCalledWith({
+        where: { id: "app-1" },
+        data: { reference: "TS-SMITH05-Smith, Bob" },
+      });
+      expect(auditMock).toHaveBeenCalledTimes(1);
+    }
+  );
 
   it("fails cleanly when the application does not exist", async () => {
     fakeTx = makeFakeTx({
