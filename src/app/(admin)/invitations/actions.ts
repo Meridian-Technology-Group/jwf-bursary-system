@@ -41,10 +41,14 @@ import { getAppUrl } from "@/lib/app-url";
 import { sendEmail } from "@/lib/email/send";
 import { withAdminContext } from "@/lib/db/prisma";
 import { createAuditLog } from "@/lib/audit/log";
-import { prepopulateReassessment, getPreviousYearApplication } from "@/lib/db/queries/reassessment";
+import {
+  prepopulateReassessment,
+  getPreviousYearApplication,
+  getPreviousYearReferenceSource,
+} from "@/lib/db/queries/reassessment";
 import { ensurePrimaryContributor } from "@/lib/db/queries/contributors";
 import { applicationCreateData } from "@/lib/applications/status";
-import { generateApplicationReference } from "@/lib/applications/reference";
+import { resolveRolloverReference } from "@/lib/applications/reference";
 import { listOpenRounds } from "@/lib/db/queries/reports";
 
 import { AUDIT_ACTIONS, AUDIT_ENTITY_TYPES } from "@/lib/audit/actions";
@@ -1017,16 +1021,42 @@ export async function createReassessmentApplicationAction(
 
       // Reference (Epic 13, C4a/C4b). This used to be
       // `REA-${account.reference}-${roundId.slice(0,8)}` — built from the
-      // bursary account's own `BA-…` code, which no longer exists, and opaque
-      // to everyone who read it. It now uses the same readable default every
-      // other creation path uses ("Bob Smith – Trinity School – Year 6 –
-      // 2027-28"), and stays freely editable afterwards.
+      // bursary account's own `BA-…` code, which no longer exists.
+      //
+      // D13-1a / Q5: this creates a ROLLING_OVER application, so it INHERITS
+      // the prior year's reference. Once that reference has been edited to the
+      // external fees-system code (`TS-SMITH05-Smith, Bob`), that code is what
+      // reconciliation depends on — regenerating it here would silently break
+      // the link, which is exactly what Q5 was decided to prevent. It is
+      // regenerated ONLY when the prior reference is still the untouched
+      // default, since inheriting that verbatim would drag a stale academic
+      // year onto the new year's application. A human-entered value is never
+      // discarded.
+      //
+      // Same helper as `createReassessmentApplicationFromInvitation` — the
+      // comparison lives in `resolveRolloverReference` and is deliberately NOT
+      // duplicated here. `getPreviousYearReferenceSource` is its own narrow
+      // read (not the heavyweight `getPreviousYearApplication` below), but both
+      // share `previousYearApplicationQuery`, so they always resolve to the
+      // same prior application. With no prior application it falls back to the
+      // generated default.
+      //
+      // Unlike the invitation path, this create DOES persist `entryYearGroup`,
+      // so it is passed through — the label is built from exactly the fields
+      // the row will hold, which is what keeps next year's
+      // recompute-and-compare consistent.
       const round = await tx.round.findUnique({
         where: { id: roundId },
         select: { academicYear: true },
       });
 
-      const reference = generateApplicationReference({
+      const priorReferenceSource = await getPreviousYearReferenceSource(
+        tx,
+        bursaryAccountId,
+        roundId
+      );
+
+      const reference = resolveRolloverReference(priorReferenceSource, {
         childName: account.childName,
         school: account.school,
         entryYearGroup: account.entryYearGroup,
