@@ -424,7 +424,11 @@ const assetsRules: DocumentRule[] = [
     },
   },
   // Per other-property: latest mortgage statement required when a mortgage
-  // balance is declared (workbook §6/7 Q2).
+  // balance is declared (workbook §6/7 Q2). Gated on `hasOtherProperties` like
+  // CREDIT_CARD_STATEMENT above: the property cards — and the per-property
+  // upload control — render only inside that branch, so a stale
+  // `otherProperties` entry left behind by switching the branch off must not
+  // raise a gap the applicant has no way to satisfy.
   {
     kind: "arrayForEach",
     id: "OTHER_PROPERTY_MORTGAGE_STATEMENT",
@@ -434,7 +438,10 @@ const assetsRules: DocumentRule[] = [
       docIdPath: "mortgageStatementDocumentId",
       slotPrefix: "OTHER_PROPERTY_MORTGAGE_",
     },
-    elementGate: (el) => Number(el.mortgageBalance ?? 0) > 0,
+    elementGate: (el, blob) => {
+      if (blob.hasOtherProperties !== true) return false; // not applicable
+      return Number(el.mortgageBalance ?? 0) > 0;
+    },
     elementLabel: (i) =>
       `A latest mortgage statement is required for other property ${i}`,
   },

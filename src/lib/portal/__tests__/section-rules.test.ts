@@ -653,7 +653,11 @@ describe("OTHER_INFO — court / insurance / maintenance uploads (PR-3)", () => 
 });
 
 describe("ASSETS_LIABILITIES — per other-property mortgage statement (PR-3)", () => {
-  const base = { councilTaxDocumentId: "x", parent1CurrentAccountDocumentIds: ["a"] };
+  const base = {
+    councilTaxDocumentId: "x",
+    parent1CurrentAccountDocumentIds: ["a"],
+    hasOtherProperties: true,
+  };
   it("requires a mortgage statement only for properties with a balance > 0", () => {
     expect(
       gapIds("ASSETS_LIABILITIES", {
@@ -667,6 +671,15 @@ describe("ASSETS_LIABILITIES — per other-property mortgage statement (PR-3)", 
       gapIds("ASSETS_LIABILITIES", {
         ...base,
         otherProperties: [{ mortgageBalance: 100000, mortgageStatementDocumentId: "m" }],
+      })
+    ).toEqual([]);
+  });
+  it("requires nothing for a stale property left behind by hasOtherProperties = false", () => {
+    expect(
+      gapIds("ASSETS_LIABILITIES", {
+        ...base,
+        hasOtherProperties: false,
+        otherProperties: [{ mortgageBalance: 100000 }],
       })
     ).toEqual([]);
   });

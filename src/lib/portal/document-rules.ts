@@ -151,8 +151,16 @@ export interface ArrayForEachRule extends BaseRule {
   arrayPath: string;
   /** Per-element doc location, relative to the element. */
   elementDoc: { docIdPath: string; slotPrefix: string };
-  /** Optional gate: only require the doc for an element when this returns true. */
-  elementGate?: (element: Record<string, unknown>) => boolean;
+  /**
+   * Optional gate: only require the doc for an element when this returns true.
+   * Receives the section blob as well as the element so the gate can re-check
+   * the branch flag that renders the upload control (a branch switched back off
+   * leaves stale element values in the blob — see `ConditionalField`).
+   */
+  elementGate?: (
+    element: Record<string, unknown>,
+    blob: Record<string, unknown>
+  ) => boolean;
   /** Builds the per-element gap label (1-based index passed for messaging). */
   elementLabel: (index: number, element: Record<string, unknown>) => string;
 }
@@ -319,7 +327,7 @@ export function evaluateRules(
         arr.forEach((el, i) => {
           if (!el || typeof el !== "object") return;
           const element = el as Record<string, unknown>;
-          if (rule.elementGate && !rule.elementGate(element)) return;
+          if (rule.elementGate && !rule.elementGate(element, blob)) return;
           const idVal = resolvePath(element, rule.elementDoc.docIdPath);
           const hasId =
             (typeof idVal === "string" && idVal.length > 0) ||
