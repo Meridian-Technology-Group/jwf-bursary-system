@@ -1,5 +1,9 @@
 import { describe, it, expect } from 'vitest'
-import { calculateEarnerIncome, calculateHouseholdNetIncome } from '../income'
+import {
+  calculateEarnerAggregateIncome,
+  calculateEarnerIncome,
+  calculateHouseholdNetIncome,
+} from '../income'
 import type { AssessorIncomeRecord } from '@/types/assessment-v2'
 
 describe('calculateEarnerIncome', () => {
@@ -165,5 +169,54 @@ describe('calculateHouseholdNetIncome', () => {
       { retired: { statePension: 9_500, privatePension: 2_500 }, total: 0, documentsConfirmed: true },
     ]
     expect(calculateHouseholdNetIncome(earners)).toBe(12_000)
+  })
+})
+
+// ─── Epic 13 / C2 — manual income adjustment (D13-3) ─────────────────────────
+
+describe('calculateHouseholdNetIncome — manual income adjustment', () => {
+  const earners: AssessorIncomeRecord[] = [
+    { employed: { annualSalaryPaye: 40_000 }, total: 0, documentsConfirmed: true },
+    { employed: { annualSalaryPaye: 25_000 }, total: 0, documentsConfirmed: true },
+  ]
+
+  it('defaults to no adjustment when the argument is omitted', () => {
+    expect(calculateHouseholdNetIncome(earners)).toBe(65_000)
+  })
+
+  it('adds a POSITIVE adjustment on top of the earner aggregate (the parent-2 add-on case)', () => {
+    expect(calculateHouseholdNetIncome(earners, 12_500)).toBe(77_500)
+  })
+
+  it('DEDUCTS a negative adjustment', () => {
+    expect(calculateHouseholdNetIncome(earners, -7_250)).toBe(57_750)
+  })
+
+  it('is applied AFTER earner aggregation, not per-earner', () => {
+    // Same adjustment, different earner split — the result depends only on
+    // the aggregate, proving the adjustment is a single household-level line.
+    const split: AssessorIncomeRecord[] = [
+      { employed: { annualSalaryPaye: 65_000 }, total: 0, documentsConfirmed: true },
+    ]
+    expect(calculateHouseholdNetIncome(split, 5_000)).toBe(
+      calculateHouseholdNetIncome(earners, 5_000),
+    )
+  })
+
+  it('still floors the ADJUSTED total at 0 (workbook C40)', () => {
+    expect(calculateHouseholdNetIncome(earners, -100_000)).toBe(0)
+  })
+
+  it('treats a non-finite / missing adjustment as 0', () => {
+    expect(calculateHouseholdNetIncome(earners, Number.NaN)).toBe(65_000)
+    expect(calculateHouseholdNetIncome(earners, undefined)).toBe(65_000)
+  })
+
+  it('calculateEarnerAggregateIncome reports the pre-adjustment subtotal', () => {
+    expect(calculateEarnerAggregateIncome(earners)).toBe(65_000)
+    // …and is unaffected by whatever the adjustment turns out to be.
+    expect(calculateHouseholdNetIncome(earners, 12_500) - calculateEarnerAggregateIncome(earners)).toBe(
+      12_500,
+    )
   })
 })

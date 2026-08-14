@@ -32,33 +32,56 @@ function formatCurrency(value: number): string {
   }).format(value);
 }
 
-function parseCurrency(raw: string): number {
+function parseCurrency(raw: string, allowNegative = false): number {
   const cleaned = raw.replace(/[£,\s]/g, "");
   const n = parseFloat(cleaned);
-  return isNaN(n) ? 0 : Math.max(0, n);
+  if (isNaN(n)) return 0;
+  return allowNegative ? n : Math.max(0, n);
 }
 
 export function CurrencyInput({
   id,
   value,
   onChange,
+  onBlur,
   disabled,
   className,
   prefix = "£",
+  allowNegative = false,
+  ariaLabel = "Currency amount",
+  ariaInvalid,
+  ariaDescribedBy,
 }: {
   id?: string;
   value: number;
   onChange: (value: number) => void;
+  /** Fired after the parsed value has been committed on blur (e.g. to schedule an auto-save). */
+  onBlur?: () => void;
   disabled?: boolean;
   className?: string;
   prefix?: string;
+  /**
+   * Epic 13 / C2 — allows a SIGNED amount. Off by default so every existing
+   * (always-positive) money cell keeps its `Math.max(0, …)` clamp verbatim;
+   * only the manual income-adjustment line opts in.
+   */
+  allowNegative?: boolean;
+  ariaLabel?: string;
+  ariaInvalid?: boolean;
+  ariaDescribedBy?: string;
 }) {
-  const [display, setDisplay] = React.useState(value > 0 ? formatCurrency(value) : "");
+  // A signed field must still render a negative value, so "is there a value to
+  // show?" is `!== 0`, not `> 0`, once negatives are allowed.
+  const hasValue = React.useCallback(
+    (v: number) => (allowNegative ? v !== 0 : v > 0),
+    [allowNegative]
+  );
+  const [display, setDisplay] = React.useState(hasValue(value) ? formatCurrency(value) : "");
   const [focused, setFocused] = React.useState(false);
 
   React.useEffect(() => {
-    if (!focused) setDisplay(value > 0 ? formatCurrency(value) : "");
-  }, [value, focused]);
+    if (!focused) setDisplay(hasValue(value) ? formatCurrency(value) : "");
+  }, [value, focused, hasValue]);
 
   return (
     <div className="relative">
@@ -73,17 +96,20 @@ export function CurrencyInput({
         disabled={disabled}
         onFocus={() => {
           setFocused(true);
-          setDisplay(value > 0 ? String(value) : "");
+          setDisplay(hasValue(value) ? String(value) : "");
         }}
         onBlur={() => {
           setFocused(false);
-          const parsed = parseCurrency(display);
+          const parsed = parseCurrency(display, allowNegative);
           onChange(parsed);
-          setDisplay(parsed > 0 ? formatCurrency(parsed) : "");
+          setDisplay(hasValue(parsed) ? formatCurrency(parsed) : "");
+          onBlur?.();
         }}
         onChange={(e) => setDisplay(e.target.value)}
         className={cn("pl-7 text-right font-mono", className)}
-        aria-label="Currency amount"
+        aria-label={ariaLabel}
+        aria-invalid={ariaInvalid}
+        aria-describedby={ariaDescribedBy}
       />
     </div>
   );

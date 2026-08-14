@@ -1,5 +1,9 @@
 import { z } from "zod";
 import {
+  MANUAL_ADJUSTMENT_REASON_REQUIRED_MESSAGE,
+  isManualAdjustmentApplied,
+} from "@/lib/assessment/v2/manual-adjustment";
+import {
   employedIncomeSchema,
   selfEmployedIncomeSchema,
   benefitsIncomeSchema,
@@ -81,3 +85,32 @@ export const debtsRecordSchema = z.object({
 });
 
 export type DebtsRecordFormValues = z.infer<typeof debtsRecordSchema>;
+
+// ─── Manual income adjustment (Epic 13 / C2, D13-3) ─────────────────────────
+// The one assessor-editable line on top of the calculated household income.
+// SIGNED (negatives deduct), so it deliberately does NOT reuse `currencyField`
+// (which is `.nonnegative()`). The reason is mandatory whenever the amount is
+// non-zero — enforced here so the schema, the form and the server action all
+// share one rule (`@/lib/assessment/v2/manual-adjustment`).
+
+export const manualAdjustmentSchema = z
+  .object({
+    manualAdjustment: z.coerce
+      .number({ error: "Please enter a number" })
+      .optional(),
+    manualAdjustmentReason: z.string().nullish(),
+  })
+  .superRefine((value, ctx) => {
+    if (
+      isManualAdjustmentApplied(value.manualAdjustment) &&
+      (value.manualAdjustmentReason ?? "").trim().length === 0
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["manualAdjustmentReason"],
+        message: MANUAL_ADJUSTMENT_REASON_REQUIRED_MESSAGE,
+      });
+    }
+  });
+
+export type ManualAdjustmentFormValues = z.infer<typeof manualAdjustmentSchema>;

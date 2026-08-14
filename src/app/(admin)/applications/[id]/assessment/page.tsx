@@ -632,6 +632,9 @@ export default async function AssessmentPage({ params }: Props) {
         usesPublicTransport: assessment.usesPublicTransport,
         feeInsuranceAnnual: toNumber(assessment.feeInsuranceAnnual),
         behindOnFees: assessment.behindOnFees,
+        // Epic 13 / C2 — the manual income-adjustment line.
+        manualAdjustment: toNumber(assessment.manualAdjustment),
+        manualAdjustmentReason: assessment.manualAdjustmentReason,
         dishonestyFlag: assessment.dishonestyFlag,
         watchOutNotes: assessment.watchOutNotes,
         earners: assessment.earners

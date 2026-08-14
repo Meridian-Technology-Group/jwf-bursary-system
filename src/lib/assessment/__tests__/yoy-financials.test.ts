@@ -11,6 +11,7 @@ function row(overrides: Partial<YoyFinancialsInputRow>): YoyFinancialsInputRow {
     academicYear: "2024/25",
     completedAt: new Date("2025-01-01T00:00:00Z"),
     totalHouseholdNetIncome: 50_000,
+    manualAdjustment: null,
     cashSavings: 10_000,
     isasPepsShares: 5_000,
     propertyAssets: null,

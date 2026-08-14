@@ -3,7 +3,9 @@ import {
   assessorIncomeRecordSchema,
   propertyAssetsRecordSchema,
   debtsRecordSchema,
+  manualAdjustmentSchema,
 } from "@/lib/schemas/assessment-v2";
+import { MANUAL_ADJUSTMENT_REASON_REQUIRED_MESSAGE } from "@/lib/assessment/v2/manual-adjustment";
 
 describe("assessorIncomeRecordSchema (CALC-02)", () => {
   it("accepts an empty record (every field optional)", () => {
@@ -115,6 +117,61 @@ describe("debtsRecordSchema (CALC-02)", () => {
     expect(debtsRecordSchema.safeParse({ leaseBalances: -1 }).success).toBe(false);
     expect(
       debtsRecordSchema.safeParse({ schoolFeesOwedOrOther: -1 }).success
+    ).toBe(false);
+  });
+});
+
+describe("manualAdjustmentSchema (Epic 13 / C2, D13-3)", () => {
+  it("accepts an absent adjustment", () => {
+    expect(manualAdjustmentSchema.safeParse({}).success).toBe(true);
+  });
+
+  it("accepts a zero amount with no reason", () => {
+    expect(
+      manualAdjustmentSchema.safeParse({
+        manualAdjustment: 0,
+        manualAdjustmentReason: null,
+      }).success
+    ).toBe(true);
+  });
+
+  it("accepts a NEGATIVE amount — the line must be able to deduct", () => {
+    const r = manualAdjustmentSchema.safeParse({
+      manualAdjustment: -4_000,
+      manualAdjustmentReason: "Maintenance was double-counted",
+    });
+    expect(r.success).toBe(true);
+  });
+
+  it("coerces a numeric string, sign intact", () => {
+    const r = manualAdjustmentSchema.safeParse({
+      manualAdjustment: "-4000",
+      manualAdjustmentReason: "Deducted",
+    });
+    expect(r.success).toBe(true);
+    expect(r.success && r.data.manualAdjustment).toBe(-4_000);
+  });
+
+  it("REJECTS a non-zero amount with no reason", () => {
+    const r = manualAdjustmentSchema.safeParse({
+      manualAdjustment: 12_500,
+      manualAdjustmentReason: null,
+    });
+    expect(r.success).toBe(false);
+    expect(r.success === false && r.error.issues[0].message).toBe(
+      MANUAL_ADJUSTMENT_REASON_REQUIRED_MESSAGE
+    );
+    expect(r.success === false && r.error.issues[0].path).toEqual([
+      "manualAdjustmentReason",
+    ]);
+  });
+
+  it("REJECTS a non-zero amount with a whitespace-only reason", () => {
+    expect(
+      manualAdjustmentSchema.safeParse({
+        manualAdjustment: -12_500,
+        manualAdjustmentReason: "   ",
+      }).success
     ).toBe(false);
   });
 });

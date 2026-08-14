@@ -80,6 +80,15 @@ export interface V2AssessmentSnapshot {
   lifestyleSqueezeRatio: number | null;
   lifestyleSqueezeLabel: string | null;
   dishonestyFlag: boolean;
+  /**
+   * Epic 13 / C2 — the household net income the three legs were computed from,
+   * plus the assessor's manual income-adjustment line and its reason. Carried
+   * onto the recommendation so the figure the decision rests on is never
+   * unexplained at decision time.
+   */
+  totalHouseholdNetIncome: number | null;
+  manualAdjustment: number | null;
+  manualAdjustmentReason: string | null;
 }
 
 /** Existing v2 recommendation (null if first save). */
@@ -122,6 +131,48 @@ function parseNum(value: string): number {
 
 // ─── Award-legs panel ─────────────────────────────────────────────────────────
 
+/**
+ * Epic 13 / C2 — the household net income the legs were computed from, with
+ * the assessor's manual adjustment and its mandatory reason spelled out
+ * underneath whenever one was applied. The figure the whole decision rests on
+ * must never appear here unexplained.
+ */
+function HouseholdIncomeLine({ snapshot }: { snapshot: V2AssessmentSnapshot }) {
+  const income = snapshot.totalHouseholdNetIncome;
+  const adjustment = snapshot.manualAdjustment ?? 0;
+  if (income == null && adjustment === 0) return null;
+
+  return (
+    <div className="mb-3 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
+      <div className="flex items-baseline justify-between gap-2">
+        <span className="text-sm text-slate-500">Household net income (C40)</span>
+        <span className="font-mono text-sm font-semibold tabular-nums text-slate-800">
+          {income == null ? "—" : formatCurrency(income)}
+        </span>
+      </div>
+      {adjustment !== 0 && (
+        <div className="mt-2 border-t border-slate-200 pt-2">
+          <div className="flex items-baseline justify-between gap-2">
+            <span className="text-sm text-amber-700">
+              Includes a manual income adjustment
+            </span>
+            <span className="font-mono text-sm font-semibold tabular-nums text-amber-700">
+              {adjustment > 0 ? "+" : "−"}
+              {formatCurrency(Math.abs(adjustment))}
+            </span>
+          </div>
+          <p className="mt-1 text-xs text-slate-500">
+            Reason:{" "}
+            {snapshot.manualAdjustmentReason?.trim() || (
+              <span className="italic text-slate-400">not recorded</span>
+            )}
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function AwardLegsPanel({
   snapshot,
   recommendedPayableFees,
@@ -148,6 +199,7 @@ function AwardLegsPanel({
         </p>
       </CardHeader>
       <CardContent>
+        <HouseholdIncomeLine snapshot={snapshot} />
         <div className="space-y-1.5">
           {legs.map((leg) => (
             <div

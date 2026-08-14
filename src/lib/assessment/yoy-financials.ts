@@ -34,6 +34,13 @@ export interface YoyFinancialsInputRow {
   completedAt: Date | string | null;
   /** `Assessment.totalHouseholdNetIncome` — shared by v1 and v2. */
   totalHouseholdNetIncome: number | null;
+  /**
+   * Epic 13 / C2 — `Assessment.manualAdjustment`, the signed manual income
+   * adjustment folded into `totalHouseholdNetIncome` for v2 rows. Surfaced
+   * here so a year whose income jumps because of an assessor adjustment is
+   * never an unexplained jump. Null/0 when none was applied.
+   */
+  manualAdjustment: number | null;
   /** `AssessmentProperty.cashSavings` — shared by v1 and v2; null when no property row exists. */
   cashSavings: number | null;
   /** `AssessmentProperty.isasPepsShares` — shared by v1 and v2; null when no property row exists. */
@@ -53,6 +60,8 @@ export interface YoyFinancialsTableRow {
   applicationReference: string;
   academicYear: string;
   totalHouseholdNetIncome: number | null;
+  /** Epic 13 / C2 — the signed manual income adjustment inside `totalHouseholdNetIncome` (null/0 when none). */
+  manualAdjustment: number | null;
   /** `cashSavings + isasPepsShares`; `null` only when BOTH source values are null (no property row). */
   totalCashSavings: number | null;
   /** Sum of per-property equity (value − mortgageBalance) from `propertyAssets`; `null` when no JSONB is stored (v1, or not yet itemised). */
@@ -123,6 +132,7 @@ export function buildYoyFinancialsTable(
       applicationReference: row.applicationReference,
       academicYear: row.academicYear,
       totalHouseholdNetIncome: row.totalHouseholdNetIncome,
+      manualAdjustment: row.manualAdjustment,
       totalCashSavings,
       totalPropertyEquity: propertyEquity,
       yearlyDebtExposure: row.yearlyDebtExposure,

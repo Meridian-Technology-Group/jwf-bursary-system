@@ -104,9 +104,11 @@ export interface AssessmentSaveInput {
   scholarshipPct?: number;
   vatRate?: number;
 
-  // Manual adjustment
+  // Manual adjustment. v1 reads it as a payable-fees adjustment; v2 (Epic 13
+  // / C2) reads the SAME column as a signed household-income adjustment line.
+  // `manualAdjustmentReason: null` is a valid clear (the amount went back to 0).
   manualAdjustment?: number;
-  manualAdjustmentReason?: string;
+  manualAdjustmentReason?: string | null;
 
   // CALC-10 — "Assessor's wizard" forward-looking note (v2 form; see
   // watch-out-notes.ts for the next-assessment read path). `null` clears it.
@@ -569,6 +571,7 @@ export async function getYoyFinancialsRows(
         select: {
           completedAt: true,
           totalHouseholdNetIncome: true,
+          manualAdjustment: true,
           yearlyDebtExposure: true,
           lifestyleSqueezeLabel: true,
           property: {
@@ -594,6 +597,7 @@ export async function getYoyFinancialsRows(
       academicYear: app.round.academicYear,
       completedAt: app.assessment.completedAt,
       totalHouseholdNetIncome: decimalToNumber(app.assessment.totalHouseholdNetIncome),
+      manualAdjustment: decimalToNumber(app.assessment.manualAdjustment),
       cashSavings: decimalToNumber(app.assessment.property?.cashSavings ?? null),
       isasPepsShares: decimalToNumber(app.assessment.property?.isasPepsShares ?? null),
       propertyAssets:

@@ -67,6 +67,26 @@ const COLUMNS: ColumnDef[] = [
   { header: "Gap Reasons", key: "gapReasons", width: 50 },
   { header: "Debt Status", key: "debtStatus", width: 22 },
   { header: "Lifestyle Squeeze", key: "lifestyleSqueezeLabel", width: 22 },
+  // Epic 13 / C2: the household income figure the award rests on, immediately
+  // followed by the manual adjustment folded into it and its reason — so the
+  // number is never unexplained in the spreadsheet either.
+  {
+    header: "Household Net Income",
+    key: "totalHouseholdNetIncome",
+    width: 24,
+    numFmt: '£#,##0.00',
+  },
+  {
+    header: "Manual Income Adjustment",
+    key: "manualAdjustment",
+    width: 24,
+    numFmt: '£#,##0.00;[Red]-£#,##0.00',
+  },
+  {
+    header: "Manual Adjustment Reason",
+    key: "manualAdjustmentReason",
+    width: 50,
+  },
 ];
 
 // Design tokens
@@ -141,6 +161,9 @@ export async function buildXlsxBuffer(rows: ExportRow[]): Promise<Buffer> {
       gapReasons: row.gapReasons,
       debtStatus: row.debtStatus,
       lifestyleSqueezeLabel: row.lifestyleSqueezeLabel,
+      totalHouseholdNetIncome: row.totalHouseholdNetIncome,
+      manualAdjustment: row.manualAdjustment,
+      manualAdjustmentReason: row.manualAdjustmentReason,
     });
 
     // Apply number formats to financial columns

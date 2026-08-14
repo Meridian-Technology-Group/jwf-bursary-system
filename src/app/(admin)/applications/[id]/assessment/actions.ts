@@ -41,6 +41,8 @@ import {
   AssessmentSnapshotMissingError,
 } from "@/lib/applications/status";
 import { getSecondaryContributor } from "@/lib/db/queries/contributors";
+import { manualAdjustmentSchema } from "@/lib/schemas/assessment-v2";
+import { MANUAL_ADJUSTMENT_REASON_REQUIRED_MESSAGE } from "@/lib/assessment/v2/manual-adjustment";
 import { createAuditLog } from "@/lib/audit/log";
 import { AUDIT_ACTIONS, AUDIT_ENTITY_TYPES } from "@/lib/audit/actions";
 import {
@@ -288,6 +290,44 @@ export async function proceedWithoutSecondParentAction(
   }
 }
 
+// ─── Manual income adjustment (Epic 13 / C2, D13-3) ───────────────────────────
+
+/**
+ * Resolves the EFFECTIVE manual-adjustment amount/reason for a partial save
+ * payload — submitted value where the field is present, stored value
+ * otherwise — and runs it through `manualAdjustmentSchema` (the same Zod
+ * schema the assessor form uses). Module-local, not exported: this file is
+ * `"use server"`, so only async functions may be exported.
+ */
+function validateManualAdjustmentSave(
+  data: AssessmentSaveInput,
+  stored: { manualAdjustment: unknown; manualAdjustmentReason: string | null }
+): { ok: true } | { ok: false; error: string } {
+  const amount =
+    data.manualAdjustment !== undefined
+      ? data.manualAdjustment
+      : stored.manualAdjustment != null
+        ? Number(stored.manualAdjustment)
+        : 0;
+  const reason =
+    data.manualAdjustmentReason !== undefined
+      ? data.manualAdjustmentReason
+      : stored.manualAdjustmentReason;
+
+  const parsed = manualAdjustmentSchema.safeParse({
+    manualAdjustment: amount,
+    manualAdjustmentReason: reason,
+  });
+  if (parsed.success) return { ok: true };
+
+  return {
+    ok: false,
+    error:
+      parsed.error.issues[0]?.message ??
+      MANUAL_ADJUSTMENT_REASON_REQUIRED_MESSAGE,
+  };
+}
+
 // ─── Save Assessment ──────────────────────────────────────────────────────────
 
 /**
@@ -320,7 +360,11 @@ export async function saveAssessmentAction(
       async (tx) => {
         const current = await tx.assessment.findUnique({
           where: { id: assessmentId },
-          select: { status: true },
+          select: {
+            status: true,
+            manualAdjustment: true,
+            manualAdjustmentReason: true,
+          },
         });
         if (!current) {
           return { ok: false as const, error: "Assessment not found." };
@@ -332,6 +376,18 @@ export async function saveAssessmentAction(
             ok: false as const,
             error: ASSESSMENT_COMPLETED_LOCK_MESSAGE,
           };
+        }
+
+        // Epic 13 / C2 — the manual income-adjustment line's mandatory reason,
+        // enforced SERVER-SIDE. The browser refuses first as a courtesy; this
+        // is the rule. `data` is a partial save payload, so the effective
+        // amount/reason is the submitted value where present and the stored
+        // value otherwise — otherwise a payload that moves the amount without
+        // touching the reason (or clears the reason without touching the
+        // amount) could sneak an unexplained income change past the check.
+        const manualCheck = validateManualAdjustmentSave(data, current);
+        if (!manualCheck.ok) {
+          return { ok: false as const, error: manualCheck.error };
         }
 
         // Persist the field data WITHOUT forcing a status (the previous
