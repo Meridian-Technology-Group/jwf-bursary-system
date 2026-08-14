@@ -17,6 +17,7 @@ import * as React from "react";
 import { beginReassessmentAction } from "@/app/(portal)/actions";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { ContactBursaryTeam } from "@/components/portal/contact-bursary-team";
 import { RefreshCw } from "lucide-react";
 
 interface ReassessmentCardProps {
@@ -105,7 +106,7 @@ export function ReassessmentCard({
             aria-readonly="true"
           />
           <p className="text-xs text-slate-400">
-            If this has changed, contact the Foundation before continuing.
+            If this has changed, <ContactBursaryTeam /> before continuing.
           </p>
         </div>
 

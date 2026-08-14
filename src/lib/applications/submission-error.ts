@@ -21,6 +21,7 @@
  *     error is echoed, because "anything else" is where the leaks live.
  */
 
+import { CONTACT_BURSARY_TEAM_COPY } from "@/lib/portal/guidance-content";
 import { SECTION_TITLES } from "@/lib/portal/sections";
 import type { ApplicationSectionType } from "@prisma/client";
 
@@ -34,7 +35,7 @@ export const SUBMISSION_BLOCKED_MESSAGE =
  * answer and the allow-list below cannot drift from the string it allows.
  */
 export const SUBMISSION_DEADLINE_PASSED_MESSAGE =
-  "The submission deadline for this application has passed, so it can no longer be submitted. Forms submitted late cannot be assessed — please contact the Foundation if you believe this is an error.";
+  `The submission deadline for this application has passed, so it can no longer be submitted. Forms submitted late cannot be assessed — if you believe this is an error, ${CONTACT_BURSARY_TEAM_COPY}.`;
 
 /** Shape of the gap payload the submit gate JSON-encodes into an Error message. */
 interface GapsPayload {
