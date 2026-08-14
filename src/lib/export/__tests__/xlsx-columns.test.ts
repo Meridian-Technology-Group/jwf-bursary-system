@@ -26,6 +26,11 @@ function source(overrides: Partial<ExportRowSource> = {}): ExportRowSource {
       synopsis: "A synopsis.",
       debtStatusLabel: null,
       lifestyleSqueezeLabel: null,
+      // C2 (manual income adjustment) — fields added to the export row type
+      // after this test was written on the C4a branch; integration fix.
+      totalHouseholdNetIncome: null,
+      manualAdjustment: null,
+      manualAdjustmentReason: null,
       recommendation: {
         familySynopsis: "A family synopsis.",
         accommodationStatus: "Renting",
