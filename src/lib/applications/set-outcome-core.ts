@@ -48,9 +48,6 @@ export type SetOutcomeResult =
   | { success: true }
   | { success: false; error: string };
 
-/** Legacy binary outcome the pre-Epic-08 callers still pass. */
-export type Outcome = "QUALIFIES" | "DOES_NOT_QUALIFY";
-
 /** The 3-value award decision (Epic 08). */
 export type AwardDecision = LifecycleOutcome; // AWARDED | QUALIFIES_NOT_AWARDED | DOES_NOT_QUALIFY
 
@@ -305,41 +302,4 @@ export async function setApplicationOutcome(
     console.error("[setApplicationOutcome]", err);
     return { success: false, error: "Failed to set application outcome." };
   }
-}
-
-/**
- * Back-compat shim for the legacy binary outcome callers
- * (application-detail "Set Outcome" buttons). Maps QUALIFIES → AWARDED when the
- * application is already linked to an account (a re-assessment) or
- * QUALIFIES_NOT_AWARDED otherwise; DOES_NOT_QUALIFY maps to itself. The
- * award-aware recommendation surface (Epic 08 PR-2) calls
- * `setApplicationOutcome` with the explicit 3-value decision + award figures.
- */
-export async function setApplicationOutcomeLegacy(
-  applicationId: string,
-  legacy: Outcome
-): Promise<SetOutcomeResult> {
-  if (legacy === "DOES_NOT_QUALIFY") {
-    return setApplicationOutcome(applicationId, "DOES_NOT_QUALIFY");
-  }
-  // Resolve AWARDED vs QUALIFIES_NOT_AWARDED from existing account linkage —
-  // the same discriminator the status service uses. A new qualifying
-  // application (no account yet) defaults to AWARDED so today's
-  // "QUALIFIES creates an ACTIVE account" behaviour is preserved.
-  const user = await requireRole([Role.ADMIN, Role.ASSESSOR]);
-  const hasAccount = await withUserContext(
-    user.id,
-    user.role as RlsRole,
-    async (tx) => {
-      const app = await tx.application.findUnique({
-        where: { id: applicationId },
-        select: { bursaryAccountId: true },
-      });
-      return app?.bursaryAccountId != null;
-    }
-  );
-  // Preserve the historical behaviour: a QUALIFIES outcome opens/continues an
-  // ACTIVE account, i.e. it is AWARDED in the new model.
-  void hasAccount;
-  return setApplicationOutcome(applicationId, "AWARDED");
 }
