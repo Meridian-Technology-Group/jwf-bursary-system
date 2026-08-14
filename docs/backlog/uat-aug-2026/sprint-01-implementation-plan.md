@@ -601,6 +601,18 @@ Ships as two PRs.
   the current `TS-20252026-0001` sequence counter goes away, which also
   removes an existing race (it counts rows to derive the next number).
 - **ROLLING_OVER inherits the edited reference** (Q5, decided 2026-08-14).
+
+  > ⚠️ **There are TWO reassessment creation paths, not one** — found during
+  > C4b, 2026-08-14. Besides `reassessment.ts:339`,
+  > `createReassessmentApplicationAction`
+  > (`src/app/(admin)/invitations/actions.ts:~1018`) also creates a
+  > `ROLLING_OVER` application; it built its reference as
+  > `` `REA-${account.reference}-${roundId}` ``, off the bursary-account code
+  > C4b drops. **Both paths must apply the inheritance rule via ONE shared
+  > helper** — a forked copy of the comparison will drift. C4a's tests did not
+  > catch this because they exercise only the other path; each path needs its
+  > own test.
+
   `src/lib/db/queries/reassessment.ts:339` currently calls
   `generateApplicationReference` for the new year's application. Change it to:
 
