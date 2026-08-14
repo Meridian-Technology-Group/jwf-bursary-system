@@ -89,6 +89,23 @@ The sprint is done when all of the following hold on `staging`:
   outcome set".
 - **Client-facing copy** comes from the CF catalogue verbatim where Charlotte
   supplied wording. Do not paraphrase her email address or guidance text.
+- **⚠️ Parallel worktrees: the generated Prisma client is not reliably isolated.**
+  Observed 2026-08-14 while running WP agents in git worktrees: **9 of 10
+  worktrees had their own `node_modules`, but one symlinked to the parent
+  repo's.** In a symlinked worktree, `prisma generate` rewrites the *shared*
+  client — so a schema-changing branch can leave another agent type-checking
+  against a client that does not match its own `schema.prisma`. C4b hit exactly
+  this: `tsc` claimed `reference` was still required on
+  `BursaryAccountUncheckedCreateInput` after its migration dropped it.
+  Consequences:
+  - **CI is the authority, not local `tsc`/`build`** — CI does a clean install
+    and a fresh `generate`. Local green is a smoke test while schema-changing
+    PRs are in flight.
+  - Re-run `npx prisma generate` from your own worktree immediately before the
+    final verification pass.
+  - Do not run `prisma generate` in the main checkout while agents are running.
+  - A phantom type error about a column another in-flight PR drops or adds is
+    this, not your code. Regenerate before you debug it.
 
 ---
 
