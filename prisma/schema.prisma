@@ -177,6 +177,15 @@ model Application {
   /// later document swap never rewrites a historic acceptance. See
   /// lib/portal/terms.ts (TERMS_AND_CONDITIONS_VERSION).
   termsVersion         String?                  @map("terms_version")
+  /// Consumed-flag for the ONE-TIME submission PDF (Epic 13, D13-4). NULL ⇒ the
+  /// applicant's single download is unspent; NOT NULL ⇒ when it was taken, and
+  /// GET /api/pdf/submission/[id] answers 410 Gone from then on, permanently.
+  /// Stamped by a conditional UPDATE (… WHERE submission_pdf_downloaded_at IS
+  /// NULL) run ONLY after `renderToBuffer` has succeeded, so a failed render
+  /// never consumes the download and concurrent requests resolve to exactly one
+  /// winner. Additive/nullable, never backfilled — see migration
+  /// 20260814160000_application_submission_pdf_downloaded_at.
+  submissionPdfDownloadedAt DateTime?            @map("submission_pdf_downloaded_at") @db.Timestamptz(6)
   /// Per-applicant submit-by override (Epic 03). NULL ⇒ fall back to
   /// round.closeDate. Distinct from Assessment.pausedUntil (post-submission
   /// doc deadline, Epic 01) and from Round.closeDate (round-level intake
