@@ -19,6 +19,12 @@ export const familyMemberIdentitySchema = z.object({
     .enum(["BRITISH_PASSPORT", "SETTLED_STATUS", "ILR_VISA", "OTHER"])
     .optional(),
   isBritishCitizen: z.boolean(),
+  // LEGACY (pre-F2). The form once rendered a separate "UK Passport" upload
+  // that wrote this field while sharing the "Passport" control's storage slot,
+  // which is how uploads went missing. There is now one passport control per
+  // member writing `passportDocumentId`. Kept in the schema so applications
+  // saved before the fix still parse and still show their passport — read via
+  // `passportDocumentIdOf` (lib/portal/family-id-documents), never written.
   ukPassportDocumentId: z.string().optional(),
   passportDocumentId: z.string().optional(),
   ilrDocumentId: z.string().optional(),
