@@ -66,9 +66,12 @@ export interface FamilyMemberIdentity {
   /** Child vs adult — only used for OTHER rows (Q1). */
   memberType?: "CHILD" | "ADULT";
   isBritishCitizen: boolean;
-  /** Document slot ID for UK passport (when British citizen) */
+  /**
+   * LEGACY (pre-F2): passports uploaded through the old separate "UK Passport"
+   * control. Read-only — resolve via `passportDocumentIdOf`.
+   */
   ukPassportDocumentId?: string;
-  /** Document slot ID for passport (when not British citizen) */
+  /** The member's passport document, whatever their citizenship. */
   passportDocumentId?: string;
   /** Document slot ID for ILR evidence (when not British citizen) */
   ilrDocumentId?: string;

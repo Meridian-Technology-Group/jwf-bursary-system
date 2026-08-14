@@ -5,6 +5,12 @@
  *
  * Upload passport/ILR for each family member.
  * Hidden for re-assessments.
+ *
+ * Each member has exactly ONE passport upload (`FAMILY_ID_PASSPORT_<index>` →
+ * `passportDocumentId`), always on screen, plus an ILR upload
+ * (`FAMILY_ID_ILR_<index>` → `ilrDocumentId`) for non-British members. Slot
+ * keys and the legacy-aware resolution live in `@/lib/portal/family-id-documents`
+ * — see that module for why the passport control is no longer split in two.
  */
 
 import * as React from "react";
@@ -33,6 +39,10 @@ import type { UploadedDocument } from "@/components/portal/file-upload";
 import { Plus, Trash2 } from "lucide-react";
 import type { FamilyIdFormValues } from "@/lib/schemas/family-id";
 import type { DocumentMeta } from "@/lib/db/queries/applications";
+import {
+  familyIdSlot,
+  familyIdDocuments,
+} from "@/lib/portal/family-id-documents";
 
 interface FamilyIdFormProps {
   applicationId: string;
@@ -272,22 +282,28 @@ function FamilyMemberCard({
     control,
     name: `familyMembers.${index}.memberType`,
   });
+  // Watched (not read once) so the ILR control can stay on screen whenever it
+  // holds a document, even after the citizenship answer flips — an upload must
+  // never end up behind a branch the form has stopped rendering.
+  const ilrDocumentId = useWatch({
+    control,
+    name: `familyMembers.${index}.ilrDocumentId`,
+  });
 
-  // Resolve existing documents from documentMap
+  // Resolve existing documents from documentMap. `familyIdDocuments` prefers
+  // `passportDocumentId` and falls back to the legacy `ukPassportDocumentId`,
+  // so passports saved before F2 still surface in the single passport control.
   const form = useFormContext<FamilyIdFormValues>();
   const existingDocs = React.useMemo(() => {
-    if (!documentMap) return { ukPassport: undefined, passport: undefined, ilr: undefined };
+    if (!documentMap) return { passport: undefined, ilr: undefined };
     const members = form.getValues("familyMembers");
-    const member = members?.[index];
-    const ukId = member?.ukPassportDocumentId;
-    const passId = member?.passportDocumentId;
-    const ilrId = member?.ilrDocumentId;
+    const ids = familyIdDocuments(members?.[index]);
     const toExisting = (id?: string) => {
       if (!id || !documentMap[id]) return undefined;
       const d = documentMap[id];
       return { id: d.id, filename: d.filename, fileSize: d.fileSize, uploadedAt: d.uploadedAt };
     };
-    return { ukPassport: toExisting(ukId), passport: toExisting(passId), ilr: toExisting(ilrId) };
+    return { passport: toExisting(ids.PASSPORT), ilr: toExisting(ids.ILR) };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [documentMap, index]);
 
@@ -350,69 +366,77 @@ function FamilyMemberCard({
         label="Is this family member a British citizen?"
       />
 
-      <ConditionalField show={isBritishCitizen === true}>
+      {/*
+        ONE passport control per member (F2). A person has one passport; the
+        citizenship answer changes what we call it and whether ILR evidence is
+        also required — it does not create a second document. Rendering it
+        unconditionally is what makes the upload impossible to lose: there is no
+        collapsed twin sharing its slot (and therefore its DOM id) to swallow
+        the file, and flipping the citizenship toggle can no longer strand a
+        document behind a branch the form has stopped showing.
+      */}
+      <FileUpload
+        slot={familyIdSlot("PASSPORT", index)}
+        label={isBritishCitizen === true ? "UK Passport" : "Passport"}
+        hint={
+          isBritishCitizen === true
+            ? "Upload a copy of this family member's UK passport."
+            : "Upload a copy of this family member's passport."
+        }
+        applicationId={applicationId}
+        existingDocument={existingDocs.passport}
+        onUploadComplete={(doc: UploadedDocument) => {
+          setValue(`familyMembers.${index}.passportDocumentId`, doc.id, {
+            shouldValidate: true,
+            shouldDirty: true,
+          });
+          // Retire the legacy pointer once the applicant supplies a passport
+          // through the single control. The old Document row is untouched — it
+          // stays in Storage and on the assessor's document list.
+          setValue(`familyMembers.${index}.ukPassportDocumentId`, undefined, {
+            shouldValidate: true,
+            shouldDirty: true,
+          });
+        }}
+        onRemove={() => {
+          setValue(`familyMembers.${index}.passportDocumentId`, undefined, {
+            shouldValidate: true,
+            shouldDirty: true,
+          });
+          setValue(`familyMembers.${index}.ukPassportDocumentId`, undefined, {
+            shouldValidate: true,
+            shouldDirty: true,
+          });
+        }}
+      />
+
+      {/*
+        ILR is only required of a non-British member, but stays on screen while
+        it holds a document so an upload is never hidden by a later change of
+        answer.
+      */}
+      <ConditionalField
+        show={isBritishCitizen === false || Boolean(ilrDocumentId)}
+      >
         <FileUpload
-          slot={`FAMILY_ID_PASSPORT_${index}`}
-          label="UK Passport"
-          hint="Upload a copy of this family member's UK passport."
+          slot={familyIdSlot("ILR", index)}
+          label="Evidence of Indefinite Leave to Remain in the UK"
+          hint="Upload evidence of this family member's right to remain."
           applicationId={applicationId}
-          existingDocument={existingDocs.ukPassport}
+          existingDocument={existingDocs.ilr}
           onUploadComplete={(doc: UploadedDocument) => {
-            setValue(`familyMembers.${index}.ukPassportDocumentId`, doc.id, {
+            setValue(`familyMembers.${index}.ilrDocumentId`, doc.id, {
               shouldValidate: true,
               shouldDirty: true,
             });
           }}
           onRemove={() => {
-            setValue(`familyMembers.${index}.ukPassportDocumentId`, undefined, {
+            setValue(`familyMembers.${index}.ilrDocumentId`, undefined, {
               shouldValidate: true,
               shouldDirty: true,
             });
           }}
         />
-      </ConditionalField>
-
-      <ConditionalField show={isBritishCitizen === false}>
-        <div className="space-y-3">
-          <FileUpload
-            slot={`FAMILY_ID_PASSPORT_${index}`}
-            label="Passport"
-            hint="Upload a copy of this family member's passport."
-            applicationId={applicationId}
-            existingDocument={existingDocs.passport}
-            onUploadComplete={(doc: UploadedDocument) => {
-              setValue(`familyMembers.${index}.passportDocumentId`, doc.id, {
-                shouldValidate: true,
-                shouldDirty: true,
-              });
-            }}
-            onRemove={() => {
-              setValue(`familyMembers.${index}.passportDocumentId`, undefined, {
-                shouldValidate: true,
-                shouldDirty: true,
-              });
-            }}
-          />
-          <FileUpload
-            slot={`FAMILY_ID_ILR_${index}`}
-            label="Evidence of Indefinite Leave to Remain in the UK"
-            hint="Upload evidence of this family member's right to remain."
-            applicationId={applicationId}
-            existingDocument={existingDocs.ilr}
-            onUploadComplete={(doc: UploadedDocument) => {
-              setValue(`familyMembers.${index}.ilrDocumentId`, doc.id, {
-                shouldValidate: true,
-                shouldDirty: true,
-              });
-            }}
-            onRemove={() => {
-              setValue(`familyMembers.${index}.ilrDocumentId`, undefined, {
-                shouldValidate: true,
-                shouldDirty: true,
-              });
-            }}
-          />
-        </div>
       </ConditionalField>
     </fieldset>
   );

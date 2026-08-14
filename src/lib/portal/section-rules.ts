@@ -17,6 +17,11 @@ import type {
   SectionType,
   StructuralRule,
 } from "@/lib/portal/document-rules";
+import {
+  familyIdSlot,
+  ilrDocumentIdOf,
+  passportDocumentIdOf,
+} from "@/lib/portal/family-id-documents";
 
 // ─── per-parent rule builders ────────────────────────────────────────────────
 
@@ -628,6 +633,10 @@ const childDetailsRules: DocumentRule[] = [
 // the member object and uploads to indexed slots (FAMILY_ID_PASSPORT_<i> /
 // FAMILY_ID_ILR_<i>). This replaces the old `FAMILY_ID: []` no-op (Epic 02 PR-4).
 //
+// One passport per member, whatever their citizenship: `passportDocumentIdOf`
+// reads the current field and falls back to the legacy `ukPassportDocumentId`,
+// so applications saved before F2 keep passing (see family-id-documents.ts).
+//
 // Emitted as a single aggregate structural gap (the per-member upload prompts in
 // the form itself give granular guidance); the gate only blocks submission when
 // the member's required identity document(s) are missing.
@@ -647,13 +656,15 @@ const familyIdRules: DocumentRule[] = [
         const member = m as Record<string, unknown>;
         const has = (id: unknown, slot: string) =>
           (typeof id === "string" && id.length > 0) || uploadedSlots.has(slot);
+        const hasPassport = () =>
+          has(passportDocumentIdOf(member), familyIdSlot("PASSPORT", i));
         if (member.isBritishCitizen === true) {
-          return has(member.ukPassportDocumentId, `FAMILY_ID_PASSPORT_${i}`);
+          return hasPassport();
         }
         if (member.isBritishCitizen === false) {
           return (
-            has(member.passportDocumentId, `FAMILY_ID_PASSPORT_${i}`) &&
-            has(member.ilrDocumentId, `FAMILY_ID_ILR_${i}`)
+            hasPassport() &&
+            has(ilrDocumentIdOf(member), familyIdSlot("ILR", i))
           );
         }
         // citizenship not yet answered → don't block here (the form requires it)
@@ -678,9 +689,8 @@ const familyIdRules: DocumentRule[] = [
         const has = (id: unknown, slot: string) =>
           (typeof id === "string" && id.length > 0) || uploadedSlots.has(slot);
         return (
-          has(member.ukPassportDocumentId, `FAMILY_ID_PASSPORT_${i}`) ||
-          has(member.passportDocumentId, `FAMILY_ID_PASSPORT_${i}`) ||
-          has(member.ilrDocumentId, `FAMILY_ID_ILR_${i}`)
+          has(passportDocumentIdOf(member), familyIdSlot("PASSPORT", i)) ||
+          has(ilrDocumentIdOf(member), familyIdSlot("ILR", i))
         );
       };
       const roleDocumented = (role: string) =>
