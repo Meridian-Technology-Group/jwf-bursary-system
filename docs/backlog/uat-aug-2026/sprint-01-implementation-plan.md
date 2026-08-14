@@ -957,6 +957,28 @@ production.
 
 </details>
 
+### 🔴 The single most consequential finding of the sprint
+
+**`ConditionalField` hides children with CSS and never unmounts them.**
+(`src/components/portal/form-fields/conditional-field.tsx` — `grid-rows-[0fr]` +
+`overflow-hidden`; the form does not set `shouldUnregister`.)
+
+Three *independent* WPs traced three different bug classes back to this one
+behaviour:
+
+| Found by | Class |
+|---|---|
+| **D3** | Values typed into a branch **persist into the saved blob** after the branch is switched off → 6 of 11 asset rules demanded documents whose upload control was off-screen |
+| **F2** | Hidden controls stay in the DOM with **duplicate ids**, so `<label for>` binds to the *first* match in tree order — a visible label opened a hidden input, and the success card rendered inside the collapsed branch |
+| **F2** | Documents uploaded under one branch are **stranded** when the answer changes — still in Storage, unreachable in the UI |
+
+Every one of these presents to the applicant as "the form won't let me continue"
+or "it isn't accepting my document", with nothing on screen to act on. That is
+Charlotte's dominant complaint, and it has a single structural cause.
+
+Each WP fixed its own instance. **Nothing has fixed the cause** —
+→ **F11**, below.
+
 ### Wave F — discovered during the sprint
 
 These were **not** in the epic. Each was found while building a WP and is
@@ -967,6 +989,8 @@ recorded here rather than fixed inline, so the discovering PR stays scoped.
 | **F1** | D13-1b | **Retire NM-01..05 name masking coherently.** Brian retired masking on 2026-08-14, but the codebase now contradicts itself. Remove the `childName` omission from `getApplicationWithDetails` (`src/lib/db/queries/applications.ts:429-468`) and the "Assessment tab MUST NOT call this" prohibition on `getApplicationNamesForReveal` (~:516); decide whether the queue's masked-by-default toggle stays; update the PRD (`docs/product/prd/04-admin-round-management.md:7`, AC-03) and mark finding 2.18 superseded rather than open. **Decide deliberately whether `NAME_REVEAL` audit rows are still wanted** — if names are simply visible, an audit row per page load is cost without a purpose, and C4a currently writes one on every detail-page load. | M |
 | **F5** | A4 + A3 | **Unseeded defaults leak raw Zod internals — a defect *class*, not one bug.** A required field absent from a form's `getDefaultValues` stays `undefined`; the base-type check then fails **before** any `refine`/`superRefine` runs, and the banner renders bare Zod text naming no field ("Invalid input: expected string, received undefined"). Two instances found independently on the same day: A4's `documentsConfirmed` seeded for `parent1Income` only (Parent 2's checkbox also mounted uncontrolled), and Charlotte's CF-17 blocker. Two consequences worth fixing generally: **(a)** audit every section form for required fields missing from its defaults, especially in conditionally-rendered blocks; **(b)** make the error banner name the offending field — a pathless error cost hours of diagnosis here and is hostile to applicants, who cannot act on it at all. **Assessed during A3: (b) is NOT cheap** — `flattenErrors` has the path, but turning `parent2Contact.firstName` into copy a parent should read needs a field-label registry spanning every section. Separate PR. A3 removed the *unnamed raw Zod* class; the residual gap is that two parents' identical messages still don't say **which parent**. | M |
 | **F6** | A4 | **Blank and a deliberate £0 are indistinguishable at field level** (pre-existing, not introduced by A4). Every currency cell is seeded to `0` on mount, so "never touched" and "typed 0" are identical in the stored blob; `CurrencyInput` also writes `""` on clear and leaves it `""` on blur, which `z.coerce.number()` turns into `0`. A4 works around it with a per-parent declaration at section level, which is sound — but the underlying ambiguity remains and will bite any future rule that needs to tell the two apart. | M |
+| **F11** | D3 + F2 | **Fix the `ConditionalField` cause, not just its instances** (see the red box above). Options, in rough order of preference: genuinely unmount hidden branches; set `shouldUnregister` so RHF drops their values; or make the rendered ids unique per instance so a hidden control can never steal a label click. Each has blast radius — unmounting changes what reaches the blob, which several rules now depend on — so this needs deliberate design, not a quick patch. **Until it is done, expect a fourth instance.** | L |
+| **F10** | F2 | **Family-ID slots key off the member's array index.** Removing a member shifts every later member onto slots that already hold the removed member's documents. The blob doc-ids follow the member correctly, but the `uploadedSlots` gate fallback and the `/respond` per-slot view do not — **a deleted member's document can silently satisfy a later member's requirement.** Also: 7 `FAMILY_ID_*` documents in nonprod are already unreferenced by any member field (orphaned uploads, one named `PASSEPORT.docx.pdf`), still visible on the assessor's document list. | M |
 | **F9** | D2 | **The staff multipart upload path stores a NULL digest.** `/api/admin/documents` (edit-on-behalf) is neither duplicate-checked nor checkable against applicant uploads, because D2's digest is computed in the presigned confirm endpoint only. Out of D2's stated scope. Low urgency — staff uploading the same file three times is not the reported problem — but it means duplicate detection has a hole on one path. | S |
 | **F7** | D3 | **`arrayForEach` rules cannot see the section blob.** `OTHER_PROPERTY_MORTGAGE_STATEMENT` has the same stale-branch defect as the six D3 fixed, but its `elementGate` receives only the array element, so it cannot re-check `hasOtherProperties`. Fix by passing the blob as `elementGate`'s second argument — one line in `src/lib/portal/document-rules.ts`. Converting it to `structural` instead would destroy the per-index gap ids existing tests assert, so don't. | S |
 | **F8** | D3 | **`INVESTMENT_PARENT_2` needs a decision, not a guess.** It gates on `parent2OwnsInvestments`, but its control renders under `!isSoleParent` — derived **outside** the section blob, so the rule cannot see it. The sibling's "was it saved" heuristic could wrongly **suppress** a legitimate requirement for a dual-parent household, which is the one direction that causes real harm (a missing document silently not asked for). D3 left it deliberately. Decide how a rule should read state that lives outside its own section. | M |
@@ -1119,7 +1143,7 @@ Update the status column as PRs merge. `—` = not started.
 | D3 | ✅ merged-ready | [#284](https://github.com/Meridian-Technology-Group/jwf-bursary-system/pull/284) | CI green. Follow-up commit fixed **6 of 11** stale-branch rules → F7/F8 |
 | D4 | ✅ merged-ready | [#285](https://github.com/Meridian-Technology-Group/jwf-bursary-system/pull/285) | Standardised on "Submit Application". Confirmation fires **after** validation, not on click |
 | D2 | ✅ merged-ready | [#288](https://github.com/Meridian-Technology-Group/jwf-bursary-system/pull/288) | migration. Digest computed off A1's **existing** Range read — no second download |
-| F2 | in progress | | |
+| F2 | ✅ merged-ready | [#289](https://github.com/Meridian-Technology-Group/jwf-bursary-system/pull/289) | **This is CF-24.** Duplicate DOM id meant a visible label opened a hidden input. No slot renamed → no migration |
 | F4 | ✅ merged-ready | [#286](https://github.com/Meridian-Technology-Group/jwf-bursary-system/pull/286) | One file, −40/+0. Second commit folds in `OutcomeApplication` + a stale docstring it reported |
 | E1 | — | | migration |
 | E1b | — | | legacy column drop, after E1 verified |
