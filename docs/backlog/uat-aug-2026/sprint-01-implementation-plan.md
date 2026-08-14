@@ -81,9 +81,14 @@ The sprint is done when all of the following hold on `staging`:
 - **RLS**: no new tables are planned in this sprint, so no new policies are
   required. If a WP grows a table, the policy ships in the same PR — a table
   without policies reads empty app-wide (`ensure_rls` event trigger).
-- **Tests**: `npm run test` (vitest, 111 test files). Every behavioural change
-  gets a test in the nearest `__tests__/` sibling. Run `npx tsc --noEmit` and
-  `npm run build` before opening each PR.
+- **Tests**: `npm run test` (vitest, 111 test files at sprint start). Every
+  behavioural change gets a test in the nearest `__tests__/` sibling. Run
+  `npx tsc --noEmit` and `npm run build` before opening each PR.
+- **⚠️ Also run `npx prisma format` if you touch `prisma/schema.prisma`.** CI
+  runs `npx prisma format --check` as a separate step, and none of the local
+  gates above catch it. D1 failed CI on exactly this: adding
+  `submissionPdfDownloadedAt` reflowed the whole `Application` block's column
+  alignment. Whitespace-only, but a red build.
 - **Never recompute completed assessments.** Assessment rows snapshot their
   outputs. C1 (reopen) is the one deliberate exception and is gated on "no
   outcome set".
@@ -940,7 +945,7 @@ Update the status column as PRs merge. `—` = not started.
 | A5 + A7 + A8 | — | | paired PR |
 | A6 | ✅ merged-ready | [#276](https://github.com/Meridian-Technology-Group/jwf-bursary-system/pull/276) | CI green. Correctly refused the schedule-page removal (derivation input, not display) |
 | B1 | in progress | | |
-| D1 | in progress | | migration |
+| D1 | ✅ fixed-up | [#279](https://github.com/Meridian-Technology-Group/jwf-bursary-system/pull/279) | Failed CI on `prisma format --check`; fixed. Compare-and-set claim; also removed `/submitted` answer browsing (correct per CF-27) |
 | B1 | — | | |
 | B2 | — | | |
 | C1 | ✅ merged-ready | [#269](https://github.com/Meridian-Technology-Group/jwf-bursary-system/pull/269) | CI green. Closed a live authz gap: `saveAssessmentAction` had no server-side status check |
