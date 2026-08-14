@@ -150,6 +150,34 @@ schema migration.
 6 S · 17 PRs (A5/A7/A8 pair up; E1b follows E1). All open questions answered —
 nothing is decision-blocked.
 
+### Branch topology (stacked PRs — nothing merges to `staging` during the sprint)
+
+The plan branch is the **stack root**. Every stack head branches from it and
+targets it as its PR base; each subsequent WP branches from its predecessor and
+targets that. GitHub retargets automatically as ancestors merge, so the stack
+collapses cleanly in order once `staging` opens up.
+
+```
+staging
+└── chore/epic-13-sprint-plan            ← stack root (this plan, PR #268)
+    ├── fix/uat-a1-presigned-uploads     ← Track 1 head
+    │   └── fix/uat-a2-… → a3 → a4 → a6 → a5+a7+a8 → b1 → b2 → d4 → d3 → d2
+    ├── feature/uat-c1-reopen-assessment ← Track 2 head
+    │   └── feature/uat-c2-… → c3
+    └── feature/uat-c4a-application-reference  ← Track 3 head
+        └── chore/uat-c4b-… → d1 → e1 → e1b
+```
+
+Rules while stacked:
+
+- **Never merge to `staging`** until the whole sprint is reviewed — the sprint
+  is a stack, not a series of independent drops.
+- **Green CI is the bar** for each PR; review happens on the stack.
+- Rebase a branch onto its parent when the parent gains commits; never
+  force-push a branch someone else has based work on without saying so.
+- Migrations stay unapplied while stacked (`db-push.yml` only fires on a push to
+  `staging`), so a migration PR is safe to leave open.
+
 ### PR trains and parallelism
 
 Three tracks run concurrently; within a track, order is strict.
