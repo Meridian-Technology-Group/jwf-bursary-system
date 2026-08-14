@@ -4,6 +4,12 @@
  * Portal sidebar — section progress stepper for the applicant portal.
  *
  * Displayed at 280 px on desktop; collapses into a Sheet on mobile.
+ *
+ * Each step is a `GuardedLink` (WP B1). It used to be a raw `<a href>`, which
+ * meant a full document load: the section form was torn down and everything
+ * typed since the last save went with it (CF-19). The guarded link routes
+ * client-side and, when the mounted form holds unsaved edits, hands the click to
+ * the unsaved-changes prompt instead of navigating.
  */
 
 import { usePathname } from "next/navigation";
@@ -16,6 +22,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { JwfLogo } from "@/components/brand/jwf-logo";
+import { GuardedLink } from "./guarded-link";
 import {
   DEFAULT_SIDEBAR_SECTIONS,
   type SectionStatus,
@@ -195,17 +202,22 @@ export function PortalSidebarContent({
 
             return (
               <li key={section.id}>
-                <a
+                <GuardedLink
                   href={`${basePath}/${section.slug}`}
                   className={cn(
                     "flex items-center gap-3 rounded-md px-3 py-2.5 text-sm transition-colors",
+                    "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-600",
                     isActive
                       ? "bg-primary-50 text-primary-900 font-medium"
                       : section.status === "complete"
                         ? "text-slate-600 hover:bg-slate-50"
                         : section.status === "needs_attention"
                           ? "text-amber-700 hover:bg-amber-50"
-                          : "text-slate-400 hover:bg-slate-50"
+                          : // CF-22: a not-yet-started step is still navigable.
+                            // slate-400 read as "disabled" to the client, so the
+                            // resting tone is the same slate-600 a completed step
+                            // uses and only the icon distinguishes the two.
+                            "text-slate-600 hover:bg-slate-50"
                   )}
                   aria-current={isActive ? "step" : undefined}
                 >
@@ -239,7 +251,7 @@ export function PortalSidebarContent({
                       aria-hidden="true"
                     />
                   )}
-                </a>
+                </GuardedLink>
               </li>
             );
           })}

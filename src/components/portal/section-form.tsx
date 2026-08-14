@@ -24,7 +24,10 @@ import type { ZodType } from "zod";
 import type { Resolver } from "react-hook-form";
 import { AlertCircle, CheckCircle2, ChevronLeft, ChevronRight, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { snapshotValues, valuesEqual } from "@/lib/portal/unsaved-changes";
 import { useSectionSaving } from "./section-saving-context";
+import { useRegisterUnsavedSection } from "./unsaved-changes-context";
+import { GuardedLink } from "./guarded-link";
 
 /**
  * Minimal slice of Next's `AppRouterInstance` that the post-save navigation
@@ -62,6 +65,25 @@ interface SectionFormProps<T extends FieldValues> {
   defaultValues: DefaultValues<T>;
   /** Called on successful validation. Should persist data. */
   onSave: (data: T) => Promise<{ success: boolean; errors?: string[] }>;
+  /**
+   * Persist the section IN PLACE — no navigation, no submission — for the
+   * unsaved-changes guard (WP B1). Called when the applicant clicks a stepper
+   * link mid-edit and chooses "Save and continue"; the guard performs the
+   * navigation itself afterwards.
+   *
+   * `complete` reports whether the current values passed the section's Zod
+   * schema, so the caller can choose between a complete save and a draft save.
+   * Half-finished sections are the whole point: the applicant is leaving a
+   * section they have not finished, and refusing to persist it because it does
+   * not validate is exactly the data loss this guard exists to prevent.
+   *
+   * Omitted (the default) means the section cannot be saved in place, and the
+   * guard's "save" option is not offered.
+   */
+  onSaveWithoutAdvancing?: (
+    data: T,
+    complete: boolean
+  ) => Promise<{ success: boolean; errors?: string[] }>;
   /** URL of the previous section (or dashboard) */
   backHref?: string;
   /** URL to navigate to after successful save */
@@ -85,6 +107,7 @@ export function SectionForm<T extends FieldValues>({
   schema,
   defaultValues,
   onSave,
+  onSaveWithoutAdvancing,
   backHref,
   nextHref,
   nextLabel = "Save and Continue",
@@ -119,6 +142,85 @@ export function SectionForm<T extends FieldValues>({
 
   const hasErrors = Object.keys(errors).length > 0 || serverErrors.length > 0;
 
+  // ── Unsaved-changes guard (WP B1) ─────────────────────────────────────────
+  // "Has the applicant changed anything" is measured against a snapshot taken
+  // once the section has mounted — NOT react-hook-form's `formState.isDirty`,
+  // which is a value comparison against `defaultValues` and so counts the
+  // sections that write to themselves on mount (Income seeds seven sub-blocks
+  // and a total; Child Details re-applies the locked school). Reading `isDirty`
+  // made Income prompt on a page nobody had touched. See
+  // `@/lib/portal/unsaved-changes` for the contract.
+  //
+  // A ref, not state: the guard reads it at click time and the rail must not
+  // re-render on every keystroke.
+  const baselineRef = React.useRef<T | null>(null);
+
+  React.useEffect(() => {
+    // Parent effects run AFTER their children's, so every section's own mount
+    // effect has already applied its programmatic writes by the time this runs.
+    baselineRef.current = snapshotValues(form.getValues());
+    // Once per mounted section — a new section is a new SectionForm.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const isDirtyNow = React.useCallback(() => {
+    // Before the baseline exists there is nothing the applicant could have
+    // typed, so "clean" is both true and the safe answer.
+    if (baselineRef.current === null) return false;
+    return !valuesEqual(form.getValues(), baselineRef.current);
+  }, [form]);
+
+  /**
+   * Persist the section where it stands, without navigating.
+   *
+   * Validation decides HOW it is saved, never WHETHER: a section that passes
+   * its schema is saved complete, and one that does not is still written (as a
+   * draft, when the caller supports it) so the applicant's typing survives. The
+   * schema is parsed directly rather than via `form.trigger()` so that merely
+   * clicking a stepper link does not splash red validation errors over a
+   * half-filled section the applicant may choose to stay on.
+   */
+  const saveWithoutAdvancing = React.useCallback(async (): Promise<boolean> => {
+    if (!onSaveWithoutAdvancing) return false;
+
+    const values = form.getValues();
+    const complete = schema.safeParse(values).success;
+
+    setSaving(true);
+    setFooterSaving(true);
+    setSaveState("saving");
+    setServerErrors([]);
+
+    try {
+      const result = await onSaveWithoutAdvancing(values, complete);
+      if (!result.success) {
+        setSaveState("error");
+        setServerErrors(result.errors ?? ["An unexpected error occurred."]);
+        return false;
+      }
+      setSaveState("saved");
+      // Re-baseline on what was just persisted, so the guard stops considering
+      // the section dirty, and refresh the rail so the stepper reflects the new
+      // (possibly draft, therefore still incomplete) state.
+      baselineRef.current = snapshotValues(values);
+      router.refresh();
+      return true;
+    } catch {
+      setSaveState("error");
+      setServerErrors(["An unexpected error occurred. Please try again."]);
+      return false;
+    } finally {
+      setSaving(false);
+      setFooterSaving(false);
+    }
+  }, [onSaveWithoutAdvancing, form, schema, router, setFooterSaving]);
+
+  useRegisterUnsavedSection({
+    isDirty: isDirtyNow,
+    canSave: !!onSaveWithoutAdvancing,
+    save: saveWithoutAdvancing,
+  });
+
   // Scroll to error summary when validation fails on submit
   React.useEffect(() => {
     if (hasErrors && saveState === "error") {
@@ -141,6 +243,10 @@ export function SectionForm<T extends FieldValues>({
 
       if (result.success) {
         setSaveState("saved");
+        // Re-baseline before navigating: between the successful write and the
+        // route change the section is no longer dirty, and the guard must not
+        // interrupt its own success path.
+        baselineRef.current = snapshotValues(data);
         navigateAfterSave(router, nextHref);
       } else {
         setSaveState("error");
@@ -272,7 +378,9 @@ export function SectionForm<T extends FieldValues>({
       {!hideInlineNav && (
         <div className="mt-8 flex items-center justify-between border-t border-slate-200 pt-6">
           {backHref ? (
-            <a
+            // Guarded (WP B1): this Back was a raw anchor, so a second parent
+            // stepping back out of a half-filled section lost it outright.
+            <GuardedLink
               href={backHref}
               className={cn(
                 "flex items-center gap-1.5 rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700",
@@ -282,7 +390,7 @@ export function SectionForm<T extends FieldValues>({
             >
               <ChevronLeft className="h-4 w-4" aria-hidden="true" />
               Back
-            </a>
+            </GuardedLink>
           ) : (
             <div />
           )}

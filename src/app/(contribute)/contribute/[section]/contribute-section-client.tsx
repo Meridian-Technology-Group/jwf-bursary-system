@@ -36,7 +36,7 @@ import {
   normaliseLegacyIncomeRecord,
 } from "@/lib/portal/income-model";
 
-import { saveSection } from "../actions";
+import { saveSection, saveSectionDraft } from "../actions";
 
 interface ContributeSectionClientProps {
   sectionType: ApplicationSectionType;
@@ -218,6 +218,18 @@ export function ContributeSectionClient({
     return saveSection(applicationId, sectionType, data);
   }
 
+  /**
+   * The unsaved-changes guard's save path (WP B1). The second parent hits the
+   * same stepper-click data loss as the lead applicant, so the contribute flow
+   * gets the same treatment: a section that validates saves complete, one that
+   * does not is written as a draft rather than discarded.
+   */
+  async function handleGuardedSave(data: unknown, complete: boolean) {
+    return complete
+      ? saveSection(applicationId, sectionType, data)
+      : saveSectionDraft(applicationId, sectionType, data);
+  }
+
   return (
     <div className="space-y-6">
       <div>
@@ -241,6 +253,7 @@ export function ContributeSectionClient({
           schema={schema as never}
           defaultValues={defaultValues as never}
           onSave={handleSave as never}
+          onSaveWithoutAdvancing={handleGuardedSave as never}
           backHref={backHref}
           nextHref={nextHref}
           nextLabel={nextLabel}

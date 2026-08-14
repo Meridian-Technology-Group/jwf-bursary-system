@@ -23,6 +23,7 @@ import { ChevronLeft, ChevronRight, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { SECTION_TO_SLUG } from "@/lib/portal/sections";
 import { useSectionSaving } from "./section-saving-context";
+import { useUnsavedChanges } from "./unsaved-changes-context";
 
 /**
  * The one wide section. The footer's button row must track the section CARD's
@@ -37,6 +38,7 @@ export function ApplyFooter() {
   const pathname = usePathname();
   const router = useRouter();
   const { saving } = useSectionSaving();
+  const { requestUnroutedNavigation } = useUnsavedChanges();
 
   // Review owns its own CTA — show no shell footer there.
   if (pathname === "/apply/review") {
@@ -63,10 +65,18 @@ export function ApplyFooter() {
           innerMaxWidth
         )}
       >
-        {/* Back — real handler (router.back), unlike the old dead control. */}
+        {/* Back — real handler (router.back), unlike the old dead control.
+            Routed through the unsaved-changes guard (WP B1): stepping back out
+            of a half-filled section discards it just as thoroughly as a sidebar
+            click did. `requestUnroutedNavigation` returns true when there is
+            nothing to lose; otherwise the guard replays the Back itself. */}
         <button
           type="button"
-          onClick={() => router.back()}
+          onClick={() => {
+            if (requestUnroutedNavigation(() => router.back())) {
+              router.back();
+            }
+          }}
           className={cn(
             "flex items-center gap-1.5 rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700",
             "hover:bg-slate-50 hover:text-slate-900 transition-colors",
