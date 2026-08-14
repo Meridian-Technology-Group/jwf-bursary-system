@@ -245,9 +245,15 @@ export function EditOnBehalfBannerActions({
 
 // ─── Staff upload endpoints ───────────────────────────────────────────────────
 
-/** Module-level so the provider value is referentially stable across renders. */
+/**
+ * Module-level so the provider value is referentially stable across renders.
+ *
+ * Staff stay on the multipart transport: `/api/admin/documents` is out of A1's
+ * scope, so it keeps its single-POST contract (and Vercel's ~4.5 MB body cap).
+ * Only the applicant portal moved to the presigned three-step flow.
+ */
 const STAFF_UPLOAD_ENDPOINTS: UploadEndpoints = {
-  uploadUrl: "/api/admin/documents",
+  transport: { kind: "multipart", uploadUrl: "/api/admin/documents" },
   deleteUrl: (id) => `/api/admin/documents/${id}`,
 };
 
