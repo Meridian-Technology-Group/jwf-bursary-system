@@ -146,15 +146,16 @@ schema migration.
 | 18 | **D4** | 32 | Separate REVIEW from SUBMIT | M | — | — | `fix/uat-d4-review-submit-split` |
 | 19 | **E1** | 11, 12 | Type-aware round deadlines + email fix | **L** | ✅ | — | `feature/uat-e1-typed-deadlines` |
 
-**Totals:** 20 WPs (C4 split in two under D13-1a) · 5 migrations · 5 L / 8 M /
-7 S. All open questions answered — nothing is decision-blocked.
+**Totals:** 20 WPs (C4 split in two under D13-1a) · 5 migrations · 6 L / 8 M /
+6 S · 17 PRs (A5/A7/A8 pair up; E1b follows E1). All open questions answered —
+nothing is decision-blocked.
 
 ### PR trains and parallelism
 
 Three tracks run concurrently; within a track, order is strict.
 
 ```
-Track 1 (portal — Charlotte's blocker):  A1 → A2 → A3 → A4 → A5–A8 → B1 → B2 → D4 → D3 → D2
+Track 1 (portal — Charlotte's blocker):  A1 → A2 → A3 → A4 → A6 → A5+A7+A8 → B1 → B2 → D4 → D3 → D2
 Track 2 (assessment):                    C1 → C2 → C3
 Track 3 (admin/data):                    C4a → C4b → D1 → E1 → (E1b)
 ```
@@ -172,7 +173,7 @@ Track 3 (admin/data):                    C4a → C4b → D1 → E1 → (E1b)
 - **B2 depends on B1** — autosave without the dirty-guard produces two
   competing "did my work save?" mechanisms.
 - Only one migration is in flight per track at a time; if two migration PRs are
-  open simultaneously (C4, D1, E1 are all Track 3, so they serialise
+  open simultaneously (C4a, C4b, D1, E1 are all Track 3, so they serialise
   naturally), rebase the later one after the earlier merges.
 
 ---
@@ -816,7 +817,8 @@ Update the status column as PRs merge. `—` = not started.
 | A2 | — | | |
 | A3 | — | | |
 | A4 | — | | |
-| A5–A8 | — | | paired PR |
+| A5 + A7 + A8 | — | | paired PR |
+| A6 | — | | own PR; nonprod backfill already done |
 | B1 | — | | |
 | B2 | — | | |
 | C1 | — | | |
