@@ -448,11 +448,11 @@ This supersedes the CP10 "Set Qualifies" item on the calc-v2 staging pass.
 > already carry it. Admin URLs (`/applications/{uuid}`) already use the UUID;
 > that is routing, not a user-facing identifier, and is unchanged.
 >
-> **ROLLING_OVER keeps carrying the reference forward** (D13-1 as originally
-> written — my earlier note dropping this rule was wrong). Once the reference
-> has been edited to the fees-system code, that code is the thing continuity
-> depends on, so next year's application inherits it rather than regenerating
-> the dated default.
+> **ROLLING_OVER inherits the edited reference** (D13-1's rule, confirmed as Q5
+> on 2026-08-14). Once the reference has been edited to the fees-system code,
+> that code is what continuity depends on, so next year's application inherits
+> it rather than regenerating the dated default. A never-edited default is
+> regenerated for the new year — see C4a for the exact rule.
 >
 > **Data check (2026-08-14):** nonprod holds 3 bursary accounts, **0 with a
 > `fees_account_code` set** — never used, so the drop needs no backfill. Prod
@@ -473,12 +473,26 @@ Ships as two PRs.
   `generateApplicationReference` (`src/lib/applications/reference.ts:21-34`) —
   the current `TS-20252026-0001` sequence counter goes away, which also
   removes an existing race (it counts rows to derive the next number).
-- **ROLLING_OVER carries the existing reference forward.**
+- **ROLLING_OVER inherits the edited reference** (Q5, decided 2026-08-14).
   `src/lib/db/queries/reassessment.ts:339` currently calls
-  `generateApplicationReference` for the new year's application — change it to
-  inherit the prior application's reference, so a value edited to the
-  fees-system code survives into the next year. The dated default only applies
-  where there is no prior reference to inherit.
+  `generateApplicationReference` for the new year's application. Change it to:
+
+  > inherit the prior application's reference **unless** that reference is
+  > byte-identical to the default the generator would produce for the *prior*
+  > application — i.e. it was never edited — in which case generate a fresh
+  > default for the new year.
+
+  The point of the carry-forward is that a human-entered fees-system code
+  survives into next year. An untouched default is not such a value, and
+  inheriting it verbatim would drag a stale academic year (`… – 2027-28`) onto a
+  2028-29 application. Detection is a pure recompute-and-compare against the
+  prior application's own child/school/year-group/academic-year — no audit-log
+  lookup, no extra column, deterministic. **A human-entered value is never
+  discarded**; only an exact, unedited default is regenerated.
+
+  If that comparison proves awkward in practice, the fallback is unconditional
+  inheritance (simpler, at the cost of stale years on never-edited references) —
+  but do not choose it silently; note it on the PR.
 - **The reference must stay editable after award** — this is the primary use
   (reconciliation against the external fees system once a bursary exists).
   `updateApplicationReferenceAction` already has no lifecycle-state gate
@@ -706,7 +720,8 @@ the policy ships in the same PR (see §2).
 ## 9. Client-blocking questions
 
 None block the sprint start. Q2 and Q4 are built on stated assumptions marked
-in code; Q3 affects copy only.
+in code; Q3 affects copy only. Q5 was answered by Brian on 2026-08-14 and is
+now part of D13-1a.
 
 | Q | CF | Question | Assumption we build on | Affects |
 |---|---|---|---|---|
@@ -714,7 +729,7 @@ in code; Q3 affects copy only.
 | Q2 | 30 | Loan agreement required always, or only when a loan is declared? | Only when declared | D3 rule kind |
 | Q3 | 27 | Accepts that a parent who loses the one-time PDF must email the team? | Yes | D1 copy |
 | Q4 | 12 | Is the rolling-over deadline one global date per round? | Yes | E1 data model |
-| **Q5** | 04 | On rollover, should next year's application **inherit** the edited reference (the fees-system code), or regenerate the dated default? | Inherit — continuity of the reconciliation label is the point of making it editable | C4a's rollover branch |
+| ~~Q5~~ | 04 | ~~On rollover, inherit the edited reference or regenerate the default?~~ | **Decided 2026-08-14 (Brian): inherit.** Folded into D13-1a; spec in C4a | — |
 
 Also to send back (no build needed): the CF-08 and CF-11 corrections and the
 CF-23 diagnosis from the epic's "Corrections" section.
