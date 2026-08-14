@@ -251,9 +251,8 @@ function FinalYearTable({ rows }: { rows: FinalYearBursaryRow[] }) {
       <table className="w-full text-sm">
         <thead>
           <tr className="border-b border-slate-200 bg-slate-50">
-            <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
-              Reference
-            </th>
+            {/* D13-1a: the bursary account exposes no reference — the child's
+                name is the report's identifying column. */}
             <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
               Child
             </th>
@@ -277,10 +276,9 @@ function FinalYearTable({ rows }: { rows: FinalYearBursaryRow[] }) {
         <tbody className="divide-y divide-slate-100">
           {rows.map((row) => (
             <tr key={row.id} className="hover:bg-slate-50">
-              <td className="px-4 py-3 font-mono text-xs font-semibold text-primary-900">
-                {row.reference}
+              <td className="px-4 py-3 font-semibold text-primary-900">
+                {row.childName}
               </td>
-              <td className="px-4 py-3 text-slate-700">{row.childName}</td>
               <td className="px-4 py-3 text-slate-700">
                 {SCHOOL_LABEL[row.school] ?? row.school}
               </td>
@@ -365,7 +363,7 @@ function SiblingSummaryTable({ rows }: { rows: SiblingSummaryRow[] }) {
             <thead>
               <tr className="border-b border-slate-100 text-xs uppercase tracking-wide text-slate-500">
                 <th className="px-4 py-2 text-left font-semibold w-12">#</th>
-                <th className="px-4 py-2 text-left font-semibold">Reference</th>
+                {/* D13-1a: no account reference column. */}
                 <th className="px-4 py-2 text-left font-semibold">Child</th>
                 <th className="px-4 py-2 text-left font-semibold">School</th>
                 <th className="px-4 py-2 text-right font-semibold">
@@ -382,10 +380,9 @@ function SiblingSummaryTable({ rows }: { rows: SiblingSummaryRow[] }) {
                   <td className="px-4 py-2 tabular-nums text-slate-400">
                     {child.priorityOrder}
                   </td>
-                  <td className="px-4 py-2 font-mono text-xs font-semibold text-primary-900">
-                    {child.reference}
+                  <td className="px-4 py-2 font-semibold text-primary-900">
+                    {child.childName}
                   </td>
-                  <td className="px-4 py-2 text-slate-700">{child.childName}</td>
                   <td className="px-4 py-2 text-slate-700">
                     {SCHOOL_LABEL[child.school] ?? child.school}
                   </td>

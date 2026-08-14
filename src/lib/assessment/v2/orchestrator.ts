@@ -29,7 +29,8 @@
  * Pure module — no DB, no React.
  */
 
-import { calculateHouseholdNetIncome } from './income'
+import { calculateEarnerAggregateIncome, calculateHouseholdNetIncome } from './income'
+import { normaliseManualAdjustment } from './manual-adjustment'
 import { calculateNotionalSpend } from './notional-spend'
 import {
   calculateDerivedYearlyDebtRepayments,
@@ -63,6 +64,12 @@ import type { AssessorIncomeRecord, PropertyAssetsRecord, DebtsRecord } from '@/
 export interface AssessmentV2Input {
   /** One `AssessorIncomeRecord` per earner (CALC-02 `assessment_earners.income_detail`). */
   earners: readonly AssessorIncomeRecord[]
+  /**
+   * Epic 13 / C2 — the assessor's SIGNED manual income adjustment
+   * (`Assessment.manualAdjustment`), applied after earner aggregation and
+   * before the C40 £0 floor. Negative deducts. Defaults to 0.
+   */
+  manualAdjustment?: number
   /** Family type category 1–6 — keys every notional/profiling lookup. */
   familyTypeCategory: number
 
@@ -119,6 +126,10 @@ export interface AssessmentV2Input {
 export interface AssessmentV2Output {
   /** C40 — not itself a v2 snapshot column (v1's `totalHouseholdNetIncome` already covers it), but every downstream leg needs it. */
   householdNetIncome: number
+  /** Earner subtotal BEFORE the manual adjustment and before the C40 floor — so the UI can show the adjustment as its own line. */
+  earnerAggregateIncome: number
+  /** Epic 13 / C2 — the signed manual income adjustment that was applied (0 when none). */
+  manualAdjustment: number
 
   // ── Notional spend (CALC-03) ──────────────────────────────────────────
   notionalEssentials: number
@@ -170,8 +181,14 @@ function lineAmount(lines: readonly NotionalSpendLine[], key: NotionalSpendLine[
 export function calculateAssessmentV2(input: AssessmentV2Input, ref: ReferenceBundle): AssessmentV2Output {
   const category = input.familyTypeCategory
 
-  // 1. Household net income (CALC-03 income.ts).
-  const householdNetIncome = calculateHouseholdNetIncome(input.earners)
+  // 1. Household net income (CALC-03 income.ts) — earner aggregation, then
+  //    the Epic 13 / C2 manual income adjustment, then the C40 £0 floor.
+  //    Everything downstream (notional spend → NDI → the three award legs)
+  //    consumes the ADJUSTED figure, which is why the adjustment sits here at
+  //    step 1 rather than being bolted onto the award at the end.
+  const manualAdjustment = normaliseManualAdjustment(input.manualAdjustment)
+  const earnerAggregateIncome = calculateEarnerAggregateIncome(input.earners)
+  const householdNetIncome = calculateHouseholdNetIncome(input.earners, manualAdjustment)
 
   // 2. Derived yearly debt repayments (CALC-04) — precedes notional spend
   //    because the savings test needs it.
@@ -252,6 +269,8 @@ export function calculateAssessmentV2(input: AssessmentV2Input, ref: ReferenceBu
 
   return {
     householdNetIncome,
+    earnerAggregateIncome,
+    manualAdjustment,
 
     notionalEssentials: lineAmount(notionalSpend.lines, 'essentials'),
     notionalCar: lineAmount(notionalSpend.lines, 'car'),

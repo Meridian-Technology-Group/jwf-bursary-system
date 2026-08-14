@@ -17,6 +17,7 @@ import {
   FormDescription,
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
+import { CountInput } from "@/components/portal/form-fields/count-input";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -247,20 +248,11 @@ export function DependentChildrenForm({ childFullName }: { childFullName?: strin
               Include children studying at university or college.
             </FormDescription>
             <FormControl>
-              <Input
-                type="number"
-                min={0}
-                step={1}
+              <CountInput
                 className="w-24"
                 {...field}
-                onFocus={(e) => {
-                  const el = e.currentTarget;
-                  requestAnimationFrame(() => el.select());
-                }}
-                onChange={(e) =>
-                  field.onChange(parseInt(e.target.value, 10) || 0)
-                }
                 value={field.value ?? ""}
+                onChange={(count) => field.onChange(count)}
               />
             </FormControl>
             <FormMessage />

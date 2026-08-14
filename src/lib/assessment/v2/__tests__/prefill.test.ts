@@ -76,6 +76,7 @@ function assets(partial: Partial<AssetsLiabilitiesData>): AssetsLiabilitiesData 
     hasPersonalDebt: false,
     creditCardStatementDocumentIds: [],
     loanStatementDocumentIds: [],
+    loanAgreementDocumentIds: [],
     otherDebtDocumentIds: [],
     documentsConfirmed: true,
     ...partial,

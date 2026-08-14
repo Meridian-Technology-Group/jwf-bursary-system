@@ -3,6 +3,7 @@ import {
   isScheduleComplete,
   closeAccountIfComplete,
   mirrorApplicationToSchedule,
+  reopenAccountForAssessmentYear,
 } from "../lifecycle";
 
 describe("isScheduleComplete", () => {
@@ -130,5 +131,79 @@ describe("mirrorApplicationToSchedule", () => {
     });
     expect(id).toBe("e1");
     expect(tx.bursaryScheduleEntry.update).not.toHaveBeenCalled();
+  });
+});
+
+// ─── Reopen (Epic 13 / C1) ────────────────────────────────────────────────────
+
+function makeReopenTx(
+  entry: { id: string; status: string } | null,
+  accountStatus: string
+) {
+  return {
+    bursaryScheduleEntry: {
+      findFirst: vi.fn(async () => entry),
+      update: vi.fn(async () => ({})),
+    },
+    bursaryAccount: {
+      findUnique: vi.fn(async () => ({ status: accountStatus })),
+      update: vi.fn(async () => ({})),
+    },
+  };
+}
+
+describe("reopenAccountForAssessmentYear", () => {
+  const PARAMS = { bursaryAccountId: "acc-1", academicYear: "2026-27" };
+
+  it("moves the year's COMPLETE entry back to RECEIVED", async () => {
+    const tx = makeReopenTx({ id: "e1", status: "COMPLETE" }, "ACTIVE");
+    const res = await reopenAccountForAssessmentYear(tx as never, PARAMS);
+    expect(res.scheduleEntryReopened).toBe(true);
+    expect(tx.bursaryScheduleEntry.update).toHaveBeenCalledWith({
+      where: { id: "e1" },
+      data: { status: "RECEIVED" },
+    });
+  });
+
+  it("un-closes an account that this year's completion had auto-closed", async () => {
+    const tx = makeReopenTx({ id: "e1", status: "COMPLETE" }, "CLOSED");
+    const res = await reopenAccountForAssessmentYear(tx as never, PARAMS);
+    expect(res).toEqual({ scheduleEntryReopened: true, accountReopened: true });
+    // The documented exception to set-once closedAt: it is CLEARED, not
+    // back-dated — the account is genuinely no longer closed.
+    expect(tx.bursaryAccount.update).toHaveBeenCalledWith({
+      where: { id: "acc-1" },
+      data: { status: "ACTIVE", closedAt: null },
+    });
+  });
+
+  it("leaves a CLOSED account alone when this year had nothing to reverse", async () => {
+    // No COMPLETE entry for this year ⇒ the close came from somewhere else
+    // (an admin manual close, or another year). Not ours to undo.
+    const tx = makeReopenTx({ id: "e1", status: "RECEIVED" }, "CLOSED");
+    const res = await reopenAccountForAssessmentYear(tx as never, PARAMS);
+    expect(res).toEqual({
+      scheduleEntryReopened: false,
+      accountReopened: false,
+    });
+    expect(tx.bursaryAccount.update).not.toHaveBeenCalled();
+    expect(tx.bursaryScheduleEntry.update).not.toHaveBeenCalled();
+  });
+
+  it("no-ops when the account has no schedule entry for that year", async () => {
+    const tx = makeReopenTx(null, "ACTIVE");
+    const res = await reopenAccountForAssessmentYear(tx as never, PARAMS);
+    expect(res).toEqual({
+      scheduleEntryReopened: false,
+      accountReopened: false,
+    });
+    expect(tx.bursaryAccount.update).not.toHaveBeenCalled();
+  });
+
+  it("leaves an ACTIVE account active after reverting the entry", async () => {
+    const tx = makeReopenTx({ id: "e1", status: "COMPLETE" }, "ACTIVE");
+    const res = await reopenAccountForAssessmentYear(tx as never, PARAMS);
+    expect(res.accountReopened).toBe(false);
+    expect(tx.bursaryAccount.update).not.toHaveBeenCalled();
   });
 });

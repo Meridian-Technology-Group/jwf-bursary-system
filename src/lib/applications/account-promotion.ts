@@ -21,7 +21,6 @@
  */
 
 import type { Tx } from "@/lib/db/prisma";
-import { generateBursaryAccountReference } from "@/lib/bursary-accounts/reference";
 import { generateSchedule } from "@/lib/bursary-accounts/schedule";
 import type { School, EntryYearGroup } from "@prisma/client";
 
@@ -116,10 +115,11 @@ export async function promoteToActiveAccount(
     return { bursaryAccountId: application.bursaryAccountId, created: false };
   }
 
-  const reference = await generateBursaryAccountReference(
-    tx,
-    application.round.academicYear
-  );
+  // No reference is minted for the account (Epic 13, D13-1a): it is an
+  // internal container whose identity is its UUID primary key, and the one
+  // user-facing label lives on `Application.reference`. The count-based
+  // `generateBursaryAccountReference` this replaced is deleted — with it goes
+  // its count-then-insert sequence race.
 
   // BursaryAccount.entryYear is required; fall back to the round's starting
   // academic year (e.g. "2025/2026" -> 2025) when the application did not
@@ -142,7 +142,6 @@ export async function promoteToActiveAccount(
 
   const account = await tx.bursaryAccount.create({
     data: {
-      reference,
       school: application.school,
       childName: application.childName,
       childDob: application.childDob,

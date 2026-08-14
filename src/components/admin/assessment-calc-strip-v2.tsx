@@ -183,6 +183,20 @@ export function AssessmentCalcStripV2({ output, savingsCushion, className }: Ass
           ) : (
             <>
               <SectionHeader title="Income & notional spend" />
+              {/* Epic 13 / C2 — when an adjustment is in play the household
+                  figure is shown as earners + adjustment so the number is
+                  never unexplained. With no adjustment the strip reads exactly
+                  as it did before. */}
+              {output.manualAdjustment !== 0 && (
+                <>
+                  <Row label="Earner income subtotal" value={fmt(output.earnerAggregateIncome)} sub />
+                  <Row
+                    label="Manual income adjustment"
+                    value={`${output.manualAdjustment > 0 ? "+" : "−"}${fmt(Math.abs(output.manualAdjustment))}`}
+                    sub
+                  />
+                </>
+              )}
               <Row label="Household net income (C40)" value={fmt(output.householdNetIncome)} bold />
               <Row label="Total notional spend (C85)" value={fmt(output.totalNotionalSpend)} />
               <Row label="Savings-test number (C80)" value={fmt(output.savingsTestNumber)} sub />

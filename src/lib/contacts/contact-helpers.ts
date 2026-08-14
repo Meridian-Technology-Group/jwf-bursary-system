@@ -19,8 +19,8 @@ export interface ContactCore {
 /**
  * The fields that MUST be present before a contact can be invited (D1/§5.2):
  * a parent surname + email, the child's name, and the LOCKED school + entry
- * year. A from-contact invite rejects an incomplete contact rather than
- * sending a half-formed invite.
+ * year + entry year-group. A from-contact invite rejects an incomplete contact
+ * rather than sending a half-formed invite.
  */
 export function missingRequiredInviteFields(contact: ContactCore): string[] {
   const missing: string[] = [];
@@ -35,6 +35,10 @@ export function missingRequiredInviteFields(contact: ContactCore): string[] {
   }
   if (!contact.school) missing.push("school");
   if (contact.entryYear == null) missing.push("entry year");
+  // Q1 (Brian, 2026-08-14): the entry year-group is JWF-facing only and the
+  // parent can never supply it, so an invite must not go out without one — the
+  // application created on acceptance would otherwise have no year-group at all.
+  if (!contact.entryYearGroup) missing.push("entry year group");
   return missing;
 }
 

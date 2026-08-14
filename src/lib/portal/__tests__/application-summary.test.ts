@@ -35,7 +35,11 @@ describe("buildSubmittedSummary (Epic 05 §3.3)", () => {
     ).toBeUndefined();
   });
 
-  it("shows Year of entry from the Application entry year (not the empty blob)", () => {
+  // Q1 (Brian, 2026-08-14): year of entry is JWF-facing ONLY. This summary is
+  // applicant-facing (submitted-summary page + the applicant's submission PDF),
+  // so the row is gone outright — including for a legacy blob that still
+  // carries an entryYearGroup.
+  it("never shows a Year of entry row, even from a legacy blob value", () => {
     const summary = buildSubmittedSummary({
       sections: [
         {
@@ -46,17 +50,18 @@ describe("buildSubmittedSummary (Epic 05 §3.3)", () => {
             school: "WHITGIFT",
             placeOfBirth: "London",
             sameAddressAsParent1: true,
+            entryYearGroup: "Y7",
           },
         },
       ],
       documents: [],
-      entryYear: 2027,
-      entryYearGroup: "Y7",
     });
     const child = summary.sections.find((s) => s.sectionType === "CHILD_DETAILS");
-    expect(child?.rows.find((r) => r.label === "Year of entry")?.value).toBe(
-      "2027 (Year 7)"
-    );
+    expect(child).toBeDefined();
+    expect(child?.rows.find((r) => r.label === "Year of entry")).toBeUndefined();
+    expect(
+      child?.rows.some((r) => /year of entry|entry year/i.test(r.label))
+    ).toBe(false);
   });
 
   it("dependent children table shows School/School address, not a phantom 'Date registered'", () => {

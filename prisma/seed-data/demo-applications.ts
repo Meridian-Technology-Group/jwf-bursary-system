@@ -42,7 +42,6 @@ export const WILLIAMS_FAMILY_GROUP_ID = "00000000-0000-4000-f000-000000000001";
 export const bursaryAccounts = [
   {
     id: ACCOUNT_OKAFOR_ID,
-    reference: "WS-2601",
     school: "WHITGIFT" as const,
     childName: "Emeka Okafor",
     childDob: new Date("2014-03-12"),
@@ -54,7 +53,6 @@ export const bursaryAccounts = [
   },
   {
     id: ACCOUNT_PATEL_ID,
-    reference: "TS-2401",
     school: "TRINITY" as const,
     childName: "Arjun Patel",
     childDob: new Date("2012-07-20"),
@@ -66,7 +64,6 @@ export const bursaryAccounts = [
   },
   {
     id: ACCOUNT_WILLIAMS_M_ID,
-    reference: "WS-2501",
     school: "WHITGIFT" as const,
     childName: "Marcus Williams",
     childDob: new Date("2011-11-04"),
@@ -78,7 +75,6 @@ export const bursaryAccounts = [
   },
   {
     id: ACCOUNT_WILLIAMS_A_ID,
-    reference: "TS-2601",
     school: "TRINITY" as const,
     childName: "Amara Williams",
     childDob: new Date("2014-06-18"),
@@ -90,7 +86,6 @@ export const bursaryAccounts = [
   },
   {
     id: ACCOUNT_CHEN_ID,
-    reference: "TS-2602",
     school: "TRINITY" as const,
     childName: "Lily Chen",
     childDob: new Date("2015-09-28"),

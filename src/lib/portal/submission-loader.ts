@@ -31,6 +31,12 @@ export interface LoadedSubmission {
   submittedAt: Date | null;
   termsAcceptedAt: Date | null;
   termsVersion: string | null;
+  /**
+   * Consumed-flag for the ONE-TIME submission PDF (Epic 13, D13-4). NULL ⇒ the
+   * single download is still available. Read by the PDF route (fast-path 410)
+   * and by /submitted, which shows the one-shot offer only while it is NULL.
+   */
+  submissionPdfDownloadedAt: Date | null;
   summary: SubmittedSummary;
 }
 
@@ -78,8 +84,7 @@ export async function loadSubmittedApplication(
           submittedAt: true,
           termsAcceptedAt: true,
           termsVersion: true,
-          entryYear: true,
-          entryYearGroup: true,
+          submissionPdfDownloadedAt: true,
           round: { select: { academicYear: true } },
           sections: {
             where: { ownerContributorId },
@@ -115,8 +120,7 @@ export async function loadSubmittedApplication(
           submittedAt: true,
           termsAcceptedAt: true,
           termsVersion: true,
-          entryYear: true,
-          entryYearGroup: true,
+          submissionPdfDownloadedAt: true,
           round: { select: { academicYear: true } },
           sections: {
             where: { ownerContributorId: ownerContributorId! },
@@ -146,8 +150,7 @@ type RawApplication = {
   submittedAt: Date | null;
   termsAcceptedAt: Date | null;
   termsVersion: string | null;
-  entryYear: number | null;
-  entryYearGroup: string | null;
+  submissionPdfDownloadedAt: Date | null;
   round: { academicYear: string };
   sections: { section: string; data: unknown }[];
   documents: { slot: string; filename: string }[];
@@ -164,11 +167,10 @@ function shape(app: RawApplication): LoadedSubmission {
     submittedAt: app.submittedAt,
     termsAcceptedAt: app.termsAcceptedAt,
     termsVersion: app.termsVersion,
+    submissionPdfDownloadedAt: app.submissionPdfDownloadedAt,
     summary: buildSubmittedSummary({
       sections: app.sections,
       documents: app.documents,
-      entryYear: app.entryYear,
-      entryYearGroup: app.entryYearGroup,
     }),
   };
 }

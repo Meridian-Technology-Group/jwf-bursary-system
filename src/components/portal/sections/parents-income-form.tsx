@@ -6,9 +6,12 @@
  * Epic 02 (D3): the flat 14-line model is replaced with sub-tables keyed by the
  * parent's declared employment status (from PARENT_DETAILS). Each sub-table has
  * its own numeric rows + the required upload(s), a live per-parent TOTAL footer,
- * and a compulsory legibility tick. The workbook's "value > £0 ⇒ upload, except
- * Child Benefit" rule is enforced by the rule engine (section-rules.ts); here we
- * surface the matching upload control when the value is non-zero.
+ * and one compulsory acknowledgment: the legibility tick when the parent declared
+ * income, or the "£0 / no income at all" declaration when they did not (CF-21 —
+ * at £0 the page asks for no documents, so it must not demand a document tick).
+ * The workbook's "value > £0 ⇒ upload, except Child Benefit" rule is enforced by
+ * the rule engine (section-rules.ts); here we surface the matching upload control
+ * when the value is non-zero.
  *
  * Layout (income redesign): every group is ALWAYS open — there are no
  * collapsible disclosures. Each group renders as a dense `Source | Amount (£) |
@@ -175,6 +178,7 @@ function DocUpload({
   hint,
   applicationId,
   documentMap,
+  clearsToNull = false,
 }: {
   prefix: Prefix;
   docIdPath: string;
@@ -183,6 +187,12 @@ function DocUpload({
   hint?: string;
   applicationId: string;
   documentMap?: Record<string, DocumentMeta>;
+  /**
+   * Positional (array-entry) uploads clear to `null`, not `undefined`, so
+   * removing month 2 of the three UC monthly documents leaves months 1 and 3
+   * where they are instead of collapsing the array (CF-28).
+   */
+  clearsToNull?: boolean;
 }) {
   const { control, setValue, getValues } = useFormContext<ParentsIncomeFormValues>();
   const initial = React.useRef(
@@ -208,10 +218,11 @@ function DocUpload({
           })
         }
         onRemove={() =>
-          setValue(`${prefix}.${docIdPath}` as never, undefined as never, {
-            shouldValidate: true,
-            shouldDirty: true,
-          })
+          setValue(
+            `${prefix}.${docIdPath}` as never,
+            (clearsToNull ? null : undefined) as never,
+            { shouldValidate: true, shouldDirty: true }
+          )
         }
       />
       {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
@@ -277,6 +288,32 @@ function ParentIncomeColumn({
     ensure("retired", { statePension: 0, privatePension: 0 });
     ensure("divorcedSeparated", { maintenanceReceived: 0, sharedCustodyNote: "" });
     ensure("thirdParty", { incomeSupportReceived: 0, supportNote: "" });
+    // Seed both acknowledgment ticks to `false` as well (CF-21). Only Parent 1
+    // got a `documentsConfirmed: false` default from `getDefaultValues`, so
+    // Parent 2's checkboxes mounted with `checked={undefined}` — i.e. UNCONTROLLED
+    // Radix checkboxes, whose state React was not driving. Seeding both keys for
+    // both parents makes the two columns behave identically.
+    // CF-28 — normalise the UC monthly block to exactly three positional
+    // entries (month 1/2/3). Seeding it here means the array always exists and
+    // never grows holes when the applicant uploads month 3 first; a legacy blob
+    // that carried a single id keeps it, in position 1.
+    const benefits = (cur.benefits ?? {}) as Record<string, unknown>;
+    const existingUcMonthly = benefits.ucMonthlyDocumentIds;
+    const ucMonthly = [0, 1, 2].map((i) => {
+      const v = Array.isArray(existingUcMonthly) ? existingUcMonthly[i] : null;
+      return typeof v === "string" && v.length > 0 ? v : null;
+    });
+    setValue(
+      `${prefix}.benefits.ucMonthlyDocumentIds` as never,
+      ucMonthly as never,
+      { shouldDirty: false }
+    );
+
+    for (const tick of ["noIncomeConfirmed", "documentsConfirmed"] as const) {
+      if (cur[tick] === undefined || cur[tick] === null) {
+        setValue(`${prefix}.${tick}` as never, false as never, { shouldDirty: false });
+      }
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [prefix]);
 
@@ -304,6 +341,25 @@ function ParentIncomeColumn({
       hint={hint}
       applicationId={applicationId}
       documentMap={documentMap}
+    />
+  );
+
+  // One entry of a positional repeat block (the three UC monthly documents).
+  const repeatDoc = (
+    docIdPath: string,
+    slot: string,
+    label: string,
+    hint?: string
+  ) => (
+    <DocUpload
+      prefix={prefix}
+      docIdPath={docIdPath}
+      slot={`${slot}${slotSuffix}`}
+      label={label}
+      hint={hint}
+      applicationId={applicationId}
+      documentMap={documentMap}
+      clearsToNull
     />
   );
 
@@ -392,13 +448,36 @@ function ParentIncomeColumn({
           label="Universal Credit (excl. childcare)"
           evidence={
             subGt0("benefits", "universalCredit") ? (
-              <div className="space-y-1.5">
+              /* CF-28 — Universal Credit needs FOUR documents, and the form
+                 has to ask for them separately or an applicant can satisfy the
+                 whole requirement with one upload. Block 1: the 12-month
+                 statement. Block 2: three positional entries, one per month, so
+                 a missing third month is visible as an empty slot rather than
+                 hidden behind a satisfied tick. */
+              <div className="space-y-2">
                 {doc("benefits.ucStatementDocumentId", "UC_STATEMENT", "Universal Credit 12-month statement")}
-                {doc(
-                  "benefits.ucMonthlyDocumentIds.0",
-                  "UC_MONTHLY",
-                  "3 monthly UC detailed payment calculations (not just the front page)"
-                )}
+                <div className="space-y-1.5 rounded-md border border-slate-200 bg-slate-50/70 p-2">
+                  <p className="text-[11px] font-medium leading-tight text-slate-600">
+                    3 monthly UC detailed payment calculations — three{" "}
+                    <span className="font-semibold">different</span> months, full
+                    calculation (not just the front page)
+                  </p>
+                  {repeatDoc(
+                    "benefits.ucMonthlyDocumentIds.0",
+                    "UC_MONTHLY_1",
+                    "Monthly UC payment 1"
+                  )}
+                  {repeatDoc(
+                    "benefits.ucMonthlyDocumentIds.1",
+                    "UC_MONTHLY_2",
+                    "Monthly UC payment 2"
+                  )}
+                  {repeatDoc(
+                    "benefits.ucMonthlyDocumentIds.2",
+                    "UC_MONTHLY_3",
+                    "Monthly UC payment 3"
+                  )}
+                </div>
               </div>
             ) : undefined
           }
@@ -604,28 +683,35 @@ function ParentIncomeColumn({
         />
       )}
 
-      {/* Legibility tick */}
-      <FormField
-        control={control}
-        name={`${prefix}.documentsConfirmed` as never}
-        render={({ field }) => (
-          <FormItem>
-            <div className="flex items-start gap-3 rounded-md border border-slate-200 bg-white p-4">
-              <FormControl>
-                <Checkbox
-                  checked={field.value as boolean}
-                  onCheckedChange={field.onChange}
-                  className="mt-0.5"
-                />
-              </FormControl>
-              <FormLabel className="cursor-pointer font-normal text-slate-700">
-                I confirm all documents on this page are correct and legible.
-              </FormLabel>
-            </div>
-            <FormMessage />
-          </FormItem>
-        )}
-      />
+      {/* Legibility tick — only when this parent declared income. At £0 the page
+          renders no upload controls at all (every income document is required
+          only when its figure is > £0), so asking the applicant to confirm the
+          legibility of documents that do not exist is meaningless — and used to
+          be an unsatisfiable gate on the zero-income path (CF-21). The £0
+          declaration above is the acknowledgment in that case. */}
+      {total > 0 && (
+        <FormField
+          control={control}
+          name={`${prefix}.documentsConfirmed` as never}
+          render={({ field }) => (
+            <FormItem>
+              <div className="flex items-start gap-3 rounded-md border border-slate-200 bg-white p-4">
+                <FormControl>
+                  <Checkbox
+                    checked={field.value as boolean}
+                    onCheckedChange={field.onChange}
+                    className="mt-0.5"
+                  />
+                </FormControl>
+                <FormLabel className="cursor-pointer font-normal text-slate-700">
+                  I confirm all documents on this page are correct and legible.
+                </FormLabel>
+              </div>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+      )}
     </div>
   );
 }

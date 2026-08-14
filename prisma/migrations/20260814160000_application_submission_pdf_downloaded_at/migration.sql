@@ -1,0 +1,64 @@
+-- =============================================================================
+-- JWF Bursary System — the submission PDF becomes a ONE-TIME download (D1)
+-- =============================================================================
+-- Epic 13, decision D13-4 (confirmed by Brian, 2026-08-14 — "build it
+-- regardless"), implemented per
+-- docs/backlog/uat-aug-2026/sprint-01-implementation-plan.md §5 D1.
+--
+-- CF-27: applicants must not be able to browse everything they submitted (the
+-- "tailor-made application" risk). The applicant History page and the on-screen
+-- answer summary are removed in the same PR; the submission PDF survives as a
+-- single download offered at submission time and never again.
+--
+-- This column is the consumed-flag that makes "never again" enforceable
+-- server-side rather than by hiding a link:
+--
+--   NULL     ⇒ the one download has not been taken yet.
+--   NOT NULL ⇒ when it was taken. GET /api/pdf/submission/[applicationId]
+--              answers 410 Gone from then on, for anyone, forever.
+--
+-- ── Why nullable + additive ──────────────────────────────────────────────────
+-- Every existing application must start life with its download unspent, and
+-- NULL is exactly that state. There is no backfill: applications submitted
+-- before this migration have (under the old rules) been able to re-download
+-- freely, and deliberately keep one final download rather than being
+-- retro-punished by a backfill to now(). Adding a nullable column takes no
+-- table rewrite and no long lock.
+--
+-- ── Concurrency contract this column has to satisfy ──────────────────────────
+-- The route claims the download with a CONDITIONAL update — the Prisma
+-- equivalent of:
+--
+--   UPDATE public.applications
+--      SET submission_pdf_downloaded_at = now()
+--    WHERE id = $1
+--      AND lead_applicant_id = $2
+--      AND submission_pdf_downloaded_at IS NULL;   -- ← the guard
+--
+-- and treats "0 rows updated" as having lost the race. Under READ COMMITTED
+-- (Prisma's default), a second concurrent statement blocks on the row lock,
+-- then re-evaluates the guard against the committed row and matches nothing.
+-- So N simultaneous requests produce exactly one winner without an advisory
+-- lock or a SERIALIZABLE retry loop. Nothing about that requires an index: the
+-- predicate is anchored on the primary key.
+--
+-- The stamp is written only AFTER the PDF has rendered successfully, so a
+-- rendering failure (500) leaves the column NULL and does not consume the
+-- applicant's single download.
+--
+-- ── RLS ──────────────────────────────────────────────────────────────────────
+-- No new table, so no new policies. The claiming UPDATE runs under the
+-- applicant's own context via `withUserContext` and is permitted by the
+-- existing `applications_update` policy (20260513090020_enable_row_level_
+-- security), which allows `lead_applicant_id = current_user_id()`. Least
+-- privilege: no service-role escalation is needed to stamp it.
+--
+-- ── Data check ───────────────────────────────────────────────────────────────
+-- None required. Adding a nullable column cannot fail on existing data.
+-- Reversal is `ALTER TABLE public.applications DROP COLUMN
+-- submission_pdf_downloaded_at`, which loses only the consumed-flags and
+-- restores unlimited re-downloads.
+-- =============================================================================
+
+ALTER TABLE "applications"
+  ADD COLUMN IF NOT EXISTS "submission_pdf_downloaded_at" TIMESTAMPTZ(6);

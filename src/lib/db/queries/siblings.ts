@@ -19,7 +19,12 @@ export interface SiblingLinkRow {
     id: string;
     childName: string;
     school: string;
-    reference: string;
+    /**
+     * Calendar year the child entered the school. Epic 13 (D13-1a): the
+     * account no longer carries a reference, so the sibling surfaces identify
+     * an account by child name + school + entry year instead of `BA-…`.
+     */
+    entryYear: number;
     /**
      * The most recent assessed payable-fees figure for this sibling, or null.
      * CALC-08: sourced with the same fallback walk as `selectLastPayableFees`
@@ -34,9 +39,10 @@ export interface SiblingLinkRow {
 
 export interface BursaryAccountSearchResult {
   id: string;
-  reference: string;
   childName: string;
   school: string;
+  /** Entry year — disambiguates two accounts at the same school (D13-1a). */
+  entryYear: number;
   leadApplicantEmail: string;
 }
 
@@ -81,7 +87,7 @@ export async function getSiblingLinks(
           id: true,
           childName: true,
           school: true,
-          reference: true,
+          entryYear: true,
           applications: {
             // A fee figure can live on the legacy assessment column (v1) OR on
             // the recommendation's v2 columns — match whichever is present so
@@ -144,7 +150,7 @@ export async function getSiblingLinks(
         id: link.bursaryAccount.id,
         childName: link.bursaryAccount.childName,
         school: link.bursaryAccount.school,
-        reference: link.bursaryAccount.reference,
+        entryYear: link.bursaryAccount.entryYear,
         latestPayableFees,
       },
     };
@@ -154,10 +160,12 @@ export async function getSiblingLinks(
 // ─── searchBursaryAccounts ────────────────────────────────────────────────────
 
 /**
- * Searches bursary accounts by child name, account reference, or lead
- * applicant email. Returns up to 10 matches.
+ * Searches bursary accounts by child name or lead applicant email. Returns up
+ * to 10 matches.
  *
- * Used by the sibling linker search input.
+ * Used by the sibling linker search input. Epic 13 (D13-1a) removed the
+ * account reference, and with it the third search term — staff never had a
+ * `BA-…` code to type in anyway, since it was never communicated to anyone.
  */
 export async function searchBursaryAccounts(
   tx: Tx,
@@ -170,7 +178,6 @@ export async function searchBursaryAccounts(
     where: {
       OR: [
         { childName: { contains: trimmed, mode: "insensitive" } },
-        { reference: { contains: trimmed, mode: "insensitive" } },
         {
           leadApplicant: {
             email: { contains: trimmed, mode: "insensitive" },
@@ -182,9 +189,9 @@ export async function searchBursaryAccounts(
     take: 10,
     select: {
       id: true,
-      reference: true,
       childName: true,
       school: true,
+      entryYear: true,
       leadApplicant: {
         select: { email: true },
       },
@@ -193,9 +200,9 @@ export async function searchBursaryAccounts(
 
   return accounts.map((a) => ({
     id: a.id,
-    reference: a.reference,
     childName: a.childName,
     school: a.school,
+    entryYear: a.entryYear,
     leadApplicantEmail: a.leadApplicant.email,
   }));
 }

@@ -15,6 +15,15 @@
 
 export const BURSARIES_CONTACT_EMAIL = "fees@johnwhitgiftfoundation.org";
 
+/**
+ * The sentence the Foundation asked us to put in front of parents, verbatim
+ * (CF-31). It is specific on purpose: every place the portal says "contact the
+ * Foundation" without naming a channel, a parent phones — and there is no call
+ * centre to answer. Wherever this appears the address is a `mailto:` link, so
+ * "by email" is one tap rather than an instruction to go and find an inbox.
+ */
+export const CONTACT_BURSARY_TEAM_COPY = `please contact the bursary team by email at ${BURSARIES_CONTACT_EMAIL}`;
+
 export interface GuidanceFaq {
   question: string;
   answer: string;
@@ -97,7 +106,7 @@ export const HOW_TO_APPLY_GUIDANCE_NOTES = [
 export const CHECKLIST_UPLOAD_NOTES = [
   "Upload clear scans or sharp phone photos. Bank statements must be uploaded as a single PDF per account — not page-by-page photos.",
   "You can check your application status here after you submit.",
-  "Questions about an in-progress application are answered by email only during April and May.",
+  `Questions about an in-progress application are answered by email only during April and May — ${CONTACT_BURSARY_TEAM_COPY}.`,
   "You are responsible for the accuracy of everything you submit. Please provide everything that is asked for — missing documents can lead to your application being rejected.",
 ];
 

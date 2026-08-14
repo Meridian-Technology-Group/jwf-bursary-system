@@ -36,7 +36,11 @@ export const emailTemplates: EmailTemplateData[] = [
       "school",
       "round_year",
       "registration_link",
+      // E1: {{deadline}} is the SUBMISSION deadline; {{link_expiry}} is when
+      // the single-use registration link stops working. Two different dates —
+      // conflating them was CF-11.
       "deadline",
+      "link_expiry",
     ],
     body: `Dear {{applicant_name}},
 
@@ -47,6 +51,8 @@ The John Whitgift Foundation is committed to providing bursary support to famili
 To begin your application, please visit the link below and complete the online registration form. You will be asked to provide details of your household income, assets, and family circumstances, along with supporting documentation.
 
 Registration link: {{registration_link}}
+
+This link is unique to you and can only be used once. For your security it will expire on {{link_expiry}}. If it expires before you have registered, please contact the Bursary Office and we will gladly send you a new one.
 
 Please note that the deadline for submitting your completed application is {{deadline}}. Applications received after this date may not be considered for this round.
 
@@ -241,7 +247,10 @@ John Whitgift Foundation`,
       "school",
       "round_year",
       "registration_link",
+      // E1: {{deadline}} is the round's ROLLING-OVER submission deadline (the
+      // April date), not the link's 30-day expiry — that is {{link_expiry}}.
       "deadline",
+      "link_expiry",
     ],
     body: `Dear {{applicant_name}},
 
@@ -252,6 +261,8 @@ As you will be aware, bursary awards are subject to annual review to ensure that
 To complete the re-assessment, please log in to the application portal using the link below and complete the re-assessment form for the {{round_year}} academic year. You will be asked to provide updated information about your household income, assets, and any changes in your family circumstances since your last assessment.
 
 Re-assessment link: {{registration_link}}
+
+This link is unique to you and can only be used once. For your security it will expire on {{link_expiry}}. If it expires before you have logged in, please contact the Bursary Office and we will gladly send you a new one.
 
 Please ensure that your re-assessment form and all supporting documentation are submitted by {{deadline}}. Failure to submit by this date may result in the bursary being suspended pending receipt of the required information.
 
@@ -343,7 +354,10 @@ JWF Bursary System`,
       "school",
       "round_year",
       "registration_link",
+      // E1: {{deadline}} is the application's own submission deadline;
+      // {{link_expiry}} is when this registration link stops working.
       "deadline",
+      "link_expiry",
     ],
     body: `Dear {{secondary_parent_name}},
 
@@ -354,6 +368,8 @@ Because the Foundation assesses each parent's financial circumstances independen
 To contribute your part of the application, please register using the link below and complete your section of the form. You will be asked to provide details of your own household income, assets, and supporting documentation.
 
 Registration link: {{registration_link}}
+
+This link is unique to you and can only be used once. For your security it will expire on {{link_expiry}}. If it expires before you have registered, please contact the Bursary Office and we will gladly send you a new one.
 
 Please complete your section by {{deadline}}. If your information is not received, the Foundation may need to assess the application on the basis of the details available, which could affect the outcome.
 

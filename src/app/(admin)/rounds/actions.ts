@@ -41,12 +41,16 @@ const RoundSchema = z
     openDate: z.string().min(1, "Open date is required"),
     closeDate: z.string().min(1, "Close date is required"),
     decisionDate: z.string().optional(),
-    // Item 12: round-level default submission-by date. Optional — a round with
-    // no default simply has none (applications fall back to closeDate, D-1).
-    // No refinement against openDate/closeDate: the Foundation may legitimately
-    // want a default before or after closeDate (e.g. a grace period past close),
-    // so this is deliberately permissive.
-    defaultSubmissionDeadline: z.string().optional(),
+    // Item 12, made type-aware by E1/D13-8: the round carries TWO default
+    // submission-by dates — one for new applicants, one for bursary holders
+    // rolling over into the annual re-assessment (conventionally April; Q4:
+    // one global date per round, not per school). Each is optional — a round
+    // with no default for a type simply has none (those applications fall back
+    // to closeDate, D-1) — and neither is refined against openDate/closeDate:
+    // the Foundation may legitimately want a default before or after closeDate
+    // (e.g. a grace period past close), so this is deliberately permissive.
+    defaultSubmissionDeadlineNew: z.string().optional(),
+    defaultSubmissionDeadlineRolling: z.string().optional(),
   })
   .refine(
     (data) => new Date(data.closeDate) > new Date(data.openDate),
@@ -82,8 +86,10 @@ export async function createRoundAction(
     openDate: formData.get("openDate") as string,
     closeDate: formData.get("closeDate") as string,
     decisionDate: (formData.get("decisionDate") as string) || undefined,
-    defaultSubmissionDeadline:
-      (formData.get("defaultSubmissionDeadline") as string) || undefined,
+    defaultSubmissionDeadlineNew:
+      (formData.get("defaultSubmissionDeadlineNew") as string) || undefined,
+    defaultSubmissionDeadlineRolling:
+      (formData.get("defaultSubmissionDeadlineRolling") as string) || undefined,
   };
 
   const parsed = RoundSchema.safeParse(raw);
@@ -94,8 +100,14 @@ export async function createRoundAction(
     };
   }
 
-  const { academicYear, openDate, closeDate, decisionDate, defaultSubmissionDeadline } =
-    parsed.data;
+  const {
+    academicYear,
+    openDate,
+    closeDate,
+    decisionDate,
+    defaultSubmissionDeadlineNew,
+    defaultSubmissionDeadlineRolling,
+  } = parsed.data;
 
   try {
     await withUserContext(user.id, user.role as RlsRole, async (tx) => {
@@ -104,8 +116,11 @@ export async function createRoundAction(
         openDate: new Date(openDate),
         closeDate: new Date(closeDate),
         decisionDate: decisionDate ? new Date(decisionDate) : undefined,
-        defaultSubmissionDeadline: defaultSubmissionDeadline
-          ? new Date(defaultSubmissionDeadline)
+        defaultSubmissionDeadlineNew: defaultSubmissionDeadlineNew
+          ? new Date(defaultSubmissionDeadlineNew)
+          : undefined,
+        defaultSubmissionDeadlineRolling: defaultSubmissionDeadlineRolling
+          ? new Date(defaultSubmissionDeadlineRolling)
           : undefined,
       });
 
@@ -119,7 +134,9 @@ export async function createRoundAction(
           academicYear,
           openDate,
           closeDate,
-          defaultSubmissionDeadline: defaultSubmissionDeadline ?? null,
+          defaultSubmissionDeadlineNew: defaultSubmissionDeadlineNew ?? null,
+          defaultSubmissionDeadlineRolling:
+            defaultSubmissionDeadlineRolling ?? null,
         },
       });
     });
@@ -161,8 +178,10 @@ export async function updateRoundAction(
     openDate: formData.get("openDate") as string,
     closeDate: formData.get("closeDate") as string,
     decisionDate: (formData.get("decisionDate") as string) || undefined,
-    defaultSubmissionDeadline:
-      (formData.get("defaultSubmissionDeadline") as string) || undefined,
+    defaultSubmissionDeadlineNew:
+      (formData.get("defaultSubmissionDeadlineNew") as string) || undefined,
+    defaultSubmissionDeadlineRolling:
+      (formData.get("defaultSubmissionDeadlineRolling") as string) || undefined,
   };
 
   const parsed = RoundSchema.safeParse(raw);
@@ -173,8 +192,18 @@ export async function updateRoundAction(
     };
   }
 
-  const { academicYear, openDate, closeDate, decisionDate, defaultSubmissionDeadline } =
-    parsed.data;
+  const {
+    academicYear,
+    openDate,
+    closeDate,
+    decisionDate,
+    defaultSubmissionDeadlineNew,
+    defaultSubmissionDeadlineRolling,
+  } = parsed.data;
+
+  const newDeadline = defaultSubmissionDeadlineNew
+    ? new Date(defaultSubmissionDeadlineNew)
+    : null;
 
   try {
     await withUserContext(user.id, user.role as RlsRole, async (tx) => {
@@ -183,9 +212,13 @@ export async function updateRoundAction(
         openDate: new Date(openDate),
         closeDate: new Date(closeDate),
         decisionDate: decisionDate ? new Date(decisionDate) : null,
-        defaultSubmissionDeadline: defaultSubmissionDeadline
-          ? new Date(defaultSubmissionDeadline)
+        defaultSubmissionDeadlineNew: newDeadline,
+        defaultSubmissionDeadlineRolling: defaultSubmissionDeadlineRolling
+          ? new Date(defaultSubmissionDeadlineRolling)
           : null,
+        // Legacy mirror (E1) — no readers left; kept in step with the NEW date
+        // so a code-only revert behaves as before. E1b drops the column.
+        defaultSubmissionDeadline: newDeadline,
       });
 
       await createAuditLog(tx, {
@@ -204,7 +237,9 @@ export async function updateRoundAction(
           openDate,
           closeDate,
           decisionDate: decisionDate ?? null,
-          defaultSubmissionDeadline: defaultSubmissionDeadline ?? null,
+          defaultSubmissionDeadlineNew: defaultSubmissionDeadlineNew ?? null,
+          defaultSubmissionDeadlineRolling:
+            defaultSubmissionDeadlineRolling ?? null,
         },
       });
     });

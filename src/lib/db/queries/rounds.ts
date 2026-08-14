@@ -22,8 +22,15 @@ export interface RoundWithCounts {
   openDate: Date;
   closeDate: Date;
   decisionDate: Date | null;
-  /** Round-level default submission-by date (Item 12); null = no round default. */
-  defaultSubmissionDeadline: Date | null;
+  /**
+   * Round-level default submission-by dates (Item 12, split by application type
+   * in E1/D13-8); null = no round default for that type, so those applications
+   * fall back to `closeDate`. The superseded single `defaultSubmissionDeadline`
+   * column is deliberately NOT surfaced here — it has no readers left and is
+   * dropped in E1b.
+   */
+  defaultSubmissionDeadlineNew: Date | null;
+  defaultSubmissionDeadlineRolling: Date | null;
   status: RoundStatus;
   createdAt: Date;
   counts: {
@@ -139,7 +146,10 @@ export async function createRound(
     openDate: Date;
     closeDate: Date;
     decisionDate?: Date;
-    defaultSubmissionDeadline?: Date;
+    /** Round default submit-by for NEW applications (E1/D13-8). */
+    defaultSubmissionDeadlineNew?: Date;
+    /** Round default submit-by for ROLLING_OVER applications (E1/D13-8). */
+    defaultSubmissionDeadlineRolling?: Date;
   }
 ): Promise<Round> {
   return tx.round.create({
@@ -148,7 +158,13 @@ export async function createRound(
       openDate: data.openDate,
       closeDate: data.closeDate,
       decisionDate: data.decisionDate ?? null,
-      defaultSubmissionDeadline: data.defaultSubmissionDeadline ?? null,
+      defaultSubmissionDeadlineNew: data.defaultSubmissionDeadlineNew ?? null,
+      defaultSubmissionDeadlineRolling:
+        data.defaultSubmissionDeadlineRolling ?? null,
+      // Legacy mirror (E1): nothing reads `defaultSubmissionDeadline` any more,
+      // but it is kept in step with the NEW date so reverting the E1 code alone
+      // restores today's behaviour. E1b drops the column and this line.
+      defaultSubmissionDeadline: data.defaultSubmissionDeadlineNew ?? null,
       status: RoundStatus.DRAFT,
     },
   });
@@ -172,6 +188,8 @@ export async function updateRound(
       | "closeDate"
       | "decisionDate"
       | "defaultSubmissionDeadline"
+      | "defaultSubmissionDeadlineNew"
+      | "defaultSubmissionDeadlineRolling"
       | "status"
     >
   >

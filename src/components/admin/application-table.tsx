@@ -114,14 +114,17 @@ type AssessorOption = {
   lastName: string | null;
 };
 
-/** Lead applicant name + email, revealed once (audited) at page load. */
+/** Child + lead applicant names, revealed once (audited) at page load. */
 export interface ApplicantNameEntry {
   id: string;
+  /** D13-1a: shown beside the reference, which is no longer self-describing. */
+  childName: string;
   leadApplicantName: string;
   leadApplicantEmail: string;
 }
 
 interface NameData {
+  childName: string;
   leadApplicantName: string;
   leadApplicantEmail: string;
 }
@@ -751,6 +754,7 @@ export function ApplicationTable({
     const map = new Map<string, NameData>();
     for (const entry of names) {
       map.set(entry.id, {
+        childName: entry.childName,
         leadApplicantName: entry.leadApplicantName,
         leadApplicantEmail: entry.leadApplicantEmail,
       });
@@ -891,10 +895,21 @@ export function ApplicationTable({
       }),
       columnHelper.accessor("reference", {
         header: "Reference",
+        // D13-1a: the reference is a free-text label that is routinely re-edited
+        // to the fees-system code (`TS-SMITH05-Smith, Bob`), at which point it
+        // no longer names the child. The child's name therefore renders beside
+        // it on every admin surface so the row stays identifiable.
         cell: (info) => (
-          <span className="font-mono text-sm font-medium text-slate-800">
-            {info.getValue()}
-          </span>
+          <div className="flex flex-col">
+            <span className="font-mono text-sm font-medium text-slate-800">
+              {info.getValue()}
+            </span>
+            {info.row.original.names?.childName ? (
+              <span className="text-xs text-slate-500">
+                {info.row.original.names.childName}
+              </span>
+            ) : null}
+          </div>
         ),
       }),
       columnHelper.accessor((row) => row.round.academicYear, {

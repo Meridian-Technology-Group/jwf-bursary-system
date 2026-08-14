@@ -72,12 +72,42 @@ function isDisabledByFlag(raw: string | undefined): boolean {
 }
 
 /**
+ * The three settings, read as LITERAL `process.env.NEXT_PUBLIC_*` expressions.
+ *
+ * This spelling is load-bearing, not style. Next.js substitutes `NEXT_PUBLIC_*`
+ * values into the client bundle by replacing literal `process.env.NAME` member
+ * expressions at build time; a dynamic lookup (`env[name]`, or a bare
+ * `process.env` handed around as an object) is never substituted, so in the
+ * BROWSER it resolves to nothing.
+ *
+ * That is what `resolveIdleTimeoutConfig(env = process.env)` was doing, and the
+ * consequence was not cosmetic (found while diagnosing CF-15, 2026-08-14): the
+ * watcher fell back to its defaults in every environment, so
+ *   - `NEXT_PUBLIC_SESSION_IDLE_ENABLED=false` did not disable it, and
+ *   - `NEXT_PUBLIC_SESSION_IDLE_MINUTES` did not change the window,
+ * leaving every applicant on a hard-wired 30-minute forced sign-out with no way
+ * to configure it. Verified in the browser: a 1-minute window had no effect
+ * before this change and took effect immediately after.
+ *
+ * D20 (the real idle window) is still Charlotte's call — this only makes the
+ * documented switches actually reach the browser.
+ */
+const CLIENT_ENV: Record<string, string | undefined> = {
+  NEXT_PUBLIC_SESSION_IDLE_ENABLED:
+    process.env.NEXT_PUBLIC_SESSION_IDLE_ENABLED,
+  NEXT_PUBLIC_SESSION_IDLE_MINUTES:
+    process.env.NEXT_PUBLIC_SESSION_IDLE_MINUTES,
+  NEXT_PUBLIC_SESSION_IDLE_WARN_SECONDS:
+    process.env.NEXT_PUBLIC_SESSION_IDLE_WARN_SECONDS,
+};
+
+/**
  * Resolve the idle-timeout config from a plain env-like record. Exposed (rather
  * than reading `process.env` directly) so tests can drive every branch without
  * mutating global env.
  */
 export function resolveIdleTimeoutConfig(
-  env: Record<string, string | undefined> = process.env
+  env: Record<string, string | undefined> = CLIENT_ENV
 ): IdleTimeoutConfig {
   const enabled = !isDisabledByFlag(env.NEXT_PUBLIC_SESSION_IDLE_ENABLED);
 

@@ -17,7 +17,6 @@
  * source of truth for which answers a parent sees.
  */
 
-import { ENTRY_YEAR_GROUP_LABELS } from "@/lib/assessment/schooling-years";
 import { humaniseSlot } from "@/lib/documents/slots";
 import {
   parentIncomeTotal,
@@ -119,32 +118,19 @@ const SUMMARY_SECTION_ORDER = [
 
 // ─── Per-section row builders ───────────────────────────────────────────────
 
-function childDetailsRows(
-  raw: unknown,
-  entry?: { entryYear?: number | null; entryYearGroup?: string | null }
-): SummaryRow[] {
+function childDetailsRows(raw: unknown): SummaryRow[] {
   const d = parseSafe<ChildDetailsData>(raw);
   if (!d) return [];
-  // The entry year is locked admin-side at the invite and lives on the
-  // Application record (calendar year, e.g. 2027) — it is no longer captured on
-  // the parent form, so prefer it and fall back to any legacy value in the
-  // section blob. The year-group is shown alongside when known.
-  const groupCode = entry?.entryYearGroup ?? d.entryYearGroup;
-  const groupLabel = groupCode
-    ? ENTRY_YEAR_GROUP_LABELS[groupCode as keyof typeof ENTRY_YEAR_GROUP_LABELS] ??
-      groupCode
-    : undefined;
-  const entryYear = entry?.entryYear ?? undefined;
-  const yearOfEntry = entryYear
-    ? groupLabel
-      ? `${entryYear} (${groupLabel})`
-      : String(entryYear)
-    : groupLabel ?? "—";
+  // No "Year of entry" row. Per Q1 (Brian, 2026-08-14) the entry year is a
+  // JWF-facing property of the application: it lives on `Application.entryYear`
+  // / `entryYearGroup`, is set admin-side, and is rendered on admin surfaces
+  // ONLY. Every consumer of this builder is applicant-facing (the submitted
+  // summary page and the applicant's submission PDF), so it is dropped outright
+  // rather than re-pointed at the columns.
   const rows: SummaryRow[] = [
     { label: "Name", value: d.childFullName || "—" },
     { label: "Date of birth", value: fmtDate(d.dateOfBirth) },
     { label: "School applying for", value: fmtSchool(d.school) },
-    { label: "Year of entry", value: yearOfEntry },
     { label: "Current school", value: d.currentSchool || "—" },
     {
       label: "Place of birth",
@@ -441,6 +427,7 @@ const SECTION_DOC_SLOTS: Record<string, string[]> = {
     "INVESTMENT_PARENT_2",
     "CREDIT_CARD_STATEMENT",
     "LOAN_STATEMENT",
+    "LOAN_AGREEMENT",
     "OTHER_DEBT_DOCUMENT",
     "CAR_LEASE_AGREEMENT",
   ],
@@ -468,10 +455,8 @@ export interface SummaryInput {
   sections: { section: string; data: unknown }[];
   /** All documents uploaded against the application. */
   documents: { slot: string; filename: string }[];
-  /** Entry calendar year, locked admin-side at the invite (Application column). */
-  entryYear?: number | null;
-  /** Entry year-group, locked admin-side at the invite (Application column). */
-  entryYearGroup?: string | null;
+  // NOTE: entryYear / entryYearGroup are deliberately absent. They are
+  // JWF-facing only (Q1) and this summary is applicant-facing.
 }
 
 /**
@@ -491,10 +476,7 @@ export function buildSubmittedSummary(input: SummaryInput): SubmittedSummary {
 
     switch (sectionType) {
       case "CHILD_DETAILS":
-        rows = childDetailsRows(raw, {
-          entryYear: input.entryYear,
-          entryYearGroup: input.entryYearGroup,
-        });
+        rows = childDetailsRows(raw);
         break;
       case "FAMILY_ID":
         rows = familyIdRows(raw);

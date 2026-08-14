@@ -41,6 +41,15 @@ export interface ExportRow {
   debtStatus: string;
   /** `Assessment.lifestyleSqueezeLabel` (v2 only). */
   lifestyleSqueezeLabel: string;
+  /**
+   * Epic 13 / C2 — the household net income the award was calculated from,
+   * plus the signed manual income adjustment baked into it and its mandatory
+   * reason. Exported alongside the income figure so a reviewer working from
+   * the spreadsheet can see why it differs from the earners' total.
+   */
+  totalHouseholdNetIncome: number | null;
+  manualAdjustment: number | null;
+  manualAdjustmentReason: string;
 }
 
 // ─── Query ────────────────────────────────────────────────────────────────────
@@ -77,6 +86,12 @@ export async function getExportRows(
           // CALC-12: v2-only snapshot fields, null for v1 assessments.
           debtStatusLabel: true,
           lifestyleSqueezeLabel: true,
+          // Epic 13 / C2 — household income + the manual adjustment folded
+          // into it (shared column: v1 rows carry v1's fees-adjustment
+          // semantics, v2 rows the income-adjustment line).
+          totalHouseholdNetIncome: true,
+          manualAdjustment: true,
+          manualAdjustmentReason: true,
           recommendation: {
             select: {
               familySynopsis: true,
@@ -124,7 +139,10 @@ export async function getExportRows(
         },
       },
     },
-    orderBy: { reference: "asc" },
+    // D13-1a: `reference` is no longer unique, so it is not a total order on
+    // its own — two rows sharing a fees-system code would swap places between
+    // exports. `id` breaks the tie so the sheet is byte-stable run to run.
+    orderBy: [{ reference: "asc" }, { id: "asc" }],
   });
 
   return rows.map(mapExportRow);
@@ -142,6 +160,9 @@ export interface ExportRowSource {
     synopsis: string | null;
     debtStatusLabel: string | null;
     lifestyleSqueezeLabel: string | null;
+    totalHouseholdNetIncome: unknown;
+    manualAdjustment: unknown;
+    manualAdjustmentReason: string | null;
     recommendation: {
       familySynopsis: string | null;
       accommodationStatus: string | null;
@@ -226,6 +247,10 @@ export function mapExportRow(app: ExportRowSource): ExportRow {
     gapReasons,
     debtStatus: app.assessment?.debtStatusLabel ?? "",
     lifestyleSqueezeLabel: app.assessment?.lifestyleSqueezeLabel ?? "",
+    // Epic 13 / C2 — the income figure and the adjustment that explains it.
+    totalHouseholdNetIncome: decimalToNumber(app.assessment?.totalHouseholdNetIncome),
+    manualAdjustment: decimalToNumber(app.assessment?.manualAdjustment),
+    manualAdjustmentReason: app.assessment?.manualAdjustmentReason ?? "",
   };
 }
 

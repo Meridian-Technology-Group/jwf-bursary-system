@@ -276,8 +276,9 @@ the current status badge, and — for re-assessments — an orange **Re-assessme
 pill. Beneath it, two cards separate the everyday from the occasional:
 
 - A prominent **Actions** card surfaces the next step for the current status
-  (e.g. **Begin Review**, **Resume Review**, **Set Qualifies** / **Set Does Not
-  Qualify**).
+  (e.g. **Begin Review**, **Resume Review**, **Mark Complete**). The outcome
+  itself is not set here — it is recorded by the 3-way decision on the
+  **Recommendation** tab.
 - A quieter, consolidated **Manage** card holds the rare actions — **Add second
   parent** and **Delete Applicant Data (GDPR)**.
 

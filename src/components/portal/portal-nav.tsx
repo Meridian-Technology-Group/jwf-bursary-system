@@ -3,8 +3,10 @@
 /**
  * PortalNav — the persistent left-rail navigation for the applicant portal.
  *
- * This is the lead-applicant nav (Home / My Application / Documents / History /
- * Help), modelled on `admin-nav.tsx`. It is a DISTINCT component family from the
+ * This is the lead-applicant nav (Home / My Application / Documents / Help),
+ * modelled on `admin-nav.tsx`. The History item was removed by Epic 13 D1
+ * (D13-4): applicants keep status visibility, but no route back into what they
+ * submitted. It is a DISTINCT component family from the
  * `/contribute`-shared stepper shell (`PortalDesktopSidebar` /
  * `PortalMobileHeader`) — do NOT parameterise one to do both (Decision 6).
  *
@@ -18,12 +20,10 @@
  */
 
 import { usePathname } from "next/navigation";
-import Link from "next/link";
 import {
   Home,
   FileText,
   Upload,
-  History,
   HelpCircle,
   AlertCircle,
   CalendarRange,
@@ -32,6 +32,7 @@ import { cn } from "@/lib/utils";
 import { JwfLogo } from "@/components/brand/jwf-logo";
 import { PortalAccountFooter } from "./portal-account-footer";
 import { RailStepper } from "./rail-stepper";
+import { GuardedLink } from "./guarded-link";
 
 // ─── Nav model (the single source of nav membership) ──────────────────────────
 
@@ -112,13 +113,6 @@ export function buildPortalNav(
       matchMode: "prefix",
     },
     {
-      label: "History",
-      href: "/history",
-      icon: History,
-      match: "/history",
-      matchMode: "prefix",
-    },
-    {
       label: "Help & guidance",
       href: "/help",
       icon: HelpCircle,
@@ -150,7 +144,9 @@ function PortalNavLink({
   // assistive tech with an explicit aria-label rather than a role.
   const highlight = item.highlight === true;
   return (
-    <Link
+    // Guarded (WP B1): leaving the wizard for Home / Documents / Help mid-edit
+    // discarded the section just as a stepper click did.
+    <GuardedLink
       href={item.href}
       aria-label={highlight ? `${item.label}: action needed` : undefined}
       className={cn(
@@ -185,7 +181,7 @@ function PortalNavLink({
         aria-hidden="true"
       />
       <span className="flex-1 truncate">{item.label}</span>
-    </Link>
+    </GuardedLink>
   );
 }
 

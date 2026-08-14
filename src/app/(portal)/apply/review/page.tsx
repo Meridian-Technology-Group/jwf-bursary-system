@@ -25,7 +25,6 @@ import {
   SECTION_TITLES,
   SECTION_TO_SLUG as SECTION_SLUGS,
 } from "@/lib/portal/sections";
-import { ENTRY_YEAR_GROUP_LABELS } from "@/lib/assessment/schooling-years";
 import { PortalPage } from "@/components/portal/portal-page";
 import { cn } from "@/lib/utils";
 import type {
@@ -135,10 +134,8 @@ function renderChildDetails(raw: unknown): SummaryRow[] {
     { label: "Name", value: d.childFullName || "—" },
     { label: "Date of birth", value: fmtDate(d.dateOfBirth) },
     { label: "School applying for", value: fmtSchool(d.school) },
-    {
-      label: "Year of entry",
-      value: d.entryYearGroup ? ENTRY_YEAR_GROUP_LABELS[d.entryYearGroup] ?? d.entryYearGroup : "—",
-    },
+    // No "Year of entry" row: the entry year is JWF-facing only (Q1, Brian
+    // 2026-08-14) and is never shown to the applicant.
     { label: "Current school", value: d.currentSchool || "—" },
     {
       label: "Place of birth",
@@ -867,7 +864,7 @@ const SECTION_DOC_SLOTS: Partial<Record<ApplicationSectionType, string[]>> = {
   CHILD_DETAILS: ["BIRTH_CERTIFICATE"],
   FAMILY_ID: ["UK_PASSPORT_PARENT_1", "PASSPORT_PARENT_1", "UK_PASSPORT_PARENT_2", "PASSPORT_PARENT_2"],
   PARENTS_INCOME: ["P60_PARENT_1", "P60_PARENT_2", "SELF_ASSESSMENT_PARENT_1", "SELF_ASSESSMENT_PARENT_2", "BENEFITS_EVIDENCE_PARENT_1", "BENEFITS_EVIDENCE_PARENT_2", "CAPITAL_REPAYMENTS_PARENT_1", "CAPITAL_REPAYMENTS_PARENT_2"],
-  ASSETS_LIABILITIES: ["COUNCIL_TAX", "MAIN_MORTGAGE_STATEMENT", "TENANCY_AGREEMENT", "HOUSING_BENEFIT_LETTER", "RELATIVE_LETTER", "BANK_STATEMENT_CURRENT_PARENT_1", "BANK_STATEMENT_CURRENT_PARENT_2", "BANK_STATEMENT_SAVINGS_PARENT_1", "BANK_STATEMENT_SAVINGS_PARENT_2", "INVESTMENT_PARENT_1", "INVESTMENT_PARENT_2", "CREDIT_CARD_STATEMENT", "LOAN_STATEMENT", "OTHER_DEBT_DOCUMENT", "CAR_LEASE_AGREEMENT"],
+  ASSETS_LIABILITIES: ["COUNCIL_TAX", "MAIN_MORTGAGE_STATEMENT", "TENANCY_AGREEMENT", "HOUSING_BENEFIT_LETTER", "RELATIVE_LETTER", "BANK_STATEMENT_CURRENT_PARENT_1", "BANK_STATEMENT_CURRENT_PARENT_2", "BANK_STATEMENT_SAVINGS_PARENT_1", "BANK_STATEMENT_SAVINGS_PARENT_2", "INVESTMENT_PARENT_1", "INVESTMENT_PARENT_2", "CREDIT_CARD_STATEMENT", "LOAN_STATEMENT", "LOAN_AGREEMENT", "OTHER_DEBT_DOCUMENT", "CAR_LEASE_AGREEMENT"],
 };
 
 function DocumentCount({

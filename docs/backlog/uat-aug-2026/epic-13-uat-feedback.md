@@ -32,6 +32,7 @@ independently of everything else.
 | # | Decision |
 |---|---|
 | D13-1 | **Reference becomes a non-unique label.** Drop `@unique` on `Application.reference` and the raw `lower(reference)` unique index; identity stays on the internal UUID. Reference must be editable to *anything* (hard requirement: must match the external fees system, e.g. `TS-SMITH05-Smith, Bob`). Default generated format for NEW applications: `{Child first last} – {School name} – {Year group} – {Academic year}` (e.g. `Bob Smith – Trinity School – Year 6 – 2027-28`). Child name displayed alongside the reference on all admin surfaces. (CF-04 + Charlotte's 09 Jul ask.) |
+| **D13-1a** | **Amends D13-1 (Brian, 2026-08-14): there is ONE user-facing reference and it lives on the Application; the bursary account exposes no reference or ID to the user.** `Application.reference` defaults to `{Child} – {School} – {Year group} – {Academic year}`, is freely editable and non-unique, and is **re-edited at award** to match the external fees system for reconciliation; on rollover the next year's application **inherits** that edited reference (a never-edited default is regenerated for the new year instead). Database uniqueness rests on the existing UUID PKs, which are never shown as identifiers — no surrogate key needed (`Application.id` is already `uuid`, and no FK anywhere references `reference`). The bursary account is an internal container for awarded applicants: **`BursaryAccount.reference` and `BursaryAccount.feesAccountCode` are both removed**, and sibling-picker surfaces show the child's name instead. Detail in [`sprint-01-implementation-plan.md` §5 C4](sprint-01-implementation-plan.md). |
 | D13-2 | **Assessment reopen: allowed until an outcome is set.** "Reopen assessment" (ADMIN + assigned assessor) flips COMPLETED → IN_PROGRESS with an audit entry; blocked once an outcome/award has gone out. Existing recommendation is marked stale and must be re-confirmed; account close is reverted automatically on reopen. (CF-01/02/10.) |
 | D13-3 | **Assessor edit scope = adjustment line, not per-field overrides.** Port the v1 `manualAdjustment` + mandatory `manualAdjustmentReason` into the calc-v2 form as an income adjustment line. Covers the divorced/separated parent-2 add-on spec (CF-07); calculated cells stay derived. Per-field overrides explicitly out of scope. |
 | D13-4 | **Strict one-time submission PDF.** Remove the applicant History page and all on-screen answer browsing; the submission PDF is downloadable **once, at submission**, then never again (consumed-flag state). (CF-27.) |
@@ -126,10 +127,43 @@ independently of everything else.
 - Any change to the H1–H11 household rules engine — E3's spec was checked
   against it and current behaviour already matches (advisory gates, parent-1
   category, parent-2 assets excluded).
-- Server-side session timers (none exist; CF-15's "kicked out" is an error
-  path to fix, not a timeout to remove).
+- ~~Server-side session timers (none exist; CF-15's "kicked out" is an error
+  path to fix, not a timeout to remove).~~
+
+  > ❌ **WRONG — corrected 2026-08-14 during B1. There IS a session timer, and
+  > Charlotte's own guess was right.** `IdleLogoutWatcher` (Epic 11, D20) is
+  > mounted in the portal layout and signs the applicant out after **30 minutes**
+  > of no mouse/keyboard/scroll activity, via a form POST to `/api/auth/logout`
+  > — a full-page navigation that tears down the section form. Reproduced
+  > end-to-end in a browser against nonprod.
+  >
+  > Worse, **it was unconfigurable in every environment**:
+  > `resolveIdleTimeoutConfig` read keys off `process.env` *dynamically*, and
+  > Next only substitutes **literal** `process.env.NEXT_PUBLIC_*` member
+  > expressions into the client bundle — so in the browser every key resolved to
+  > nothing. `NEXT_PUBLIC_SESSION_IDLE_ENABLED=false` did not disable it and
+  > `NEXT_PUBLIC_SESSION_IDLE_MINUTES` did not move the window. Every
+  > environment ran a hard-wired 30 minutes.
+  >
+  > A hidden tab was also signed out with **no warning at all** — background
+  > timer throttling let the warning and its 60 s countdown elapse unseen. That
+  > is exactly CF-15 *and* CF-16 in one mechanism.
+  >
+  > **We told Charlotte no timer existed. We were wrong — say so in the reply.**
+  > The 30-minute default is deliberately unchanged (it is D20, her decision),
+  > but it is now genuinely settable, and the section is flushed through the B1
+  > dirty-guard before sign-out so work is no longer lost.
 
 ## Sequencing / PR plan
+
+> **Execution plan:** [`sprint-01-implementation-plan.md`](sprint-01-implementation-plan.md)
+> turns the work packages below into an executable sprint — sized board, branch
+> names, dependency trains, per-WP acceptance criteria, migration summary, test
+> strategy, and a progress tracker. It also records corrections where the code
+> disagreed with this epic's diagnosis (`BursaryAccount.reference` stays unique;
+> `AuditLog.action` is a String, not an enum; the upload client already guards
+> against non-JSON error bodies; the invitation `{{deadline}}` bug has four
+> injection sites, not two).
 
 Branch off `staging` per CLAUDE.md; one PR per WP unless trivially small
 (A5–A8 can pair up). Suggested order: **A1 → A2–A8 → B1 → B2 → C1 → C2 →

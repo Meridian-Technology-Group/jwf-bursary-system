@@ -25,9 +25,11 @@ import { z } from "zod";
 import {
   ApplicationContributorRole,
   ApplicationContributorStatus,
+  EntryYearGroup,
   InvitationStatus,
   RoundStatus,
   School,
+  type ApplicationType,
 } from "@prisma/client";
 import { requireRole, Role } from "@/lib/auth/roles";
 import {
@@ -39,11 +41,21 @@ import { createSupabaseAdminClient } from "@/lib/auth/supabase-admin";
 import { createProfile } from "@/lib/auth/create-profile";
 import { getAppUrl } from "@/lib/app-url";
 import { sendEmail } from "@/lib/email/send";
+import {
+  invitationDeadlineFields,
+  INVITATION_ROUND_DEADLINE_SELECT,
+} from "@/lib/email/invitation-deadline";
+import type { SubmissionDeadlineRound } from "@/lib/rounds/submission-deadline";
 import { withAdminContext } from "@/lib/db/prisma";
 import { createAuditLog } from "@/lib/audit/log";
-import { prepopulateReassessment, getPreviousYearApplication } from "@/lib/db/queries/reassessment";
+import {
+  prepopulateReassessment,
+  getPreviousYearApplication,
+  getPreviousYearReferenceSource,
+} from "@/lib/db/queries/reassessment";
 import { ensurePrimaryContributor } from "@/lib/db/queries/contributors";
 import { applicationCreateData } from "@/lib/applications/status";
+import { resolveRolloverReference } from "@/lib/applications/reference";
 import { listOpenRounds } from "@/lib/db/queries/reports";
 
 import { AUDIT_ACTIONS, AUDIT_ENTITY_TYPES } from "@/lib/audit/actions";
@@ -62,6 +74,12 @@ const InvitationSchema = z.object({
   lastName: z.string().trim().min(1, "A surname is required"),
   childName: z.string().trim().min(1, "The child's name is required"),
   school: z.nativeEnum(School, { error: "A school is required" }),
+  // Q1 (Brian, 2026-08-14): the entry year-group is JWF-facing only — the
+  // applicant can never enter one — so the quick-invite must capture it here or
+  // the application created on acceptance would have no year-group at all.
+  entryYearGroup: z.nativeEnum(EntryYearGroup, {
+    error: () => ({ message: "An entry year group is required" }),
+  }),
   roundId: z.string().uuid("An application round is required"),
 });
 
@@ -116,6 +134,7 @@ export async function createInvitationAction(
     lastName: (formData.get("lastName") as string) || undefined,
     childName: (formData.get("childName") as string) || undefined,
     school: (formData.get("school") as string) || undefined,
+    entryYearGroup: (formData.get("entryYearGroup") as string) || undefined,
     roundId: (formData.get("roundId") as string) || undefined,
   };
 
@@ -127,7 +146,7 @@ export async function createInvitationAction(
     };
   }
 
-  const { email, firstName, lastName, childName, school, roundId } =
+  const { email, firstName, lastName, childName, school, entryYearGroup, roundId } =
     parsed.data;
 
   const effectiveApplicantName = composeApplicantName(firstName, lastName);
@@ -162,6 +181,9 @@ export async function createInvitationAction(
   let invitationId: string;
   let invitationToken: string;
   let academicYear = "";
+  // Deadline columns for the {{deadline}} merge field (E1) — read inside the
+  // same tx that resolves the academic year, so no extra round query.
+  let deadlineRound: SubmissionDeadlineRound | null = null;
   try {
     const result = await withAdminContext(async (tx) => {
       const profile = await createProfile(tx, {
@@ -181,6 +203,7 @@ export async function createInvitationAction(
         lastName,
         childName,
         school,
+        entryYearGroup,
         roundId,
         authUserId,
         createdBy: user.id,
@@ -188,12 +211,24 @@ export async function createInvitationAction(
       });
 
       let year = "";
+      let roundDeadline: SubmissionDeadlineRound | null = null;
       if (roundId) {
         const round = await tx.round.findUnique({
           where: { id: roundId },
-          select: { academicYear: true },
+          select: {
+            academicYear: true,
+            ...INVITATION_ROUND_DEADLINE_SELECT,
+          },
         });
         year = round?.academicYear ?? "";
+        roundDeadline = round
+          ? {
+              closeDate: round.closeDate,
+              defaultSubmissionDeadlineNew: round.defaultSubmissionDeadlineNew,
+              defaultSubmissionDeadlineRolling:
+                round.defaultSubmissionDeadlineRolling,
+            }
+          : null;
       }
 
       await createAuditLog(tx, {
@@ -214,6 +249,7 @@ export async function createInvitationAction(
         invitationId: inv.id,
         token: inv.token,
         academicYear: year,
+        roundDeadline,
       };
     });
 
@@ -233,6 +269,7 @@ export async function createInvitationAction(
     invitationId = result.invitationId;
     invitationToken = result.token;
     academicYear = result.academicYear;
+    deadlineRound = result.roundDeadline;
   } catch (err) {
     await supabase.auth.admin.deleteUser(authUserId).catch((rollbackErr) => {
       console.error(
@@ -258,7 +295,10 @@ export async function createInvitationAction(
     school: schoolLabel(school),
     round_year: academicYear,
     registration_link: `${appUrl}/register?token=${invitationToken}`,
-    deadline: expiresAt.toLocaleDateString("en-GB"),
+    // E1/CF-11: {{deadline}} is the SUBMISSION deadline for the round this
+    // invitation is for (a fresh invite always starts a NEW application);
+    // {{link_expiry}} carries the token expiry that used to masquerade as it.
+    ...invitationDeadlineFields(deadlineRound, "NEW", expiresAt),
   });
 
   if (!emailResult.success) {
@@ -337,6 +377,12 @@ async function sendReassessmentInviteForHolder(
   ctx: {
     roundId: string;
     academicYear: string;
+    /**
+     * The target round's deadline columns, resolved once by the batch caller —
+     * every holder in a batch shares one round, so this is not re-read per row.
+     * Null only if the round could not be read.
+     */
+    deadlineRound: SubmissionDeadlineRound | null;
     userId: string;
     supabase: ReturnType<typeof createSupabaseAdminClient>;
     appUrl: string;
@@ -427,7 +473,14 @@ async function sendReassessmentInviteForHolder(
       school: schoolLabel(holder.school),
       round_year: academicYear,
       registration_link: `${appUrl}/register?token=${txResult.token}`,
-      deadline: txResult.expiresAt.toLocaleDateString("en-GB"),
+      // E1/CF-12: a re-assessment invitation is by definition ROLLING_OVER, so
+      // {{deadline}} resolves against the round's rolling submission date (the
+      // April one), NOT the 30-day token expiry it used to carry.
+      ...invitationDeadlineFields(
+        ctx.deadlineRound,
+        "ROLLING_OVER",
+        txResult.expiresAt
+      ),
     });
 
     if (emailResult.success) {
@@ -469,17 +522,36 @@ async function runReassessmentInvites(
 
   let eligible: EligibleHolder[] = [];
   let academicYear = "";
+  // Read once for the whole batch — every holder is invited into the SAME
+  // round, so the rolling-over submission deadline is identical for all of
+  // them (E1; Q4: one global rolling date per round).
+  let deadlineRound: SubmissionDeadlineRound | null = null;
   try {
     const loaded = await withAdminContext(async (tx) => {
       const h = await getActiveBursaryHolders(tx, roundId);
       const round = await tx.round.findUnique({
         where: { id: roundId },
-        select: { academicYear: true },
+        select: {
+          academicYear: true,
+          ...INVITATION_ROUND_DEADLINE_SELECT,
+        },
       });
-      return { holders: h, academicYear: round?.academicYear ?? "" };
+      return {
+        holders: h,
+        academicYear: round?.academicYear ?? "",
+        deadlineRound: round
+          ? {
+              closeDate: round.closeDate,
+              defaultSubmissionDeadlineNew: round.defaultSubmissionDeadlineNew,
+              defaultSubmissionDeadlineRolling:
+                round.defaultSubmissionDeadlineRolling,
+            }
+          : null,
+      };
     });
     eligible = loaded.holders;
     academicYear = loaded.academicYear;
+    deadlineRound = loaded.deadlineRound;
   } catch (err) {
     const message =
       err instanceof Error ? err.message : "Failed to load bursary holders";
@@ -503,7 +575,14 @@ async function runReassessmentInvites(
 
   const supabase = createSupabaseAdminClient();
   const appUrl = getAppUrl();
-  const ctx = { roundId, academicYear, userId: user.id, supabase, appUrl };
+  const ctx = {
+    roundId,
+    academicYear,
+    deadlineRound,
+    userId: user.id,
+    supabase,
+    appUrl,
+  };
 
   for (let i = 0; i < holders.length; i++) {
     await sendReassessmentInviteForHolder(holders[i], ctx, result);
@@ -804,7 +883,18 @@ export async function resendInvitationAction(
       tx.invitation.findUnique({
         where: { id: invitationId },
         include: {
-          round: { select: { academicYear: true } },
+          round: {
+            select: {
+              academicYear: true,
+              ...INVITATION_ROUND_DEADLINE_SELECT,
+            },
+          },
+          // A resend must reproduce the ORIGINAL invitation's submission
+          // deadline, so it needs the linked application's own type + override
+          // when there is one (second-parent invites) — E1.
+          application: {
+            select: { applicationType: true, submissionDeadlineAt: true },
+          },
         },
       })
     );
@@ -859,7 +949,16 @@ export async function resendInvitationAction(
       school: schoolLabel(invitation.school),
       round_year: invitation.round?.academicYear ?? "",
       registration_link: `${appUrl}/register?token=${newToken}`,
-      deadline: newExpiresAt.toLocaleDateString("en-GB"),
+      // E1: a resend re-states the SAME submission deadline as the original
+      // send — only {{link_expiry}} moves, because only the token was renewed.
+      // Before this, every resend silently pushed the advertised "deadline"
+      // another 30 days into the future.
+      ...invitationDeadlineFields(
+        invitation.round,
+        invitation.application?.applicationType ?? "NEW",
+        newExpiresAt,
+        invitation.application?.submissionDeadlineAt ?? null
+      ),
     });
 
     if (!emailResult.success) {
@@ -1014,8 +1113,49 @@ export async function createReassessmentApplicationAction(
         return { success: false as const, error: "Bursary account not found." };
       }
 
-      // Generate reference
-      const reference = `REA-${account.reference}-${roundId.slice(0, 8).toUpperCase()}`;
+      // Reference (Epic 13, C4a/C4b). This used to be
+      // `REA-${account.reference}-${roundId.slice(0,8)}` — built from the
+      // bursary account's own `BA-…` code, which no longer exists.
+      //
+      // D13-1a / Q5: this creates a ROLLING_OVER application, so it INHERITS
+      // the prior year's reference. Once that reference has been edited to the
+      // external fees-system code (`TS-SMITH05-Smith, Bob`), that code is what
+      // reconciliation depends on — regenerating it here would silently break
+      // the link, which is exactly what Q5 was decided to prevent. It is
+      // regenerated ONLY when the prior reference is still the untouched
+      // default, since inheriting that verbatim would drag a stale academic
+      // year onto the new year's application. A human-entered value is never
+      // discarded.
+      //
+      // Same helper as `createReassessmentApplicationFromInvitation` — the
+      // comparison lives in `resolveRolloverReference` and is deliberately NOT
+      // duplicated here. `getPreviousYearReferenceSource` is its own narrow
+      // read (not the heavyweight `getPreviousYearApplication` below), but both
+      // share `previousYearApplicationQuery`, so they always resolve to the
+      // same prior application. With no prior application it falls back to the
+      // generated default.
+      //
+      // Unlike the invitation path, this create DOES persist `entryYearGroup`,
+      // so it is passed through — the label is built from exactly the fields
+      // the row will hold, which is what keeps next year's
+      // recompute-and-compare consistent.
+      const round = await tx.round.findUnique({
+        where: { id: roundId },
+        select: { academicYear: true },
+      });
+
+      const priorReferenceSource = await getPreviousYearReferenceSource(
+        tx,
+        bursaryAccountId,
+        roundId
+      );
+
+      const reference = resolveRolloverReference(priorReferenceSource, {
+        childName: account.childName,
+        school: account.school,
+        entryYearGroup: account.entryYearGroup,
+        academicYear: round?.academicYear,
+      });
 
       // Create the re-assessment application
       const application = await tx.application.create({
@@ -1153,6 +1293,12 @@ export async function addSecondParentAction(
     school: School;
     childName: string;
     academicYear: string;
+    /** Selects which round default the invite's {{deadline}} uses (E1). */
+    applicationType: ApplicationType;
+    /** The application's own submit-by override, when set (E1, tier 1). */
+    submissionDeadlineAt: Date | null;
+    /** The round's deadline columns for tiers 2–3 (E1). */
+    deadlineRound: SubmissionDeadlineRound;
   };
   let existingProfileId: string | null = null;
   try {
@@ -1164,7 +1310,14 @@ export async function addSecondParentAction(
           roundId: true,
           school: true,
           childName: true,
-          round: { select: { academicYear: true } },
+          applicationType: true,
+          submissionDeadlineAt: true,
+          round: {
+            select: {
+              academicYear: true,
+              ...INVITATION_ROUND_DEADLINE_SELECT,
+            },
+          },
           contributors: {
             where: { role: ApplicationContributorRole.SECONDARY },
             select: { id: true },
@@ -1195,6 +1348,14 @@ export async function addSecondParentAction(
           school: app.school,
           childName: app.childName,
           academicYear: app.round.academicYear,
+          applicationType: app.applicationType,
+          submissionDeadlineAt: app.submissionDeadlineAt,
+          deadlineRound: {
+            closeDate: app.round.closeDate,
+            defaultSubmissionDeadlineNew: app.round.defaultSubmissionDeadlineNew,
+            defaultSubmissionDeadlineRolling:
+              app.round.defaultSubmissionDeadlineRolling,
+          },
         },
         existingProfileId: profile?.id ?? null,
       };
@@ -1346,7 +1507,16 @@ export async function addSecondParentAction(
     school: schoolLabel(application.school),
     round_year: application.academicYear,
     registration_link: `${appUrl}/register?token=${invitationToken}`,
-    deadline: expiresAt.toLocaleDateString("en-GB"),
+    // E1: the second parent is contributing to an EXISTING application, so
+    // {{deadline}} is that application's own effective submission deadline —
+    // its override first, else the round default on its type's clock.
+    // Previously the 30-day token expiry.
+    ...invitationDeadlineFields(
+      application.deadlineRound,
+      application.applicationType,
+      expiresAt,
+      application.submissionDeadlineAt
+    ),
   });
 
   if (!emailResult.success) {

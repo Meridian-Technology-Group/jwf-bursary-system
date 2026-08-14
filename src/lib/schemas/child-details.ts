@@ -68,25 +68,17 @@ export const childAddressSchema = z.object({
   country: reqString(1, "Country is required"),
 });
 
-/**
- * The school year-group the child enters at. Mandated by §4 of the spec.
- * `OTHER` is the escape hatch for unusual cohorts; the assessor follows
- * up for clarification in those cases.
- */
-export const entryYearGroupSchema = z.enum(
-  ["Y6", "Y7", "Y9", "Y12", "OTHER"] as const,
-  { message: "Please select an entry year group" },
-);
-
 export const childDetailsSchema = z
   .object({
     school: z.enum(["TRINITY", "WHITGIFT"] as const, {
       message: "Please select a school",
     }),
-    // Entry-year is set & LOCKED admin-side at the invite (D1) — it is no longer
-    // captured on the parent form, so it is optional here. Any value carried in a
-    // legacy draft is preserved on read.
-    entryYearGroup: entryYearGroupSchema.optional(),
+    // NOTE: entry year / entry year-group are deliberately ABSENT here.
+    // Per Q1 (Brian, 2026-08-14) the entry year is a JWF-facing property of the
+    // application: it is set admin-side on `Application.entryYear` /
+    // `entryYearGroup` and the applicant can neither enter, change nor see it.
+    // The schema must not accept it — an unknown key in a legacy draft is
+    // stripped by Zod rather than validated or promoted.
     childTitle: z.string().optional(),
     childFirstName: reqString(1, "Child's first name is required"),
     childSurname: reqString(1, "Child's surname is required"),

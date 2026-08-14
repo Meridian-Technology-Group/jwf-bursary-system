@@ -35,6 +35,14 @@ describe("missingRequiredInviteFields (D1 locked-school invariant)", () => {
     expect(isContactInviteReady(c)).toBe(false);
   });
 
+  // Q1 (Brian, 2026-08-14): the entry year-group is JWF-facing only — the
+  // parent can never supply one — so an invite must not go out without it.
+  it("flags a missing entry year group — mandatory admin-side (Q1)", () => {
+    const c = { ...complete, entryYearGroup: null };
+    expect(missingRequiredInviteFields(c)).toContain("entry year group");
+    expect(isContactInviteReady(c)).toBe(false);
+  });
+
   it("flags missing surname and child name", () => {
     const c = { ...complete, lastName: "", childName: "" };
     const missing = missingRequiredInviteFields(c);

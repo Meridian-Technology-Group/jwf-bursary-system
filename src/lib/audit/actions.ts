@@ -58,6 +58,17 @@ export const AUDIT_ACTIONS = {
    * cleared by the same write. Carries `{ applicationId, reason, changedFields }`.
    */
   ASSESSMENT_DISCARDED: "ASSESSMENT_DISCARDED",
+  /**
+   * A COMPLETED assessment was REOPENED for correction (Epic 13 / C1, D13-2) —
+   * status COMPLETED → IN_PROGRESS, `completedAt` cleared, the existing
+   * recommendation marked stale (its confirmed figure cleared) and any
+   * close-on-complete account/schedule effects reverted. Distinct from
+   * ASSESSMENT_DISCARDED: nothing is invalidated, the data survives. Only ever
+   * written while NO outcome exists — the action refuses once one is set.
+   * Carries `{ applicationId, assessmentId, reason, recommendationCleared,
+   * accountReopened, scheduleEntryReopened }`.
+   */
+  ASSESSMENT_REOPENED: "ASSESSMENT_REOPENED",
   ASSESSMENT_SECOND_PARENT_OVERRIDE: "ASSESSMENT_SECOND_PARENT_OVERRIDE",
   RECOMMENDATION_SAVE: "RECOMMENDATION_SAVE",
 
@@ -167,7 +178,15 @@ export const AUDIT_ACTIONS = {
   SCHEDULE_SHOW_ON_PORTAL_TOGGLED: "SCHEDULE_SHOW_ON_PORTAL_TOGGLED",
   /** Assessor/admin closed (withdrew) a bursary account at account level (gap F1). */
   BURSARY_ACCOUNT_WITHDRAWN: "BURSARY_ACCOUNT_WITHDRAWN",
-  /** CALC-10 — the account's fees-account code field was edited. */
+  /**
+   * CALC-10 — the account's fees-account code field was edited.
+   *
+   * **RETIRED, deliberately kept.** Epic 13 (C4b / D13-1a) dropped
+   * `BursaryAccount.feesAccountCode` and deleted its editor, so nothing writes
+   * this action any more. It stays defined because `audit_logs` is append-only:
+   * historic rows still carry the string, and removing the constant would leave
+   * them unlabelled (and uncoloured) in the audit UI. Do not add new writers.
+   */
   BURSARY_ACCOUNT_FEES_CODE_UPDATED: "BURSARY_ACCOUNT_FEES_CODE_UPDATED",
 } as const;
 
@@ -310,6 +329,11 @@ const ACTION_COLOUR: Partial<Record<AuditAction, string>> = {
   [AUDIT_ACTIONS.APPLICATION_STATUS_CHANGED]: "bg-red-400",
   [AUDIT_ACTIONS.APPLICATION_REJECTED_RESTART]: "bg-red-400",
   [AUDIT_ACTIONS.ASSESSMENT_DISCARDED]: "bg-red-400",
+  // Reopen is a deliberate correction, not a destruction (DISCARDED) and not a
+  // fresh start (BEGIN) — it shares the amber "attention" bucket. The explicit
+  // entry also matters: the heuristic fallback below would match "OPENED"
+  // inside "REOPENED" and render it green, i.e. as a completion.
+  [AUDIT_ACTIONS.ASSESSMENT_REOPENED]: "bg-orange-400",
   [AUDIT_ACTIONS.GDPR_DELETION]: "bg-red-400",
   [AUDIT_ACTIONS.RETENTION_PURGE_CRON]: "bg-red-400",
   [AUDIT_ACTIONS.NAME_REVEAL]: "bg-orange-400",

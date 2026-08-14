@@ -226,3 +226,91 @@ describe('calculateAssessmentV2 — award summary is null without nextYearFees/b
     expect(result.awardSummary).toBeNull()
   })
 })
+
+// ─── Epic 13 / C2 — the manual income adjustment moves the award ────────────
+
+/**
+ * D13-3: the assessor's edit scope is ONE signed adjustment line on household
+ * income. Applied at step 1 of the orchestrator (after earner aggregation,
+ * before the C40 floor), it flows through notional spend → NDI → the actual
+ * leg untouched — so while the ACTUAL leg is the binding one, the recommended
+ * payable fees move by EXACTLY the adjustment, in both directions.
+ *
+ * The scenario is chosen so the actual leg binds at −£6k, £0 and +£6k (the
+ * theoretical and affordability legs stay comfortably above it), which is what
+ * makes "exactly its amount" a meaningful assertion rather than a coincidence.
+ */
+describe('calculateAssessmentV2 — manual income adjustment (Epic 13 / C2)', () => {
+  const scenario = (manualAdjustment: number): AssessmentV2Input => ({
+    earners: [earner(90_000)],
+    manualAdjustment,
+    familyTypeCategory: 1,
+    rentAddBackType: 'NONE',
+    multiPropertyRentAddBack: false,
+    councilTaxSupport: false,
+    usesCar: true,
+    usesPublicTransport: false,
+    feeInsuranceAnnual: 0,
+    cashSavings: 5_000,
+    isasPepsShares: 0,
+    schoolingYearsRemaining: 5,
+    propertyAssets: { home: { value: 400_000, mortgageBalance: 200_000 } },
+    portfolioType: 'SINGLE',
+    debts: {},
+    siblingPayableFees: [],
+    annualFees: 30_000,
+    scholarshipPct: 0,
+  })
+
+  const baseline = calculateAssessmentV2(scenario(0), ref)
+  const added = calculateAssessmentV2(scenario(6_000), ref)
+  const deducted = calculateAssessmentV2(scenario(-6_000), ref)
+
+  it('the actual leg binds in all three variants (so the assertions below mean what they say)', () => {
+    for (const result of [baseline, added, deducted]) {
+      expect(result.recommendedPayableFees).toBe(result.actualRemainingDi)
+      expect(result.recommendedPayableFees).toBeGreaterThan(0)
+    }
+  })
+
+  it('an omitted adjustment leaves household net income at the earner aggregate', () => {
+    const noAdjustment = calculateAssessmentV2(
+      { ...scenario(0), manualAdjustment: undefined },
+      ref,
+    )
+    expect(noAdjustment.manualAdjustment).toBe(0)
+    expect(noAdjustment.householdNetIncome).toBe(90_000)
+    expect(noAdjustment.recommendedPayableFees).toBe(baseline.recommendedPayableFees)
+  })
+
+  it('a POSITIVE adjustment raises the recommended award by exactly its amount', () => {
+    expect(added.householdNetIncome).toBe(96_000)
+    expect(added.recommendedPayableFees - baseline.recommendedPayableFees).toBeCloseTo(6_000, 6)
+  })
+
+  it('a NEGATIVE adjustment lowers the recommended award by exactly its amount', () => {
+    expect(deducted.householdNetIncome).toBe(84_000)
+    expect(deducted.recommendedPayableFees - baseline.recommendedPayableFees).toBeCloseTo(-6_000, 6)
+  })
+
+  it('carries the earner subtotal and the applied adjustment on the output', () => {
+    expect(added.earnerAggregateIncome).toBe(90_000)
+    expect(added.manualAdjustment).toBe(6_000)
+    expect(deducted.manualAdjustment).toBe(-6_000)
+    expect(baseline.earnerAggregateIncome).toBe(baseline.householdNetIncome)
+  })
+
+  it('the adjustment reaches the award through NDI, not by a late bolt-on', () => {
+    // Every intermediate between income and the actual leg shifts by the same
+    // amount — proof the adjustment entered at C40 rather than being added to
+    // the award at the end.
+    expect(added.ndiAfterNotionalSpend - baseline.ndiAfterNotionalSpend).toBeCloseTo(6_000, 6)
+    expect(added.actualRemainingDi - baseline.actualRemainingDi).toBeCloseTo(6_000, 6)
+    // Notional spend itself is income-independent, so it must NOT move.
+    expect(added.totalNotionalSpend).toBeCloseTo(baseline.totalNotionalSpend, 6)
+  })
+
+  it('still populates every CALC-02 snapshot-contract field with an adjustment applied', () => {
+    expectContractPopulated(added)
+  })
+})

@@ -27,7 +27,8 @@ interface RoundDetailActionsProps {
   closeDate: string;
   decisionDate: string;
   /** ISO yyyy-MM-dd, or "" when the round has no default (Item 12). */
-  defaultSubmissionDeadline: string;
+  defaultSubmissionDeadlineNew: string;
+  defaultSubmissionDeadlineRolling: string;
 }
 
 export function RoundDetailActions({
@@ -37,7 +38,8 @@ export function RoundDetailActions({
   openDate,
   closeDate,
   decisionDate,
-  defaultSubmissionDeadline,
+  defaultSubmissionDeadlineNew,
+  defaultSubmissionDeadlineRolling,
 }: RoundDetailActionsProps) {
   const [closeDialogOpen, setCloseDialogOpen] = useState(false);
   const [openDialogOpen, setOpenDialogOpen] = useState(false);
@@ -81,7 +83,8 @@ export function RoundDetailActions({
         openDate={openDate}
         closeDate={closeDate}
         decisionDate={decisionDate}
-        defaultSubmissionDeadline={defaultSubmissionDeadline}
+        defaultSubmissionDeadlineNew={defaultSubmissionDeadlineNew}
+        defaultSubmissionDeadlineRolling={defaultSubmissionDeadlineRolling}
       />
 
       {/* Open round (DRAFT only) */}

@@ -63,7 +63,6 @@ import { getSiblingLinks } from "@/lib/db/queries/siblings";
 import { withUserContext, type RlsRole } from "@/lib/db/prisma";
 import { YearComparison } from "@/components/admin/year-comparison";
 import { BenchmarkDisplay } from "@/components/admin/benchmark-display";
-import { FeesAccountCodeField } from "@/components/admin/fees-account-code-field";
 import { SplitScreen } from "@/components/admin/split-screen";
 import { AssessmentForm, type SerialisedAssessment } from "@/components/admin/assessment-form";
 import { AssessmentSynopsis } from "@/components/admin/assessment-synopsis";
@@ -71,6 +70,7 @@ import { HouseholdDecisionAid } from "@/components/admin/household-decision-aid"
 import { deriveHouseholdFromSources, type HouseholdSources } from "@/lib/household/from-sections";
 import { deriveReviewPhase } from "@/lib/applications/status";
 import { BeginAssessmentButton } from "@/components/admin/begin-assessment-button";
+import { ReopenAssessmentBanner } from "@/components/admin/reopen-assessment-banner";
 import { SecondParentGate } from "@/components/admin/second-parent-gate";
 import { DocumentListClient } from "@/components/admin/document-list-client";
 import { ClipboardList, Lightbulb } from "lucide-react";
@@ -162,64 +162,49 @@ interface AccountContextBarProps {
 }
 
 /**
- * CALC-10 — fees account code (read-only header context) + the "Assessor's
- * wizard" callout: the most recently COMPLETED assessment's `watchOutNotes`
- * for this bursary account, excluding the current application. Renders
- * nothing when there is neither a fees account code nor a previous note to
- * show, so it never adds empty chrome to the page.
+ * CALC-10 — the "Assessor's wizard" callout: the most recently COMPLETED
+ * assessment's `watchOutNotes` for this bursary account, excluding the current
+ * application. Renders nothing when there is no previous note, so it never adds
+ * empty chrome to the page.
+ *
+ * Epic 13 (C4b / D13-1a): this bar also carried a read-only fees-account-code
+ * field. That column is gone — reconciliation now rides on
+ * `Application.reference` — so the account lookup and the two-way render guard
+ * went with it, leaving the callout as the bar's only content.
  */
 async function AccountContextBar({
   applicationId,
   bursaryAccountId,
   user,
 }: AccountContextBarProps) {
-  const [account, watchOut] = await withUserContext(
+  const watchOut = await withUserContext(
     user.id,
     user.role as RlsRole,
-    (tx) =>
-      Promise.all([
-        tx.bursaryAccount.findUnique({
-          where: { id: bursaryAccountId },
-          select: { feesAccountCode: true },
-        }),
-        getPreviousWatchOutNotes(tx, bursaryAccountId, applicationId),
-      ])
+    (tx) => getPreviousWatchOutNotes(tx, bursaryAccountId, applicationId)
   );
 
-  const feesAccountCode = account?.feesAccountCode ?? null;
-  if (!feesAccountCode && !watchOut) return null;
+  if (!watchOut) return null;
 
   return (
-    <div className="mb-5 space-y-3">
-      {feesAccountCode && (
-        <FeesAccountCodeField
-          accountId={bursaryAccountId}
-          applicationId={applicationId}
-          feesAccountCode={feesAccountCode}
-          readOnly
+    <div className="mb-5">
+      <div
+        role="note"
+        aria-label="Assessor's wizard"
+        className="flex items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3"
+      >
+        <Lightbulb
+          className="mt-0.5 h-4 w-4 shrink-0 text-amber-600"
+          aria-hidden="true"
         />
-      )}
-
-      {watchOut && (
-        <div
-          role="note"
-          aria-label="Assessor's wizard"
-          className="flex items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3"
-        >
-          <Lightbulb
-            className="mt-0.5 h-4 w-4 shrink-0 text-amber-600"
-            aria-hidden="true"
-          />
-          <div>
-            <p className="text-sm font-semibold text-amber-900">
-              Assessor&apos;s wizard — from {watchOut.academicYear}
-            </p>
-            <p className="mt-1 whitespace-pre-wrap text-sm text-amber-800">
-              {watchOut.watchOutNotes}
-            </p>
-          </div>
+        <div>
+          <p className="text-sm font-semibold text-amber-900">
+            Assessor&apos;s wizard — from {watchOut.academicYear}
+          </p>
+          <p className="mt-1 whitespace-pre-wrap text-sm text-amber-800">
+            {watchOut.watchOutNotes}
+          </p>
         </div>
-      )}
+      </div>
     </div>
   );
 }
@@ -631,6 +616,9 @@ export default async function AssessmentPage({ params }: Props) {
         usesPublicTransport: assessment.usesPublicTransport,
         feeInsuranceAnnual: toNumber(assessment.feeInsuranceAnnual),
         behindOnFees: assessment.behindOnFees,
+        // Epic 13 / C2 — the manual income-adjustment line.
+        manualAdjustment: toNumber(assessment.manualAdjustment),
+        manualAdjustmentReason: assessment.manualAdjustmentReason,
         dishonestyFlag: assessment.dishonestyFlag,
         watchOutNotes: assessment.watchOutNotes,
         earners: assessment.earners
@@ -721,6 +709,16 @@ export default async function AssessmentPage({ params }: Props) {
           roundId={application.roundId}
           academicYear={round.academicYear}
           user={user}
+        />
+      )}
+
+      {/* Epic 13 / C1 — completed assessments render read-only; say so, and
+          offer the way back while no outcome has been recorded (D13-2). */}
+      {assessment.status === "COMPLETED" && (
+        <ReopenAssessmentBanner
+          assessmentId={assessment.id}
+          applicationId={params.id}
+          canReopen={!isViewer && assessment.outcome == null}
         />
       )}
 

@@ -121,11 +121,14 @@ async function fetchRecipientApplications(
         childName: true,
         school: true,
         submissionDeadlineAt: true,
+        // Selects which typed round default applies (E1/D13-8).
+        applicationType: true,
         round: {
           select: {
             academicYear: true,
             closeDate: true,
-            defaultSubmissionDeadline: true,
+            defaultSubmissionDeadlineNew: true,
+            defaultSubmissionDeadlineRolling: true,
           },
         },
         leadApplicant: {
@@ -167,6 +170,7 @@ export async function getBulkEmailRecipientsAction(
       childName: app.childName,
       school: app.school,
       submissionDeadlineAt: app.submissionDeadlineAt,
+      applicationType: app.applicationType,
       round: app.round,
       leadApplicant: {
         firstName: app.leadApplicant.firstName,
@@ -306,6 +310,7 @@ export async function bulkSendEmailAction(
         childName: app.childName,
         school: app.school,
         submissionDeadlineAt: app.submissionDeadlineAt,
+        applicationType: app.applicationType,
         round: app.round,
         leadApplicant: app.leadApplicant,
       });

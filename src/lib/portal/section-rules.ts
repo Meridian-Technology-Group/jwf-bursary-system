@@ -17,6 +17,11 @@ import type {
   SectionType,
   StructuralRule,
 } from "@/lib/portal/document-rules";
+import {
+  familyIdSlot,
+  ilrDocumentIdOf,
+  passportDocumentIdOf,
+} from "@/lib/portal/family-id-documents";
 
 // ─── per-parent rule builders ────────────────────────────────────────────────
 
@@ -170,16 +175,30 @@ function incomeRules(earner: Earner): DocumentRule[] {
         slot: `UC_STATEMENT${suffix}`,
       },
     },
+    // CF-28 — this label has always said "3", but the check was satisfied by a
+    // single upload, so Charlotte received applications carrying one month's
+    // evidence (sometimes the SAME file three times) where three months were
+    // asked for. `minCount: 3` makes the rule mean what the label says; with
+    // the statement above it, Universal Credit now needs 4 documents in total.
+    // The three sibling slots are the repeat-upload block in the income form;
+    // the legacy single `UC_MONTHLY…` slot stays first in the list so documents
+    // uploaded before this change still count.
     {
       kind: "requiredIfValueGt0",
       id: `UC_MONTHLY${suffix}`,
       onlyIfExistsPath: ben,
       valuePaths: [`${ben}.universalCredit`],
-      label: `${label}: 3 monthly Universal Credit payment documents are required`,
+      label: `${label}: 3 monthly Universal Credit payment documents are required (3 different months)`,
       fieldRef: `${ben}.ucMonthlyDocumentIds`,
       doc: {
         docIdPath: `${ben}.ucMonthlyDocumentIds`,
         slot: `UC_MONTHLY${suffix}`,
+        slots: [
+          `UC_MONTHLY_1${suffix}`,
+          `UC_MONTHLY_2${suffix}`,
+          `UC_MONTHLY_3${suffix}`,
+        ],
+        minCount: 3,
       },
     },
     // Housing Benefit — award letter when HB > 0.
@@ -341,15 +360,22 @@ const assetsRules: DocumentRule[] = [
     doc: { docIdPath: "councilTaxDocumentId", slot: "COUNCIL_TAX" },
   },
   // OWN branch — latest main mortgage statement when a mortgage is declared.
+  // Gated on propertyOwnership too: the upload only renders inside the OWN
+  // branch, so without that guard a stale `hasMortgage` left behind by
+  // switching OWN → RENT raises a gap the applicant cannot see or satisfy.
   {
-    kind: "requiredIfTrue",
+    kind: "structural",
     id: "MAIN_MORTGAGE_STATEMENT",
-    truePath: "hasMortgage",
     label: "Your latest mortgage statement is required",
     fieldRef: "mortgageStatementDocumentId",
-    doc: {
-      docIdPath: "mortgageStatementDocumentId",
-      slot: "MAIN_MORTGAGE_STATEMENT",
+    predicate: (blob, uploadedSlots) => {
+      if (blob.propertyOwnership !== "OWN") return true; // branch not shown
+      if (blob.hasMortgage !== true) return true; // not applicable
+      const id = blob.mortgageStatementDocumentId;
+      return (
+        (typeof id === "string" && id.length > 0) ||
+        uploadedSlots.has("MAIN_MORTGAGE_STATEMENT")
+      );
     },
   },
   // RENT branch — tenancy agreement when renting privately or from the council.
@@ -359,6 +385,7 @@ const assetsRules: DocumentRule[] = [
     label: "A tenancy agreement is required for your rent arrangement",
     fieldRef: "tenancyAgreementDocumentId",
     predicate: (blob, uploadedSlots) => {
+      if (blob.propertyOwnership !== "RENT") return true; // branch not shown
       const type = blob.rentAgreementType;
       if (type !== "PRIVATE" && type !== "COUNCIL") return true; // not applicable
       const id = blob.tenancyAgreementDocumentId;
@@ -375,6 +402,7 @@ const assetsRules: DocumentRule[] = [
     label: "A housing benefit letter is required for your rent arrangement",
     fieldRef: "housingBenefitLetterDocumentId",
     predicate: (blob, uploadedSlots) => {
+      if (blob.propertyOwnership !== "RENT") return true; // branch not shown
       if (blob.rentAgreementType !== "COUNCIL_NO_RENT") return true; // not applicable
       const id = blob.housingBenefitLetterDocumentId;
       return (
@@ -391,6 +419,7 @@ const assetsRules: DocumentRule[] = [
       "A letter from your relative is required for your living arrangement",
     fieldRef: "relativeLetterDocumentId",
     predicate: (blob, uploadedSlots) => {
+      if (blob.propertyOwnership !== "RENT") return true; // branch not shown
       if (blob.rentAgreementType !== "RELATIVES") return true; // not applicable
       const id = blob.relativeLetterDocumentId;
       return (
@@ -400,7 +429,11 @@ const assetsRules: DocumentRule[] = [
     },
   },
   // Per other-property: latest mortgage statement required when a mortgage
-  // balance is declared (workbook §6/7 Q2).
+  // balance is declared (workbook §6/7 Q2). Gated on `hasOtherProperties` like
+  // CREDIT_CARD_STATEMENT above: the property cards — and the per-property
+  // upload control — render only inside that branch, so a stale
+  // `otherProperties` entry left behind by switching the branch off must not
+  // raise a gap the applicant has no way to satisfy.
   {
     kind: "arrayForEach",
     id: "OTHER_PROPERTY_MORTGAGE_STATEMENT",
@@ -410,7 +443,10 @@ const assetsRules: DocumentRule[] = [
       docIdPath: "mortgageStatementDocumentId",
       slotPrefix: "OTHER_PROPERTY_MORTGAGE_",
     },
-    elementGate: (el) => Number(el.mortgageBalance ?? 0) > 0,
+    elementGate: (el, blob) => {
+      if (blob.hasOtherProperties !== true) return false; // not applicable
+      return Number(el.mortgageBalance ?? 0) > 0;
+    },
     elementLabel: (i) =>
       `A latest mortgage statement is required for other property ${i}`,
   },
@@ -484,12 +520,46 @@ const assetsRules: DocumentRule[] = [
       return uploadedSlots.has("CREDIT_CARD_STATEMENT");
     },
   },
+  // Loan statement AND loan agreement — both required when a credit-agency loan
+  // balance is declared (CF-30: the statement is no longer optional, and the
+  // agreement is a new compulsory ask). Gated on `hasPersonalDebt` exactly like
+  // CREDIT_CARD_STATEMENT above: both uploads render only inside that branch.
+  {
+    kind: "structural",
+    id: "LOAN_STATEMENT",
+    label: "A loan statement is required for the declared loan balance",
+    fieldRef: "loanStatementDocumentIds",
+    predicate: (blob, uploadedSlots) => {
+      if (blob.hasPersonalDebt !== true) return true; // not applicable
+      if (Number(blob.loansToAgencies ?? 0) <= 0) return true; // no balance
+      const ids = blob.loanStatementDocumentIds;
+      if (Array.isArray(ids) && ids.length > 0) return true;
+      return uploadedSlots.has("LOAN_STATEMENT");
+    },
+  },
+  {
+    kind: "structural",
+    id: "LOAN_AGREEMENT",
+    label: "A loan agreement is required for the declared loan balance",
+    fieldRef: "loanAgreementDocumentIds",
+    predicate: (blob, uploadedSlots) => {
+      if (blob.hasPersonalDebt !== true) return true; // not applicable
+      if (Number(blob.loansToAgencies ?? 0) <= 0) return true; // no balance
+      const ids = blob.loanAgreementDocumentIds;
+      if (Array.isArray(ids) && ids.length > 0) return true;
+      return uploadedSlots.has("LOAN_AGREEMENT");
+    },
+  },
 ];
 
 // ─── DEPENDENT_ELDERLY rules ─────────────────────────────────────────────────
 
 const dependentElderlyRules: DocumentRule[] = [
   // Per in-care elder: latest care-home invoice required (workbook §4 Q13).
+  // Gated on `hasElderlyInCare` for the same reason as
+  // OTHER_PROPERTY_MORTGAGE_STATEMENT: the elder cards — and the per-elder
+  // upload control — render only inside that branch, so an entry stranded by
+  // switching the branch back off must not raise an unsatisfiable gap.
   {
     kind: "arrayForEach",
     id: "CARE_HOME_INVOICE",
@@ -499,6 +569,7 @@ const dependentElderlyRules: DocumentRule[] = [
       docIdPath: "careHomeInvoiceDocumentId",
       slotPrefix: "CARE_HOME_INVOICE_",
     },
+    elementGate: (_el, blob) => blob.hasElderlyInCare === true,
     elementLabel: (i, el) =>
       `A latest care-home invoice is required for ${
         (el.firstName as string) ?? `dependant ${i}`
@@ -562,6 +633,10 @@ const childDetailsRules: DocumentRule[] = [
 // the member object and uploads to indexed slots (FAMILY_ID_PASSPORT_<i> /
 // FAMILY_ID_ILR_<i>). This replaces the old `FAMILY_ID: []` no-op (Epic 02 PR-4).
 //
+// One passport per member, whatever their citizenship: `passportDocumentIdOf`
+// reads the current field and falls back to the legacy `ukPassportDocumentId`,
+// so applications saved before F2 keep passing (see family-id-documents.ts).
+//
 // Emitted as a single aggregate structural gap (the per-member upload prompts in
 // the form itself give granular guidance); the gate only blocks submission when
 // the member's required identity document(s) are missing.
@@ -581,13 +656,15 @@ const familyIdRules: DocumentRule[] = [
         const member = m as Record<string, unknown>;
         const has = (id: unknown, slot: string) =>
           (typeof id === "string" && id.length > 0) || uploadedSlots.has(slot);
+        const hasPassport = () =>
+          has(passportDocumentIdOf(member), familyIdSlot("PASSPORT", i));
         if (member.isBritishCitizen === true) {
-          return has(member.ukPassportDocumentId, `FAMILY_ID_PASSPORT_${i}`);
+          return hasPassport();
         }
         if (member.isBritishCitizen === false) {
           return (
-            has(member.passportDocumentId, `FAMILY_ID_PASSPORT_${i}`) &&
-            has(member.ilrDocumentId, `FAMILY_ID_ILR_${i}`)
+            hasPassport() &&
+            has(ilrDocumentIdOf(member), familyIdSlot("ILR", i))
           );
         }
         // citizenship not yet answered → don't block here (the form requires it)
@@ -612,9 +689,8 @@ const familyIdRules: DocumentRule[] = [
         const has = (id: unknown, slot: string) =>
           (typeof id === "string" && id.length > 0) || uploadedSlots.has(slot);
         return (
-          has(member.ukPassportDocumentId, `FAMILY_ID_PASSPORT_${i}`) ||
-          has(member.passportDocumentId, `FAMILY_ID_PASSPORT_${i}`) ||
-          has(member.ilrDocumentId, `FAMILY_ID_ILR_${i}`)
+          has(passportDocumentIdOf(member), familyIdSlot("PASSPORT", i)) ||
+          has(ilrDocumentIdOf(member), familyIdSlot("ILR", i))
         );
       };
       const roleDocumented = (role: string) =>
