@@ -138,14 +138,17 @@ schema migration.
 | 11 | **C1** | 10, 01 | Reopen assessment + server-side lock | **L** | — | — | `feature/uat-c1-reopen-assessment` |
 | 12 | **C2** | 02, 07 | v2 manual income adjustment line | M | — | — | `feature/uat-c2-manual-adjustment` |
 | 13 | **C3** | 03 | Remove Set Qualifies / Does Not Qualify | S | — | C1 | `chore/uat-c3-remove-legacy-outcome` |
-| 14 | **C4** | 04 | Reference becomes a free-text label | **L** | ✅ | — | `feature/uat-c4-reference-model` |
+| 14 | **C4a** | 04 | Application reference — per-year label | M | ✅ | — | `feature/uat-c4a-application-reference` |
+| 14b | **C4b** | 04 | Account reference absorbs the fees code | M | ✅ | C4a | `feature/uat-c4b-account-reference` |
+| 14c | **C4c** | 04 | Drop `fees_account_code` | S | ✅ | C4b verified | `chore/uat-c4c-drop-fees-code` |
 | 15 | **D1** | 27 | Strict one-time submission PDF | M | ✅ | — | `feature/uat-d1-one-time-pdf` |
 | 16 | **D2** | 28 | UC `minCount` + duplicate digest | **L** | ✅ | A1 | `feature/uat-d2-uc-multi-upload` |
 | 17 | **D3** | 30 | Loan agreement slot + required copy | S | — | — | `fix/uat-d3-loan-documents` |
 | 18 | **D4** | 32 | Separate REVIEW from SUBMIT | M | — | — | `fix/uat-d4-review-submit-split` |
 | 19 | **E1** | 11, 12 | Type-aware round deadlines + email fix | **L** | ✅ | — | `feature/uat-e1-typed-deadlines` |
 
-**Totals:** 19 WPs · 4 migrations · 6 L / 5 M / 8 S.
+**Totals:** 21 WPs (C4 split three ways under D13-1a) · 6 migrations · 5 L /
+7 M / 9 S.
 
 ### PR trains and parallelism
 
@@ -154,7 +157,7 @@ Three tracks run concurrently; within a track, order is strict.
 ```
 Track 1 (portal — Charlotte's blocker):  A1 → A2 → A3 → A4 → A5–A8 → B1 → B2 → D4 → D3 → D2
 Track 2 (assessment):                    C1 → C2 → C3
-Track 3 (admin/data):                    C4 → D1 → E1
+Track 3 (admin/data):                    C4a → C4b → D1 → E1 → (C4c, E1b)
 ```
 
 - **A1 ships first and alone.** It is the single change that unblocks her
@@ -416,67 +419,110 @@ enum value in this sprint.
 
 This supersedes the CP10 "Set Qualifies" item on the calc-v2 staging pass.
 
-#### C4 · Reference becomes a free-text label · **L** · **migration**
-**CF-04** · **D13-1**
+#### C4 · Two-reference model · **L** · **migration**
+**CF-04** · **D13-1 as amended by D13-1a**
+
+> **D13-1a (Brian, 2026-08-14) — amends D13-1.** The account reference and the
+> application reference are **separate identifiers**, and
+> `BursaryAccount.feesAccountCode` is therefore redundant and is removed.
+>
+> | | Holds | Lifetime | Editable | Unique |
+> |---|---|---|---|---|
+> | `BursaryAccount.reference` | the external fees-system code, e.g. `TS-SMITH05-Smith, Bob` | one per child, spans all years | ✅ free text, anything | ❌ (soft warning only) |
+> | `Application.reference` | the per-year application label, default `{Child} – {School} – {Year group} – {Academic year}` | one per application | ✅ free text, anything | ❌ |
+>
+> **Why the split.** Charlotte's fees-system example carries **no academic
+> year** — it is stable across years, i.e. account-level. D13-1's generated
+> default carries the academic year — application-level. D13-1 put both on one
+> field, which is what forced its "ROLLING_OVER carries the reference forward"
+> rule; with the split that rule is unnecessary and is **dropped** (each year's
+> application gets its own year-stamped reference; the account reference is the
+> thing that persists). `feesAccountCode` (CALC-10) is then the account
+> reference under a second name — two free-text external-system codes on one
+> entity chain that would inevitably diverge.
+>
+> **Data check (2026-08-14):** nonprod holds 3 bursary accounts, **0 with a
+> `fees_account_code` set** — the field has never been used, so the drop needs
+> no backfill. Prod could not be queried (see §8 risks), but CALC-10 shipped
+> with the calc-v2 work that has not been promoted to `main`, so the column is
+> not expected to exist there; **verify before the C4c drop lands.**
+
+Ships as three PRs.
+
+##### C4a · Application reference (per-year label)
 
 - **Migration**: drop `@unique` from `Application.reference`
   (`prisma/schema.prisma:138`) and drop the raw `lower(reference)` unique index
   from `20260709130000_reference_case_insensitive_unique`. Replace with a
   **non-unique** index on `lower(reference)` so search stays fast.
-  **Leave `BursaryAccount.reference` unique (`schema.prisma:71`) — it is a
-  different constraint and stays.**
 - New default format for NEW applications:
   `{Child first last} – {School name} – {Year group} – {Academic year}`
   (e.g. `Bob Smith – Trinity School – Year 6 – 2027-28`). Rewrite
   `generateApplicationReference` (`src/lib/applications/reference.ts:21-34`) —
   the current `TS-20252026-0001` sequence counter goes away, which also
   removes an existing race (it counts rows to derive the next number).
-- ROLLING_OVER applications keep carrying the existing reference forward.
+- **ROLLING_OVER no longer carries the reference forward** (D13-1a) — a
+  reassessment application generates its own reference for its own academic
+  year. Check `src/lib/db/queries/reassessment.ts:339`, which already calls
+  `generateApplicationReference`, so this may be a no-op beyond removing any
+  carry-forward the epic would have added.
 - `validateReferenceInput` stays non-blank-only (already correct at :44-54).
-- **Child name displayed beside the reference** on: the admin application table
-  (`src/components/admin/application-table.tsx:892`), the application header, the
-  assessment header, exports, and outcome emails.
 - **Remove the app-layer uniqueness enforcement too** — dropping the index is
   not sufficient. `updateApplicationReferenceAction`
   (`src/app/(admin)/applications/[id]/actions.ts:1071-1118`) performs a
   case-insensitive `findFirst` pre-check that throws *"X is already in use by
   another application"*, and its catch block maps `"Unique constraint"` to a
   second rejection message. Both must go, along with the uniqueness paragraphs
-  in the action's doc comment. Miss this and duplicates stay blocked with the
-  DB constraint gone.
+  in the action's doc comment.
+- **Child name displayed beside the reference** on: the admin application table
+  (`src/components/admin/application-table.tsx:892`), the application header, the
+  assessment header, exports, and outcome emails.
 - Verify the admin search box and the XLSX export behave with duplicate
   references. All joins are on UUID (verified — no FK uses `reference`), so
   duplicates are safe, but any code that *looks up* by reference must be found
   and made non-`findUnique`. Grep for `reference:` in `where` clauses.
 
-**`BursaryAccount.reference` is untouched and unaffected.** Verified: it is
-generated independently by `src/lib/bursary-accounts/reference.ts`
-(`BA-{academicYear}-{seq}`), created once at award
-(`src/lib/applications/account-promotion.ts:119-143`), and never derived from
-or synced with `Application.reference` — `updateApplicationReferenceAction`
-writes `tx.application.update` only. Keeping it unique does not constrain
-D13-1.
+##### C4b · Account reference absorbs the fees code
 
-> **Open design question (Q5 — raise with Charlotte, does not block the build).**
-> `BursaryAccount.feesAccountCode` already exists (CALC-10, `schema.prisma:84-86`):
-> free-text, ADMIN/ASSESSOR-editable, documented as *"the school finance
-> system's billing reference for this account"*, with a UI at
-> `src/components/admin/fees-account-code-field.tsx`. That is the same stated
-> rationale as D13-1 ("must match the external fees system"). Build C4 as
-> specified — the reference is what renders on lists, exports and emails, which
-> `feesAccountCode` does not — but two free-text external-system codes on one
-> entity chain will diverge in use. Ask whether `feesAccountCode` is now
-> redundant, or whether the two serve different systems.
+- **Migration**: drop `@unique` from `BursaryAccount.reference`
+  (`prisma/schema.prisma:71`); add a non-unique index. An account is one child,
+  so a duplicate is a data error rather than a legitimate case — but blocking
+  the save is exactly the failure mode D13-1 exists to remove, so enforce it as
+  a **non-blocking UI warning** ("another account already uses this
+  reference"), not a constraint. Save always succeeds.
+- Make the account reference **editable**, ADMIN/ASSESSOR, no lifecycle gate —
+  the same permissions and shape `feesAccountCode` has today. **Repurpose the
+  existing UI**: `src/components/admin/fees-account-code-field.tsx` and
+  `updateFeesAccountCodeAction`
+  (`src/app/(admin)/applications/[id]/bursary-account-actions.ts:102-155`)
+  already implement precisely this field — retarget them at `reference` and
+  rename, rather than writing a second editor.
+- **Audit**: add a `BURSARY_ACCOUNT_REFERENCE_UPDATED` action to both maps in
+  `src/lib/audit/actions.ts`. **Keep `BURSARY_ACCOUNT_FEES_CODE_UPDATED`
+  defined** — `audit_logs` is append-only and historical rows still carry that
+  string; removing the constant would render them unlabelled.
+- Surface the account reference wherever the fees code appears today
+  (application page header, assessment page header) plus the recommendation and
+  outcome surfaces. It currently renders in only three sibling-related places
+  (`recommendation/page.tsx:191`, `sibling-linker.tsx:221`,
+  `sibling-list.tsx:289`) — those keep working unchanged.
+- Keep `generateBursaryAccountReference` as the **default** for a newly promoted
+  account; it becomes a starting value the admin overwrites, not an identity.
+  Its count-based sequence race stops mattering once the column is non-unique.
 
-**Pre-existing, not fixed here:** `generateBursaryAccountReference` derives its
-sequence by counting rows, the same race C4 removes on the application side.
-After C4 it is the only reference generator that can still throw a
-unique-constraint error, under concurrent awards in the same academic year.
-Low probability (awards are batch-sequential today); noted for whoever hits it.
+##### C4c · Drop `fees_account_code` (follow-up, after C4b verified)
 
-**Done when:** two applications can hold the identical reference
-`TS-SMITH05-Smith, Bob`; the generated default matches the format above; every
-listed admin surface shows the child's name; search returns both duplicates.
+Separate PR per the §2 column-drop rule. Remove the column, the Prisma field,
+and the last references in `applications/[id]/page.tsx` and
+`assessment/page.tsx`. **Re-check both nonprod and prod for non-null values
+immediately before merging** — nonprod was clean on 2026-08-14, prod is
+unverified.
+
+**Done when:** two applications can hold the identical reference; the generated
+application default matches the format above; an admin can set an account
+reference to `TS-SMITH05-Smith, Bob` and it renders on the application header,
+assessment header, exports and outcome emails; a duplicate account reference
+warns but saves; `feesAccountCode` is gone with no data lost.
 
 ### Wave D — portal content & document requirements
 
@@ -591,7 +637,9 @@ per-school). Build the global-per-round model; per-school would be a new WP.
 
 | WP | Migration | Shape | Risk |
 |---|---|---|---|
-| C4 | drop `Application.reference` unique + `lower(reference)` unique idx; add non-unique `lower(reference)` idx | destructive-ish (constraint drop) | Low — no FK uses it; verify no `findUnique({where:{reference}})` remains |
+| C4a | drop `Application.reference` unique + `lower(reference)` unique idx; add non-unique `lower(reference)` idx | constraint drop | Low — no FK uses it; verify no `findUnique({where:{reference}})` remains |
+| C4b | drop `BursaryAccount.reference` unique; add non-unique idx | constraint drop | Low — uniqueness moves to a non-blocking UI warning |
+| C4c | drop `bursary_accounts.fees_account_code` | **column drop** | Low on nonprod (0 non-null rows, verified 2026-08-14); **re-verify prod before merge** |
 | D1 | `applications.submission_pdf_downloaded_at timestamptz?` | additive | None |
 | D2 | `documents.content_digest text?` + `(application_id, content_digest)` idx | additive | Backfill is not required — existing rows keep NULL and skip duplicate detection |
 | E1 | `rounds.default_submission_deadline_{new,rolling} date?` + backfill | additive | Legacy column retained; drop in follow-up E1b |
@@ -628,7 +676,8 @@ the policy ships in the same PR (see §2).
 | A1 rewrites the upload path Charlotte is already stuck on — a regression here is worse than the 413 | Ship A1 alone and first; keep `uploadDocument()` and the admin route untouched; manual test on preview before merge |
 | Autosave (B2) multiplies `clearedProvenanceForApplicantSave` calls, potentially thrashing assessor provenance | Verify idempotence; gate the clear on real value change if needed; extend the provenance test |
 | C1 reopens a state the whole model treats as terminal | Server-side guard added in the same PR; outcome gate; audit entry; doc comment rewritten so the exception is legible to the next reader |
-| C4 removes a uniqueness guarantee other code may quietly rely on | Grep every `reference` `where` clause before merging; confirm no `findUnique`; test duplicate search + export |
+| C4a/C4b remove uniqueness guarantees other code may quietly rely on | Grep every `reference` `where` clause before merging; confirm no `findUnique`; test duplicate search + export |
+| **C4c drops a column and prod could not be inspected** — `supabase-prod` rejected the read-only user's password on 2026-08-14 (`28P01`). CALC-10 is not promoted to `main`, so the column is not expected to exist in prod, but that is inference, not verification | Fix the prod read-only credential (worth doing regardless — it blocks every prod check), then confirm `fees_account_code` is absent or all-null before merging C4c |
 | CF-15 ("kicked out") may not reproduce | B1 ships the other three fixes regardless; record the non-reproduction on the PR rather than closing it silently |
 | E1's structural type is consumed by 6+ call sites | The `select:` list in §5 E1 is the complete set as of `ae4bdb4` — re-grep before starting |
 
@@ -645,7 +694,7 @@ in code; Q3 affects copy only.
 | Q2 | 30 | Loan agreement required always, or only when a loan is declared? | Only when declared | D3 rule kind |
 | Q3 | 27 | Accepts that a parent who loses the one-time PDF must email the team? | Yes | D1 copy |
 | Q4 | 12 | Is the rolling-over deadline one global date per round? | Yes | E1 data model |
-| **Q5** | 04 | `BursaryAccount.feesAccountCode` (CALC-10) already holds "the school finance system's billing reference" — is it now redundant, or do the two codes serve different systems? | Both are kept; the editable reference is what renders on lists/exports/emails | C4 follow-up only — does not block |
+| **Q5** | 04 | Is the fees-system code ever needed **before** an award? Under D13-1a it lives on the bursary account, and an account is only created at award (`account-promotion.ts:143`) — so a not-yet-awarded applicant has nowhere to hold one. | No — the fees system bills awarded pupils, so the code first matters at award | C4b. If she says yes, either the account is created earlier in the lifecycle or the code moves back onto `Application` — a new WP either way |
 
 Also to send back (no build needed): the CF-08 and CF-11 corrections and the
 CF-23 diagnosis from the epic's "Corrections" section.
@@ -668,7 +717,9 @@ Update the status column as PRs merge. `—` = not started.
 | C1 | — | | |
 | C2 | — | | |
 | C3 | — | | |
-| C4 | — | | migration |
+| C4a | — | | migration |
+| C4b | — | | migration |
+| C4c | — | | column drop, after C4b verified |
 | D1 | — | | migration |
 | D2 | — | | migration |
 | D3 | — | | |
