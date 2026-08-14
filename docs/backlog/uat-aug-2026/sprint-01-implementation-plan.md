@@ -1073,6 +1073,6 @@ Update the status column as PRs merge. `—` = not started.
 | D4 | ✅ merged-ready | [#285](https://github.com/Meridian-Technology-Group/jwf-bursary-system/pull/285) | Standardised on "Submit Application". Confirmation fires **after** validation, not on click |
 | D2 | in progress | | migration |
 | F2 | in progress | | |
-| F4 | in progress | | |
+| F4 | ✅ merged-ready | [#286](https://github.com/Meridian-Technology-Group/jwf-bursary-system/pull/286) | One file, −40/+0. Second commit folds in `OutcomeApplication` + a stale docstring it reported |
 | E1 | — | | migration |
 | E1b | — | | legacy column drop, after E1 verified |
