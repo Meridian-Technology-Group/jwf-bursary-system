@@ -519,6 +519,29 @@ Two things the epic does not call out, both mandatory here:
 the indicator never claims "Saved" for a failed write; provenance tests still
 pass and cover the repeated-autosave case.
 
+> **Outcomes (2026-08-14, #287):**
+>
+> - **The provenance-churn worry was unfounded — verified, not assumed.**
+>   `clearedProvenanceForApplicantSave` diffs incoming values against **what is
+>   already stored**, not against the assessor's original, so repeated autosaves
+>   *converge* rather than eroding stamps. It also returns before any diffing
+>   when stored provenance is empty (the common row). No gating needed.
+>   One real behaviour change: an applicant who types into an assessor-stamped
+>   field **and then reverts** now has that stamp cleared, where previously only
+>   a manual save did. The field genuinely was re-entered.
+> - **The contributor flow is covered, not deferred.** `/contribute` inherits
+>   autosave through `SectionForm` and drives the secondary-scoped
+>   `saveSectionDraft` with zero extra wiring. The assessor edit-on-behalf shell
+>   is the deliberate opt-out — its action has no draft equivalent, so background
+>   writes would fail in a loop.
+> - **Complete-if-valid, draft otherwise** — reuses B1's classification rather
+>   than always writing a draft. Always-drafting would *demote* an already
+>   complete section the moment one field was edited, a new failure mode.
+> - **Trade-off to watch:** a background save only calls `router.refresh()` when
+>   completeness could have flipped, so gap-derived rail state (e.g. a
+>   missing-document gap resolved mid-section) can lag until the next real
+>   navigation.
+
 ### Wave C — assessment editability & references
 
 #### C1 · Reopen assessment · **L**
@@ -1061,7 +1084,7 @@ Update the status column as PRs merge. `—` = not started.
 | A6 | ✅ merged-ready | [#276](https://github.com/Meridian-Technology-Group/jwf-bursary-system/pull/276) | CI green. Correctly refused the schedule-page removal (derivation input, not display) |
 | D1 | ✅ fixed-up | [#279](https://github.com/Meridian-Technology-Group/jwf-bursary-system/pull/279) | Failed CI on `prisma format --check`; fixed. Compare-and-set claim; also removed `/submitted` answer browsing (correct per CF-27) |
 | B1 | — | | |
-| B2 | — | | |
+| B2 | ✅ merged-ready | [#287](https://github.com/Meridian-Technology-Group/jwf-bursary-system/pull/287) | Provenance churn concern **resolved empirically** — no gating needed. Contributor flow covered, not deferred |
 | C1 | ✅ merged-ready | [#269](https://github.com/Meridian-Technology-Group/jwf-bursary-system/pull/269) | CI green. Closed a live authz gap: `saveAssessmentAction` had no server-side status check |
 | C2 | ✅ merged-ready | [#272](https://github.com/Meridian-Technology-Group/jwf-bursary-system/pull/272) | CI green. No recommendation PDF exists — see the C2 correction |
 | C3 | ✅ merged-ready | [#273](https://github.com/Meridian-Technology-Group/jwf-bursary-system/pull/273) | 16 insertions / 180 deletions. Orphaned `setApplicationOutcomeLegacy` → F4 |
