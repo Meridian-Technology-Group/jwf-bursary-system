@@ -139,13 +139,32 @@ PRD still specifies the toggle. **Half-retired is worse than either state** — 
 next reader cannot tell which behaviour is intended. Also mark security finding
 2.18 superseded rather than leaving it open.
 
-### F7 · `arrayForEach` rules cannot see the blob
+### F7 · `arrayForEach` rules cannot see the blob — IN PROGRESS
 `OTHER_PROPERTY_MORTGAGE_STATEMENT` has the same stale-branch defect D3 fixed in
 six sibling rules, but its `elementGate` receives only the array element, so it
 cannot re-check `hasOtherProperties`. **Fix: pass the blob as `elementGate`'s
 second argument** — one line in `src/lib/portal/document-rules.ts`. Do **not**
 convert it to `structural`; that would destroy the per-index gap ids existing
 tests assert.
+
+> **Scope widened 2026-08-14, mid-build.** There are exactly **two** production
+> `arrayForEach` rules, and the second — `CARE_HOME_INVOICE`
+> (`section-rules.ts:548`, DEPENDENT_ELDERLY) — has the **same defect with no
+> branch guard at all**, while its upload control renders only inside
+> `ConditionalField show={hasElderlyInCare === true}`
+> (`dependent-elderly-form.tsx:114`). Declare an in-care elder, flip the toggle
+> back to No, and `elderlyInCare[]` persists in the blob → invisible requirement,
+> no control on screen.
+>
+> Authorised into the same PR: it is one line, it only *narrows* a requirement,
+> and **`DEPENDENT_ELDERLY` is a section the client has actively tested** — she
+> confirmed the "declare 1 or 2 → require that many entries" behaviour, meaning
+> she has been toggling the exact control that strands this. Leaving it would
+> also mean a one-line fix waiting on its own ticket at precisely the moment the
+> guard became trivially available.
+>
+> With both fixed, this class is **fully closed** for `arrayForEach` rules — the
+> inventory is two of two, not a sample.
 
 ### F9 · Staff uploads have no digest
 `/api/admin/documents` (edit-on-behalf) still stores `content_digest` NULL,
