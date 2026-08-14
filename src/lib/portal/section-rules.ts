@@ -551,6 +551,10 @@ const assetsRules: DocumentRule[] = [
 
 const dependentElderlyRules: DocumentRule[] = [
   // Per in-care elder: latest care-home invoice required (workbook §4 Q13).
+  // Gated on `hasElderlyInCare` for the same reason as
+  // OTHER_PROPERTY_MORTGAGE_STATEMENT: the elder cards — and the per-elder
+  // upload control — render only inside that branch, so an entry stranded by
+  // switching the branch back off must not raise an unsatisfiable gap.
   {
     kind: "arrayForEach",
     id: "CARE_HOME_INVOICE",
@@ -560,6 +564,7 @@ const dependentElderlyRules: DocumentRule[] = [
       docIdPath: "careHomeInvoiceDocumentId",
       slotPrefix: "CARE_HOME_INVOICE_",
     },
+    elementGate: (_el, blob) => blob.hasElderlyInCare === true,
     elementLabel: (i, el) =>
       `A latest care-home invoice is required for ${
         (el.firstName as string) ?? `dependant ${i}`

@@ -611,6 +611,7 @@ describe("DEPENDENT_ELDERLY — per in-care elder invoice (PR-3)", () => {
   it("requires an invoice for each in-care elder", () => {
     expect(
       gapIds("DEPENDENT_ELDERLY", {
+        hasElderlyInCare: true,
         elderlyInCare: [{ firstName: "Ada" }, { firstName: "Bob" }],
       })
     ).toEqual([
@@ -622,9 +623,20 @@ describe("DEPENDENT_ELDERLY — per in-care elder invoice (PR-3)", () => {
     expect(
       gapIds(
         "DEPENDENT_ELDERLY",
-        { elderlyInCare: [{ firstName: "Ada", careHomeInvoiceDocumentId: "x" }, { firstName: "Bob" }] },
+        {
+          hasElderlyInCare: true,
+          elderlyInCare: [{ firstName: "Ada", careHomeInvoiceDocumentId: "x" }, { firstName: "Bob" }],
+        },
         new Set(["CARE_HOME_INVOICE_1"])
       )
+    ).toEqual([]);
+  });
+  it("requires nothing for a stale elder left behind by hasElderlyInCare = false", () => {
+    expect(
+      gapIds("DEPENDENT_ELDERLY", {
+        hasElderlyInCare: false,
+        elderlyInCare: [{ firstName: "Ada" }],
+      })
     ).toEqual([]);
   });
 });
