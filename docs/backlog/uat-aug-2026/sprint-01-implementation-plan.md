@@ -130,7 +130,7 @@ schema migration.
 | 3 | **A3** | 17 | Cohabiting validates as Married | S | — | — | `fix/uat-a3-cohabiting-validation` |
 | 4 | **A4** | 21 | Zero-income path progresses | M | — | — | `fix/uat-a4-zero-income-path` |
 | 5 | **A5** | 18 | Number entry fix for parent 2 | S | — | — | `fix/uat-a5-a8-portal-smalls` |
-| 6 | **A6** | 23 | Review page year-of-entry source | S | — | — | ↑ paired |
+| 6 | **A6** | 23 | Remove year of entry from applicant input entirely | M | — | — | `fix/uat-a6-entry-year-removal` |
 | 7 | **A7** | 25 | Plain submission-failure message | S | — | — | ↑ paired |
 | 8 | **A8** | 31 | Bursary-team contact copy | S | — | — | ↑ paired |
 | 9 | **B1** | 15,16,19,22 | Guarded sidebar nav + "kicked out" fix | **L** | — | — | `fix/uat-b1-dirty-nav-guard` |
@@ -146,8 +146,8 @@ schema migration.
 | 18 | **D4** | 32 | Separate REVIEW from SUBMIT | M | — | — | `fix/uat-d4-review-submit-split` |
 | 19 | **E1** | 11, 12 | Type-aware round deadlines + email fix | **L** | ✅ | — | `feature/uat-e1-typed-deadlines` |
 
-**Totals:** 20 WPs (C4 split in two under D13-1a) · 5 migrations · 5 L / 7 M /
-8 S.
+**Totals:** 20 WPs (C4 split in two under D13-1a) · 5 migrations · 5 L / 8 M /
+7 S. All open questions answered — nothing is decision-blocked.
 
 ### PR trains and parallelism
 
@@ -162,8 +162,10 @@ Track 3 (admin/data):                    C4a → C4b → D1 → E1 → (E1b)
 - **A1 ships first and alone.** It is the single change that unblocks her
   submission; get it on staging before starting anything else so she can
   re-test the birth-certificate upload while the rest is in flight.
-- **A5–A8 are one PR** (four independent one-file fixes; separate PRs cost more
-  review than they save).
+- **A5, A7 and A8 are one PR** (three independent one-file fixes; separate PRs
+  cost more review than they save). **A6 is no longer among them** — Q1's answer
+  grew it into a multi-file removal that also touches the admin invite path and
+  carries a data backfill, so it ships alone.
 - **D2 depends on A1** (repeat-slot upload UI is built on the new transport).
 - **C3 depends on C1** — removing the legacy outcome buttons while COMPLETED is
   still a terminal state would leave no way back from a mis-set state.
@@ -270,15 +272,60 @@ The select-0-on-focus / no-leading-zero-accumulation behaviour is applied to
 parent 1's fields only. Extract it to a shared input component (or shared
 handler) and apply to parent 2's fields. Do not fork the logic.
 
-#### A6 · Review page year-of-entry · S
-**CF-23** · no migration
+#### A6 · Remove year of entry from applicant input entirely · M
+**CF-23** · **Q1 answered 2026-08-14 (Brian)** · no migration
 
-`renderChildDetails()` at `src/app/(portal)/apply/review/page.tsx:131-140` reads
-`entryYearGroup` from the legacy section blob, which no longer carries it (the
-field moved admin-side in Epic 02 PR-6, D1). Thread `Application.entryYear` /
-`entryYearGroup` into the renderer, matching `application-summary.ts:124-147`.
+> **Q1 decision.** Year of entry stays relevant to the *application* but must not
+> be something the applicant can enter, update or change — **including
+> validation**. The `Application.entryYear` / `entryYearGroup` columns, set
+> admin-side, become the sole source.
 
-**Done when:** the review page shows the admin-set year of entry, not "—".
+The field is already absent from the form UI (`child-details-form.tsx` has no
+`entryYear` reference at all), but residue remains in five places:
+
+- `src/lib/schemas/child-details.ts:89` — `entryYearGroup:
+  entryYearGroupSchema.optional()` is still in the applicant schema. **Remove
+  it** (and `entryYearGroupSchema` itself if nothing else imports it).
+- `src/types/application.ts:24` — `ChildDetailsData.entryYearGroup` is declared
+  **non-optional**, already inconsistent with the optional schema. Remove.
+- `src/lib/applications/submission.ts:306-327` — submission reads
+  `entryYearGroup` out of the CHILD_DETAILS blob and promotes it to the column.
+  Remove the blob read. **Safe:** the expression is
+  `application.entryYearGroup ?? childEntryYearGroup`, so an admin-set column
+  already wins and cannot be clobbered.
+- `src/app/(portal)/apply/review/page.tsx:131-140` and
+  `src/app/(portal)/schedule/page.tsx:43` — read the blob for display; switch to
+  the `Application` columns, matching `application-summary.ts:124-147`.
+- `src/lib/portal/application-summary.ts:132` — `entry?.entryYearGroup ??
+  d.entryYearGroup` keeps a blob fallback; drop the fallback.
+  `section-page-client.tsx:273` carries an `entryYearGroup: undefined` shim to
+  clear as well.
+
+**⚠️ This creates a dependency the epic did not anticipate.** Once the blob
+fallback goes, the column is the only source — and **the invite path does not
+require it**: `src/lib/applications/create-from-invitation.ts:95` writes
+`entryYearGroup: source.entryYearGroup ?? null` with a comment stating it is
+optional. The data shows the consequence — on nonprod, **only 8 of 35
+applications have `entry_year_group` set, and 3 of the NULLs are already
+submitted** (checked 2026-08-14). Only `internal-request-dialog.tsx:76` treats
+it as mandatory today.
+
+So this WP must also:
+
+- **Make `entryYearGroup` mandatory wherever an application is created
+  admin-side** — the invitation path and contact creation, matching the
+  `z.enum` treatment `internal-request-dialog.tsx` already uses.
+  `src/lib/contacts/contact-helpers.ts:37` already flags a missing entry year in
+  its completeness check, so the contact model expects it.
+- **Backfill the existing NULLs** as a data task before the fallback is removed,
+  prioritising the 3 submitted applications. Not a migration — a one-off script
+  or admin edit; confirm the intended values with Charlotte rather than
+  guessing.
+
+**Done when:** no applicant-facing schema, type or validation path mentions
+entry year; the review and schedule pages show the admin-set value; a new
+admin-created application cannot be created without one; the nonprod NULLs are
+resolved.
 
 #### A7 · Plain submission-failure message · S
 **CF-25** · no migration
@@ -578,8 +625,10 @@ columns are gone with no data lost.
 Stamp *after* `renderToBuffer` succeeds, not before — a failed render must not
 consume the single download.
 
-**Blocked on Q3** (Charlotte confirming the support consequence) only for the
-copy wording, not for the build. Ship the mechanism; adjust copy on her answer.
+**Q3 decided (Brian, 2026-08-14): build it regardless.** Ship the mechanism and
+the copy; no client gate. The support consequence (a parent who loses the file
+must email the bursary team) is accepted — make the one-shot copy explicit
+enough that it is not a surprise.
 
 #### D2 · UC multi-upload + duplicate detection · **L** · **migration**
 **CF-28** · depends on A1
@@ -610,9 +659,8 @@ Drop "(optional)" from the loan statement copy
 is declared (`requiredIfValueGt0` — the pattern already used for
 `UC_STATEMENT`).
 
-**Assumes Q2's answer is "only when declared."** If Charlotte says "always",
-the rule kind changes to `requiredAlways` — a one-line change, so ship on the
-assumption and mark it `// ASSUMPTION(Q2):`.
+**Q2 decided (Brian, 2026-08-14): required only when a loan is declared.**
+Use `requiredIfValueGt0`; no assumption marker needed.
 
 #### D4 · Separate REVIEW from SUBMIT · M
 **CF-32**
@@ -662,8 +710,8 @@ explicit button; the review round-trip loses nothing.
   expiry genuinely needs communicating (it does — the link stops working), add a
   separate merge field rather than overloading `{{deadline}}`.
 
-**Blocked on Q4** for the rolling date's value only (global per round vs
-per-school). Build the global-per-round model; per-school would be a new WP.
+**Q4 decided (Brian, 2026-08-14): one global date per round, defaulting to
+April.** Not per-school — two date columns on `Round` is the whole model.
 
 ---
 
@@ -717,19 +765,22 @@ the policy ships in the same PR (see §2).
 
 ---
 
-## 9. Client-blocking questions
+## 9. Open questions — all answered
 
-None block the sprint start. Q2 and Q4 are built on stated assumptions marked
-in code; Q3 affects copy only. Q5 was answered by Brian on 2026-08-14 and is
-now part of D13-1a.
+**Brian answered Q1–Q5 on 2026-08-14. Nothing is blocked and no
+`ASSUMPTION(...)` markers are needed.**
 
-| Q | CF | Question | Assumption we build on | Affects |
+| Q | CF | Question | Answer | Affects |
 |---|---|---|---|---|
-| Q1 | 23 | Does the Details-of-the-Child blocker disappear once the birth-certificate upload is fixed? | Yes — year of entry is no longer parent-entered | A1/A6 verification |
-| Q2 | 30 | Loan agreement required always, or only when a loan is declared? | Only when declared | D3 rule kind |
-| Q3 | 27 | Accepts that a parent who loses the one-time PDF must email the team? | Yes | D1 copy |
-| Q4 | 12 | Is the rolling-over deadline one global date per round? | Yes | E1 data model |
-| ~~Q5~~ | 04 | ~~On rollover, inherit the edited reference or regenerate the default?~~ | **Decided 2026-08-14 (Brian): inherit.** Folded into D13-1a; spec in C4a | — |
+| Q1 | 23 | Is year of entry still parent-entered? | **Remove it from applicant input entirely, including validation.** It stays relevant to the application but must not be applicant-editable; the admin-set columns are the sole source | A6 — grew from S to M, see the invite/backfill dependency there |
+| Q2 | 30 | Loan agreement always, or only when declared? | **Only when a loan is declared** | D3 — `requiredIfValueGt0` |
+| Q3 | 27 | Accept the one-time-PDF support consequence? | **Build it regardless** | D1 — no client gate |
+| Q4 | 12 | Rolling-over deadline: global per round or per-school? | **One global date per round, defaulting to April** | E1 — two date columns, no per-school structure |
+| Q5 | 04 | On rollover, inherit the edited reference or regenerate? | **Inherit** (a never-edited default is regenerated) | C4a; folded into D13-1a |
+
+**Still to relay to Charlotte** (informational, not blocking): the CF-08 and
+CF-11 corrections, and the CF-23 diagnosis — her Details-of-the-Child blocker
+is the birth-certificate upload (CF-14), not year of entry.
 
 Also to send back (no build needed): the CF-08 and CF-11 corrections and the
 CF-23 diagnosis from the epic's "Corrections" section.
