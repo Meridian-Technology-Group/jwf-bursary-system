@@ -127,8 +127,32 @@ independently of everything else.
 - Any change to the H1–H11 household rules engine — E3's spec was checked
   against it and current behaviour already matches (advisory gates, parent-1
   category, parent-2 assets excluded).
-- Server-side session timers (none exist; CF-15's "kicked out" is an error
-  path to fix, not a timeout to remove).
+- ~~Server-side session timers (none exist; CF-15's "kicked out" is an error
+  path to fix, not a timeout to remove).~~
+
+  > ❌ **WRONG — corrected 2026-08-14 during B1. There IS a session timer, and
+  > Charlotte's own guess was right.** `IdleLogoutWatcher` (Epic 11, D20) is
+  > mounted in the portal layout and signs the applicant out after **30 minutes**
+  > of no mouse/keyboard/scroll activity, via a form POST to `/api/auth/logout`
+  > — a full-page navigation that tears down the section form. Reproduced
+  > end-to-end in a browser against nonprod.
+  >
+  > Worse, **it was unconfigurable in every environment**:
+  > `resolveIdleTimeoutConfig` read keys off `process.env` *dynamically*, and
+  > Next only substitutes **literal** `process.env.NEXT_PUBLIC_*` member
+  > expressions into the client bundle — so in the browser every key resolved to
+  > nothing. `NEXT_PUBLIC_SESSION_IDLE_ENABLED=false` did not disable it and
+  > `NEXT_PUBLIC_SESSION_IDLE_MINUTES` did not move the window. Every
+  > environment ran a hard-wired 30 minutes.
+  >
+  > A hidden tab was also signed out with **no warning at all** — background
+  > timer throttling let the warning and its 60 s countdown elapse unseen. That
+  > is exactly CF-15 *and* CF-16 in one mechanism.
+  >
+  > **We told Charlotte no timer existed. We were wrong — say so in the reply.**
+  > The 30-minute default is deliberately unchanged (it is D20, her decision),
+  > but it is now genuinely settable, and the section is flushed through the B1
+  > dirty-guard before sign-out so work is no longer lost.
 
 ## Sequencing / PR plan
 

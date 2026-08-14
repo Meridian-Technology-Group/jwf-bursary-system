@@ -110,7 +110,12 @@ The sprint is done when all of the following hold on `staging`:
     final verification pass.
   - Do not run `prisma generate` in the main checkout while agents are running.
   - A phantom type error about a column another in-flight PR drops or adds is
-    this, not your code. Regenerate before you debug it.
+    this, not your code. Regenerate before you debug it. **Four agents hit this**
+    — pair `prisma generate` with `tsc` in a single command.
+- **⚠️ Agents read this plan from their own base branch, so plan edits made
+  after they branch are invisible to them.** F5's agent correctly reported "there
+  is no Wave F in the plan" — true on its base, false on the plan branch. Put
+  anything an agent must know **in its brief**, not only in the plan.
 
 ---
 
@@ -327,6 +332,22 @@ advances; test covers the zero case for both parents.
 #### A5 · Parent-2 number entry · S
 **CF-18** · no migration
 
+> **Outcome (2026-08-14): the reported defect could NOT be reproduced.** Both
+> parents' money cells are the same `CurrencyInput`, rendered by one
+> `ParentIncomeColumn` twice with a different prefix; the leading-zero strip and
+> focus-select landed in **#266, merged 2026-07-18** — nearly four weeks before
+> her test. The `£0,001 → £0,015 → £0,150` walk she describes is precisely the
+> *pre-#266* behaviour, so she was either recalling an earlier session or served
+> stale code. **Ask her to re-confirm on the current preview before closing
+> CF-18.**
+>
+> What the WP *did* find is the fork the brief predicted: **three hand-pasted
+> copies** of the focus handler (Dependent Children ×1, Dependent Elderly ×2)
+> that got the select-on-focus half and never got the zero-strip half. Those are
+> now a shared module with a guard test that fails the build if a fourth copy
+> appears — which is the mechanism that let this be "fixed on one field only" in
+> the first place.
+
 The select-0-on-focus / no-leading-zero-accumulation behaviour is applied to
 parent 1's fields only. Extract it to a shared input component (or shared
 handler) and apply to parent 2's fields. Do not fork the logic.
@@ -439,13 +460,32 @@ Three distinct defects under one WP:
    step as `<a href={...}>`, so a full page load discards unsaved form state.
    Convert to client-side navigation with a dirty-state guard: if the section
    form is dirty, prompt save-or-discard before navigating.
-2. **The "kicked out" error (CF-15).** There is no session timer in the code —
-   the epic is right that this is an error path, not a timeout. Reproduce by
-   completing the parent/guardian section, capture the real failure (server
-   action error, most likely unhandled), and fix it. **If it cannot be
-   reproduced, say so on the PR rather than closing it as fixed.**
-3. **Income tab disabled after re-login (CF-22).** Check the stepper's
-   status derivation for a stale/short-circuited read after a fresh session.
+2. **The "kicked out" error (CF-15) — RESOLVED; the premise was wrong.**
+   > This WP asserted "there is no session timer in the code". **False.**
+   > `IdleLogoutWatcher` (Epic 11, D20) signs the applicant out after 30 minutes
+   > idle via a form POST to `/api/auth/logout` — a full-page navigation that
+   > tears down the section form. Reproduced in a browser against nonprod.
+   >
+   > Root cause of the mystery: `resolveIdleTimeoutConfig` read keys off
+   > `process.env` **dynamically**, and Next only inlines *literal*
+   > `process.env.NEXT_PUBLIC_*` member expressions into the client bundle — so
+   > in the browser every key resolved to nothing. Every environment ran a
+   > hard-wired, unconfigurable 30 minutes. A hidden tab was signed out with no
+   > warning at all, because background timer throttling ate the warning and its
+   > 60 s countdown.
+   >
+   > Fixed: literal env reads, warning deferred while the document is hidden,
+   > and the section flushed through the B1 guard before sign-out. **The
+   > 30-minute default is unchanged** — that is D20, Charlotte's call — but it is
+   > now genuinely settable.
+3. **Income tab disabled after re-login (CF-22) — no gating defect exists.**
+   > `getSectionGapStatuses` returns a row for every section in `SECTION_ORDER`,
+   > so `buildSidebarSections` never falls through to its default and every step
+   > is a plain link in every state. What she saw was **presentation**:
+   > `not_started` rendered in `text-slate-400`, the tone used for disabled
+   > chrome, and her Income section had reverted to `not_started` because the
+   > data was destroyed by defects 1 and 2. Tone changed to `slate-600`; the
+   > real fix is the other two defects not happening.
 
 **Done when:** navigating away from a dirty section prompts; the prompt's
 "save" path actually persists; CF-15 has a recorded root cause; a re-login
@@ -801,6 +841,22 @@ declaration *is* submitting. Decouple:
 **Done when:** saving the declaration does not submit; submitting requires the
 explicit button; the review round-trip loses nothing.
 
+### ⚠️ Needs a decision before the stack merges
+
+**F5 closed a silent hole in the DECLARATION rule, which changes behaviour.**
+`DECLARATION`'s `superRefine` detects whether the Parent 2 block is present by
+testing `acceptedParent2 !== undefined`. Because that field was never seeded,
+a "sole parent = yes" + coupled-status household **rendered** the Parent 2
+declaration but the rule read it as "not shown" and **skipped Parent 2's
+declaration entirely** — a consent/declaration gap, not merely a bad message.
+Seeding the field makes the intended rule fire.
+
+This is the one place F5 changes behaviour rather than message copy.
+**Recommend accepting it** — a declaration silently not collected is a legal
+exposure, and the rule was always intended to fire — but it is a conscious call,
+and it means some in-flight drafts will now be asked for a declaration they were
+previously let past.
+
 ### Wave F — discovered during the sprint
 
 These were **not** in the epic. Each was found while building a WP and is
@@ -942,9 +998,11 @@ Update the status column as PRs merge. `—` = not started.
 | A3 | ✅ fixed | [#277](https://github.com/Meridian-Technology-Group/jwf-bursary-system/pull/277) | Root cause: `parent2Contact.*` (7 strings) + `parent1Contact.email` unseeded in `getDefaultValues`. **No validation rule changed.** Also fixed the contribute-flow schema mismatch |
 | F5 | in progress | | systemic defaults sweep — on the critical path |
 | A4 | ✅ merged-ready | [#278](https://github.com/Meridian-Technology-Group/jwf-bursary-system/pull/278) | CI green. Root cause was the legibility tick, not the numbers — see F5 |
-| A5 + A7 + A8 | — | | paired PR |
+| A5 + A7 + A8 | ✅ merged-ready | [#281](https://github.com/Meridian-Technology-Group/jwf-bursary-system/pull/281) | CI green. **A5 could not be reproduced** — see the CF-18 note; 3 forked focus handlers fixed instead |
+| B1 | ✅ merged-ready | [#283](https://github.com/Meridian-Technology-Group/jwf-bursary-system/pull/283) | CI green. **Found the real CF-15 cause: a 30-min idle logout whose env switches never reached the browser** |
+| F5 | ✅ merged-ready | [#280](https://github.com/Meridian-Technology-Group/jwf-bursary-system/pull/280) | CI green. 5 further broken sections + a guard test; one behaviour change needs sign-off (below) |
+| E1 | ✅ merged-ready | [#282](https://github.com/Meridian-Technology-Group/jwf-bursary-system/pull/282) | CI green. **6** `{{deadline}}` sites, not 4; 11 `select:` feeders, not 6 |
 | A6 | ✅ merged-ready | [#276](https://github.com/Meridian-Technology-Group/jwf-bursary-system/pull/276) | CI green. Correctly refused the schedule-page removal (derivation input, not display) |
-| B1 | in progress | | |
 | D1 | ✅ fixed-up | [#279](https://github.com/Meridian-Technology-Group/jwf-bursary-system/pull/279) | Failed CI on `prisma format --check`; fixed. Compare-and-set claim; also removed `/submitted` answer browsing (correct per CF-27) |
 | B1 | — | | |
 | B2 | — | | |
