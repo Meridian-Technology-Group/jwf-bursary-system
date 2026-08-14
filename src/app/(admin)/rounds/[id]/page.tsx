@@ -190,10 +190,18 @@ export default async function RoundDetailPage({
                   </span>
                 </span>
               )}
+              {/* Two round defaults since E1/D13-8 — new applicants and
+                  rolling-over holders submit on different clocks. */}
               <span>
-                Default submission-by:{" "}
+                Submission-by (new):{" "}
                 <span className="font-medium text-slate-700">
-                  {formatDate(round.defaultSubmissionDeadline)}
+                  {formatDate(round.defaultSubmissionDeadlineNew)}
+                </span>
+              </span>
+              <span>
+                Submission-by (rolling over):{" "}
+                <span className="font-medium text-slate-700">
+                  {formatDate(round.defaultSubmissionDeadlineRolling)}
                 </span>
               </span>
             </div>
@@ -212,9 +220,16 @@ export default async function RoundDetailPage({
                 ? round.decisionDate.toISOString().slice(0, 10)
                 : ""
             }
-            defaultSubmissionDeadline={
-              round.defaultSubmissionDeadline
-                ? round.defaultSubmissionDeadline.toISOString().slice(0, 10)
+            defaultSubmissionDeadlineNew={
+              round.defaultSubmissionDeadlineNew
+                ? round.defaultSubmissionDeadlineNew.toISOString().slice(0, 10)
+                : ""
+            }
+            defaultSubmissionDeadlineRolling={
+              round.defaultSubmissionDeadlineRolling
+                ? round.defaultSubmissionDeadlineRolling
+                    .toISOString()
+                    .slice(0, 10)
                 : ""
             }
           />

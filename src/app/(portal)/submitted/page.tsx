@@ -1,12 +1,20 @@
 /**
- * Post-submission read-only summary (Epic 05 §3.3).
+ * Post-submission confirmation (Epic 05 §3.3, narrowed by Epic 13 D1 / D13-4).
  *
- * Expanded from the old confirmation card into a read-only render of WHAT was
- * submitted — section-by-section answers + uploaded documents + recorded T&Cs
- * acceptance — with a dismissible "Download submission (PDF)" offer. The
- * submitted application is immutable (Epic 01), so the displayed submission date
- * never changes even after a later document request. The parent-safe label is
- * "Submitted" (new) / "Received" (rolling) per the signed bursary-flow diagram.
+ * Epic 05 made this a read-only render of WHAT was submitted — every section's
+ * answers, on screen, forever. CF-27 reverses that: applicants must not be able
+ * to browse everything they submitted (the "tailor-made application" risk), so
+ * the section-by-section summary and the History page are gone and this page is
+ * a confirmation, not an archive.
+ *
+ * What remains is identification and status — reference, child, round, the
+ * submitted date — plus the ONE-TIME PDF offer. The submitted application is
+ * immutable (Epic 01), so the displayed submission date never changes even
+ * after a later document request. The parent-safe label is "Submitted" (new) /
+ * "Received" (rolling) per the signed bursary-flow diagram.
+ *
+ * The full answer set still exists in the PDF, which the parent may download
+ * exactly once; after that their route to a copy is the bursary team.
  */
 
 import { redirect } from "next/navigation";
@@ -16,7 +24,7 @@ import { getCurrentUser } from "@/lib/auth/roles";
 import { withUserContext, type RlsRole } from "@/lib/db/prisma";
 import { loadSubmittedApplication } from "@/lib/portal/submission-loader";
 import { submittedLabel } from "@/lib/portal/status-projection";
-import { SubmittedSummary } from "@/components/portal/submitted-summary";
+import { SubmissionDownloadOffer } from "@/components/portal/submission-download-offer";
 import { PortalPage } from "@/components/portal/portal-page";
 import { formatLondonDate } from "@/lib/datetime";
 
@@ -72,29 +80,67 @@ export default async function SubmittedPage() {
                 : "Your re-assessment has been received"}
             </h1>
             <p className="mt-1 text-sm text-green-700">
-              Thank you. A copy of the details you submitted is shown below — you
-              can download it as a PDF for your records. You will receive a
-              confirmation email shortly.
+              Thank you. You will receive a confirmation email shortly, and you
+              can follow progress from your application status page at any time.
             </p>
           </div>
         </div>
       </div>
 
-      {/* Read-only submitted summary + PDF offer */}
-      <SubmittedSummary
+      {/* Identification / status meta — no answers (D13-4). */}
+      <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <p className="text-xs font-medium uppercase tracking-wider text-slate-400">
+              {label}
+            </p>
+            <p className="mt-1 font-mono text-lg font-semibold text-primary-900">
+              {submission.reference}
+            </p>
+            {submission.childName && (
+              <p className="mt-1 text-sm text-slate-600">
+                {submission.childName}
+              </p>
+            )}
+            <p className="text-xs text-slate-500">
+              {submission.academicYear} assessment round
+            </p>
+          </div>
+          <dl className="text-right text-sm">
+            <dt className="text-xs uppercase tracking-wider text-slate-400">
+              Submitted
+            </dt>
+            <dd className="font-medium text-slate-800">{submittedDate}</dd>
+          </dl>
+        </div>
+        {submission.termsAcceptedAt && (
+          <p className="mt-4 border-t border-slate-100 pt-4 text-sm text-slate-600">
+            You confirmed the bursary Terms &amp; Conditions when you submitted
+            this application on{" "}
+            <span className="font-medium">
+              {formatLondonDate(submission.termsAcceptedAt)}
+            </span>
+            {submission.termsVersion ? (
+              <>
+                {" "}
+                (terms version{" "}
+                <span className="font-mono text-xs">
+                  {submission.termsVersion}
+                </span>
+                )
+              </>
+            ) : null}
+            .
+          </p>
+        )}
+      </div>
+
+      {/* The single, one-time PDF download (D13-4). */}
+      <SubmissionDownloadOffer
         applicationId={submission.id}
-        reference={submission.reference}
-        submittedLabel={label}
-        submittedDate={submittedDate}
-        childName={submission.childName}
-        academicYear={submission.academicYear}
-        summary={submission.summary}
-        termsAccepted={
-          submission.termsAcceptedAt
-            ? {
-                date: formatLondonDate(submission.termsAcceptedAt),
-                version: submission.termsVersion,
-              }
+        downloadedAt={
+          submission.submissionPdfDownloadedAt
+            ? formatLondonDate(submission.submissionPdfDownloadedAt)
             : null
         }
       />

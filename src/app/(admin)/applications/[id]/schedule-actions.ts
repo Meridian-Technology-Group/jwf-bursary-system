@@ -57,7 +57,7 @@ export async function regenerateScheduleAction(
             id: true,
             entryYearGroup: true,
             firstAssessmentYear: true,
-            reference: true,
+            childName: true,
           },
         });
         if (!account) {
@@ -85,7 +85,8 @@ export async function regenerateScheduleAction(
           action: AUDIT_ACTIONS.SCHEDULE_REGENERATED,
           entityType: AUDIT_ENTITY_TYPES.BursaryAccount,
           entityId: account.id,
-          context: `Regenerated schedule for account ${account.reference} (${gen.created} added, ${gen.skipped} kept)`,
+          // Epic 13 (D13-1a): the account carries no reference — name the child.
+          context: `Regenerated schedule for ${account.childName} (${gen.created} added, ${gen.skipped} kept)`,
           metadata: {
             horizon: gen.horizon,
             created: gen.created,

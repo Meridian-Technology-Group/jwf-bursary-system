@@ -3,8 +3,10 @@
 /**
  * PortalNav — the persistent left-rail navigation for the applicant portal.
  *
- * This is the lead-applicant nav (Home / My Application / Documents / History /
- * Help), modelled on `admin-nav.tsx`. It is a DISTINCT component family from the
+ * This is the lead-applicant nav (Home / My Application / Documents / Help),
+ * modelled on `admin-nav.tsx`. The History item was removed by Epic 13 D1
+ * (D13-4): applicants keep status visibility, but no route back into what they
+ * submitted. It is a DISTINCT component family from the
  * `/contribute`-shared stepper shell (`PortalDesktopSidebar` /
  * `PortalMobileHeader`) — do NOT parameterise one to do both (Decision 6).
  *
@@ -23,7 +25,6 @@ import {
   Home,
   FileText,
   Upload,
-  History,
   HelpCircle,
   AlertCircle,
   CalendarRange,
@@ -109,13 +110,6 @@ export function buildPortalNav(
       href: "/documents",
       icon: Upload,
       match: "/documents",
-      matchMode: "prefix",
-    },
-    {
-      label: "History",
-      href: "/history",
-      icon: History,
-      match: "/history",
       matchMode: "prefix",
     },
     {

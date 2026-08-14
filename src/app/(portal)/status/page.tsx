@@ -67,7 +67,10 @@ export default async function StatusPage() {
               academicYear: true,
               decisionDate: true,
               closeDate: true,
-              defaultSubmissionDeadline: true,
+              // Both typed round defaults (E1/D13-8) — the resolver picks the
+              // one matching this application's `applicationType`.
+              defaultSubmissionDeadlineNew: true,
+              defaultSubmissionDeadlineRolling: true,
             },
           },
           assessment: {
@@ -89,7 +92,10 @@ export default async function StatusPage() {
   const isDraft = application.formStatus !== "SUBMITTED";
   const deadline = isDraft
     ? getDeadlineStatus(
-        { submissionDeadlineAt: application.submissionDeadlineAt },
+        {
+          submissionDeadlineAt: application.submissionDeadlineAt,
+          applicationType: application.applicationType,
+        },
         application.round
       )
     : null;

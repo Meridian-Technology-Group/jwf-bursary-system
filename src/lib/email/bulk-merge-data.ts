@@ -8,7 +8,10 @@
 
 import type { School } from "@prisma/client";
 import { contactDisplayName, schoolLabel } from "@/lib/contacts/contact-helpers";
-import { effectiveSubmissionDeadline } from "@/lib/rounds/submission-deadline";
+import {
+  effectiveSubmissionDeadline,
+  type SubmissionDeadlineApplicationType,
+} from "@/lib/rounds/submission-deadline";
 import type { EmailMergeData } from "./types";
 
 /**
@@ -52,11 +55,15 @@ export interface BulkMergeDataApplication {
   childName: string;
   school: School;
   submissionDeadlineAt: Date | null;
+  /** Selects which typed round default applies (E1/D13-8). */
+  applicationType: SubmissionDeadlineApplicationType;
   round: {
     academicYear: string;
     closeDate: Date;
-    /** Round-level default submit-by (item 12) — middle tier of the D-1 chain. */
-    defaultSubmissionDeadline: Date | null;
+    /** Round default submit-by for NEW rows — middle tier of the D-1 chain. */
+    defaultSubmissionDeadlineNew: Date | null;
+    /** Round default submit-by for ROLLING_OVER rows — same tier, other clock. */
+    defaultSubmissionDeadlineRolling: Date | null;
   };
   leadApplicant: {
     firstName: string | null;
@@ -75,10 +82,16 @@ export function buildBulkMergeData(
   application: BulkMergeDataApplication
 ): EmailMergeData {
   const { deadline } = effectiveSubmissionDeadline(
-    { submissionDeadlineAt: application.submissionDeadlineAt },
+    {
+      submissionDeadlineAt: application.submissionDeadlineAt,
+      applicationType: application.applicationType,
+    },
     {
       closeDate: application.round.closeDate,
-      defaultSubmissionDeadline: application.round.defaultSubmissionDeadline,
+      defaultSubmissionDeadlineNew:
+        application.round.defaultSubmissionDeadlineNew,
+      defaultSubmissionDeadlineRolling:
+        application.round.defaultSubmissionDeadlineRolling,
     }
   );
 

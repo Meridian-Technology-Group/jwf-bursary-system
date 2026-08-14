@@ -1,0 +1,78 @@
+-- =============================================================================
+-- JWF Bursary System — the bursary account stops exposing an identifier (C4b)
+-- =============================================================================
+-- Epic 13, decision D13-1a (Brian, 2026-08-14), implemented per
+-- docs/backlog/uat-aug-2026/sprint-01-implementation-plan.md §5 C4b.
+--
+-- There is ONE user-facing reference and it lives on the Application (C4a,
+-- migration 20260814120000). The bursary account is an INTERNAL container for
+-- awarded applicants and exposes no reference or ID to the user at all — its
+-- identity is its UUID primary key. Both of its former identifier columns are
+-- therefore redundant and are dropped here:
+--
+--   * `reference`         — `BA-20252026-0001`, minted by a count-based
+--                           generator (`src/lib/bursary-accounts/reference.ts`,
+--                           deleted in this PR — the count-then-insert also
+--                           carried a sequence race). Every surface that
+--                           displayed it — the sibling picker, the sibling
+--                           list, the recommendation page's sibling context,
+--                           the final-year and sibling-summary reports —
+--                           now shows the child's name, which the account
+--                           already carries and which staff actually recognise.
+--   * `fees_account_code` — CALC-10's free-text fees-system code
+--                           (20260710191301_calc10_admin_extras). Superseded:
+--                           the reconciliation code now lives on
+--                           `Application.reference`, which is re-edited at
+--                           award to match the external fees system. Its
+--                           editor and server action are deleted in this PR.
+--
+-- Why the drops ship WITH their code (departing from §2's "column drops get
+-- their own follow-up PR" rule): §5 C4b calls this out explicitly as the one
+-- sanctioned exception. There is nothing to cut over to and no dual-read
+-- window to hold open — after this PR no reader of either column remains, so
+-- a staged drop would only leave two dead columns on staging indefinitely.
+--
+-- ── Data verification ────────────────────────────────────────────────────────
+-- nonprod, re-verified 2026-08-14 immediately before authoring this file
+-- (read-only SELECT via the Supabase MCP; no write was issued):
+--
+--   SELECT count(*)                 AS total_accounts,       -- 3
+--          count(fees_account_code) AS non_null_fees_code,   -- 0
+--          count(reference)         AS non_null_reference    -- 3
+--     FROM public.bursary_accounts;
+--
+-- `fees_account_code` has never held a value, so nothing is lost there. The 3
+-- `reference` values are machine-generated `BA-…` labels that no FK, no view
+-- and no remaining code path reads — deliberately discarded, not migrated:
+-- there is no destination column, because the account is not meant to have an
+-- identifier at all.
+--
+-- Integrity: all SIX foreign keys pointing at this table reference `id`, never
+-- `reference` (verified against pg_constraint on nonprod: applications,
+-- recommendations, sibling_links, invitations, contacts,
+-- bursary_schedule_entries). No view or materialised view depends on the table
+-- (verified against pg_depend/pg_rewrite — empty). Dropping these columns
+-- therefore removes no integrity guarantee that anything depends on.
+--
+-- PROD IS UNVERIFIED. `supabase-prod` still rejects the read-only user's
+-- password (`28P01`), the blocker already logged in §8 of the plan. CALC-10 is
+-- not promoted to `main`, so `fees_account_code` is not expected to exist
+-- there — inference, not verification. Both statements below are written
+-- `IF EXISTS` so this migration is a no-op against a database where the CALC-10
+-- column never landed, but the prod credential should still be fixed and the
+-- check run before this reaches `main`.
+--
+-- Reversal re-adds two nullable columns; the dropped values are NOT
+-- recoverable, and the `reference` unique index could only be recreated after
+-- backfilling distinct values.
+-- =============================================================================
+
+-- 1. The account's own reference. `DROP COLUMN` also drops
+--    `bursary_accounts_reference_key` (the `@unique`), but it is dropped
+--    explicitly first so the intent is visible in the migration history.
+DROP INDEX IF EXISTS "bursary_accounts_reference_key";
+
+ALTER TABLE "bursary_accounts" DROP COLUMN IF EXISTS "reference";
+
+-- 2. CALC-10's fees-system code (0 non-null rows on nonprod, 2026-08-14).
+ALTER TABLE "bursary_accounts" DROP COLUMN IF EXISTS "fees_account_code";

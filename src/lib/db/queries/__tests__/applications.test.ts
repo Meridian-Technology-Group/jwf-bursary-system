@@ -3,7 +3,12 @@ import {
   submittedDateRangeWhere,
   effectiveDeadlineRangeWhere,
 } from "@/lib/db/queries/applications";
-import { effectiveSubmissionDeadline } from "@/lib/rounds/submission-deadline";
+import {
+  effectiveSubmissionDeadline,
+  roundDefaultForType,
+  type SubmissionDeadlineApplicationType,
+  type SubmissionDeadlineRound,
+} from "@/lib/rounds/submission-deadline";
 import { londonStartOfDayUtc, londonEndOfDayUtc } from "@/lib/datetime";
 import type { Prisma } from "@prisma/client";
 
@@ -13,7 +18,32 @@ import type { Prisma } from "@prisma/client";
 interface DeadlineRow {
   submittedAt: Date | null;
   submissionDeadlineAt: Date | null;
-  round: { defaultSubmissionDeadline: Date | null; closeDate: Date };
+  /** Selects which typed round default governs the row (E1/D13-8). */
+  applicationType: SubmissionDeadlineApplicationType;
+  round: SubmissionDeadlineRound;
+}
+
+/** Terse round fixture: `mkRound(close, { new: …, rolling: … })`. */
+function mkRound(
+  closeDate: string,
+  defaults: { forNew?: string; forRolling?: string } = {}
+): SubmissionDeadlineRound {
+  return {
+    closeDate: new Date(`${closeDate}T00:00:00.000Z`),
+    defaultSubmissionDeadlineNew: defaults.forNew
+      ? new Date(`${defaults.forNew}T00:00:00.000Z`)
+      : null,
+    defaultSubmissionDeadlineRolling: defaults.forRolling
+      ? new Date(`${defaults.forRolling}T00:00:00.000Z`)
+      : null,
+  };
+}
+
+/** The round column `effectiveDeadlineRangeWhere` consults for a given type. */
+function defaultColumnFor(type: SubmissionDeadlineApplicationType) {
+  return type === "ROLLING_OVER"
+    ? ("defaultSubmissionDeadlineRolling" as const)
+    : ("defaultSubmissionDeadlineNew" as const);
 }
 
 /** Simulates matching `submittedDateRangeWhere`'s known `{ submittedAt: {...} }` shape. */
@@ -29,7 +59,18 @@ function matchesSubmittedFragment(
   return true;
 }
 
-/** Simulates matching `effectiveDeadlineRangeWhere`'s known 3-branch OR shape. */
+type Bound = { gte?: Date; lte?: Date };
+/** One `applicationType`-keyed arm inside the round-default / close branches. */
+type TypeArm = {
+  applicationType: SubmissionDeadlineApplicationType;
+  round: Record<string, Bound | null>;
+};
+
+/**
+ * Simulates matching `effectiveDeadlineRangeWhere`'s known shape: a 3-branch
+ * OR (override / round default / close date), where the latter two each fan
+ * out into a per-application-type arm (E1/D13-8).
+ */
 function matchesDeadlineFragment(
   row: DeadlineRow,
   fragment: Prisma.ApplicationWhereInput | undefined
@@ -38,33 +79,40 @@ function matchesDeadlineFragment(
   const [overrideBranch, defaultBranch, closeBranch] = (
     fragment as {
       OR: [
-        { submissionDeadlineAt: { gte?: Date; lte?: Date } },
-        { round: { defaultSubmissionDeadline: { gte?: Date; lte?: Date } } },
-        { round: { closeDate: { gte?: Date; lte?: Date } } },
+        { submissionDeadlineAt: Bound },
+        { OR: TypeArm[] },
+        { OR: TypeArm[] },
       ];
     }
   ).OR;
 
-  const inBounds = (value: number, cmp: { gte?: Date; lte?: Date }) =>
+  const inBounds = (value: number, cmp: Bound) =>
     (!cmp.gte || value >= cmp.gte.getTime()) &&
     (!cmp.lte || value <= cmp.lte.getTime());
+
+  /** The arm of a fanned-out branch that applies to this row's type. */
+  const armFor = (branch: { OR: TypeArm[] }) =>
+    branch.OR.find((arm) => arm.applicationType === row.applicationType)!;
+
+  const column = defaultColumnFor(row.applicationType);
+  const roundDefault = roundDefaultForType(row.round, row.applicationType);
 
   const overrideMatches =
     row.submissionDeadlineAt !== null &&
     inBounds(row.submissionDeadlineAt.getTime(), overrideBranch.submissionDeadlineAt);
 
+  const defaultArm = armFor(defaultBranch);
   const defaultMatches =
     row.submissionDeadlineAt === null &&
-    row.round.defaultSubmissionDeadline !== null &&
-    inBounds(
-      row.round.defaultSubmissionDeadline.getTime(),
-      defaultBranch.round.defaultSubmissionDeadline
-    );
+    roundDefault !== null &&
+    inBounds(roundDefault.getTime(), defaultArm.round[column] as Bound);
 
+  const closeArm = armFor(closeBranch);
   const closeMatches =
     row.submissionDeadlineAt === null &&
-    row.round.defaultSubmissionDeadline === null &&
-    inBounds(row.round.closeDate.getTime(), closeBranch.round.closeDate);
+    roundDefault === null &&
+    closeArm.round[column] === null &&
+    inBounds(row.round.closeDate.getTime(), closeArm.round.closeDate as Bound);
 
   return overrideMatches || defaultMatches || closeMatches;
 }
@@ -81,7 +129,10 @@ function referenceEffectiveInRange(
   to: string | undefined
 ): boolean {
   const { deadline, source } = effectiveSubmissionDeadline(
-    { submissionDeadlineAt: row.submissionDeadlineAt },
+    {
+      submissionDeadlineAt: row.submissionDeadlineAt,
+      applicationType: row.applicationType,
+    },
     row.round
   );
   if (source === "override") {
@@ -94,7 +145,9 @@ function referenceEffectiveInRange(
   // Date-only tier: compare the SOURCE calendar date (not the endOfDay()
   // shifted instant) against from/to as plain YYYY-MM-DD strings.
   const sourceDate =
-    source === "roundDefault" ? row.round.defaultSubmissionDeadline! : row.round.closeDate;
+    source === "roundDefault"
+      ? roundDefaultForType(row.round, row.applicationType)!
+      : row.round.closeDate;
   const sourceDateStr = sourceDate.toISOString().slice(0, 10);
   if (from && sourceDateStr < from) return false;
   if (to && sourceDateStr > to) return false;
@@ -151,18 +204,39 @@ describe("effectiveDeadlineRangeWhere (Item 7.2)", () => {
     expect((fragment as { OR: unknown[] }).OR).toHaveLength(3);
   });
 
-  it("the round-default branch only applies when there is no override (submissionDeadlineAt: null)", () => {
+  it("the round-default branch only applies when there is no override, and fans out per application type", () => {
     const fragment = effectiveDeadlineRangeWhere("2026-07-01", "2026-07-31") as {
       OR: [Prisma.ApplicationWhereInput, Prisma.ApplicationWhereInput, Prisma.ApplicationWhereInput];
     };
     const [, roundDefaultBranch, closeDateBranch] = fragment.OR;
     expect(roundDefaultBranch).toMatchObject({ submissionDeadlineAt: null });
-    // The close-date branch additionally requires no round default, so a
-    // round WITH a default never falls through to closeDate.
+    // E1/D13-8: NEW reads default_submission_deadline_new, ROLLING_OVER reads
+    // default_submission_deadline_rolling — the legacy single column is gone
+    // from every branch.
+    expect(roundDefaultBranch).toMatchObject({
+      OR: [
+        { applicationType: "NEW", round: expect.objectContaining({ defaultSubmissionDeadlineNew: expect.anything() }) },
+        { applicationType: "ROLLING_OVER", round: expect.objectContaining({ defaultSubmissionDeadlineRolling: expect.anything() }) },
+      ],
+    });
+    // The close-date branch additionally requires no round default ON THAT
+    // TYPE'S CLOCK, so a round WITH a default never falls through to closeDate.
     expect(closeDateBranch).toMatchObject({
       submissionDeadlineAt: null,
-      round: expect.objectContaining({ defaultSubmissionDeadline: null }),
+      OR: [
+        {
+          applicationType: "NEW",
+          round: expect.objectContaining({ defaultSubmissionDeadlineNew: null }),
+        },
+        {
+          applicationType: "ROLLING_OVER",
+          round: expect.objectContaining({
+            defaultSubmissionDeadlineRolling: null,
+          }),
+        },
+      ],
     });
+    expect(JSON.stringify(fragment)).not.toContain('"defaultSubmissionDeadline"');
   });
 
   // ── Cross-check against effectiveSubmissionDeadline() ──────────────────────
@@ -180,50 +254,94 @@ describe("effectiveDeadlineRangeWhere (Item 7.2)", () => {
     overrideOnlyBst: {
       submittedAt: null,
       submissionDeadlineAt: new Date("2026-07-09T17:00:00.000Z"),
-      round: { defaultSubmissionDeadline: null, closeDate: new Date("2026-07-31T00:00:00.000Z") },
+      applicationType: "NEW",
+      round: mkRound("2026-07-31"),
     },
     overrideOnlyGmt: {
       submittedAt: null,
       submissionDeadlineAt: new Date("2026-01-15T10:00:00.000Z"),
-      round: { defaultSubmissionDeadline: null, closeDate: new Date("2026-01-31T00:00:00.000Z") },
+      applicationType: "NEW",
+      round: mkRound("2026-01-31"),
     },
     roundDefaultBst: {
       submittedAt: null,
       submissionDeadlineAt: null,
-      round: {
-        defaultSubmissionDeadline: new Date("2026-07-20T00:00:00.000Z"),
-        closeDate: new Date("2026-07-31T00:00:00.000Z"),
-      },
+      applicationType: "NEW",
+      round: mkRound("2026-07-31", { forNew: "2026-07-20" }),
     },
     closeDateFallbackGmt: {
       submittedAt: null,
       submissionDeadlineAt: null,
-      round: { defaultSubmissionDeadline: null, closeDate: new Date("2026-01-31T00:00:00.000Z") },
+      applicationType: "NEW",
+      round: mkRound("2026-01-31"),
     },
     closeDateFallbackBst: {
       submittedAt: null,
       submissionDeadlineAt: null,
-      round: { defaultSubmissionDeadline: null, closeDate: new Date("2026-07-31T00:00:00.000Z") },
+      applicationType: "NEW",
+      round: mkRound("2026-07-31"),
     },
     // Round default OUT of a query range that would otherwise include closeDate
     // — must stay excluded; the default governs, closeDate is never consulted.
     defaultGovernsOverCloseDate: {
       submittedAt: null,
       submissionDeadlineAt: null,
-      round: {
-        defaultSubmissionDeadline: new Date("2026-07-05T00:00:00.000Z"),
-        closeDate: new Date("2026-07-15T00:00:00.000Z"),
-      },
+      applicationType: "NEW",
+      round: mkRound("2026-07-15", { forNew: "2026-07-05" }),
     },
     // Override present alongside a round default AND close date that would
     // both put it in-range — the override alone governs.
     overrideGovernsOverDefaultAndClose: {
       submittedAt: null,
       submissionDeadlineAt: new Date("2026-08-01T00:00:00.000Z"),
-      round: {
-        defaultSubmissionDeadline: new Date("2026-07-20T00:00:00.000Z"),
-        closeDate: new Date("2026-07-20T00:00:00.000Z"),
-      },
+      applicationType: "NEW",
+      round: mkRound("2026-07-20", { forNew: "2026-07-20" }),
+    },
+    // ── E1/D13-8: the same round, filtered on the other clock ───────────────
+    // Both defaults set and different: each type must be matched against its
+    // OWN column, never the other's.
+    rollingReadsItsOwnDefault: {
+      submittedAt: null,
+      submissionDeadlineAt: null,
+      applicationType: "ROLLING_OVER",
+      round: mkRound("2026-07-31", {
+        forNew: "2026-07-20",
+        forRolling: "2026-04-30",
+      }),
+    },
+    newReadsItsOwnDefaultOnTheSameRound: {
+      submittedAt: null,
+      submissionDeadlineAt: null,
+      applicationType: "NEW",
+      round: mkRound("2026-07-31", {
+        forNew: "2026-07-20",
+        forRolling: "2026-04-30",
+      }),
+    },
+    // Only the NEW default is set: a rolling-over row on this round has no
+    // default on ITS clock and must fall through to closeDate.
+    rollingFallsThroughWhenOnlyNewDefaultSet: {
+      submittedAt: null,
+      submissionDeadlineAt: null,
+      applicationType: "ROLLING_OVER",
+      round: mkRound("2026-07-31", { forNew: "2026-07-20" }),
+    },
+    // …and the mirror image.
+    newFallsThroughWhenOnlyRollingDefaultSet: {
+      submittedAt: null,
+      submissionDeadlineAt: null,
+      applicationType: "NEW",
+      round: mkRound("2026-07-31", { forRolling: "2026-04-30" }),
+    },
+    // An override still wins on a rolling-over row.
+    rollingOverrideGoverns: {
+      submittedAt: null,
+      submissionDeadlineAt: new Date("2026-07-09T17:00:00.000Z"),
+      applicationType: "ROLLING_OVER",
+      round: mkRound("2026-07-31", {
+        forNew: "2026-07-20",
+        forRolling: "2026-04-30",
+      }),
     },
   };
 
@@ -234,6 +352,8 @@ describe("effectiveDeadlineRangeWhere (Item 7.2)", () => {
     { from: "2026-07-15" },
     { from: "2026-07-20", to: "2026-07-20" },
     { from: "2026-07-21", to: "2026-07-25" },
+    // Straddles the April rolling deadline, so the two types diverge.
+    { from: "2026-04-01", to: "2026-04-30" },
   ];
 
   for (const [rowName, row] of Object.entries(rows)) {
@@ -260,10 +380,8 @@ describe("received + submission-by filters compose (Item 7.1 + 7.2, AND)", () =>
     const row: DeadlineRow = {
       submittedAt: new Date("2026-06-15T09:00:00.000Z"), // in June
       submissionDeadlineAt: null,
-      round: {
-        defaultSubmissionDeadline: null,
-        closeDate: new Date("2026-07-31T00:00:00.000Z"), // in the deadline range
-      },
+      applicationType: "NEW",
+      round: mkRound("2026-07-31"), // close date in the deadline range
     };
     expect(matchesSubmittedFragment(row.submittedAt, receivedFragment)).toBe(true);
     expect(matchesDeadlineFragment(row, deadlineFragment)).toBe(true);
@@ -273,10 +391,8 @@ describe("received + submission-by filters compose (Item 7.1 + 7.2, AND)", () =>
     const row: DeadlineRow = {
       submittedAt: new Date("2026-06-15T09:00:00.000Z"), // in June — matches alone
       submissionDeadlineAt: null,
-      round: {
-        defaultSubmissionDeadline: null,
-        closeDate: new Date("2026-08-31T00:00:00.000Z"), // NOT in the deadline range
-      },
+      applicationType: "NEW",
+      round: mkRound("2026-08-31"), // close date NOT in the deadline range
     };
     const matchesReceived = matchesSubmittedFragment(row.submittedAt, receivedFragment);
     const matchesDeadline = matchesDeadlineFragment(row, deadlineFragment);
@@ -291,10 +407,8 @@ describe("received + submission-by filters compose (Item 7.1 + 7.2, AND)", () =>
     const row: DeadlineRow = {
       submittedAt: new Date("2026-05-01T09:00:00.000Z"), // NOT in June
       submissionDeadlineAt: null,
-      round: {
-        defaultSubmissionDeadline: null,
-        closeDate: new Date("2026-07-31T00:00:00.000Z"), // matches the deadline range alone
-      },
+      applicationType: "NEW",
+      round: mkRound("2026-07-31"), // matches the deadline range alone
     };
     const matchesReceived = matchesSubmittedFragment(row.submittedAt, receivedFragment);
     const matchesDeadline = matchesDeadlineFragment(row, deadlineFragment);

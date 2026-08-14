@@ -1035,11 +1035,14 @@ export async function setSubmissionDeadlineAction(
  *   after trim is rejected.
  * - Re-saving the current value (case-sensitively identical) is a no-op — no
  *   write, no audit entry.
- * - Uniqueness is case-insensitive (Story 11.2): a pre-check inside the
- *   transaction returns a friendly error naming the conflicting application,
- *   and the `applications_reference_lower_key` functional unique index
- *   (migration 20260709130000_reference_case_insensitive_unique) catches any
- *   race the pre-check misses.
+ * - **Uniqueness is not enforced at any layer** (Epic 13, D13-1a). The
+ *   reference is a label, not an identity — identity is the UUID PK, and no FK
+ *   points at `reference`. Its primary use is being set to the external
+ *   fees-system code for reconciliation, and two applications may legitimately
+ *   carry the same code, so duplicates are accepted. The former
+ *   case-insensitive pre-check and the `applications_reference_lower_key`
+ *   unique index are both gone (migration
+ *   20260814120000_application_reference_non_unique).
  * - Audited as `UPDATE_REFERENCE` only on success, capturing { from, to }.
  */
 export async function updateApplicationReferenceAction(
@@ -1064,18 +1067,7 @@ export async function updateApplicationReferenceAction(
       // Unchanged (case-sensitively identical) — nothing to persist or audit.
       if (app.reference === newReference) return;
 
-      const conflict = await tx.application.findFirst({
-        where: {
-          reference: { equals: newReference, mode: "insensitive" },
-          id: { not: applicationId },
-        },
-        select: { reference: true },
-      });
-      if (conflict) {
-        throw new Error(
-          `"${conflict.reference}" is already in use by another application.`
-        );
-      }
+      // No duplicate pre-check: the reference is a non-unique label (D13-1a).
 
       await tx.application.update({
         where: { id: applicationId },
@@ -1097,14 +1089,8 @@ export async function updateApplicationReferenceAction(
 
     return { success: true };
   } catch (err) {
-    let message =
+    const message =
       err instanceof Error ? err.message : "Failed to update reference.";
-    // Unique constraint violation race on the case-insensitive functional
-    // index — mirrors createRoundAction's message-matching pattern
-    // (src/app/(admin)/rounds/actions.ts).
-    if (message.includes("Unique constraint")) {
-      message = "That reference is already in use by another application.";
-    }
     console.error("[updateApplicationReferenceAction]", err);
     return { success: false, error: message };
   }

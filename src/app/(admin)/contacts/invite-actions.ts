@@ -27,6 +27,11 @@ import { createSupabaseAdminClient } from "@/lib/auth/supabase-admin";
 import { createProfile } from "@/lib/auth/create-profile";
 import { createInvitation } from "@/lib/db/queries/invitations";
 import { getAppUrl } from "@/lib/app-url";
+import {
+  invitationDeadlineFields,
+  INVITATION_ROUND_DEADLINE_SELECT,
+} from "@/lib/email/invitation-deadline";
+import type { SubmissionDeadlineRound } from "@/lib/rounds/submission-deadline";
 import { sendEmail } from "@/lib/email/send";
 import { createAuditLog } from "@/lib/audit/log";
 import { AUDIT_ACTIONS, AUDIT_ENTITY_TYPES } from "@/lib/audit/actions";
@@ -65,6 +70,8 @@ export async function sendInvitationFromContactAction(
     profileId: string | null;
   };
   let academicYear = "";
+  // Round deadline columns for the invitation's {{deadline}} field (E1).
+  let deadlineRound: SubmissionDeadlineRound | null = null;
   try {
     const loaded = await withAdminContext(async (tx) => {
       const c = await tx.contact.findUnique({
@@ -89,7 +96,11 @@ export async function sendInvitationFromContactAction(
 
       const round = await tx.round.findUnique({
         where: { id: roundId },
-        select: { academicYear: true, status: true },
+        select: {
+          academicYear: true,
+          status: true,
+          ...INVITATION_ROUND_DEADLINE_SELECT,
+        },
       });
       if (!round) return { ok: false as const, error: "Round not found." };
       if (round.status !== RoundStatus.OPEN) {
@@ -99,12 +110,23 @@ export async function sendInvitationFromContactAction(
         };
       }
 
-      return { ok: true as const, contact: c, academicYear: round.academicYear };
+      return {
+        ok: true as const,
+        contact: c,
+        academicYear: round.academicYear,
+        deadlineRound: {
+          closeDate: round.closeDate,
+          defaultSubmissionDeadlineNew: round.defaultSubmissionDeadlineNew,
+          defaultSubmissionDeadlineRolling:
+            round.defaultSubmissionDeadlineRolling,
+        },
+      };
     });
 
     if (!loaded.ok) return { success: false, error: loaded.error };
     contact = loaded.contact;
     academicYear = loaded.academicYear;
+    deadlineRound = loaded.deadlineRound;
   } catch (err) {
     const message = err instanceof Error ? err.message : "Failed to load contact";
     console.error("[contacts] sendInvitationFromContactAction load error:", err);
@@ -245,7 +267,10 @@ export async function sendInvitationFromContactAction(
     school: schoolLabel(contact.school),
     round_year: academicYear,
     registration_link: `${appUrl}/register?token=${invitationToken}`,
-    deadline: expiresAt.toLocaleDateString("en-GB"),
+    // E1/CF-11: {{deadline}} is the round's SUBMISSION deadline for a new
+    // applicant, not the 30-day token expiry — that now has its own
+    // {{link_expiry}} field. Same fix as the four sites in invitations/actions.
+    ...invitationDeadlineFields(deadlineRound, "NEW", expiresAt),
   });
 
   if (!emailResult.success) {

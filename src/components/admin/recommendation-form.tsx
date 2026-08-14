@@ -98,7 +98,12 @@ export interface SerialisedRecommendation {
 
 /** Read-only sibling context surfaced at decision time. */
 export interface SiblingContextRow {
-  reference: string;
+  /**
+   * Bursary-account id — the React key only. Epic 13 (D13-1a) removed the
+   * account reference this row used to key on and display; the UUID is the
+   * account's only remaining identity, and it is never rendered.
+   */
+  bursaryAccountId: string;
   childName: string;
   school: string;
   priorityOrder: number;
@@ -342,20 +347,16 @@ export function SiblingContextPanel({ rows }: { rows: SiblingContextRow[] }) {
               <tr className="border-b border-slate-200 text-left text-xs uppercase tracking-wide text-slate-400">
                 <th className="py-2 pr-4 font-semibold">Priority</th>
                 <th className="py-2 pr-4 font-semibold">Child</th>
-                <th className="py-2 pr-4 font-semibold">Account</th>
                 <th className="py-2 pr-4 font-semibold">School</th>
                 <th className="py-2 text-right font-semibold">Absorbed fees</th>
               </tr>
             </thead>
             <tbody>
               {rows.map((r) => (
-                <tr key={r.reference} className="border-b border-slate-100">
+                <tr key={r.bursaryAccountId} className="border-b border-slate-100">
                   <td className="py-2 pr-4 text-slate-600">{r.priorityOrder}</td>
                   <td className="py-2 pr-4 font-medium text-slate-800">
                     {r.childName}
-                  </td>
-                  <td className="py-2 pr-4 font-mono text-xs text-slate-500">
-                    {r.reference}
                   </td>
                   <td className="py-2 pr-4 text-slate-600">
                     {r.school === "TRINITY" ? "Trinity" : "Whitgift"}

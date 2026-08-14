@@ -11,6 +11,9 @@ import {
   type ReviewPhase,
 } from "@/lib/applications/queue-filter";
 import { londonStartOfDayUtc, londonEndOfDayUtc } from "@/lib/datetime";
+// Value import (not type-only): the deadline-range filter branches on the
+// application type at runtime (E1/D13-8).
+import { ApplicationType } from "@prisma/client";
 import type {
   School,
   Application,
@@ -20,7 +23,6 @@ import type {
   ApplicationContributorRole,
   ApplicationContributorStatus,
   ApplicationFormStatus,
-  ApplicationType,
   AssessmentStatus,
   AssessmentOutcome,
   BursaryAccountStatus,
@@ -65,12 +67,20 @@ export interface ApplicationListItem {
   isReassessment: boolean;
   assignedToId: string | null;
   /**
-   * Carries `closeDate` + `defaultSubmissionDeadline` (Item 12) alongside the
+   * Carries `closeDate` + BOTH typed round defaults (E1/D13-8) alongside the
    * round identity fields so callers can compute the effective deadline via
    * `effectiveSubmissionDeadline()` (src/lib/rounds/submission-deadline.ts)
-   * without a second query.
+   * without a second query. Both are needed because the helper branches on the
+   * row's own `applicationType`.
    */
-  round: Pick<Round, "id" | "academicYear" | "closeDate" | "defaultSubmissionDeadline">;
+  round: Pick<
+    Round,
+    | "id"
+    | "academicYear"
+    | "closeDate"
+    | "defaultSubmissionDeadlineNew"
+    | "defaultSubmissionDeadlineRolling"
+  >;
   secondParent: SecondParentIndicator;
   /**
    * The rolling BursaryAccount this application is linked to, or null when none
@@ -171,10 +181,19 @@ export function submittedDateRangeWhere(
  * Builds the Prisma where-fragment for the submission-by (deadline) range
  * filter (Item 7.2), matching the SAME three-tier chain
  * `effectiveSubmissionDeadline()` computes (src/lib/rounds/submission-deadline.ts,
- * Item 12/D-1): `application.submissionDeadlineAt` (override) ?? round's
- * `defaultSubmissionDeadline` ?? round's `closeDate`. Only the first tier that
- * is SET applies for a given row — a round default, if present, is checked
- * INSTEAD OF closeDate, never in addition (matches the helper's precedence).
+ * Item 12/D-1): `application.submissionDeadlineAt` (override) ?? the round
+ * default FOR THAT ROW'S APPLICATION TYPE ?? round's `closeDate`. Only the
+ * first tier that is SET applies for a given row — a round default, if present,
+ * is checked INSTEAD OF closeDate, never in addition (matches the helper's
+ * precedence).
+ *
+ * Type-awareness (E1/D13-8): the middle tier reads
+ * `defaultSubmissionDeadlineNew` for `applicationType = NEW` rows and
+ * `defaultSubmissionDeadlineRolling` for `ROLLING_OVER` rows, so each row is
+ * filtered against the same date the queue's Deadline column displays. The
+ * close-date tier inherits the same branch — "this row has no round default"
+ * means "no default ON ITS OWN CLOCK", not "no default at all", or a NEW-only
+ * round would wrongly push its rolling-over rows onto closeDate twice.
  *
  * `from`/`to` are plain `YYYY-MM-DD` calendar-date strings. The three tiers
  * need two different conversions of the same bound:
@@ -224,29 +243,49 @@ export function effectiveDeadlineRangeWhere(
     },
   };
 
-  // Only reached when there's no override (D-1 precedence: override wins).
-  const roundDefaultInRange: Prisma.ApplicationWhereInput = {
-    submissionDeadlineAt: null,
-    round: {
-      defaultSubmissionDeadline: {
-        ...(dateFrom ? { gte: dateFrom } : {}),
-        ...(dateTo ? { lte: dateTo } : {}),
-      },
-    },
+  const dateInRange = {
+    ...(dateFrom ? { gte: dateFrom } : {}),
+    ...(dateTo ? { lte: dateTo } : {}),
   };
 
-  // Only reached when there's no override AND no round default — a round
-  // with a default set never falls through to closeDate, even if the
-  // default itself is out of range (matches the helper's strict precedence).
+  // Only reached when there's no override (D-1 precedence: override wins). The
+  // column consulted depends on the row's application type (E1/D13-8).
+  const roundDefaultInRange: Prisma.ApplicationWhereInput = {
+    submissionDeadlineAt: null,
+    OR: [
+      {
+        applicationType: ApplicationType.NEW,
+        round: { defaultSubmissionDeadlineNew: dateInRange },
+      },
+      {
+        applicationType: ApplicationType.ROLLING_OVER,
+        round: { defaultSubmissionDeadlineRolling: dateInRange },
+      },
+    ],
+  };
+
+  // Only reached when there's no override AND no round default ON THIS ROW'S
+  // CLOCK — a round with a default set for this application type never falls
+  // through to closeDate, even if the default itself is out of range (matches
+  // the helper's strict precedence).
   const closeDateInRange: Prisma.ApplicationWhereInput = {
     submissionDeadlineAt: null,
-    round: {
-      defaultSubmissionDeadline: null,
-      closeDate: {
-        ...(dateFrom ? { gte: dateFrom } : {}),
-        ...(dateTo ? { lte: dateTo } : {}),
+    OR: [
+      {
+        applicationType: ApplicationType.NEW,
+        round: {
+          defaultSubmissionDeadlineNew: null,
+          closeDate: dateInRange,
+        },
       },
-    },
+      {
+        applicationType: ApplicationType.ROLLING_OVER,
+        round: {
+          defaultSubmissionDeadlineRolling: null,
+          closeDate: dateInRange,
+        },
+      },
+    ],
   };
 
   return { OR: [overrideInRange, roundDefaultInRange, closeDateInRange] };
@@ -348,7 +387,8 @@ export async function listApplications(
           id: true,
           academicYear: true,
           closeDate: true,
-          defaultSubmissionDeadline: true,
+          defaultSubmissionDeadlineNew: true,
+          defaultSubmissionDeadlineRolling: true,
         },
       },
       bursaryAccount: {
@@ -544,6 +584,47 @@ export async function getApplicationNamesForReveal(
   });
 
   return application;
+}
+
+/**
+ * Fetches JUST the child's name for the application-detail header, writing a
+ * NAME_REVEAL audit entry — the same GDPR trail the queue and the Applicant
+ * Data tab keep.
+ *
+ * Why this exists (Epic 13, D13-1a): `Application.reference` is now a free-text
+ * label that is routinely re-edited to the external fees-system code, at which
+ * point it identifies nothing to a human. The child's name therefore renders
+ * beside the reference on every admin surface — including the assessment
+ * workspace, which previously excluded it. That exclusion is deliberately
+ * retired for the child's name only: the default reference format embeds the
+ * child's name anyway, so withholding it from the header alongside it would be
+ * theatre. Lead-applicant names remain behind `getApplicationNamesForReveal`.
+ *
+ * Returns null when the application does not exist; writes no audit entry in
+ * that case.
+ */
+export async function getApplicationChildNameForHeader(
+  tx: Tx,
+  applicationId: string,
+  userId: string
+): Promise<string | null> {
+  const application = await tx.application.findUnique({
+    where: { id: applicationId },
+    select: { childName: true },
+  });
+
+  if (!application) return null;
+
+  await createAuditLog(tx, {
+    userId,
+    action: AUDIT_ACTIONS.NAME_REVEAL,
+    entityType: AUDIT_ENTITY_TYPES.Application,
+    entityId: applicationId,
+    context: "Application header — child name shown beside the reference",
+    metadata: { applicationId },
+  });
+
+  return application.childName;
 }
 
 // ─── Round list (for filter dropdown) ────────────────────────────────────────

@@ -31,6 +31,12 @@ export interface LoadedSubmission {
   submittedAt: Date | null;
   termsAcceptedAt: Date | null;
   termsVersion: string | null;
+  /**
+   * Consumed-flag for the ONE-TIME submission PDF (Epic 13, D13-4). NULL ⇒ the
+   * single download is still available. Read by the PDF route (fast-path 410)
+   * and by /submitted, which shows the one-shot offer only while it is NULL.
+   */
+  submissionPdfDownloadedAt: Date | null;
   summary: SubmittedSummary;
 }
 
@@ -78,6 +84,7 @@ export async function loadSubmittedApplication(
           submittedAt: true,
           termsAcceptedAt: true,
           termsVersion: true,
+          submissionPdfDownloadedAt: true,
           entryYear: true,
           entryYearGroup: true,
           round: { select: { academicYear: true } },
@@ -115,6 +122,7 @@ export async function loadSubmittedApplication(
           submittedAt: true,
           termsAcceptedAt: true,
           termsVersion: true,
+          submissionPdfDownloadedAt: true,
           entryYear: true,
           entryYearGroup: true,
           round: { select: { academicYear: true } },
@@ -146,6 +154,7 @@ type RawApplication = {
   submittedAt: Date | null;
   termsAcceptedAt: Date | null;
   termsVersion: string | null;
+  submissionPdfDownloadedAt: Date | null;
   entryYear: number | null;
   entryYearGroup: string | null;
   round: { academicYear: string };
@@ -164,6 +173,7 @@ function shape(app: RawApplication): LoadedSubmission {
     submittedAt: app.submittedAt,
     termsAcceptedAt: app.termsAcceptedAt,
     termsVersion: app.termsVersion,
+    submissionPdfDownloadedAt: app.submissionPdfDownloadedAt,
     summary: buildSubmittedSummary({
       sections: app.sections,
       documents: app.documents,

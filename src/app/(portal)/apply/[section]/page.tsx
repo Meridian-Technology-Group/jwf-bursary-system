@@ -106,13 +106,22 @@ export default async function SectionPage({ params }: PageProps) {
     (tx) =>
       tx.round.findUnique({
         where: { id: application.roundId },
-        select: { closeDate: true, defaultSubmissionDeadline: true },
+        select: {
+          closeDate: true,
+          // Both typed defaults (E1/D13-8) — a rolling-over draft is judged
+          // against the round's rolling date, not the NEW one.
+          defaultSubmissionDeadlineNew: true,
+          defaultSubmissionDeadlineRolling: true,
+        },
       })
   );
   if (
     deadlineRound &&
     isSubmissionDeadlinePassed(
-      { submissionDeadlineAt: application.submissionDeadlineAt },
+      {
+        submissionDeadlineAt: application.submissionDeadlineAt,
+        applicationType: application.applicationType,
+      },
       deadlineRound
     )
   ) {

@@ -7,8 +7,10 @@
  * point in its lifecycle (no state-gating). The value is preserved verbatim —
  * whitespace and special characters are significant, so the input is NOT
  * trimmed or normalised client-side beyond the emptiness check the server
- * already enforces. Inline errors surface the server's blank/duplicate
- * validation (updateApplicationReferenceAction, applications/[id]/actions.ts).
+ * already enforces. Inline errors surface the server's blank-value validation
+ * (updateApplicationReferenceAction, applications/[id]/actions.ts). Since
+ * D13-1a the reference is NOT unique — duplicates are accepted, because the
+ * value is edited to match the external fees system.
  */
 
 import * as React from "react";
@@ -93,8 +95,9 @@ export function EditReferenceDialog({
           <DialogTitle>Edit bursary reference</DialogTitle>
           <DialogDescription>
             The reference can be changed at any point in the application&apos;s
-            lifecycle. It must be unique (case-insensitive) across all
-            applications.
+            lifecycle, including after an award — set it to the fees-system code
+            so the two systems reconcile. Any value is accepted and it does not
+            have to be unique.
           </DialogDescription>
         </DialogHeader>
 

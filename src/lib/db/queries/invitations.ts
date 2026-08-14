@@ -43,7 +43,6 @@ export interface InvitationWithCreator extends Invitation {
 
 export interface ActiveBursaryHolder {
   id: string;
-  reference: string;
   school: School;
   childName: string;
   leadApplicant: {
@@ -344,12 +343,12 @@ export async function getActiveBursaryHolders(
         },
       },
     },
-    orderBy: { reference: "asc" },
+    // D13-1a: the account reference this used to order by is gone.
+    orderBy: { childName: "asc" },
   });
 
   return accounts.map((account) => ({
     id: account.id,
-    reference: account.reference,
     school: account.school,
     childName: account.childName,
     leadApplicant: account.leadApplicant,

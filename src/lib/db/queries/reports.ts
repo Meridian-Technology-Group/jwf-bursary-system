@@ -74,7 +74,6 @@ export interface ReasonCodeFrequencyRow {
 
 export interface FinalYearBursaryRow {
   id: string;
-  reference: string;
   childName: string;
   school: School;
   entryYear: number;
@@ -90,7 +89,6 @@ export interface FinalYearBursaryRow {
 
 export interface SiblingSummaryChild {
   bursaryAccountId: string;
-  reference: string;
   childName: string;
   school: School;
   priorityOrder: number;
@@ -619,7 +617,6 @@ export async function getFinalYearBursaries(
     where: { status: BursaryAccountStatus.ACTIVE },
     select: {
       id: true,
-      reference: true,
       childName: true,
       school: true,
       entryYear: true,
@@ -631,7 +628,9 @@ export async function getFinalYearBursaries(
         take: 1,
       },
     },
-    orderBy: { reference: "asc" },
+    // D13-1a: the account reference this used to order by is gone; the child's
+    // name is the label the report now shows, so it is what it sorts on.
+    orderBy: { childName: "asc" },
   });
 
   // Sibling counts: how many distinct accounts share each family group.
@@ -687,7 +686,6 @@ export async function getFinalYearBursaries(
 
     rows.push({
       id: account.id,
-      reference: account.reference,
       childName: account.childName,
       school: account.school,
       entryYear: account.entryYear,
@@ -701,11 +699,11 @@ export async function getFinalYearBursaries(
     });
   }
 
-  // Final year (Y13) first, then by reference.
+  // Final year (Y13) first, then by child name (D13-1a — no reference left).
   return rows.sort(
     (a, b) =>
       a.yearsRemaining - b.yearsRemaining ||
-      a.reference.localeCompare(b.reference)
+      a.childName.localeCompare(b.childName)
   );
 }
 
@@ -730,7 +728,6 @@ export async function getSiblingBursarySummary(
       bursaryAccount: {
         select: {
           id: true,
-          reference: true,
           childName: true,
           school: true,
           recommendations: {
@@ -752,7 +749,6 @@ export async function getSiblingBursarySummary(
 
     const child: SiblingSummaryChild = {
       bursaryAccountId: account.id,
-      reference: account.reference,
       childName: account.childName,
       school: account.school,
       priorityOrder: link.priorityOrder,

@@ -69,6 +69,9 @@ const COMMON_MERGE_FIELDS = [
   "{{academic_year}}",
   "{{deadline}}",
   "{{registration_link}}",
+  // Invite-only (E1): when the single-use registration link expires. Distinct
+  // from {{deadline}}, which is the application's submission deadline.
+  "{{link_expiry}}",
 ];
 
 // ─── Props ────────────────────────────────────────────────────────────────────
