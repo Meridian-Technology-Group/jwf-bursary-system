@@ -234,6 +234,44 @@ export function isTwoParentHousehold(input: {
   );
 }
 
+/**
+ * CF-13 — should the remarried / new-partnership question be asked?
+ *
+ * The client's matrix (rows = relationship status, columns = sole parent):
+ *
+ * | Relationship status                  | Sole = YES | Sole = NO |
+ * |--------------------------------------|------------|-----------|
+ * | Single, Widowed, Separated, Divorced | ask        | ask       |
+ * | Married, Civil Partnership, Cohabiting | ask      | do NOT ask |
+ *
+ * A coupled status with sole-parent = NO describes a household that already has
+ * a resident partner on the form, so "have you remarried?" is redundant there.
+ * Every other combination can hide a new partner the form has not otherwise
+ * captured, so the question is asked.
+ *
+ * Returns false while no valid relationship status has been chosen — the
+ * question belongs to the status-dependent block and must not flash before it.
+ *
+ * This is the ONLY definition of the matrix; the portal form and the rules-engine
+ * input mapper both call it, so a hidden question can never be answered and can
+ * never feed the engine a stale answer.
+ */
+export function shouldAskRemarriedQuestion(input: {
+  isSoleParent?: boolean | null;
+  relationshipStatus?: string | null;
+}): boolean {
+  const status = input.relationshipStatus ?? "";
+  const isKnownStatus = (
+    relationshipStatusSchema.options as readonly string[]
+  ).includes(status);
+  if (!isKnownStatus) return false;
+
+  const isCoupled = (COUPLED_RELATIONSHIP_STATUSES as readonly string[]).includes(
+    status
+  );
+  return isCoupled ? input.isSoleParent === true : true;
+}
+
 const parentDetailsObject = z
   .object({
     isSoleParent: z.boolean(),

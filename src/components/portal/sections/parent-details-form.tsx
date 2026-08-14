@@ -36,6 +36,7 @@ import { CountryCombobox } from "@/components/portal/form-fields/country-combobo
 import { FileUpload, type UploadedDocument } from "@/components/portal/file-upload";
 import {
   isTwoParentHousehold,
+  shouldAskRemarriedQuestion,
   type ParentDetailsFormValues,
 } from "@/lib/schemas/parent-details";
 import type { DocumentMeta } from "@/lib/db/queries/applications";
@@ -773,7 +774,7 @@ export function ParentDetailsForm({
   documentMap,
   secondaryMode = false,
 }: ParentDetailsFormProps) {
-  const { control } = useFormContext<ParentDetailsFormValues>();
+  const { control, setValue } = useFormContext<ParentDetailsFormValues>();
 
   const isSoleParent = useWatch({ control, name: "isSoleParent" });
   const relationshipStatus = useWatch({ control, name: "relationshipStatus" });
@@ -790,6 +791,26 @@ export function ParentDetailsForm({
     control,
     name: "financesNotDisentangled",
   });
+
+  // CF-13 — the remarried/new-partnership question follows the client's matrix.
+  // Never asked of the second parent (they answer only their own subset).
+  const askRemarried =
+    !secondaryMode &&
+    shouldAskRemarriedQuestion({ isSoleParent, relationshipStatus });
+
+  // A previously-given answer must not keep steering the household rules once
+  // the question stops being asked (e.g. the applicant answers YES, then
+  // switches to Married + not-a-sole-parent). Drop it from the form state so the
+  // next save persists the absence; `householdInputFromSources` applies the same
+  // matrix to data already sitting in the database.
+  React.useEffect(() => {
+    if (!askRemarried && isRemarriedSoleParent !== undefined) {
+      setValue("isRemarriedSoleParent", undefined, {
+        shouldDirty: false,
+        shouldValidate: false,
+      });
+    }
+  }, [askRemarried, isRemarriedSoleParent, setValue]);
 
   // Epic 09: derive the live household scenario from the watched values so the
   // form reveals exactly the right question subset (D15/D16/D17) and the H7
@@ -808,7 +829,7 @@ export function ParentDetailsForm({
         isGuardian: false,
         custodyArrangement: custodyArrangement ?? "SOLE",
         hasSchoolFeesCourtOrder: hasSchoolFeesCourtOrder === true,
-        isRemarriedSoleParent: isRemarriedSoleParent === true,
+        isRemarriedSoleParent: askRemarried && isRemarriedSoleParent === true,
         financesNotDisentangled: financesNotDisentangled === true,
       }),
     [
@@ -816,6 +837,7 @@ export function ParentDetailsForm({
       isSoleParent,
       custodyArrangement,
       hasSchoolFeesCourtOrder,
+      askRemarried,
       isRemarriedSoleParent,
       financesNotDisentangled,
     ]
@@ -838,6 +860,7 @@ export function ParentDetailsForm({
   const hasHouseholdContent =
     isSeparatedOrDivorced ||
     relationshipStatus === "WIDOWED" ||
+    askRemarried ||
     isSoleParent === false ||
     handling.gate === "CANNOT_SUPPORT" ||
     handling.requiredEvidence.length > 0;
@@ -947,14 +970,15 @@ export function ParentDetailsForm({
             </div>
           )}
 
-          {/* D17 — remarried sole parent (three incomes via two-earner +
-              maintenance). Offered when the parent is in a couple (not sole). */}
-          {isSoleParent === false && (
+          {/* D17 / CF-13 — remarried or new partnership. Asked per the client's
+              matrix (see shouldAskRemarriedQuestion): always for single /
+              widowed / separated / divorced, and for a coupled status only when
+              the applicant says they are a sole parent. */}
+          {askRemarried && (
             <YesNoToggle
               control={control}
               name="isRemarriedSoleParent"
               label="Have you remarried or formed a new partnership since the child's other natural parent?"
-              description="If so, we assess your current household together and capture the absent natural parent's contribution as maintenance."
             />
           )}
 
