@@ -8,6 +8,8 @@
  * - Save assessment data (partial update)
  * - Complete an assessment
  * - Pause an assessment
+ * - Reopen a completed assessment (Epic 13 / C1 — the one way back out of
+ *   COMPLETED, gated on no outcome having been set)
  *
  * All actions create audit log entries and revalidate the assessment path.
  */
@@ -23,6 +25,7 @@ import {
 import {
   mirrorApplicationToSchedule,
   closeAccountIfComplete,
+  reopenAccountForAssessmentYear,
 } from "@/lib/bursary-accounts/lifecycle";
 import {
   createAssessment,
@@ -33,13 +36,21 @@ import {
 import type { AssessmentSaveInput } from "@/lib/db/queries/assessments";
 import {
   startAssessmentIfNotStarted,
+  reopenAssessmentRow,
   deriveReviewPhase,
   AssessmentSnapshotMissingError,
 } from "@/lib/applications/status";
 import { getSecondaryContributor } from "@/lib/db/queries/contributors";
 import { createAuditLog } from "@/lib/audit/log";
 import { AUDIT_ACTIONS, AUDIT_ENTITY_TYPES } from "@/lib/audit/actions";
-import { NOT_SUBMITTED_GATE_MESSAGE } from "./gate";
+import {
+  NOT_SUBMITTED_GATE_MESSAGE,
+  ASSESSMENT_COMPLETED_LOCK_MESSAGE,
+  REOPEN_NOT_COMPLETED_MESSAGE,
+  REOPEN_OUTCOME_SET_MESSAGE,
+  REOPEN_APPLICATION_CLOSED_MESSAGE,
+  REOPEN_NOT_ASSIGNED_MESSAGE,
+} from "./gate";
 
 // ─── Completeness gate ─────────────────────────────────────────────────────────
 
@@ -279,6 +290,21 @@ export async function proceedWithoutSecondParentAction(
 
 // ─── Save Assessment ──────────────────────────────────────────────────────────
 
+/**
+ * Saves assessment field data.
+ *
+ * SERVER-SIDE COMPLETED LOCK (Epic 13 / C1). A completed assessment is
+ * read-only, and until C1 that was enforced ONLY in the browser
+ * (`assessment-form-v2.tsx`'s `isReadOnly`). Any caller that skipped the
+ * component — a stale tab whose form mounted before the assessment was
+ * completed, a replayed request, a direct server-action invocation — could
+ * still overwrite a completed assessment's snapshot, silently changing the
+ * numbers a recommendation had already been built on. The guard below makes the
+ * lock real; the client-side read-only mode stays as the courtesy that keeps
+ * assessors from typing into a form that will refuse them.
+ *
+ * The way back is REOPEN (`reopenAssessmentAction`), not a bypass.
+ */
 export async function saveAssessmentAction(
   assessmentId: string,
   applicationId: string,
@@ -288,24 +314,53 @@ export async function saveAssessmentAction(
     const user = await requireRole([Role.ADMIN, Role.ASSESSOR]);
     await requireApplicationAccess(user, applicationId);
 
-    await withUserContext(user.id, user.role as RlsRole, async (tx) => {
-      // Persist the field data WITHOUT forcing a status (the previous
-      // `status: data.status ?? "NOT_STARTED"` re-pinned every save to
-      // NOT_STARTED, so an assessment never progressed). Status is owned by the
-      // service: the first save promotes NOT_STARTED → IN_PROGRESS.
-      await saveAssessment(tx, assessmentId, data);
-      const started = await startAssessmentIfNotStarted(tx, assessmentId);
-      await createAuditLog(tx, {
-        userId: user.id,
-        action: AUDIT_ACTIONS.ASSESSMENT_SAVE,
-        entityType: AUDIT_ENTITY_TYPES.Assessment,
-        entityId: assessmentId,
-        context: started
-          ? "Assessment data saved — review started (IN_PROGRESS)"
-          : "Assessment data saved",
-        metadata: { assessmentId, applicationId, fieldsUpdated: Object.keys(data) },
-      });
-    });
+    const result = await withUserContext(
+      user.id,
+      user.role as RlsRole,
+      async (tx) => {
+        const current = await tx.assessment.findUnique({
+          where: { id: assessmentId },
+          select: { status: true },
+        });
+        if (!current) {
+          return { ok: false as const, error: "Assessment not found." };
+        }
+        // The lock. Note this is status-only: an assessment carrying an outcome
+        // is necessarily COMPLETED, so that case is covered too.
+        if (current.status === "COMPLETED") {
+          return {
+            ok: false as const,
+            error: ASSESSMENT_COMPLETED_LOCK_MESSAGE,
+          };
+        }
+
+        // Persist the field data WITHOUT forcing a status (the previous
+        // `status: data.status ?? "NOT_STARTED"` re-pinned every save to
+        // NOT_STARTED, so an assessment never progressed). Status is owned by the
+        // service: the first save promotes NOT_STARTED → IN_PROGRESS.
+        await saveAssessment(tx, assessmentId, data);
+        const started = await startAssessmentIfNotStarted(tx, assessmentId);
+        await createAuditLog(tx, {
+          userId: user.id,
+          action: AUDIT_ACTIONS.ASSESSMENT_SAVE,
+          entityType: AUDIT_ENTITY_TYPES.Assessment,
+          entityId: assessmentId,
+          context: started
+            ? "Assessment data saved — review started (IN_PROGRESS)"
+            : "Assessment data saved",
+          metadata: {
+            assessmentId,
+            applicationId,
+            fieldsUpdated: Object.keys(data),
+          },
+        });
+        return { ok: true as const };
+      }
+    );
+
+    if (!result.ok) {
+      return { success: false, error: result.error };
+    }
 
     revalidatePath(`/applications/${applicationId}/assessment`);
 
@@ -384,6 +439,192 @@ export async function completeAssessmentAction(
       return { success: false, error: err.message };
     }
     return { success: false, error: "Failed to complete assessment." };
+  }
+}
+
+// ─── Reopen Assessment ─────────────────────────────────────────────────────────
+
+/**
+ * Reopens a COMPLETED assessment for correction: COMPLETED → IN_PROGRESS
+ * (Epic 13 / C1, decision D13-2 — CF-10/CF-01).
+ *
+ * WHY THIS EXISTS. "Mark complete" used to be a one-way door: the assessment
+ * form locks, and an assessor who completes a still-wrong assessment has no way
+ * back. UAT hit exactly that. D13-2 opens the door — but only until a decision
+ * has been made.
+ *
+ * THE GATE. Reopening is allowed only while NO outcome is set (and the
+ * application is not closed). Once an outcome exists, the applicant has been
+ * emailed, a bursary account may have been promoted, and the assessment is the
+ * evidence behind a communicated decision — changing it then is an
+ * outcome-reversal problem, not an editing problem, and this action refuses.
+ * (`canSetOutcome` guards the other direction: a reopened assessment is
+ * IN_PROGRESS, so no outcome can be set until it is completed again.)
+ *
+ * WHAT IT DOES, all in one user-context transaction:
+ *   1. Authorises: ADMIN, or the assessor ASSIGNED to the application. Assigned
+ *      is defined exactly as `requireApplicationAccess` defines it
+ *      (`application.assignedToId`) so there is one definition of "this
+ *      assessor's application", not two that can drift.
+ *   2. Reverts the status via the central status service (data is preserved —
+ *      reopen is not discard) and clears `completedAt`.
+ *   3. Marks the existing recommendation STALE by clearing its confirmed
+ *      payable fees + gap. There is no `stale` column and C1 ships no
+ *      migration, so the absence of a confirmed figure IS the stale signal —
+ *      and it is the right one: `confirmedPayableFees` is the assessor's
+ *      sign-off on a number derived from the assessment that has just been
+ *      reopened. `setApplicationOutcome` refuses to decide on a v2
+ *      recommendation lacking it, so the figure must be re-confirmed against
+ *      the corrected assessment before any outcome can be set.
+ *
+ * Then, outside that transaction (ADMIN-write tables, mirroring
+ * `completeAssessmentAction`'s own schedule hand-off): reverts the
+ * close-on-complete effects — the year's schedule entry goes back to RECEIVED
+ * and an account auto-closed by that completion is returned to ACTIVE. That
+ * un-close is a DELIBERATE, documented exception to the set-once `closedAt`
+ * rule; see `reopenAccountForAssessmentYear` and the schema note on
+ * `BursaryAccount.closedAt` for why it is safe here and nowhere else.
+ * Non-blocking, exactly like the completion path it mirrors.
+ */
+export async function reopenAssessmentAction(
+  assessmentId: string,
+  applicationId: string,
+  reason?: string
+): Promise<{ success: true } | { success: false; error: string }> {
+  try {
+    const user = await requireRole([Role.ADMIN, Role.ASSESSOR]);
+    // Redirects a non-assigned assessor before we get here; the explicit
+    // ownership check below is defence in depth for any caller that reaches the
+    // action directly, and gives a clean refusal instead of a redirect.
+    await requireApplicationAccess(user, applicationId);
+
+    const trimmedReason = reason?.trim() || null;
+
+    const result = await withUserContext(
+      user.id,
+      user.role as RlsRole,
+      async (tx) => {
+        const assessment = await tx.assessment.findUnique({
+          where: { id: assessmentId },
+          select: {
+            id: true,
+            applicationId: true,
+            status: true,
+            outcome: true,
+            application: {
+              select: {
+                assignedToId: true,
+                closedAt: true,
+                bursaryAccountId: true,
+                round: { select: { academicYear: true } },
+              },
+            },
+          },
+        });
+
+        if (!assessment || assessment.applicationId !== applicationId) {
+          return { ok: false as const, error: "Assessment not found." };
+        }
+
+        // 1. Authorisation — ADMIN, or the assigned assessor.
+        if (
+          user.role !== Role.ADMIN &&
+          assessment.application.assignedToId !== user.id
+        ) {
+          return { ok: false as const, error: REOPEN_NOT_ASSIGNED_MESSAGE };
+        }
+
+        // 2. The gate — never reopen past a decision.
+        if (assessment.outcome != null) {
+          return { ok: false as const, error: REOPEN_OUTCOME_SET_MESSAGE };
+        }
+        if (assessment.application.closedAt != null) {
+          return {
+            ok: false as const,
+            error: REOPEN_APPLICATION_CLOSED_MESSAGE,
+          };
+        }
+        if (assessment.status !== "COMPLETED") {
+          return { ok: false as const, error: REOPEN_NOT_COMPLETED_MESSAGE };
+        }
+
+        // 3. COMPLETED → IN_PROGRESS via the central status service.
+        await reopenAssessmentRow(tx, assessmentId, assessment.status);
+
+        // 4. Stale-mark the recommendation: the confirmed figure signed off a
+        //    calculation that is now open for correction, so it must be
+        //    re-confirmed. `updateMany` (not `update`) so an assessment with no
+        //    recommendation yet is a clean no-op.
+        const cleared = await tx.recommendation.updateMany({
+          where: { assessmentId },
+          data: { confirmedPayableFees: null, gapAmount: null },
+        });
+
+        return {
+          ok: true as const,
+          recommendationCleared: cleared.count > 0,
+          bursaryAccountId: assessment.application.bursaryAccountId,
+          academicYear: assessment.application.round.academicYear,
+        };
+      }
+    );
+
+    if (!result.ok) {
+      return { success: false, error: result.error };
+    }
+
+    // ── Revert the close-on-complete effects (Epic 10 tables, ADMIN-write) ────
+    // Mirrors completeAssessmentAction's schedule hand-off in reverse. Runs
+    // under withAdminContext because the actor may be an ASSESSOR, and is
+    // non-blocking: the reopen itself has already been persisted, and an
+    // application with no account has nothing to revert.
+    let accountReopened = false;
+    let scheduleEntryReopened = false;
+    if (result.bursaryAccountId) {
+      try {
+        const reverted = await withAdminContext((tx) =>
+          reopenAccountForAssessmentYear(tx, {
+            bursaryAccountId: result.bursaryAccountId as string,
+            academicYear: result.academicYear,
+          })
+        );
+        accountReopened = reverted.accountReopened;
+        scheduleEntryReopened = reverted.scheduleEntryReopened;
+      } catch (err) {
+        console.error(
+          "[reopenAssessmentAction] schedule/account reopen failed",
+          err
+        );
+      }
+    }
+
+    await withUserContext(user.id, user.role as RlsRole, (tx) =>
+      createAuditLog(tx, {
+        userId: user.id,
+        action: AUDIT_ACTIONS.ASSESSMENT_REOPENED,
+        entityType: AUDIT_ENTITY_TYPES.Assessment,
+        entityId: assessmentId,
+        context: trimmedReason
+          ? `Assessment reopened for correction: ${trimmedReason}`
+          : "Assessment reopened for correction (COMPLETED → IN_PROGRESS)",
+        metadata: {
+          applicationId,
+          assessmentId,
+          reason: trimmedReason,
+          recommendationCleared: result.recommendationCleared,
+          accountReopened,
+          scheduleEntryReopened,
+        },
+      })
+    );
+
+    revalidatePath(`/applications/${applicationId}/assessment`);
+    revalidatePath(`/applications/${applicationId}`);
+
+    return { success: true };
+  } catch (err) {
+    console.error("[reopenAssessmentAction]", err);
+    return { success: false, error: "Failed to reopen assessment." };
   }
 }
 

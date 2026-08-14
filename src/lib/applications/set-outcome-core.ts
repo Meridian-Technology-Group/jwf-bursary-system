@@ -39,6 +39,7 @@ import {
   promoteToActiveAccount,
   type AwardFigures,
 } from "@/lib/applications/account-promotion";
+import { selectEngineVersion } from "@/lib/assessment/engine-version";
 import { EmailTemplateType } from "@prisma/client";
 
 import { AUDIT_ACTIONS, AUDIT_ENTITY_TYPES } from "@/lib/audit/actions";
@@ -60,6 +61,45 @@ export type AwardDecision = LifecycleOutcome; // AWARDED | QUALIFIES_NOT_AWARDED
  */
 function isValidOutcomeSource(assessmentStatus: string | null): boolean {
   return assessmentStatus === "COMPLETED";
+}
+
+/** User-facing refusal when a recommendation's payable fees are unconfirmed. */
+export const RECOMMENDATION_NOT_RECONFIRMED_MESSAGE =
+  "The payable fees on this recommendation have not been confirmed — " +
+  "reopening an assessment clears the previous confirmation. Confirm them on " +
+  "the recommendation screen before setting an outcome.";
+
+/**
+ * Re-confirmation gate (Epic 13 / C1, D13-2).
+ *
+ * Reopening a COMPLETED assessment clears the recommendation's
+ * `confirmedPayableFees` — the assessor's sign-off on a figure derived from an
+ * assessment that has since been reopened and possibly corrected. Deciding on
+ * it afterwards would promote a bursary account off a number nobody has looked
+ * at since the correction (`promoteToActiveAccount` walks confirmed →
+ * recommended → legacy for the benchmark). So: a v2 recommendation that exists
+ * but carries no confirmed figure is stale, and cannot decide anything.
+ *
+ * Scoped so no pre-existing flow changes:
+ *   - v1 assessments never populate `confirmedPayableFees` (a CALC-08/v2
+ *     field), so they are exempt outright.
+ *   - An assessment with NO recommendation row is exempt — nothing was ever
+ *     recorded, so there is nothing stale, and the pre-recommendation outcome
+ *     paths keep working unchanged.
+ *
+ * Reopen is the main way to reach the blocked state, but deliberately not the
+ * only one: a v2 recommendation whose payable fees were NEVER confirmed is the
+ * same defect wearing different clothes, and it should not decide an award
+ * either. Both clear the same way — confirm the figure and save.
+ */
+function needsRecommendationReconfirmation(assessment: {
+  calculationVersion: number | null;
+  recommendation: { confirmedPayableFees: unknown } | null;
+} | null): boolean {
+  if (!assessment) return false;
+  if (selectEngineVersion(assessment.calculationVersion) !== "v2") return false;
+  if (!assessment.recommendation) return false;
+  return assessment.recommendation.confirmedPayableFees == null;
 }
 
 async function fetchApplicationForOutcome(tx: Tx, applicationId: string) {
@@ -89,6 +129,8 @@ async function fetchApplicationForOutcome(tx: Tx, applicationId: string) {
           id: true,
           status: true,
           outcome: true,
+          // Epic 13 / C1: engine version scopes the re-confirmation gate to v2.
+          calculationVersion: true,
           // CALC-08: the account benchmark walks recommendation confirmed →
           // v2 recommended snapshot → legacy yearly (see account-promotion.ts).
           yearlyPayableFees: true,
@@ -167,6 +209,15 @@ export async function setApplicationOutcome(
           return {
             success: false as const,
             error: `Cannot set outcome ${outcome}: the assessment is not completed.`,
+          };
+        }
+
+        // Epic 13 / C1 — a reopened assessment's recommendation must be
+        // re-confirmed before it can decide anything.
+        if (needsRecommendationReconfirmation(application.assessment)) {
+          return {
+            success: false as const,
+            error: RECOMMENDATION_NOT_RECONFIRMED_MESSAGE,
           };
         }
 
