@@ -864,6 +864,22 @@ declaration *is* submitting. Decouple:
 **Done when:** saving the declaration does not submit; submitting requires the
 explicit button; the review round-trip loses nothing.
 
+> **Design calls made during D4 (2026-08-14), both worth knowing:**
+>
+> 1. **The confirmation fires after validation passes, not on the button click.**
+>    The intent is *armed* by a click but *consumed* by a successful validation
+>    pass. A click-time gate would let an intent that survived a failed
+>    validation submit silently later (e.g. Enter in a text field). It also
+>    avoids asking "are you sure?" and *then* reporting validation errors —
+>    which is the very stress CF-32 complains about.
+> 2. **"Review" saves before navigating**, so the round-trip loses nothing — but
+>    that means it validates and can surface errors. **Back** stays the
+>    zero-friction escape (`router.back()`, no save, no validation).
+>
+> Label standardised on **"Submit Application"**; the footer's conflicting
+> "Review and Submit" is gone. **Not manually tested** — worth a UAT pass on the
+> three-button footer at mobile widths, where the row wraps.
+
 ### Decisions taken during the sprint
 
 **D13-1c (Brian, 2026-08-14) — accept F5's DECLARATION behaviour change.**
@@ -1053,7 +1069,10 @@ Update the status column as PRs merge. `—` = not started.
 | C4b | in progress | | migration (column drops) |
 | D1 | — | | migration |
 | D2 | — | | migration |
-| D3 | — | | |
-| D4 | — | | |
+| D3 | ✅ merged-ready | [#284](https://github.com/Meridian-Technology-Group/jwf-bursary-system/pull/284) | CI green. Follow-up commit fixed **6 of 11** stale-branch rules → F7/F8 |
+| D4 | ✅ merged-ready | [#285](https://github.com/Meridian-Technology-Group/jwf-bursary-system/pull/285) | Standardised on "Submit Application". Confirmation fires **after** validation, not on click |
+| D2 | in progress | | migration |
+| F2 | in progress | | |
+| F4 | in progress | | |
 | E1 | — | | migration |
 | E1b | — | | legacy column drop, after E1 verified |
