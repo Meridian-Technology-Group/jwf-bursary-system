@@ -59,6 +59,7 @@ import {
 } from "@/hooks/use-assessment-calculation-v2";
 import { EarnerFormV2, CurrencyInput } from "@/components/admin/earner-form-v2";
 import { AssessmentCalcStripV2 } from "@/components/admin/assessment-calc-strip-v2";
+import { SeeComputationToggle } from "@/components/admin/see-computation-toggle";
 import {
   saveAssessmentAction,
   completeAssessmentAction,
@@ -694,7 +695,9 @@ export function AssessmentFormV2({
   // ── Render ──────────────────────────────────────────────────────────────────
   return (
     <div className="space-y-4">
-      <AssessmentCalcStripV2 output={output} savingsCushion={savingsCushion} />
+      {/* Epic 14 C2 (CG-21): the actions banner leads, level with the tab
+          titles; the live computation sits BEHIND the SEE COMPUTATION
+          disclosure below it (collapsed by default, preference persisted). */}
 
       {/* Status bar + actions */}
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-200 bg-white px-4 py-2.5 shadow-sm">
@@ -763,6 +766,11 @@ export function AssessmentFormV2({
           </div>
         )}
       </div>
+
+      {/* CG-21 — live calculation behind SEE COMPUTATION (collapsed default). */}
+      <SeeComputationToggle>
+        <AssessmentCalcStripV2 output={output} savingsCushion={savingsCushion} />
+      </SeeComputationToggle>
 
       {/* A. Family & fees */}
       <FormSection title="A. Family type & fees">
