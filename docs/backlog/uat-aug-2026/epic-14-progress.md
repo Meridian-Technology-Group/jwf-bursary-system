@@ -22,7 +22,7 @@ in review · merged`.
 | A2 | Upload progress honesty | in review | `fix/e14-a2-upload-progress` | Root cause: the progress bar was a fake timer parked at 85% for the whole transfer + verification. Now real XHR byte progress (0→100%) + explicit "Checking your file…" phase during server verification. 4 new transport unit tests; live 9 MB upload to nonprod storage captured 0→13→…→100% → checking → success. |
 | A3 | Idle timer 60+60 | in review | `fix/e14-a3-idle-timer-60` | Portal default now 60 min (env override still wins); "Stay signed in (+60 min)" resets the full window. Resolver unit tests (4 new); browser-verified with a 1-min override: warning → extend resets window → expiry signs out. Admin shell stays 30 min. |
 | A4 | Expiry-dialog overflow | in review | (paired with A3) | Base DialogContent hardened: viewport margin below `sm`, rounded corners at all widths, max-height + internal scroll, `break-words` on descriptions. Screenshots at 375px + 1440px — dialog centred and contained. |
-| A5 | Post-submit download flow | todo | | |
+| A5 | Post-submit download flow | in review | `feature/e14-a5-submit-download-flow` | Three-beat flow live: submit confirm → "application sent" + bare `DOWNLOAD MY COPY` + `Continue` (zero scarcity copy) → home. Offer exists only in the live post-submit beat (sessionStorage flag, LA-1 forfeit); server one-download rule + 410 unchanged. 6 unit tests on the beat matrix; full E2E submit on throwaway WS-202627-0007 with screenshots of all beats; revisit shows no download path. |
 | B1 | replyTo on all sends | todo | | |
 | B2 | Missing-docs template copy | todo | | |
 | B3 | Five invitation templates | todo | | |

@@ -18,8 +18,7 @@
  */
 
 import { redirect } from "next/navigation";
-import Link from "next/link";
-import { CheckCircle2, ArrowLeft } from "lucide-react";
+import { CheckCircle2 } from "lucide-react";
 import { getCurrentUser } from "@/lib/auth/roles";
 import { withUserContext, type RlsRole } from "@/lib/db/prisma";
 import { loadSubmittedApplication } from "@/lib/portal/submission-loader";
@@ -135,7 +134,10 @@ export default async function SubmittedPage() {
         )}
       </div>
 
-      {/* The single, one-time PDF download (D13-4). */}
+      {/* CG-13/LA-1 — the bare download beat: `DOWNLOAD MY COPY` + `Continue`
+          during the live post-submit flow (no explanatory copy), the normal
+          bottom navigation otherwise. The one-download rule (D13-4) is
+          unchanged server-side. */}
       <SubmissionDownloadOffer
         applicationId={submission.id}
         downloadedAt={
@@ -144,23 +146,6 @@ export default async function SubmittedPage() {
             : null
         }
       />
-
-      {/* Navigation */}
-      <div className="flex items-center justify-between">
-        <Link
-          href="/"
-          className="inline-flex items-center gap-1.5 text-sm font-medium text-slate-600 transition-colors hover:text-primary-900"
-        >
-          <ArrowLeft className="h-4 w-4" aria-hidden="true" />
-          Back to dashboard
-        </Link>
-        <Link
-          href="/status"
-          className="inline-flex items-center gap-2 rounded-md bg-primary-900 px-5 py-2.5 text-sm font-medium text-white transition-colors hover:bg-primary-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-600"
-        >
-          View application status
-        </Link>
-      </div>
     </PortalPage>
   );
 }
