@@ -26,6 +26,7 @@ import {
   ApplicationContributorRole,
   ApplicationContributorStatus,
   EntryYearGroup,
+  InvitationSituation,
   InvitationStatus,
   RoundStatus,
   School,
@@ -45,6 +46,11 @@ import {
   invitationDeadlineFields,
   INVITATION_ROUND_DEADLINE_SELECT,
 } from "@/lib/email/invitation-deadline";
+import {
+  deadlineTypeForSituation,
+  openingDateMergeField,
+  resolveInvitationTemplate,
+} from "@/lib/email/invitation-template";
 import type { SubmissionDeadlineRound } from "@/lib/rounds/submission-deadline";
 import { withAdminContext } from "@/lib/db/prisma";
 import { createAuditLog } from "@/lib/audit/log";
@@ -81,6 +87,10 @@ const InvitationSchema = z.object({
     error: () => ({ message: "An entry year group is required" }),
   }),
   roundId: z.string().uuid("An application round is required"),
+  // Epic 14 B3 (CG-26, LA-3) — the 3-way situation choice; the school half of
+  // the template resolves from `school`. Defaults to NEW so the quick-invite
+  // keeps working for callers that don't send it.
+  situation: z.nativeEnum(InvitationSituation).default(InvitationSituation.NEW),
 });
 
 // ---------------------------------------------------------------------------
@@ -136,6 +146,7 @@ export async function createInvitationAction(
     school: (formData.get("school") as string) || undefined,
     entryYearGroup: (formData.get("entryYearGroup") as string) || undefined,
     roundId: (formData.get("roundId") as string) || undefined,
+    situation: (formData.get("situation") as string) || undefined,
   };
 
   const parsed = InvitationSchema.safeParse(raw);
@@ -146,8 +157,16 @@ export async function createInvitationAction(
     };
   }
 
-  const { email, firstName, lastName, childName, school, entryYearGroup, roundId } =
-    parsed.data;
+  const {
+    email,
+    firstName,
+    lastName,
+    childName,
+    school,
+    entryYearGroup,
+    roundId,
+    situation,
+  } = parsed.data;
 
   const effectiveApplicantName = composeApplicantName(firstName, lastName);
 
@@ -184,6 +203,9 @@ export async function createInvitationAction(
   // Deadline columns for the {{deadline}} merge field (E1) — read inside the
   // same tx that resolves the academic year, so no extra round query.
   let deadlineRound: SubmissionDeadlineRound | null = null;
+  // B3 — the round's portal opening date feeds the rolling template's
+  // {{opening_date}}; null when the invitation carries no round.
+  let roundOpenDate: Date | null = null;
   try {
     const result = await withAdminContext(async (tx) => {
       const profile = await createProfile(tx, {
@@ -205,6 +227,7 @@ export async function createInvitationAction(
         school,
         entryYearGroup,
         roundId,
+        situation,
         authUserId,
         createdBy: user.id,
         expiresAt,
@@ -212,15 +235,18 @@ export async function createInvitationAction(
 
       let year = "";
       let roundDeadline: SubmissionDeadlineRound | null = null;
+      let openDate: Date | null = null;
       if (roundId) {
         const round = await tx.round.findUnique({
           where: { id: roundId },
           select: {
             academicYear: true,
+            openDate: true,
             ...INVITATION_ROUND_DEADLINE_SELECT,
           },
         });
         year = round?.academicYear ?? "";
+        openDate = round?.openDate ?? null;
         roundDeadline = round
           ? {
               closeDate: round.closeDate,
@@ -250,6 +276,7 @@ export async function createInvitationAction(
         token: inv.token,
         academicYear: year,
         roundDeadline,
+        roundOpenDate: openDate,
       };
     });
 
@@ -270,6 +297,7 @@ export async function createInvitationAction(
     invitationToken = result.token;
     academicYear = result.academicYear;
     deadlineRound = result.roundDeadline;
+    roundOpenDate = result.roundOpenDate;
   } catch (err) {
     await supabase.auth.admin.deleteUser(authUserId).catch((rollbackErr) => {
       console.error(
@@ -289,17 +317,31 @@ export async function createInvitationAction(
   //    recipient. On failure we hard-roll-back — delete the invitation row,
   //    delete the auth user, and write a failure audit entry so the attempt
   //    stays visible — then surface a clear error to the admin.
-  const emailResult = await sendEmail(email, "INVITATION", {
-    applicant_name: effectiveApplicantName || email,
-    child_name: childName ?? "",
-    school: schoolLabel(school),
-    round_year: academicYear,
-    registration_link: `${appUrl}/register?token=${invitationToken}`,
-    // E1/CF-11: {{deadline}} is the SUBMISSION deadline for the round this
-    // invitation is for (a fresh invite always starts a NEW application);
-    // {{link_expiry}} carries the token expiry that used to masquerade as it.
-    ...invitationDeadlineFields(deadlineRound, "NEW", expiresAt),
-  });
+  // B3 (CG-26): the template variant follows the chosen situation and the
+  // school; the {{deadline}} default follows the situation too (rolling-over
+  // invites get the round's rolling date).
+  const emailResult = await sendEmail(
+    email,
+    resolveInvitationTemplate(situation, school),
+    {
+      applicant_name: effectiveApplicantName || email,
+      child_name: childName ?? "",
+      school: schoolLabel(school),
+      round_year: academicYear,
+      registration_link: `${appUrl}/register?token=${invitationToken}`,
+      opening_date: openingDateMergeField(
+        roundOpenDate ? { openDate: roundOpenDate } : null
+      ),
+      // E1/CF-11: {{deadline}} is the SUBMISSION deadline for the round this
+      // invitation is for; {{link_expiry}} carries the token expiry that used
+      // to masquerade as it.
+      ...invitationDeadlineFields(
+        deadlineRound,
+        deadlineTypeForSituation(situation),
+        expiresAt
+      ),
+    }
+  );
 
   if (!emailResult.success) {
     console.error(
@@ -886,6 +928,7 @@ export async function resendInvitationAction(
           round: {
             select: {
               academicYear: true,
+              openDate: true,
               ...INVITATION_ROUND_DEADLINE_SELECT,
             },
           },
@@ -943,23 +986,32 @@ export async function resendInvitationAction(
         invitation.lastName ?? undefined
       ) || invitation.email;
 
-    const emailResult = await sendEmail(invitation.email, "INVITATION", {
+    // B3: a resend reuses the SAME template variant the original send chose
+    // (situation persisted on the row; legacy NULL rows fall back to the
+    // generic INVITATION).
+    const emailResult = await sendEmail(
+      invitation.email,
+      resolveInvitationTemplate(invitation.situation, invitation.school),
+      {
       applicant_name: applicantName,
       child_name: invitation.childName ?? "",
       school: schoolLabel(invitation.school),
       round_year: invitation.round?.academicYear ?? "",
       registration_link: `${appUrl}/register?token=${newToken}`,
+      opening_date: openingDateMergeField(invitation.round),
       // E1: a resend re-states the SAME submission deadline as the original
       // send — only {{link_expiry}} moves, because only the token was renewed.
       // Before this, every resend silently pushed the advertised "deadline"
       // another 30 days into the future.
       ...invitationDeadlineFields(
         invitation.round,
-        invitation.application?.applicationType ?? "NEW",
+        invitation.application?.applicationType ??
+          deadlineTypeForSituation(invitation.situation),
         newExpiresAt,
         invitation.application?.submissionDeadlineAt ?? null
       ),
-    });
+      }
+    );
 
     if (!emailResult.success) {
       console.error(

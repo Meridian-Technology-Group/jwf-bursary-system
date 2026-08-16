@@ -893,8 +893,12 @@ model Contact {
 
   // School & year — set by admin, LOCKED for the parent (D1).
   school         School
-  entryYear      Int             @map("entry_year")
-  entryYearGroup EntryYearGroup? @map("entry_year_group")
+  /// Epic 14 B3 (CG-26) — the situation chosen at contact creation (new /
+  /// internal / rolling-over); the invite-send step defaults from it and the
+  /// school half of the template resolves from `school` above.
+  situation      InvitationSituation?
+  entryYear      Int                  @map("entry_year")
+  entryYearGroup EntryYearGroup?      @map("entry_year_group")
 
   // Home address — structured, so the portal can show the stored address
   // when the child is "at the same address" (Epic 02 reads it).
@@ -936,30 +940,33 @@ model Contact {
 
 /// Tracks invitations sent by assessors.
 model Invitation {
-  id               String           @id @default(uuid()) @db.Uuid
+  id               String               @id @default(uuid()) @db.Uuid
   email            String
-  firstName        String?          @map("first_name")
-  lastName         String?          @map("last_name")
-  childName        String?          @map("child_name")
+  firstName        String?              @map("first_name")
+  lastName         String?              @map("last_name")
+  childName        String?              @map("child_name")
   school           School?
-  roundId          String?          @map("round_id") @db.Uuid
-  bursaryAccountId String?          @map("bursary_account_id") @db.Uuid
-  contactId        String?          @map("contact_id") @db.Uuid
-  applicationId    String?          @map("application_id") @db.Uuid
-  authUserId       String?          @map("auth_user_id") @db.Uuid
-  entryYear        Int?             @map("entry_year")
-  entryYearGroup   EntryYearGroup?  @map("entry_year_group")
-  token            String           @unique
-  status           InvitationStatus @default(PENDING)
-  expiresAt        DateTime         @map("expires_at") @db.Timestamptz(6)
-  acceptedAt       DateTime?        @map("accepted_at") @db.Timestamptz(6)
-  createdBy        String           @map("created_by") @db.Uuid
-  createdAt        DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
-  bursaryAccount   BursaryAccount?  @relation(fields: [bursaryAccountId], references: [id])
-  contact          Contact?         @relation(fields: [contactId], references: [id])
-  application      Application?     @relation(fields: [applicationId], references: [id], onDelete: Cascade)
-  creator          Profile          @relation("InvitationCreator", fields: [createdBy], references: [id])
-  round            Round?           @relation(fields: [roundId], references: [id])
+  roundId          String?              @map("round_id") @db.Uuid
+  bursaryAccountId String?              @map("bursary_account_id") @db.Uuid
+  contactId        String?              @map("contact_id") @db.Uuid
+  applicationId    String?              @map("application_id") @db.Uuid
+  authUserId       String?              @map("auth_user_id") @db.Uuid
+  entryYear        Int?                 @map("entry_year")
+  entryYearGroup   EntryYearGroup?      @map("entry_year_group")
+  /// Epic 14 B3 — which of the five invitation templates this invite used;
+  /// persisted so resends reuse the same variant. Null on legacy rows.
+  situation        InvitationSituation?
+  token            String               @unique
+  status           InvitationStatus     @default(PENDING)
+  expiresAt        DateTime             @map("expires_at") @db.Timestamptz(6)
+  acceptedAt       DateTime?            @map("accepted_at") @db.Timestamptz(6)
+  createdBy        String               @map("created_by") @db.Uuid
+  createdAt        DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
+  bursaryAccount   BursaryAccount?      @relation(fields: [bursaryAccountId], references: [id])
+  contact          Contact?             @relation(fields: [contactId], references: [id])
+  application      Application?         @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  creator          Profile              @relation("InvitationCreator", fields: [createdBy], references: [id])
+  round            Round?               @relation(fields: [roundId], references: [id])
 
   @@index([token])
   @@index([email])
@@ -1056,6 +1063,16 @@ enum Role {
 enum School {
   TRINITY
   WHITGIFT
+}
+
+/// Epic 14 B3 (CG-26, LA-3) — the 3-way situation an invitation is sent for.
+/// Combined with `Contact.school` / `Invitation.school` it selects one of the
+/// five invitation template variants; null (legacy rows) falls back to the
+/// generic INVITATION template.
+enum InvitationSituation {
+  NEW
+  INTERNAL
+  ROLLING_OVER
 }
 
 /// School year-group at which a child enters (spec §4). The numeric year-group
@@ -1183,6 +1200,13 @@ enum InvitationStatus {
 
 enum EmailTemplateType {
   INVITATION
+  /// Epic 14 B3 (CG-26) — situation × school invitation variants. The legacy
+  /// INVITATION stays as the fallback when no situation is recorded.
+  INVITATION_NEW_TS
+  INVITATION_NEW_WS
+  INVITATION_INTERNAL_TS
+  INVITATION_INTERNAL_WS
+  INVITATION_ROLLING
   CONFIRMATION
   MISSING_DOCS
   OUTCOME_QUALIFIES

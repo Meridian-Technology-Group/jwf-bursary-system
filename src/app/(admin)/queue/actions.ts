@@ -20,7 +20,7 @@
 import { randomBytes } from "node:crypto";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { School, EntryYearGroup } from "@prisma/client";
+import { School, EntryYearGroup, InvitationSituation } from "@prisma/client";
 import { requireRole, Role } from "@/lib/auth/roles";
 import { withAdminContext, type Tx } from "@/lib/db/prisma";
 import { createAuditLog } from "@/lib/audit/log";
@@ -29,6 +29,7 @@ import { createSupabaseAdminClient } from "@/lib/auth/supabase-admin";
 import { createProfile } from "@/lib/auth/create-profile";
 import { getAppUrl } from "@/lib/app-url";
 import { createInvitation } from "@/lib/db/queries/invitations";
+import { resolveInvitationTemplate } from "@/lib/email/invitation-template";
 import {
   invitationDeadlineFields,
   INVITATION_ROUND_DEADLINE_SELECT,
@@ -274,6 +275,9 @@ export async function createInternalRequestAction(
         school,
         roundId,
         authUserId: profile!.id,
+        // B3 — the internal-request path IS Charlotte's "internal
+        // application" situation; the template resolves per school.
+        situation: InvitationSituation.INTERNAL,
         createdBy: user.id,
         expiresAt,
       });
@@ -329,17 +333,22 @@ export async function createInternalRequestAction(
 
   // 6. Send the invitation email
   const schoolLabel = school === "TRINITY" ? "Trinity School" : "Whitgift School";
-  const emailResult = await sendEmail(parentEmail, "INVITATION", {
-    applicant_name: parentName,
-    child_name: childName,
-    school: schoolLabel,
-    round_year: round.academicYear,
-    registration_link: `${appUrl}/register?token=${invitationToken}`,
-    // E1/CF-11: the internal request creates a NEW application, so {{deadline}}
-    // is that round's new-applicant submission deadline; the token expiry moves
-    // to {{link_expiry}}.
-    ...invitationDeadlineFields(round.deadline, "NEW", expiresAt),
-  });
+  // B3 (CG-26): internal requests use the INTERNAL template for the school.
+  const emailResult = await sendEmail(
+    parentEmail,
+    resolveInvitationTemplate(InvitationSituation.INTERNAL, school),
+    {
+      applicant_name: parentName,
+      child_name: childName,
+      school: schoolLabel,
+      round_year: round.academicYear,
+      registration_link: `${appUrl}/register?token=${invitationToken}`,
+      // E1/CF-11: the internal request creates a NEW application, so
+      // {{deadline}} is that round's new-applicant submission deadline; the
+      // token expiry moves to {{link_expiry}}.
+      ...invitationDeadlineFields(round.deadline, "NEW", expiresAt),
+    }
+  );
 
   if (!emailResult.success) {
     console.warn(

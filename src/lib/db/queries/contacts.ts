@@ -10,7 +10,12 @@
  */
 
 import type { Tx } from "@/lib/db/prisma";
-import type { Contact, EntryYearGroup, School } from "@prisma/client";
+import type {
+  Contact,
+  EntryYearGroup,
+  InvitationSituation,
+  School,
+} from "@prisma/client";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -32,6 +37,7 @@ export interface ContactListItem {
   school: School;
   entryYear: number;
   entryYearGroup: EntryYearGroup | null;
+  situation: InvitationSituation | null;
   addressLine1: string | null;
   addressLine2: string | null;
   town: string | null;
@@ -61,6 +67,8 @@ export interface ContactWriteData {
   school: School;
   entryYear: number;
   entryYearGroup?: EntryYearGroup | null;
+  /** Epic 14 B3 (CG-26) — situation for the invitation template variant. */
+  situation?: InvitationSituation | null;
   addressLine1?: string | null;
   addressLine2?: string | null;
   town?: string | null;
@@ -103,6 +111,7 @@ export async function listContacts(
     school: c.school,
     entryYear: c.entryYear,
     entryYearGroup: c.entryYearGroup,
+    situation: c.situation,
     addressLine1: c.addressLine1,
     addressLine2: c.addressLine2,
     town: c.town,
@@ -152,6 +161,7 @@ export async function createContact(
       school: data.school,
       entryYear: data.entryYear,
       entryYearGroup: data.entryYearGroup ?? null,
+      situation: data.situation ?? null,
       addressLine1: data.addressLine1 ?? null,
       addressLine2: data.addressLine2 ?? null,
       town: data.town ?? null,
@@ -187,6 +197,7 @@ export async function updateContact(
       school: data.school,
       entryYear: data.entryYear,
       entryYearGroup: data.entryYearGroup ?? null,
+      situation: data.situation ?? null,
       addressLine1: data.addressLine1 ?? null,
       addressLine2: data.addressLine2 ?? null,
       town: data.town ?? null,

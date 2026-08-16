@@ -15,7 +15,7 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { EntryYearGroup, School } from "@prisma/client";
+import { EntryYearGroup, InvitationSituation, School } from "@prisma/client";
 import { requireRole, Role } from "@/lib/auth/roles";
 import { withAdminContext } from "@/lib/db/prisma";
 import { createAuditLog } from "@/lib/audit/log";
@@ -64,6 +64,9 @@ const ContactSchema = z.object({
     .optional()
     .or(z.literal("").transform(() => undefined)),
   school: z.nativeEnum(School, { error: "A school is required" }),
+  // B3 (CG-26, LA-3) — situation chosen at contact creation; the invite path
+  // resolves the template variant from it (school half from `school`).
+  situation: z.nativeEnum(InvitationSituation).default(InvitationSituation.NEW),
   entryYear: z.coerce
     .number()
     .int()
@@ -105,6 +108,7 @@ function rawFromFormData(formData: FormData) {
     childLastName: (formData.get("childLastName") as string) || "",
     childDob: (formData.get("childDob") as string) || undefined,
     school: (formData.get("school") as string) || undefined,
+    situation: (formData.get("situation") as string) || undefined,
     entryYear: (formData.get("entryYear") as string) || undefined,
     entryYearGroup: (formData.get("entryYearGroup") as string) || undefined,
     addressLine1: (formData.get("addressLine1") as string) || undefined,
@@ -149,6 +153,7 @@ function toWriteData(
     school: parsed.school,
     entryYear: parsed.entryYear,
     entryYearGroup: parsed.entryYearGroup,
+    situation: parsed.situation,
     addressLine1: parsed.addressLine1 ?? null,
     addressLine2: parsed.addressLine2 ?? null,
     town: parsed.town ?? null,

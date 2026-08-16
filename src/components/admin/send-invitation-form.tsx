@@ -68,6 +68,9 @@ const schema = z.object({
   lastName: z.string().min(1, "A surname is required"),
   childName: z.string().min(1, "The child's name is required"),
   school: z.enum(["TRINITY", "WHITGIFT"], { error: "A school is required" }),
+  // B3 (CG-26, LA-3) — the 3-way situation choice selecting the invitation
+  // template variant; the school half resolves from `school` above.
+  situation: z.enum(["NEW", "INTERNAL", "ROLLING_OVER"]),
   // Q1 (Brian, 2026-08-14): the entry year-group is JWF-facing only and the
   // parent can never supply it, so the quick invite has to capture it.
   entryYearGroup: z.enum(["Y6", "Y7", "Y9", "Y12", "OTHER"], {
@@ -108,6 +111,7 @@ export function SendInvitationForm({
       lastName: "",
       childName: "",
       school: undefined,
+      situation: "NEW",
       entryYearGroup: undefined,
       roundId: defaultRoundId ?? "__none__",
     },
@@ -133,6 +137,7 @@ export function SendInvitationForm({
     if (values.lastName) formData.set("lastName", values.lastName);
     formData.set("childName", values.childName);
     formData.set("school", values.school);
+    formData.set("situation", values.situation);
     formData.set("entryYearGroup", values.entryYearGroup);
     formData.set("roundId", values.roundId);
 
@@ -146,6 +151,7 @@ export function SendInvitationForm({
           lastName: "",
           childName: "",
           school: undefined,
+          situation: "NEW",
           entryYearGroup: undefined,
           roundId: defaultRoundId ?? "__none__",
         });
@@ -301,6 +307,42 @@ export function SendInvitationForm({
                     <SelectContent>
                       <SelectItem value="TRINITY">Trinity School</SelectItem>
                       <SelectItem value="WHITGIFT">Whitgift School</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            {/* Situation — B3 (CG-26): picks the invitation template
+                variant (new / internal / rolling-over); school resolves the
+                TS/WS half automatically. */}
+            <FormField
+              control={form.control}
+              name="situation"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>
+                    Situation <span className="text-red-500">*</span>
+                  </FormLabel>
+                  <Select
+                    onValueChange={field.onChange}
+                    value={field.value ?? "NEW"}
+                    disabled={isPending}
+                  >
+                    <FormControl>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select situation" />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                      <SelectItem value="NEW">New application</SelectItem>
+                      <SelectItem value="INTERNAL">
+                        Internal bursary application
+                      </SelectItem>
+                      <SelectItem value="ROLLING_OVER">
+                        Rolling over (existing bursary family)
+                      </SelectItem>
                     </SelectContent>
                   </Select>
                   <FormMessage />
