@@ -69,8 +69,8 @@ vi.mock("@/lib/storage/documents", () => ({
 import { POST } from "../confirm/route";
 import {
   DIGEST_SAMPLE_BYTES,
-  DUPLICATE_UC_MESSAGE,
   computeContentDigest,
+  duplicateUcMessage,
 } from "@/lib/documents/content-digest";
 import {
   issueUploadTicket,
@@ -106,6 +106,14 @@ function makeFakeTx(
     contributor?: { id: string; role: string } | null;
     /** Rows the CF-28 digest lookup finds on this application. */
     digestMatches?: { id: string; slot: string; filename: string }[];
+    /** Legacy NULL-digest UC rows the CG-09 heal query finds. */
+    undigestedUcDocs?: {
+      id: string;
+      slot: string;
+      filename: string;
+      storagePath: string;
+      fileSize: number;
+    }[];
   } = {}
 ) {
   return {
@@ -124,7 +132,17 @@ function makeFakeTx(
       ),
     },
     document: {
-      findMany: vi.fn(async () => overrides.digestMatches ?? []),
+      // Two shapes of lookup share findMany: the digest-equality match and
+      // the CG-09 heal query for legacy rows (`contentDigest: null`).
+      findMany: vi.fn(
+        async ({ where }: { where: Record<string, unknown> }) =>
+          where.contentDigest === null
+            ? overrides.undigestedUcDocs ?? []
+            : overrides.digestMatches ?? []
+      ),
+      update: vi.fn(
+        async ({ data }: { data: Record<string, unknown> }) => data
+      ),
       create: vi.fn(async ({ data }: { data: Record<string, unknown> }) => ({
         id: "doc-1",
         isVerified: false,
@@ -415,7 +433,7 @@ describe("POST /api/documents/confirm — duplicate detection (CF-28)", () => {
     );
   });
 
-  it("409s the same file uploaded into a second UC slot, and deletes the orphan", async () => {
+  it("409s the same file uploaded into a second UC slot, naming the clash, and deletes the orphan", async () => {
     // Exactly Charlotte's case: one UC payment PDF used for every month.
     fakeTx = makeFakeTx({
       digestMatches: [
@@ -427,7 +445,95 @@ describe("POST /api/documents/confirm — duplicate detection (CF-28)", () => {
     const body = await response.json();
 
     expect(response.status).toBe(409);
-    expect(body.error).toBe(DUPLICATE_UC_MESSAGE);
+    expect(body.error).toBe(duplicateUcMessage("uc.pdf"));
+    expect(body.duplicateOf).toEqual({
+      slot: "UC_MONTHLY_1_PARENT_1",
+      filename: "uc.pdf",
+    });
+    expect(deleteDocumentMock).toHaveBeenCalledWith(UC_CLAIMS.storagePath);
+    expect(fakeTx.document.create).not.toHaveBeenCalled();
+  });
+
+  it("409s when the duplicate hides behind a legacy NULL-digest UC document (CG-09)", async () => {
+    // Charlotte's 16 Aug repro: "Dec 2025 UC.pdf" was uploaded before the
+    // digest column existed (content_digest NULL, so digest equality can never
+    // see it), then re-uploaded into a second UC slot and accepted. The heal
+    // path must digest the legacy row on the fly, persist it, and refuse.
+    const legacyPath = "documents/app-1/UC_MONTHLY_PARENT_1/uuid_legacy.pdf";
+    fakeTx = makeFakeTx({
+      undigestedUcDocs: [
+        {
+          id: "doc-legacy",
+          slot: "UC_MONTHLY_PARENT_1",
+          filename: "Dec 2025 UC.pdf",
+          storagePath: legacyPath,
+          fileSize: 12_000_000, // same size + same head bytes = same digest
+        },
+      ],
+    });
+
+    const response = await POST(confirmRequest(issueUploadTicket(UC_CLAIMS)));
+    const body = await response.json();
+
+    expect(response.status).toBe(409);
+    expect(body.error).toBe(duplicateUcMessage("Dec 2025 UC.pdf"));
+    // The legacy row is healed in place so this branch never runs again.
+    expect(fakeTx.document.update).toHaveBeenCalledWith({
+      where: { id: "doc-legacy" },
+      data: { contentDigest: computeContentDigest(PDF_HEAD, 12_000_000) },
+    });
+    expect(deleteDocumentMock).toHaveBeenCalledWith(UC_CLAIMS.storagePath);
+    expect(fakeTx.document.create).not.toHaveBeenCalled();
+  });
+
+  it("heals a non-matching legacy UC row and still accepts the upload", async () => {
+    fakeTx = makeFakeTx({
+      undigestedUcDocs: [
+        {
+          id: "doc-legacy",
+          slot: "UC_MONTHLY_1_PARENT_1",
+          filename: "Nov 2025 UC.pdf",
+          storagePath: "documents/app-1/UC_MONTHLY_1_PARENT_1/uuid_nov.pdf",
+          fileSize: 5_000, // different size → different digest → no clash
+        },
+      ],
+    });
+
+    const response = await POST(confirmRequest(issueUploadTicket(UC_CLAIMS)));
+
+    expect(response.status).toBe(201);
+    expect(fakeTx.document.update).toHaveBeenCalledWith({
+      where: { id: "doc-legacy" },
+      data: { contentDigest: computeContentDigest(PDF_HEAD, 5_000) },
+    });
+    expect(fakeTx.document.create).toHaveBeenCalled();
+  });
+
+  it("allows re-uploading the same file into the SAME UC slot (replace)", async () => {
+    fakeTx = makeFakeTx({
+      digestMatches: [
+        // Same slot as UC_CLAIMS — a replace, not a month faked twice.
+        { id: "doc-same", slot: "UC_MONTHLY_2_PARENT_1", filename: "uc.pdf" },
+      ],
+    });
+
+    const response = await POST(confirmRequest(issueUploadTicket(UC_CLAIMS)));
+    const body = await response.json();
+
+    expect(response.status).toBe(201);
+    expect(body.duplicateWarning).toContain("uc.pdf");
+    expect(fakeTx.document.create).toHaveBeenCalled();
+  });
+
+  it("fails closed when the duplicate lookup fails on a UC slot", async () => {
+    // On the UC slots the check is a gate (CG-09): a broken lookup must not
+    // silently accept — that is exactly the acceptance Charlotte reported.
+    fakeTx = makeFakeTx();
+    fakeTx.document.findMany.mockRejectedValue(new Error("lookup exploded"));
+
+    const response = await POST(confirmRequest(issueUploadTicket(UC_CLAIMS)));
+
+    expect(response.status).toBe(500);
     expect(deleteDocumentMock).toHaveBeenCalledWith(UC_CLAIMS.storagePath);
     expect(fakeTx.document.create).not.toHaveBeenCalled();
   });

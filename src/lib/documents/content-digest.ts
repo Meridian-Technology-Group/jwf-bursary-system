@@ -74,11 +74,19 @@ export function isUniversalCreditSlot(slot: string): boolean {
   return /^UC_/.test(slot);
 }
 
-/** Shown (as an upload error) when a duplicate is refused on a UC slot. */
-export const DUPLICATE_UC_MESSAGE =
-  "You have already uploaded this exact file for Universal Credit. Please " +
-  "upload three different monthly payment documents (one per month), plus " +
-  "your 12-month statement.";
+/**
+ * Shown (as an upload error) when a duplicate is refused on a UC slot. Names
+ * the clashing upload so the parent can see WHICH file they double-used
+ * (CG-09 — the bare "already uploaded" message left Charlotte unsure what
+ * clashed with what).
+ */
+export function duplicateUcMessage(existingFilename: string): string {
+  return (
+    `This is the same file you already uploaded as “${existingFilename}” ` +
+    "for Universal Credit. Please upload three different monthly payment " +
+    "documents (one per month), plus your 12-month statement."
+  );
+}
 
 /** Shown (as a non-blocking notice) when a duplicate is accepted elsewhere. */
 export function duplicateWarningMessage(existingFilename: string): string {

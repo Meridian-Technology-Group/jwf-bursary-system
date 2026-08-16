@@ -18,7 +18,7 @@ in review · merged`.
 
 | WP | Title | Status | Branch / PR | Evidence |
 |---|---|---|---|---|
-| A1 | UC duplicate-upload rejection | todo | | |
+| A1 | UC duplicate-upload rejection | in review | `fix/e14-a1-uc-duplicate-rejection` | Root cause: pre-Epic-13-D2 documents carry a NULL `content_digest` that digest-equality can never match (Charlotte's "Dec 2025 UC.pdf" sat undigested in the legacy `UC_MONTHLY` slot). Fix: lazy digest heal of undigested UC rows at confirm + fail-closed UC check + 409 names the clashing file. Unit tests (5 new) + live browser check on a throwaway (both fresh-digest and simulated-legacy paths refused; healed digest persisted). |
 | A2 | Upload progress honesty | todo | | |
 | A3 | Idle timer 60+60 | todo | | |
 | A4 | Expiry-dialog overflow | todo | | |

@@ -9,7 +9,7 @@
 import { describe, it, expect } from "vitest";
 import {
   DIGEST_SAMPLE_BYTES,
-  DUPLICATE_UC_MESSAGE,
+  duplicateUcMessage,
   computeContentDigest,
   duplicateWarningMessage,
   isUniversalCreditSlot,
@@ -79,7 +79,10 @@ describe("isUniversalCreditSlot", () => {
 
 describe("applicant-facing copy", () => {
   it("tells the applicant what to do, not what the server found", () => {
-    expect(DUPLICATE_UC_MESSAGE).toMatch(/three different monthly/i);
+    expect(duplicateUcMessage("Dec 2025 UC.pdf")).toMatch(
+      /three different monthly/i
+    );
+    expect(duplicateUcMessage("Dec 2025 UC.pdf")).toContain("Dec 2025 UC.pdf");
     expect(duplicateWarningMessage("uc-march.pdf")).toContain("uc-march.pdf");
   });
 });
