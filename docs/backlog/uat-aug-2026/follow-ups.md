@@ -24,7 +24,41 @@ of things that went wrong.
 
 ---
 
-## 0. Can Charlotte resume testing once the stack merges?
+## 0a. ✅ DELIVERED — merged to `staging` 2026-08-14 (commit `77a27cc`)
+
+**#291 merged (Brian's authorisation, "merge it if you think it's safe" —
+safety verified: CI green, MERGEABLE CLEAN, staging unmoved since branch).**
+All five migrations applied to nonprod by `db-push.yml` and verified: four new
+columns present, both `bursary_accounts` identifier columns dropped. The 22
+delivered stacked PRs are closed with pointer comments (GitHub refused a
+retarget with "no new commits between base and head" — the proof their content
+is fully contained in staging).
+
+**Browser pass — run against the staging alias, same session:**
+
+| Check | Result |
+|---|---|
+| Login + dashboard renders | ✅ (was crashing on the pre-migration preview) |
+| History nav item gone (D1) | ✅ Home / My Application / Documents / Help only |
+| Autosave indicator (B2) | ✅ "Saved 21:35" after typing + debounce |
+| Navigate away mid-edit, return (B1+B2) | ✅ text intact — no prompt needed because the blur-flush saved first; **also survives a full page reload** |
+| **6.0 MB PDF upload (A1/CF-14)** | ✅ uploads through the presigned transport — beyond the old 4.5 MB cap; `Document` row has exact bytes, sniffed `application/pdf`, **and a populated `content_digest` (D2)** |
+| Document Remove (delete path) | ✅ |
+| Declaration footer (D4) | ✅ three buttons: Back / Review ("…without submitting" aria-label) / **Submit Application** |
+
+**Still not browser-tested** (deliberately): the one-time PDF's 410 (needs a
+real submission — would consume the throwaway's single download), the UC
+three-slot UI (needs UC > 0 form state; unit-tested), the zero-income path
+end-to-end, and mobile-width footer wrap. These are Charlotte-adjacent paths
+worth one eye during her session rather than blockers.
+
+Test residue cleaned: comments text cleared, test PDF removed from the
+application and from disk, browser closed. Charlotte's `test3@…` data untouched
+throughout.
+
+**Charlotte can be handed the staging environment now.**
+
+## 0. ~~Can Charlotte resume testing once the stack merges?~~ (superseded by 0a)
 
 **Yes.** Every blocker she reported is fixed, and none of the follow-ups below
 stands between her and a submitted application. But three things gate it, and
