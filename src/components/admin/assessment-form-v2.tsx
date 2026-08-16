@@ -507,7 +507,6 @@ export function AssessmentFormV2({
   );
   const [behindOnFees, setBehindOnFees] = React.useState<boolean>(assessment.behindOnFees ?? false);
   const [dishonestyFlag, setDishonestyFlag] = React.useState<boolean>(assessment.dishonestyFlag);
-  const [watchOutNotes, setWatchOutNotes] = React.useState<string>(assessment.watchOutNotes ?? "");
 
   // school-age children default from FamilyCategoryMeta, overridable (CALC-07).
   const metaDefaultChildren = React.useMemo(
@@ -708,7 +707,6 @@ export function AssessmentFormV2({
         ? manualAdjustmentReason.trim()
         : null,
       dishonestyFlag,
-      watchOutNotes: watchOutNotes.trim().length > 0 ? watchOutNotes : null,
       // Epic 14 C4/C7 (CG-22) — the three sibling rows (names now; the award
       // tab adds school + fees). Persist null when every row is blank.
       siblingDetails: siblingDetails.some(
@@ -775,7 +773,6 @@ export function AssessmentFormV2({
     manualAdjustmentReason,
     manualAdjustmentError,
     dishonestyFlag,
-    watchOutNotes,
     siblingDetails,
     propertyAssets,
     portfolioType,
@@ -1555,31 +1552,6 @@ export function AssessmentFormV2({
         </p>
       </FormSection>
 
-      {/* F. Assessor's wizard (CALC-10) — forward-looking notes for NEXT
-          year's assessor, rendered as a prominent callout on the account's
-          next assessment (see the top of the assessment page). Distinct from
-          the synopsis (this year's narrative), which is docked below the
-          workspace. */}
-      <FormSection title="F. Assessor's Wizard" defaultOpen={false}>
-        <FieldRow
-          label="Things to look out for with this family"
-          htmlFor="v2-watch-out-notes"
-          hint="Forward-looking notes for next year's assessor — surfaced as a callout when this account's next assessment begins."
-        >
-          <Textarea
-            id="v2-watch-out-notes"
-            value={watchOutNotes}
-            disabled={isReadOnly}
-            onChange={(e) => {
-              setWatchOutNotes(e.target.value);
-              scheduleAutoSave();
-            }}
-            placeholder="e.g. income is seasonal and dips sharply over the summer; watch for the second mortgage renewal in 2027."
-            rows={4}
-            className="resize-y text-sm"
-          />
-        </FieldRow>
-      </FormSection>
     </div>
   );
 }
