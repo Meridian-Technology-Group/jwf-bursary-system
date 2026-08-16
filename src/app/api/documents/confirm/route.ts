@@ -28,11 +28,15 @@
  *      the sniff exists to stop.
  *   5. Magic-byte sniff of the leading bytes, which must match the declared
  *      MIME.
- *   6. Duplicate detection (CF-28). The leading bytes read for the sniff are
- *      ALSO hashed — one Range request serves both — and the resulting digest
- *      is looked up against the other documents on the same application. On a
- *      UC slot a duplicate is refused (409); anywhere else it is stored and
- *      reported back as a non-blocking `duplicateWarning`.
+ *   6. Duplicate detection (CF-28, hardened for CG-09). The leading bytes read
+ *      for the sniff are ALSO hashed — one Range request serves both — and the
+ *      resulting digest is looked up against the other documents on the same
+ *      application. On a UC slot a duplicate in another UC slot is refused
+ *      (409, naming the clashing file); anywhere else it is stored and
+ *      reported back as a non-blocking `duplicateWarning`. Rows that predate
+ *      the digest column (or came via the staff multipart path) carry a NULL
+ *      digest that equality can never match, so on the UC path they are
+ *      digested on the fly and healed in place before the decision is made.
  */
 
 import { NextRequest, NextResponse } from "next/server";
@@ -48,8 +52,8 @@ import { authorizeDocumentUpload } from "@/lib/documents/upload-authorization";
 import { verifyUploadTicket } from "@/lib/uploads/upload-ticket";
 import {
   DIGEST_SAMPLE_BYTES,
-  DUPLICATE_UC_MESSAGE,
   computeContentDigest,
+  duplicateUcMessage,
   duplicateWarningMessage,
   isUniversalCreditSlot,
 } from "@/lib/documents/content-digest";
@@ -184,12 +188,21 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     );
   }
 
-  // ── 6. Duplicate detection (CF-28) ─────────────────────────────────────────
+  // ── 6. Duplicate detection (CF-28, hardened for CG-09) ─────────────────────
   // Fingerprint the bytes we already hold — see content-digest.ts for what the
   // digest covers and why it is a prefix hash rather than a whole-file one.
   const contentDigest = computeContentDigest(bytes, info.size);
+  const uploadingToUcSlot = isUniversalCreditSlot(claims.slot);
 
   let duplicateWarning: string | null = null;
+  // Refuse only when the same bytes are already sitting in ANOTHER Universal
+  // Credit slot — the exact CF-28 case, where "3 monthly UC payments" was
+  // satisfied with one file uploaded three times and the assessor is left
+  // with a single month. Re-uploading into the SAME slot is a replace, and a
+  // repeat outside the UC slots is plausible enough (one letter that genuinely
+  // evidences two lines) that blocking it would punish honest applicants, so
+  // both fall through to the warning below.
+  let ucDuplicate: { slot: string; filename: string } | null = null;
   try {
     // Scoped to THIS application by the query itself (and by RLS): a digest is
     // never compared across families.
@@ -205,29 +218,103 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         })
     );
 
-    // Refuse only when the same bytes are already sitting in another Universal
-    // Credit slot — the exact CF-28 case, where "3 monthly UC payments" was
-    // satisfied with one file uploaded three times and the assessor is left
-    // with a single month. Any other repeat is plausible enough (one letter
-    // that genuinely evidences two lines) that blocking it would punish honest
-    // applicants, so it falls through to the warning below.
-    const ucDuplicate = matches.find((m) => isUniversalCreditSlot(m.slot));
-    if (isUniversalCreditSlot(claims.slot) && ucDuplicate) {
-      await discardOrphan(claims.storagePath);
-      return NextResponse.json(
-        { error: DUPLICATE_UC_MESSAGE },
-        { status: 409 }
+    ucDuplicate =
+      (uploadingToUcSlot
+        ? matches.find(
+            (m) => m.slot !== claims.slot && isUniversalCreditSlot(m.slot)
+          )
+        : null) ?? null;
+
+    // CG-09 — a digest-equality lookup can never see documents whose
+    // content_digest is NULL, and every row created before CF-28 shipped (or
+    // via the staff multipart path) is exactly that. Charlotte's 16 Aug repro:
+    // "Dec 2025 UC.pdf" sat undigested in the legacy UC_MONTHLY slot, so
+    // re-uploading the same file into UC_MONTHLY_2 sailed through. Heal those
+    // rows now: an application holds at most a handful of UC documents, so
+    // this is a few 64 KB Range reads once — after which the digests are
+    // persisted and this branch never runs again for them.
+    if (uploadingToUcSlot && !ucDuplicate) {
+      const undigested = await withUserContext(
+        user.id,
+        user.role as RlsRole,
+        (tx) =>
+          tx.document.findMany({
+            where: {
+              applicationId: claims.applicationId,
+              contentDigest: null,
+              slot: { startsWith: "UC_", not: claims.slot },
+            },
+            select: {
+              id: true,
+              slot: true,
+              filename: true,
+              storagePath: true,
+              fileSize: true,
+            },
+            orderBy: { uploadedAt: "asc" },
+            take: 20,
+          })
       );
+
+      for (const legacy of undigested) {
+        const head = await readObjectHead(
+          legacy.storagePath,
+          DIGEST_SAMPLE_BYTES
+        );
+        if (head.error || !head.bytes) {
+          // Unreadable object — leave the row unhealed rather than failing
+          // the whole upload over someone else's stale document.
+          logError(
+            "documents/confirm:legacy-digest-read",
+            head.error ?? "No bytes returned"
+          );
+          continue;
+        }
+        const legacyDigest = computeContentDigest(head.bytes, legacy.fileSize);
+        await withUserContext(user.id, user.role as RlsRole, (tx) =>
+          tx.document.update({
+            where: { id: legacy.id },
+            data: { contentDigest: legacyDigest },
+          })
+        );
+        if (!ucDuplicate && legacyDigest === contentDigest) {
+          ucDuplicate = legacy;
+        }
+      }
     }
 
     if (matches.length > 0) {
       duplicateWarning = duplicateWarningMessage(matches[0].filename);
     }
   } catch (err) {
-    // Duplicate detection is a convenience, not a gate: if the lookup fails the
-    // upload still completes (with the digest stored, so a later upload can
-    // still be matched against it).
     logError("documents/confirm:duplicate-lookup", err);
+    if (uploadingToUcSlot) {
+      // On the UC slots the duplicate check is a GATE (CG-09), not a
+      // convenience — silently accepting when the lookup fails is precisely
+      // the acceptance Charlotte reported. Fail closed; the applicant retries.
+      await discardOrphan(claims.storagePath);
+      return NextResponse.json(
+        { error: "Could not verify the uploaded file. Please try again." },
+        { status: 500 }
+      );
+    }
+    // Outside the UC slots duplicate detection stays a convenience: the upload
+    // completes (with the digest stored, so a later upload can still be
+    // matched against it).
+  }
+
+  if (ucDuplicate) {
+    await discardOrphan(claims.storagePath);
+    return NextResponse.json(
+      {
+        error: duplicateUcMessage(ucDuplicate.filename),
+        duplicateOf: {
+          slot: ucDuplicate.slot,
+          filename: ucDuplicate.filename,
+        },
+      },
+      { status: 409 }
+    );
   }
 
   // ── Create Prisma Document record ──────────────────────────────────────────
