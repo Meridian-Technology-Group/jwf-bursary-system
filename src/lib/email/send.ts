@@ -36,6 +36,24 @@ export function fromAddress(): string {
 }
 
 /**
+ * Resolve the reply-to address every outbound email carries (CG-05 / D14-5).
+ *
+ * The from-address lives on a send-only subdomain, so a parent hitting Reply
+ * previously wrote to a black hole. `replyTo` routes replies to the bursary
+ * team's real inbox natively — no inbound-mail infrastructure needed. The
+ * default makes production correct even with the env var unset; nonprod can
+ * point `RESEND_REPLY_TO_EMAIL` at a test inbox.
+ *
+ * Exported so the bulk "Send Email" wizard can surface it beside the sending
+ * address before an admin confirms a batch.
+ */
+export function replyToAddress(): string {
+  return (
+    process.env.RESEND_REPLY_TO_EMAIL ?? "fees@johnwhitgiftfoundation.org"
+  );
+}
+
+/**
  * Pause execution for `ms` milliseconds.
  * Used to respect Resend's rate limits between batch sends.
  */
@@ -106,6 +124,7 @@ export async function sendEmail(
     // 4. Send via Resend.
     const { data, error } = await resend.emails.send({
       from: fromAddress(),
+      replyTo: replyToAddress(),
       to,
       subject,
       html,
@@ -223,6 +242,7 @@ export async function sendBatchEmails(
 
       const { data, error } = await resend.emails.send({
         from: fromAddress(),
+      replyTo: replyToAddress(),
         to: email,
         subject,
         html,
@@ -295,6 +315,7 @@ export async function sendRawEmail(
 
     const { data, error } = await resend.emails.send({
       from: fromAddress(),
+      replyTo: replyToAddress(),
       to,
       subject,
       html,

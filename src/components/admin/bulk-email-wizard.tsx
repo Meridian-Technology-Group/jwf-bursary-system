@@ -101,6 +101,7 @@ export function BulkEmailWizardAction({
 
   const [recipients, setRecipients] = React.useState<BulkEmailRecipient[] | null>(null);
   const [fromAddress, setFromAddress] = React.useState<string>("");
+  const [replyToAddress, setReplyToAddress] = React.useState<string>("");
   const [isLoadingRecipients, startLoadRecipients] = useTransition();
   const [excludedIds, setExcludedIds] = React.useState<Set<string>>(new Set());
   const [expandedPreviewId, setExpandedPreviewId] = React.useState<string | null>(null);
@@ -152,6 +153,7 @@ export function BulkEmailWizardAction({
       if (result.success) {
         setRecipients(result.recipients);
         setFromAddress(result.fromAddress);
+        setReplyToAddress(result.replyToAddress);
         setExcludedIds(new Set(result.recipients.filter((r) => r.unsendableReason).map((r) => r.applicationId)));
       } else {
         setError(result.error);
@@ -245,6 +247,7 @@ export function BulkEmailWizardAction({
               recipients={recipients}
               isLoading={isLoadingRecipients}
               fromAddress={fromAddress}
+              replyToAddress={replyToAddress}
               excludedIds={excludedIds}
               setExcludedIds={setExcludedIds}
               expandedPreviewId={expandedPreviewId}
@@ -410,6 +413,7 @@ function RecipientsStep({
   recipients,
   isLoading,
   fromAddress,
+  replyToAddress,
   excludedIds,
   setExcludedIds,
   expandedPreviewId,
@@ -419,6 +423,7 @@ function RecipientsStep({
   recipients: BulkEmailRecipient[] | null;
   isLoading: boolean;
   fromAddress: string;
+  replyToAddress: string;
   excludedIds: Set<string>;
   setExcludedIds: (updater: (prev: Set<string>) => Set<string>) => void;
   expandedPreviewId: string | null;
@@ -456,6 +461,12 @@ function RecipientsStep({
         {fromAddress && (
           <span>
             From: <span className="font-mono">{fromAddress}</span>
+            {replyToAddress && (
+              <>
+                {" · "}Replies to:{" "}
+                <span className="font-mono">{replyToAddress}</span>
+              </>
+            )}
           </span>
         )}
       </div>
