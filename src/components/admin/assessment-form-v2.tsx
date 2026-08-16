@@ -43,6 +43,11 @@ import type { AssessmentStatus, EmploymentStatus, RentAddBackType } from "@prism
 import type { AssessorIncomeRecord, PropertyAssetsRecord, DebtsRecord, SiblingDetail } from "@/types/assessment-v2";
 import type { ReferenceBundle } from "@/lib/assessment/v2/types";
 import type { PropertyPortfolioType } from "@/lib/assessment/v2/profiling";
+import {
+  propertyEquityTotals,
+  netFinancialEquity,
+  lifestyleSqueeze,
+} from "@/lib/assessment/v2/profiling";
 import type { AssessmentV2Input } from "@/lib/assessment/v2/orchestrator";
 import { getNotionalCostAmount, getFamilyCategoryMeta } from "@/lib/assessment/reference-bands";
 import { calculateSchoolingYearsRemainingFromEntry, type EntryYearGroupCode } from "@/lib/assessment/schooling-years";
@@ -160,11 +165,12 @@ const RENT_ADD_BACK_OPTIONS: { value: RentAddBackType; label: string }[] = [
   { value: "PARTIAL_LOWER_RENT", label: "Partial — lower rent (+25%)" },
 ];
 
+// Part 4 property-structure selector — Charlotte's labels verbatim (CG-16).
 const PORTFOLIO_OPTIONS: { value: PropertyPortfolioType; label: string }[] = [
-  { value: "RENTING", label: "Renting (no owned property)" },
-  { value: "SINGLE", label: "Single property (home only)" },
-  { value: "DOUBLE", label: "Double (home + one other)" },
-  { value: "MULTIPLE", label: "Multiple (home + two or more)" },
+  { value: "RENTING", label: "NO PROPERTY, RENTING" },
+  { value: "SINGLE", label: "SINGLE PROPERTY - FAMILY HOME" },
+  { value: "DOUBLE", label: "TWO PROPERTY PORTFOLIO" },
+  { value: "MULTIPLE", label: "MULTIPLE PROPERTY PORTFOLIO" },
 ];
 
 const MULTI_PROPERTY_HELPER =
@@ -175,6 +181,108 @@ const MULTI_PROPERTY_HELPER =
 function fmtMoney(v: number | null | undefined): string {
   if (v == null) return "—";
   return new Intl.NumberFormat("en-GB", { style: "currency", currency: "GBP", minimumFractionDigits: 2 }).format(v);
+}
+
+/** Whole-percentage display for the lifestyle-squeeze rows (null → n/a). */
+function pct(v: number | null | undefined): string {
+  if (v == null) return "n/a";
+  return `${v.toFixed(1)}%`;
+}
+
+// ─── Workbook-table primitives (Epic 14 C6) ───────────────────────────────────
+// Plain label | control | AUTO-value rows mirroring Charlotte's sheets.
+
+function WorkbookTable({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="overflow-x-auto rounded-lg border border-slate-200">
+      <table className="w-full min-w-[680px] border-collapse text-sm">
+        <tbody>{children}</tbody>
+      </table>
+    </div>
+  );
+}
+
+function WBRow({
+  label,
+  sublabel,
+  note,
+  auto,
+  emphasis = false,
+  children,
+}: {
+  /** Workbook row label, verbatim. */
+  label: string;
+  /** Second-column workbook label when the row carries both (condition + action). */
+  sublabel?: string;
+  note?: string;
+  /** Computed (AUTO) display value. */
+  auto?: string;
+  /** Highlights the workbook's total/category rows. */
+  emphasis?: boolean;
+  /** Manual-fill control, when the row has one. */
+  children?: React.ReactNode;
+}) {
+  return (
+    <tr
+      className={cn(
+        "border-b border-slate-100 last:border-b-0",
+        emphasis && "bg-primary-50/60"
+      )}
+    >
+      <td className="w-[55%] px-3 py-2 align-top">
+        <span
+          className={cn(
+            "block text-xs font-medium leading-snug",
+            emphasis ? "font-semibold text-primary-900" : "text-slate-700"
+          )}
+        >
+          {label}
+        </span>
+        {sublabel && (
+          <span className="mt-0.5 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+            {sublabel}
+          </span>
+        )}
+        {note && (
+          <span className="mt-0.5 block text-[11px] leading-tight text-slate-400">{note}</span>
+        )}
+      </td>
+      <td className="w-[25%] px-3 py-2 align-top">{children}</td>
+      <td
+        className={cn(
+          "w-[20%] px-3 py-2 text-right align-top font-mono text-sm",
+          emphasis ? "font-bold text-primary-900" : "text-slate-700"
+        )}
+      >
+        {auto ?? ""}
+      </td>
+    </tr>
+  );
+}
+
+/** The workbook's MANUAL FILL YES/NO cells. */
+function YesNo({
+  checked,
+  disabled,
+  ariaLabel,
+  onChange,
+}: {
+  checked: boolean;
+  disabled?: boolean;
+  ariaLabel: string;
+  onChange: (checked: boolean) => void;
+}) {
+  return (
+    <label className="inline-flex items-center gap-2">
+      <Checkbox
+        checked={checked}
+        disabled={disabled}
+        onCheckedChange={(c) => onChange(c === true)}
+        aria-label={ariaLabel}
+      />
+      <span className="text-xs font-medium text-slate-600">{checked ? "YES" : "NO"}</span>
+    </label>
+  );
 }
 
 /** Best-effort dominant employment status for the (non-null) `employmentStatus` column — back-compat display only. */
@@ -468,6 +576,24 @@ export function AssessmentFormV2({
   ]);
 
   const output = useAssessmentCalculationV2(input, referenceBundle);
+
+  // ── Epic 14 C6 — derived display values for the Parts 3–5 tables ───────────
+  // All computed by the UNCHANGED engine helpers; zero new maths (D14-4).
+  const lineAmt = (key: string): number | null =>
+    output?.notionalSpendLines.find((l) => l.key === key)?.amount ?? null;
+  const equityTotals = propertyEquityTotals(propertyAssets);
+  const financialEquity = netFinancialEquity(cashSavings + isasPepsShares, debts);
+  const squeeze = output
+    ? lifestyleSqueeze(
+        {
+          ndiAfterNotionalSpend: output.ndiAfterNotionalSpend,
+          householdNetIncome: output.householdNetIncome,
+          yearlyDebtExposure: output.yearlyDebtExposure,
+          feesBenchmarkPct: output.feesBenchmarkPct ?? 0,
+        },
+        referenceBundle.lifestyleSqueezeBands
+      )
+    : null;
 
   // Auto notional values (for the per-line display) + savings cushion, from the bundle.
   const savingsCushion = getNotionalCostAmount(referenceBundle.notionalCosts, familyTypeCategory, "SAVINGS_CUSHION");
@@ -1083,220 +1209,102 @@ export function AssessmentFormV2({
         </div>
       </FormSection>
 
-      {/* C. Notional spend toggles */}
-      <FormSection title="C. Notional spend">
-        <p className="text-xs text-slate-400">
-          Auto values are drawn from the reference tables for family type {familyTypeCategory}. Use the
-          toggles to apply the workbook&apos;s conditional add-backs and to include car / public-transport
-          spend.
-        </p>
-        <div className="grid grid-cols-2 gap-2 rounded-lg border border-slate-100 bg-slate-50/60 p-3 text-xs sm:grid-cols-3">
-          <div>Rent: <span className="font-mono">{fmtMoney(notionalAuto("RENT"))}</span></div>
-          <div>Council tax: <span className="font-mono">{fmtMoney(notionalAuto("COUNCIL_TAX"))}</span></div>
-          <div>Essentials: <span className="font-mono">{fmtMoney(notionalAuto("ESSENTIALS"))}</span></div>
-          <div>Car: <span className="font-mono">{fmtMoney(notionalAuto("CAR"))}</span></div>
-          <div>Public transport: <span className="font-mono">{fmtMoney(notionalAuto("PUBLIC_TRANSPORT"))}</span></div>
-          <div>JWF allowance: <span className="font-mono">{fmtMoney(notionalAuto("JWF_ALLOWANCE"))}</span></div>
-          <div>Notional savings: <span className="font-mono">{fmtMoney(notionalAuto("NOTIONAL_SAVINGS"))}</span></div>
-        </div>
-
-        <FieldRow label="Rent add-back type" htmlFor="v2-rent-add-back">
-          <Select
-            value={rentAddBackType}
-            onValueChange={(v) => {
-              setRentAddBackType(v as RentAddBackType);
-              scheduleAutoSave();
-            }}
-            disabled={isReadOnly}
+      {/* PART 3 (CG-16/CG-21, Epic 14 C6) — notional spend benchmarking as
+          a plain workbook table: labels verbatim ("STUCTURE" included), AUTO
+          cells from the engine's notional-spend lines, manual cells editable. */}
+      <FormSection title="PART 3 - NOTIONAL SPEND BENCHMARKING">
+        <WorkbookTable>
+          <WBRow label="SELECT FAMILY STUCTURE" note="Autofilled from the Part 1 family-category selection.">
+            <span className="text-xs text-slate-700">
+              {referenceBundle.familyCategoryMetas.find((m) => m.category === familyTypeCategory)?.description ?? "—"}
+            </span>
+          </WBRow>
+          <WBRow label="FAMILY CATEGORY" auto={String(familyTypeCategory)} />
+          <WBRow label="DEDUCT NOTIONAL RENT" auto={fmtMoney(lineAmt("rent"))} />
+          <WBRow
+            label="IF THE FAMILY HOME IS MORTGAGE FREE/ or LIVING RENT FREE, ADD FULL NOTIONAL BACK IN - or if FAMILY HAS A LOWER RENT, ADD 25% BACK IN OF THE NOTIONAL RENT"
+            sublabel="ADD BACK IN NOTIONAL RENT APPLIED"
+            auto={fmtMoney(lineAmt("rentAddBack"))}
           >
-            <SelectTrigger id="v2-rent-add-back" className="h-9 text-sm">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {RENT_ADD_BACK_OPTIONS.map((o) => (
-                <SelectItem key={o.value} value={o.value} className="text-sm">
-                  {o.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </FieldRow>
-
-        <label className="flex items-start gap-2">
-          <Checkbox
-            checked={multiPropertyRentAddBack}
-            disabled={isReadOnly}
-            onCheckedChange={(c) => {
-              setMultiPropertyRentAddBack(c === true);
-              scheduleAutoSave();
-            }}
-            className="mt-0.5"
-          />
-          <span className="text-xs text-slate-600">
-            <span className="font-medium text-slate-700">Multi-property rent add-back</span>
-            <br />
-            {MULTI_PROPERTY_HELPER}
-          </span>
-        </label>
-
-        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-          <label className="flex items-center gap-2">
-            <Checkbox
+            <Select
+              value={rentAddBackType}
+              onValueChange={(v) => {
+                setRentAddBackType(v as RentAddBackType);
+                scheduleAutoSave();
+              }}
+              disabled={isReadOnly}
+            >
+              <SelectTrigger id="v2-rent-add-back" className="h-9 text-sm">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {RENT_ADD_BACK_OPTIONS.map((o) => (
+                  <SelectItem key={o.value} value={o.value} className="text-sm">
+                    {o.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </WBRow>
+          <WBRow
+            label="IF HOUSEHOLD OWNS AT LEAST TWO PROPERTIES AND EITHER 1- PROPERTY INCOME IS NOT MAIN INCOME OR 2- EVIDENCE OF STABLE (PAYE OVER S-E) MEDIUM TO HIGH OR HIGH INCOME 3- CASH DRAWDOWN NOT SOLELY TO DEBT CONSOLIDATE"
+            sublabel="ADD BACK NOTIONAL RENT"
+            auto={fmtMoney(lineAmt("multiPropertyRentAddBack"))}
+            note={MULTI_PROPERTY_HELPER}
+          >
+            <YesNo
+              checked={multiPropertyRentAddBack}
+              disabled={isReadOnly}
+              ariaLabel="Multi-property rent add-back"
+              onChange={(c) => {
+                setMultiPropertyRentAddBack(c);
+                scheduleAutoSave();
+              }}
+            />
+          </WBRow>
+          <WBRow label="DEDUCT ANNUAL COUNCIL TAX" auto={fmtMoney(lineAmt("councilTax"))} />
+          <WBRow
+            label="IF HOUSEHOLD RECEIVES FULL COUNCIL TAX SUPPORT"
+            sublabel="ADD BACK IN COUNCIL TAX NOTIONAL"
+            auto={fmtMoney(lineAmt("councilTaxAddBack"))}
+          >
+            <YesNo
               checked={councilTaxSupport}
               disabled={isReadOnly}
-              onCheckedChange={(c) => {
-                setCouncilTaxSupport(c === true);
+              ariaLabel="Council tax support add-back"
+              onChange={(c) => {
+                setCouncilTaxSupport(c);
                 scheduleAutoSave();
               }}
             />
-            <span className="text-xs text-slate-600">Council-tax support (full add-back)</span>
-          </label>
-          <label className="flex items-center gap-2">
-            <Checkbox
+          </WBRow>
+          <WBRow label="DEDUCT NOTIONAL ESSENTIALS" auto={fmtMoney(lineAmt("essentials"))} />
+          <WBRow label="DOES THE FAMILY USE A CAR?">
+            <YesNo
               checked={usesCar}
               disabled={isReadOnly}
-              onCheckedChange={(c) => {
-                setUsesCar(c === true);
+              ariaLabel="Does the family use a car?"
+              onChange={(c) => {
+                setUsesCar(c);
                 scheduleAutoSave();
               }}
             />
-            <span className="text-xs text-slate-600">Uses a car (deduct notional car spend)</span>
-          </label>
-          <label className="flex items-center gap-2">
-            <Checkbox
+          </WBRow>
+          <WBRow label="IF YES, DEDUCT NOTIONAL CAR SPEND" auto={fmtMoney(lineAmt("car"))} />
+          <WBRow label="DOES THE FAMILY USE PUBLIC TRANSPORT?">
+            <YesNo
               checked={usesPublicTransport}
               disabled={isReadOnly}
-              onCheckedChange={(c) => {
-                setUsesPublicTransport(c === true);
+              ariaLabel="Does the family use public transport?"
+              onChange={(c) => {
+                setUsesPublicTransport(c);
                 scheduleAutoSave();
               }}
             />
-            <span className="text-xs text-slate-600">
-              Uses public transport (deduct notional public-transport spend)
-            </span>
-          </label>
-        </div>
-
-        <FieldRow
-          label="Fee insurance (annual)"
-          htmlFor="v2-fee-insurance"
-          hint="Yearly insured school-fee total — added back in full (C83)."
-        >
-          <CurrencyInput
-            id="v2-fee-insurance"
-            value={feeInsuranceAnnual}
-            disabled={isReadOnly}
-            onChange={(v) => {
-              setFeeInsuranceAnnual(v);
-              scheduleAutoSave();
-            }}
-          />
-        </FieldRow>
-      </FormSection>
-
-      {/* D. Property, debt & savings */}
-      <FormSection title="D. Property, debt & savings">
-        <FieldRow label="Property portfolio type" htmlFor="v2-portfolio">
-          <Select
-            value={portfolioType}
-            onValueChange={(v) => {
-              setPortfolioType(v as PropertyPortfolioType);
-              scheduleAutoSave();
-            }}
-            disabled={isReadOnly}
-          >
-            <SelectTrigger id="v2-portfolio" className="h-9 text-sm">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {PORTFOLIO_OPTIONS.map((o) => (
-                <SelectItem key={o.value} value={o.value} className="text-sm">
-                  {o.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </FieldRow>
-
-        {(["home", "second", "other"] as const).map((slot) => (
-          <div key={slot} className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <FieldRow
-              label={`${slot === "home" ? "Home" : slot === "second" ? "Second property" : "Other properties (aggregate)"} — value`}
-              htmlFor={`v2-prop-${slot}-value`}
-            >
-              <CurrencyInput
-                id={`v2-prop-${slot}-value`}
-                value={propertyAssets[slot]?.value ?? 0}
-                disabled={isReadOnly}
-                onChange={(v) => {
-                  setPropertyField(slot, "value", v);
-                  scheduleAutoSave();
-                }}
-              />
-            </FieldRow>
-            <FieldRow label="Mortgage balance" htmlFor={`v2-prop-${slot}-mortgage`}>
-              <CurrencyInput
-                id={`v2-prop-${slot}-mortgage`}
-                value={propertyAssets[slot]?.mortgageBalance ?? 0}
-                disabled={isReadOnly}
-                onChange={(v) => {
-                  setPropertyField(slot, "mortgageBalance", v);
-                  scheduleAutoSave();
-                }}
-              />
-            </FieldRow>
-          </div>
-        ))}
-
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <FieldRow label="Credit cards + overdraft" htmlFor="v2-debt-credit">
-            <CurrencyInput
-              id="v2-debt-credit"
-              value={debts.creditCards ?? 0}
-              disabled={isReadOnly}
-              onChange={(v) => {
-                setDebtField("creditCards", v);
-                scheduleAutoSave();
-              }}
-            />
-          </FieldRow>
-          <FieldRow label="Loans" htmlFor="v2-debt-loans">
-            <CurrencyInput
-              id="v2-debt-loans"
-              value={debts.loans ?? 0}
-              disabled={isReadOnly}
-              onChange={(v) => {
-                setDebtField("loans", v);
-                scheduleAutoSave();
-              }}
-            />
-          </FieldRow>
-          <FieldRow label="Lease balances" htmlFor="v2-debt-lease">
-            <CurrencyInput
-              id="v2-debt-lease"
-              value={debts.leaseBalances ?? 0}
-              disabled={isReadOnly}
-              onChange={(v) => {
-                setDebtField("leaseBalances", v);
-                scheduleAutoSave();
-              }}
-            />
-          </FieldRow>
-          <FieldRow label="School fees owed / other" htmlFor="v2-debt-fees">
-            <CurrencyInput
-              id="v2-debt-fees"
-              value={debts.schoolFeesOwedOrOther ?? 0}
-              disabled={isReadOnly}
-              onChange={(v) => {
-                setDebtField("schoolFeesOwedOrOther", v);
-                scheduleAutoSave();
-              }}
-            />
-          </FieldRow>
-        </div>
-
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <FieldRow label="Cash savings" htmlFor="v2-cash">
+          </WBRow>
+          <WBRow label="IF YES, DEDUCT NOTIONAL PUBLIC TRANSPORT SPEND" auto={fmtMoney(lineAmt("publicTransport"))} />
+          <WBRow label="DEDUCT NOTIONAL JWF BURSARY RECIPIENT ALLOWANCE" auto={fmtMoney(lineAmt("jwfAllowance"))} />
+          <WBRow label="DISPLAY ONLY - ENTER TOTAL CASH HELD">
             <CurrencyInput
               id="v2-cash"
               value={cashSavings}
@@ -1306,8 +1314,8 @@ export function AssessmentFormV2({
                 scheduleAutoSave();
               }}
             />
-          </FieldRow>
-          <FieldRow label="ISAs / PEPs / shares" htmlFor="v2-isas">
+          </WBRow>
+          <WBRow label="DISPLAY ONLY - ENTER TOTAL SAVINGS">
             <CurrencyInput
               id="v2-isas"
               value={isasPepsShares}
@@ -1317,25 +1325,215 @@ export function AssessmentFormV2({
                 scheduleAutoSave();
               }}
             />
-          </FieldRow>
-        </div>
-
-        <div className="rounded-md border border-slate-100 bg-slate-50/60 px-3 py-2 text-xs text-slate-500">
-          Savings test (display only): {fmtMoney(output?.savingsTestNumber)} · adjusted savings{" "}
-          {fmtMoney(output?.adjustedSavings)} · savings-cushion allowance {fmtMoney(savingsCushion)}
-        </div>
-
-        <label className="flex items-center gap-2">
-          <Checkbox
-            checked={behindOnFees}
-            disabled={isReadOnly}
-            onCheckedChange={(c) => {
-              setBehindOnFees(c === true);
-              scheduleAutoSave();
-            }}
+          </WBRow>
+          <WBRow label="DISPLAY ONLY - TOTAL CASH & SAVINGS" auto={fmtMoney(cashSavings + isasPepsShares)} />
+          <WBRow label="TOTAL NUMBER OF CHILDREN OF SCHOOL AGE" auto={String(schoolAgeChildrenCount)} note="From the Part 1 entry." />
+          <WBRow label="NUMBER OF SCHOOL YEARS LEFT FOR THE BURSARY RECIPIENT" auto={String(schoolingYearsRemaining)} note="From the Part 1 entry." />
+          <WBRow label="DISPLAY ONLY - ADJUSTED SAVINGS TOTAL" auto={fmtMoney(output?.adjustedSavings)} />
+          <WBRow label="DEDUCT NOTIONAL SAVINGS" auto={fmtMoney(lineAmt("notionalSavingsBenchmark"))} />
+          <WBRow
+            label="DISPLAY ONLY - SAVINGS CUSHION ALLOWANCE"
+            auto={fmtMoney(savingsCushion)}
+            note="Reference value only — feeds no calculation (LA-8, sign-off pending)."
           />
-          <span className="text-xs text-slate-600">Family is behind on fees</span>
-        </label>
+          <WBRow label="DISPLAY ONLY - SAVINGS TEST NUMBER" auto={fmtMoney(output?.savingsTestNumber)} />
+          <WBRow label="IF SAVINGS TEST NUMBER IS POSITIVE, ADD IT IN" auto={fmtMoney(lineAmt("savingsTestAddBack"))} />
+          <WBRow label="IF THE APPLICANT HAS INSURED SCHOOL FEES PAYMENT, ADD YEARLY INSURED TOTAL BACK IN">
+            <CurrencyInput
+              id="v2-fee-insurance"
+              value={feeInsuranceAnnual}
+              disabled={isReadOnly}
+              onChange={(v) => {
+                setFeeInsuranceAnnual(v);
+                scheduleAutoSave();
+              }}
+            />
+          </WBRow>
+          <WBRow label="TOTAL DEDUCTED NOTIONAL SPEND" auto={fmtMoney(output?.totalNotionalSpend)} emphasis />
+          <WBRow label="HOUSEHOLD'S NET DISPOSABLE INCOME AFTER NOTIONAL SPEND" auto={fmtMoney(output?.ndiAfterNotionalSpend)} emphasis />
+          <WBRow label="HOUSEHOLD'S INCOME CATEGORY IS:" auto={output?.incomeCategory != null ? String(output.incomeCategory) : "—"} emphasis />
+        </WorkbookTable>
+      </FormSection>
+
+      {/* PART 4 (CG-16, Epic 14 C6) — assets categories, workbook rows verbatim. */}
+      <FormSection title="PART 4 - HOUSEHOLD'S ASSETS CATEGORIES">
+        <WorkbookTable>
+          <WBRow label="Property asset structure">
+            <Select
+              value={portfolioType}
+              onValueChange={(v) => {
+                setPortfolioType(v as PropertyPortfolioType);
+                scheduleAutoSave();
+              }}
+              disabled={isReadOnly}
+            >
+              <SelectTrigger id="v2-portfolio" className="h-9 text-sm">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {PORTFOLIO_OPTIONS.map((o) => (
+                  <SelectItem key={o.value} value={o.value} className="text-sm">
+                    {o.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </WBRow>
+          <WBRow label="DISPLAY ONLY - TOTAL FAMILY HOME MARKET VALUE">
+            <CurrencyInput
+              id="v2-prop-home-value"
+              value={propertyAssets.home?.value ?? 0}
+              disabled={isReadOnly}
+              onChange={(v) => {
+                setPropertyField("home", "value", v);
+                scheduleAutoSave();
+              }}
+            />
+          </WBRow>
+          <WBRow label="DISPLAY ONLY - TOTAL FAMILY HOME MORTGAGE BALANCE">
+            <CurrencyInput
+              id="v2-prop-home-mortgage"
+              value={propertyAssets.home?.mortgageBalance ?? 0}
+              disabled={isReadOnly}
+              onChange={(v) => {
+                setPropertyField("home", "mortgageBalance", v);
+                scheduleAutoSave();
+              }}
+            />
+          </WBRow>
+          <WBRow label="DISPLAY ONLY - TOTAL SECOND PROPERTY MARKET VALUE">
+            <CurrencyInput
+              id="v2-prop-second-value"
+              value={propertyAssets.second?.value ?? 0}
+              disabled={isReadOnly}
+              onChange={(v) => {
+                setPropertyField("second", "value", v);
+                scheduleAutoSave();
+              }}
+            />
+          </WBRow>
+          <WBRow label="DISPLAY ONLY - TOTAL SECOND PROPERTY MORTGAGE BALANCE">
+            <CurrencyInput
+              id="v2-prop-second-mortgage"
+              value={propertyAssets.second?.mortgageBalance ?? 0}
+              disabled={isReadOnly}
+              onChange={(v) => {
+                setPropertyField("second", "mortgageBalance", v);
+                scheduleAutoSave();
+              }}
+            />
+          </WBRow>
+          <WBRow label="DISPLAY ONLY - TOTAL OTHER PROPERTY (IES) MARKET VALUE">
+            <CurrencyInput
+              id="v2-prop-other-value"
+              value={propertyAssets.other?.value ?? 0}
+              disabled={isReadOnly}
+              onChange={(v) => {
+                setPropertyField("other", "value", v);
+                scheduleAutoSave();
+              }}
+            />
+          </WBRow>
+          <WBRow label="DISPLAY ONLY - TOTAL OTHER PROPERTY (IES) MORTGAGE BALANCE">
+            <CurrencyInput
+              id="v2-prop-other-mortgage"
+              value={propertyAssets.other?.mortgageBalance ?? 0}
+              disabled={isReadOnly}
+              onChange={(v) => {
+                setPropertyField("other", "mortgageBalance", v);
+                scheduleAutoSave();
+              }}
+            />
+          </WBRow>
+          <WBRow label="DISPLAY ONLY - HOUSEHOLD'S TOTAL PROPERTY VALUE" auto={fmtMoney(equityTotals.totalValue)} />
+          <WBRow label="DISPLAY ONLY - HOUSEHOLD'S EQUITY ON FAMILY HOME" auto={fmtMoney(equityTotals.homeEquity)} />
+          <WBRow label="DISPLAY ONLY - HOUSEHOLD'S EQUITY ON SECOND PROPERTY" auto={fmtMoney(equityTotals.secondEquity)} />
+          <WBRow label="DISPLAY ONLY - HOUSEHOLD'S EQUITY ON OTHER PROPERTIES" auto={fmtMoney(equityTotals.otherEquity)} />
+          <WBRow label="HOUSEHOLD'S PROPERTY CATEGORY IS:" auto={output ? String(output.propertyCategoryDerived) : "—"} emphasis />
+          <WBRow label="HOUSEHOLD'S TOTAL EQUITY HELD ON PROPERTY ASSETS" auto={fmtMoney(equityTotals.totalEquity)} />
+          <WBRow label="HOUSEHOLD'S PROPERTY EQUITY CATEGORY IS:" auto={output?.propertyEquityCategory != null ? String(output.propertyEquityCategory) : "—"} emphasis />
+          <WBRow label="HOUSEHOLD'S TOTAL EQUITY HELD ON FINANCIAL ASSETS" auto={fmtMoney(financialEquity)} />
+          <WBRow label="HOUSEHOLD'S FINANCIAL EQUITY CATEGORY IS:" auto={output?.financialEquityLabel ?? "—"} emphasis />
+        </WorkbookTable>
+      </FormSection>
+
+      {/* "PART 5" personal debt + lifestyle squeeze — lives on the MODEL tab
+          per LA-6 (the award sheet is the other "PART 5"). Rows verbatim. */}
+      <FormSection title="PART 5 - HOUSEHOLD'S PERSONAL DEBT (NON-PROPERTY)">
+        <WorkbookTable>
+          <WBRow label="DISPLAY ONLY - ENTER TOTAL CREDIT CARD DEBT">
+            <CurrencyInput
+              id="v2-debt-credit"
+              value={debts.creditCards ?? 0}
+              disabled={isReadOnly}
+              onChange={(v) => {
+                setDebtField("creditCards", v);
+                scheduleAutoSave();
+              }}
+            />
+          </WBRow>
+          <WBRow label="DISPLAY ONLY - ENTER TOTAL LOAN BALANCES">
+            <CurrencyInput
+              id="v2-debt-loans"
+              value={debts.loans ?? 0}
+              disabled={isReadOnly}
+              onChange={(v) => {
+                setDebtField("loans", v);
+                scheduleAutoSave();
+              }}
+            />
+          </WBRow>
+          <WBRow label="DISPLAY ONLY - ENTER TOTAL OWED LEASE BALANCES">
+            <CurrencyInput
+              id="v2-debt-lease"
+              value={debts.leaseBalances ?? 0}
+              disabled={isReadOnly}
+              onChange={(v) => {
+                setDebtField("leaseBalances", v);
+                scheduleAutoSave();
+              }}
+            />
+          </WBRow>
+          <WBRow label="DISPLAY ONLY - ENTER OWED OTHER SCHOOL FEES BALANCES OR OTHER DEBT">
+            <CurrencyInput
+              id="v2-debt-fees"
+              value={debts.schoolFeesOwedOrOther ?? 0}
+              disabled={isReadOnly}
+              onChange={(v) => {
+                setDebtField("schoolFeesOwedOrOther", v);
+                scheduleAutoSave();
+              }}
+            />
+          </WBRow>
+          <WBRow label="NUMBER OF SCHOOL YEARS LEFT FOR THE BURSARY RECIPIENT" auto={String(schoolingYearsRemaining)} note="From the Part 1 entry — one stored value." />
+          <WBRow label="DISPLAY ONLY - DERIVED YEARLY DEBT REPAYMENTS" auto={fmtMoney(output?.derivedYearlyDebtRepayments)} />
+          <WBRow label="YEARLY DEBT EXPOSURE (NETTED OFF YEARLY SAVINGS)" auto={fmtMoney(output?.yearlyDebtExposure)} />
+          <WBRow label="DEBT OVER NET DISPOSABLE INCOME RATIO" auto={output ? output.debtOverNdiRatio.toFixed(3) : "—"} />
+          <WBRow label="Minimum Debt Repayment Duration in months without school fees payments" auto={output?.minRepaymentMonths != null ? String(output.minRepaymentMonths) : "—"} />
+          <WBRow label="DEBT STATUS" auto={output?.debtStatusLabel ?? "—"} emphasis />
+          <WBRow label="DEBT SITUATION WITH THE FOUNDATION — DISPLAY ONLY - IS THE FAMILY BEHIND WITH THEIR SCHOOL FEES PAYMENTS?">
+            <YesNo
+              checked={behindOnFees}
+              disabled={isReadOnly}
+              ariaLabel="Is the family behind with their school fees payments?"
+              onChange={(c) => {
+                setBehindOnFees(c);
+                scheduleAutoSave();
+              }}
+            />
+          </WBRow>
+        </WorkbookTable>
+
+        <p className="pt-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+          LIFESTYLE SQUEEZE AFFORDABILITY RATIO
+        </p>
+        <WorkbookTable>
+          <WBRow label="CALCULATING NDI over NET INCOME %" auto={pct(squeeze?.ndiOverIncomePct)} />
+          <WBRow label="CALCULATING (NDI after YEARLY DEBT EXPOSURE) over NET INCOME) LIFESTYLE RATIO %" auto={pct(squeeze?.postDebtLifestylePct)} />
+          <WBRow label="SCHOOL FEES USE BENCHMARKING" auto={fmtMoney(squeeze?.feesBenchmarkAmount)} />
+          <WBRow label="LIFESTYLE SQUEEZE AFFORDABILITY RATIO" auto={pct(squeeze?.squeezeRatio)} emphasis />
+          <WBRow label="LIFESTYLE SQUEEZE AFFORDABILITY STATUS" auto={squeeze?.statusLabel ?? "—"} emphasis />
+        </WorkbookTable>
       </FormSection>
 
       {/* E. Flags */}
