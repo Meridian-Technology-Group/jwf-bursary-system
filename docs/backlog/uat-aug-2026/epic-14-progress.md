@@ -37,7 +37,7 @@ in review · merged`.
 | C8 | Assessment Admin tab | in review | `feature/e14-c8-admin-tab` | Sheet-3 complete: header strip (name · reference · school · siblings), synopsis + wizard-notes editor relocated from form section F (same storage/save; read-only when COMPLETED), YoY history table (system years from snapshots + LA-7 manual pre-system rows in new `bursary_accounts.pre_system_history` JSONB with editor + audited action; deltas across the manual→system seam, 4 unit tests incl. Charlotte's example figures), payable-fees schedule (per Epic 10 year: reason codes · payable + Δ · school year · submit-by · 3 statuses; future rows Scheduled/Not started; year-matching falls back to round academic year when entries aren't back-linked). Browser-verified end-to-end on the awarded throwaway. |
 | C9 | Real reason codes | merged (pre-delivered) | delivered by CALC-09/CALC-02/CALC-11 (calc-model epic) | Verified 2026-08-16 against the new extraction: the 36 YoY codes are seeded (101–136, placeholders 1–35 deprecated-in-place for historic references) and match the extraction verbatim — 0 label mismatches; the 9 gap codes live in `gap_reasons` (dup-"5" already renumbered); Settings → Reason Codes shows both sets with CRUD/deprecation. Remaining C9 scope = the award-tab pickers, which belong to C7 by design. CG-25/D4 closed. |
 | D1 | Round scenarios | in review | `feature/e14-d1-round-scenarios` | New `round_windows` table (RLS policies in the same migration, admin-modify/staff-read) keyed (round, scenario) with opensOn/submitBy/defaultTaxYear; pure resolver `resolveRoundScenario` with the full boundary matrix (19/20 Aug, 10 Nov, 11/12 Apr, 22 May — 10 unit tests, LA-4 fixed 12 Apr cutover); "Round scenarios" card on the round page with 4 editable rows + derived defaults as placeholders. E1 deadline columns stay authoritative for the effective-deadline chain (decision recorded); D2 wires consumption. Browser: RA dates edited, persisted, reloaded. |
-| D2 | Scenario consumption | todo | | |
+| D2 | Scenario consumption | in review | `feature/e14-d2-scenario-consumption` | Pure `window-consumption.ts`: stored window `submitBy` FILLS a null E1 per-type round default (explicit E1 column always wins — D1 decision preserved); `{{opening_date}}` = window `opensOn` > `Round.openDate` > resolver derived default. Wired into all four round-anchored sends (contact invite, quick invite, resend, reassessment batch — batch resolves once per round). Second-parent invite deliberately untouched (application-anchored deadline). Tax year: Epic 02 rule engine (round-year → (Y-1)/Y) DISAGREES with Charlotte's winter-window "previous year" — per plan the RULE ENGINE WINS, disagreement documented in `tax-year.ts` + pinned by a test; flip point is one line. 12 unit tests. |
 | D3 | Portal schedule home | todo | | |
 | E1 | Second child on one login | in review | `fix/e14-e1-multi-child-invite` | Root cause: every invite path called `createUser(email)` unconditionally → raw "already registered" failure on a second child. Fix: shared `provisionApplicantAuthUser` (reuse APPLICANT profile → create → recover half-provisioned; staff emails refused) wired into contact-invite + quick-invite (queue path already looked up); rollbacks guarded so a REUSED login is never deleted. New existing-account accept step at /register?token (no password reset; signed-in one-click or sign-in-and-accept). Browser E2E = Charlotte's exact test: contact #2 same email → invite (reused auth user, situation carried) → accept signed-out with the EXISTING password → both applications on one profile, invitation ACCEPTED. Fixture kept for E2. |
 | E2 | Portal multi-application UX | todo | | |
@@ -76,6 +76,14 @@ in review · merged`.
   computed (no per-field overrides, D13-3/D14-4); manual entry there would
   be a calculation change (MSA 9.3).
 
+- **D2 tax-year question (decision needed):** the application form's tax-year
+  wording is derived from the ROUND's academic year (Epic 02 rule: round
+  2027/28 → tax year 2026/27), regardless of when the parent fills it in.
+  Charlotte's scenario table wants the winter window (Nov–11 Apr, before the
+  tax year ends) to ask for the PREVIOUS year (2025/26) instead. Per the epic
+  plan we kept the existing rule and documented the disagreement — the form
+  behaviour is unchanged. If Charlotte wants the winter window to switch to
+  the previous tax year, it's a small follow-up (the plumbing is in place).
 - **CG-07 answers (B2, ready to relay):** yes — Request Missing Documents
   emails the lead applicant, pauses the application, and merges the ticked
   items + return-by date into the email. Replies now land at

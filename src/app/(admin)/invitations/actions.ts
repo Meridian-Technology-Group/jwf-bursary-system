@@ -53,6 +53,10 @@ import {
   resolveInvitationTemplate,
 } from "@/lib/email/invitation-template";
 import type { SubmissionDeadlineRound } from "@/lib/rounds/submission-deadline";
+import {
+  invitationScenarioFields,
+  ROUND_WINDOWS_SELECT,
+} from "@/lib/rounds/window-consumption";
 import { withAdminContext } from "@/lib/db/prisma";
 import { createAuditLog } from "@/lib/audit/log";
 import {
@@ -241,18 +245,30 @@ export async function createInvitationAction(
             academicYear: true,
             openDate: true,
             ...INVITATION_ROUND_DEADLINE_SELECT,
+            ...ROUND_WINDOWS_SELECT,
           },
         });
         year = round?.academicYear ?? "";
-        openDate = round?.openDate ?? null;
-        roundDeadline = round
-          ? {
-              closeDate: round.closeDate,
-              defaultSubmissionDeadlineNew: round.defaultSubmissionDeadlineNew,
-              defaultSubmissionDeadlineRolling:
-                round.defaultSubmissionDeadlineRolling,
-            }
-          : null;
+        // D2 (CG-01): the stored scenario window fills null round defaults
+        // and supplies the opening date (window > openDate > derived default).
+        const scenario = invitationScenarioFields({
+          situation,
+          academicYear: round?.academicYear,
+          onDate: new Date(),
+          deadlineRound: round
+            ? {
+                closeDate: round.closeDate,
+                defaultSubmissionDeadlineNew:
+                  round.defaultSubmissionDeadlineNew,
+                defaultSubmissionDeadlineRolling:
+                  round.defaultSubmissionDeadlineRolling,
+              }
+            : null,
+          roundOpenDate: round?.openDate ?? null,
+          windows: round?.windows ?? [],
+        });
+        openDate = scenario.openingDate;
+        roundDeadline = scenario.deadlineRound;
       }
 
       await createAuditLog(tx, {
@@ -583,11 +599,13 @@ async function runReassessmentInvites(
         select: {
           academicYear: true,
           ...INVITATION_ROUND_DEADLINE_SELECT,
+          ...ROUND_WINDOWS_SELECT,
         },
       });
       return {
         holders: h,
         academicYear: round?.academicYear ?? "",
+        roundWindows: round?.windows ?? [],
         deadlineRound: round
           ? {
               closeDate: round.closeDate,
@@ -600,7 +618,17 @@ async function runReassessmentInvites(
     });
     eligible = loaded.holders;
     academicYear = loaded.academicYear;
-    deadlineRound = loaded.deadlineRound;
+    // D2 (CG-01): a stored RA window's submit-by fills the rolling default
+    // when the round column is null — resolved ONCE for the whole batch
+    // (every holder is invited into the same round on the same clock).
+    deadlineRound = invitationScenarioFields({
+      situation: InvitationSituation.ROLLING_OVER,
+      academicYear,
+      onDate: new Date(),
+      deadlineRound: loaded.deadlineRound,
+      roundOpenDate: null,
+      windows: loaded.roundWindows,
+    }).deadlineRound;
   } catch (err) {
     const message =
       err instanceof Error ? err.message : "Failed to load bursary holders";
@@ -937,6 +965,7 @@ export async function resendInvitationAction(
               academicYear: true,
               openDate: true,
               ...INVITATION_ROUND_DEADLINE_SELECT,
+              ...ROUND_WINDOWS_SELECT,
             },
           },
           // A resend must reproduce the ORIGINAL invitation's submission
@@ -996,6 +1025,15 @@ export async function resendInvitationAction(
     // B3: a resend reuses the SAME template variant the original send chose
     // (situation persisted on the row; legacy NULL rows fall back to the
     // generic INVITATION).
+    // D2 (CG-01): same window consumption as the original send.
+    const scenario = invitationScenarioFields({
+      situation: invitation.situation,
+      academicYear: invitation.round?.academicYear,
+      onDate: new Date(),
+      deadlineRound: invitation.round,
+      roundOpenDate: invitation.round?.openDate ?? null,
+      windows: invitation.round?.windows ?? [],
+    });
     const emailResult = await sendEmail(
       invitation.email,
       resolveInvitationTemplate(invitation.situation, invitation.school),
@@ -1005,13 +1043,15 @@ export async function resendInvitationAction(
       school: schoolLabel(invitation.school),
       round_year: invitation.round?.academicYear ?? "",
       registration_link: `${appUrl}/register?token=${newToken}`,
-      opening_date: openingDateMergeField(invitation.round),
+      opening_date: openingDateMergeField(
+        scenario.openingDate ? { openDate: scenario.openingDate } : null
+      ),
       // E1: a resend re-states the SAME submission deadline as the original
       // send — only {{link_expiry}} moves, because only the token was renewed.
       // Before this, every resend silently pushed the advertised "deadline"
       // another 30 days into the future.
       ...invitationDeadlineFields(
-        invitation.round,
+        scenario.deadlineRound,
         invitation.application?.applicationType ??
           deadlineTypeForSituation(invitation.situation),
         newExpiresAt,
