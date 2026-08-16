@@ -24,6 +24,7 @@ import { RoundStatus } from "@prisma/client";
 import { requireRole, Role } from "@/lib/auth/roles";
 import { withAdminContext } from "@/lib/db/prisma";
 import { createSupabaseAdminClient } from "@/lib/auth/supabase-admin";
+import { provisionApplicantAuthUser } from "@/lib/auth/provision-applicant";
 import { createProfile } from "@/lib/auth/create-profile";
 import { createInvitation } from "@/lib/db/queries/invitations";
 import { getAppUrl } from "@/lib/app-url";
@@ -169,28 +170,25 @@ export async function sendInvitationFromContactAction(
   const appUrl = getAppUrl();
   const applicantName = contactDisplayName(contact);
 
-  // 3. Provision the auth user up front (reuse an existing profile when the
-  //    contact is already bound, so we never create a duplicate auth user).
+  // 3. Provision the auth user up front. Epic 14 E1 (CG-04): a SECOND child
+  //    contact shares the parent's email, so the provisioning helper reuses
+  //    the existing APPLICANT profile/auth user (one login, many children) —
+  //    creating fresh only for a genuinely new email.
   let authUserId: string;
   let createdAuthUser = false;
   if (contact.profileId) {
     authUserId = contact.profileId;
   } else {
-    const tempPassword = randomBytes(24).toString("base64url");
-    const { data: created, error: supabaseError } =
-      await supabase.auth.admin.createUser({
-        email: contact.email,
-        password: tempPassword,
-        email_confirm: true,
-        app_metadata: { role: "APPLICANT" },
-      });
-    if (supabaseError || !created?.user) {
-      const message = supabaseError?.message ?? "Failed to create auth user";
-      console.error("[contacts] sendInvitationFromContactAction createUser error:", supabaseError);
-      return { success: false, error: message };
+    const provisioned = await provisionApplicantAuthUser(supabase, contact.email);
+    if (!provisioned.ok) {
+      console.error(
+        "[contacts] sendInvitationFromContactAction provisioning error:",
+        provisioned.error
+      );
+      return { success: false, error: provisioned.error };
     }
-    authUserId = created.user.id;
-    createdAuthUser = true;
+    authUserId = provisioned.authUserId;
+    createdAuthUser = provisioned.created;
   }
 
   const rollbackAuthUser = async () => {

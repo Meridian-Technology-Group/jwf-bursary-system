@@ -39,6 +39,7 @@ import {
   getActiveBursaryHolders,
 } from "@/lib/db/queries/invitations";
 import { createSupabaseAdminClient } from "@/lib/auth/supabase-admin";
+import { provisionApplicantAuthUser } from "@/lib/auth/provision-applicant";
 import { createProfile } from "@/lib/auth/create-profile";
 import { getAppUrl } from "@/lib/app-url";
 import { sendEmail } from "@/lib/email/send";
@@ -176,24 +177,21 @@ export async function createInvitationAction(
   const supabase = createSupabaseAdminClient();
   const appUrl = getAppUrl();
 
-  // 1. Create Supabase auth user silently. email_confirm: true suppresses
-  //    the built-in OTP email — only the branded Resend message will reach
-  //    the applicant.
-  const tempPassword = randomBytes(24).toString("base64url");
-  const { data: created, error: supabaseError } =
-    await supabase.auth.admin.createUser({
-      email,
-      password: tempPassword,
-      email_confirm: true,
-      app_metadata: { role: "APPLICANT" },
-    });
-
-  if (supabaseError || !created?.user) {
-    const message = supabaseError?.message ?? "Failed to create auth user";
-    console.error("[invitations] createInvitationAction createUser error:", supabaseError);
-    return { success: false, error: message };
+  // 1. Provision the auth user. Epic 14 E1 (CG-04): an email that already
+  //    belongs to a registered parent is REUSED (a second child on one
+  //    login), not an error; only genuinely new emails create an auth user.
+  //    email_confirm: true suppresses the built-in OTP email — only the
+  //    branded Resend message reaches the applicant.
+  const provisioned = await provisionApplicantAuthUser(supabase, email);
+  if (!provisioned.ok) {
+    console.error(
+      "[invitations] createInvitationAction provisioning error:",
+      provisioned.error
+    );
+    return { success: false, error: provisioned.error };
   }
-  const authUserId = created.user.id;
+  const authUserId = provisioned.authUserId;
+  const createdAuthUser = provisioned.created;
 
   // 2. Profile + Invitation + audit log under one admin context. Any throw
   //    rolls back the auth user.
@@ -281,12 +279,16 @@ export async function createInvitationAction(
     });
 
     if (!result.success) {
-      await supabase.auth.admin.deleteUser(authUserId).catch((err) => {
-        console.error(
-          "[invitations] createInvitationAction auth rollback failed:",
-          err
-        );
-      });
+      // E1: only a FRESHLY created auth user is rolled back — deleting a
+      // reused one would destroy the parent's real login.
+      if (createdAuthUser) {
+        await supabase.auth.admin.deleteUser(authUserId).catch((err) => {
+          console.error(
+            "[invitations] createInvitationAction auth rollback failed:",
+            err
+          );
+        });
+      }
       return {
         success: false,
         error: result.error ?? "Failed to create invitation",
@@ -299,12 +301,14 @@ export async function createInvitationAction(
     deadlineRound = result.roundDeadline;
     roundOpenDate = result.roundOpenDate;
   } catch (err) {
-    await supabase.auth.admin.deleteUser(authUserId).catch((rollbackErr) => {
-      console.error(
-        "[invitations] createInvitationAction auth rollback failed:",
-        rollbackErr
-      );
-    });
+    if (createdAuthUser) {
+      await supabase.auth.admin.deleteUser(authUserId).catch((rollbackErr) => {
+        console.error(
+          "[invitations] createInvitationAction auth rollback failed:",
+          rollbackErr
+        );
+      });
+    }
     const message =
       err instanceof Error ? err.message : "Failed to send invitation";
     console.error("[invitations] createInvitationAction error:", err);
@@ -377,13 +381,16 @@ export async function createInvitationAction(
       );
     });
 
-    // Roll back the auth user so we never leave an orphan account behind.
-    await supabase.auth.admin.deleteUser(authUserId).catch((err) => {
-      console.error(
-        "[invitations] createInvitationAction auth rollback failed:",
-        err
-      );
-    });
+    // Roll back the auth user so we never leave an orphan account behind —
+    // but only one WE created this call (E1: a reused login must survive).
+    if (createdAuthUser) {
+      await supabase.auth.admin.deleteUser(authUserId).catch((err) => {
+        console.error(
+          "[invitations] createInvitationAction auth rollback failed:",
+          err
+        );
+      });
+    }
 
     revalidatePath("/invitations");
     return {
