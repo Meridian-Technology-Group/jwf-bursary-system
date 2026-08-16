@@ -114,6 +114,12 @@ model BursaryAccount {
   /// automatic close, and only while no outcome has been set. Nothing else may
   /// rewrite this field. `Application.closedAt` mirrors this rule.
   closedAt             DateTime?              @map("closed_at") @db.Timestamptz(6)
+  /// Epic 14 C8 (CG-24, LA-7) — manual pre-system YoY history rows for
+  /// families that predate the system: `[{ academicYear, netIncome, savings,
+  /// propertyEquity, debtExposure, livingArrangement, lifestyleSqueeze }]`.
+  /// Display data only — feeds the ASSESSMENT ADMIN tab's history table,
+  /// never a calculation. System years derive from assessment snapshots.
+  preSystemHistory     Json?                  @map("pre_system_history")
   createdAt            DateTime               @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt            DateTime               @updatedAt @map("updated_at") @db.Timestamptz(6)
   applications         Application[]
