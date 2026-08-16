@@ -39,6 +39,12 @@ import { RoundStageStrip } from "@/components/rounds/round-stage-strip";
 import { RoundProgressGauge } from "@/components/rounds/round-progress-gauge";
 import { RoundOutcomesBar } from "@/components/rounds/round-outcomes-bar";
 import { ExportReadinessPanel } from "@/components/rounds/export-readiness-panel";
+import {
+  RoundWindowsEditor,
+  type RoundWindowRowDefaults,
+  type RoundWindowRowValue,
+} from "@/components/admin/round-windows-editor";
+import { resolveRoundScenario } from "@/lib/rounds/round-scenario";
 
 export async function generateMetadata({
   params,
@@ -68,13 +74,23 @@ export default async function RoundDetailPage({
 }) {
   const user = await requireRole([Role.ADMIN, Role.ASSESSOR, Role.VIEWER]);
 
-  const [cockpit, feed] = await withUserContext(
+  const [cockpit, feed, windows] = await withUserContext(
     user.id,
     user.role as RlsRole,
     (tx) =>
       Promise.all([
         getRoundCockpit(tx, params.id),
         getDashboardFeed(tx, params.id),
+        // Epic 14 D1 — the round's scenario windows (may be empty).
+        tx.roundWindow.findMany({
+          where: { roundId: params.id },
+          select: {
+            scenario: true,
+            opensOn: true,
+            submitBy: true,
+            defaultTaxYear: true,
+          },
+        }),
       ])
   );
 
@@ -92,6 +108,48 @@ export default async function RoundDetailPage({
   } = cockpit;
 
   const isClosed = round.status === "CLOSED";
+
+  // Epic 14 D1 — the four scenario rows: stored values + resolver defaults.
+  // Round.academicYear is "2026/27"-style; its starting calendar year anchors
+  // the derived windows. Defaults are computed with an on-date INSIDE each
+  // scenario's own window so the resolver returns that scenario's dates.
+  const roundStartYear = Number(String(round.academicYear).slice(0, 4)) || new Date().getUTCFullYear();
+  const iso = (d: Date) => d.toISOString().slice(0, 10);
+  const scenarioDefault = (
+    scenario: "NA_CURRENT" | "NA_NEXT_WINTER" | "NA_NEXT_SPRING" | "RA",
+    label: string
+  ): RoundWindowRowDefaults => {
+    const onDate =
+      scenario === "NA_CURRENT"
+        ? new Date(Date.UTC(roundStartYear, 8, 1)) // inside the current year
+        : scenario === "NA_NEXT_WINTER"
+          ? new Date(Date.UTC(roundStartYear, 0, 15)) // winter before entry
+          : new Date(Date.UTC(roundStartYear, 3, 15)); // after the 12 Apr cutover
+    const d = resolveRoundScenario({
+      applicationType: scenario === "RA" ? "ROLLING_OVER" : "NEW",
+      onDate,
+      roundStartYear,
+    });
+    return {
+      scenario,
+      label,
+      opensOn: iso(d.opensOn),
+      submitBy: iso(d.submitBy),
+      defaultTaxYear: d.defaultTaxYear,
+    };
+  };
+  const windowDefaults: RoundWindowRowDefaults[] = [
+    scenarioDefault("NA_CURRENT", "New application — current year (any time)"),
+    scenarioDefault("NA_NEXT_WINTER", "New application — next year, winter window"),
+    scenarioDefault("NA_NEXT_SPRING", "New application — next year, spring/summer window"),
+    scenarioDefault("RA", "Rolling re-assessment"),
+  ];
+  const windowValues: RoundWindowRowValue[] = windows.map((w) => ({
+    scenario: w.scenario,
+    opensOn: w.opensOn ? iso(w.opensOn) : null,
+    submitBy: w.submitBy ? iso(w.submitBy) : null,
+    defaultTaxYear: w.defaultTaxYear,
+  }));
 
   // Pipeline tile configs — clickable when a drill-in href is available.
   const pipelineTiles: Array<{ config: TileConfig; count: number }> = [
@@ -323,6 +381,14 @@ export default async function RoundDetailPage({
           roundId={round.id}
         />
       </div>
+
+      {/* ── Round scenarios (Epic 14 D1, CG-01) ─────────────────────────── */}
+      <RoundWindowsEditor
+        roundId={round.id}
+        initial={windowValues}
+        defaults={windowDefaults}
+        readOnly={user.role !== Role.ADMIN}
+      />
 
       {/* ── Activity feed ────────────────────────────────────────────────── */}
       <section

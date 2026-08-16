@@ -76,8 +76,40 @@ model Round {
   applications                     Application[]
   invitations                      Invitation[]
   recommendations                  Recommendation[]
+  windows                          RoundWindow[]
 
   @@map("rounds")
+}
+
+/// Epic 14 D1 (CG-01, US-D1) — Charlotte's four operating scenarios per round.
+/// Admin-editable window config: opening date, submission date and the
+/// DEFAULT TAX YEAR the income form should assume for applications started in
+/// that window. Rows are optional — a round with no row for a scenario falls
+/// back to the pure resolver's derived defaults (round-scenario.ts). The Epic
+/// 13 E1 per-type deadline columns on `Round` remain the authority for the
+/// effective-submission-deadline chain; these windows are the richer scenario
+/// config that D2 consumes for merge fields and tax-year derivation.
+model RoundWindow {
+  id             String        @id @default(uuid()) @db.Uuid
+  roundId        String        @map("round_id") @db.Uuid
+  scenario       RoundScenario
+  opensOn        DateTime?     @map("opens_on") @db.Date
+  submitBy       DateTime?     @map("submit_by") @db.Date
+  /// e.g. "2025/26" — the tax year label the income form defaults to.
+  defaultTaxYear String?       @map("default_tax_year")
+  round          Round         @relation(fields: [roundId], references: [id], onDelete: Cascade)
+
+  @@unique([roundId, scenario])
+  @@map("round_windows")
+}
+
+/// The four scenarios of CG-01: three new-application windows + the rolling
+/// re-assessment window (12 Apr – 22 May, fixed by default).
+enum RoundScenario {
+  NA_CURRENT
+  NA_NEXT_WINTER
+  NA_NEXT_SPRING
+  RA
 }
 
 /// A persistent account per child, spanning multiple assessment years.
