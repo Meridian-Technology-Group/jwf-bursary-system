@@ -1,9 +1,8 @@
-// Epic 14 B1 (CG-05 / D14-5) — every outbound email carries a replyTo.
-//
-// The from-address lives on a send-only subdomain, so before this a parent
-// hitting Reply wrote to a black hole. Contract: ALL THREE send paths pass
-// `replyTo` to Resend; the default is the bursary team's real inbox so
-// production is correct even with `RESEND_REPLY_TO_EMAIL` unset.
+// Epic 14 B1 (CG-05 / D14-5) — every outbound email carries a replyTo,
+// production-gated: the bursary team's REAL inbox is the fallback ONLY in
+// production, so test sends can never route replies to the client's live
+// mailbox. An explicit RESEND_REPLY_TO_EMAIL wins in every environment;
+// unset outside production means no reply-to header at all.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -37,21 +36,42 @@ import { replyToAddress, sendBatchEmails, sendEmail, sendRawEmail } from "../sen
 
 const FEES = "fees@johnwhitgiftfoundation.org";
 
-describe("replyTo on every send path (CG-05)", () => {
-  beforeEach(() => {
-    sendMock.mockClear();
-    delete process.env.RESEND_REPLY_TO_EMAIL;
-  });
+function reset() {
+  sendMock.mockClear();
+  delete process.env.RESEND_REPLY_TO_EMAIL;
+  delete process.env.VERCEL_ENV;
+}
 
-  afterEach(() => {
-    delete process.env.RESEND_REPLY_TO_EMAIL;
-  });
+describe("replyToAddress resolution (CG-05, production-gated)", () => {
+  beforeEach(reset);
+  afterEach(reset);
 
-  it("defaults to the fees inbox and honours the env override", () => {
+  it("falls back to the fees inbox ONLY in production", () => {
+    process.env.VERCEL_ENV = "production";
     expect(replyToAddress()).toBe(FEES);
+  });
+
+  it("returns undefined outside production when the env var is unset", () => {
+    expect(replyToAddress()).toBeUndefined();
+    process.env.VERCEL_ENV = "preview";
+    expect(replyToAddress()).toBeUndefined();
+  });
+
+  it("an explicit RESEND_REPLY_TO_EMAIL wins in every environment", () => {
     process.env.RESEND_REPLY_TO_EMAIL = "test-inbox@example.test";
     expect(replyToAddress()).toBe("test-inbox@example.test");
+    process.env.VERCEL_ENV = "production";
+    expect(replyToAddress()).toBe("test-inbox@example.test");
   });
+});
+
+describe("replyTo on every send path (CG-05)", () => {
+  beforeEach(() => {
+    reset();
+    process.env.VERCEL_ENV = "production";
+  });
+
+  afterEach(reset);
 
   it("sendEmail passes replyTo", async () => {
     const result = await sendEmail(
@@ -100,5 +120,14 @@ describe("replyTo on every send path (CG-05)", () => {
     expect(sendMock.mock.calls[0][0]).toMatchObject({
       replyTo: "test-inbox@example.test",
     });
+  });
+
+  it("nonprod with the env var unset sends NO replyTo", async () => {
+    delete process.env.VERCEL_ENV;
+
+    await sendRawEmail("parent@example.com", "Subject", "Body");
+
+    const payload = sendMock.mock.calls[0][0] as { replyTo?: string };
+    expect(payload.replyTo).toBeUndefined();
   });
 });

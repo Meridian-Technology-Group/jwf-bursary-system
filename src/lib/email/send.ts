@@ -40,17 +40,25 @@ export function fromAddress(): string {
  *
  * The from-address lives on a send-only subdomain, so a parent hitting Reply
  * previously wrote to a black hole. `replyTo` routes replies to the bursary
- * team's real inbox natively — no inbound-mail infrastructure needed. The
- * default makes production correct even with the env var unset; nonprod can
- * point `RESEND_REPLY_TO_EMAIL` at a test inbox.
+ * team's real inbox natively — no inbound-mail infrastructure needed.
+ *
+ * The bursary team's REAL inbox is a production-only fallback: on any other
+ * environment an unset `RESEND_REPLY_TO_EMAIL` means NO reply-to header at
+ * all (undefined), so test sends can never route replies to the client's
+ * live mailbox. Setting the env var always wins, in every environment —
+ * point nonprod at a test inbox if reply behaviour needs exercising there.
+ * Same production gate as `isStaffMfaEnforced()`.
  *
  * Exported so the bulk "Send Email" wizard can surface it beside the sending
  * address before an admin confirms a batch.
  */
-export function replyToAddress(): string {
-  return (
-    process.env.RESEND_REPLY_TO_EMAIL ?? "fees@johnwhitgiftfoundation.org"
-  );
+export function replyToAddress(): string | undefined {
+  if (process.env.RESEND_REPLY_TO_EMAIL) {
+    return process.env.RESEND_REPLY_TO_EMAIL;
+  }
+  return process.env.VERCEL_ENV === "production"
+    ? "fees@johnwhitgiftfoundation.org"
+    : undefined;
 }
 
 /**

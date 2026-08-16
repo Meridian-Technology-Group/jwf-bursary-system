@@ -109,7 +109,11 @@ export type GetBulkEmailRecipientsResult =
       success: true;
       recipients: BulkEmailRecipient[];
       fromAddress: string;
-      /** CG-05 — where parent replies land; shown beside the from-address. */
+      /**
+       * CG-05 — where parent replies land; shown beside the from-address.
+       * Empty when no reply-to applies (nonprod with the env var unset) —
+       * the wizard then omits the "Replies to" line.
+       */
       replyToAddress: string;
     }
   | { success: false; error: string };
@@ -194,7 +198,7 @@ export async function getBulkEmailRecipientsAction(
       success: true,
       recipients,
       fromAddress: fromAddress(),
-      replyToAddress: replyToAddress(),
+      replyToAddress: replyToAddress() ?? "",
     };
   } catch (err) {
     console.error("[getBulkEmailRecipientsAction]", err);
