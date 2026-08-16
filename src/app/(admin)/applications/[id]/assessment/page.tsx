@@ -23,7 +23,6 @@ import {
   getSectionData,
 } from "@/lib/db/queries/applications";
 import { getApplicationContributors } from "@/lib/db/queries/contributors";
-import { buildContributorLabelMap } from "@/lib/contributors/dual-view";
 import { getAssessment } from "@/lib/db/queries/assessments";
 import {
   getConfigsForAssessment,
@@ -63,16 +62,13 @@ import { getSiblingLinks } from "@/lib/db/queries/siblings";
 import { withUserContext, type RlsRole } from "@/lib/db/prisma";
 import { YearComparison } from "@/components/admin/year-comparison";
 import { BenchmarkDisplay } from "@/components/admin/benchmark-display";
-import { SplitScreen } from "@/components/admin/split-screen";
 import { AssessmentForm, type SerialisedAssessment } from "@/components/admin/assessment-form";
-import { AssessmentSynopsis } from "@/components/admin/assessment-synopsis";
 import { HouseholdDecisionAid } from "@/components/admin/household-decision-aid";
 import { deriveHouseholdFromSources, type HouseholdSources } from "@/lib/household/from-sections";
 import { deriveReviewPhase } from "@/lib/applications/status";
 import { BeginAssessmentButton } from "@/components/admin/begin-assessment-button";
 import { ReopenAssessmentBanner } from "@/components/admin/reopen-assessment-banner";
 import { SecondParentGate } from "@/components/admin/second-parent-gate";
-import { DocumentListClient } from "@/components/admin/document-list-client";
 import { ClipboardList, Lightbulb } from "lucide-react";
 
 export const metadata = {
@@ -295,20 +291,7 @@ export default async function AssessmentPage({ params }: Props) {
   const hasUnsubmittedSecondary =
     !!secondaryContributor && secondaryContributor.status !== "SUBMITTED";
 
-  // Document grouping passed to the workspace document list. Only built when a
-  // secondary exists, so single-parent applications render exactly as before.
-  const contributorGroups = secondaryContributor
-    ? {
-        labelByContributorId: Object.fromEntries(
-          Object.entries(buildContributorLabelMap(contributors)).map(
-            ([id, v]) => [id, v.shortLabel]
-          )
-        ),
-        primaryContributorId: primaryContributor?.id ?? null,
-      }
-    : undefined;
-
-  const { documents, isReassessment, bursaryAccountId, round } = application;
+  const { isReassessment, bursaryAccountId, round } = application;
 
   // ── No assessment record yet ───────────────────────────────────────────────
 
@@ -680,16 +663,6 @@ export default async function AssessmentPage({ params }: Props) {
     );
   }
 
-  // Build the document panel (left side of split-screen).
-  // The client component owns its own toolbar / empty state. When a second
-  // parent exists, documents are labelled by uploading contributor.
-  const documentListPanel = (
-    <DocumentListClient
-      documents={documents}
-      contributorGroups={contributorGroups}
-    />
-  );
-
   return (
     <div className="space-y-5">
       {/* CALC-10 — fees account code + assessor's-wizard callout */}
@@ -728,22 +701,11 @@ export default async function AssessmentPage({ params }: Props) {
         <HouseholdDecisionAid handling={householdHandling} />
       )}
 
-      {/* Split-screen workspace */}
-      <div className="h-[calc(100vh-220px)] min-h-[600px]">
-        <SplitScreen
-          leftPanel={documentListPanel}
-          rightPanel={formPanel}
-        />
-      </div>
-
-      {/* Single qualitative synopsis — docked below the workspace, always
-          visible, and editable even after the assessment is COMPLETED. */}
-      <AssessmentSynopsis
-        assessmentId={serialisedAssessment.id}
-        applicationId={params.id}
-        synopsis={serialisedAssessment.synopsis}
-        assessmentCompleted={serialisedAssessment.status === "COMPLETED"}
-      />
+      {/* Epic 14 C3 (CG-23, D14-2): the split-screen documents panel is
+          RETIRED at client request — documents live on the UPLOADED DOCUMENTS
+          DISPLAY tab. This tab is the ASSESSMENT MODEL (1-4) workspace; the
+          synopsis moved to the ASSESSMENT ADMIN tab. */}
+      {formPanel}
     </div>
   );
 }
