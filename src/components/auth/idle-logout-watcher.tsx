@@ -76,15 +76,26 @@ const HIDDEN_RECHECK_MS = 15_000;
 export function IdleLogoutWatcher({
   /** Override for tests; production resolves from NEXT_PUBLIC_* env. */
   config,
+  /**
+   * Layout-specific fallback window in minutes, used only when
+   * `NEXT_PUBLIC_SESSION_IDLE_MINUTES` is unset (the env override always
+   * wins). The portal passes 60 (CG-12); the admin shell keeps the default.
+   */
+  defaultIdleMinutes,
 }: {
   config?: IdleTimeoutConfig;
+  defaultIdleMinutes?: number;
 }) {
   // Resolve once on mount. Env is build-time inlined for NEXT_PUBLIC_* vars, so
   // there is nothing to re-resolve on re-render.
   const resolved = useRef<IdleTimeoutConfig>(
-    config ?? resolveIdleTimeoutConfig()
+    config ??
+      resolveIdleTimeoutConfig(undefined, { idleMinutes: defaultIdleMinutes })
   );
   const { enabled, idleMs, warnMs } = resolved.current;
+  // "Stay signed in" reschedules the whole idle window, so the extension it
+  // grants IS the window (CG-12: 60 more minutes on the portal).
+  const extendMinutes = Math.max(1, Math.round(idleMs / 60_000));
 
   // Inert outside an `UnsavedChangesProvider` (i.e. in the admin shell).
   const { flush: flushUnsavedChanges } = useUnsavedChanges();
@@ -220,7 +231,9 @@ export function IdleLogoutWatcher({
           <Button variant="outline" onClick={doLogout}>
             Sign out now
           </Button>
-          <Button onClick={stayActive}>Stay signed in</Button>
+          <Button onClick={stayActive}>
+            Stay signed in (+{extendMinutes} min)
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

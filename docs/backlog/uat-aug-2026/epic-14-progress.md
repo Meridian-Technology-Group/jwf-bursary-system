@@ -20,8 +20,8 @@ in review · merged`.
 |---|---|---|---|---|
 | A1 | UC duplicate-upload rejection | todo | | |
 | A2 | Upload progress honesty | todo | | |
-| A3 | Idle timer 60+60 | todo | | |
-| A4 | Expiry-dialog overflow | todo | | |
+| A3 | Idle timer 60+60 | in review | `fix/e14-a3-idle-timer-60` | Portal default now 60 min (env override still wins); "Stay signed in (+60 min)" resets the full window. Resolver unit tests (4 new); browser-verified with a 1-min override: warning → extend resets window → expiry signs out. Admin shell stays 30 min. |
+| A4 | Expiry-dialog overflow | in review | (paired with A3) | Base DialogContent hardened: viewport margin below `sm`, rounded corners at all widths, max-height + internal scroll, `break-words` on descriptions. Screenshots at 375px + 1440px — dialog centred and contained. |
 | A5 | Post-submit download flow | todo | | |
 | B1 | replyTo on all sends | todo | | |
 | B2 | Missing-docs template copy | todo | | |

@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   DEFAULT_IDLE_MINUTES,
   DEFAULT_WARN_SECONDS,
+  PORTAL_IDLE_MINUTES,
   resolveIdleTimeoutConfig,
 } from "../idle-timeout";
 
@@ -75,6 +76,39 @@ describe("resolveIdleTimeoutConfig", () => {
         ).toBe(DEFAULT_IDLE_MINUTES * MIN);
       }
     );
+  });
+
+  describe("caller default window (CG-12 — the portal's 60 minutes)", () => {
+    it("uses the caller's default when the env var is unset", () => {
+      expect(
+        resolveIdleTimeoutConfig({}, { idleMinutes: PORTAL_IDLE_MINUTES })
+          .idleMs
+      ).toBe(60 * MIN);
+    });
+
+    it("lets the env override beat the caller's default", () => {
+      expect(
+        resolveIdleTimeoutConfig(
+          { NEXT_PUBLIC_SESSION_IDLE_MINUTES: "15" },
+          { idleMinutes: PORTAL_IDLE_MINUTES }
+        ).idleMs
+      ).toBe(15 * MIN);
+    });
+
+    it("uses the caller's default when the env value is malformed", () => {
+      expect(
+        resolveIdleTimeoutConfig(
+          { NEXT_PUBLIC_SESSION_IDLE_MINUTES: "60m" },
+          { idleMinutes: PORTAL_IDLE_MINUTES }
+        ).idleMs
+      ).toBe(60 * MIN);
+    });
+
+    it("still falls back to the global default with no caller default", () => {
+      expect(resolveIdleTimeoutConfig({}).idleMs).toBe(
+        DEFAULT_IDLE_MINUTES * MIN
+      );
+    });
   });
 
   describe("warning countdown (seconds)", () => {
