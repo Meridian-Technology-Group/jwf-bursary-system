@@ -30,7 +30,7 @@ in review · merged`.
 | C1 | Assessments queue + naming | in review | `feature/e14-c1-assessments-queue` | New `/assessments` list (reference · child · school · round · derived assessment status · assignee · submitted) + status chips + assignee filter; nav item beside Applications. Status derivation pure + 7 unit tests (due/in-progress/paused/completed/locked-by-outcome/closed). Browser: 31 nonprod assessments render with sane statuses; ASSESSOR spot check (minted test assessor) sees only their assigned row. |
 | C2 | Assessment chrome | in review | `feature/e14-c2-assessment-chrome` | On assessment routes only: status-badge block hidden (reference/child/school stay left); second-parent+GDPR card behind a collapsed MANAGE disclosure (DOM-absent until opened); Save/Pause/Complete banner leads the workspace; live calc behind SEE COMPUTATION (collapsed default, localStorage-persisted). Other tabs unchanged (browser-verified). Screenshots default/expanded/1280px. |
 | C3 | Five-tab IA | in review | `feature/e14-c3-five-tabs` | Assessment workspace is now five sub-routes (deep-linkable): UPLOADED DOCUMENTS DISPLAY (full-width list + filter + verified toggle + inline viewer; split-screen RETIRED per CG-23/D14-2, component deleted) · APPLICATION FORM (read-only sections child→declaration via shared cards + per-section doc titles + jump link) · ASSESSMENT MODEL (1-4) (existing form A–F, save/pause/complete verified working) · AWARD (placeholder → recommendation pointer, C7 builds) · ADMIN (reference strip + synopsis w/ own save + prior wizard notes, C8 builds tables). 24 new unit tests (slot→section grouping). Browser walk of all five tabs on nonprod. |
-| C4 | Prefill removal + Part 1 | todo | | |
+| C4 | Prefill removal + Part 1 | in review | `feature/e14-c4-part1-prefill` | Applicant-figure prefill removed (D14-3): assessment opens empty except names / year-of-entry (editable, LA-5) / remaining-years / hidden annual fees / reference notionals; declared values live on the APPLICATION FORM tab. Part 1 = the verbatim 11-row table; sibling names persist in new additive `sibling_details` JSONB (pre-applied to nonprod, IF NOT EXISTS). Also fixed a pre-existing autosave staleness bug (stale debounce could overwrite a manual save / drop the last keystroke). Browser: fresh v2 assessment opens empty; sibling name round-trips exactly; in-flight assessment keeps its saved values. |
 | C5 | Income two-column table | todo | | |
 | C6 | Parts 3–4 tables | todo | | |
 | C7 | Bursary Award tab | todo | | |
@@ -87,5 +87,14 @@ in review · merged`.
 
 ## Deviations from plan / discoveries
 
-*(record here anything a WP found that corrects the plan or epic —
-sprint-01 §3 style: claim, status, detail)*
+- **C4 · pre-existing autosave staleness (fixed in the C4 PR).** The v2
+  form's 400 ms debounced autosave captured `handleSave` at schedule time —
+  one render behind the change that scheduled it — so the autosave could
+  drop the last keystroke of a typed value, and a pending stale timer could
+  fire AFTER a manual Save and overwrite it. Observed live while testing the
+  new sibling fields; affected every setState-then-scheduleAutoSave field in
+  principle. Fixed with a latest-closure ref + manual saves cancelling any
+  pending timer.
+- **C4 · WS-202627-0007's empty v1 NOT_STARTED assessment stub deleted**
+  (own throwaway) so Begin could create a fresh v2 assessment for the
+  empty-open verification.

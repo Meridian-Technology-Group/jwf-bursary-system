@@ -114,6 +114,10 @@ export interface AssessmentSaveInput {
   // watch-out-notes.ts for the next-assessment read path). `null` clears it.
   watchOutNotes?: string | null;
 
+  // Epic 14 C4/C7 (CG-22) — the workbook's three sibling rows
+  // [{ name, school, netPayableFees }]. `null` clears.
+  siblingDetails?: unknown;
+
   // Flags
   dishonestyFlag?: boolean;
   creditRiskFlag?: boolean;
@@ -283,6 +287,8 @@ export async function saveAssessment(
     updateData.manualAdjustmentReason = assessmentFields.manualAdjustmentReason;
   if (assessmentFields.watchOutNotes !== undefined)
     updateData.watchOutNotes = assessmentFields.watchOutNotes;
+  if (assessmentFields.siblingDetails !== undefined)
+    updateData.siblingDetails = assessmentFields.siblingDetails;
   if (assessmentFields.dishonestyFlag !== undefined)
     updateData.dishonestyFlag = assessmentFields.dishonestyFlag;
   if (assessmentFields.creditRiskFlag !== undefined)
