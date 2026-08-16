@@ -32,6 +32,10 @@ import { GdprDeleteAction } from "@/components/admin/gdpr-delete-action";
 import { AddSecondParentCard } from "@/components/admin/add-second-parent-card";
 import { EditReferenceDialog } from "@/components/admin/edit-reference-dialog";
 import { CloseApplicationDialog } from "@/components/admin/close-application-dialog";
+import {
+  HideOnAssessmentRoute,
+  ManageDisclosure,
+} from "@/components/admin/assessment-route-chrome";
 
 function SchoolBadge({ school }: { school: "WHITGIFT" | "TRINITY" }) {
   if (school === "WHITGIFT") {
@@ -271,27 +275,32 @@ export default async function ApplicationDetailLayout({
             </div>
           </div>
 
-          <div className="flex flex-wrap items-center gap-3">
-            {/* Three independent lifecycles (Epic 01): form → assessment →
-                outcome. Staff see the real internal values. */}
-            <FormStatusBadge
-              status={application.formStatus}
-              applicationType={application.applicationType}
-            />
-            {application.assessment && (
-              <AssessmentStatusBadge status={application.assessment.status} />
-            )}
-            {application.assessment?.outcome && (
-              <OutcomeBadge outcome={application.assessment.outcome} />
-            )}
-            {user.role === Role.ADMIN && (
-              <AssignAssessorSelect
-                applicationId={application.id}
-                currentAssessorId={application.assignedToId}
-                assessors={assessors}
+          {/* Epic 14 C2 (CG-18): on the ASSESSMENT view the application
+              status block is hidden — the header keeps only the reference,
+              child and school on the left. Every other tab keeps it. */}
+          <HideOnAssessmentRoute>
+            <div className="flex flex-wrap items-center gap-3">
+              {/* Three independent lifecycles (Epic 01): form → assessment →
+                  outcome. Staff see the real internal values. */}
+              <FormStatusBadge
+                status={application.formStatus}
+                applicationType={application.applicationType}
               />
-            )}
-          </div>
+              {application.assessment && (
+                <AssessmentStatusBadge status={application.assessment.status} />
+              )}
+              {application.assessment?.outcome && (
+                <OutcomeBadge outcome={application.assessment.outcome} />
+              )}
+              {user.role === Role.ADMIN && (
+                <AssignAssessorSelect
+                  applicationId={application.id}
+                  currentAssessorId={application.assignedToId}
+                  assessors={assessors}
+                />
+              )}
+            </div>
+          </HideOnAssessmentRoute>
         </div>
       </div>
 
@@ -339,6 +348,10 @@ export default async function ApplicationDetailLayout({
           GDPR is ADMIN-only; the second-parent row follows the original
           ADMIN/ASSESSOR-or-existing-secondary rule. */}
       {showManageCard && (
+        // Epic 14 C2 (CG-19): on assessment routes this card collapses behind
+        // a quiet Manage disclosure (closed by default); other tabs keep the
+        // always-open card. Content and role gating unchanged.
+        <ManageDisclosure>
         <section
           className="rounded-xl border border-slate-200 bg-white shadow-sm"
           aria-label="Manage application"
@@ -399,6 +412,7 @@ export default async function ApplicationDetailLayout({
             )}
           </div>
         </section>
+        </ManageDisclosure>
       )}
 
       {/* Tab navigation */}
