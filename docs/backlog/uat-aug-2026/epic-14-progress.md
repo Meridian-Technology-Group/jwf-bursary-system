@@ -24,7 +24,7 @@ in review · merged`.
 | A4 | Expiry-dialog overflow | in review | (paired with A3) | Base DialogContent hardened: viewport margin below `sm`, rounded corners at all widths, max-height + internal scroll, `break-words` on descriptions. Screenshots at 375px + 1440px — dialog centred and contained. |
 | A5 | Post-submit download flow | in review | `feature/e14-a5-submit-download-flow` | Three-beat flow live: submit confirm → "application sent" + bare `DOWNLOAD MY COPY` + `Continue` (zero scarcity copy) → home. Offer exists only in the live post-submit beat (sessionStorage flag, LA-1 forfeit); server one-download rule + 410 unchanged. 6 unit tests on the beat matrix; full E2E submit on throwaway WS-202627-0007 with screenshots of all beats; revisit shows no download path. |
 | B1 | replyTo on all sends | in review | `feature/e14-b1-reply-to` | All three Resend send sites carry `replyTo` (`RESEND_REPLY_TO_EMAIL` ?? fees@johnwhitgiftfoundation.org — prod correct even unset). Bulk wizard step 2 shows "Replies to" beside the from-address. 5 unit tests across every send path. Staging live-email check = Brian (see §For Brian). |
-| B2 | Missing-docs template copy | todo | | |
+| B2 | Missing-docs template copy | in review | `feature/e14-b2-missing-docs-copy` | Migration `20260816160000` updates the MISSING_DOCS row to Charlotte's verbatim subject + body ({{applicant_name}}, {{missing_documents}}, {{deadline}}); merge data already flows from the pause action. 3 render tests pin the shipped copy. SQL dry-run validated against nonprod in a rolled-back tx; applies via db-push on merge. |
 | B3 | Five invitation templates | todo | | |
 | C0 | Field-map workbook ⇄ engine/UI | todo | | |
 | C1 | Assessments queue + naming | todo | | |
@@ -57,7 +57,18 @@ in review · merged`.
 
 ## For Brian → Charlotte (questions raised during implementation)
 
-*(none yet)*
+- **CG-07 answers (B2, ready to relay):** yes — Request Missing Documents
+  emails the lead applicant, pauses the application, and merges the ticked
+  items + return-by date into the email. Replies now land at
+  `fees@johnwhitgiftfoundation.org` (B1 replyTo). The email uses the
+  standard branded wrapper around her body copy. Parents can also still
+  respond through the portal (`/respond`), but per her copy the email only
+  mentions returning documents by email (LA-2).
+- **B2 note:** her default body has no slot for the assessor's personal
+  note (the dialog's "custom message"), so that note no longer appears in
+  the email — it still shows on the portal respond page. If she wants the
+  note in the email, tell us where it should sit and we'll add
+  `{{custom_message}}` back at that spot.
 
 ## Deviations from plan / discoveries
 
