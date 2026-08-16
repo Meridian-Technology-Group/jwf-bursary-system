@@ -8,6 +8,9 @@ opened_by: Brian Wagner (source: Charlotte Perrier, 7 emails, 2026-08-16)
 depends_on:
   - ./epic-13-uat-feedback.md
   - ./follow-ups.md
+implementation:
+  - ./epic-14-implementation-plan.md   # autonomous-execution plan — start there
+  - ./epic-14-progress.md              # live board
 related:
   - Gmail messages 1a009b95bcb3ccd2 (Rounds & applications),
     1a009d228c39f4be (RE Application - applied testing feedback),
@@ -16,9 +19,8 @@ related:
     1a009e2ebb90dc14 (Request Missing Documents),
     1a00a4e5911c9fcd (Testing the assessment model + workbook),
     1a00a63c8286ccab (Invitation emails)
-  - source-materials: "ASSESSMENT MODEL REQUIREMENTS 16.08.26.xlsx"
-    (attachment on 1a00a4e5911c9fcd — commit a copy to
-    docs/backlog/uat-aug-2026/source-materials/ in WP-C0)
+  - source-materials: assessment-model-requirements-2026-08-16.xlsx (committed)
+    + assessment-model-requirements-2026-08-16.md (full extraction, committed)
 ---
 
 # Epic 14 — UAT feedback round 2, August 2026
@@ -27,6 +29,13 @@ Everything arising from Charlotte's seven emails of **2026-08-16** (her retest
 of the Epic 13 Sprint 01 fixes plus her first real pass at the assessment
 side). Item IDs `CG-*` are catalogued in §2 below with Gmail message pointers
 for in-thread replies.
+
+> **Implementation**: this epic is executed autonomously by Claude Code
+> sessions. The authoritative how — cold-start bootstrap, granted authority,
+> ground rules, locked assumptions LA-1..8, per-WP briefs, validation
+> standards — is [`epic-14-implementation-plan.md`](epic-14-implementation-plan.md).
+> Live status: [`epic-14-progress.md`](epic-14-progress.md). A session
+> picking up a work package starts from the plan, not from this file alone.
 
 **Commercial position (Brian, 2026-08-16):** all of this is accepted as
 pre-go-live acceptance remediation under the Build Fee — **no change request,
@@ -303,8 +312,16 @@ Sizes: S ≤ half a day · M ~1 day · L 2 days+.
 `C4` → `C5` → `C6` → `C7` → `C8` → `C9` ‖ `D1` → `D2` → `D3` → `E1` → `E2`.
 A and B are independent of C; D3/E2 depend on D1/E1. Tell Charlotte when
 Wave A and Wave C land, separately — she asked to be pinged to retest both.
+Branch names, dependency board, and per-WP briefs: implementation plan §5–§6.
 
 ## 6. Open questions (fold into the reply emails)
+
+> **Status (2026-08-16): implementation is NOT blocked on these.** Each is
+> locked to a default assumption (**LA-1..7**, one per question, same order)
+> in [`epic-14-implementation-plan.md` §3](epic-14-implementation-plan.md) so
+> autonomous sessions can build; the questions remain open **for Charlotte**
+> and her answers, if different, are absorbed as the cheap adjustments the
+> LA table names.
 
 1. **Q1 (CG-13):** confirm the forfeit rule — a parent who clicks past
    "DOWNLOAD MY COPY" without downloading cannot come back for it (the
