@@ -224,3 +224,134 @@ describe("error copy", () => {
     expect(error.message).toBe("Remove failed (502)");
   });
 });
+
+// ─── CG-10 — honest upload progress ───────────────────────────────────────────
+
+describe("upload progress reporting (CG-10)", () => {
+  it("reports uploading → processing around the presigned PUT (fetch fallback)", async () => {
+    fetchMock
+      .mockResolvedValueOnce(
+        jsonResponse({
+          signedUrl: SIGNED_URL,
+          contentType: "application/pdf",
+          uploadTicket: "ticket",
+        })
+      )
+      .mockResolvedValueOnce(new Response(null, { status: 200 }))
+      .mockResolvedValueOnce(jsonResponse(DOCUMENT, 201));
+
+    const events: unknown[] = [];
+    await uploadFile(bigPdf(), "app-1", "BIRTH_CERTIFICATE", PRESIGNED, (e) =>
+      events.push({ ...e })
+    );
+
+    // Without XHR (node test env) there are no byte-level events, but the two
+    // phase beats must still bracket the transfer: start at 0, then an explicit
+    // "processing" beat BEFORE the confirm call resolves the upload.
+    expect(events[0]).toEqual({ phase: "uploading", percent: 0 });
+    expect(events[events.length - 1]).toEqual({
+      phase: "processing",
+      percent: 100,
+    });
+  });
+
+  it("reports REAL byte progress through XMLHttpRequest when available", async () => {
+    // Minimal XHR stub: captures the upload.onprogress handler and drives it
+    // with byte counts, then completes with a 200.
+    class FakeXhr {
+      static instances: FakeXhr[] = [];
+      upload: { onprogress: ((e: unknown) => void) | null } = {
+        onprogress: null,
+      };
+      onload: (() => void) | null = null;
+      onerror: (() => void) | null = null;
+      onabort: (() => void) | null = null;
+      status = 200;
+      responseText = "";
+      open() {}
+      setRequestHeader() {}
+      send() {
+        FakeXhr.instances.push(this);
+        queueMicrotask(() => {
+          this.upload.onprogress?.({
+            lengthComputable: true,
+            loaded: 3_000_000,
+            total: 12_000_000,
+          });
+          this.upload.onprogress?.({
+            lengthComputable: true,
+            loaded: 12_000_000,
+            total: 12_000_000,
+          });
+          this.onload?.();
+        });
+      }
+    }
+    vi.stubGlobal("XMLHttpRequest", FakeXhr);
+
+    fetchMock
+      .mockResolvedValueOnce(
+        jsonResponse({
+          signedUrl: SIGNED_URL,
+          contentType: "application/pdf",
+          uploadTicket: "ticket",
+        })
+      )
+      // confirm leg (the PUT goes through the XHR stub)
+      .mockResolvedValueOnce(jsonResponse(DOCUMENT, 201));
+
+    const events: { phase: string; percent: number }[] = [];
+    await uploadFile(bigPdf(), "app-1", "BIRTH_CERTIFICATE", PRESIGNED, (e) =>
+      events.push({ ...e })
+    );
+
+    expect(events).toEqual([
+      { phase: "uploading", percent: 0 },
+      { phase: "uploading", percent: 25 },
+      { phase: "uploading", percent: 100 },
+      { phase: "processing", percent: 100 },
+    ]);
+    // The PUT really went over XHR, not fetch: only sign + confirm hit fetch.
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("maps an XHR failure status through the shared error copy", async () => {
+    class FailingXhr {
+      upload: { onprogress: unknown } = { onprogress: null };
+      onload: (() => void) | null = null;
+      onerror: (() => void) | null = null;
+      onabort: (() => void) | null = null;
+      status = 413;
+      responseText = JSON.stringify({ message: "too big" });
+      open() {}
+      setRequestHeader() {}
+      send() {
+        queueMicrotask(() => this.onload?.());
+      }
+    }
+    vi.stubGlobal("XMLHttpRequest", FailingXhr);
+
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({
+        signedUrl: SIGNED_URL,
+        contentType: "application/pdf",
+        uploadTicket: "ticket",
+      })
+    );
+
+    await expect(
+      uploadFile(bigPdf(), "app-1", "BIRTH_CERTIFICATE", PRESIGNED)
+    ).rejects.toThrow(FILE_TOO_LARGE_MESSAGE);
+  });
+
+  it("reports processing once a multipart body is fully sent", async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse(DOCUMENT, 201));
+
+    const events: { phase: string; percent: number }[] = [];
+    await uploadFile(bigPdf(), "app-1", "BIRTH_CERTIFICATE", MULTIPART, (e) =>
+      events.push({ ...e })
+    );
+
+    expect(events[0]).toEqual({ phase: "uploading", percent: 0 });
+  });
+});

@@ -19,7 +19,7 @@ in review · merged`.
 | WP | Title | Status | Branch / PR | Evidence |
 |---|---|---|---|---|
 | A1 | UC duplicate-upload rejection | in review | `fix/e14-a1-uc-duplicate-rejection` | Root cause: pre-Epic-13-D2 documents carry a NULL `content_digest` that digest-equality can never match (Charlotte's "Dec 2025 UC.pdf" sat undigested in the legacy `UC_MONTHLY` slot). Fix: lazy digest heal of undigested UC rows at confirm + fail-closed UC check + 409 names the clashing file. Unit tests (5 new) + live browser check on a throwaway (both fresh-digest and simulated-legacy paths refused; healed digest persisted). |
-| A2 | Upload progress honesty | todo | | |
+| A2 | Upload progress honesty | in review | `fix/e14-a2-upload-progress` | Root cause: the progress bar was a fake timer parked at 85% for the whole transfer + verification. Now real XHR byte progress (0→100%) + explicit "Checking your file…" phase during server verification. 4 new transport unit tests; live 9 MB upload to nonprod storage captured 0→13→…→100% → checking → success. |
 | A3 | Idle timer 60+60 | in review | `fix/e14-a3-idle-timer-60` | Portal default now 60 min (env override still wins); "Stay signed in (+60 min)" resets the full window. Resolver unit tests (4 new); browser-verified with a 1-min override: warning → extend resets window → expiry signs out. Admin shell stays 30 min. |
 | A4 | Expiry-dialog overflow | in review | (paired with A3) | Base DialogContent hardened: viewport margin below `sm`, rounded corners at all widths, max-height + internal scroll, `break-words` on descriptions. Screenshots at 375px + 1440px — dialog centred and contained. |
 | A5 | Post-submit download flow | todo | | |
