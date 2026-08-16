@@ -26,7 +26,7 @@ in review · merged`.
 | B1 | replyTo on all sends | in review | `feature/e14-b1-reply-to` | All three Resend send sites carry `replyTo` (`RESEND_REPLY_TO_EMAIL` ?? fees@johnwhitgiftfoundation.org — prod correct even unset). Bulk wizard step 2 shows "Replies to" beside the from-address. 5 unit tests across every send path. Staging live-email check = Brian (see §For Brian). |
 | B2 | Missing-docs template copy | in review | `feature/e14-b2-missing-docs-copy` | Migration `20260816160000` updates the MISSING_DOCS row to Charlotte's verbatim subject + body ({{applicant_name}}, {{missing_documents}}, {{deadline}}); merge data already flows from the pause action. 3 render tests pin the shipped copy. SQL dry-run validated against nonprod in a rolled-back tx; applies via db-push on merge. |
 | B3 | Five invitation templates | in review | `feature/e14-b3-invitation-templates` | Enum + seed migrations (validated on scratch PG); resolver (situation × school → template, 12 unit tests); situation persisted on Contact + Invitation; selectors on quick-invite + contact dialog (default New); internal-request path hard-wired INTERNAL; resend reuses stored variant; rolling template carries {{opening_date}} + rolling {{deadline}} from the round. All 5 listed + locked in Settings. Browser check of selectors/Settings deferred to post-merge (column lands via db-push). |
-| C0 | Field-map workbook ⇄ engine/UI | todo | | |
+| C0 | Field-map workbook ⇄ engine/UI | in review | `docs/e14-c0-field-map` | `epic-14-field-map.md` committed: every workbook row mapped to a v2 engine input/output or flagged. LA-8 list = 5 items (Part-1 scholarship, sibling names/schools, sole-trader profits row, DLA/PIP split, savings-cushion display) + manual-vs-computed conflicts on 3 award cells (note A). Removal candidates listed (prefill blocks → C4; rest keep). |
 | C1 | Assessments queue + naming | todo | | |
 | C2 | Assessment chrome | todo | | |
 | C3 | Five-tab IA | todo | | |
@@ -56,6 +56,21 @@ in review · merged`.
   session.
 
 ## For Brian → Charlotte (questions raised during implementation)
+
+- **C0 / LA-8 list (relay for sign-off):** see `epic-14-field-map.md` §LA-8 —
+  (1) Part 1 "Bursary recipient's Scholarship" has no engine field (manual
+  text cell vs display of the award-side scholarship %?); (2) sibling
+  names/schools aren't stored anywhere (proposed small additive store filled
+  by the C7 sibling-account picker); (3) the sole-trader "COMPANY NET
+  PROFITS" row has no separate engine input (historically entered under
+  gross salaried — confirm one bound row is acceptable); (4) the workbook
+  splits DLA and PIP but the engine holds one combined figure (proposed one
+  combined row); (5) "SAVINGS CUSHION ALLOWANCE" exists as reference data
+  but feeds no calculation (display-only OK?). **Note A:** the award sheet
+  marks AFFORDABILITY ADJUSTED DI / SCHOLARSHIP VALUE / PAYABLE FEES NEXT
+  YEAR as manual-fill, but the engine computes all three — C7 renders them
+  computed (no per-field overrides, D13-3/D14-4); manual entry there would
+  be a calculation change (MSA 9.3).
 
 - **CG-07 answers (B2, ready to relay):** yes — Request Missing Documents
   emails the lead applicant, pauses the application, and merges the ticked
