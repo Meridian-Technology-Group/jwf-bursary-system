@@ -38,6 +38,10 @@ import {
   INVITATION_ROUND_DEADLINE_SELECT,
 } from "@/lib/email/invitation-deadline";
 import type { SubmissionDeadlineRound } from "@/lib/rounds/submission-deadline";
+import {
+  invitationScenarioFields,
+  ROUND_WINDOWS_SELECT,
+} from "@/lib/rounds/window-consumption";
 import { sendEmail } from "@/lib/email/send";
 import { createAuditLog } from "@/lib/audit/log";
 import { AUDIT_ACTIONS, AUDIT_ENTITY_TYPES } from "@/lib/audit/actions";
@@ -111,6 +115,7 @@ export async function sendInvitationFromContactAction(
           status: true,
           openDate: true,
           ...INVITATION_ROUND_DEADLINE_SELECT,
+          ...ROUND_WINDOWS_SELECT,
         },
       });
       if (!round) return { ok: false as const, error: "Round not found." };
@@ -126,6 +131,7 @@ export async function sendInvitationFromContactAction(
         contact: c,
         academicYear: round.academicYear,
         roundOpenDate: round.openDate,
+        roundWindows: round.windows,
         deadlineRound: {
           closeDate: round.closeDate,
           defaultSubmissionDeadlineNew: round.defaultSubmissionDeadlineNew,
@@ -138,8 +144,19 @@ export async function sendInvitationFromContactAction(
     if (!loaded.ok) return { success: false, error: loaded.error };
     contact = loaded.contact;
     academicYear = loaded.academicYear;
-    deadlineRound = loaded.deadlineRound;
     roundOpenDate = loaded.roundOpenDate;
+    // D2 (CG-01): the stored scenario window fills null round defaults and
+    // supplies the opening date (window > openDate > derived default).
+    const scenario = invitationScenarioFields({
+      situation: loaded.contact.situation,
+      academicYear,
+      onDate: new Date(),
+      deadlineRound: loaded.deadlineRound,
+      roundOpenDate,
+      windows: loaded.roundWindows,
+    });
+    deadlineRound = scenario.deadlineRound;
+    roundOpenDate = scenario.openingDate;
   } catch (err) {
     const message = err instanceof Error ? err.message : "Failed to load contact";
     console.error("[contacts] sendInvitationFromContactAction load error:", err);
