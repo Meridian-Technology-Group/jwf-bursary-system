@@ -59,6 +59,7 @@ export interface ContactFormValues {
   childLastName: string;
   childDob: string;
   school: "TRINITY" | "WHITGIFT" | "";
+  situation: "NEW" | "INTERNAL" | "ROLLING_OVER";
   entryYear: string;
   entryYearGroup: "Y6" | "Y7" | "Y9" | "Y12" | "OTHER" | "";
   addressLine1: string;
@@ -79,6 +80,8 @@ const schema = z.object({
   childLastName: z.string().min(1, "Child's surname is required"),
   childDob: z.string().optional(),
   school: z.enum(["TRINITY", "WHITGIFT"], { error: "A school is required" }),
+  // B3 (CG-26) — the invitation-template situation; defaults to NEW.
+  situation: z.enum(["NEW", "INTERNAL", "ROLLING_OVER"]),
   entryYear: z
     .string()
     .min(1, "Entry year is required")
@@ -108,6 +111,7 @@ const EMPTY: ContactFormValues = {
   childLastName: "",
   childDob: "",
   school: "",
+  situation: "NEW",
   entryYear: "",
   entryYearGroup: "",
   addressLine1: "",
@@ -136,6 +140,7 @@ export function ContactFormDialog({
     defaultValues: {
       ...(initial ?? EMPTY),
       school: (initial?.school as Values["school"]) || undefined,
+      situation: (initial?.situation as Values["situation"]) || "NEW",
       entryYearGroup:
         (initial?.entryYearGroup as Values["entryYearGroup"]) || undefined,
     },
@@ -153,6 +158,7 @@ export function ContactFormDialog({
     reset({
       ...(initial ?? EMPTY),
       school: (initial?.school as Values["school"]) || undefined,
+      situation: (initial?.situation as Values["situation"]) || "NEW",
       entryYearGroup:
         (initial?.entryYearGroup as Values["entryYearGroup"]) || undefined,
     });
@@ -172,6 +178,7 @@ export function ContactFormDialog({
     fd.set("childLastName", values.childLastName);
     if (values.childDob) fd.set("childDob", values.childDob);
     fd.set("school", values.school);
+    fd.set("situation", values.situation);
     fd.set("entryYear", values.entryYear);
     fd.set("entryYearGroup", values.entryYearGroup);
     if (values.addressLine1) fd.set("addressLine1", values.addressLine1);
@@ -415,6 +422,38 @@ export function ContactFormDialog({
                           <SelectItem value="TRINITY">Trinity School</SelectItem>
                           <SelectItem value="WHITGIFT">
                             Whitgift School
+                          </SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="situation"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>
+                        Situation <span className="text-red-500">*</span>
+                      </FormLabel>
+                      <Select
+                        onValueChange={field.onChange}
+                        value={field.value ?? "NEW"}
+                        disabled={isPending}
+                      >
+                        <FormControl>
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select situation" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          <SelectItem value="NEW">New application</SelectItem>
+                          <SelectItem value="INTERNAL">
+                            Internal bursary application
+                          </SelectItem>
+                          <SelectItem value="ROLLING_OVER">
+                            Rolling over
                           </SelectItem>
                         </SelectContent>
                       </Select>

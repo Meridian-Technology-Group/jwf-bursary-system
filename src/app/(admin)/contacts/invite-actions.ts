@@ -28,6 +28,11 @@ import { createProfile } from "@/lib/auth/create-profile";
 import { createInvitation } from "@/lib/db/queries/invitations";
 import { getAppUrl } from "@/lib/app-url";
 import {
+  deadlineTypeForSituation,
+  openingDateMergeField,
+  resolveInvitationTemplate,
+} from "@/lib/email/invitation-template";
+import {
   invitationDeadlineFields,
   INVITATION_ROUND_DEADLINE_SELECT,
 } from "@/lib/email/invitation-deadline";
@@ -67,11 +72,14 @@ export async function sendInvitationFromContactAction(
     school: import("@prisma/client").School;
     entryYear: number;
     entryYearGroup: import("@prisma/client").EntryYearGroup | null;
+    situation: import("@prisma/client").InvitationSituation | null;
     profileId: string | null;
   };
   let academicYear = "";
   // Round deadline columns for the invitation's {{deadline}} field (E1).
   let deadlineRound: SubmissionDeadlineRound | null = null;
+  // B3 — feeds the rolling template's {{opening_date}}.
+  let roundOpenDate: Date | null = null;
   try {
     const loaded = await withAdminContext(async (tx) => {
       const c = await tx.contact.findUnique({
@@ -85,6 +93,7 @@ export async function sendInvitationFromContactAction(
           school: true,
           entryYear: true,
           entryYearGroup: true,
+          situation: true,
           profileId: true,
           archivedAt: true,
         },
@@ -99,6 +108,7 @@ export async function sendInvitationFromContactAction(
         select: {
           academicYear: true,
           status: true,
+          openDate: true,
           ...INVITATION_ROUND_DEADLINE_SELECT,
         },
       });
@@ -114,6 +124,7 @@ export async function sendInvitationFromContactAction(
         ok: true as const,
         contact: c,
         academicYear: round.academicYear,
+        roundOpenDate: round.openDate,
         deadlineRound: {
           closeDate: round.closeDate,
           defaultSubmissionDeadlineNew: round.defaultSubmissionDeadlineNew,
@@ -127,6 +138,7 @@ export async function sendInvitationFromContactAction(
     contact = loaded.contact;
     academicYear = loaded.academicYear;
     deadlineRound = loaded.deadlineRound;
+    roundOpenDate = loaded.roundOpenDate;
   } catch (err) {
     const message = err instanceof Error ? err.message : "Failed to load contact";
     console.error("[contacts] sendInvitationFromContactAction load error:", err);
@@ -223,6 +235,9 @@ export async function sendInvitationFromContactAction(
         entryYearGroup: contact.entryYearGroup,
         roundId,
         contactId: contact.id,
+        // B3 — the situation chosen when the contact was created; resends
+        // then reuse it from the invitation row.
+        situation: contact.situation,
         authUserId,
         createdBy: user.id,
         expiresAt,
@@ -261,17 +276,30 @@ export async function sendInvitationFromContactAction(
   }
 
   // 5. Send the branded INVITATION email inside the rollback boundary.
-  const emailResult = await sendEmail(contact.email, "INVITATION", {
-    applicant_name: applicantName,
-    child_name: contact.childName,
-    school: schoolLabel(contact.school),
-    round_year: academicYear,
-    registration_link: `${appUrl}/register?token=${invitationToken}`,
-    // E1/CF-11: {{deadline}} is the round's SUBMISSION deadline for a new
-    // applicant, not the 30-day token expiry — that now has its own
-    // {{link_expiry}} field. Same fix as the four sites in invitations/actions.
-    ...invitationDeadlineFields(deadlineRound, "NEW", expiresAt),
-  });
+  // B3 (CG-26): the template follows the contact's situation × school;
+  // legacy contacts (situation NULL) keep the generic INVITATION.
+  const emailResult = await sendEmail(
+    contact.email,
+    resolveInvitationTemplate(contact.situation, contact.school),
+    {
+      applicant_name: applicantName,
+      child_name: contact.childName,
+      school: schoolLabel(contact.school),
+      round_year: academicYear,
+      registration_link: `${appUrl}/register?token=${invitationToken}`,
+      opening_date: openingDateMergeField(
+        roundOpenDate ? { openDate: roundOpenDate } : null
+      ),
+      // E1/CF-11: {{deadline}} is the round's SUBMISSION deadline (typed by
+      // situation), not the 30-day token expiry — that now has its own
+      // {{link_expiry}} field.
+      ...invitationDeadlineFields(
+        deadlineRound,
+        deadlineTypeForSituation(contact.situation),
+        expiresAt
+      ),
+    }
+  );
 
   if (!emailResult.success) {
     console.error("[contacts] sendInvitationFromContactAction email error:", emailResult.error);

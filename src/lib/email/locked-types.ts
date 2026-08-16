@@ -26,6 +26,13 @@ import { EmailTemplateType } from "@prisma/client";
 export const LOCKED_EMAIL_TEMPLATE_TYPES: ReadonlySet<EmailTemplateType> =
   new Set<EmailTemplateType>([
     EmailTemplateType.INVITATION,
+    // B3 — every invitation variant carries the registration link, so they
+    // are locked for the same reason the generic INVITATION is.
+    EmailTemplateType.INVITATION_NEW_TS,
+    EmailTemplateType.INVITATION_NEW_WS,
+    EmailTemplateType.INVITATION_INTERNAL_TS,
+    EmailTemplateType.INVITATION_INTERNAL_WS,
+    EmailTemplateType.INVITATION_ROLLING,
     EmailTemplateType.INVITE_STAFF,
     EmailTemplateType.APPLICATION_RESTART_REQUIRED,
   ]);

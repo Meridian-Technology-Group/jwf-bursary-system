@@ -10,6 +10,7 @@ import {
   BursaryAccountStatus,
   type EntryYearGroup,
   type Invitation,
+  type InvitationSituation,
   type School,
 } from "@prisma/client";
 
@@ -122,6 +123,8 @@ export async function createInvitation(
     contactId?: string;
     applicationId?: string;
     authUserId?: string;
+    /** Epic 14 B3 — which invitation template variant this invite uses. */
+    situation?: InvitationSituation | null;
     token?: string;
     createdBy: string;
     expiresAt: Date;
@@ -136,6 +139,7 @@ export async function createInvitation(
       school: data.school ?? null,
       entryYear: data.entryYear ?? null,
       entryYearGroup: data.entryYearGroup ?? null,
+      situation: data.situation ?? null,
       roundId: data.roundId ?? null,
       bursaryAccountId: data.bursaryAccountId ?? null,
       contactId: data.contactId ?? null,

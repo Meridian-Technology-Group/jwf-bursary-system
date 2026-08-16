@@ -5,9 +5,14 @@
 
 import type { EmailTemplateType } from "@prisma/client";
 
-/** Display labels for the 16 seeded system templates, keyed by `type`. */
+/** Display labels for the seeded system templates, keyed by `type`. */
 export const TEMPLATE_LABELS: Record<EmailTemplateType, string> = {
-  INVITATION: "Invitation",
+  INVITATION: "Invitation (generic fallback)",
+  INVITATION_NEW_TS: "Invitation — New Application, Trinity",
+  INVITATION_NEW_WS: "Invitation — New Application, Whitgift",
+  INVITATION_INTERNAL_TS: "Invitation — Internal Application, Trinity",
+  INVITATION_INTERNAL_WS: "Invitation — Internal Application, Whitgift",
+  INVITATION_ROLLING: "Invitation — Rolling Over (both schools)",
   CONFIRMATION: "Submission Confirmation",
   MISSING_DOCS: "Missing Documents",
   OUTCOME_QUALIFIES: "Outcome — Qualifies (legacy)",

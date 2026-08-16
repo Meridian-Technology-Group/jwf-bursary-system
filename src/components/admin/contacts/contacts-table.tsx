@@ -89,6 +89,7 @@ function toFormValues(c: ContactListItem & {
     entryYear: String(c.entryYear),
     entryYearGroup:
       (c.entryYearGroup as ContactFormValues["entryYearGroup"]) ?? "",
+    situation: (c.situation as ContactFormValues["situation"]) ?? "NEW",
     // Address + notes must round-trip through the edit form: the update action
     // writes a full record (unsubmitted fields become null), so presenting them
     // blank would silently wipe the stored address on every edit.
