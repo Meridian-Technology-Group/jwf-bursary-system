@@ -41,6 +41,7 @@ import {
   SECTION_TITLES,
 } from "@/lib/portal/sections";
 import { getScheduleHomeForUser } from "@/lib/db/queries/schedule";
+import { getActiveApplicationId } from "@/lib/portal/active-application";
 import { buildScheduleHomeRows } from "@/lib/bursary-accounts/schedule-home";
 import {
   ScheduleHome,
@@ -110,11 +111,18 @@ export default async function PortalDashboardPage() {
     inviteRoundYear,
   } = user
     ? await (async () => {
+        // E2: the dashboard describes the ACTIVE application (cookie
+        // preference; most-recent when unset — pre-E2 behaviour).
+        const activeApplicationId = await getActiveApplicationId();
         const userScope = await withUserContext(
           user.id,
           user.role as RlsRole,
           async (tx) => {
-            const app = await getCurrentApplicationForUser(tx, user.id);
+            const app = await getCurrentApplicationForUser(
+              tx,
+              user.id,
+              activeApplicationId
+            );
             let completed = 0;
             let totalSections = TOTAL_SECTIONS;
             let deadlinePast = false;
@@ -356,7 +364,8 @@ export default async function PortalDashboardPage() {
   // PAUSED bit under service-role context (see getApplicationPausedStateForUser).
   const hasOutstandingDocRequest =
     user && application
-      ? (await getApplicationPausedStateForUser(user.id)).isPaused
+      ? (await getApplicationPausedStateForUser(user.id, application.id))
+          .isPaused
       : false;
 
   return (
@@ -379,8 +388,6 @@ export default async function PortalDashboardPage() {
       {hasSchedule && (
         <ScheduleHome
           blocks={scheduleBlocks.filter((b) => b.rows.length > 0)}
-          currentApplicationId={application?.id ?? null}
-          continueHref={continueHref}
           hasStartAffordance={!application && invitation != null}
         />
       )}

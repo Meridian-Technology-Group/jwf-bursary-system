@@ -22,6 +22,7 @@ import { CheckCircle2 } from "lucide-react";
 import { getCurrentUser } from "@/lib/auth/roles";
 import { withUserContext, type RlsRole } from "@/lib/db/prisma";
 import { loadSubmittedApplication } from "@/lib/portal/submission-loader";
+import { getActiveApplicationId } from "@/lib/portal/active-application";
 import { submittedLabel } from "@/lib/portal/status-projection";
 import { SubmissionDownloadOffer } from "@/components/portal/submission-download-offer";
 import { PortalPage } from "@/components/portal/portal-page";
@@ -35,11 +36,24 @@ export default async function SubmittedPage() {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
 
-  // Most-recently submitted application for this user (any round).
+  // Most-recently submitted application for this user (any round). E2: the
+  // active-application preference wins when it points at a SUBMITTED app of
+  // the caller's own (the status filter stays on both branches).
+  const activeApplicationId = await getActiveApplicationId();
   const latest = await withUserContext(
     user.id,
     user.role as RlsRole,
-    (tx) =>
+    async (tx) =>
+      (activeApplicationId
+        ? await tx.application.findFirst({
+            where: {
+              id: activeApplicationId,
+              leadApplicantId: user.id,
+              formStatus: "SUBMITTED",
+            },
+            select: { id: true },
+          })
+        : null) ??
       tx.application.findFirst({
         where: { leadApplicantId: user.id, formStatus: "SUBMITTED" },
         orderBy: { submittedAt: "desc" },

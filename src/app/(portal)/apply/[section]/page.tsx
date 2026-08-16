@@ -18,6 +18,7 @@ import { ApplicationSectionType } from "@prisma/client";
 import { getCurrentUser } from "@/lib/auth/roles";
 import { withUserContext, withAdminContext, type RlsRole } from "@/lib/db/prisma";
 import { getApplicationForUser } from "@/lib/db/queries/applications";
+import { getActiveApplicationId } from "@/lib/portal/active-application";
 import { loadSectionPageData } from "@/lib/portal/section-page-data";
 import {
   ensurePrimaryContributor,
@@ -79,11 +80,12 @@ export default async function SectionPage({ params }: PageProps) {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
 
-  // Load application
+  // Load application (E2: honour the active-application context).
+  const activeApplicationId = await getActiveApplicationId();
   const application = await withUserContext(
     user.id,
     user.role as RlsRole,
-    (tx) => getApplicationForUser(tx, user.id)
+    (tx) => getApplicationForUser(tx, user.id, activeApplicationId)
   );
   if (!application) {
     // No application yet — redirect to portal home

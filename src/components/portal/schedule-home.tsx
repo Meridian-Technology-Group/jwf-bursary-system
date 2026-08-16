@@ -5,11 +5,9 @@
  *
  * Server component — rows are pre-derived by `buildScheduleHomeRows`; this
  * only renders. Buttons:
- *   CONTINUE          → the existing continue deep link, ONLY when the row's
- *                       application is the portal's current application (the
- *                       single-application context E2 replaces); otherwise
- *                       the label renders inert until E2 wires per-app
- *                       context.
+ *   CONTINUE          → /apply/open/{applicationId} (E2): sets the explicit
+ *                       active-application context, then enters the wizard —
+ *                       so any child's draft is resumable from here.
  *   START APPLICATION → anchors to the start affordance below (the type
  *                       chooser / re-assessment card) when one is rendered;
  *                       inert otherwise (nothing on the page could start it).
@@ -40,30 +38,22 @@ export interface ScheduleHomeBlock {
 
 interface ScheduleHomeProps {
   blocks: ScheduleHomeBlock[];
-  /** The portal's current application id — gates the CONTINUE link (pre-E2). */
-  currentApplicationId: string | null;
-  /** Deep link for CONTINUE on the current application. */
-  continueHref: string;
   /** True when the page renders a start affordance to anchor to. */
   hasStartAffordance: boolean;
 }
 
 function StateCell({
   row,
-  currentApplicationId,
-  continueHref,
   hasStartAffordance,
 }: {
   row: ScheduleHomeRow;
-  currentApplicationId: string | null;
-  continueHref: string;
   hasStartAffordance: boolean;
 }) {
   if (row.state === "continue" || row.state === "start") {
     const href =
       row.state === "continue"
-        ? row.applicationId != null && row.applicationId === currentApplicationId
-          ? continueHref
+        ? row.applicationId != null
+          ? `/apply/open/${row.applicationId}`
           : null
         : hasStartAffordance
           ? "#start-application"
@@ -102,12 +92,7 @@ function StateCell({
   );
 }
 
-export function ScheduleHome({
-  blocks,
-  currentApplicationId,
-  continueHref,
-  hasStartAffordance,
-}: ScheduleHomeProps) {
+export function ScheduleHome({ blocks, hasStartAffordance }: ScheduleHomeProps) {
   return (
     <section aria-label="Bursary application schedule" className="space-y-6">
       <h2 className="flex items-center gap-2 text-sm font-semibold uppercase tracking-wider text-slate-400">
@@ -160,12 +145,7 @@ export function ScheduleHome({
                       {fmt(row.awardCommunicationDate)}
                     </td>
                     <td className="px-6 py-3 text-right">
-                      <StateCell
-                        row={row}
-                        currentApplicationId={currentApplicationId}
-                        continueHref={continueHref}
-                        hasStartAffordance={hasStartAffordance}
-                      />
+                      <StateCell row={row} hasStartAffordance={hasStartAffordance} />
                     </td>
                   </tr>
                 ))}

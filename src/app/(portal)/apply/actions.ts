@@ -38,6 +38,7 @@ import {
   clearProvenance,
 } from "@/lib/applications/section-diff";
 import { logError } from "@/lib/log";
+import { getActiveApplicationId } from "@/lib/portal/active-application";
 
 import { AUDIT_ACTIONS } from "@/lib/audit/actions";
 
@@ -75,10 +76,11 @@ async function resolveApplicationId(): Promise<string | null> {
   const user = await getCurrentUser();
   if (!user) return null;
 
+  const activeId = await getActiveApplicationId();
   const application = await withUserContext(
     user.id,
     user.role as RlsRole,
-    (tx) => getApplicationForUser(tx, user.id)
+    (tx) => getApplicationForUser(tx, user.id, activeId)
   );
   return application?.id ?? null;
 }
@@ -88,20 +90,35 @@ async function resolveApplicationId(): Promise<string | null> {
  *
  * Intentionally ignores any client-supplied applicationId — every section
  * action must operate exclusively on the caller's own application to
- * prevent IDOR (audit finding 2.3).
+ * prevent IDOR (audit finding 2.3). The E2 active-application cookie is a
+ * server-read preference folded into the same ownership WHERE, so it cannot
+ * widen that guarantee — only pick BETWEEN the caller's own drafts.
  */
 async function getOwnedApplicationId(): Promise<string | null> {
   const user = await getCurrentUser();
   if (!user) return null;
 
+  const activeId = await getActiveApplicationId();
   const application = await withUserContext(
     user.id,
     user.role as RlsRole,
-    (tx) =>
-      tx.application.findFirst({
+    async (tx) => {
+      if (activeId) {
+        const preferred = await tx.application.findFirst({
+          where: {
+            id: activeId,
+            leadApplicantId: user.id,
+            formStatus: { not: "SUBMITTED" },
+          },
+          select: { id: true },
+        });
+        if (preferred) return preferred;
+      }
+      return tx.application.findFirst({
         where: { leadApplicantId: user.id, formStatus: { not: "SUBMITTED" } },
         select: { id: true },
-      })
+      });
+    }
   );
   return application?.id ?? null;
 }
@@ -135,14 +152,28 @@ async function getOwnedApplicationContext(): Promise<{
   const user = await getCurrentUser();
   if (!user) return null;
 
+  const activeId = await getActiveApplicationId();
   const resolved = await withUserContext(
     user.id,
     user.role as RlsRole,
     async (tx) => {
-      const application = await tx.application.findFirst({
-        where: { leadApplicantId: user.id, formStatus: { not: "SUBMITTED" } },
-        select: { id: true },
-      });
+      // E2: same active-application preference as getOwnedApplicationId, so
+      // section reads and writes always target the same child's application.
+      const application =
+        (activeId
+          ? await tx.application.findFirst({
+              where: {
+                id: activeId,
+                leadApplicantId: user.id,
+                formStatus: { not: "SUBMITTED" },
+              },
+              select: { id: true },
+            })
+          : null) ??
+        (await tx.application.findFirst({
+          where: { leadApplicantId: user.id, formStatus: { not: "SUBMITTED" } },
+          select: { id: true },
+        }));
       if (!application) return null;
 
       const ownerContributorId = await resolveOwningContributorId(
