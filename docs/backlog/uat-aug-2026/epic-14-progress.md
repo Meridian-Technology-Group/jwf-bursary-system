@@ -35,7 +35,7 @@ in review · merged`.
 | C6 | Parts 3–4 tables | in review | `feature/e14-c6-notional-assets-tables` | Parts 3, 4 and the LA-6 "Part 5" debt + lifestyle-squeeze blocks render as plain workbook tables, labels verbatim (STUCTURE incl.). AUTO cells bind to the engine's notional-spend lines / orchestrator output / pure profiling helpers (equity totals, net financial equity, lifestyleSqueeze re-used verbatim — zero new maths). Manual cells = existing inputs relocated (cash/savings to Part 3 per workbook). Savings-cushion display-only (LA-8 №5 note). Browser: 400k−250k home → £150k equity AUTO; toggles drive add-backs; strip reconciles. |
 | C7 | Bursary Award tab | todo | | |
 | C8 | Assessment Admin tab | todo | | |
-| C9 | Real reason codes | todo | | |
+| C9 | Real reason codes | merged (pre-delivered) | delivered by CALC-09/CALC-02/CALC-11 (calc-model epic) | Verified 2026-08-16 against the new extraction: the 36 YoY codes are seeded (101–136, placeholders 1–35 deprecated-in-place for historic references) and match the extraction verbatim — 0 label mismatches; the 9 gap codes live in `gap_reasons` (dup-"5" already renumbered); Settings → Reason Codes shows both sets with CRUD/deprecation. Remaining C9 scope = the award-tab pickers, which belong to C7 by design. CG-25/D4 closed. |
 | D1 | Round scenarios | todo | | |
 | D2 | Scenario consumption | todo | | |
 | D3 | Portal schedule home | todo | | |
@@ -57,6 +57,10 @@ in review · merged`.
 
 ## For Brian → Charlotte (questions raised during implementation)
 
+- **C9 note (relay):** Charlotte's 36 YoY + 9 gap reason codes were already
+  ingested during the calc-model build and match her 16 Aug workbook
+  verbatim (verified). Her gap list's duplicate "5" is seeded as two
+  distinct codes in her order — worth a one-line confirmation.
 - **C0 / LA-8 list (relay for sign-off):** see `epic-14-field-map.md` §LA-8 —
   (1) Part 1 "Bursary recipient's Scholarship" has no engine field (manual
   text cell vs display of the award-side scholarship %?); (2) sibling
