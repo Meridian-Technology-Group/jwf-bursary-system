@@ -8,8 +8,8 @@
  *
  * Design goals (plan 11 §5.3):
  *  - Genuinely optional: a single flag disables the whole feature.
- *  - Configurable window with a sensible default (30 min) — the exact idle
- *    window is **D20, TBC by Charlotte**; this is the swap-point.
+ *  - Configurable window. Staff default 30 min; the portal passes a 60-minute
+ *    default (CG-12 — Charlotte's answer to D20, 2026-08-16).
  *  - Warn-then-logout: a short countdown is shown before the forced sign-out so
  *    an active-but-idle user can stay signed in.
  *
@@ -26,8 +26,15 @@
  *      Default: 60. Clamped to [5, idleMs - 1s]; malformed → default.
  */
 
-/** Default idle window in minutes. D20 — Charlotte to confirm the real window. */
+/** Default idle window in minutes (staff shell). */
 export const DEFAULT_IDLE_MINUTES = 30;
+/**
+ * Applicant (portal) idle window in minutes — Charlotte's explicit choice,
+ * CG-12 / Epic 14 A3: 60 minutes, with the warning's "stay signed in"
+ * granting a further full window. Passed by the portal layout as
+ * `defaultIdleMinutes`; `NEXT_PUBLIC_SESSION_IDLE_MINUTES` still overrides.
+ */
+export const PORTAL_IDLE_MINUTES = 60;
 /** Default warning-countdown length in seconds, shown before the forced logout. */
 export const DEFAULT_WARN_SECONDS = 60;
 
@@ -105,14 +112,21 @@ const CLIENT_ENV: Record<string, string | undefined> = {
  * Resolve the idle-timeout config from a plain env-like record. Exposed (rather
  * than reading `process.env` directly) so tests can drive every branch without
  * mutating global env.
+ *
+ * `defaults.idleMinutes` is the caller's fallback window (e.g. the portal's 60,
+ * CG-12) and applies only when `NEXT_PUBLIC_SESSION_IDLE_MINUTES` is unset or
+ * malformed — the env override always wins.
  */
 export function resolveIdleTimeoutConfig(
-  env: Record<string, string | undefined> = CLIENT_ENV
+  env: Record<string, string | undefined> = CLIENT_ENV,
+  defaults: { idleMinutes?: number } = {}
 ): IdleTimeoutConfig {
   const enabled = !isDisabledByFlag(env.NEXT_PUBLIC_SESSION_IDLE_ENABLED);
 
   const minutes = clamp(
-    parseIntOrNull(env.NEXT_PUBLIC_SESSION_IDLE_MINUTES) ?? DEFAULT_IDLE_MINUTES,
+    parseIntOrNull(env.NEXT_PUBLIC_SESSION_IDLE_MINUTES) ??
+      defaults.idleMinutes ??
+      DEFAULT_IDLE_MINUTES,
     MIN_IDLE_MINUTES,
     MAX_IDLE_MINUTES
   );

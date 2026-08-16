@@ -36,6 +36,7 @@ import { StepperDataProvider } from "@/components/portal/stepper-data-context";
 import { UnsavedChangesProvider } from "@/components/portal/unsaved-changes-context";
 import { PageLoader } from "@/components/shared/loading";
 import { IdleLogoutWatcher } from "@/components/auth/idle-logout-watcher";
+import { PORTAL_IDLE_MINUTES } from "@/lib/auth/idle-timeout";
 
 export const metadata = {
   title: {
@@ -122,7 +123,7 @@ export default async function PortalLayout({
       {/* Epic 11 (D20) — optional inactivity logout, applied to the parent
           portal as well as staff. Renders nothing without an authenticated
           user or when the flag is off. */}
-      {user ? <IdleLogoutWatcher /> : null}
+      {user ? <IdleLogoutWatcher defaultIdleMinutes={PORTAL_IDLE_MINUTES} /> : null}
 
       {/* The stepper-data bridge (replaces the `@stepper` slot). It MUST wrap
           BOTH the rail (the reader, via RailStepper) and {children} (which
