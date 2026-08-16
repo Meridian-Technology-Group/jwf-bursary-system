@@ -23,6 +23,7 @@ import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth/roles";
 import { validateApplicantInvitationAction } from "./actions";
+import { ExistingAccountAccept } from "./existing-account-accept";
 import { ApplicantRegisterForm } from "./applicant-register-form";
 import { ReassessmentSignIn } from "./reassessment-signin";
 import { TokenRegistration } from "./token-registration";
@@ -85,6 +86,24 @@ export default async function RegisterPage({
         email={validation.email}
         childName={validation.childName}
         academicYear={validation.academicYear}
+      />
+    );
+  }
+
+  // Epic 14 E1 (CG-04): a second child invited on an already-registered
+  // email must never see the create-a-password form (it would reset the
+  // parent's real password). Route to the existing-account accept step.
+  if (validation.existingAccount) {
+    const currentUser = await getCurrentUser();
+    return (
+      <ExistingAccountAccept
+        token={token}
+        email={validation.email}
+        childName={validation.childName}
+        signedInAsInvited={
+          !!currentUser &&
+          currentUser.email.toLowerCase() === validation.email.toLowerCase()
+        }
       />
     );
   }

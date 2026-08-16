@@ -21,6 +21,7 @@ import {
   type School,
 } from "@prisma/client";
 import { withAdminContext } from "@/lib/db/prisma";
+import { getCurrentUser } from "@/lib/auth/roles";
 import { createSupabaseAdminClient } from "@/lib/auth/supabase-admin";
 import { createProfile } from "@/lib/auth/create-profile";
 import {
@@ -87,6 +88,14 @@ export type ValidateApplicantInvitationResult =
        * routes them to sign in rather than rendering the create-account form.
        */
       isReassessment: boolean;
+      /**
+       * Epic 14 E1 (CG-04) — true when the invitation's auth user already
+       * carries a REGISTERED profile (a second child on the same parent
+       * email). The form shows honest copy: setting a password here UPDATES
+       * the existing login (one account for all children), and signing in
+       * first also works.
+       */
+      existingAccount: boolean;
       /** New round's academic year, for the re-assessment "welcome back" copy. */
       academicYear: string | null;
     }
@@ -131,6 +140,22 @@ export async function validateApplicantInvitationAction(
     }
 
     const isReassessment = !!invitation.bursaryAccountId;
+
+    // E1 (CG-04): does this invitation point at an auth user who has already
+    // registered? A profile with a non-null lastName/firstName set at accept
+    // time is a heuristic; the reliable signal is any prior ACCEPTED
+    // invitation for the same auth user (they've been through registration).
+    const existingAccount = invitation.authUserId
+      ? (await withAdminContext((tx) =>
+          tx.invitation.count({
+            where: {
+              authUserId: invitation.authUserId,
+              status: InvitationStatus.ACCEPTED,
+            },
+          })
+        )) > 0
+      : false;
+
     let academicYear: string | null = null;
     if (invitation.roundId) {
       const round = await withAdminContext((tx) =>
@@ -151,6 +176,7 @@ export async function validateApplicantInvitationAction(
       school: invitation.school,
       roundId: invitation.roundId,
       isReassessment,
+      existingAccount,
       academicYear,
     };
   } catch (err) {
@@ -361,6 +387,122 @@ export async function acceptApplicantInvitationAction(
       err instanceof Error ? err.message : "Registration failed.";
     console.error(
       "[register] acceptApplicantInvitationAction error:",
+      err
+    );
+    return { success: false, error: message };
+  }
+}
+
+
+// ---------------------------------------------------------------------------
+// acceptInvitationForExistingAccountAction (Epic 14 E1, CG-04)
+// ---------------------------------------------------------------------------
+
+export interface AcceptExistingAccountResult {
+  success: boolean;
+  error?: string;
+}
+
+/**
+ * Accepts an applicant invitation for a parent who ALREADY has a registered
+ * account (a second child on the same email — one login, many children).
+ *
+ * Unlike `acceptApplicantInvitationAction` this NEVER touches the password
+ * and never overwrites the profile's names: the caller must be SIGNED IN as
+ * the invitation's auth user, and acceptance only creates the new
+ * application / flips the contributor / marks the invitation ACCEPTED —
+ * the same finalisation branch as the registration path.
+ */
+export async function acceptInvitationForExistingAccountAction(
+  token: string
+): Promise<AcceptExistingAccountResult> {
+  if (!token || typeof token !== "string") {
+    return { success: false, error: "Invalid invitation token." };
+  }
+
+  const currentUser = await getCurrentUser();
+  if (!currentUser) {
+    return { success: false, error: "Please sign in first." };
+  }
+
+  const invitation = await withAdminContext((tx) =>
+    getInvitationByToken(tx, token)
+  );
+  if (!invitation) {
+    return { success: false, error: "Invitation not found." };
+  }
+  if (invitation.status !== InvitationStatus.PENDING) {
+    return { success: false, error: "This invitation has already been used." };
+  }
+  if (invitation.expiresAt < new Date()) {
+    return { success: false, error: "This invitation has expired." };
+  }
+  if (!invitation.authUserId || invitation.authUserId !== currentUser.id) {
+    // The token belongs to a different login — never cross-accept.
+    return {
+      success: false,
+      error:
+        "This invitation belongs to a different account. Sign out and open the link again.",
+    };
+  }
+
+  try {
+    await withAdminContext(async (tx) => {
+      if (invitation.applicationId) {
+        await tx.applicationContributor.updateMany({
+          where: {
+            applicationId: invitation.applicationId,
+            profileId: invitation.authUserId!,
+            role: ApplicationContributorRole.SECONDARY,
+          },
+          data: { status: ApplicationContributorStatus.IN_PROGRESS },
+        });
+      } else if (invitation.bursaryAccountId && invitation.roundId) {
+        await createReassessmentApplicationFromInvitation(tx, invitation);
+      } else if (
+        canCreateFirstYearApplication({
+          leadApplicantId: invitation.authUserId!,
+          roundId: invitation.roundId,
+          school: invitation.school,
+          childName: invitation.childName,
+          entryYear: invitation.entryYear,
+          entryYearGroup: invitation.entryYearGroup,
+        })
+      ) {
+        await createFirstYearApplicationFromSource(tx, {
+          leadApplicantId: invitation.authUserId!,
+          roundId: invitation.roundId,
+          school: invitation.school,
+          childName: invitation.childName,
+          entryYear: invitation.entryYear,
+          entryYearGroup: invitation.entryYearGroup,
+          contactId: invitation.contactId,
+        });
+      }
+
+      await markInvitationAccepted(tx, invitation.id, invitation.authUserId!);
+
+      await createAuditLog(tx, {
+        userId: invitation.authUserId!,
+        action: AUDIT_ACTIONS.ACCEPT_INVITATION,
+        entityType: AUDIT_ENTITY_TYPES.Invitation,
+        entityId: invitation.id,
+        context: `Invitation accepted onto the existing account of ${invitation.email} (second child, E14-E1)`,
+        metadata: {
+          email: invitation.email,
+          roundId: invitation.roundId,
+          childName: invitation.childName,
+          existingAccount: true,
+        },
+      });
+    });
+
+    return { success: true };
+  } catch (err) {
+    const message =
+      err instanceof Error ? err.message : "Failed to accept the invitation.";
+    console.error(
+      "[register] acceptInvitationForExistingAccountAction error:",
       err
     );
     return { success: false, error: message };

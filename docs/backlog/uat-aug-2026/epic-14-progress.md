@@ -39,7 +39,7 @@ in review · merged`.
 | D1 | Round scenarios | in review | `feature/e14-d1-round-scenarios` | New `round_windows` table (RLS policies in the same migration, admin-modify/staff-read) keyed (round, scenario) with opensOn/submitBy/defaultTaxYear; pure resolver `resolveRoundScenario` with the full boundary matrix (19/20 Aug, 10 Nov, 11/12 Apr, 22 May — 10 unit tests, LA-4 fixed 12 Apr cutover); "Round scenarios" card on the round page with 4 editable rows + derived defaults as placeholders. E1 deadline columns stay authoritative for the effective-deadline chain (decision recorded); D2 wires consumption. Browser: RA dates edited, persisted, reloaded. |
 | D2 | Scenario consumption | todo | | |
 | D3 | Portal schedule home | todo | | |
-| E1 | Second child on one login | todo | | |
+| E1 | Second child on one login | in review | `fix/e14-e1-multi-child-invite` | Root cause: every invite path called `createUser(email)` unconditionally → raw "already registered" failure on a second child. Fix: shared `provisionApplicantAuthUser` (reuse APPLICANT profile → create → recover half-provisioned; staff emails refused) wired into contact-invite + quick-invite (queue path already looked up); rollbacks guarded so a REUSED login is never deleted. New existing-account accept step at /register?token (no password reset; signed-in one-click or sign-in-and-accept). Browser E2E = Charlotte's exact test: contact #2 same email → invite (reused auth user, situation carried) → accept signed-out with the EXISTING password → both applications on one profile, invitation ACCEPTED. Fixture kept for E2. |
 | E2 | Portal multi-application UX | todo | | |
 
 ## For Brian (accumulate; do not delete answered items — strike through)
