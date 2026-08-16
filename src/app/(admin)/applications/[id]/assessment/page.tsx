@@ -30,14 +30,7 @@ import {
 } from "@/lib/db/queries/reference-tables";
 import { resolveReferenceBundle } from "@/lib/assessment/v2/reference-bundle";
 import { selectEngineVersion } from "@/lib/assessment/engine-version";
-import {
-  parentIncomeToAssessorRecord,
-  assetsToPropertyAssets,
-  assetsToDebts,
-  derivePortfolioType,
-  assetsToSavings,
-  assetsToTransport,
-} from "@/lib/assessment/v2/prefill";
+import { emptyAssessmentPrefill } from "@/lib/assessment/v2/prefill";
 import {
   AssessmentFormV2,
   type SerialisedAssessmentV2,
@@ -47,11 +40,8 @@ import type {
   AssessorIncomeRecord,
   PropertyAssetsRecord,
   DebtsRecord,
+  SiblingDetail,
 } from "@/types/assessment-v2";
-import type {
-  ParentsIncomeData,
-  AssetsLiabilitiesData,
-} from "@/types/application";
 import type { EntryYearGroupCode } from "@/lib/assessment/schooling-years";
 import { feeYearLabels } from "@/lib/assessment/fee-year";
 import {
@@ -215,7 +205,7 @@ export default async function AssessmentPage({ params }: Props) {
   const user = await requireRole([Role.ADMIN, Role.ASSESSOR, Role.VIEWER]);
   const isViewer = user.role === Role.VIEWER;
 
-  const { application, assessment, contributors, householdSources } =
+  const { application, assessment, contributors, householdSources, childName } =
     await withUserContext(
       user.id,
       user.role as RlsRole,
@@ -227,9 +217,20 @@ export default async function AssessmentPage({ params }: Props) {
             assessment: null,
             contributors: [],
             householdSources: null as HouseholdSources | null,
+            childName: null as string | null,
           };
         const a = await getAssessment(tx, params.id);
         const ctribs = await getApplicationContributors(tx, params.id);
+
+        // Part 1 rows 1–2 (CG-22) — the recipient's name. NOT separately
+        // audited: the detail layout's header already discloses (and audits,
+        // NAME_REVEAL) the child's name for every assessment-route render, so
+        // a second entry for the same page view would be a duplicate record
+        // of one disclosure.
+        const nameRow = await tx.application.findUnique({
+          where: { id: params.id },
+          select: { childName: true },
+        });
 
         // Epic 09: read the PRIMARY contributor's PARENT_DETAILS + OTHER_INFO
         // JSONB so the household decision aid can derive the scenario from the
@@ -254,6 +255,7 @@ export default async function AssessmentPage({ params }: Props) {
           assessment: a,
           contributors: ctribs,
           householdSources: household,
+          childName: nameRow?.childName ?? null,
         };
       }
     );
@@ -415,32 +417,15 @@ export default async function AssessmentPage({ params }: Props) {
   // form. The branch lives here at the page level (implementation-plan §CALC-07).
   const engineVersion = selectEngineVersion(assessment.calculationVersion);
 
-  // For v2, additionally load the ReferenceBundle for the round's academic year
-  // and the family's submitted income/assets sections (for first-load pre-fill).
+  // For v2, additionally load the ReferenceBundle. Epic 14 C4 (CG-15/D14-3):
+  // the applicant's submitted income/assets sections are NO LONGER read here —
+  // the assessment opens empty except the sanctioned autofill, and declared
+  // values live on the APPLICATION FORM tab for cross-reference.
   const v2Sources =
     engineVersion === "v2"
-      ? await withUserContext(user.id, user.role as RlsRole, async (tx) => {
-          const rows = await getReferenceBundleRows(tx);
-          const primaryId = primaryContributor?.id;
-          const [incomeSec, assetsSec] = primaryId
-            ? await Promise.all([
-                getSectionData(tx, application.id, "PARENTS_INCOME", primaryId),
-                getSectionData(tx, application.id, "ASSETS_LIABILITIES", primaryId),
-              ])
-            : [null, null];
-          // A submitted second parent supplies Parent 2's income from their own
-          // PARENTS_INCOME section; otherwise the primary's parent2Income is used.
-          const secondaryIncomeSec =
-            hasSubmittedSecondary && secondaryContributor
-              ? await getSectionData(
-                  tx,
-                  application.id,
-                  "PARENTS_INCOME",
-                  secondaryContributor.id
-                )
-              : null;
-          return { rows, incomeSec, assetsSec, secondaryIncomeSec };
-        })
+      ? await withUserContext(user.id, user.role as RlsRole, async (tx) => ({
+          rows: await getReferenceBundleRows(tx),
+        }))
       : null;
 
   // Normalise assessment data: convert all Decimal → number for client.
@@ -561,26 +546,8 @@ export default async function AssessmentPage({ params }: Props) {
         </div>
       );
     } else {
-      const incomeData = (v2Sources.incomeSec?.data ?? null) as ParentsIncomeData | null;
-      const assetsData = (v2Sources.assetsSec?.data ?? null) as AssetsLiabilitiesData | null;
-      const secondaryIncomeData = (v2Sources.secondaryIncomeSec?.data ??
-        null) as ParentsIncomeData | null;
-
-      const savings = assetsToSavings(assetsData);
-      const transport = assetsToTransport(assetsData);
-      const prefill: AssessmentV2Prefill = {
-        parent1Income: parentIncomeToAssessorRecord(incomeData?.parent1Income),
-        parent2Income: parentIncomeToAssessorRecord(
-          secondaryIncomeData?.parent1Income ?? incomeData?.parent2Income
-        ),
-        propertyAssets: assetsToPropertyAssets(assetsData),
-        debts: assetsToDebts(assetsData),
-        portfolioType: derivePortfolioType(assetsData),
-        cashSavings: savings.cashSavings,
-        isasPepsShares: savings.isasPepsShares,
-        usesCar: transport.usesCar,
-        usesPublicTransport: transport.usesPublicTransport,
-      };
+      // D14-3: the form opens empty; stored assessor records always win.
+      const prefill: AssessmentV2Prefill = emptyAssessmentPrefill();
 
       const serialisedV2: SerialisedAssessmentV2 = {
         id: assessment.id,
@@ -604,6 +571,9 @@ export default async function AssessmentPage({ params }: Props) {
         manualAdjustmentReason: assessment.manualAdjustmentReason,
         dishonestyFlag: assessment.dishonestyFlag,
         watchOutNotes: assessment.watchOutNotes,
+        siblingDetails: (assessment.siblingDetails ?? null) as
+          | SiblingDetail[]
+          | null,
         earners: assessment.earners
           .filter((e) => e.earnerLabel === "PARENT_1" || e.earnerLabel === "PARENT_2")
           .map((e) => ({
@@ -635,6 +605,7 @@ export default async function AssessmentPage({ params }: Props) {
           applicationEntryYearGroup={
             application.entryYearGroup as EntryYearGroupCode | null
           }
+          childName={childName}
           siblingPayableFees={siblingPayableFees}
           forceTwoEarner={forceTwoEarner}
           secondaryParentOverride={serialisedAssessment.secondaryParentOverride}

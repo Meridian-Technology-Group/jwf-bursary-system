@@ -85,3 +85,16 @@ export interface DebtsRecord {
   leaseBalances?: number;
   schoolFeesOwedOrOther?: number;
 }
+
+/**
+ * Epic 14 C4/C7 (CG-22) — one of the workbook's three "sibling at the school"
+ * rows: Part 1 captures the name; the award tab adds the school + net payable
+ * fees (manual, or filled from a sibling's bursary account by the C7 picker).
+ * Presentation/entry data — the only computed consumer remains the existing
+ * `siblingPayableFees` sequential absorption input.
+ */
+export interface SiblingDetail {
+  name?: string
+  school?: 'TRINITY' | 'WHITGIFT' | null
+  netPayableFees?: number | null
+}

@@ -40,7 +40,7 @@ import {
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 import type { AssessmentStatus, EmploymentStatus, RentAddBackType } from "@prisma/client";
-import type { AssessorIncomeRecord, PropertyAssetsRecord, DebtsRecord } from "@/types/assessment-v2";
+import type { AssessorIncomeRecord, PropertyAssetsRecord, DebtsRecord, SiblingDetail } from "@/types/assessment-v2";
 import type { ReferenceBundle } from "@/lib/assessment/v2/types";
 import type { PropertyPortfolioType } from "@/lib/assessment/v2/profiling";
 import type { AssessmentV2Input } from "@/lib/assessment/v2/orchestrator";
@@ -103,6 +103,8 @@ export interface SerialisedAssessmentV2 {
   dishonestyFlag: boolean;
   /** CALC-10 — "Assessor's wizard" forward-looking note for next year's assessor. */
   watchOutNotes: string | null;
+  /** Epic 14 C4/C7 (CG-22) — the workbook's three sibling rows. */
+  siblingDetails: SiblingDetail[] | null;
   earners: SerialisedEarnerV2[];
   property: {
     propertyAssets: PropertyAssetsRecord | null;
@@ -142,6 +144,8 @@ interface AssessmentFormV2Props {
   defaultNextYearAnnualFees?: number | null;
   applicationEntryYear: number | null;
   applicationEntryYearGroup: EntryYearGroupCode | null;
+  /** Part 1 rows 1–2 — the recipient's name from the application (CG-22). */
+  childName?: string | null;
   siblingPayableFees?: number[];
   forceTwoEarner?: boolean;
   secondaryParentOverride?: boolean;
@@ -246,6 +250,7 @@ export function AssessmentFormV2({
   defaultNextYearAnnualFees = null,
   applicationEntryYear,
   applicationEntryYearGroup,
+  childName = null,
   siblingPayableFees = [],
   forceTwoEarner = false,
   secondaryParentOverride = false,
@@ -276,9 +281,43 @@ export function AssessmentFormV2({
   const [familyTypeCategory, setFamilyTypeCategory] = React.useState<number>(
     assessment.familyTypeCategory ?? 1
   );
-  const [annualFees, setAnnualFees] = React.useState<number>(
+  // CG-22 row 11: annual school fees are autofilled from reference data and
+  // HIDDEN — they feed the engine (and the Complete gate), not the screen.
+  // Stored value wins for pre-existing assessments.
+  const [annualFees] = React.useState<number>(
     Number(assessment.annualFees ?? defaultAnnualFees) || 0
   );
+
+  // Part 1 row 4 — display-back of the award-side scholarship % (LA-8 №1:
+  // no recipient-level scholarship field exists; sign-off pending).
+  const scholarshipDisplay =
+    assessment.scholarshipPct != null && Number(assessment.scholarshipPct) !== 0
+      ? `${Number(assessment.scholarshipPct)}%`
+      : "—";
+
+  // ── Part 1 (CG-22) ──────────────────────────────────────────────────────────
+  // Year of entry: prefilled from the application (LA-5), editable — edits
+  // recompute the remaining-years suggestion; the persisted value stays
+  // `schoolingYearsRemaining` (the engine input), same as before.
+  const [entryYear, setEntryYear] = React.useState<number | "">(
+    applicationEntryYear ?? ""
+  );
+  // The three "sibling at the school" rows — names here; the award tab adds
+  // school + net payable fees (C7). Stored as `Assessment.siblingDetails`.
+  const [siblingDetails, setSiblingDetails] = React.useState<SiblingDetail[]>(
+    () => {
+      const stored = Array.isArray(assessment.siblingDetails)
+        ? assessment.siblingDetails
+        : [];
+      return [0, 1, 2].map((i) => stored[i] ?? {});
+    }
+  );
+  const setSiblingName = (i: number, name: string) => {
+    setSiblingDetails((prev) =>
+      prev.map((d, idx) => (idx === i ? { ...d, name } : d))
+    );
+    scheduleAutoSave();
+  };
   const [schoolingYearsRemaining, setSchoolingYearsRemaining] = React.useState<number>(
     assessment.schoolingYearsRemaining ??
       calculateSchoolingYearsRemainingFromEntry(applicationEntryYearGroup, applicationEntryYear) ??
@@ -451,6 +490,10 @@ export function AssessmentFormV2({
   const handleSave = React.useCallback(async (): Promise<boolean> => {
     if (isReadOnly) return true;
 
+    // A manual/explicit save supersedes any pending debounced autosave — a
+    // stale timer firing after this save must never overwrite it.
+    if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
+
     // Epic 13 / C2 — refuse locally before the round-trip so the assessor gets
     // the message inline instead of a failed save. The server enforces the
     // same rule regardless (`saveAssessmentAction`); this is the courtesy.
@@ -539,6 +582,13 @@ export function AssessmentFormV2({
         : null,
       dishonestyFlag,
       watchOutNotes: watchOutNotes.trim().length > 0 ? watchOutNotes : null,
+      // Epic 14 C4/C7 (CG-22) — the three sibling rows (names now; the award
+      // tab adds school + fees). Persist null when every row is blank.
+      siblingDetails: siblingDetails.some(
+        (d) => (d.name ?? "").trim() || d.school || d.netPayableFees != null
+      )
+        ? siblingDetails
+        : null,
       ...snapshot,
       earnersV2,
       propertyV2: {
@@ -599,6 +649,7 @@ export function AssessmentFormV2({
     manualAdjustmentError,
     dishonestyFlag,
     watchOutNotes,
+    siblingDetails,
     propertyAssets,
     portfolioType,
     debts,
@@ -608,13 +659,22 @@ export function AssessmentFormV2({
   ]);
 
   const autoSaveTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Epic 14 C4 fix — the debounced timer used to close over the handleSave
+  // memoised at SCHEDULE time, i.e. one render behind the setState that
+  // triggered it: the autosave fired with state missing the very change it
+  // was scheduled for, and a pending stale timer could even fire AFTER a
+  // manual Save and overwrite it (observed losing a just-typed value). The
+  // ref always points at the latest closure, so the timer saves what is on
+  // screen when it fires.
+  const handleSaveRef = React.useRef(handleSave);
+  handleSaveRef.current = handleSave;
   const scheduleAutoSave = React.useCallback(() => {
     if (isReadOnly) return;
     if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
     autoSaveTimer.current = setTimeout(() => {
-      handleSave();
+      handleSaveRef.current();
     }, 400);
-  }, [handleSave, isReadOnly]);
+  }, [isReadOnly]);
 
   const handleComplete = async () => {
     setIsCompleting(true);
@@ -772,75 +832,157 @@ export function AssessmentFormV2({
         <AssessmentCalcStripV2 output={output} savingsCushion={savingsCushion} />
       </SeeComputationToggle>
 
-      {/* A. Family & fees */}
-      <FormSection title="A. Family type & fees">
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <FieldRow label="Family type category" htmlFor="v2-family-type">
-            <Select
-              value={String(familyTypeCategory)}
-              onValueChange={(v) => handleFamilyCategoryChange(Number(v))}
-              disabled={isReadOnly}
-            >
-              <SelectTrigger id="v2-family-type" className="h-9 text-sm">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {referenceBundle.familyCategoryMetas.map((m) => (
-                  <SelectItem key={m.category} value={String(m.category)} className="text-sm">
-                    {m.category} — {m.description}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </FieldRow>
-          <FieldRow label="Annual school fees (current year)" htmlFor="v2-annual-fees">
-            <CurrencyInput
-              id="v2-annual-fees"
-              value={annualFees}
-              disabled={isReadOnly}
-              onChange={(v) => {
-                setAnnualFees(v);
-                scheduleAutoSave();
-              }}
-            />
-          </FieldRow>
-          <FieldRow label="Schooling years remaining" htmlFor="v2-schooling-years">
-            <Input
-              id="v2-schooling-years"
-              type="number"
-              min={0}
-              value={schoolingYearsRemaining}
-              disabled={isReadOnly}
-              onChange={(e) => setSchoolingYearsRemaining(Math.max(0, Number(e.target.value) || 0))}
-              onBlur={scheduleAutoSave}
-              className="text-right font-mono"
-            />
-          </FieldRow>
-          <FieldRow
-            label="School-age children (savings-test divisor)"
-            htmlFor="v2-school-age-children"
-            hint={`Default for this family type: ${metaDefaultChildren}`}
-          >
-            <Input
-              id="v2-school-age-children"
-              type="number"
-              min={1}
-              value={schoolAgeChildrenCount}
-              disabled={isReadOnly}
-              onChange={(e) => markChildrenOverridden(Math.max(1, Number(e.target.value) || 1))}
-              onBlur={scheduleAutoSave}
-              className="text-right font-mono"
-            />
-          </FieldRow>
-        </div>
+      {/* PART 1 (CG-22, Epic 14 C4) — the workbook's 11-row table, labels
+          verbatim. Autofill = names / year of entry (LA-5, editable) /
+          remaining-years derivation / annual fees (reference data, HIDDEN —
+          feeds the engine, not displayed). Everything else assessor-entered. */}
+      <FormSection title="PART 1 - BURSARY RECIPIENT'S & FAMILY DETAILS">
+        {(() => {
+          const nameParts = (childName ?? "").trim().split(/\s+/).filter(Boolean);
+          const surname = nameParts.length > 1 ? nameParts[nameParts.length - 1] : "";
+          const firstName =
+            nameParts.length > 1 ? nameParts.slice(0, -1).join(" ") : nameParts[0] ?? "";
+          const rowClass = "grid grid-cols-1 items-center gap-1 border-b border-slate-100 py-2 last:border-b-0 sm:grid-cols-[minmax(260px,1fr)_minmax(200px,1fr)]";
+          const labelClass = "text-xs font-medium text-slate-500";
+          return (
+            <div>
+              <div className={rowClass}>
+                <span className={labelClass}>Bursary recipient&apos;s First name</span>
+                <span className="text-sm text-slate-700">{firstName || "—"}</span>
+              </div>
+              <div className={rowClass}>
+                <span className={labelClass}>Bursary recipient&apos;s Surname</span>
+                <span className="text-sm text-slate-700">{surname || "—"}</span>
+              </div>
+              <div className={rowClass}>
+                <label className={labelClass} htmlFor="v2-entry-year">
+                  Bursary award year of entry:
+                </label>
+                <div>
+                  <Input
+                    id="v2-entry-year"
+                    type="number"
+                    value={entryYear}
+                    disabled={isReadOnly}
+                    onChange={(e) => {
+                      const v = e.target.value === "" ? "" : Number(e.target.value) || "";
+                      setEntryYear(v);
+                      // LA-5: edits refresh the remaining-years suggestion; the
+                      // engine input that persists is remaining-years itself.
+                      const derived = calculateSchoolingYearsRemainingFromEntry(
+                        applicationEntryYearGroup,
+                        typeof v === "number" ? v : null
+                      );
+                      if (derived != null) setSchoolingYearsRemaining(derived);
+                    }}
+                    onBlur={scheduleAutoSave}
+                    className="w-32 text-right font-mono"
+                  />
+                  <p className="mt-0.5 text-[11px] text-slate-400">
+                    Prefilled from the invitation; edits update the remaining-years row.
+                  </p>
+                </div>
+              </div>
+              <div className={rowClass}>
+                <span className={labelClass}>Bursary recipient&apos;s Scholarship</span>
+                <span className="text-sm text-slate-700">
+                  {scholarshipDisplay}
+                  <span className="ml-2 text-[11px] text-slate-400">
+                    recorded on the Bursary Award tab
+                  </span>
+                </span>
+              </div>
+              {[0, 1, 2].map((i) => (
+                <div className={rowClass} key={i}>
+                  <label className={labelClass} htmlFor={`v2-sibling-${i + 1}`}>
+                    Bursary recipient&apos;s sibling {i + 1} at the school
+                  </label>
+                  <Input
+                    id={`v2-sibling-${i + 1}`}
+                    value={siblingDetails[i]?.name ?? ""}
+                    disabled={isReadOnly}
+                    onChange={(e) => setSiblingName(i, e.target.value)}
+                    onBlur={scheduleAutoSave}
+                    placeholder="—"
+                    className="text-sm"
+                  />
+                </div>
+              ))}
+              <div className={rowClass}>
+                <label className={labelClass} htmlFor="v2-family-type">
+                  Family category
+                </label>
+                <Select
+                  value={String(familyTypeCategory)}
+                  onValueChange={(v) => handleFamilyCategoryChange(Number(v))}
+                  disabled={isReadOnly}
+                >
+                  <SelectTrigger id="v2-family-type" className="h-9 text-sm">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {referenceBundle.familyCategoryMetas.map((m) => (
+                      <SelectItem key={m.category} value={String(m.category)} className="text-sm">
+                        {m.category} — {m.description}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className={rowClass}>
+                <label className={labelClass} htmlFor="v2-schooling-years">
+                  Remaining years at the school
+                </label>
+                <Input
+                  id="v2-schooling-years"
+                  type="number"
+                  min={0}
+                  value={schoolingYearsRemaining}
+                  disabled={isReadOnly}
+                  onChange={(e) => setSchoolingYearsRemaining(Math.max(0, Number(e.target.value) || 0))}
+                  onBlur={scheduleAutoSave}
+                  className="w-32 text-right font-mono"
+                />
+              </div>
+              <div className={rowClass}>
+                <label className={labelClass} htmlFor="v2-school-age-children">
+                  Number of schooling age children
+                </label>
+                <div>
+                  <Input
+                    id="v2-school-age-children"
+                    type="number"
+                    min={1}
+                    value={schoolAgeChildrenCount}
+                    disabled={isReadOnly}
+                    onChange={(e) => markChildrenOverridden(Math.max(1, Number(e.target.value) || 1))}
+                    onBlur={scheduleAutoSave}
+                    className="w-32 text-right font-mono"
+                  />
+                  <p className="mt-0.5 text-[11px] text-slate-400">
+                    Default for this family type: {metaDefaultChildren}
+                  </p>
+                </div>
+              </div>
+              {/* Row 11 — Annual school fees: autofill + HIDDEN (feeds the
+                  engine only). Surfaced ONLY when the reference figure is
+                  missing, because Complete is gated on it. */}
+              {annualFees <= 0 && (
+                <div className={rowClass}>
+                  <span className={labelClass}>Annual school fees</span>
+                  <span className="text-xs font-medium text-amber-700">
+                    Missing from reference data — Complete is disabled until the
+                    school-fees reference row exists for this school and year.
+                  </span>
+                </div>
+              )}
+            </div>
+          );
+        })()}
       </FormSection>
 
       {/* B. Income */}
       <FormSection title="B. Income entry">
-        <p className="text-xs text-slate-400">
-          Pre-filled from the family&apos;s submitted income — review, confirm and adjust. The computed
-          income feeds the household net income (C40).
-        </p>
         <div className="rounded-lg border border-slate-100 p-3">
           <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Parent 1</p>
           <EarnerFormV2

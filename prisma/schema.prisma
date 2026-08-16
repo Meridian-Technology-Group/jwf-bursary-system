@@ -455,6 +455,12 @@ model Assessment {
   /// permissive). Backfilled from the eight legacy boxes (those columns are
   /// retained, read-only, until the 08 cutover). Additive + nullable.
   synopsis                      String?               @map("synopsis")
+  /// Epic 14 C4/C7 (CG-16/CG-22, field-map LA-8 №2) — the workbook's three
+  /// sibling rows: `[{ name, school, netPayableFees }]`. Assessor-entered
+  /// display data (Part 1 names; the award tab adds school + fees) — feeds
+  /// `siblingPayableFees` presentation only, never computed maths beyond the
+  /// existing sequential-absorption input. Additive + nullable.
+  siblingDetails                Json?                 @map("sibling_details")
   /// CALC-10 — "Assessor's wizard — things to look out for with this family"
   /// (workbook §3.16). Forward-looking notes for NEXT year's assessor,
   /// distinct from `synopsis` (this year's narrative). On the account's next
