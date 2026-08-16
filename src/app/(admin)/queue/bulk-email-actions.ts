@@ -24,7 +24,7 @@ import { createAuditLog } from "@/lib/audit/log";
 import { AUDIT_ACTIONS, AUDIT_ENTITY_TYPES } from "@/lib/audit/actions";
 import { getAllEmailTemplates, type EmailTemplateRow } from "@/lib/db/queries/reference-tables";
 import { replaceMergeFields } from "@/lib/email/merge";
-import { sendRawEmail, fromAddress } from "@/lib/email/send";
+import { sendRawEmail, fromAddress, replyToAddress } from "@/lib/email/send";
 import {
   buildBulkMergeData,
   isBulkResolvable,
@@ -105,7 +105,13 @@ export interface BulkEmailRecipient extends BulkMergeDataApplication {
 }
 
 export type GetBulkEmailRecipientsResult =
-  | { success: true; recipients: BulkEmailRecipient[]; fromAddress: string }
+  | {
+      success: true;
+      recipients: BulkEmailRecipient[];
+      fromAddress: string;
+      /** CG-05 — where parent replies land; shown beside the from-address. */
+      replyToAddress: string;
+    }
   | { success: false; error: string };
 
 async function fetchRecipientApplications(
@@ -184,7 +190,12 @@ export async function getBulkEmailRecipientsAction(
       unsendableReason: unsendableReason(app.leadApplicant),
     }));
 
-    return { success: true, recipients, fromAddress: fromAddress() };
+    return {
+      success: true,
+      recipients,
+      fromAddress: fromAddress(),
+      replyToAddress: replyToAddress(),
+    };
   } catch (err) {
     console.error("[getBulkEmailRecipientsAction]", err);
     return { success: false, error: "Failed to resolve recipients." };
