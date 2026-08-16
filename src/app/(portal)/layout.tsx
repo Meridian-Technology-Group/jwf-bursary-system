@@ -30,6 +30,7 @@ import {
   getApplicationPausedStateForUser,
 } from "@/lib/db/queries/applications";
 import { hasPortalSchedule } from "@/lib/db/queries/schedule";
+import { getActiveApplicationId } from "@/lib/portal/active-application";
 import { PortalNav } from "@/components/portal/portal-nav";
 import { PortalNavMobileHeader } from "@/components/portal/portal-nav-mobile-header";
 import { StepperDataProvider } from "@/components/portal/stepper-data-context";
@@ -68,13 +69,16 @@ export default async function PortalLayout({
   // costs no extra context hop.
   let navState: Awaited<ReturnType<typeof getPortalNavState>> = null;
   let hasSchedule = false;
+  // E2: the nav describes the ACTIVE application (cookie preference; falls
+  // back to most-recent when unset/stale, i.e. pre-E2 behaviour).
+  const activeApplicationId = user ? await getActiveApplicationId() : null;
   if (user) {
     const { hasAccess, nav, scheduled } = await withUserContext(
       user.id,
       user.role as RlsRole,
       async (tx) => ({
         hasAccess: (await loadPortalAccessState(tx, user.id)).hasAccess,
-        nav: await getPortalNavState(tx, user.id),
+        nav: await getPortalNavState(tx, user.id, activeApplicationId),
         scheduled: await hasPortalSchedule(tx, user.id),
       })
     );
@@ -91,7 +95,8 @@ export default async function PortalLayout({
   // the missing-documents CTA can surface without exposing assessment data.
   // Separate hop from the user-context block above, by necessity.
   const needsDocs = user
-    ? (await getApplicationPausedStateForUser(user.id)).isPaused
+    ? (await getApplicationPausedStateForUser(user.id, activeApplicationId))
+        .isPaused
     : false;
 
   const displayName = user

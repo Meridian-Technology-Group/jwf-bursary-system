@@ -657,18 +657,34 @@ export interface SectionStatusResult {
  * PR-6a: "draft" is `form_status` ≠ SUBMITTED (the lifecycle equivalent of the
  * old fused PRE_SUBMISSION), not the deprecated fused `applications.status`.
  */
-export async function getApplicationForUser(tx: Tx, userId: string) {
+export async function getApplicationForUser(
+  tx: Tx,
+  userId: string,
+  preferredId: string | null = null
+) {
+  // E2: the active-application cookie is a PREFERENCE, not an authority —
+  // the id is folded into the SAME ownership/status WHERE, so a stale or
+  // foreign id fails the match and the legacy most-recent draft wins.
+  const where = {
+    leadApplicantId: userId,
+    formStatus: { not: "SUBMITTED" as const },
+  };
+  const include = {
+    round: {
+      select: { academicYear: true as const, status: true as const },
+    },
+  };
+  if (preferredId) {
+    const preferred = await tx.application.findFirst({
+      where: { ...where, id: preferredId },
+      include,
+    });
+    if (preferred) return preferred;
+  }
   return tx.application.findFirst({
-    where: {
-      leadApplicantId: userId,
-      formStatus: { not: "SUBMITTED" },
-    },
+    where,
     orderBy: { updatedAt: "desc" },
-    include: {
-      round: {
-        select: { academicYear: true, status: true },
-      },
-    },
+    include,
   });
 }
 
@@ -679,22 +695,35 @@ export async function getApplicationForUser(tx: Tx, userId: string) {
  * decided application is still returned — which the dashboard needs so it
  * reflects the real state instead of falling back to onboarding.
  */
-export async function getCurrentApplicationForUser(tx: Tx, userId: string) {
+export async function getCurrentApplicationForUser(
+  tx: Tx,
+  userId: string,
+  preferredId: string | null = null
+) {
+  const include = {
+    round: {
+      select: { academicYear: true as const, status: true as const },
+    },
+    // PR-6a: the portal "awaiting documents" CTA reads the assessment
+    // lifecycle (PAUSED) instead of the deprecated fused applications.status.
+    assessment: {
+      select: { status: true as const },
+    },
+  };
+  // E2: preference folded into the ownership WHERE — see getApplicationForUser.
+  if (preferredId) {
+    const preferred = await tx.application.findFirst({
+      where: { leadApplicantId: userId, id: preferredId },
+      include,
+    });
+    if (preferred) return preferred;
+  }
   return tx.application.findFirst({
     where: {
       leadApplicantId: userId,
     },
     orderBy: { updatedAt: "desc" },
-    include: {
-      round: {
-        select: { academicYear: true, status: true },
-      },
-      // PR-6a: the portal "awaiting documents" CTA reads the assessment
-      // lifecycle (PAUSED) instead of the deprecated fused applications.status.
-      assessment: {
-        select: { status: true },
-      },
-    },
+    include,
   });
 }
 
@@ -718,8 +747,18 @@ export interface PortalNavState {
 
 export async function getPortalNavState(
   tx: Tx,
-  userId: string
+  userId: string,
+  preferredId: string | null = null
 ): Promise<PortalNavState | null> {
+  // E2: the nav must describe the SAME application the pages show, so the
+  // active-application preference applies here too (ownership WHERE intact).
+  if (preferredId) {
+    const preferred = await tx.application.findFirst({
+      where: { leadApplicantId: userId, id: preferredId },
+      select: { formStatus: true },
+    });
+    if (preferred) return { formStatus: preferred.formStatus };
+  }
   const app = await tx.application.findFirst({
     where: { leadApplicantId: userId },
     orderBy: { updatedAt: "desc" },
@@ -759,14 +798,27 @@ export interface ApplicationPausedState {
  * always matches the application the rest of the portal is showing.
  */
 export async function getApplicationPausedStateForUser(
-  userId: string
+  userId: string,
+  preferredId: string | null = null
 ): Promise<ApplicationPausedState> {
   return withAdminContext(async (tx) => {
-    const app = await tx.application.findFirst({
-      where: { leadApplicantId: userId },
-      orderBy: { updatedAt: "desc" },
-      select: { assessment: { select: { status: true, pausedUntil: true } } },
-    });
+    const select = {
+      assessment: { select: { status: true as const, pausedUntil: true as const } },
+    };
+    // E2: follow the same active-application preference as the pages, so the
+    // paused CTA always describes the application being shown.
+    const app =
+      (preferredId
+        ? await tx.application.findFirst({
+            where: { leadApplicantId: userId, id: preferredId },
+            select,
+          })
+        : null) ??
+      (await tx.application.findFirst({
+        where: { leadApplicantId: userId },
+        orderBy: { updatedAt: "desc" },
+        select,
+      }));
     return {
       isPaused: app?.assessment?.status === "PAUSED",
       pausedUntil: app?.assessment?.pausedUntil ?? null,

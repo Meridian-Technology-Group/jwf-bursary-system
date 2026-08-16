@@ -19,6 +19,7 @@ import {
 } from "@/lib/db/queries/invitations";
 import { createReassessmentApplicationFromInvitation } from "@/lib/db/queries/reassessment";
 import { createFirstYearApplicationFromSource } from "@/lib/applications/create-from-invitation";
+import { setActiveApplicationId } from "@/lib/portal/active-application";
 import { resumeReview } from "@/lib/applications/status";
 import { createAuditLog } from "@/lib/audit/log";
 import { sendEmail } from "@/lib/email/send";
@@ -126,8 +127,17 @@ export async function startApplicationAction(
           };
         }
 
+        // E2 (CG-04): the dedupe is scoped to THIS invitation's round + child.
+        // The old profile-wide check (`any application exists`) silently
+        // skipped creation for a SECOND child on the same login and dropped
+        // the parent into the first child's form.
+        const effectiveChildName = invitation.childName ?? childName.trim();
         const existing = await tx.application.findFirst({
-          where: { leadApplicantId: user.id },
+          where: {
+            leadApplicantId: user.id,
+            roundId: invitation.roundId,
+            childName: { equals: effectiveChildName, mode: "insensitive" },
+          },
           select: { id: true },
         });
 
@@ -151,23 +161,30 @@ export async function startApplicationAction(
           // onboarding-card inputs only fill the gaps a bare invite left open.
           // (Epic 02 removes the parent school selector entirely; this is the
           // server-side belt-and-braces in the interim.)
-          await createFirstYearApplicationFromSource(tx, {
+          const createdId = await createFirstYearApplicationFromSource(tx, {
             leadApplicantId: user.id,
             roundId: invitation.roundId,
             school: invitation.school ?? school,
-            childName: invitation.childName ?? childName.trim(),
+            childName: effectiveChildName,
             entryYear: invitation.entryYear,
             entryYearGroup: invitation.entryYearGroup,
             contactId: invitation.contactId,
           });
+          return { error: null, applicationId: createdId };
         }
 
-        return { error: null };
+        return { error: null, applicationId: existing.id };
       }
     );
 
     if (validation.error) {
       return { success: false, error: validation.error };
+    }
+
+    // E2: the application just started/resumed becomes the active context so
+    // the wizard opens on THIS child.
+    if ("applicationId" in validation && validation.applicationId) {
+      await setActiveApplicationId(validation.applicationId);
     }
 
     revalidatePath("/");
@@ -259,11 +276,16 @@ export async function beginReassessmentAction(): Promise<BeginReassessmentResult
         },
       });
 
-      return { error: null };
+      return { error: null, applicationId };
     });
 
     if (result.error) {
       return { success: false, error: result.error };
+    }
+
+    // E2: the freshly created re-assessment becomes the active context.
+    if ("applicationId" in result && result.applicationId) {
+      await setActiveApplicationId(result.applicationId);
     }
 
     revalidatePath("/");

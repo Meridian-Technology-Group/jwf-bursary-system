@@ -20,6 +20,7 @@ import {
   resolveOwningContributorId,
 } from "@/lib/db/queries/contributors";
 import { getSectionGapStatuses } from "@/lib/portal/section-gaps";
+import { getActiveApplicationId } from "@/lib/portal/active-application";
 import {
   SECTION_ORDER,
   SECTION_TITLES,
@@ -358,17 +359,27 @@ export default async function ReviewPage() {
   // is scoped to their owned section/document rows (dual-parent, PR 4b) — the
   // review page must never surface the secondary's data. A SELECT under
   // applicant RLS; self-heal under admin context only if (impossibly) missing.
+  // E2: honour the active-application context (ownership WHERE intact).
+  const activeApplicationId = await getActiveApplicationId();
   const appIdForOwner = await withUserContext(
     user.id,
     user.role as RlsRole,
-    (tx) =>
-      tx.application
+    async (tx) => {
+      if (activeApplicationId) {
+        const preferred = await tx.application.findFirst({
+          where: { id: activeApplicationId, leadApplicantId: user.id },
+          select: { id: true },
+        });
+        if (preferred) return preferred.id;
+      }
+      return tx.application
         .findFirst({
           where: { leadApplicantId: user.id },
           orderBy: { updatedAt: "desc" },
           select: { id: true },
         })
-        .then((a) => a?.id ?? null)
+        .then((a) => a?.id ?? null);
+    }
   );
 
   if (!appIdForOwner) redirect("/");
@@ -385,13 +396,14 @@ export default async function ReviewPage() {
   }
 
   // Load application with the PRIMARY-owned section data + documents only
+  // The full load is pinned to the id resolved above, so both reads describe
+  // the SAME application even if another draft's updatedAt moves in between.
   const application = await withUserContext(
     user.id,
     user.role as RlsRole,
     (tx) =>
       tx.application.findFirst({
-        where: { leadApplicantId: user.id },
-        orderBy: { updatedAt: "desc" },
+        where: { id: appIdForOwner, leadApplicantId: user.id },
         include: {
           sections: {
             where: { ownerContributorId: ownerContributorId! },

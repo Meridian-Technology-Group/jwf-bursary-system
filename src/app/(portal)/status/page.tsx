@@ -29,6 +29,7 @@ import {
   type ParentStep,
 } from "@/lib/portal/status-projection";
 import { getDeadlineStatus } from "@/lib/portal/deadline";
+import { getActiveApplicationId } from "@/lib/portal/active-application";
 import { SubmissionCountdown } from "@/components/portal/submission-countdown";
 import { PortalPage } from "@/components/portal/portal-page";
 import { formatLondonDate } from "@/lib/datetime";
@@ -46,37 +47,47 @@ export default async function StatusPage() {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
 
+  // E2: honour the active-application context (preference folded into the
+  // ownership WHERE; most-recent fallback keeps pre-E2 behaviour).
+  const activeApplicationId = await getActiveApplicationId();
+  const statusSelect = {
+    id: true,
+    reference: true,
+    formStatus: true,
+    applicationType: true,
+    submittedAt: true,
+    createdAt: true,
+    childName: true,
+    submissionDeadlineAt: true,
+    round: {
+      select: {
+        academicYear: true,
+        decisionDate: true,
+        closeDate: true,
+        // Both typed round defaults (E1/D13-8) — the resolver picks the
+        // one matching this application's `applicationType`.
+        defaultSubmissionDeadlineNew: true,
+        defaultSubmissionDeadlineRolling: true,
+      },
+    },
+    assessment: {
+      select: { status: true, outcome: true, completedAt: true },
+    },
+  } as const;
   const application = await withUserContext(
     user.id,
     user.role as RlsRole,
-    (tx) =>
+    async (tx) =>
+      (activeApplicationId
+        ? await tx.application.findFirst({
+            where: { id: activeApplicationId, leadApplicantId: user.id },
+            select: statusSelect,
+          })
+        : null) ??
       tx.application.findFirst({
         where: { leadApplicantId: user.id },
         orderBy: { updatedAt: "desc" },
-        select: {
-          id: true,
-          reference: true,
-          formStatus: true,
-          applicationType: true,
-          submittedAt: true,
-          createdAt: true,
-          childName: true,
-          submissionDeadlineAt: true,
-          round: {
-            select: {
-              academicYear: true,
-              decisionDate: true,
-              closeDate: true,
-              // Both typed round defaults (E1/D13-8) — the resolver picks the
-              // one matching this application's `applicationType`.
-              defaultSubmissionDeadlineNew: true,
-              defaultSubmissionDeadlineRolling: true,
-            },
-          },
-          assessment: {
-            select: { status: true, outcome: true, completedAt: true },
-          },
-        },
+        select: statusSelect,
       })
   );
 
