@@ -47,6 +47,75 @@ export interface UploadedDocument {
 }
 
 /**
+ * Progress reported to the widget while an upload runs (CG-10).
+ *
+ * `percent` is the REAL fraction of bytes handed to storage — not a timer.
+ * The old widget animated a fake counter to 85% and parked it there for the
+ * whole transfer + server verification, which read as a stall on any file
+ * big enough to matter. Two phases:
+ *   - "uploading"  — bytes are moving; `percent` grows monotonically to 100.
+ *   - "processing" — all bytes sent; the server is verifying (magic-byte
+ *     sniff, duplicate fingerprint) and writing the Document row. Length
+ *     unknown, so the UI shows an explicit indeterminate state instead of a
+ *     frozen number.
+ */
+export interface UploadProgressEvent {
+  phase: "uploading" | "processing";
+  /** 0–100 of the request body actually sent. */
+  percent: number;
+}
+
+export type UploadProgressListener = (event: UploadProgressEvent) => void;
+
+/**
+ * Sends one request with REAL upload-progress reporting where the runtime
+ * allows it. Browsers get an `XMLHttpRequest` (the only widely-supported way
+ * to observe request-body progress); non-DOM runtimes (unit tests, SSR-side
+ * incidental imports) fall back to `fetch` with no progress events. Both
+ * resolve to a `Response` so error mapping stays in one place.
+ */
+function sendWithProgress(
+  url: string,
+  init: {
+    method: string;
+    headers?: Record<string, string>;
+    body: XMLHttpRequestBodyInit;
+  },
+  onUploadProgress?: (percent: number) => void
+): Promise<Response> {
+  if (typeof XMLHttpRequest === "undefined") {
+    return fetch(url, init);
+  }
+
+  return new Promise<Response>((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open(init.method, url);
+    for (const [name, value] of Object.entries(init.headers ?? {})) {
+      xhr.setRequestHeader(name, value);
+    }
+    xhr.upload.onprogress = (event) => {
+      if (event.lengthComputable && event.total > 0) {
+        onUploadProgress?.(
+          Math.max(0, Math.min(100, (event.loaded / event.total) * 100))
+        );
+      }
+    };
+    xhr.onload = () => {
+      // Response() refuses a body on bodyless statuses.
+      const body =
+        xhr.status === 204 || xhr.status === 205 ? null : xhr.responseText;
+      resolve(new Response(body, { status: xhr.status }));
+    };
+    xhr.onerror = () =>
+      reject(
+        new Error("Upload failed. Please check your connection and try again.")
+      );
+    xhr.onabort = () => reject(new Error("Upload cancelled."));
+    xhr.send(init.body);
+  });
+}
+
+/**
  * Turns a failed response into the message the parent sees.
  *
  * 413 (payload too large) and 507 (insufficient storage) get plain copy no
@@ -79,14 +148,16 @@ export async function uploadFile(
   file: File,
   applicationId: string,
   slot: string,
-  endpoints: UploadEndpoints
+  endpoints: UploadEndpoints,
+  onProgress?: UploadProgressListener
 ): Promise<UploadedDocument> {
   if (endpoints.transport.kind === "multipart") {
     return uploadFileMultipart(
       file,
       applicationId,
       slot,
-      endpoints.transport.uploadUrl
+      endpoints.transport.uploadUrl,
+      onProgress
     );
   }
   return uploadFilePresigned(
@@ -94,7 +165,8 @@ export async function uploadFile(
     applicationId,
     slot,
     endpoints.transport.signUrl,
-    endpoints.transport.confirmUrl
+    endpoints.transport.confirmUrl,
+    onProgress
   );
 }
 
@@ -103,8 +175,10 @@ async function uploadFilePresigned(
   applicationId: string,
   slot: string,
   signUrl: string,
-  confirmUrl: string
+  confirmUrl: string,
+  onProgress?: UploadProgressListener
 ): Promise<UploadedDocument> {
+  onProgress?.({ phase: "uploading", percent: 0 });
   // ── 1. Sign ────────────────────────────────────────────────────────────────
   const signResponse = await fetch(signUrl, {
     method: "POST",
@@ -134,17 +208,24 @@ async function uploadFilePresigned(
   // `file.type` — the confirm leg rejects an object stored under any other
   // Content-Type, so sending the server's value is what keeps a legitimate
   // upload from being mistaken for a masquerade.
-  const putResponse = await fetch(signedUrl, {
-    method: "PUT",
-    headers: { "Content-Type": contentType, "x-upsert": "false" },
-    body: file,
-  });
+  const putResponse = await sendWithProgress(
+    signedUrl,
+    {
+      method: "PUT",
+      headers: { "Content-Type": contentType, "x-upsert": "false" },
+      body: file,
+    },
+    (percent) => onProgress?.({ phase: "uploading", percent })
+  );
 
   if (!putResponse.ok) {
     throw await uploadErrorFrom(putResponse, "Upload failed");
   }
 
   // ── 3. Confirm — server-side content verification + Document row ───────────
+  // Every byte is in storage; what remains is the server's sniff + duplicate
+  // fingerprint + DB write (CG-10 — the honest "processing" beat, not a stall).
+  onProgress?.({ phase: "processing", percent: 100 });
   const confirmResponse = await fetch(confirmUrl, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -162,14 +243,27 @@ async function uploadFileMultipart(
   file: File,
   applicationId: string,
   slot: string,
-  uploadUrl: string
+  uploadUrl: string,
+  onProgress?: UploadProgressListener
 ): Promise<UploadedDocument> {
   const formData = new FormData();
   formData.append("file", file);
   formData.append("applicationId", applicationId);
   formData.append("slot", slot);
 
-  const response = await fetch(uploadUrl, { method: "POST", body: formData });
+  onProgress?.({ phase: "uploading", percent: 0 });
+  const response = await sendWithProgress(
+    uploadUrl,
+    { method: "POST", body: formData },
+    (percent) =>
+      onProgress?.(
+        // The single POST carries verification inside it, so once the body is
+        // fully sent the remainder is server work — same honest split.
+        percent >= 100
+          ? { phase: "processing", percent: 100 }
+          : { phase: "uploading", percent }
+      )
+  );
 
   if (!response.ok) {
     throw await uploadErrorFrom(response, "Upload failed");

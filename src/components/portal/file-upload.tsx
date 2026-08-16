@@ -230,6 +230,8 @@ function SingleFileUpload({
   const [uploadState, setUploadState] = React.useState<UploadState>(
     existingDocument ? "uploaded" : "empty"
   );
+  // CG-10 — true once every byte is sent and the server is verifying the file.
+  const [processing, setProcessing] = React.useState(false);
   const [uploadedDoc, setUploadedDoc] = React.useState<
     ExistingDocument | undefined
   >(existingDocument);
@@ -257,17 +259,20 @@ function SingleFileUpload({
 
     setUploadState("uploading");
     setUploadProgress(0);
+    setProcessing(false);
     setErrorMessage("");
     setDuplicateNotice("");
 
-    const progressInterval = setInterval(() => {
-      setUploadProgress((prev) => Math.min(prev + 10, 85));
-    }, 150);
-
     try {
-      const doc = await uploadFile(file, applicationId, slot, endpoints);
-      clearInterval(progressInterval);
+      // Progress is REAL (CG-10): the transport reports the bytes actually
+      // sent to storage, then an explicit "processing" beat while the server
+      // verifies the file — no simulated counter parked at 85%.
+      const doc = await uploadFile(file, applicationId, slot, endpoints, (e) => {
+        setUploadProgress(Math.round(e.percent));
+        setProcessing(e.phase === "processing");
+      });
       setUploadProgress(100);
+      setProcessing(false);
       setUploadedDoc({
         id: doc.id,
         filename: doc.filename,
@@ -278,7 +283,7 @@ function SingleFileUpload({
       setDuplicateNotice(doc.duplicateWarning ?? "");
       onUploadComplete?.(doc);
     } catch (err) {
-      clearInterval(progressInterval);
+      setProcessing(false);
       const message =
         err instanceof Error ? err.message : "Upload failed. Please try again.";
       setErrorMessage(message);
@@ -368,7 +373,7 @@ function SingleFileUpload({
         )}
 
         {uploadState === "uploading" && (
-          <InlineUploadingChip progress={uploadProgress} />
+          <InlineUploadingChip progress={uploadProgress} processing={processing} />
         )}
 
         {uploadState === "uploaded" && uploadedDoc && (
@@ -444,7 +449,7 @@ function SingleFileUpload({
       )}
 
       {uploadState === "uploading" && (
-        <UploadingRow progress={uploadProgress} />
+        <UploadingRow progress={uploadProgress} processing={processing} />
       )}
 
       {uploadState === "uploaded" && uploadedDoc && (
@@ -482,6 +487,8 @@ interface InflightUpload {
   key: string;
   filename: string;
   progress: number;
+  /** All bytes sent; server-side verification running (CG-10). */
+  processing?: boolean;
   /** Set once the request resolves with a failure */
   error?: string;
 }
@@ -523,7 +530,20 @@ function MultiFileUpload({
 
   async function uploadOne(file: File, key: string) {
     try {
-      const doc = await uploadFile(file, applicationId, slot, endpoints);
+      // Real per-file progress (CG-10) — no shared fake counter.
+      const doc = await uploadFile(file, applicationId, slot, endpoints, (e) =>
+        setInflight((prev) =>
+          prev.map((u) =>
+            u.key === key && !u.error
+              ? {
+                  ...u,
+                  progress: Math.round(e.percent),
+                  processing: e.phase === "processing",
+                }
+              : u
+          )
+        )
+      );
       setInflight((prev) => prev.filter((u) => u.key !== key));
       setUploadedDocs((prev) => [
         ...prev,
@@ -593,23 +613,10 @@ function MultiFileUpload({
       })),
     ]);
 
-    // Cap concurrency by chunking
+    // Cap concurrency by chunking; each upload reports its own real progress.
     for (let i = 0; i < accepted.length; i += MAX_CONCURRENT_UPLOADS) {
       const batch = accepted.slice(i, i + MAX_CONCURRENT_UPLOADS);
-
-      // Animate progress for the batch until requests resolve
-      const interval = setInterval(() => {
-        setInflight((prev) =>
-          prev.map((u) =>
-            batch.some((b) => b.key === u.key) && !u.error
-              ? { ...u, progress: Math.min(u.progress + 10, 85) }
-              : u
-          )
-        );
-      }, 150);
-
       await Promise.all(batch.map(({ file, key }) => uploadOne(file, key)));
-      clearInterval(interval);
     }
 
     if (inputRef.current) inputRef.current.value = "";
@@ -741,7 +748,11 @@ function MultiFileUpload({
               </li>
             ) : (
               <li key={u.key}>
-                <UploadingRow progress={u.progress} filename={u.filename} />
+                <UploadingRow
+                  progress={u.progress}
+                  filename={u.filename}
+                  processing={u.processing}
+                />
               </li>
             )
           )}
@@ -854,10 +865,20 @@ function DropZone({
 function UploadingRow({
   progress,
   filename,
+  processing,
 }: {
   progress: number;
   filename?: string;
+  /** All bytes sent; the server is verifying the file (CG-10). */
+  processing?: boolean;
 }) {
+  const label = processing
+    ? filename
+      ? `Checking ${filename}…`
+      : "Checking your file…"
+    : filename
+      ? `Uploading ${filename}…`
+      : "Uploading…";
   return (
     <div className="rounded-xl border border-slate-200 bg-white p-4">
       <div className="flex items-center gap-3">
@@ -866,24 +887,27 @@ function UploadingRow({
           aria-hidden="true"
         />
         <div className="flex-1 min-w-0">
-          <p className="text-sm font-medium text-slate-700 truncate">
-            {filename ? `Uploading ${filename}…` : "Uploading…"}
-          </p>
+          <p className="text-sm font-medium text-slate-700 truncate">{label}</p>
           <div
             role="progressbar"
-            aria-valuenow={progress}
+            aria-valuenow={processing ? undefined : progress}
             aria-valuemin={0}
             aria-valuemax={100}
-            aria-label="Upload progress"
+            aria-label={processing ? "Checking your file" : "Upload progress"}
             className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-slate-200"
           >
             <div
-              className="h-full rounded-full bg-accent-600 transition-all duration-150"
-              style={{ width: `${progress}%` }}
+              className={cn(
+                "h-full rounded-full bg-accent-600 transition-all duration-150",
+                processing && "animate-pulse"
+              )}
+              style={{ width: processing ? "100%" : `${progress}%` }}
             />
           </div>
         </div>
-        <span className="text-xs text-slate-500 shrink-0">{progress}%</span>
+        <span className="text-xs text-slate-500 shrink-0">
+          {processing ? "Almost done" : `${progress}%`}
+        </span>
       </div>
     </div>
   );
@@ -1008,11 +1032,17 @@ function InlineDropButton({
   );
 }
 
-function InlineUploadingChip({ progress }: { progress: number }) {
+function InlineUploadingChip({
+  progress,
+  processing,
+}: {
+  progress: number;
+  processing?: boolean;
+}) {
   return (
     <span className="inline-flex min-h-9 w-full items-center gap-1.5 rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-600">
       <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-accent-600" aria-hidden="true" />
-      <span>Uploading… {progress}%</span>
+      <span>{processing ? "Checking your file…" : `Uploading… ${progress}%`}</span>
     </span>
   );
 }
