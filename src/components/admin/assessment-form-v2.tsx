@@ -57,7 +57,8 @@ import {
   useAssessmentCalculationV2,
   runAssessmentV2,
 } from "@/hooks/use-assessment-calculation-v2";
-import { EarnerFormV2, CurrencyInput } from "@/components/admin/earner-form-v2";
+import { CurrencyInput } from "@/components/admin/earner-form-v2";
+import { IncomeTableV2 } from "@/components/admin/income-table-v2";
 import { AssessmentCalcStripV2 } from "@/components/admin/assessment-calc-strip-v2";
 import { SeeComputationToggle } from "@/components/admin/see-computation-toggle";
 import {
@@ -981,21 +982,10 @@ export function AssessmentFormV2({
         })()}
       </FormSection>
 
-      {/* B. Income */}
-      <FormSection title="B. Income entry">
-        <div className="rounded-lg border border-slate-100 p-3">
-          <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Parent 1</p>
-          <EarnerFormV2
-            label="Parent 1"
-            value={parent1}
-            readOnly={isReadOnly}
-            onChange={(v) => {
-              setParent1(v);
-              scheduleAutoSave();
-            }}
-          />
-        </div>
-
+      {/* PART 2 (CG-20, Epic 14 C5) — one Excel-style table, workbook rows
+          verbatim, Parent 1 · Parent 2 as two value columns, closing in the
+          AUTO household total. No commentary copy. */}
+      <FormSection title="PART 2 - HOUSEHOLD INCOME">
         {/* Second-earner toggle (review fix #1) — assessor-controlled unless a
             submitted secondary contributor locks two-earner mode ON. */}
         <label className="flex items-center gap-2">
@@ -1016,20 +1006,22 @@ export function AssessmentFormV2({
           </span>
         </label>
 
-        {twoEarner && (
-          <div className="rounded-lg border border-slate-100 p-3">
-            <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Parent 2</p>
-            <EarnerFormV2
-              label="Parent 2"
-              value={parent2}
-              readOnly={isReadOnly}
-              onChange={(v) => {
-                setParent2(v);
-                scheduleAutoSave();
-              }}
-            />
-          </div>
-        )}
+        <IncomeTableV2
+          parent1={parent1}
+          parent2={parent2}
+          twoEarner={twoEarner}
+          manualAdjustment={manualAdjustment}
+          readOnly={isReadOnly}
+          onChangeParent1={(v) => {
+            setParent1(v);
+            scheduleAutoSave();
+          }}
+          onChangeParent2={(v) => {
+            setParent2(v);
+            scheduleAutoSave();
+          }}
+          onCellBlur={scheduleAutoSave}
+        />
 
         {/* Manual income adjustment (Epic 13 / C2, D13-3) — ONE signed line on
             top of the aggregated earner income. Not a per-field override. */}
