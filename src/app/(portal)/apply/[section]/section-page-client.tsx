@@ -23,6 +23,7 @@ import { SubmitConfirmDialog } from "@/components/portal/submit-confirm-dialog";
 import { useSectionSaving } from "@/components/portal/section-saving-context";
 import { getSectionDefaultValues } from "@/lib/portal/section-defaults";
 import { runSectionSave } from "@/lib/portal/declaration-submit";
+import { SUBMISSION_FLOW_KEY } from "@/lib/portal/submission-flow";
 import { saveSection, saveSectionDraft, submitApplication } from "../actions";
 import type { SaveSectionResult } from "../actions";
 
@@ -268,7 +269,18 @@ export function SectionPageClient({
         confirmSubmit: requestSubmitConfirmation,
         // Throws Next's NEXT_REDIRECT on success (redirect("/submitted")).
         // `runSectionSave` re-throws it so the router can navigate.
-        submit: () => submitApplication(applicationId),
+        submit: () => {
+          // CG-13 — arm the post-submit download beat: /submitted offers the
+          // one-time `DOWNLOAD MY COPY` button only while this flag names the
+          // application (see submission-flow.ts). Set before the action so the
+          // redirect lands with the beat live; harmless if the submit fails.
+          try {
+            sessionStorage.setItem(SUBMISSION_FLOW_KEY, applicationId);
+          } catch {
+            // Storage unavailable — the parent just won't see the offer.
+          }
+          return submitApplication(applicationId);
+        },
       }
     );
   }

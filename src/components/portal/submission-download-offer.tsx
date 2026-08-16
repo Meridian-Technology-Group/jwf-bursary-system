@@ -1,33 +1,43 @@
 "use client";
 
 /**
- * SubmissionDownloadOffer — Epic 13 D1 (decision D13-4), replacing the Epic 05
- * dismissible-offer behaviour.
+ * SubmissionDownloadOffer — Epic 14 A5 (CG-13/LA-1), amending the presentation
+ * of Epic 13 D1 (D13-4).
  *
- * The submission PDF is now a ONE-SHOT: downloadable once, at submission, and
- * never again (CF-27 — applicants must not be able to re-read everything they
- * submitted). The old component collapsed into a small permanent "Download PDF"
- * link once dismissed, and the History page offered the same link indefinitely;
- * both are gone.
+ * The flow is three bare beats: the page's "file sent" confirmation, then a
+ * single `DOWNLOAD MY COPY` button with NO explanatory or scarcity text, then
+ * `Continue` back to the portal home. Charlotte asked for exactly this
+ * ("Please remove all the text, simply 'DOWNLOAD MY COPY' and then it is
+ * gone") — the previous unmissable warning panel prompted parents to feel they
+ * absolutely must save it.
  *
- * Because there is no second chance, this must be unmissable rather than
- * polite. There is no "No thanks" dismissal and no localStorage state: the
- * offer is either live (server says the download is unspent) or spent, and it
- * says so in plain words including the consequence — email the bursary team.
+ * The one-successful-download rule is unchanged server-side: the PDF route
+ * still stamps `submissionPdfDownloadedAt` and 410s afterwards. The offer is
+ * shown only during the live post-submit beat (a sessionStorage flag written
+ * by the submit path); downloading or continuing consumes the flag, and a
+ * plain revisit to /submitted shows no download path and no explanation
+ * (LA-1 — leaving without downloading forfeits the copy; the fallback route
+ * to a copy is the bursary team, deliberately unadvertised here).
  *
- * The download is a plain anchor, not a `fetch` + blob: the browser's native
- * save is the most reliable way for a parent to actually end up with the file,
- * and reliability outranks richer client-side error handling when the shot is
- * single. Clicking flips the panel optimistically — the copy is careful to
- * claim only that the download *started*, and tells the parent that reloading
- * brings the offer back if it did not, which is exactly true: the server stamps
- * the consumed-flag only after the PDF renders.
+ * The download stays a plain anchor, not fetch+blob: the browser's native
+ * save is the most reliable way for a parent to end up with the file. The
+ * server stamps the consumed-flag only after the PDF renders, so a failed
+ * download does not burn the single shot.
+ *
+ * When the beat is over ("hidden") this component renders the page's normal
+ * bottom navigation instead — during the live beat, `Continue` is the one
+ * exit, so clicking past the offer is an explicit choice.
  */
 
 import * as React from "react";
-import { AlertTriangle, Download, Info } from "lucide-react";
-
-const BURSARY_EMAIL = "fees@johnwhitgiftfoundation.org";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { ArrowLeft, Download } from "lucide-react";
+import {
+  SUBMISSION_FLOW_KEY,
+  resolveDownloadBeat,
+  type DownloadBeat,
+} from "@/lib/portal/submission-flow";
 
 interface SubmissionDownloadOfferProps {
   applicationId: string;
@@ -38,111 +48,97 @@ interface SubmissionDownloadOfferProps {
   downloadedAt: string | null;
 }
 
+function readFlowFlag(): string | null {
+  try {
+    return sessionStorage.getItem(SUBMISSION_FLOW_KEY);
+  } catch {
+    return null;
+  }
+}
+
+function clearFlowFlag(): void {
+  try {
+    sessionStorage.removeItem(SUBMISSION_FLOW_KEY);
+  } catch {
+    // Ignore — worst case the flag lingers for this tab's session.
+  }
+}
+
 export function SubmissionDownloadOffer({
   applicationId,
   downloadedAt,
 }: SubmissionDownloadOfferProps) {
+  const router = useRouter();
   const pdfHref = `/api/pdf/submission/${applicationId}`;
-  const [justDownloaded, setJustDownloaded] = React.useState(false);
+  const [downloadStarted, setDownloadStarted] = React.useState(false);
+  // null until mounted — sessionStorage is client-only, so the beat resolves
+  // after hydration to avoid a server/client markup mismatch.
+  const [beat, setBeat] = React.useState<DownloadBeat | null>(null);
 
-  // Already spent on a previous visit — no link, just the explanation.
-  if (downloadedAt) {
-    return (
-      <div className="flex items-start gap-3 rounded-xl border border-slate-200 bg-slate-50 p-5">
-        <Info
-          className="mt-0.5 h-5 w-5 shrink-0 text-slate-400"
-          aria-hidden="true"
-        />
-        <div className="text-sm text-slate-700">
-          <p className="font-semibold text-slate-800">
-            You downloaded your copy on {downloadedAt}.
-          </p>
-          <p className="mt-1">
-            A copy of your application can only be downloaded once, so it is no
-            longer available here. If you no longer have the file, email the
-            bursary team at{" "}
-            <a
-              className="font-medium text-accent-700 underline underline-offset-2 hover:text-accent-600"
-              href={`mailto:${BURSARY_EMAIL}`}
-            >
-              {BURSARY_EMAIL}
-            </a>
-            .
-          </p>
-        </div>
-      </div>
+  React.useEffect(() => {
+    setBeat(
+      resolveDownloadBeat({
+        downloadedAt,
+        flowApplicationId: readFlowFlag(),
+        applicationId,
+        downloadStarted,
+      })
     );
-  }
+  }, [downloadedAt, applicationId, downloadStarted]);
 
-  // Spent in this session — optimistic, so claim only that it started.
-  if (justDownloaded) {
+  const handleDownload = () => {
+    clearFlowFlag();
+    setDownloadStarted(true);
+  };
+
+  const handleContinue = () => {
+    clearFlowFlag();
+    router.push("/");
+  };
+
+  if (beat === null) return null;
+
+  if (beat === "hidden") {
+    // Beat over (revisit or already downloaded): the page's normal navigation,
+    // no download path, no explanation (CG-13).
     return (
-      <div className="flex items-start gap-3 rounded-xl border border-slate-200 bg-slate-50 p-5">
-        <Info
-          className="mt-0.5 h-5 w-5 shrink-0 text-slate-400"
-          aria-hidden="true"
-        />
-        <div className="text-sm text-slate-700">
-          <p className="font-semibold text-slate-800">
-            Your download has started. That was your one copy — please keep it
-            somewhere safe.
-          </p>
-          <p className="mt-1">
-            If the file did not arrive, reload this page: the offer will still
-            be here if the download failed. Otherwise, email the bursary team at{" "}
-            <a
-              className="font-medium text-accent-700 underline underline-offset-2 hover:text-accent-600"
-              href={`mailto:${BURSARY_EMAIL}`}
-            >
-              {BURSARY_EMAIL}
-            </a>
-            .
-          </p>
-        </div>
+      <div className="flex items-center justify-between">
+        <Link
+          href="/"
+          className="inline-flex items-center gap-1.5 text-sm font-medium text-slate-600 transition-colors hover:text-primary-900"
+        >
+          <ArrowLeft className="h-4 w-4" aria-hidden="true" />
+          Back to dashboard
+        </Link>
+        <Link
+          href="/status"
+          className="inline-flex items-center gap-2 rounded-md bg-primary-900 px-5 py-2.5 text-sm font-medium text-white transition-colors hover:bg-primary-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-600"
+        >
+          View application status
+        </Link>
       </div>
     );
   }
 
   return (
-    <div className="rounded-xl border-2 border-accent-400 bg-accent-50 p-5">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex items-start gap-3">
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-white">
-            <AlertTriangle
-              className="h-5 w-5 text-accent-700"
-              aria-hidden="true"
-            />
-          </div>
-          <div>
-            <p className="text-sm font-semibold text-primary-900">
-              Download your copy now — this is your only chance
-            </p>
-            <p className="mt-1 text-sm text-primary-800">
-              This PDF contains everything you submitted.{" "}
-              <strong className="font-semibold">
-                You can download it once, and once only.
-              </strong>{" "}
-              Save it somewhere safe: afterwards it is no longer available from
-              your account, and you will need to email the bursary team at{" "}
-              <a
-                className="font-medium underline underline-offset-2"
-                href={`mailto:${BURSARY_EMAIL}`}
-              >
-                {BURSARY_EMAIL}
-              </a>{" "}
-              if you need another copy.
-            </p>
-          </div>
-        </div>
+    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-end">
+      {beat === "offer" && (
         <a
           href={pdfHref}
-          onClick={() => setJustDownloaded(true)}
-          className="inline-flex shrink-0 items-center justify-center gap-1.5 rounded-md bg-primary-900 px-4 py-2.5 text-sm font-medium text-white hover:bg-primary-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-600"
+          onClick={handleDownload}
+          className="inline-flex items-center justify-center gap-2 rounded-md bg-primary-900 px-6 py-3 text-sm font-semibold uppercase tracking-wide text-white transition-colors hover:bg-primary-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-600"
         >
           <Download className="h-4 w-4" aria-hidden="true" />
-          Download my copy (one time only)
+          Download my copy
         </a>
-      </div>
+      )}
+      <button
+        type="button"
+        onClick={handleContinue}
+        className="inline-flex items-center justify-center gap-2 rounded-md border border-slate-300 bg-white px-6 py-3 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-600"
+      >
+        Continue
+      </button>
     </div>
   );
 }
