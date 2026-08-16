@@ -8,6 +8,7 @@
 
 import type { Tx } from "@/lib/db/prisma";
 import type { ScheduleEntryStatus, ScheduleEntryType } from "@prisma/client";
+import { parseAcademicYearStart } from "@/lib/assessment/fee-year";
 
 /** A schedule-grid row, serialised for the client component. */
 export interface ScheduleEntryRow {
@@ -161,4 +162,149 @@ export async function hasPortalSchedule(
 ): Promise<boolean> {
   const data = await getPortalScheduleForUser(tx, userId);
   return data != null && data.visibleEntries.length > 0;
+}
+
+/**
+ * Epic 14 D3 (CG-02) — the returning parent's Bursary Application Schedule:
+ * every ACTIVE account the profile leads, each with its FULL entry span plus
+ * the per-entry round dates and any matching application.
+ *
+ * MUST run under ADMIN context, scoped by the explicit `leadApplicantId`
+ * filter: the row needs `round_windows` (staff-only RLS select policy) and
+ * cross-round application matching, both of which the applicant role cannot
+ * read. Only derived, parent-safe fields leave this function — dates, states
+ * and the application id used for the CONTINUE deep link. Same precedent as
+ * the dashboard's invitation lookup / paused-state probe.
+ */
+export interface ScheduleHomeAccountData {
+  accountId: string;
+  childName: string;
+  school: import("@prisma/client").School;
+  entryYearGroup: import("@prisma/client").EntryYearGroup | null;
+  entries: import("@/lib/bursary-accounts/schedule-home").ScheduleHomeEntryInput[];
+}
+
+export async function getScheduleHomeForUser(
+  tx: Tx,
+  userId: string
+): Promise<ScheduleHomeAccountData[]> {
+  const accounts = await tx.bursaryAccount.findMany({
+    where: { leadApplicantId: userId, status: "ACTIVE" },
+    orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+    select: {
+      id: true,
+      childName: true,
+      school: true,
+      entryYearGroup: true,
+      scheduleEntries: {
+        orderBy: { scheduleYear: "asc" },
+        select: {
+          scheduleYear: true,
+          academicYear: true,
+          availableOn: true,
+          requiredBy: true,
+          status: true,
+          roundId: true,
+          applicationId: true,
+        },
+      },
+    },
+  });
+  if (accounts.length === 0) return [];
+
+  const roundIds = Array.from(
+    new Set(
+      accounts.flatMap((a) =>
+        a.scheduleEntries.map((e) => e.roundId).filter((id): id is string => !!id)
+      )
+    )
+  );
+  const rounds = roundIds.length
+    ? await tx.round.findMany({
+        where: { id: { in: roundIds } },
+        select: {
+          id: true,
+          openDate: true,
+          closeDate: true,
+          decisionDate: true,
+          defaultSubmissionDeadlineNew: true,
+          defaultSubmissionDeadlineRolling: true,
+          windows: {
+            select: {
+              scenario: true,
+              opensOn: true,
+              submitBy: true,
+              defaultTaxYear: true,
+            },
+          },
+        },
+      })
+    : [];
+  const roundById = new Map(rounds.map((r) => [r.id, r]));
+
+  const apps = await tx.application.findMany({
+    where: { leadApplicantId: userId },
+    select: {
+      id: true,
+      formStatus: true,
+      applicationType: true,
+      submissionDeadlineAt: true,
+      bursaryAccountId: true,
+      childName: true,
+      round: { select: { academicYear: true } },
+    },
+  });
+  const appById = new Map(apps.map((a) => [a.id, a]));
+
+  return accounts.map((account) => ({
+    accountId: account.id,
+    childName: account.childName,
+    school: account.school,
+    entryYearGroup: account.entryYearGroup,
+    entries: account.scheduleEntries.map((e) => {
+      // Application match: the entry's own back-link wins; otherwise match by
+      // academic year on this account's applications (Epic 10 links lazily,
+      // so back-links are often absent). Unlinked applications
+      // (bursaryAccountId null — the original NEW app) match by child name.
+      const entryStart = parseAcademicYearStart(e.academicYear);
+      const app =
+        (e.applicationId ? appById.get(e.applicationId) : undefined) ??
+        apps.find(
+          (a) =>
+            parseAcademicYearStart(a.round?.academicYear) === entryStart &&
+            entryStart != null &&
+            (a.bursaryAccountId === account.id ||
+              (a.bursaryAccountId == null &&
+                a.childName.trim().toLowerCase() ===
+                  account.childName.trim().toLowerCase()))
+        );
+      const round = e.roundId ? roundById.get(e.roundId) : undefined;
+      return {
+        scheduleYear: e.scheduleYear,
+        academicYear: e.academicYear,
+        availableOn: e.availableOn,
+        requiredBy: e.requiredBy,
+        status: e.status,
+        round: round
+          ? {
+              openDate: round.openDate,
+              closeDate: round.closeDate,
+              decisionDate: round.decisionDate,
+              defaultSubmissionDeadlineNew: round.defaultSubmissionDeadlineNew,
+              defaultSubmissionDeadlineRolling:
+                round.defaultSubmissionDeadlineRolling,
+              windows: round.windows,
+            }
+          : null,
+        application: app
+          ? {
+              id: app.id,
+              formStatus: app.formStatus,
+              applicationType: app.applicationType,
+              submissionDeadlineAt: app.submissionDeadlineAt,
+            }
+          : null,
+      };
+    }),
+  }));
 }

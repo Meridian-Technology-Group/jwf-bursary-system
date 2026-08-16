@@ -40,6 +40,12 @@ import {
   SECTION_TO_SLUG,
   SECTION_TITLES,
 } from "@/lib/portal/sections";
+import { getScheduleHomeForUser } from "@/lib/db/queries/schedule";
+import { buildScheduleHomeRows } from "@/lib/bursary-accounts/schedule-home";
+import {
+  ScheduleHome,
+  type ScheduleHomeBlock,
+} from "@/components/portal/schedule-home";
 import {
   FileText,
   ArrowRight,
@@ -285,6 +291,28 @@ export default async function PortalDashboardPage() {
         inviteRoundYear: null,
       };
 
+  // D3 (CG-02): returning parents — ≥1 ACTIVE bursary account led by this
+  // profile — get the per-child Bursary Application Schedule as the lead
+  // section. First-time applicants (no account) keep the single-path home
+  // (CG-03). Admin context is required (round_windows is staff-read under
+  // RLS); the query is hard-scoped to this user and returns derived,
+  // parent-safe rows only.
+  const scheduleBlocks: ScheduleHomeBlock[] = user
+    ? (
+        await withAdminContext((tx) => getScheduleHomeForUser(tx, user.id))
+      ).map((account) => ({
+        accountId: account.accountId,
+        childName: account.childName,
+        school: account.school,
+        rows: buildScheduleHomeRows({
+          entryYearGroup: account.entryYearGroup,
+          entries: account.entries,
+          today: new Date(),
+        }),
+      }))
+    : [];
+  const hasSchedule = scheduleBlocks.some((b) => b.rows.length > 0);
+
   const isDraft =
     application != null && application.formStatus !== "SUBMITTED";
   // Past-deadline lockout (Epic 05 §3.2): only meaningful while still drafting.
@@ -346,6 +374,16 @@ export default async function PortalDashboardPage() {
             : "Your bursary portal is ready."}
         </p>
       </div>
+
+      {/* D3 (CG-02): returning families lead with the per-child schedule. */}
+      {hasSchedule && (
+        <ScheduleHome
+          blocks={scheduleBlocks.filter((b) => b.rows.length > 0)}
+          currentApplicationId={application?.id ?? null}
+          continueHref={continueHref}
+          hasStartAffordance={!application && invitation != null}
+        />
+      )}
 
       {application ? (
         <>
@@ -526,12 +564,15 @@ export default async function PortalDashboardPage() {
            below is the one ELEVATED tier (Decision 7) — first-timers benefit
            most from the guidance before they start. */
         <>
-          <ApplicationTypeChooser
-            eligibleType={invitation.bursaryAccountId ? "ROLLING_OVER" : "NEW"}
-            defaultChildName={invitation.childName}
-            school={invitation.school}
-            academicYear={inviteRoundYear}
-          />
+          {/* D3: schedule rows' START APPLICATION buttons anchor here. */}
+          <div id="start-application">
+            <ApplicationTypeChooser
+              eligibleType={invitation.bursaryAccountId ? "ROLLING_OVER" : "NEW"}
+              defaultChildName={invitation.childName}
+              school={invitation.school}
+              academicYear={inviteRoundYear}
+            />
+          </div>
 
           {/* Elevated help card (Decision 7) — same destination as the quiet
               link, more prominence for first-timers. NOTE: this is currently
