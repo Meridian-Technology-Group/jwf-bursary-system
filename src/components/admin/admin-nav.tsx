@@ -14,6 +14,7 @@ import Link from "next/link";
 import {
   LayoutDashboard,
   ClipboardList,
+  FileCheck2,
   Gauge,
   CalendarRange,
   Mail,
@@ -51,6 +52,9 @@ const NAV_GROUPS: NavGroup[] = [
     heading: "Assessment Rounds",
     items: [
       { label: "Applications", href: "/queue", icon: ClipboardList },
+      // Epic 14 C1 (CG-17) — assessments get their own queue, separate from
+      // application-lifecycle admin.
+      { label: "Assessments", href: "/assessments", icon: FileCheck2 },
       { label: "All Rounds", href: "/rounds", icon: CalendarRange },
       { label: "Current Round", href: "/rounds/current", icon: Gauge },
     ],
