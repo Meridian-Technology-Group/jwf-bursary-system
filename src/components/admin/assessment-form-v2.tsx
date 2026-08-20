@@ -596,6 +596,17 @@ export function AssessmentFormV2({
   // All computed by the UNCHANGED engine helpers; zero new maths (D14-4).
   const lineAmt = (key: string): number | null =>
     output?.notionalSpendLines.find((l) => l.key === key)?.amount ?? null;
+  // Epic 15 M4 (CH-24): the workbook's ± column — DEDUCT lines display as
+  // negative totals, ADD BACK lines as explicit positives. Pure display of
+  // the engine's existing `signedAmount`; totals unchanged.
+  const lineSigned = (key: string): string => {
+    const line = output?.notionalSpendLines.find((l) => l.key === key);
+    if (!line) return "—";
+    if (line.direction === "ADD_BACK" && line.amount > 0) {
+      return `+${fmtMoney(line.amount)}`;
+    }
+    return fmtMoney(line.signedAmount);
+  };
   const equityTotals = propertyEquityTotals(propertyAssets);
   const financialEquity = netFinancialEquity(cashSavings + isasPepsShares, debts);
   const squeeze = output
@@ -1245,11 +1256,11 @@ export function AssessmentFormV2({
             </span>
           </WBRow>
           <WBRow label="FAMILY CATEGORY" auto={String(familyTypeCategory)} />
-          <WBRow label="DEDUCT NOTIONAL RENT" auto={fmtMoney(lineAmt("rent"))} />
+          <WBRow label="DEDUCT NOTIONAL RENT" auto={lineSigned("rent")} />
           <WBRow
             label="IF THE FAMILY HOME IS MORTGAGE FREE/ or LIVING RENT FREE, ADD FULL NOTIONAL BACK IN - or if FAMILY HAS A LOWER RENT, ADD 25% BACK IN OF THE NOTIONAL RENT"
             sublabel="ADD BACK IN NOTIONAL RENT APPLIED"
-            auto={fmtMoney(lineAmt("rentAddBack"))}
+            auto={lineSigned("rentAddBack")}
           >
             <Select
               value={rentAddBackType}
@@ -1274,7 +1285,7 @@ export function AssessmentFormV2({
           <WBRow
             label="IF HOUSEHOLD OWNS AT LEAST TWO PROPERTIES AND EITHER 1- PROPERTY INCOME IS NOT MAIN INCOME OR 2- EVIDENCE OF STABLE (PAYE OVER S-E) MEDIUM TO HIGH OR HIGH INCOME 3- CASH DRAWDOWN NOT SOLELY TO DEBT CONSOLIDATE"
             sublabel="ADD BACK NOTIONAL RENT"
-            auto={fmtMoney(lineAmt("multiPropertyRentAddBack"))}
+            auto={lineSigned("multiPropertyRentAddBack")}
             note={MULTI_PROPERTY_HELPER}
           >
             <YesNo
@@ -1287,11 +1298,11 @@ export function AssessmentFormV2({
               }}
             />
           </WBRow>
-          <WBRow label="DEDUCT ANNUAL COUNCIL TAX" auto={fmtMoney(lineAmt("councilTax"))} />
+          <WBRow label="DEDUCT ANNUAL COUNCIL TAX" auto={lineSigned("councilTax")} />
           <WBRow
             label="IF HOUSEHOLD RECEIVES FULL COUNCIL TAX SUPPORT"
             sublabel="ADD BACK IN COUNCIL TAX NOTIONAL"
-            auto={fmtMoney(lineAmt("councilTaxAddBack"))}
+            auto={lineSigned("councilTaxAddBack")}
           >
             <YesNo
               checked={councilTaxSupport}
@@ -1303,7 +1314,7 @@ export function AssessmentFormV2({
               }}
             />
           </WBRow>
-          <WBRow label="DEDUCT NOTIONAL ESSENTIALS" auto={fmtMoney(lineAmt("essentials"))} />
+          <WBRow label="DEDUCT NOTIONAL ESSENTIALS" auto={lineSigned("essentials")} />
           <WBRow label="DOES THE FAMILY USE A CAR?">
             <YesNo
               checked={usesCar}
@@ -1315,7 +1326,7 @@ export function AssessmentFormV2({
               }}
             />
           </WBRow>
-          <WBRow label="IF YES, DEDUCT NOTIONAL CAR SPEND" auto={fmtMoney(lineAmt("car"))} />
+          <WBRow label="IF YES, DEDUCT NOTIONAL CAR SPEND" auto={lineSigned("car")} />
           <WBRow label="DOES THE FAMILY USE PUBLIC TRANSPORT?">
             <YesNo
               checked={usesPublicTransport}
@@ -1327,8 +1338,8 @@ export function AssessmentFormV2({
               }}
             />
           </WBRow>
-          <WBRow label="IF YES, DEDUCT NOTIONAL PUBLIC TRANSPORT SPEND" auto={fmtMoney(lineAmt("publicTransport"))} />
-          <WBRow label="DEDUCT NOTIONAL JWF BURSARY RECIPIENT ALLOWANCE" auto={fmtMoney(lineAmt("jwfAllowance"))} />
+          <WBRow label="IF YES, DEDUCT NOTIONAL PUBLIC TRANSPORT SPEND" auto={lineSigned("publicTransport")} />
+          <WBRow label="DEDUCT NOTIONAL JWF BURSARY RECIPIENT ALLOWANCE" auto={lineSigned("jwfAllowance")} />
           <WBRow label="DISPLAY ONLY - ENTER TOTAL CASH HELD">
             <CurrencyInput
               id="v2-cash"
@@ -1355,14 +1366,14 @@ export function AssessmentFormV2({
           <WBRow label="TOTAL NUMBER OF CHILDREN OF SCHOOL AGE" auto={schoolAgeChildrenCount === "" ? "—" : String(schoolAgeChildrenCount)} note="From the Part 1 entry." />
           <WBRow label="NUMBER OF SCHOOL YEARS LEFT FOR THE BURSARY RECIPIENT" auto={String(schoolingYearsRemaining)} note="From the Part 1 entry." />
           <WBRow label="DISPLAY ONLY - ADJUSTED SAVINGS TOTAL" auto={fmtMoney(output?.adjustedSavings)} />
-          <WBRow label="DEDUCT NOTIONAL SAVINGS" auto={fmtMoney(lineAmt("notionalSavingsBenchmark"))} />
+          <WBRow label="DEDUCT NOTIONAL SAVINGS" auto={lineSigned("notionalSavingsBenchmark")} />
           <WBRow
             label="DISPLAY ONLY - SAVINGS CUSHION ALLOWANCE"
             auto={fmtMoney(savingsCushion)}
             note="Reference value only — feeds no calculation."
           />
           <WBRow label="DISPLAY ONLY - SAVINGS TEST NUMBER" auto={fmtMoney(output?.savingsTestNumber)} />
-          <WBRow label="IF SAVINGS TEST NUMBER IS POSITIVE, ADD IT IN" auto={fmtMoney(lineAmt("savingsTestAddBack"))} />
+          <WBRow label="IF SAVINGS TEST NUMBER IS POSITIVE, ADD IT IN" auto={lineSigned("savingsTestAddBack")} />
           <WBRow label="IF THE APPLICANT HAS INSURED SCHOOL FEES PAYMENT, ADD YEARLY INSURED TOTAL BACK IN">
             <CurrencyInput
               id="v2-fee-insurance"
