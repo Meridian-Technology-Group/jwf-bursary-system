@@ -1541,24 +1541,10 @@ export function AssessmentFormV2({
         </WorkbookTable>
       </FormSection>
 
-      {/* E. Flags */}
-      <FormSection title="E. Flags" defaultOpen={false}>
-        <label className="flex items-center gap-2">
-          <Checkbox
-            checked={dishonestyFlag}
-            disabled={isReadOnly}
-            onCheckedChange={(c) => {
-              setDishonestyFlag(c === true);
-              scheduleAutoSave();
-            }}
-          />
-          <span className="text-xs text-slate-600">Dishonesty flag</span>
-        </label>
-        <p className="text-xs text-slate-400">
-          Credit risk is derived from the debt module (see the profiling strip); it is no longer a manual
-          flag for v2 assessments.
-        </p>
-      </FormSection>
+      {/* Epic 15 M5 (CI-10): the E. Flags section is REMOVED at client request
+          ("we will stop using the flags there"). The dishonestyFlag column and
+          any previously-saved value are preserved but no longer surfaced or
+          editable here. */}
 
     </div>
   );

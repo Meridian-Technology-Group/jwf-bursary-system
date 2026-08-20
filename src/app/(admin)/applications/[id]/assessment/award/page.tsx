@@ -1,5 +1,5 @@
 /**
- * BURSARY AWARD CALCULATION (5) — Epic 14 C7 (CG-16/CG-14, US-C8).
+ * BURSARY AWARD CALCULATION (6) — Epic 14 C7 (CG-16/CG-14, US-C8).
  *
  * The workbook's award sheet as tab 4 of the assessment workspace:
  *
