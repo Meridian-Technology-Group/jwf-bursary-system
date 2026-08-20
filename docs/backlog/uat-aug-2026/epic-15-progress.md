@@ -1,6 +1,6 @@
 ---
 title: "Epic 15 — live progress board"
-status: open
+status: complete — all 15 WPs merged to staging (PRs #321–#335, overnight 2026-08-20/21)
 opened: 2026-08-20
 related:
   - ./epic-15-implementation-plan.md
@@ -32,7 +32,7 @@ in review · merged`.
 | M4 | Part 3 overrides + sign display (CH-21..24) | merged | #332 (`feature/e15-m4-part3-signs`) | CH-24 SHIPPED: every notional-spend line renders the engine's existing signedAmount — DEDUCT rows negative (browser: DEDUCT NOTIONAL RENT −£19,000.00, her exact example), ADD BACK rows explicit '+'; totals untouched (pure display). CH-23: cash/savings display-only rows already open at 0 on fresh assessments — her prefilled values are the same pre-C4 persisted story as CH-18 (documented, no code). ⚠️ CH-21/CH-22 ESCALATED, NOT BUILT: manual £ overrides of the rent add-back and council-tax lines require NEW ENGINE INPUTS (verified: the engine derives both from reference data with no override input) — locked rule says never improvise engine changes. Proposal in §For Brian. |
 | M7 | Admin history scaffold (CI-13) | merged | #333 (`feature/e15-m7-admin-scaffold`) | Both admin-tab tables now render their SCAFFOLD when empty: full headers + one row per academic year (round year → horizon sized by the assessment's remaining-years, default 8, pure helper + 5 tests), em-dash cells; data-bearing rows keep the existing C8 rendering. Browser: fresh assessment shows 2026/27→2032/33 in both tables (full-page screenshot). Her Table-1 columns all present (Lifestyle Squeeze Ratio included); 'Living arrangement' fills from C8's existing source when data exists. |
 | X1 | Sent-emails log view (CI-02) | merged | #334 (`feature/e15-x1-sent-emails`) | New append-style `email_log` table (staff-read/server-insert RLS in the same migration, round_windows pattern; pre-applied to nonprod) written best-effort by all three senders (SENT+resendId / FAILED+error / SKIPPED; a log failure never fails a send — 5 unit tests). New `/emails` admin page (nav: Invitations → Sent Emails): reverse-chron, email filter, pagination, honest 'from 21 Aug 2026' caveat. Browser: real invitation send → SENT row with template label + rendered subject. NOTE: it's a send log, not a mailbox — replies go to the reply-to address (CI-03). |
-| X2 | Reply-to on staging + BCC + quiet contact create (CI-03/04/05) | in review | `feature/e15-x2-comms-controls` | CI-04: 'Don't email — I'll send the registration link myself' on BOTH invite paths — creates the invitation (auth user, 30-day token, resend later still works) without sending and shows the copyable registration link (browser E2E: link created, ZERO email_log rows, link opens the registration page). CI-05: optional BCC on ad-hoc/bulk sends (sendRawEmail option + bulk wizard input + server validation; unit-pinned passthrough). CI-03: NO CODE (LA15-9) — Vercel Preview-scope RESEND_REPLY_TO_EMAIL is Brian's pre-flight (runbook §1.1). |
+| X2 | Reply-to on staging + BCC + quiet contact create (CI-03/04/05) | merged | #335 (`feature/e15-x2-comms-controls`) | CI-04: 'Don't email — I'll send the registration link myself' on BOTH invite paths — creates the invitation (auth user, 30-day token, resend later still works) without sending and shows the copyable registration link (browser E2E: link created, ZERO email_log rows, link opens the registration page). CI-05: optional BCC on ad-hoc/bulk sends (sendRawEmail option + bulk wizard input + server validation; unit-pinned passthrough). CI-03: NO CODE (LA15-9) — Vercel Preview-scope RESEND_REPLY_TO_EMAIL is Brian's pre-flight (runbook §1.1). |
 
 ## For Brian (accumulate; do not delete answered items — strike through)
 
@@ -78,8 +78,29 @@ in review · merged`.
 
 ## Post-merge verification (evidence promised in PR bodies)
 
-_(collect here as WPs merge)_
+- **Final staging smoke (2026-08-21 ~01:00, after #335):** signed in on the
+  staging alias, opened the retained E14 fixture (WS-202627-0007, awarded)
+  read-only — compressed header renders with the four-state strip correctly
+  on LOCKED, SEE COMPUTATION in the header, tabs read ASSESSMENT MODEL (1-5)
+  / BURSARY AWARD CALCULATION (6), no breadcrumb / Actions row / old 4-tab
+  row, read-only completion banner intact. `/emails` route live. Final
+  `ci.yml` + `db-push.yml` on staging: green. Screenshot
+  `e15-final-staging-workspace.png`.
+- Day-0 staging pass (G3): see the runbook §0 table.
 
 ## Deviations from plan / discoveries
 
-_(collect here as WPs merge)_
+- **Latent defects found & fixed en route:** the `/reset-password/update`
+  page never existed (G1, the true CI-01 root cause); paused re-uploads
+  409'd — the E14 `/respond` flow's uploads never worked (P1); the quick
+  invite carried the child's DOB nowhere (G2 fixed in passing).
+- **Root causes documented, no code:** CH-18/CH-23 prefilled values =
+  pre-C4 persisted prefill on Charlotte's own assessment (fingerprint: the
+  stored earner JSON carries applicant document ids).
+- **Escalated, not built (engine read-only):** CH-21/CH-22 manual £
+  overrides need new engine inputs — proposal in §For Brian.
+- **M2 nonprod data pass:** real fee figures seeded; 3 invented placeholder
+  rows deleted (logged in #329).
+- **M6 anchoring deviation (deliberate):** award AUTO cells bind to the
+  last-SAVED snapshot (the figures the server validates gaps against), not a
+  duplicated live computation — the banner says so.
