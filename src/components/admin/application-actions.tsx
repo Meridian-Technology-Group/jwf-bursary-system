@@ -17,7 +17,7 @@
  */
 
 import * as React from "react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import {
   AlertCircle,
   CheckCircle2,
@@ -58,6 +58,11 @@ export function ApplicationActions({
   documents,
 }: ApplicationActionsProps) {
   const router = useRouter();
+  // Assessment-route detection (same test as assessment-route-chrome.tsx).
+  const pathname = usePathname();
+  const onAssessmentRoute = /\/applications\/[^/]+\/assessment(\/|$)/.test(
+    pathname ?? ""
+  );
 
   const [isPending, startTransition] = React.useTransition();
   const [actionError, setActionError] = React.useState<string | null>(null);
@@ -115,17 +120,20 @@ export function ApplicationActions({
     <>
       <div className="rounded-xl border border-slate-200 bg-white px-6 py-4 shadow-sm">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          {/* Left: context label */}
-          <div className="flex items-center gap-2">
-            <span className="text-sm font-medium text-slate-600">Actions</span>
-            <ChevronRight
-              className="h-4 w-4 text-slate-400"
-              aria-hidden="true"
-            />
-            <span className="text-sm text-slate-500">
-              {REVIEW_PHASE_LABEL[status]}
-            </span>
-          </div>
+          {/* Left: context label. Hidden on assessment routes (CH-06) — the
+              W1 lifecycle strip is the status vocabulary there. */}
+          {!onAssessmentRoute && (
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-medium text-slate-600">Actions</span>
+              <ChevronRight
+                className="h-4 w-4 text-slate-400"
+                aria-hidden="true"
+              />
+              <span className="text-sm text-slate-500">
+                {REVIEW_PHASE_LABEL[status]}
+              </span>
+            </div>
+          )}
 
           {/* Right: contextual buttons */}
           <div className="flex flex-wrap items-center gap-2">
@@ -176,19 +184,24 @@ export function ApplicationActions({
                     </Button>
                   }
                 />
-                <Button
-                  size="sm"
-                  onClick={handleMarkComplete}
-                  disabled={isPending}
-                  className="gap-2 bg-primary-700 hover:bg-primary-800"
-                >
-                  {isPending ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <CheckCircle2 className="h-4 w-4" />
-                  )}
-                  Mark Complete
-                </Button>
+                {/* CH-04 (Epic 15 W1): on assessment routes the form's green
+                    Complete is the single completion affordance — the blue
+                    duplicate is hidden there. */}
+                {!onAssessmentRoute && (
+                  <Button
+                    size="sm"
+                    onClick={handleMarkComplete}
+                    disabled={isPending}
+                    className="gap-2 bg-primary-700 hover:bg-primary-800"
+                  >
+                    {isPending ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <CheckCircle2 className="h-4 w-4" />
+                    )}
+                    Mark Complete
+                  </Button>
+                )}
               </>
             )}
 
