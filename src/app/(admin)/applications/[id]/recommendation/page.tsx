@@ -1,7 +1,7 @@
 /**
  * Recommendation tab — thin wrapper around the shared RecommendationSurface
  * (Epic 14 C7): the identical surface also renders on the assessment
- * workspace's BURSARY AWARD CALCULATION (5) tab.
+ * workspace's BURSARY AWARD CALCULATION (6) tab.
  */
 
 import { requireRole, Role } from "@/lib/auth/roles";

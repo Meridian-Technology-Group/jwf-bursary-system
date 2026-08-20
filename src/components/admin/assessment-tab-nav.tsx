@@ -4,8 +4,8 @@
  * Epic 14 C3 (CG-16, D14-2) — the assessment workspace's five-tab navigation.
  *
  * Tab names are Charlotte's, verbatim (workbook/email, 2026-08-16):
- * UPLOADED DOCUMENTS DISPLAY · APPLICATION FORM · ASSESSMENT MODEL (1-4) ·
- * BURSARY AWARD CALCULATION (5) · ASSESSMENT ADMIN.
+ * UPLOADED DOCUMENTS DISPLAY · APPLICATION FORM · ASSESSMENT MODEL (1-5) ·
+ * BURSARY AWARD CALCULATION (6) · ASSESSMENT ADMIN.
  *
  * Sub-route based (deep-linkable); the ASSESSMENT MODEL tab is the index
  * route, so its active check is exact while the others are prefix-based.
@@ -18,8 +18,8 @@ import { cn } from "@/lib/utils";
 const TABS = [
   { label: "UPLOADED DOCUMENTS DISPLAY", segment: "documents" },
   { label: "APPLICATION FORM", segment: "application-form" },
-  { label: "ASSESSMENT MODEL (1-4)", segment: "" },
-  { label: "BURSARY AWARD CALCULATION (5)", segment: "award" },
+  { label: "ASSESSMENT MODEL (1-5)", segment: "" },
+  { label: "BURSARY AWARD CALCULATION (6)", segment: "award" },
   { label: "ASSESSMENT ADMIN", segment: "admin" },
 ] as const;
 

@@ -658,7 +658,7 @@ export default async function AssessmentPage({ params }: Props) {
 
       {/* Epic 14 C3 (CG-23, D14-2): the split-screen documents panel is
           RETIRED at client request — documents live on the UPLOADED DOCUMENTS
-          DISPLAY tab. This tab is the ASSESSMENT MODEL (1-4) workspace; the
+          DISPLAY tab. This tab is the ASSESSMENT MODEL (1-5) workspace; the
           synopsis moved to the ASSESSMENT ADMIN tab. */}
       {formPanel}
     </div>
