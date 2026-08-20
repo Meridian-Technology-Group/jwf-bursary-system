@@ -166,6 +166,11 @@ export async function startApplicationAction(
             roundId: invitation.roundId,
             school: invitation.school ?? school,
             childName: effectiveChildName,
+            // Split identity only when the invitation carries it (G2); a
+            // parent-supplied gap-fill name has no split source.
+            childFirstName: invitation.childFirstName,
+            childLastName: invitation.childLastName,
+            childDob: invitation.childDob,
             entryYear: invitation.entryYear,
             entryYearGroup: invitation.entryYearGroup,
             contactId: invitation.contactId,

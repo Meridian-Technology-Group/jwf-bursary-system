@@ -66,7 +66,10 @@ const schema = z.object({
   // form (parity with the contact register) so partial invites can't slip
   // through. The `__none__` school sentinel is gone.
   lastName: z.string().min(1, "A surname is required"),
-  childName: z.string().min(1, "The child's name is required"),
+  // Epic 15 G2 (CH-09): split child identity + DOB, all required.
+  childFirstName: z.string().min(1, "The child's first name is required"),
+  childLastName: z.string().min(1, "The child's surname is required"),
+  childDob: z.string().min(1, "The child's date of birth is required"),
   school: z.enum(["TRINITY", "WHITGIFT"], { error: "A school is required" }),
   // B3 (CG-26, LA-3) — the 3-way situation choice selecting the invitation
   // template variant; the school half resolves from `school` above.
@@ -109,7 +112,9 @@ export function SendInvitationForm({
       email: "",
       firstName: "",
       lastName: "",
-      childName: "",
+      childFirstName: "",
+      childLastName: "",
+      childDob: "",
       school: undefined,
       situation: "NEW",
       entryYearGroup: undefined,
@@ -135,7 +140,9 @@ export function SendInvitationForm({
     formData.set("email", values.email);
     if (values.firstName) formData.set("firstName", values.firstName);
     if (values.lastName) formData.set("lastName", values.lastName);
-    formData.set("childName", values.childName);
+    formData.set("childFirstName", values.childFirstName);
+    formData.set("childLastName", values.childLastName);
+    formData.set("childDob", values.childDob);
     formData.set("school", values.school);
     formData.set("situation", values.situation);
     formData.set("entryYearGroup", values.entryYearGroup);
@@ -149,7 +156,9 @@ export function SendInvitationForm({
           email: "",
           firstName: "",
           lastName: "",
-          childName: "",
+          childFirstName: "",
+          childLastName: "",
+          childDob: "",
           school: undefined,
           situation: "NEW",
           entryYearGroup: undefined,
@@ -264,21 +273,47 @@ export function SendInvitationForm({
               )}
             />
 
-            {/* Child Name */}
+            {/* Child — split identity + DOB (CH-09; no title) */}
             <FormField
               control={form.control}
-              name="childName"
+              name="childFirstName"
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>
-                    Child Name <span className="text-red-500">*</span>
+                    Child First Name <span className="text-red-500">*</span>
                   </FormLabel>
                   <FormControl>
-                    <Input
-                      placeholder="Alex Smith"
-                      {...field}
-                      disabled={isPending}
-                    />
+                    <Input placeholder="Alex" {...field} disabled={isPending} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="childLastName"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>
+                    Child Surname <span className="text-red-500">*</span>
+                  </FormLabel>
+                  <FormControl>
+                    <Input placeholder="Smith" {...field} disabled={isPending} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="childDob"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>
+                    Child Date of Birth <span className="text-red-500">*</span>
+                  </FormLabel>
+                  <FormControl>
+                    <Input type="date" {...field} disabled={isPending} />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -506,7 +541,9 @@ export function SendInvitationForm({
                 <p className="text-xs text-slate-500">
                   Child:{" "}
                   <span className="font-medium text-slate-700">
-                    {pendingValues?.childName || "—"}
+                    {[pendingValues?.childFirstName, pendingValues?.childLastName]
+                      .filter(Boolean)
+                      .join(" ") || "—"}
                   </span>{" "}
                   · School:{" "}
                   <span className="font-medium text-slate-700">

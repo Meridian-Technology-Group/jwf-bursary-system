@@ -74,6 +74,9 @@ export async function sendInvitationFromContactAction(
     lastName: string;
     email: string;
     childName: string;
+    childFirstName: string | null;
+    childLastName: string | null;
+    childDob: Date | null;
     school: import("@prisma/client").School;
     entryYear: number;
     entryYearGroup: import("@prisma/client").EntryYearGroup | null;
@@ -95,6 +98,9 @@ export async function sendInvitationFromContactAction(
           lastName: true,
           email: true,
           childName: true,
+          childFirstName: true,
+          childLastName: true,
+          childDob: true,
           school: true,
           entryYear: true,
           entryYearGroup: true,
@@ -169,6 +175,9 @@ export async function sendInvitationFromContactAction(
     lastName: contact.lastName,
     email: contact.email,
     childName: contact.childName,
+    childFirstName: contact.childFirstName,
+    childLastName: contact.childLastName,
+    childDob: contact.childDob,
     school: contact.school,
     entryYear: contact.entryYear,
     entryYearGroup: contact.entryYearGroup,
@@ -245,6 +254,9 @@ export async function sendInvitationFromContactAction(
         firstName: contact.firstName ?? undefined,
         lastName: contact.lastName,
         childName: contact.childName,
+        childFirstName: contact.childFirstName,
+        childLastName: contact.childLastName,
+        childDob: contact.childDob,
         school: contact.school,
         entryYear: contact.entryYear,
         entryYearGroup: contact.entryYearGroup,

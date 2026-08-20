@@ -99,6 +99,43 @@ describe("createFirstYearApplicationFromSource (D1 locked school/year)", () => {
     });
   });
 
+  // Epic 15 G2 (CH-09): the split child identity + DOB carry from the
+  // invitation onto the application; legacy sources without them write null.
+  it("carries the split child identity + DOB when the source has them", async () => {
+    const tx = makeTx((data) => {
+      captured = data as Record<string, unknown>;
+    });
+    const dob = new Date("2015-03-09T00:00:00.000Z");
+
+    await createFirstYearApplicationFromSource(tx, {
+      ...complete,
+      childFirstName: "Daniel",
+      childLastName: "Adeyemi",
+      childDob: dob,
+    });
+
+    expect(captured).toMatchObject({
+      childName: "Daniel Adeyemi",
+      childFirstName: "Daniel",
+      childLastName: "Adeyemi",
+      childDob: dob,
+    });
+  });
+
+  it("writes null split fields for a legacy source without them", async () => {
+    const tx = makeTx((data) => {
+      captured = data as Record<string, unknown>;
+    });
+
+    await createFirstYearApplicationFromSource(tx, complete);
+
+    expect(captured).toMatchObject({
+      childFirstName: null,
+      childLastName: null,
+      childDob: null,
+    });
+  });
+
   it("writes null entry calendar year when the source omits it (still locked to source)", async () => {
     const tx = makeTx((data) => {
       captured = data as Record<string, unknown>;

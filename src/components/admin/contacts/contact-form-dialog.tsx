@@ -45,7 +45,7 @@ import {
   createContactAction,
   updateContactAction,
 } from "@/app/(admin)/contacts/actions";
-import { ADULT_TITLES, CHILD_TITLES } from "@/lib/contacts/titles";
+import { ADULT_TITLES } from "@/lib/contacts/titles";
 
 export interface ContactFormValues {
   id?: string;
@@ -76,9 +76,11 @@ const schema = z.object({
   email: z.string().email("A valid email address is required"),
   phone: z.string().optional(),
   childTitle: z.string().optional(),
-  childFirstName: z.string().optional(),
+  // Epic 15 G2 (CH-09): first name, surname and DOB are all required — the
+  // invitation cannot be prepared without the full child identity.
+  childFirstName: z.string().min(1, "Child's first name is required"),
   childLastName: z.string().min(1, "Child's surname is required"),
-  childDob: z.string().optional(),
+  childDob: z.string().min(1, "Child's date of birth is required"),
   school: z.enum(["TRINITY", "WHITGIFT"], { error: "A school is required" }),
   // B3 (CG-26) — the invitation-template situation; defaults to NEW.
   situation: z.enum(["NEW", "INTERNAL", "ROLLING_OVER"]),
@@ -318,41 +320,17 @@ export function ContactFormDialog({
               <legend className="text-xs font-semibold uppercase tracking-wide text-slate-500">
                 Child
               </legend>
+              {/* No child title — the recipient record is first name, surname,
+                  DOB, school and year of entry only (CH-09). */}
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                <FormField
-                  control={form.control}
-                  name="childTitle"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Title</FormLabel>
-                      <Select
-                        onValueChange={field.onChange}
-                        value={field.value ?? ""}
-                        disabled={isPending}
-                      >
-                        <FormControl>
-                          <SelectTrigger>
-                            <SelectValue placeholder="Select title" />
-                          </SelectTrigger>
-                        </FormControl>
-                        <SelectContent>
-                          {CHILD_TITLES.map((t) => (
-                            <SelectItem key={t.value} value={t.value}>
-                              {t.label}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
                 <FormField
                   control={form.control}
                   name="childFirstName"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>First name</FormLabel>
+                      <FormLabel>
+                        First name <span className="text-red-500">*</span>
+                      </FormLabel>
                       <FormControl>
                         <Input {...field} disabled={isPending} />
                       </FormControl>
@@ -380,12 +358,14 @@ export function ContactFormDialog({
                   name="childDob"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Date of birth</FormLabel>
+                      <FormLabel>
+                        Date of birth <span className="text-red-500">*</span>
+                      </FormLabel>
                       <FormControl>
                         <Input type="date" {...field} disabled={isPending} />
                       </FormControl>
                       <FormDescription>
-                        Recommended — distinguishes twins (one account per child).
+                        Also distinguishes twins (one account per child).
                       </FormDescription>
                       <FormMessage />
                     </FormItem>

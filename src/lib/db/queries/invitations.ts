@@ -115,6 +115,11 @@ export async function createInvitation(
     firstName?: string;
     lastName?: string;
     childName?: string;
+    /** Epic 15 G2 (CH-09) — split child identity + DOB, carried onto the
+     *  application at acceptance. */
+    childFirstName?: string | null;
+    childLastName?: string | null;
+    childDob?: Date | null;
     school?: School;
     entryYear?: number | null;
     entryYearGroup?: EntryYearGroup | null;
@@ -136,6 +141,9 @@ export async function createInvitation(
       firstName: data.firstName ?? null,
       lastName: data.lastName ?? null,
       childName: data.childName ?? null,
+      childFirstName: data.childFirstName ?? null,
+      childLastName: data.childLastName ?? null,
+      childDob: data.childDob ?? null,
       school: data.school ?? null,
       entryYear: data.entryYear ?? null,
       entryYearGroup: data.entryYearGroup ?? null,
