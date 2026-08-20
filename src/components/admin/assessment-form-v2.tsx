@@ -189,7 +189,7 @@ const PORTFOLIO_OPTIONS: { value: PropertyPortfolioType; label: string }[] = [
 const MULTI_PROPERTY_HELPER =
   "Add back the notional rent again when ANY of: (1) an additional property is mortgage-free; " +
   "OR (2) an additional property generates rental income; OR (3) additional properties collectively " +
-  "hold substantial equity. Assessor judgement (assumption CALC-A7).";
+  "hold substantial equity. Assessor judgement.";
 
 function fmtMoney(v: number | null | undefined): string {
   if (v == null) return "—";
@@ -1227,64 +1227,11 @@ export function AssessmentFormV2({
           onCellBlur={scheduleAutoSave}
         />
 
-        {/* Manual income adjustment (Epic 13 / C2, D13-3) — ONE signed line on
-            top of the aggregated earner income. Not a per-field override. */}
-        <div className="space-y-3 rounded-lg border border-slate-200 bg-slate-50/60 p-3">
-          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-            Manual income adjustment
-          </p>
-          <p className="text-xs text-slate-400">
-            A single signed line added to the household net income (C40) after the earners are
-            totalled. Use a positive figure to add income the calculation cannot see — most often a
-            second parent&apos;s income in a divorced or separated household — or a negative figure
-            to deduct. A reason is required whenever the amount is not zero.
-          </p>
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <FieldRow
-              label="Adjustment amount"
-              htmlFor="v2-manual-adjustment"
-              hint="Positive adds to household income; negative deducts."
-            >
-              <CurrencyInput
-                id="v2-manual-adjustment"
-                value={manualAdjustment}
-                disabled={isReadOnly}
-                allowNegative
-                ariaLabel="Manual income adjustment amount"
-                onChange={(v) => setManualAdjustment(v)}
-                onBlur={scheduleAutoSave}
-              />
-            </FieldRow>
-            {isManualAdjustmentApplied(manualAdjustment) && (
-              <FieldRow label="Reason (required)" htmlFor="v2-manual-adjustment-reason">
-                <Input
-                  id="v2-manual-adjustment-reason"
-                  type="text"
-                  value={manualAdjustmentReason}
-                  disabled={isReadOnly}
-                  onChange={(e) => setManualAdjustmentReason(e.target.value)}
-                  onBlur={scheduleAutoSave}
-                  placeholder="e.g. second parent's income added (divorced/separated household)"
-                  aria-invalid={manualAdjustmentError != null}
-                  aria-describedby={
-                    manualAdjustmentError ? "v2-manual-adjustment-error" : undefined
-                  }
-                  className="h-9 border-slate-200 text-sm"
-                />
-              </FieldRow>
-            )}
-          </div>
-          {manualAdjustmentError && (
-            <p
-              id="v2-manual-adjustment-error"
-              role="alert"
-              className="flex items-start gap-1.5 text-xs font-medium text-error-600"
-            >
-              <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-              {manualAdjustmentError}
-            </p>
-          )}
-        </div>
+        {/* Epic 15 M3 (CH-20, LA15-6): the MANUAL INCOME ADJUSTMENT entry
+            block is REMOVED at client request — the divorced-parents capture
+            already covers the second parent's income. The engine input
+            remains: a previously-saved adjustment still flows into the
+            computation and shows as the amber line in the table above. */}
       </FormSection>
 
       {/* PART 3 (CG-16/CG-21, Epic 14 C6) — notional spend benchmarking as
@@ -1412,7 +1359,7 @@ export function AssessmentFormV2({
           <WBRow
             label="DISPLAY ONLY - SAVINGS CUSHION ALLOWANCE"
             auto={fmtMoney(savingsCushion)}
-            note="Reference value only — feeds no calculation (LA-8, sign-off pending)."
+            note="Reference value only — feeds no calculation."
           />
           <WBRow label="DISPLAY ONLY - SAVINGS TEST NUMBER" auto={fmtMoney(output?.savingsTestNumber)} />
           <WBRow label="IF SAVINGS TEST NUMBER IS POSITIVE, ADD IT IN" auto={fmtMoney(lineAmt("savingsTestAddBack"))} />
