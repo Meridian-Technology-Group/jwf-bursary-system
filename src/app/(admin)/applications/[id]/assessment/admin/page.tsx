@@ -30,6 +30,7 @@ import { getPayableFeesScheduleRows } from "@/lib/db/queries/payable-fees-schedu
 import { deriveReviewPhase } from "@/lib/applications/status";
 import {
   mergeYoyHistory,
+  scaffoldAcademicYears,
   parsePreSystemHistory,
 } from "@/lib/assessments/admin-tab";
 import { formatLondonDate } from "@/lib/datetime";
@@ -138,6 +139,14 @@ export default async function AssessmentAdminPage({ params }: Props) {
     .filter(Boolean);
 
   const historyRows = mergeYoyHistory(preSystem, yoyRows);
+
+  // Epic 15 M7 (CI-13): the empty-table scaffolds' year spine — from the
+  // application's round year across the account's plausible horizon (sized
+  // by the assessment's remaining-years figure when it has one).
+  const scaffoldYears = scaffoldAcademicYears(
+    application.round.academicYear,
+    assessment?.schoolingYearsRemaining ?? null
+  );
   const assessmentReadOnly =
     isViewer || !assessment || assessment.status === "COMPLETED";
 
@@ -228,10 +237,45 @@ export default async function AssessmentAdminPage({ params }: Props) {
         )}
 
         {historyRows.length === 0 ? (
-          <p className="text-xs text-slate-400">
-            No history yet — rows appear as assessments complete (or add
-            pre-system years above).
-          </p>
+          /* Epic 15 M7 (CI-13): the empty state renders the table SCAFFOLD —
+             full headers + a row per academic year — so the shape of what is
+             coming is visible at a glance. Cells fill as assessments
+             complete (or via pre-system years above). */
+          <div className="overflow-x-auto rounded-lg border border-slate-200">
+            <table className="w-full min-w-[1080px] text-sm">
+              <thead>
+                <tr className="border-b border-slate-200 bg-slate-50 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                  <th className="px-3 py-2">Assessment Year</th>
+                  <th className="px-3 py-2 text-right">Overall net income</th>
+                  <th className="px-3 py-2 text-right">Total savings</th>
+                  <th className="px-3 py-2 text-right">Property equity</th>
+                  <th className="px-3 py-2 text-right">Debt exposure</th>
+                  <th className="px-3 py-2 text-right">Δ Income</th>
+                  <th className="px-3 py-2 text-right">Δ Savings</th>
+                  <th className="px-3 py-2 text-right">Δ Equity</th>
+                  <th className="px-3 py-2 text-right">Δ Debt</th>
+                  <th className="px-3 py-2">Living</th>
+                  <th className="px-3 py-2">Lifestyle squeeze</th>
+                </tr>
+              </thead>
+              <tbody>
+                {scaffoldYears.map((year) => (
+                  <tr key={year} className="border-b border-slate-100 last:border-b-0">
+                    <td className="px-3 py-2 font-mono text-xs font-semibold text-slate-400">
+                      {year}
+                    </td>
+                    {Array.from({ length: 8 }).map((_, i) => (
+                      <td key={i} className="px-3 py-2 text-right font-mono text-xs text-slate-300">
+                        —
+                      </td>
+                    ))}
+                    <td className="px-3 py-2 text-xs text-slate-300">—</td>
+                    <td className="px-3 py-2 text-xs text-slate-300">—</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         ) : (
           <div className="overflow-x-auto rounded-lg border border-slate-200">
             <table className="w-full min-w-[1080px] text-sm">
@@ -298,10 +342,39 @@ export default async function AssessmentAdminPage({ params }: Props) {
           Payable-fees schedule
         </p>
         {scheduleRows.length === 0 ? (
-          <p className="text-xs text-slate-400">
-            No schedule yet — the forward schedule is generated when the
-            bursary account is awarded (Epic 10).
-          </p>
+          /* Epic 15 M7 (CI-13): scaffolded schedule — the real rows generate
+             when the bursary account is awarded (Epic 10). */
+          <div className="overflow-x-auto rounded-lg border border-slate-200">
+            <table className="w-full min-w-[1080px] text-sm">
+              <thead>
+                <tr className="border-b border-slate-200 bg-slate-50 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                  <th className="px-3 py-2">Academic Year</th>
+                  <th className="px-3 py-2">Year on Year Assessment Comments re Payable Fees Change</th>
+                  <th className="px-3 py-2 text-right">Payable fees</th>
+                  <th className="px-3 py-2 text-right">Δ</th>
+                  <th className="px-3 py-2">School Year</th>
+                  <th className="px-3 py-2">App to be submitted by</th>
+                  <th className="px-3 py-2">Application Status</th>
+                  <th className="px-3 py-2">Assessment Status</th>
+                  <th className="px-3 py-2">Bursary Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {scaffoldYears.map((year) => (
+                  <tr key={year} className="border-b border-slate-100 last:border-b-0">
+                    <td className="px-3 py-2 font-mono text-xs font-semibold text-slate-400">
+                      {year}
+                    </td>
+                    {Array.from({ length: 8 }).map((_, i) => (
+                      <td key={i} className="px-3 py-2 text-xs text-slate-300">
+                        —
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         ) : (
           <div className="overflow-x-auto rounded-lg border border-slate-200">
             <table className="w-full min-w-[1080px] text-sm">

@@ -144,3 +144,26 @@ export function mergeYoyHistory(
 
   return merged
 }
+
+/**
+ * Epic 15 M7 (CI-13) — the empty-table SCAFFOLD year spine. Charlotte wants
+ * the history/schedule infrastructure visible "at a glance" before any data
+ * exists: full headers plus one row per academic year, empty cells.
+ *
+ * The spine starts at the application's round year and runs the account's
+ * plausible horizon (default 8 years — the Year 6 entry maximum; pass the
+ * remaining-years figure when known to size it exactly).
+ */
+export function scaffoldAcademicYears(
+  roundAcademicYear: string,
+  count: number | null | undefined
+): string[] {
+  const m = roundAcademicYear.match(/^(\d{4})/)
+  if (!m) return []
+  const start = parseInt(m[1], 10)
+  const n = Math.min(Math.max(count ?? 8, 1), 8)
+  return Array.from({ length: n }, (_, i) => {
+    const y = start + i
+    return `${y}/${String((y + 1) % 100).padStart(2, '0')}`
+  })
+}
