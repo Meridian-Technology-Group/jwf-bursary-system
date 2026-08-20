@@ -22,6 +22,7 @@
 import { ApplicationContributorRole } from "@prisma/client";
 import { withUserContext, withAdminContext, type RlsRole } from "@/lib/db/prisma";
 import { ensurePrimaryContributor } from "@/lib/db/queries/contributors";
+import { getLatestMissingDocsRequest } from "@/lib/db/queries/missing-docs";
 import type { UploadNamespace } from "@/lib/uploads/upload-ticket";
 
 /** The sub-directory a SECONDARY contributor's uploads live under. */
@@ -48,15 +49,53 @@ export type UploadAuthorization =
   | UploadAuthorizationDenial;
 
 /**
+ * Epic 15 P1 (CI-07/08): while a missing-documents request is open (the
+ * assessment is PAUSED), the parent may upload into the REQUESTED slots of
+ * their submitted application — and nothing else. The window shuts by itself
+ * when `submitMissingDocsResponse` resumes the assessment (PAUSED →
+ * IN_PROGRESS), so the exemption below evaporates and the blanket
+ * submitted-application 409 applies again. That IS the one-shot window.
+ *
+ * The admin-context reads are safe here: the caller's visibility of the
+ * application was already proven under RLS user context, and the exemption is
+ * keyed purely on the application's own paused state + requested slots (the
+ * same pattern as the portal /respond page).
+ */
+async function isOpenMissingDocsSlot(
+  applicationId: string,
+  slot: string | undefined
+): Promise<{ paused: boolean; slotAllowed: boolean }> {
+  const assessment = await withAdminContext((tx) =>
+    tx.assessment.findUnique({
+      where: { applicationId },
+      select: { status: true },
+    })
+  );
+  if (assessment?.status !== "PAUSED") {
+    return { paused: false, slotAllowed: false };
+  }
+  if (!slot) return { paused: true, slotAllowed: false };
+  const request = await getLatestMissingDocsRequest(applicationId);
+  return {
+    paused: true,
+    slotAllowed: Boolean(request?.requestedSlots.includes(slot)),
+  };
+}
+
+/**
  * Resolves whether `user` may upload a document to `applicationId`, and under
  * which contributor identity / storage namespace.
  *
  * @param user          The authenticated caller (from `getCurrentUser`).
  * @param applicationId The target application.
+ * @param slot          The target document slot — used only for the paused
+ *                      missing-docs window exemption (CI-07/08); uploads to a
+ *                      submitted application are refused without it.
  */
 export async function authorizeDocumentUpload(
   user: { id: string; role: string },
-  applicationId: string
+  applicationId: string,
+  slot?: string
 ): Promise<UploadAuthorization> {
   // The application is fetched (status guard + existence). This is the
   // enforcing layer — the storage RLS namespace is only a backstop.
@@ -75,13 +114,20 @@ export async function authorizeDocumentUpload(
   }
 
   // PR-6a: the submission guard reads form_status, not the deprecated fused
-  // applications.status.
+  // applications.status. Epic 15 P1 (CI-07/08): a PAUSED missing-docs window
+  // exempts exactly the requested slots — nothing else on a submitted
+  // application is ever parent-writable.
   if (application.formStatus === "SUBMITTED") {
-    return {
-      ok: false,
-      status: 409,
-      error: "Cannot upload documents to a submitted application",
-    };
+    const window = await isOpenMissingDocsSlot(applicationId, slot);
+    if (!window.slotAllowed) {
+      return {
+        ok: false,
+        status: 409,
+        error: window.paused
+          ? "Only the documents requested by the Bursary Office can be uploaded while your application is paused"
+          : "Cannot upload documents to a submitted application",
+      };
+    }
   }
 
   const isLeadApplicant = application.leadApplicantId === user.id;

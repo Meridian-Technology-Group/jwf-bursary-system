@@ -80,6 +80,10 @@ function makeFakeTx(
     formStatus?: string;
     leadApplicantId?: string;
     contributor?: { id: string; role: string } | null;
+    /** Epic 15 P1: assessment status (null = no assessment row). */
+    assessmentStatus?: string | null;
+    /** Epic 15 P1: the latest missing-docs request's slots (null = none). */
+    requestedSlots?: string[] | null;
   } = {}
 ) {
   return {
@@ -95,6 +99,23 @@ function makeFakeTx(
         overrides.contributor === undefined
           ? { id: "contributor-primary", role: "PRIMARY" }
           : overrides.contributor
+      ),
+    },
+    assessment: {
+      findUnique: vi.fn(async () =>
+        overrides.assessmentStatus
+          ? { status: overrides.assessmentStatus }
+          : null
+      ),
+    },
+    auditLog: {
+      findFirst: vi.fn(async () =>
+        overrides.requestedSlots
+          ? {
+              metadata: { missingDocumentSlots: overrides.requestedSlots },
+              createdAt: new Date(),
+            }
+          : null
       ),
     },
   };
@@ -205,6 +226,62 @@ describe("POST /api/documents/sign", () => {
 
   it("refuses uploads to a submitted application", async () => {
     fakeTx = makeFakeTx({ formStatus: "SUBMITTED" });
+
+    const response = await POST(signRequest(VALID_BODY));
+
+    expect(response.status).toBe(409);
+    expect(uploadDocumentSignedMock).not.toHaveBeenCalled();
+  });
+
+  // ─── Epic 15 P1 (CI-07/08): the paused missing-docs window ────────────────
+
+  it("allows an upload into a REQUESTED slot while the assessment is paused", async () => {
+    fakeTx = makeFakeTx({
+      formStatus: "SUBMITTED",
+      assessmentStatus: "PAUSED",
+      requestedSlots: ["BIRTH_CERTIFICATE"],
+    });
+
+    const response = await POST(signRequest(VALID_BODY));
+
+    expect(response.status).toBe(200);
+    expect(uploadDocumentSignedMock).toHaveBeenCalled();
+  });
+
+  it("refuses an upload into a slot the request did NOT name, even while paused", async () => {
+    fakeTx = makeFakeTx({
+      formStatus: "SUBMITTED",
+      assessmentStatus: "PAUSED",
+      requestedSlots: ["P60"],
+    });
+
+    const response = await POST(signRequest(VALID_BODY));
+    const body = await response.json();
+
+    expect(response.status).toBe(409);
+    expect(body.error).toMatch(/requested by the Bursary Office/);
+    expect(uploadDocumentSignedMock).not.toHaveBeenCalled();
+  });
+
+  it("shuts the window once the response is submitted (assessment resumed)", async () => {
+    fakeTx = makeFakeTx({
+      formStatus: "SUBMITTED",
+      assessmentStatus: "IN_PROGRESS",
+      requestedSlots: ["BIRTH_CERTIFICATE"],
+    });
+
+    const response = await POST(signRequest(VALID_BODY));
+
+    expect(response.status).toBe(409);
+    expect(uploadDocumentSignedMock).not.toHaveBeenCalled();
+  });
+
+  it("paused but with no recorded request refuses uploads", async () => {
+    fakeTx = makeFakeTx({
+      formStatus: "SUBMITTED",
+      assessmentStatus: "PAUSED",
+      requestedSlots: null,
+    });
 
     const response = await POST(signRequest(VALID_BODY));
 
