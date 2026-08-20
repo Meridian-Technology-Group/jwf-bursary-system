@@ -256,10 +256,17 @@ const REJECTED: Omit<BulkSendEmailResult, "error"> = {
  */
 export async function bulkSendEmailAction(
   applicationIds: string[],
-  templateId: string
+  templateId: string,
+  bcc?: string
 ): Promise<BulkSendEmailResult> {
   try {
     const user = await requireRole([Role.ADMIN]);
+
+    // Epic 15 X2 (CI-05): optional blind copy, validated as a single address.
+    const bccAddress = (bcc ?? "").trim() || undefined;
+    if (bccAddress && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(bccAddress)) {
+      return { ...REJECTED, error: "The BCC address is not a valid email." };
+    }
 
     const ids = Array.from(new Set(applicationIds)).filter(Boolean);
     if (ids.length === 0) {
@@ -333,7 +340,9 @@ export async function bulkSendEmailAction(
       const plainBody = replaceMergeFields(template.body, mergeData);
 
       try {
-        const sendResult = await sendRawEmail(app.leadApplicant.email, subject, plainBody);
+        const sendResult = await sendRawEmail(app.leadApplicant.email, subject, plainBody, {
+          bcc: bccAddress,
+        });
         if (sendResult.success) {
           sent++;
           results.push({

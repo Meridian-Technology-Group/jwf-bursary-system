@@ -98,6 +98,19 @@ describe("sent-emails log (Epic 15 X1)", () => {
     });
   });
 
+  it("raw sends pass an optional BCC through to the provider (CI-05)", async () => {
+    await sendRawEmail("someone@example.test", "Subject", "Body", {
+      bcc: "fees@johnwhitgiftfoundation.org",
+    });
+
+    const payload = sendMock.mock.calls.at(-1)?.[0] as Record<string, unknown>;
+    expect(payload.bcc).toBe("fees@johnwhitgiftfoundation.org");
+
+    await sendRawEmail("someone@example.test", "Subject", "Body");
+    const noBcc = sendMock.mock.calls.at(-1)?.[0] as Record<string, unknown>;
+    expect("bcc" in noBcc).toBe(false);
+  });
+
   it("a log-write failure never fails the send", async () => {
     logCreateMock.mockRejectedValueOnce(new Error("db down"));
 

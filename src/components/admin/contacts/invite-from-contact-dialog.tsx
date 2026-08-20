@@ -55,6 +55,9 @@ export function InviteFromContactDialog({
   const [roundId, setRoundId] = useState<string>(liveRounds[0]?.id ?? "");
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  // Epic 15 X2 (CI-04): create without emailing; the link is shown to copy.
+  const [skipEmail, setSkipEmail] = useState(false);
+  const [registrationLink, setRegistrationLink] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
   const router = useRouter();
 
@@ -67,6 +70,8 @@ export function InviteFromContactDialog({
   function reset() {
     setError(null);
     setSuccess(null);
+    setSkipEmail(false);
+    setRegistrationLink(null);
     setRoundId(liveRounds[0]?.id ?? "");
   }
 
@@ -74,15 +79,25 @@ export function InviteFromContactDialog({
     if (!contact || !roundId) return;
     setError(null);
     startTransition(async () => {
-      const result = await sendInvitationFromContactAction(contact.id, roundId);
+      const result = await sendInvitationFromContactAction(contact.id, roundId, {
+        skipEmail,
+      });
       if (result.success) {
-        setSuccess(`Invitation sent to ${contact.email}`);
         router.refresh();
-        // Close shortly after so the admin sees the confirmation.
-        setTimeout(() => {
-          onOpenChange(false);
-          reset();
-        }, 900);
+        if (result.registrationLink) {
+          // CI-04: keep the dialog open so the admin can copy the link.
+          setRegistrationLink(result.registrationLink);
+          setSuccess(
+            `Invitation created for ${contact.email} — no email sent. Copy the link below.`
+          );
+        } else {
+          setSuccess(`Invitation sent to ${contact.email}`);
+          // Close shortly after so the admin sees the confirmation.
+          setTimeout(() => {
+            onOpenChange(false);
+            reset();
+          }, 900);
+        }
       } else {
         setError(result.error ?? "Failed to send invitation.");
       }
@@ -183,8 +198,35 @@ export function InviteFromContactDialog({
               )}
             </div>
 
+            {/* Epic 15 X2 (CI-04) */}
+            <label className="flex items-center gap-2 text-sm text-slate-600">
+              <input
+                type="checkbox"
+                checked={skipEmail}
+                onChange={(e) => setSkipEmail(e.target.checked)}
+                disabled={isPending || registrationLink != null}
+                className="h-4 w-4 rounded border-slate-300"
+              />
+              Don&apos;t email — I&apos;ll send the registration link myself
+            </label>
+
             {error && <p className="text-sm text-red-600">{error}</p>}
             {success && <p className="text-sm text-green-600">{success}</p>}
+            {registrationLink && (
+              <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                <p className="mb-1 text-xs font-medium text-slate-500">
+                  Registration link (30-day expiry) — send it from your own
+                  mailbox:
+                </p>
+                <input
+                  readOnly
+                  value={registrationLink}
+                  onFocus={(e) => e.currentTarget.select()}
+                  aria-label="Registration link"
+                  className="w-full rounded-md border border-slate-300 bg-white px-2 py-1.5 font-mono text-xs text-slate-700"
+                />
+              </div>
+            )}
           </div>
         )}
 
@@ -200,11 +242,11 @@ export function InviteFromContactDialog({
           <Button
             type="button"
             onClick={onSend}
-            disabled={isPending || liveRounds.length === 0 || !roundId}
+            disabled={isPending || liveRounds.length === 0 || !roundId || registrationLink != null}
             className="gap-2"
           >
             <Send className="h-4 w-4" aria-hidden="true" />
-            {isPending ? "Sending…" : "Confirm & send"}
+            {isPending ? (skipEmail ? "Creating…" : "Sending…") : skipEmail ? "Create invitation" : "Confirm & send"}
           </Button>
         </DialogFooter>
       </DialogContent>

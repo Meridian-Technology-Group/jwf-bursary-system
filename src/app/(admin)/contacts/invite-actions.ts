@@ -54,11 +54,19 @@ import {
 export interface InviteFromContactResult {
   success: boolean;
   error?: string;
+  /** Epic 15 X2 (CI-04): set on a no-send create — the admin copies this
+   *  link and sends it from their own mailbox. */
+  registrationLink?: string;
 }
 
 export async function sendInvitationFromContactAction(
   contactId: string,
-  roundId: string
+  roundId: string,
+  options?: {
+    /** CI-04: create the invitation (auth user, token, audit) WITHOUT
+     *  emailing — the returned registrationLink is sent by the admin. */
+    skipEmail?: boolean;
+  }
 ): Promise<InviteFromContactResult> {
   const user = await requireRole([Role.ADMIN]);
 
@@ -300,6 +308,17 @@ export async function sendInvitationFromContactAction(
     const message = err instanceof Error ? err.message : "Failed to send invitation";
     console.error("[contacts] sendInvitationFromContactAction error:", err);
     return { success: false, error: message };
+  }
+
+  // Epic 15 X2 (CI-04): a no-send create stops here — the invitation exists
+  // (30-day token, resend available later); the admin sends the link.
+  if (options?.skipEmail) {
+    revalidatePath("/contacts");
+    revalidatePath("/invitations");
+    return {
+      success: true,
+      registrationLink: `${appUrl}/register?token=${invitationToken}`,
+    };
   }
 
   // 5. Send the branded INVITATION email inside the rollback boundary.

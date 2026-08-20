@@ -118,6 +118,9 @@ export interface InvitationActionResult {
   success: boolean;
   error?: string;
   fieldErrors?: Record<string, string[]>;
+  /** Epic 15 X2 (CI-04): set on a no-send create — the admin copies this
+   *  link and sends it from their own mailbox. */
+  registrationLink?: string;
 }
 
 export interface BatchInviteResult {
@@ -167,6 +170,8 @@ export async function createInvitationAction(
     roundId: (formData.get("roundId") as string) || undefined,
     situation: (formData.get("situation") as string) || undefined,
   };
+  // Epic 15 X2 (CI-04): "Don't email — I'll send the link myself".
+  const skipEmail = formData.get("skipEmail") === "1";
 
   const parsed = InvitationSchema.safeParse(raw);
   if (!parsed.success) {
@@ -351,6 +356,16 @@ export async function createInvitationAction(
       err instanceof Error ? err.message : "Failed to send invitation";
     console.error("[invitations] createInvitationAction error:", err);
     return { success: false, error: message };
+  }
+
+  // Epic 15 X2 (CI-04): a no-send create stops here — the invitation exists
+  // (30-day token, resend available later); the admin sends the link.
+  if (skipEmail) {
+    revalidatePath("/invitations");
+    return {
+      success: true,
+      registrationLink: `${appUrl}/register?token=${invitationToken}`,
+    };
   }
 
   // 3. Send branded INVITATION email. The email is now inside the rollback
