@@ -18,7 +18,7 @@ in review · merged`.
 
 | WP | Title | Status | Branch / PR | Evidence |
 |---|---|---|---|---|
-| G1 | Password-reset loop (CI-01) | todo | `fix/e15-g1-password-reset-loop` | |
+| G1 | Password-reset loop (CI-01) | in review | `fix/e15-g1-password-reset-loop` | Root cause: `/reset-password/update` never existed. Built the set-new-password page (12-char + HIBP, expired-link state), login now explains callback failures. Browser E2E on nonprod throwaway: request → real Supabase email → link → set password → sign in with new password ✓; re-used link → friendly login message ✓; sessionless visit → expired state ✓. Localhost IS in the Supabase redirect allowlist (verified live). 7 unit tests. |
 | G2 | Invitation name contract (CH-09) | todo | `fix/e15-g2-invitation-names` | |
 | G3 | Go-live readiness pass + runbook (CI-09) | todo | `docs/e15-g3-golive-readiness` | |
 | P1 | Missing-docs window lock (CI-07/08) | todo | `feature/e15-p1-missing-docs-window-lock` | |

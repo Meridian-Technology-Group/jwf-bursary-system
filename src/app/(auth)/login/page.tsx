@@ -18,6 +18,7 @@ import { Suspense, useState, type FormEvent } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { createSupabaseBrowserClient } from "@/lib/auth/supabase-browser";
+import { mapAuthCallbackError } from "@/lib/auth/reset-password-helpers";
 import { isStaffMfaEnforcedAction } from "./actions";
 
 // ---------------------------------------------------------------------------
@@ -44,7 +45,12 @@ function LoginForm() {
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [error, setError] = useState<string | null>(null);
+  // Seed with any /auth/callback failure hint (?error=missing_code|
+  // session_exchange_failed) so an expired email link explains itself
+  // instead of showing a bare sign-in form (CI-01).
+  const [error, setError] = useState<string | null>(() =>
+    mapAuthCallbackError(searchParams.get("error"))
+  );
   const [loading, setLoading] = useState(false);
 
   async function handleSubmit(e: FormEvent<HTMLFormElement>) {
