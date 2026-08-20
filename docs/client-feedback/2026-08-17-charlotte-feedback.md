@@ -4,7 +4,7 @@ Catalogue of the 2 emails received from Charlotte (charlotteperrier@johnwhitgift
 
 Item IDs (`CH-*`) continue the series: `CF-*` = 13 Aug batch ([2026-08-13-charlotte-feedback.md](2026-08-13-charlotte-feedback.md)), `CG-*` = 16 Aug batch ([epic-14-uat-round-2.md](../backlog/uat-aug-2026/epic-14-uat-round-2.md)).
 
-> ⚠️ **This batch is incomplete.** E2 covers the banner and Parts 1–3 only; Charlotte explicitly says she will send feedback on **Part 4, Part 5 and the BURSARY AWARD CALCULATION tab (6) "tomorrow"** (i.e. 18 Aug). Triage as one set once that lands.
+> ✅ **Batch now complete.** E2 covers the banner and Parts 1–3 only; the promised Parts 4–6 feedback landed on **20 Aug** and is catalogued as `CI-*` in [2026-08-20-charlotte-feedback.md](2026-08-20-charlotte-feedback.md) (E8), along with 7 further emails incl. a **go-live request for 21 Aug** (CI-09). Triage CH + CI as one set. On 20 Aug Charlotte re-sent this entire email asking for a delivery timeline.
 
 ---
 
