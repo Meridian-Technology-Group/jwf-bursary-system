@@ -11,6 +11,7 @@
  */
 
 import * as React from "react";
+import { useSearchParams } from "next/navigation";
 import { Calculator, ChevronDown, ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -24,14 +25,22 @@ export function SeeComputationToggle({
   // Collapsed on the server render; the stored preference applies after mount
   // (avoids a hydration mismatch — localStorage is client-only).
   const [open, setOpen] = React.useState(false);
+  // Epic 15 W2 (CH-03): the header's SEE COMPUTATION deep-links here with
+  // ?see=1 — that beats the stored preference for this visit.
+  const searchParams = useSearchParams();
+  const forcedOpen = searchParams?.get("see") === "1";
 
   React.useEffect(() => {
+    if (forcedOpen) {
+      setOpen(true);
+      return;
+    }
     try {
       if (localStorage.getItem(STORAGE_KEY) === "open") setOpen(true);
     } catch {
       // Storage unavailable — stay collapsed.
     }
-  }, []);
+  }, [forcedOpen]);
 
   const toggle = () => {
     setOpen((o) => {

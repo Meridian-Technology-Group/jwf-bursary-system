@@ -215,7 +215,7 @@ export default async function AssessmentsPage({
             <tbody className="divide-y divide-slate-100">
               {visible.map((row: AssessmentQueueRow) => (
                 <tr key={row.applicationId} className="hover:bg-slate-50">
-                  <td className="px-4 py-3 font-mono text-xs font-semibold text-primary-900">
+                  <td className="px-4 py-3 font-mono text-sm font-semibold text-primary-900">
                     <Link
                       href={`/applications/${row.applicationId}/assessment`}
                       className="block hover:underline"

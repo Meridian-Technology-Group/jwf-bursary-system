@@ -32,9 +32,13 @@ import { GdprDeleteAction } from "@/components/admin/gdpr-delete-action";
 import { AddSecondParentCard } from "@/components/admin/add-second-parent-card";
 import { EditReferenceDialog } from "@/components/admin/edit-reference-dialog";
 import { CloseApplicationDialog } from "@/components/admin/close-application-dialog";
+import { AssessmentHeaderActions } from "@/components/admin/assessment-header-actions";
+import { AssessmentLifecycleStrip } from "@/components/admin/assessment-lifecycle-strip";
+import { deriveAssessmentLifecycleState } from "@/lib/assessments/lifecycle-state";
 import {
   HideOnAssessmentRoute,
   ManageDisclosure,
+  ShowOnAssessmentRoute,
 } from "@/components/admin/assessment-route-chrome";
 
 function SchoolBadge({ school }: { school: "WHITGIFT" | "TRINITY" }) {
@@ -200,6 +204,13 @@ export default async function ApplicationDetailLayout({
     closedAt: application.closedAt,
   });
 
+  // Epic 15 W1/W2 — the four-state strip's input (CH-05, LA15-1).
+  const lifecycleState = deriveAssessmentLifecycleState({
+    assessmentStatus: application.assessment?.status ?? null,
+    outcome: application.assessment?.outcome ?? null,
+    closedAt: application.closedAt,
+  });
+
   const tabs = getTabItems(params.id, {
     assessmentGated: reviewPhase === "PRE_SUBMISSION",
   });
@@ -222,20 +233,23 @@ export default async function ApplicationDetailLayout({
 
   return (
     <div className="space-y-4">
-      {/* Breadcrumb */}
-      <nav
-        className="flex items-center gap-1.5 text-sm text-slate-500"
-        aria-label="Breadcrumb"
-      >
-        <Link
-          href="/queue"
-          className="hover:text-primary-700 transition-colors"
+      {/* Breadcrumb — hidden on assessment routes (Epic 15 W2 / CH-03: the
+          three stacked layers compress into the single header card). */}
+      <HideOnAssessmentRoute>
+        <nav
+          className="flex items-center gap-1.5 text-sm text-slate-500"
+          aria-label="Breadcrumb"
         >
-          Applications
-        </Link>
-        <span aria-hidden="true">/</span>
-        <span className="font-medium text-slate-700">{application.reference}</span>
-      </nav>
+          <Link
+            href="/queue"
+            className="hover:text-primary-700 transition-colors"
+          >
+            Applications
+          </Link>
+          <span aria-hidden="true">/</span>
+          <span className="font-medium text-slate-700">{application.reference}</span>
+        </nav>
+      </HideOnAssessmentRoute>
 
       {/* Header card */}
       <div className="rounded-xl border border-slate-200 bg-white px-6 py-5 shadow-sm">
@@ -301,6 +315,20 @@ export default async function ApplicationDetailLayout({
               )}
             </div>
           </HideOnAssessmentRoute>
+
+          {/* Epic 15 W2 (CH-03): on the assessment view the header carries
+              the four-state strip + the working actions — one compressed
+              banner instead of three stacked layers. */}
+          <ShowOnAssessmentRoute>
+            <div className="flex flex-col items-end gap-3">
+              <AssessmentLifecycleStrip state={lifecycleState} />
+              <AssessmentHeaderActions
+                applicationId={application.id}
+                status={reviewPhase}
+                documents={application.documents}
+              />
+            </div>
+          </ShowOnAssessmentRoute>
         </div>
       </div>
 
@@ -415,24 +443,29 @@ export default async function ApplicationDetailLayout({
         </ManageDisclosure>
       )}
 
-      {/* Tab navigation */}
-      <div className="border-b border-slate-200 pt-2">
-        <nav
-          className="-mb-px flex gap-0"
-          aria-label="Application detail tabs"
-        >
-          {tabs.map((tab) => (
-            <TabLink
-              key={tab.href}
-              label={tab.label}
-              href={tab.href}
-              isPlaceholder={tab.isPlaceholder}
-              disabled={tab.disabled}
-              disabledReason={tab.disabledReason}
-            />
-          ))}
-        </nav>
-      </div>
+      {/* Tab navigation — hidden on assessment routes (Epic 15 W2 / CH-07):
+          the workbook's five tabs are the only tab row there. The Applicant
+          Data / Recommendation / History surfaces stay reachable from the
+          applications queue (LA15-3). */}
+      <HideOnAssessmentRoute>
+        <div className="border-b border-slate-200 pt-2">
+          <nav
+            className="-mb-px flex gap-0"
+            aria-label="Application detail tabs"
+          >
+            {tabs.map((tab) => (
+              <TabLink
+                key={tab.href}
+                label={tab.label}
+                href={tab.href}
+                isPlaceholder={tab.isPlaceholder}
+                disabled={tab.disabled}
+                disabledReason={tab.disabledReason}
+              />
+            ))}
+          </nav>
+        </div>
+      </HideOnAssessmentRoute>
 
       {/* Page content */}
       {children}

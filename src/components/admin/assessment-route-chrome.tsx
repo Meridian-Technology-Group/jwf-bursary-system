@@ -34,6 +34,17 @@ export function HideOnAssessmentRoute({
   return <>{children}</>;
 }
 
+/** Renders children ONLY on assessment routes (Epic 15 W2 / CH-03). */
+export function ShowOnAssessmentRoute({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
+  const onAssessment = useIsAssessmentRoute();
+  if (!onAssessment) return null;
+  return <>{children}</>;
+}
+
 /**
  * On assessment routes, collapses its children behind a quiet `Manage`
  * disclosure (closed by default — CG-19); everywhere else the children render
