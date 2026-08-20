@@ -118,8 +118,11 @@ export async function upsertFamilyTypeConfigAction(
 // ─── School Fees ──────────────────────────────────────────────────────────────
 
 /**
- * Upserts SchoolFees for a given school.
- * Creates a new versioned row (insert, never update existing rows).
+ * Upserts SchoolFees for a given school + academic year (Epic 15 M2 / CH-17).
+ * The row is keyed on [school, effectiveFrom] where effectiveFrom is the
+ * 1 September the academic year starts — editing the same year updates the
+ * existing row; a new year inserts one. `effectiveFrom` arrives as
+ * YYYY-MM-DD (the form derives it from the academic-year choice).
  */
 export async function upsertSchoolFeesAction(
   formData: FormData
@@ -129,21 +132,26 @@ export async function upsertSchoolFeesAction(
 
     const school = formData.get("school") as School;
     const annualFees = parseFloat(formData.get("annualFees") as string);
+    const effectiveFromRaw = (formData.get("effectiveFrom") as string) || "";
 
-    if (!school || isNaN(annualFees) || annualFees < 0) {
+    if (
+      !school ||
+      isNaN(annualFees) ||
+      annualFees < 0 ||
+      !/^\d{4}-\d{2}-\d{2}$/.test(effectiveFromRaw)
+    ) {
       return { success: false, error: "Invalid or missing fields." };
     }
 
-    const effectiveFrom = new Date();
-    effectiveFrom.setHours(0, 0, 0, 0);
+    const effectiveFrom = new Date(`${effectiveFromRaw}T00:00:00.000Z`);
 
     await withUserContext(user.id, user.role as RlsRole, async (tx) => {
-      const fees = await tx.schoolFees.create({
-        data: {
-          school,
-          annualFees,
-          effectiveFrom,
+      const fees = await tx.schoolFees.upsert({
+        where: {
+          school_effectiveFrom: { school, effectiveFrom },
         },
+        create: { school, annualFees, effectiveFrom },
+        update: { annualFees },
       });
 
       await createAuditLog(tx, {
@@ -151,8 +159,8 @@ export async function upsertSchoolFeesAction(
         action: AUDIT_ACTIONS.SETTINGS_SCHOOL_FEES_UPSERT,
         entityType: AUDIT_ENTITY_TYPES.SchoolFees,
         entityId: fees.id,
-        context: `Updated annual fees for ${school}`,
-        metadata: { school, annualFees },
+        context: `Updated annual fees for ${school} (from ${effectiveFromRaw})`,
+        metadata: { school, annualFees, effectiveFrom: effectiveFromRaw },
       });
     });
 
