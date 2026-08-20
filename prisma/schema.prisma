@@ -426,6 +426,13 @@ model Assessment {
   /// notional model (CALC-03..06), stamped at assessment creation from CALC-07
   /// onward. Every engine call site branches on this value.
   calculationVersion            Int                   @default(1) @map("calculation_version")
+  /// Epic 15 M1 (CH-11/14) — the school THIS assessment runs against, picked
+  /// (and switchable) by the assessor; drives the fee lookup. Backfilled from
+  /// the application for pre-M1 rows; NULL (no prefill) on new assessments.
+  assessmentSchool              School?               @map("assessment_school")
+  /// Epic 15 M1 (CH-10/12) — the entry SCHOOL year (6–13); the hidden matrix
+  /// autofills remaining-years from it. NULL until the assessor picks.
+  entrySchoolYear               Int?                  @map("entry_school_year")
   notionalRent                  Decimal?              @map("notional_rent") @db.Decimal(10, 2)
   utilityCosts                  Decimal?              @map("utility_costs") @db.Decimal(10, 2)
   foodCosts                     Decimal?              @map("food_costs") @db.Decimal(10, 2)

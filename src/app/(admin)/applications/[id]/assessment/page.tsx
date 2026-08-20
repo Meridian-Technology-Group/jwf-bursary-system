@@ -25,6 +25,7 @@ import { getApplicationContributors } from "@/lib/db/queries/contributors";
 import { getAssessment } from "@/lib/db/queries/assessments";
 import {
   getConfigsForAssessment,
+  getSchoolFeesForYear,
   getReferenceBundleRows,
 } from "@/lib/db/queries/reference-tables";
 import { resolveReferenceBundle } from "@/lib/assessment/v2/reference-bundle";
@@ -357,7 +358,7 @@ export default async function AssessmentPage({ params }: Props) {
   // ── Assessment exists — build full workspace ───────────────────────────────
 
   // Load reference configs + sibling links under RLS context
-  const { configs, siblingPayableFees } = await withUserContext(
+  const { configs, siblingPayableFees, feesBySchool } = await withUserContext(
     user.id,
     user.role as RlsRole,
     async (tx) => {
@@ -370,6 +371,24 @@ export default async function AssessmentPage({ params }: Props) {
         // canonical year source.
         round.academicYear
       );
+
+      // Epic 15 M1 (CH-11/14): the v2 form needs BOTH schools' fee pairs so
+      // the assessor's school pick (and mid-assessment switch) recalculates
+      // instantly. Same fee-year anchor as above.
+      const [trinityFees, whitgiftFees] = await Promise.all([
+        getSchoolFeesForYear(tx, "TRINITY", round.academicYear),
+        getSchoolFeesForYear(tx, "WHITGIFT", round.academicYear),
+      ]);
+      const bySchool = {
+        TRINITY: {
+          annual: trinityFees?.currentYearAnnualFees ?? null,
+          nextYear: trinityFees?.nextYearAnnualFees ?? null,
+        },
+        WHITGIFT: {
+          annual: whitgiftFees?.currentYearAnnualFees ?? null,
+          nextYear: whitgiftFees?.nextYearAnnualFees ?? null,
+        },
+      };
 
       // Load sibling payable fees for sequential income absorption.
       // Only siblings with a lower priority order than this child are used —
@@ -391,7 +410,7 @@ export default async function AssessmentPage({ params }: Props) {
           }
         }
       }
-      return { configs: cfgs, siblingPayableFees: siblingFees };
+      return { configs: cfgs, siblingPayableFees: siblingFees, feesBySchool: bySchool };
     }
   );
 
@@ -537,6 +556,8 @@ export default async function AssessmentPage({ params }: Props) {
         applicationId: assessment.applicationId,
         calculationVersion: assessment.calculationVersion,
         status: assessment.status,
+        assessmentSchool: assessment.assessmentSchool,
+        entrySchoolYear: assessment.entrySchoolYear,
         familyTypeCategory: assessment.familyTypeCategory,
         annualFees: toNumber(assessment.annualFees),
         schoolingYearsRemaining: assessment.schoolingYearsRemaining,
@@ -582,8 +603,7 @@ export default async function AssessmentPage({ params }: Props) {
           applicationId={params.id}
           referenceBundle={resolved.bundle}
           prefill={prefill}
-          defaultAnnualFees={configs.annualFees}
-          defaultNextYearAnnualFees={configs.nextYearAnnualFees}
+          feesBySchool={feesBySchool}
           applicationEntryYear={application.entryYear}
           applicationEntryYearGroup={
             application.entryYearGroup as EntryYearGroupCode | null

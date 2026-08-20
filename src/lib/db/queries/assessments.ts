@@ -178,6 +178,12 @@ export interface AssessmentSaveInput {
   affordabilityAdjustedDi?: number;
   recommendedPayableFees?: number;
 
+  // ── Epic 15 M1 (CH-10..14) — Part 1 assessor-owned fields ────────────────
+  /** The school this assessment runs against (switchable — CH-14). */
+  assessmentSchool?: "TRINITY" | "WHITGIFT" | null;
+  /** Entry SCHOOL year 6–13 (CH-10/12); null until picked. */
+  entrySchoolYear?: number | null;
+
   // ── CALC-07 — v2 relations ────────────────────────────────────────────────
   earnersV2?: EarnerV2SaveInput[];
   propertyV2?: PropertyV2SaveInput;
@@ -356,6 +362,8 @@ export async function saveAssessment(
     "theoreticalBenchmarkDi",
     "affordabilityAdjustedDi",
     "recommendedPayableFees",
+    "assessmentSchool",
+    "entrySchoolYear",
   ] as const;
   for (const key of v2ScalarKeys) {
     const value = (assessmentFields as Record<string, unknown>)[key];

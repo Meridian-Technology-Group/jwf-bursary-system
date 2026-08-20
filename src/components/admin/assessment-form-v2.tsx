@@ -51,7 +51,11 @@ import {
 import type { AssessmentV2Input } from "@/lib/assessment/v2/orchestrator";
 import { getNotionalCostAmount, getFamilyCategoryMeta } from "@/lib/assessment/reference-bands";
 import { resolveChildNameParts } from "@/lib/applications/child-name";
-import { calculateSchoolingYearsRemainingFromEntry, type EntryYearGroupCode } from "@/lib/assessment/schooling-years";
+import {
+  calculateSchoolingYearsRemainingFromEntry,
+  remainingYearsForEntrySchoolYear,
+  type EntryYearGroupCode,
+} from "@/lib/assessment/schooling-years";
 import { calculateDerivedSavings } from "@/lib/assessment/stage2-assets";
 import { applyFamilyTypeDefaults, type OverridableField } from "@/lib/assessment/auto-populate";
 import { shouldEnableSecondEarner } from "@/lib/assessment/v2/prefill";
@@ -89,6 +93,9 @@ export interface SerialisedAssessmentV2 {
   applicationId: string;
   calculationVersion: number;
   status: AssessmentStatus;
+  /** Epic 15 M1 — assessor-picked school + entry school year (CH-10..14). */
+  assessmentSchool: "TRINITY" | "WHITGIFT" | null;
+  entrySchoolYear: number | null;
   familyTypeCategory: number | null;
   annualFees: number | null;
   schoolingYearsRemaining: number | null;
@@ -140,15 +147,16 @@ interface AssessmentFormV2Props {
   applicationId: string;
   referenceBundle: ReferenceBundle;
   prefill: AssessmentV2Prefill;
-  defaultAnnualFees: number;
   /**
-   * CALC-08: the fee-year-resolved NEXT-year gross fee for the school/round
-   * (null when no next-year fee row exists yet). Persisted on every save as
-   * the assessment's `nextYearAnnualFees` snapshot so the v2 recommendation's
-   * award summary works against the real next-year figure instead of falling
-   * back to the current-year fee.
+   * Epic 15 M1 (CH-11/14): fee-year-resolved current/next-year gross fees for
+   * BOTH schools, so the assessor's school switch recalculates instantly.
+   * The effective fee is `feesBySchool[assessmentSchool]` — no school picked,
+   * no fee (and Complete stays gated).
    */
-  defaultNextYearAnnualFees?: number | null;
+  feesBySchool: Record<
+    "TRINITY" | "WHITGIFT",
+    { annual: number | null; nextYear: number | null }
+  >;
   applicationEntryYear: number | null;
   applicationEntryYearGroup: EntryYearGroupCode | null;
   /** Part 1 rows 1–2 — the recipient's name from the application (CG-22). */
@@ -360,8 +368,7 @@ export function AssessmentFormV2({
   applicationId,
   referenceBundle,
   prefill,
-  defaultAnnualFees,
-  defaultNextYearAnnualFees = null,
+  feesBySchool,
   applicationEntryYear,
   applicationEntryYearGroup,
   childName = null,
@@ -397,26 +404,37 @@ export function AssessmentFormV2({
   const [familyTypeCategory, setFamilyTypeCategory] = React.useState<number>(
     assessment.familyTypeCategory ?? 1
   );
-  // CG-22 row 11: annual school fees are autofilled from reference data and
-  // HIDDEN — they feed the engine (and the Complete gate), not the screen.
-  // Stored value wins for pre-existing assessments.
-  const [annualFees] = React.useState<number>(
-    Number(assessment.annualFees ?? defaultAnnualFees) || 0
+  // Epic 15 M1 (CH-11/14): the assessment's OWN school — empty until the
+  // assessor picks (no prefill; pre-M1 rows arrive backfilled), switchable at
+  // any time to recalculate for the other school.
+  const [assessmentSchool, setAssessmentSchool] = React.useState<
+    "TRINITY" | "WHITGIFT" | ""
+  >(assessment.assessmentSchool ?? "");
+  // The fees are DERIVED from the picked school (CG-22 row 11: autofilled +
+  // HIDDEN — they feed the engine and the Complete gate, not the screen).
+  // No school → no fee → Complete gated: that is the mandatory enforcement.
+  const annualFees = assessmentSchool
+    ? Number(feesBySchool[assessmentSchool]?.annual ?? 0) || 0
+    : 0;
+  const nextYearAnnualFees = assessmentSchool
+    ? feesBySchool[assessmentSchool]?.nextYear ?? null
+    : null;
+
+  // Epic 15 M1 (CH-13): the recipient's scholarship %, manual 1–100 — the
+  // same column the award tab's % SCHOLARSHIP reads/writes (CALC-16).
+  const [scholarshipPct, setScholarshipPct] = React.useState<number | "">(
+    assessment.scholarshipPct != null && Number(assessment.scholarshipPct) !== 0
+      ? Number(assessment.scholarshipPct)
+      : ""
   );
 
-  // Part 1 row 4 — display-back of the award-side scholarship % (LA-8 №1:
-  // no recipient-level scholarship field exists; sign-off pending).
-  const scholarshipDisplay =
-    assessment.scholarshipPct != null && Number(assessment.scholarshipPct) !== 0
-      ? `${Number(assessment.scholarshipPct)}%`
-      : "—";
-
-  // ── Part 1 (CG-22) ──────────────────────────────────────────────────────────
-  // Year of entry: prefilled from the application (LA-5), editable — edits
-  // recompute the remaining-years suggestion; the persisted value stays
-  // `schoolingYearsRemaining` (the engine input), same as before.
-  const [entryYear, setEntryYear] = React.useState<number | "">(
-    applicationEntryYear ?? ""
+  // ── Part 1 (CG-22 / CH-10/12) ───────────────────────────────────────────────
+  // Entry SCHOOL year (Year 6–13, not a calendar year) — empty until picked;
+  // selection autofills the remaining-years row from Charlotte's matrix
+  // (Y6→8 … Y13→1). The persisted engine input stays
+  // `schoolingYearsRemaining` (still editable).
+  const [entrySchoolYear, setEntrySchoolYear] = React.useState<number | "">(
+    assessment.entrySchoolYear ?? ""
   );
   // The three "sibling at the school" rows — names here; the award tab adds
   // school + net payable fees (C7). Stored as `Assessment.siblingDetails`.
@@ -515,21 +533,11 @@ export function AssessmentFormV2({
   const [behindOnFees, setBehindOnFees] = React.useState<boolean>(assessment.behindOnFees ?? false);
   const [dishonestyFlag, setDishonestyFlag] = React.useState<boolean>(assessment.dishonestyFlag);
 
-  // school-age children default from FamilyCategoryMeta, overridable (CALC-07).
-  const metaDefaultChildren = React.useMemo(
-    () => getFamilyCategoryMeta(referenceBundle.familyCategoryMetas, familyTypeCategory)?.schoolAgeChildren ?? 1,
-    [referenceBundle.familyCategoryMetas, familyTypeCategory]
-  );
-  const [schoolAgeChildrenCount, setSchoolAgeChildrenCount] = React.useState<number>(
-    assessment.property?.schoolAgeChildrenCount ?? metaDefaultChildren
-  );
-  // Seed the overridden set: a stored count differing from the meta default is a prior override.
-  const [overridden, setOverridden] = React.useState<Set<OverridableField>>(() => {
-    const set = new Set<OverridableField>();
-    const stored = assessment.property?.schoolAgeChildrenCount;
-    if (stored != null && stored !== metaDefaultChildren) set.add("schoolAgeChildrenCount");
-    return set;
-  });
+  // Epic 15 M1 (CH-15): NO default — the count is empty until the assessor
+  // enters it (1–20). Stored values round-trip; the engine sees 0 while empty.
+  const [schoolAgeChildrenCount, setSchoolAgeChildrenCount] = React.useState<
+    number | ""
+  >(assessment.property?.schoolAgeChildrenCount ?? "");
 
   // ── Live calculation input ──────────────────────────────────────────────────
   const input: AssessmentV2Input = React.useMemo(() => {
@@ -546,14 +554,15 @@ export function AssessmentFormV2({
       feeInsuranceAnnual,
       cashSavings,
       isasPepsShares,
-      schoolAgeChildrenCount,
+      schoolAgeChildrenCount:
+        typeof schoolAgeChildrenCount === "number" ? schoolAgeChildrenCount : 0,
       schoolingYearsRemaining,
       propertyAssets,
       portfolioType,
       debts,
       siblingPayableFees,
       annualFees,
-      scholarshipPct: Number(assessment.scholarshipPct ?? 0) || 0,
+      scholarshipPct: typeof scholarshipPct === "number" ? scholarshipPct : 0,
       vatRate: Number(assessment.vatRate ?? 20) || 20,
     };
   }, [
@@ -577,7 +586,7 @@ export function AssessmentFormV2({
     debts,
     siblingPayableFees,
     annualFees,
-    assessment.scholarshipPct,
+    scholarshipPct,
     assessment.vatRate,
   ]);
 
@@ -645,7 +654,7 @@ export function AssessmentFormV2({
     const derivedSavings = calculateDerivedSavings(
       cashSavings,
       isasPepsShares,
-      schoolAgeChildrenCount,
+      typeof schoolAgeChildrenCount === "number" ? schoolAgeChildrenCount : 0,
       schoolingYearsRemaining
     );
 
@@ -694,10 +703,14 @@ export function AssessmentFormV2({
     const payload: AssessmentSaveInput = {
       familyTypeCategory,
       annualFees,
-      // CALC-08: snapshot the fee-year-resolved next-year gross fee so the
-      // recommendation's award summary (resolveNextYearFees) uses the real
+      // CALC-08: snapshot the fee-year-resolved next-year gross fee (for the
+      // PICKED school) so the recommendation's award summary uses the real
       // next-year figure; explicit null is a valid clear when none exists.
-      nextYearAnnualFees: defaultNextYearAnnualFees,
+      nextYearAnnualFees,
+      // Epic 15 M1 — the assessor-owned Part 1 fields (CH-10..14).
+      assessmentSchool: assessmentSchool || null,
+      entrySchoolYear: typeof entrySchoolYear === "number" ? entrySchoolYear : null,
+      scholarshipPct: typeof scholarshipPct === "number" ? scholarshipPct : 0,
       schoolingYearsRemaining,
       rentAddBackType,
       multiPropertyRentAddBack,
@@ -730,7 +743,8 @@ export function AssessmentFormV2({
         debts,
         cashSavings,
         isasPepsShares,
-        schoolAgeChildrenCount,
+        schoolAgeChildrenCount:
+          typeof schoolAgeChildrenCount === "number" ? schoolAgeChildrenCount : 0,
         derivedSavingsAnnualTotal: derivedSavings,
       },
     };
@@ -767,7 +781,7 @@ export function AssessmentFormV2({
     parent2,
     familyTypeCategory,
     annualFees,
-    defaultNextYearAnnualFees,
+    nextYearAnnualFees,
     schoolingYearsRemaining,
     rentAddBackType,
     multiPropertyRentAddBack,
@@ -854,21 +868,15 @@ export function AssessmentFormV2({
   };
 
   // ── Family-type change: refresh non-overridden school-age children default ──
+  // Epic 15 M1 (CH-15): a family-category change no longer reseeds the
+  // children count from the meta default — the count is assessor-entered only.
   const handleFamilyCategoryChange = (category: number) => {
     setFamilyTypeCategory(category);
-    const nextMeta = getFamilyCategoryMeta(referenceBundle.familyCategoryMetas, category)?.schoolAgeChildren ?? 1;
-    const merged = applyFamilyTypeDefaults(
-      { schoolAgeChildrenCount },
-      { schoolAgeChildrenCount: nextMeta },
-      overridden
-    );
-    setSchoolAgeChildrenCount(merged.schoolAgeChildrenCount ?? nextMeta);
     scheduleAutoSave();
   };
 
-  const markChildrenOverridden = (value: number) => {
+  const markChildrenOverridden = (value: number | "") => {
     setSchoolAgeChildrenCount(value);
-    setOverridden((prev) => new Set(prev).add("schoolAgeChildrenCount"));
   };
 
   // ── Property/debt field helpers ─────────────────────────────────────────────
@@ -949,7 +957,14 @@ export function AssessmentFormV2({
               size="sm"
               className="bg-success-600 text-white hover:bg-success-600/90"
               onClick={handleComplete}
-              disabled={isSaving || isCompleting || isPausing || annualFees <= 0}
+              disabled={
+                isSaving ||
+                isCompleting ||
+                isPausing ||
+                !assessmentSchool ||
+                typeof entrySchoolYear !== "number" ||
+                annualFees <= 0
+              }
             >
               <CheckCircle2 className="mr-1.5 h-4 w-4" aria-hidden="true" />
               {isCompleting ? "Completing…" : "Complete"}
@@ -986,43 +1001,95 @@ export function AssessmentFormV2({
                 <span className={labelClass}>Bursary recipient&apos;s Surname</span>
                 <span className="text-sm text-slate-700">{surname || "—"}</span>
               </div>
+              {/* CH-11/14 — the assessment's school: manual dropdown, no
+                  prefill, switchable mid-assessment (Trinity → Whitgift
+                  recalculation). Drives the hidden annual-fees autofill. */}
               <div className={rowClass}>
-                <label className={labelClass} htmlFor="v2-entry-year">
+                <label className={labelClass} htmlFor="v2-assessment-school">
+                  Bursary recipient&apos;s school
+                </label>
+                <Select
+                  value={assessmentSchool}
+                  onValueChange={(v) => {
+                    setAssessmentSchool(v as "TRINITY" | "WHITGIFT");
+                    scheduleAutoSave();
+                  }}
+                  disabled={isReadOnly}
+                >
+                  <SelectTrigger id="v2-assessment-school" className="h-9 text-sm">
+                    <SelectValue placeholder="Select school" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="TRINITY" className="text-sm">
+                      Trinity School
+                    </SelectItem>
+                    <SelectItem value="WHITGIFT" className="text-sm">
+                      Whitgift School
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              {/* CH-10/12 — entry SCHOOL year (Year 6–13, never a calendar
+                  year); selection autofills remaining-years from the matrix
+                  (Y6→8 … Y13→1), which stays editable below. */}
+              <div className={rowClass}>
+                <label className={labelClass} htmlFor="v2-entry-school-year">
                   Bursary award year of entry:
                 </label>
-                <div>
+                <Select
+                  value={entrySchoolYear === "" ? "" : String(entrySchoolYear)}
+                  onValueChange={(v) => {
+                    const year = Number(v);
+                    setEntrySchoolYear(year);
+                    const derived = remainingYearsForEntrySchoolYear(year);
+                    if (derived != null) setSchoolingYearsRemaining(derived);
+                    scheduleAutoSave();
+                  }}
+                  disabled={isReadOnly}
+                >
+                  <SelectTrigger id="v2-entry-school-year" className="h-9 text-sm">
+                    <SelectValue placeholder="Select year of entry" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {[6, 7, 8, 9, 10, 11, 12, 13].map((y) => (
+                      <SelectItem key={y} value={String(y)} className="text-sm">
+                        Year {y}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              {/* CH-13 — scholarship %: manual 1–100, key at the start of a
+                  rolling-over assessment; same column the award tab edits. */}
+              <div className={rowClass}>
+                <label className={labelClass} htmlFor="v2-scholarship-pct">
+                  Bursary recipient&apos;s Scholarship
+                </label>
+                <div className="relative w-32">
                   <Input
-                    id="v2-entry-year"
+                    id="v2-scholarship-pct"
                     type="number"
-                    value={entryYear}
+                    min={0}
+                    max={100}
+                    value={scholarshipPct}
                     disabled={isReadOnly}
                     onChange={(e) => {
-                      const v = e.target.value === "" ? "" : Number(e.target.value) || "";
-                      setEntryYear(v);
-                      // LA-5: edits refresh the remaining-years suggestion; the
-                      // engine input that persists is remaining-years itself.
-                      const derived = calculateSchoolingYearsRemainingFromEntry(
-                        applicationEntryYearGroup,
-                        typeof v === "number" ? v : null
-                      );
-                      if (derived != null) setSchoolingYearsRemaining(derived);
+                      const raw = e.target.value;
+                      if (raw === "") {
+                        setScholarshipPct("");
+                        return;
+                      }
+                      const n = Number(raw);
+                      if (isNaN(n)) return;
+                      setScholarshipPct(Math.min(100, Math.max(0, n)));
                     }}
                     onBlur={scheduleAutoSave}
-                    className="w-32 text-right font-mono"
+                    className="w-32 pr-7 text-right font-mono"
                   />
-                  <p className="mt-0.5 text-[11px] text-slate-400">
-                    Prefilled from the invitation; edits update the remaining-years row.
-                  </p>
-                </div>
-              </div>
-              <div className={rowClass}>
-                <span className={labelClass}>Bursary recipient&apos;s Scholarship</span>
-                <span className="text-sm text-slate-700">
-                  {scholarshipDisplay}
-                  <span className="ml-2 text-[11px] text-slate-400">
-                    recorded on the Bursary Award tab
+                  <span className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-slate-400">
+                    %
                   </span>
-                </span>
+                </div>
               </div>
               {[0, 1, 2].map((i) => (
                 <div className={rowClass} key={i}>
@@ -1080,21 +1147,26 @@ export function AssessmentFormV2({
                 <label className={labelClass} htmlFor="v2-school-age-children">
                   Number of schooling age children
                 </label>
-                <div>
-                  <Input
-                    id="v2-school-age-children"
-                    type="number"
-                    min={1}
-                    value={schoolAgeChildrenCount}
-                    disabled={isReadOnly}
-                    onChange={(e) => markChildrenOverridden(Math.max(1, Number(e.target.value) || 1))}
-                    onBlur={scheduleAutoSave}
-                    className="w-32 text-right font-mono"
-                  />
-                  <p className="mt-0.5 text-[11px] text-slate-400">
-                    Default for this family type: {metaDefaultChildren}
-                  </p>
-                </div>
+                <Input
+                  id="v2-school-age-children"
+                  type="number"
+                  min={1}
+                  max={20}
+                  value={schoolAgeChildrenCount}
+                  disabled={isReadOnly}
+                  onChange={(e) => {
+                    const raw = e.target.value;
+                    if (raw === "") {
+                      markChildrenOverridden("");
+                      return;
+                    }
+                    const n = Number(raw);
+                    if (isNaN(n)) return;
+                    markChildrenOverridden(Math.min(20, Math.max(1, Math.round(n))));
+                  }}
+                  onBlur={scheduleAutoSave}
+                  className="w-32 text-right font-mono"
+                />
               </div>
               {/* Row 11 — Annual school fees: autofill + HIDDEN (feeds the
                   engine only). Surfaced ONLY when the reference figure is
@@ -1103,8 +1175,9 @@ export function AssessmentFormV2({
                 <div className={rowClass}>
                   <span className={labelClass}>Annual school fees</span>
                   <span className="text-xs font-medium text-amber-700">
-                    Missing from reference data — Complete is disabled until the
-                    school-fees reference row exists for this school and year.
+                    {assessmentSchool
+                      ? "Missing from reference data — Complete is disabled until the school-fees reference row exists for this school and year."
+                      : "Select the recipient's school — the annual fee fills from reference data and Complete stays disabled until then."}
                   </span>
                 </div>
               )}
@@ -1332,7 +1405,7 @@ export function AssessmentFormV2({
             />
           </WBRow>
           <WBRow label="DISPLAY ONLY - TOTAL CASH & SAVINGS" auto={fmtMoney(cashSavings + isasPepsShares)} />
-          <WBRow label="TOTAL NUMBER OF CHILDREN OF SCHOOL AGE" auto={String(schoolAgeChildrenCount)} note="From the Part 1 entry." />
+          <WBRow label="TOTAL NUMBER OF CHILDREN OF SCHOOL AGE" auto={schoolAgeChildrenCount === "" ? "—" : String(schoolAgeChildrenCount)} note="From the Part 1 entry." />
           <WBRow label="NUMBER OF SCHOOL YEARS LEFT FOR THE BURSARY RECIPIENT" auto={String(schoolingYearsRemaining)} note="From the Part 1 entry." />
           <WBRow label="DISPLAY ONLY - ADJUSTED SAVINGS TOTAL" auto={fmtMoney(output?.adjustedSavings)} />
           <WBRow label="DEDUCT NOTIONAL SAVINGS" auto={fmtMoney(lineAmt("notionalSavingsBenchmark"))} />
