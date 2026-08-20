@@ -112,7 +112,11 @@ export default async function AssessmentAwardPage({ params }: Props) {
           {childName ?? application.reference}
         </span>
         <span className="text-sm text-slate-600">
-          {application.school === "TRINITY" ? "Trinity" : "Whitgift"}
+          {/* Epic 15 M1: the ASSESSMENT's school (assessor-picked, switchable)
+              wins over the application's when present. */}
+          {(assessment?.assessmentSchool ?? application.school) === "TRINITY"
+            ? "Trinity"
+            : "Whitgift"}
         </span>
         <span className="ml-auto flex items-baseline gap-4 text-sm text-slate-500">
           {assessment?.annualFees != null && (

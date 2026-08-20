@@ -196,3 +196,19 @@ export function deriveCurrentYearGroupNumber(
   const elapsed = Math.max(0, academicYearStartForDate(now) - entryCalendarYear);
   return n + elapsed;
 }
+
+/**
+ * Epic 15 M1 (CH-12) — Charlotte's full entry-year → remaining-years matrix.
+ * Unlike TOTAL_YEARS_BY_ENTRY above (the four historic entry points), this
+ * covers every school year 6–13: remaining = 14 − entry year (Years N–13
+ * inclusive). Used by the Part 1 dropdown's autofill; the persisted engine
+ * input remains `schoolingYearsRemaining` (still editable).
+ */
+export function remainingYearsForEntrySchoolYear(
+  entrySchoolYear: number | null | undefined
+): number | null {
+  if (entrySchoolYear == null) return null;
+  if (!Number.isInteger(entrySchoolYear)) return null;
+  if (entrySchoolYear < 6 || entrySchoolYear > 13) return null;
+  return 14 - entrySchoolYear;
+}
