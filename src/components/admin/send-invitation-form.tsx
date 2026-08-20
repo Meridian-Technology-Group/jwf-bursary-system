@@ -97,6 +97,10 @@ export function SendInvitationForm({
 }: SendInvitationFormProps) {
   const [serverError, setServerError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  // Epic 15 X2 (CI-04): create without emailing; the returned link is shown
+  // for the admin to copy into their own mail client.
+  const [skipEmail, setSkipEmail] = useState(false);
+  const [registrationLink, setRegistrationLink] = useState<string | null>(null);
   const [pendingValues, setPendingValues] = useState<FormValues | null>(null);
   const [isPending, startTransition] = useTransition();
   const router = useRouter();
@@ -147,11 +151,17 @@ export function SendInvitationForm({
     formData.set("situation", values.situation);
     formData.set("entryYearGroup", values.entryYearGroup);
     formData.set("roundId", values.roundId);
+    if (skipEmail) formData.set("skipEmail", "1");
 
     startTransition(async () => {
       const result = await createInvitationAction(formData);
       if (result.success) {
-        setSuccessMessage(`Invitation sent to ${values.email}`);
+        setRegistrationLink(result.registrationLink ?? null);
+        setSuccessMessage(
+          result.registrationLink
+            ? `Invitation created for ${values.email} — no email sent. Copy the registration link below.`
+            : `Invitation sent to ${values.email}`
+        );
         form.reset({
           email: "",
           firstName: "",
@@ -496,15 +506,47 @@ export function SendInvitationForm({
           {successMessage && (
             <p className="text-sm text-green-600">{successMessage}</p>
           )}
+          {registrationLink && (
+            <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+              <p className="mb-1 text-xs font-medium text-slate-500">
+                Registration link (30-day expiry) — send it from your own
+                mailbox:
+              </p>
+              <Input
+                readOnly
+                value={registrationLink}
+                onFocus={(e) => e.currentTarget.select()}
+                className="font-mono text-xs"
+                aria-label="Registration link"
+              />
+            </div>
+          )}
 
-          <div className="flex justify-end pt-2">
+          <div className="flex items-center justify-between gap-4 pt-2">
+            {/* Epic 15 X2 (CI-04) */}
+            <label className="flex items-center gap-2 text-sm text-slate-600">
+              <input
+                type="checkbox"
+                checked={skipEmail}
+                onChange={(e) => setSkipEmail(e.target.checked)}
+                disabled={isPending}
+                className="h-4 w-4 rounded border-slate-300"
+              />
+              Don&apos;t email — I&apos;ll send the registration link myself
+            </label>
             <Button
               type="submit"
               disabled={isPending || rounds.length === 0}
               className="gap-2"
             >
               <Send className="h-4 w-4" aria-hidden="true" />
-              {isPending ? "Sending..." : "Send Invitation"}
+              {isPending
+                ? skipEmail
+                  ? "Creating..."
+                  : "Sending..."
+                : skipEmail
+                  ? "Create Invitation"
+                  : "Send Invitation"}
             </Button>
           </div>
         </form>
@@ -551,8 +593,9 @@ export function SendInvitationForm({
                   </span>
                 </p>
                 <p className="pt-1 text-xs text-slate-400">
-                  This emails the applicant a link to start their bursary
-                  application. The school is locked.
+                  {skipEmail
+                    ? "No email will be sent — you will get a registration link to send yourself. The school is locked."
+                    : "This emails the applicant a link to start their bursary application. The school is locked."}
                 </p>
               </div>
             </DialogDescription>

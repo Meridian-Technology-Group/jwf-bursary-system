@@ -388,7 +388,11 @@ export async function sendBatchEmails(
 export async function sendRawEmail(
   to: string,
   subject: string,
-  body: string
+  body: string,
+  options?: {
+    /** Epic 15 X2 (CI-05) — optional blind copy on ad-hoc/bulk sends. */
+    bcc?: string;
+  }
 ): Promise<SendEmailResult> {
   try {
     const htmlFragment = plainTextToHtml(body);
@@ -398,6 +402,7 @@ export async function sendRawEmail(
       from: fromAddress(),
       replyTo: replyToAddress(),
       to,
+      ...(options?.bcc ? { bcc: options.bcc } : {}),
       subject,
       html,
       text: htmlToPlainText(html),

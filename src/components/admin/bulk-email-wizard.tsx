@@ -98,6 +98,8 @@ export function BulkEmailWizardAction({
   const [templates, setTemplates] = React.useState<EmailTemplateRow[] | null>(null);
   const [isLoadingTemplates, startLoadTemplates] = useTransition();
   const [selectedTemplateId, setSelectedTemplateId] = React.useState<string | null>(null);
+  // Epic 15 X2 (CI-05): optional blind copy on the whole batch.
+  const [bcc, setBcc] = React.useState("");
 
   const [recipients, setRecipients] = React.useState<BulkEmailRecipient[] | null>(null);
   const [fromAddress, setFromAddress] = React.useState<string>("");
@@ -173,7 +175,7 @@ export function BulkEmailWizardAction({
 
     const ids = includedRecipients.map((r) => r.applicationId);
     startSend(async () => {
-      const result = await bulkSendEmailAction(ids, selectedTemplateId);
+      const result = await bulkSendEmailAction(ids, selectedTemplateId, bcc.trim() || undefined);
       if (result.success) {
         setSendResult(result);
         setPhase("result");
@@ -248,6 +250,8 @@ export function BulkEmailWizardAction({
               isLoading={isLoadingRecipients}
               fromAddress={fromAddress}
               replyToAddress={replyToAddress}
+              bcc={bcc}
+              setBcc={setBcc}
               excludedIds={excludedIds}
               setExcludedIds={setExcludedIds}
               expandedPreviewId={expandedPreviewId}
@@ -414,6 +418,8 @@ function RecipientsStep({
   isLoading,
   fromAddress,
   replyToAddress,
+  bcc,
+  setBcc,
   excludedIds,
   setExcludedIds,
   expandedPreviewId,
@@ -424,6 +430,8 @@ function RecipientsStep({
   isLoading: boolean;
   fromAddress: string;
   replyToAddress: string;
+  bcc: string;
+  setBcc: (v: string) => void;
   excludedIds: Set<string>;
   setExcludedIds: (updater: (prev: Set<string>) => Set<string>) => void;
   expandedPreviewId: string | null;
@@ -469,6 +477,21 @@ function RecipientsStep({
             )}
           </span>
         )}
+      </div>
+
+      {/* Epic 15 X2 (CI-05): optional BCC for the whole batch. */}
+      <div className="flex items-center gap-2 text-xs text-slate-500">
+        <label htmlFor="bulk-bcc" className="font-medium">
+          BCC (optional):
+        </label>
+        <input
+          id="bulk-bcc"
+          type="email"
+          value={bcc}
+          onChange={(e) => setBcc(e.target.value)}
+          placeholder="e.g. fees@johnwhitgiftfoundation.org"
+          className="h-7 w-72 rounded border border-slate-300 bg-white px-2 font-mono text-xs text-slate-700 placeholder-slate-400"
+        />
       </div>
 
       <ScrollArea className="h-72 rounded-md border border-slate-200">
