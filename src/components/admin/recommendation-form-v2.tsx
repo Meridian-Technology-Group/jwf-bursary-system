@@ -116,6 +116,12 @@ export interface RecommendationFormV2Props {
   /** Previous recommendation's payable fees (null = first assessment). */
   lastPayableFees: number | null;
   siblingContext: SiblingContextRow[];
+  /**
+   * Epic 15 M6 (LA15-4): the assessment is not yet COMPLETE — working data
+   * saves normally, but the formal Award-decision actions are withheld (the
+   * server's set-outcome-core enforces the same rule).
+   */
+  outcomeLocked?: boolean;
 }
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
@@ -292,6 +298,7 @@ export function RecommendationFormV2({
   gapReasons,
   lastPayableFees,
   siblingContext,
+  outcomeLocked = false,
 }: RecommendationFormV2Props) {
   const router = useRouter();
   const isReadOnly = isTerminalOutcome(assessmentOutcome);
@@ -670,7 +677,12 @@ export function RecommendationFormV2({
       )}
 
       {/* ── Award decision ───────────────────────────────────────────────── */}
-      {!isReadOnly && (
+      {!isReadOnly && outcomeLocked && (
+        <p className="text-sm text-slate-500" role="note">
+          Complete the assessment to record the outcome.
+        </p>
+      )}
+      {!isReadOnly && !outcomeLocked && (
         <Card className="border-slate-200">
           <CardHeader>
             <CardTitle className="text-base">Award decision</CardTitle>
