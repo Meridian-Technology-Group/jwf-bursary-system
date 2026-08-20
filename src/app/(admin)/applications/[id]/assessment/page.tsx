@@ -205,7 +205,15 @@ export default async function AssessmentPage({ params }: Props) {
   const user = await requireRole([Role.ADMIN, Role.ASSESSOR, Role.VIEWER]);
   const isViewer = user.role === Role.VIEWER;
 
-  const { application, assessment, contributors, householdSources, childName } =
+  const {
+    application,
+    assessment,
+    contributors,
+    householdSources,
+    childName,
+    childFirstName,
+    childLastName,
+  } =
     await withUserContext(
       user.id,
       user.role as RlsRole,
@@ -218,6 +226,8 @@ export default async function AssessmentPage({ params }: Props) {
             contributors: [],
             householdSources: null as HouseholdSources | null,
             childName: null as string | null,
+            childFirstName: null as string | null,
+            childLastName: null as string | null,
           };
         const a = await getAssessment(tx, params.id);
         const ctribs = await getApplicationContributors(tx, params.id);
@@ -229,7 +239,7 @@ export default async function AssessmentPage({ params }: Props) {
         // of one disclosure.
         const nameRow = await tx.application.findUnique({
           where: { id: params.id },
-          select: { childName: true },
+          select: { childName: true, childFirstName: true, childLastName: true },
         });
 
         // Epic 09: read the PRIMARY contributor's PARENT_DETAILS + OTHER_INFO
@@ -256,6 +266,8 @@ export default async function AssessmentPage({ params }: Props) {
           contributors: ctribs,
           householdSources: household,
           childName: nameRow?.childName ?? null,
+          childFirstName: nameRow?.childFirstName ?? null,
+          childLastName: nameRow?.childLastName ?? null,
         };
       }
     );
@@ -606,6 +618,8 @@ export default async function AssessmentPage({ params }: Props) {
             application.entryYearGroup as EntryYearGroupCode | null
           }
           childName={childName}
+          childFirstName={childFirstName}
+          childLastName={childLastName}
           siblingPayableFees={siblingPayableFees}
           forceTwoEarner={forceTwoEarner}
           secondaryParentOverride={serialisedAssessment.secondaryParentOverride}

@@ -67,6 +67,7 @@ import {
 import { ensurePrimaryContributor } from "@/lib/db/queries/contributors";
 import { applicationCreateData } from "@/lib/applications/status";
 import { resolveRolloverReference } from "@/lib/applications/reference";
+import { composeChildName } from "@/lib/applications/child-name";
 import { listOpenRounds } from "@/lib/db/queries/reports";
 
 import { AUDIT_ACTIONS, AUDIT_ENTITY_TYPES } from "@/lib/audit/actions";
@@ -83,7 +84,18 @@ const InvitationSchema = z.object({
   email: z.string().email("A valid email address is required"),
   firstName: z.string().optional(),
   lastName: z.string().trim().min(1, "A surname is required"),
-  childName: z.string().trim().min(1, "The child's name is required"),
+  // Epic 15 G2 (CH-09): the child's identity is captured SPLIT (first name +
+  // surname) plus date of birth — the single `childName` string is composed
+  // server-side for the legacy backing store.
+  childFirstName: z
+    .string()
+    .trim()
+    .min(1, "The child's first name is required"),
+  childLastName: z.string().trim().min(1, "The child's surname is required"),
+  childDob: z
+    .string()
+    .trim()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, "Enter the child's date of birth"),
   school: z.nativeEnum(School, { error: "A school is required" }),
   // Q1 (Brian, 2026-08-14): the entry year-group is JWF-facing only — the
   // applicant can never enter one — so the quick-invite must capture it here or
@@ -147,7 +159,9 @@ export async function createInvitationAction(
     email: formData.get("email") as string,
     firstName: (formData.get("firstName") as string) || undefined,
     lastName: (formData.get("lastName") as string) || undefined,
-    childName: (formData.get("childName") as string) || undefined,
+    childFirstName: (formData.get("childFirstName") as string) || undefined,
+    childLastName: (formData.get("childLastName") as string) || undefined,
+    childDob: (formData.get("childDob") as string) || undefined,
     school: (formData.get("school") as string) || undefined,
     entryYearGroup: (formData.get("entryYearGroup") as string) || undefined,
     roundId: (formData.get("roundId") as string) || undefined,
@@ -166,12 +180,17 @@ export async function createInvitationAction(
     email,
     firstName,
     lastName,
-    childName,
+    childFirstName,
+    childLastName,
     school,
     entryYearGroup,
     roundId,
     situation,
   } = parsed.data;
+
+  // The composed backing store (legacy consumers read `childName`).
+  const childName = composeChildName(childFirstName, childLastName);
+  const childDob = new Date(`${parsed.data.childDob}T00:00:00.000Z`);
 
   const effectiveApplicantName = composeApplicantName(firstName, lastName);
 
@@ -226,6 +245,9 @@ export async function createInvitationAction(
         firstName,
         lastName,
         childName,
+        childFirstName,
+        childLastName,
+        childDob,
         school,
         entryYearGroup,
         roundId,

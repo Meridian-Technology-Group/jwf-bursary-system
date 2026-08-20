@@ -50,6 +50,7 @@ import {
 } from "@/lib/assessment/v2/profiling";
 import type { AssessmentV2Input } from "@/lib/assessment/v2/orchestrator";
 import { getNotionalCostAmount, getFamilyCategoryMeta } from "@/lib/assessment/reference-bands";
+import { resolveChildNameParts } from "@/lib/applications/child-name";
 import { calculateSchoolingYearsRemainingFromEntry, type EntryYearGroupCode } from "@/lib/assessment/schooling-years";
 import { calculateDerivedSavings } from "@/lib/assessment/stage2-assets";
 import { applyFamilyTypeDefaults, type OverridableField } from "@/lib/assessment/auto-populate";
@@ -152,6 +153,10 @@ interface AssessmentFormV2Props {
   applicationEntryYearGroup: EntryYearGroupCode | null;
   /** Part 1 rows 1–2 — the recipient's name from the application (CG-22). */
   childName?: string | null;
+  /** Split identity when the application carries it (Epic 15 G2 / CH-09);
+   *  falls back to a whitespace split of `childName` on legacy rows. */
+  childFirstName?: string | null;
+  childLastName?: string | null;
   siblingPayableFees?: number[];
   forceTwoEarner?: boolean;
   secondaryParentOverride?: boolean;
@@ -360,6 +365,8 @@ export function AssessmentFormV2({
   applicationEntryYear,
   applicationEntryYearGroup,
   childName = null,
+  childFirstName = null,
+  childLastName = null,
   siblingPayableFees = [],
   forceTwoEarner = false,
   secondaryParentOverride = false,
@@ -962,10 +969,11 @@ export function AssessmentFormV2({
           feeds the engine, not displayed). Everything else assessor-entered. */}
       <FormSection title="PART 1 - BURSARY RECIPIENT'S & FAMILY DETAILS">
         {(() => {
-          const nameParts = (childName ?? "").trim().split(/\s+/).filter(Boolean);
-          const surname = nameParts.length > 1 ? nameParts[nameParts.length - 1] : "";
-          const firstName =
-            nameParts.length > 1 ? nameParts.slice(0, -1).join(" ") : nameParts[0] ?? "";
+          const { firstName, lastName: surname } = resolveChildNameParts({
+            childName,
+            childFirstName,
+            childLastName,
+          });
           const rowClass = "grid grid-cols-1 items-center gap-1 border-b border-slate-100 py-2 last:border-b-0 sm:grid-cols-[minmax(260px,1fr)_minmax(200px,1fr)]";
           const labelClass = "text-xs font-medium text-slate-500";
           return (

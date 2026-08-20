@@ -33,6 +33,11 @@ export interface FirstYearApplicationSource {
   roundId: string | null;
   school: School | null;
   childName: string | null;
+  /** Epic 15 G2 (CH-09) — split child identity + DOB carried from the
+   *  invitation. Optional: legacy invitations predate the split columns. */
+  childFirstName?: string | null;
+  childLastName?: string | null;
+  childDob?: Date | null;
   /** Locked entry-year, carried from the contact via the invitation (D1). */
   entryYear?: number | null;
   /**
@@ -103,6 +108,9 @@ export async function createFirstYearApplicationFromSource(
       leadApplicantId: source.leadApplicantId,
       school: source.school!,
       childName: source.childName!,
+      childFirstName: source.childFirstName ?? null,
+      childLastName: source.childLastName ?? null,
+      childDob: source.childDob ?? null,
       // LOCKED entry-year (D1): set from the source, never the parent. Both are
       // now MANDATORY admin-side (Q1) — the guard above rejects a source without
       // an entry year-group, so the column can never be left null on a

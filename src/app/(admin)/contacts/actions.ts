@@ -50,19 +50,23 @@ const ContactSchema = z.object({
   email: z.string().trim().email("A valid email address is required"),
   phone: optionalString,
   childTitle: optionalString,
-  childFirstName: optionalString,
+  // Epic 15 G2 (CH-09): child first name, surname and DOB are all REQUIRED —
+  // the recipient record is first name + surname + DOB + school + entry year.
+  childFirstName: z
+    .string()
+    .trim()
+    .min(1, "Child's first name is required")
+    .max(120),
   childLastName: z
     .string()
     .trim()
     .min(1, "Child's surname is required")
     .max(120),
-  // YYYY-MM-DD from a <input type="date">, optional.
+  // YYYY-MM-DD from a <input type="date">.
   childDob: z
     .string()
     .trim()
-    .regex(/^\d{4}-\d{2}-\d{2}$/, "Enter a valid date")
-    .optional()
-    .or(z.literal("").transform(() => undefined)),
+    .regex(/^\d{4}-\d{2}-\d{2}$/, "Enter the child's date of birth"),
   school: z.nativeEnum(School, { error: "A school is required" }),
   // B3 (CG-26, LA-3) — situation chosen at contact creation; the invite path
   // resolves the template variant from it (school half from `school`).

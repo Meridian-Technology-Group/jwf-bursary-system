@@ -214,6 +214,11 @@ model Application {
   leadApplicantId           String                   @map("lead_applicant_id") @db.Uuid
   school                    School
   childName                 String                   @map("child_name")
+  /// Epic 15 G2 (CH-09) — split child identity carried from the invitation;
+  /// `childName` stays the composed backing store. Null on legacy rows (the
+  /// assessment falls back to a whitespace split for those).
+  childFirstName            String?                  @map("child_first_name")
+  childLastName             String?                  @map("child_last_name")
   childDob                  DateTime?                @map("child_dob") @db.Date
   entryYear                 Int?                     @map("entry_year")
   entryYearGroup            EntryYearGroup?          @map("entry_year_group")
@@ -989,6 +994,12 @@ model Invitation {
   firstName        String?              @map("first_name")
   lastName         String?              @map("last_name")
   childName        String?              @map("child_name")
+  /// Epic 15 G2 (CH-09) — split child identity carried from the contact /
+  /// quick-invite so the application (and Part 1 of the assessment) never has
+  /// to whitespace-split `childName`. Null on legacy rows.
+  childFirstName   String?              @map("child_first_name")
+  childLastName    String?              @map("child_last_name")
+  childDob         DateTime?            @map("child_dob") @db.Date
   school           School?
   roundId          String?              @map("round_id") @db.Uuid
   bursaryAccountId String?              @map("bursary_account_id") @db.Uuid

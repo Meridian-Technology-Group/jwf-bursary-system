@@ -11,14 +11,18 @@ export interface ContactCore {
   lastName: string | null;
   email: string;
   childName: string | null;
+  childFirstName: string | null;
+  childLastName: string | null;
+  childDob: Date | null;
   school: School | null;
   entryYear: number | null;
   entryYearGroup: EntryYearGroup | null;
 }
 
 /**
- * The fields that MUST be present before a contact can be invited (D1/§5.2):
- * a parent surname + email, the child's name, and the LOCKED school + entry
+ * The fields that MUST be present before a contact can be invited (D1/§5.2,
+ * tightened by Epic 15 G2 / CH-09): a parent surname + email, the child's
+ * SPLIT first name + surname and date of birth, and the LOCKED school + entry
  * year + entry year-group. A from-contact invite rejects an incomplete contact
  * rather than sending a half-formed invite.
  */
@@ -30,9 +34,16 @@ export function missingRequiredInviteFields(contact: ContactCore): string[] {
   if (!contact.email || contact.email.trim().length === 0) {
     missing.push("email");
   }
-  if (!contact.childName || contact.childName.trim().length === 0) {
-    missing.push("child name");
+  // CH-09: the recipient record is first name + surname (split), never a
+  // single name string. Legacy contacts predating the split fields must be
+  // edited before they can be invited.
+  if (!contact.childFirstName || contact.childFirstName.trim().length === 0) {
+    missing.push("child first name");
   }
+  if (!contact.childLastName || contact.childLastName.trim().length === 0) {
+    missing.push("child surname");
+  }
+  if (!contact.childDob) missing.push("child date of birth");
   if (!contact.school) missing.push("school");
   if (contact.entryYear == null) missing.push("entry year");
   // Q1 (Brian, 2026-08-14): the entry year-group is JWF-facing only and the

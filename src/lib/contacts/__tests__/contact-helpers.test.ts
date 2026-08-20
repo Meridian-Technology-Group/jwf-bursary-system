@@ -12,6 +12,9 @@ const complete: ContactCore = {
   lastName: "Adeyemi",
   email: "grace@example.test",
   childName: "Daniel Adeyemi",
+  childFirstName: "Daniel",
+  childLastName: "Adeyemi",
+  childDob: new Date("2015-03-09T00:00:00.000Z"),
   school: "WHITGIFT",
   entryYear: 2026,
   entryYearGroup: "Y7",
@@ -43,18 +46,36 @@ describe("missingRequiredInviteFields (D1 locked-school invariant)", () => {
     expect(isContactInviteReady(c)).toBe(false);
   });
 
-  it("flags missing surname and child name", () => {
-    const c = { ...complete, lastName: "", childName: "" };
+  it("flags missing surname and split child names", () => {
+    const c = { ...complete, lastName: "", childFirstName: "", childLastName: "" };
     const missing = missingRequiredInviteFields(c);
     expect(missing).toContain("parent surname");
-    expect(missing).toContain("child name");
+    expect(missing).toContain("child first name");
+    expect(missing).toContain("child surname");
   });
 
   it("treats whitespace-only required strings as missing", () => {
-    const c = { ...complete, lastName: "   ", childName: "  " };
+    const c = { ...complete, lastName: "   ", childFirstName: "  ", childLastName: " " };
     const missing = missingRequiredInviteFields(c);
     expect(missing).toContain("parent surname");
-    expect(missing).toContain("child name");
+    expect(missing).toContain("child first name");
+    expect(missing).toContain("child surname");
+  });
+
+  // Epic 15 G2 (CH-09): the recipient record REQUIRES a date of birth, and a
+  // legacy contact carrying only the composed childName is no longer
+  // invite-ready — the split fields must be completed first.
+  it("flags a missing child date of birth", () => {
+    const c = { ...complete, childDob: null };
+    expect(missingRequiredInviteFields(c)).toContain("child date of birth");
+    expect(isContactInviteReady(c)).toBe(false);
+  });
+
+  it("legacy single-string contact (no split names) is not invite-ready", () => {
+    const c = { ...complete, childFirstName: null, childLastName: null };
+    const missing = missingRequiredInviteFields(c);
+    expect(missing).toContain("child first name");
+    expect(missing).toContain("child surname");
   });
 
   it("entry year of 0 is still present (not missing)", () => {
