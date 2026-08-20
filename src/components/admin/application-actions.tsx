@@ -80,6 +80,15 @@ export function ApplicationActions({
     return null;
   }
 
+  // Epic 15 W2 (CH-03): on assessment routes the in-review actions live in
+  // the compressed header (Request Missing Documents / Reject & Restart moved
+  // there; Mark Complete retired there under CH-04) — the bar would be empty,
+  // so it doesn't render. Begin Review (SUBMITTED) and Resume Review (PAUSED)
+  // keep their bar everywhere: they are the only way into/out of those states.
+  if (onAssessmentRoute && status === "NOT_STARTED") {
+    return null;
+  }
+
   function runAction(fn: () => Promise<{ success: boolean; error?: string }>) {
     setActionError(null);
     startTransition(async () => {

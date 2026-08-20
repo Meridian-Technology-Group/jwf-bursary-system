@@ -20,7 +20,6 @@ import type { Decimal } from "@prisma/client/runtime/library";
 import { requireRole, Role, type CurrentUser } from "@/lib/auth/roles";
 import {
   getApplicationWithDetails,
-  getSectionData,
 } from "@/lib/db/queries/applications";
 import { getApplicationContributors } from "@/lib/db/queries/contributors";
 import { getAssessment } from "@/lib/db/queries/assessments";
@@ -53,8 +52,6 @@ import { withUserContext, type RlsRole } from "@/lib/db/prisma";
 import { YearComparison } from "@/components/admin/year-comparison";
 import { BenchmarkDisplay } from "@/components/admin/benchmark-display";
 import { AssessmentForm, type SerialisedAssessment } from "@/components/admin/assessment-form";
-import { HouseholdDecisionAid } from "@/components/admin/household-decision-aid";
-import { deriveHouseholdFromSources, type HouseholdSources } from "@/lib/household/from-sections";
 import { deriveReviewPhase } from "@/lib/applications/status";
 import { BeginAssessmentButton } from "@/components/admin/begin-assessment-button";
 import { ReopenAssessmentBanner } from "@/components/admin/reopen-assessment-banner";
@@ -209,7 +206,6 @@ export default async function AssessmentPage({ params }: Props) {
     application,
     assessment,
     contributors,
-    householdSources,
     childName,
     childFirstName,
     childLastName,
@@ -224,7 +220,6 @@ export default async function AssessmentPage({ params }: Props) {
             application: null,
             assessment: null,
             contributors: [],
-            householdSources: null as HouseholdSources | null,
             childName: null as string | null,
             childFirstName: null as string | null,
             childLastName: null as string | null,
@@ -242,29 +237,10 @@ export default async function AssessmentPage({ params }: Props) {
           select: { childName: true, childFirstName: true, childLastName: true },
         });
 
-        // Epic 09: read the PRIMARY contributor's PARENT_DETAILS + OTHER_INFO
-        // JSONB so the household decision aid can derive the scenario from the
-        // same data the form branches on. Defensive — degrades to single
-        // sole-parent when the primary or a section is absent.
-        const primary = ctribs.find((c) => c.role === "PRIMARY");
-        let household: HouseholdSources | null = null;
-        if (primary) {
-          const [pd, oi] = await Promise.all([
-            getSectionData(tx, app.id, "PARENT_DETAILS", primary.id),
-            getSectionData(tx, app.id, "OTHER_INFO", primary.id),
-          ]);
-          household = {
-            parentDetails: (pd?.data ?? null) as HouseholdSources["parentDetails"],
-            otherInfo: (oi?.data ?? null) as HouseholdSources["otherInfo"],
-            applicationCustodyArrangement: app.custodyArrangement ?? null,
-          };
-        }
-
         return {
           application: app,
           assessment: a,
           contributors: ctribs,
-          householdSources: household,
           childName: nameRow?.childName ?? null,
           childFirstName: nameRow?.childFirstName ?? null,
           childLastName: nameRow?.childLastName ?? null,
@@ -288,11 +264,6 @@ export default async function AssessmentPage({ params }: Props) {
   if (reviewPhase === "PRE_SUBMISSION") {
     redirect(`/applications/${params.id}`);
   }
-
-  // Derive the household scenario + handling (Epic 09) for the decision aid.
-  const householdHandling = householdSources
-    ? deriveHouseholdFromSources(householdSources)
-    : null;
 
   // ── Dual-parent context ────────────────────────────────────────────────────
   // The SECONDARY contributor (second parent), if any, plus the PRIMARY's id
@@ -680,11 +651,10 @@ export default async function AssessmentPage({ params }: Props) {
         />
       )}
 
-      {/* Household decision aid (Epic 09) — derived scenario + expected
-          handling; H7/H9 surface as advisory flags, never auto-decline. */}
-      {householdHandling && (
-        <HouseholdDecisionAid handling={householdHandling} />
-      )}
+      {/* Epic 15 W2 (CH-08): the household summary card is REMOVED from the
+          assessment view at client request — the household facts stay on the
+          Applicant Data tab / APPLICATION FORM tab. The derived handling still
+          feeds the form's branching below. */}
 
       {/* Epic 14 C3 (CG-23, D14-2): the split-screen documents panel is
           RETIRED at client request — documents live on the UPLOADED DOCUMENTS
