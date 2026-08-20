@@ -16,7 +16,7 @@ import { requireRole, Role } from "@/lib/auth/roles";
 import { withUserContext, type RlsRole } from "@/lib/db/prisma";
 import {
   getFamilyTypeConfigs,
-  getSchoolFees,
+  getAllSchoolFees,
   getCouncilTaxDefault,
   getAllReasonCodes,
   getAllGapReasons,
@@ -46,6 +46,7 @@ import {
 } from "@/components/ui/table";
 import { FamilyTypeRow } from "@/components/admin/settings/family-type-form";
 import { SchoolFeesRow } from "@/components/admin/settings/school-fees-form";
+import { AddSchoolFeesYearForm } from "@/components/admin/settings/add-school-fees-year-form";
 import { CouncilTaxForm } from "@/components/admin/settings/council-tax-form";
 import { ReasonCodeTable } from "@/components/admin/settings/reason-code-table";
 import { GapReasonTable } from "@/components/admin/settings/gap-reason-table";
@@ -100,7 +101,7 @@ export default async function SettingsPage() {
   ] = await withUserContext(user.id, user.role as RlsRole, (tx) =>
     Promise.all([
       getFamilyTypeConfigs(tx),
-      getSchoolFees(tx),
+      getAllSchoolFees(tx),
       getCouncilTaxDefault(tx),
       getAllReasonCodes(tx),
       getAllGapReasons(tx),
@@ -226,7 +227,7 @@ export default async function SettingsPage() {
           <div className="rounded-xl border border-slate-200 bg-white p-6">
             <SectionHeader
               title="School Annual Fees"
-              description="Pre-VAT annual fees for each school. Saving creates a new versioned record effective today."
+              description="Pre-VAT annual fees for each school, per academic year. Editing a row updates that year; add the next year below when the Foundation confirms it."
             />
             <div className="overflow-x-auto">
               <Table>
@@ -234,7 +235,7 @@ export default async function SettingsPage() {
                   <TableRow className="bg-slate-50">
                     <TableHead className="text-xs">School</TableHead>
                     <TableHead className="text-xs">Annual Fees</TableHead>
-                    <TableHead className="text-xs">Effective From</TableHead>
+                    <TableHead className="text-xs">Academic Year</TableHead>
                     <TableHead className="w-28 text-xs">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -255,9 +256,11 @@ export default async function SettingsPage() {
                 </TableBody>
               </Table>
             </div>
+            <AddSchoolFeesYearForm />
             <p className="mt-3 text-xs text-slate-400">
-              VAT (currently 20%) is applied on top during calculations. Only the current (most recent) fee
-              per school is used in new assessments.
+              VAT (currently 20%) is applied on top during calculations. An
+              assessment reads the fee for the academic year of its round, plus
+              the following year&apos;s fee when recorded.
             </p>
           </div>
         </TabsContent>

@@ -108,39 +108,33 @@ export const familyTypeConfigs = [
   },
 ] as const;
 
-// Epic 07 — each school carries a CURRENT-year row and a forward-dated
-// NEXT-year row so the fee-year resolver (resolveFeeYearPair) has data to find
-// for both "this academic year" and "the following one". The academic year is
-// taken to start on 1 September, so the 2026-09-01 rows are the 2026-27 fee and
-// the 2027-09-01 rows are the 2027-28 fee.
-//
-// NOTE (flag for Charlotte/finance, D14 context): the next-year figures below
-// are a PLACEHOLDER ~5% uplift on the current-year fee — the real 2027-28 fee
-// schedule must be confirmed and these swapped to the actual figures. The shape
-// (two effective-dated rows per school) is what the resolver needs; the precise
-// next-year amounts are a swap-in once the Foundation supplies them.
+// Epic 15 M2 (CH-17) — the REAL pre-VAT annual fees Charlotte supplied on
+// 2026-08-17, per academic year (effectiveFrom = 1 September of the start
+// year, the fee-year resolver's anchor). The old placeholder rows (~5%
+// uplifts) are gone; new years are entered through Settings → School Fees →
+// Add year when the Foundation confirms them — never invented here.
 export const schoolFees = [
-  // Current academic year (2026-27)
+  // 2025-26
   {
     school: "TRINITY" as const,
-    annualFees: 30702,
+    annualFees: 24366.67,
+    effectiveFrom: new Date("2025-09-01"),
+  },
+  {
+    school: "WHITGIFT" as const,
+    annualFees: 25200.0,
+    effectiveFrom: new Date("2025-09-01"),
+  },
+  // 2026-27
+  {
+    school: "TRINITY" as const,
+    annualFees: 25390.0,
     effectiveFrom: new Date("2026-09-01"),
   },
   {
     school: "WHITGIFT" as const,
-    annualFees: 31752,
+    annualFees: 26175.0,
     effectiveFrom: new Date("2026-09-01"),
-  },
-  // Next academic year (2027-28) — placeholder uplift, swap for real figures
-  {
-    school: "TRINITY" as const,
-    annualFees: 32237, // ~+5% placeholder
-    effectiveFrom: new Date("2027-09-01"),
-  },
-  {
-    school: "WHITGIFT" as const,
-    annualFees: 33340, // ~+5% placeholder
-    effectiveFrom: new Date("2027-09-01"),
   },
 ] as const;
 
