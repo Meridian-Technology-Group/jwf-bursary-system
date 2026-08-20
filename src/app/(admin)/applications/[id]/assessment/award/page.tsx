@@ -91,12 +91,19 @@ export default async function AssessmentAwardPage({ params }: Props) {
   if (!application) notFound();
 
   const isViewer = user.role === Role.VIEWER;
+  // Epic 15 M6 (LA15-4): sibling rows stay editable until the OUTCOME is
+  // recorded (previously frozen at COMPLETED) — Part 6 is workable while the
+  // assessment is in progress; the outcome is what locks it.
   const siblingReadOnly =
-    isViewer || !assessment || assessment.status === "COMPLETED";
+    isViewer || !assessment || assessment.outcome != null;
 
   return (
     <div className="space-y-5">
-      {/* Award-sheet header (AUTO): recipient + school. */}
+      {/* Award-sheet header (AUTO): recipient + school. Part heading per
+          Charlotte's layout (CI-12); numbering fixed at 6 by CH-25. */}
+      <h2 className="text-sm font-bold uppercase tracking-wide text-primary-900">
+        PART 6 - BURSARY AWARD CALCULATION
+      </h2>
       <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 rounded-xl border border-slate-200 bg-white px-6 py-4 shadow-sm">
         <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">
           CALCULATING BURSARY AWARD FOR
@@ -119,14 +126,14 @@ export default async function AssessmentAwardPage({ params }: Props) {
               </span>
             </span>
           )}
-          {assessment?.completedAt && (
-            <span>
-              ASSESSMENT COMPLETED ON:{" "}
-              <span className="font-medium text-slate-700">
-                {formatLondonDate(assessment.completedAt)}
-              </span>
+          <span>
+            ASSESSMENT COMPLETED ON:{" "}
+            <span className="font-medium text-slate-700">
+              {assessment?.completedAt
+                ? formatLondonDate(assessment.completedAt)
+                : "—"}
             </span>
-          )}
+          </span>
         </span>
       </div>
 
@@ -145,7 +152,11 @@ export default async function AssessmentAwardPage({ params }: Props) {
       {/* The shared award/outcome surface (three legs, recommended payable
           fees, scholarship/bursary/VAT summary, gap + reason pickers, outcome
           actions) — identical to the Recommendation step, by construction. */}
-      <RecommendationSurface applicationId={params.id} user={user} />
+      <RecommendationSurface
+        applicationId={params.id}
+        user={user}
+        mode="workspace"
+      />
     </div>
   );
 }

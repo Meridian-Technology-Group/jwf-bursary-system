@@ -15,7 +15,7 @@
  */
 
 import { notFound } from "next/navigation";
-import { ClipboardCheck, AlertTriangle } from "lucide-react";
+import { ClipboardCheck, AlertTriangle, PencilRuler } from "lucide-react";
 import type { Decimal } from "@prisma/client/runtime/library";
 import type { CurrentUser } from "@/lib/auth/roles";
 import { withUserContext, type RlsRole } from "@/lib/db/prisma";
@@ -31,6 +31,10 @@ import { getSiblingLinks } from "@/lib/db/queries/siblings";
 import { mergeHistoricReasonCodeOptions } from "@/lib/reason-codes/merge-options";
 import { buildOptionScenarios } from "@/lib/assessment/recommendation-options";
 import { selectEngineVersion } from "@/lib/assessment/engine-version";
+import {
+  resolveAwardSurfaceState,
+  type AwardSurfaceMode,
+} from "@/lib/assessment/award-surface-state";
 import { selectLastPayableFees } from "@/lib/assessment/recommendation-v2";
 import {
   RecommendationForm,
@@ -56,9 +60,21 @@ function toNumber(
 export interface RecommendationSurfaceProps {
   applicationId: string;
   user: CurrentUser;
+  /**
+   * Epic 15 M6 (CI-11, LA15-4): "workspace" (the BURSARY AWARD CALCULATION
+   * tab) renders the v2 form for an IN-PROGRESS assessment too — Part 6 as
+   * the natural continuation of Part 5 — with the outcome actions locked
+   * until COMPLETE. "gated" (default; the Recommendation route) keeps the
+   * completed-first behaviour.
+   */
+  mode?: AwardSurfaceMode;
 }
 
-export async function RecommendationSurface({ applicationId, user }: RecommendationSurfaceProps) {
+export async function RecommendationSurface({
+  applicationId,
+  user,
+  mode = "gated",
+}: RecommendationSurfaceProps) {
     const { application, assessment } = await withUserContext(
     user.id,
     user.role as RlsRole,
@@ -71,9 +87,18 @@ export async function RecommendationSurface({ applicationId, user }: Recommendat
   );
   if (!application) notFound();
 
-  // ── Gate: no assessment or assessment not completed ────────────────────────
+  // ── Surface state (Epic 15 M6 / CI-11) ─────────────────────────────────────
+  const engineVersion = assessment
+    ? selectEngineVersion(assessment.calculationVersion)
+    : "v1";
+  const surfaceState = resolveAwardSurfaceState({
+    mode,
+    assessmentStatus: assessment?.status ?? null,
+    engineVersion,
+    hasSnapshot: assessment?.recommendedPayableFees != null,
+  });
 
-  if (!assessment || assessment.status !== "COMPLETED") {
+  if (surfaceState === "NO_ASSESSMENT" || surfaceState === "GATE") {
     return (
       <div className="flex flex-col items-center justify-center gap-5 rounded-xl border border-dashed border-slate-300 bg-white px-6 py-16 text-center shadow-sm">
         <ClipboardCheck
@@ -82,11 +107,13 @@ export async function RecommendationSurface({ applicationId, user }: Recommendat
         />
         <div>
           <p className="text-base font-semibold text-slate-700">
-            Assessment must be completed first
+            {surfaceState === "NO_ASSESSMENT"
+              ? "No assessment yet"
+              : "Assessment must be completed first"}
           </p>
           <p className="mt-1.5 text-sm text-slate-400">
-            {!assessment
-              ? "No assessment has been started for this application yet. Begin the assessment from the Assessment tab."
+            {surfaceState === "NO_ASSESSMENT"
+              ? "No assessment has been started for this application yet. Begin from the ASSESSMENT MODEL tab."
               : "The assessment is currently in progress. Complete it before recording a recommendation."}
           </p>
         </div>
@@ -94,17 +121,30 @@ export async function RecommendationSurface({ applicationId, user }: Recommendat
     );
   }
 
-  // ── Assessment COMPLETED — dispatch v1 vs v2 by the calculation stamp ──────
-  const engineVersion = selectEngineVersion(assessment.calculationVersion);
+  // Workspace mode, v2, in progress but never saved — nothing to calculate
+  // from yet. A soft prompt, NOT the completion gate (CI-11).
+  if (surfaceState === "NO_SAVED_CALCULATION") {
+    return (
+      <div className="flex flex-col items-center justify-center gap-5 rounded-xl border border-dashed border-slate-300 bg-white px-6 py-16 text-center shadow-sm">
+        <PencilRuler className="h-12 w-12 text-slate-200" aria-hidden="true" />
+        <div>
+          <p className="text-base font-semibold text-slate-700">
+            No saved calculation yet
+          </p>
+          <p className="mt-1.5 max-w-md text-sm text-slate-400">
+            Fill in the ASSESSMENT MODEL tab and Save — the award calculation
+            fills itself from your saved figures. You do not need to complete
+            the assessment to work here.
+          </p>
+        </div>
+      </div>
+    );
+  }
 
-  // ── CALC-15 — refuse a null v2 snapshot ─────────────────────────────────────
-  // A COMPLETED v2 assessment should always carry its persisted snapshot (the
-  // server-side complete guard now enforces this going forward), but a row
-  // completed before that guard existed — e.g. via the stale-client save
-  // failure this hardens against — can still have `recommendedPayableFees`
-  // null. Never fall through to rendering the form with an implicit £0 leg;
-  // show a clear remediation callout instead.
-  if (engineVersion === "v2" && assessment.recommendedPayableFees == null) {
+  // ── CALC-15 — refuse a null v2 snapshot on a COMPLETED assessment ──────────
+  // Never fall through to rendering the form with an implicit £0 leg; show a
+  // clear remediation callout instead.
+  if (surfaceState === "SNAPSHOT_INCOMPLETE") {
     return (
       <div className="flex flex-col items-center justify-center gap-5 rounded-xl border border-dashed border-amber-300 bg-amber-50 px-6 py-16 text-center shadow-sm">
         <AlertTriangle className="h-12 w-12 text-amber-400" aria-hidden="true" />
@@ -122,6 +162,10 @@ export async function RecommendationSurface({ applicationId, user }: Recommendat
       </div>
     );
   }
+
+  // Below here the assessment row exists and the form renders.
+  if (!assessment) notFound(); // type narrowing — unreachable
+  const outcomeLocked = surfaceState === "FORM_OUTCOME_LOCKED";
 
   // ── Assessment COMPLETED — load recommendation, reason codes, siblings ─────
   // (plus, for v2, gap reasons + the previous recommendation's payable fees).
@@ -247,6 +291,15 @@ export async function RecommendationSurface({ applicationId, user }: Recommendat
 
     return (
       <div className="space-y-4">
+        {outcomeLocked && (
+          <div
+            className="rounded-lg border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-800"
+            role="status"
+          >
+            Working values from your last save — everything here can be entered
+            and saved now; complete the assessment to record the outcome.
+          </div>
+        )}
         <RecommendationFormV2
           applicationId={applicationId}
           assessmentId={assessment.id}
@@ -258,6 +311,7 @@ export async function RecommendationSurface({ applicationId, user }: Recommendat
           gapReasons={serialisedGapReasons}
           lastPayableFees={lastPayableFees}
           siblingContext={siblingContext}
+          outcomeLocked={outcomeLocked}
         />
       </div>
     );
