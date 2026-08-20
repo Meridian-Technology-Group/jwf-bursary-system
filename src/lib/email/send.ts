@@ -61,6 +61,45 @@ export function replyToAddress(): string | undefined {
     : undefined;
 }
 
+// ---------------------------------------------------------------------------
+// Sent-emails log (Epic 15 X1 / CI-02)
+// ---------------------------------------------------------------------------
+
+type EmailLogEntry = {
+  toEmail: string;
+  templateType?: EmailTemplateType | null;
+  subject: string;
+  status: "SENT" | "FAILED" | "SKIPPED";
+  error?: string | null;
+  resendId?: string | null;
+};
+
+/**
+ * Best-effort write to the email_log table — a logging failure must NEVER
+ * fail (or delay the classification of) a send, so errors are swallowed into
+ * a structured log line. History starts at the X1 merge; no backfill exists.
+ */
+async function recordEmailLog(entry: EmailLogEntry): Promise<void> {
+  try {
+    await withAdminContext((tx) =>
+      tx.emailLog.create({
+        data: {
+          toEmail: entry.toEmail,
+          templateType: entry.templateType ?? null,
+          subject: entry.subject,
+          status: entry.status,
+          error: entry.error ?? null,
+          resendId: entry.resendId ?? null,
+        },
+      })
+    );
+  } catch (err) {
+    logError("email.log_write_failed", err, {
+      recipientHash: hashEmail(entry.toEmail),
+    });
+  }
+}
+
 /**
  * Pause execution for `ms` milliseconds.
  * Used to respect Resend's rate limits between batch sends.
@@ -117,6 +156,12 @@ export async function sendEmail(
         recipientHash: hashEmail(to),
         reason: "template_disabled",
       });
+      await recordEmailLog({
+        toEmail: to,
+        templateType,
+        subject: template.subject,
+        status: "SKIPPED",
+      });
       return { success: true, skipped: true };
     }
 
@@ -144,6 +189,13 @@ export async function sendEmail(
         templateType,
         recipientHash: hashEmail(to),
       });
+      await recordEmailLog({
+        toEmail: to,
+        templateType,
+        subject,
+        status: "FAILED",
+        error: `${error.name}: ${error.message}`,
+      });
       return {
         success: false,
         error: `${error.name}: ${error.message}`,
@@ -154,6 +206,13 @@ export async function sendEmail(
       templateType,
       recipientHash: hashEmail(to),
       messageId: data?.id,
+    });
+    await recordEmailLog({
+      toEmail: to,
+      templateType,
+      subject,
+      status: "SENT",
+      resendId: data?.id,
     });
 
     return {
@@ -266,12 +325,26 @@ export async function sendBatchEmails(
           templateType,
           recipientHash: hashEmail(email),
         });
+        await recordEmailLog({
+          toEmail: email,
+          templateType,
+          subject,
+          status: "FAILED",
+          error: `${error.name}: ${error.message}`,
+        });
       } else {
         result.sent++;
         logInfo("email.sent", {
           templateType,
           recipientHash: hashEmail(email),
           messageId: data?.id,
+        });
+        await recordEmailLog({
+          toEmail: email,
+          templateType,
+          subject,
+          status: "SENT",
+          resendId: data?.id,
         });
       }
     } catch (err) {
@@ -335,6 +408,13 @@ export async function sendRawEmail(
         templateType: "RAW",
         recipientHash: hashEmail(to),
       });
+      await recordEmailLog({
+        toEmail: to,
+        templateType: null,
+        subject,
+        status: "FAILED",
+        error: `${error.name}: ${error.message}`,
+      });
       return {
         success: false,
         error: `${error.name}: ${error.message}`,
@@ -345,6 +425,13 @@ export async function sendRawEmail(
       templateType: "RAW",
       recipientHash: hashEmail(to),
       messageId: data?.id,
+    });
+    await recordEmailLog({
+      toEmail: to,
+      templateType: null,
+      subject,
+      status: "SENT",
+      resendId: data?.id,
     });
 
     return {
