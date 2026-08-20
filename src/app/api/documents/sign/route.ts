@@ -117,7 +117,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   }
 
   // ── Authorization: resolve the caller's contributor role on this application ─
-  const auth = await authorizeDocumentUpload(user, applicationId);
+  const auth = await authorizeDocumentUpload(user, applicationId, slot);
   if (!auth.ok) {
     return NextResponse.json({ error: auth.error }, { status: auth.status });
   }

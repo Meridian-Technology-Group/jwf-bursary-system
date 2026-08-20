@@ -118,7 +118,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   // ── 2. Re-run authorisation from scratch ───────────────────────────────────
   // The application may have been submitted, or the contributor row revoked,
   // between sign and confirm. Nothing is inherited from the ticket.
-  const auth = await authorizeDocumentUpload(user, claims.applicationId);
+  const auth = await authorizeDocumentUpload(user, claims.applicationId, claims.slot);
   if (!auth.ok) {
     await discardOrphan(claims.storagePath);
     return NextResponse.json({ error: auth.error }, { status: auth.status });

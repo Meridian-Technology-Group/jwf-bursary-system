@@ -131,6 +131,14 @@ function makeFakeTx(
           : overrides.contributor
       ),
     },
+    // Epic 15 P1: the paused-window exemption reads these when the
+    // application is SUBMITTED; defaults = no assessment / no request.
+    assessment: {
+      findUnique: vi.fn(async () => null),
+    },
+    auditLog: {
+      findFirst: vi.fn(async () => null),
+    },
     document: {
       // Two shapes of lookup share findMany: the digest-equality match and
       // the CG-09 heal query for legacy rows (`contentDigest: null`).
