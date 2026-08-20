@@ -110,8 +110,7 @@ export function SiblingFeesBlock({
         <p className="mt-1 text-[11px] leading-tight text-slate-400">
           Record of sibling fees. The calculation&apos;s sibling absorption
           still reads the LINKED sibling bursary accounts in priority order —
-          a manually typed fee here does not change the computed legs
-          (LA-8, sign-off pending).
+          a manually typed fee here does not change the computed legs.
         </p>
       </div>
       <div className="overflow-x-auto">

@@ -98,7 +98,7 @@ export const INCOME_TABLE_ROWS: readonly IncomeTableRow[] = [
     label: 'ADD YEARLY COMPANY NET PROFITS AFTER TAX',
     kind: 'la8',
     note:
-      'No separate engine input (LA-8, sign-off pending) — enter sole-trader profits under ADD NET SALARY above.',
+      'Enter sole-trader profits under ADD NET SALARY above.',
   },
   {
     statusBlock: 'IF ON BENEFITS',
@@ -141,13 +141,13 @@ export const INCOME_TABLE_ROWS: readonly IncomeTableRow[] = [
     kind: 'input',
     blockKey: 'benefits',
     fieldKey: 'pipOrDla',
-    note: 'Single combined DLA / PIP figure (LA-8, sign-off pending on the split).',
+    note: 'Enter the combined DLA and PIP total here.',
   },
   {
     statusBlock: null,
     label: 'ADD YEARLY PIP',
     kind: 'la8',
-    note: 'Combined with the DLA row above — the engine holds one DLA/PIP figure.',
+    note: 'Included in the DLA row above — enter the combined total there.',
   },
   {
     statusBlock: null,
