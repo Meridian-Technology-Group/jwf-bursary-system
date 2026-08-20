@@ -1072,6 +1072,32 @@ model StaffInvitation {
 /// (`email_templates_name_active_key`, case-insensitive, `name IS NOT NULL
 /// AND deleted_at IS NULL`) defined in raw SQL — not expressible in the
 /// Prisma schema DSL.
+/// Epic 15 X1 (CI-02) — sent-emails log. Written best-effort by the three
+/// senders in src/lib/email/send.ts (a log failure never fails a send);
+/// history starts at the X1 merge (no backfill exists). Staff-read,
+/// server-write, append-only at the app layer (see the migration's RLS).
+model EmailLog {
+  id           String             @id @default(uuid()) @db.Uuid
+  createdAt    DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
+  toEmail      String             @map("to_email")
+  templateType EmailTemplateType? @map("template_type")
+  subject      String
+  status       EmailLogStatus
+  /// Failure detail when status = FAILED (provider message, no PII beyond the address).
+  error        String?
+  resendId     String?            @map("resend_id")
+
+  @@index([toEmail])
+  @@index([createdAt])
+  @@map("email_log")
+}
+
+enum EmailLogStatus {
+  SENT
+  FAILED
+  SKIPPED
+}
+
 model EmailTemplate {
   id          String             @id @default(uuid()) @db.Uuid
   type        EmailTemplateType? @unique

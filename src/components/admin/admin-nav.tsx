@@ -12,6 +12,7 @@
 import { usePathname } from "next/navigation";
 import Link from "next/link";
 import {
+  MailCheck,
   LayoutDashboard,
   ClipboardList,
   FileCheck2,
@@ -64,6 +65,8 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { label: "Contacts", href: "/contacts", icon: ContactIcon },
       { label: "Send Invitations", href: "/invitations", icon: Mail },
+      // Epic 15 X1 (CI-02) — what the system has sent, from 21 Aug 2026.
+      { label: "Sent Emails", href: "/emails", icon: MailCheck },
     ],
   },
   {
