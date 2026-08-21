@@ -276,8 +276,9 @@ the current status badge, and — for re-assessments — an orange **Re-assessme
 pill. Beneath it, two cards separate the everyday from the occasional:
 
 - A prominent **Actions** card surfaces the next step for the current status
-  (e.g. **Begin Review**, **Resume Review**, **Set Qualifies** / **Set Does Not
-  Qualify**).
+  (e.g. **Begin Review**, **Resume Review**, **Mark Complete**). The outcome
+  itself is not set here — it is recorded by the 3-way decision on the
+  **Recommendation** tab.
 - A quieter, consolidated **Manage** card holds the rare actions — **Add second
   parent** and **Delete Applicant Data (GDPR)**.
 
@@ -1160,6 +1161,13 @@ For the seeded values (notional rents, utility/food costs, council tax bands,
 school fees, property categories) see the README reference tables and the source
 [`assessment-model.xlsx`](../product/assessment-model.xlsx). The seven email
 templates are listed in the [email template reference](#email-template-reference).
+
+> Sending bursary emails from the Foundation's own domain (rather than a
+> shared/default address) requires a one-time domain-verification and DNS
+> setup step in Resend — see
+> [Resend Domain Verification & DNS Setup](../operations/resend-domain-setup.md).
+> No code change is needed for that part; it's a task for the Foundation's
+> admin or IT provider.
 
 ![The Settings page with five tabs — Family Types, School Fees, Council Tax, Reason Codes, Email Templates — showing the Family Type configurations table.](images/admin/17-settings-tabs.png)
 

@@ -12,6 +12,8 @@
  * implied by relationship + sole-parent toggle.
  */
 
+import { shouldAskRemarriedQuestion } from "@/lib/schemas/parent-details";
+
 import {
   deriveHouseholdScenario,
   type CustodyArrangement,
@@ -96,16 +98,28 @@ export function householdInputFromSources(
     sources.applicationCustodyArrangement ?? pd.custodyArrangement
   );
 
+  const relationshipStatus = asRelationship(pd.relationshipStatus);
+  const isSoleParent = pd.isSoleParent === true;
+
+  // CF-13 — a remarried answer only counts when the matrix says the question was
+  // asked. Blobs saved before the matrix landed can carry an answer given under
+  // the old visibility rule; honouring it would let a question the applicant can
+  // no longer see keep driving the household rules.
+  const askedRemarried = shouldAskRemarriedQuestion({
+    isSoleParent,
+    relationshipStatus,
+  });
+
   return {
-    relationshipStatus: asRelationship(pd.relationshipStatus),
-    isSoleParent: pd.isSoleParent === true,
+    relationshipStatus,
+    isSoleParent,
     isGuardian: pd.isGuardian === true,
     // Either store satisfies the H7 discriminator: OTHER_INFO is authoritative,
     // the parent-details mirror lets the in-form notice render on that step.
     hasSchoolFeesCourtOrder:
       oi.hasCOurtOrder === true || pd.hasSchoolFeesCourtOrder === true,
     custodyArrangement: custody,
-    isRemarriedSoleParent: pd.isRemarriedSoleParent === true,
+    isRemarriedSoleParent: askedRemarried && pd.isRemarriedSoleParent === true,
     financesNotDisentangled: pd.financesNotDisentangled === true,
   };
 }

@@ -6,13 +6,19 @@ import {
   CLOSING_SOON_HOURS,
 } from "@/lib/portal/deadline";
 
-const round = { closeDate: new Date("2026-06-30T00:00:00.000Z") };
+const round = {
+  closeDate: new Date("2026-06-30T00:00:00.000Z"),
+  // Neither typed round default set (E1/D13-8) — everything here exercises the
+  // override and close-date tiers, which are type-blind.
+  defaultSubmissionDeadlineNew: null,
+  defaultSubmissionDeadlineRolling: null,
+};
 
 describe("getDeadlineStatus (Epic 05 §3.2)", () => {
   it("uses the per-application override when set (instant verbatim)", () => {
     const override = new Date("2026-07-10T17:00:00.000Z");
     const now = new Date("2026-07-01T00:00:00.000Z");
-    const s = getDeadlineStatus({ submissionDeadlineAt: override }, round, now);
+    const s = getDeadlineStatus({ submissionDeadlineAt: override, applicationType: "NEW" }, round, now);
     expect(s.isOverride).toBe(true);
     expect(s.deadline.getTime()).toBe(override.getTime());
     expect(s.isPast).toBe(false);
@@ -20,7 +26,7 @@ describe("getDeadlineStatus (Epic 05 §3.2)", () => {
 
   it("falls back to round close end-of-day when no override", () => {
     const now = new Date("2026-06-15T00:00:00.000Z");
-    const s = getDeadlineStatus({ submissionDeadlineAt: null }, round, now);
+    const s = getDeadlineStatus({ submissionDeadlineAt: null, applicationType: "NEW" }, round, now);
     expect(s.isOverride).toBe(false);
     // end-of-day, so still submittable through the close day
     expect(s.isPast).toBe(false);
@@ -29,7 +35,7 @@ describe("getDeadlineStatus (Epic 05 §3.2)", () => {
 
   it("is past once now exceeds the deadline", () => {
     const now = new Date("2026-07-01T00:00:00.000Z");
-    const s = getDeadlineStatus({ submissionDeadlineAt: null }, round, now);
+    const s = getDeadlineStatus({ submissionDeadlineAt: null, applicationType: "NEW" }, round, now);
     expect(s.isPast).toBe(true);
     expect(s.msRemaining).toBe(0);
   });
@@ -38,7 +44,7 @@ describe("getDeadlineStatus (Epic 05 §3.2)", () => {
     const override = new Date("2026-07-10T12:00:00.000Z");
     // 1 hour before
     const now = new Date("2026-07-10T11:00:00.000Z");
-    const s = getDeadlineStatus({ submissionDeadlineAt: override }, round, now);
+    const s = getDeadlineStatus({ submissionDeadlineAt: override, applicationType: "NEW" }, round, now);
     expect(s.isClosingSoon).toBe(true);
     expect(s.isPast).toBe(false);
   });
@@ -48,7 +54,7 @@ describe("getDeadlineStatus (Epic 05 §3.2)", () => {
     const now = new Date(
       override.getTime() - (CLOSING_SOON_HOURS + 24) * 60 * 60 * 1000
     );
-    const s = getDeadlineStatus({ submissionDeadlineAt: override }, round, now);
+    const s = getDeadlineStatus({ submissionDeadlineAt: override, applicationType: "NEW" }, round, now);
     expect(s.isClosingSoon).toBe(false);
   });
 });
@@ -58,14 +64,14 @@ describe("isSubmittable", () => {
     const override = new Date("2026-07-10T12:00:00.000Z");
     expect(
       isSubmittable(
-        { submissionDeadlineAt: override },
+        { submissionDeadlineAt: override, applicationType: "NEW" },
         round,
         new Date("2026-07-10T11:59:00.000Z")
       )
     ).toBe(true);
     expect(
       isSubmittable(
-        { submissionDeadlineAt: override },
+        { submissionDeadlineAt: override, applicationType: "NEW" },
         round,
         new Date("2026-07-10T12:00:01.000Z")
       )

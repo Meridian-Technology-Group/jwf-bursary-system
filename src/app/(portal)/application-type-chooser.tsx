@@ -14,7 +14,7 @@
  * invitation type (first-year vs re-assessment) and the application type, and
  * passed in as `eligibleType`. The matching card is rendered active (its real
  * onboarding / re-assessment body); the other is a muted, disabled shell with a
- * one-line reason and a "contact the Foundation" link (risk mitigation §8).
+ * one-line reason and a link to the bursary team's email (risk mitigation §8).
  */
 
 import * as React from "react";
@@ -22,7 +22,7 @@ import { GraduationCap, RefreshCw, Lock } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { OnboardingCard } from "@/app/(portal)/onboarding-card";
 import { ReassessmentCard } from "@/app/(portal)/reassessment-card";
-import { BURSARIES_CONTACT_EMAIL } from "@/lib/portal/guidance-content";
+import { ContactBursaryTeam } from "@/components/portal/contact-bursary-team";
 
 export type EligibleApplicationType = "NEW" | "ROLLING_OVER";
 
@@ -68,13 +68,8 @@ function DisabledCard({
           <h2 className="text-lg font-semibold text-slate-500">{title}</h2>
           <p className="mt-1 text-sm text-slate-500">{reason}</p>
           <p className="mt-3 text-xs text-slate-400">
-            If you think this is wrong, please contact the Foundation at{" "}
-            <a
-              href={`mailto:${BURSARIES_CONTACT_EMAIL}`}
-              className="font-medium text-slate-500 underline underline-offset-2 hover:text-slate-700"
-            >
-              {BURSARIES_CONTACT_EMAIL}
-            </a>
+            If you think this is wrong,{" "}
+            <ContactBursaryTeam linkClassName="text-slate-500 hover:text-slate-700" />
             .
           </p>
         </div>

@@ -74,7 +74,10 @@ import type { AssessmentOutcome } from "@prisma/client";
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 /** The 3-value award decision (Epic 08 / Epic 01 outcome). */
-type AwardDecision = "AWARDED" | "QUALIFIES_NOT_AWARDED" | "DOES_NOT_QUALIFY";
+export type AwardDecision =
+  | "AWARDED"
+  | "QUALIFIES_NOT_AWARDED"
+  | "DOES_NOT_QUALIFY";
 
 export interface SerialisedRecommendation {
   id: string;
@@ -95,7 +98,12 @@ export interface SerialisedRecommendation {
 
 /** Read-only sibling context surfaced at decision time. */
 export interface SiblingContextRow {
-  reference: string;
+  /**
+   * Bursary-account id — the React key only. Epic 13 (D13-1a) removed the
+   * account reference this row used to key on and display; the UUID is the
+   * account's only remaining identity, and it is never rendered.
+   */
+  bursaryAccountId: string;
   childName: string;
   school: string;
   priorityOrder: number;
@@ -130,7 +138,7 @@ export interface RecommendationFormProps {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-function formatCurrency(value: number | null | undefined): string {
+export function formatCurrency(value: number | null | undefined): string {
   if (value == null) return "—";
   return new Intl.NumberFormat("en-GB", {
     style: "currency",
@@ -143,7 +151,7 @@ function formatCurrency(value: number | null | undefined): string {
 const PROPERTY_THRESHOLD = 8;
 
 /** An outcome already recorded makes the decision terminal (synopsis excepted). */
-function isTerminalOutcome(outcome: AssessmentOutcome | null): boolean {
+export function isTerminalOutcome(outcome: AssessmentOutcome | null): boolean {
   return (
     outcome === "AWARDED" ||
     outcome === "QUALIFIES_NOT_AWARDED" ||
@@ -155,7 +163,7 @@ function isTerminalOutcome(outcome: AssessmentOutcome | null): boolean {
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
-function RedFlagBanner({
+export function RedFlagBanner({
   icon: Icon,
   title,
   description,
@@ -199,7 +207,7 @@ function PropertyAdvisoryBanner() {
   );
 }
 
-function ReadOnlyBanner({ outcome }: { outcome: AssessmentOutcome }) {
+export function ReadOnlyBanner({ outcome }: { outcome: AssessmentOutcome }) {
   return (
     <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
       <OutcomeBadge outcome={outcome} />
@@ -213,7 +221,7 @@ function ReadOnlyBanner({ outcome }: { outcome: AssessmentOutcome }) {
 
 // ─── Award decision metadata ───────────────────────────────────────────────────
 
-const AWARD_DECISIONS: Record<
+export const AWARD_DECISIONS: Record<
   AwardDecision,
   {
     label: string;
@@ -249,7 +257,7 @@ const AWARD_DECISIONS: Record<
   },
 };
 
-interface AwardDialogProps {
+export interface AwardDialogProps {
   open: boolean;
   decision: AwardDecision | null;
   scholarshipAward: number | null;
@@ -259,7 +267,7 @@ interface AwardDialogProps {
   onCancel: () => void;
 }
 
-function AwardDialog({
+export function AwardDialog({
   open,
   decision,
   scholarshipAward,
@@ -318,7 +326,7 @@ function AwardDialog({
 
 // ─── Sibling context panel ──────────────────────────────────────────────────────
 
-function SiblingContextPanel({ rows }: { rows: SiblingContextRow[] }) {
+export function SiblingContextPanel({ rows }: { rows: SiblingContextRow[] }) {
   if (rows.length === 0) return null;
   return (
     <Card>
@@ -339,20 +347,16 @@ function SiblingContextPanel({ rows }: { rows: SiblingContextRow[] }) {
               <tr className="border-b border-slate-200 text-left text-xs uppercase tracking-wide text-slate-400">
                 <th className="py-2 pr-4 font-semibold">Priority</th>
                 <th className="py-2 pr-4 font-semibold">Child</th>
-                <th className="py-2 pr-4 font-semibold">Account</th>
                 <th className="py-2 pr-4 font-semibold">School</th>
                 <th className="py-2 text-right font-semibold">Absorbed fees</th>
               </tr>
             </thead>
             <tbody>
               {rows.map((r) => (
-                <tr key={r.reference} className="border-b border-slate-100">
+                <tr key={r.bursaryAccountId} className="border-b border-slate-100">
                   <td className="py-2 pr-4 text-slate-600">{r.priorityOrder}</td>
                   <td className="py-2 pr-4 font-medium text-slate-800">
                     {r.childName}
-                  </td>
-                  <td className="py-2 pr-4 font-mono text-xs text-slate-500">
-                    {r.reference}
                   </td>
                   <td className="py-2 pr-4 text-slate-600">
                     {r.school === "TRINITY" ? "Trinity" : "Whitgift"}

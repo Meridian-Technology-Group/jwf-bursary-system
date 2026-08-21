@@ -17,7 +17,6 @@
  * source of truth for which answers a parent sees.
  */
 
-import { ENTRY_YEAR_GROUP_LABELS } from "@/lib/assessment/schooling-years";
 import { humaniseSlot } from "@/lib/documents/slots";
 import {
   parentIncomeTotal,
@@ -122,18 +121,22 @@ const SUMMARY_SECTION_ORDER = [
 function childDetailsRows(raw: unknown): SummaryRow[] {
   const d = parseSafe<ChildDetailsData>(raw);
   if (!d) return [];
+  // No "Year of entry" row. Per Q1 (Brian, 2026-08-14) the entry year is a
+  // JWF-facing property of the application: it lives on `Application.entryYear`
+  // / `entryYearGroup`, is set admin-side, and is rendered on admin surfaces
+  // ONLY. Every consumer of this builder is applicant-facing (the submitted
+  // summary page and the applicant's submission PDF), so it is dropped outright
+  // rather than re-pointed at the columns.
   const rows: SummaryRow[] = [
     { label: "Name", value: d.childFullName || "—" },
     { label: "Date of birth", value: fmtDate(d.dateOfBirth) },
     { label: "School applying for", value: fmtSchool(d.school) },
-    {
-      label: "Year of entry",
-      value: d.entryYearGroup
-        ? ENTRY_YEAR_GROUP_LABELS[d.entryYearGroup] ?? d.entryYearGroup
-        : "—",
-    },
     { label: "Current school", value: d.currentSchool || "—" },
-    { label: "Place of birth", value: d.placeOfBirth || "—" },
+    {
+      label: "Place of birth",
+      value:
+        [d.placeOfBirthCity, d.placeOfBirth].filter(Boolean).join(", ") || "—",
+    },
   ];
   if (!d.sameAddressAsParent1 && d.childAddress) {
     rows.push({
@@ -221,10 +224,11 @@ function dependentChildren(raw: unknown): {
     rows,
     table: {
       caption: "Dependent children",
-      columns: ["Name", "Date registered", "Named on application"],
+      columns: ["Name", "School", "School address", "Named on application"],
       rows: children.map((c) => [
         c.name || "—",
-        fmtDate(c.dependentStatusDate),
+        c.school || "—",
+        c.schoolAddress || "—",
         c.isNamedChild ? "Yes" : "No",
       ]),
     },
@@ -335,7 +339,6 @@ function assetsRows(raw: unknown): SummaryRow[] {
     (d.residenceValue ?? 0) +
     (d.carValue ?? 0) +
     (d.otherPossessionsValue ?? 0) +
-    (d.otherNonFinancialAssetsValue ?? 0) +
     (d.totalCashBalance ?? 0) +
     (d.investmentsValue ?? 0) +
     otherProperties.reduce((sum, p) => sum + (p.value ?? 0), 0);
@@ -424,6 +427,7 @@ const SECTION_DOC_SLOTS: Record<string, string[]> = {
     "INVESTMENT_PARENT_2",
     "CREDIT_CARD_STATEMENT",
     "LOAN_STATEMENT",
+    "LOAN_AGREEMENT",
     "OTHER_DEBT_DOCUMENT",
     "CAR_LEASE_AGREEMENT",
   ],
@@ -451,6 +455,8 @@ export interface SummaryInput {
   sections: { section: string; data: unknown }[];
   /** All documents uploaded against the application. */
   documents: { slot: string; filename: string }[];
+  // NOTE: entryYear / entryYearGroup are deliberately absent. They are
+  // JWF-facing only (Q1) and this summary is applicant-facing.
 }
 
 /**

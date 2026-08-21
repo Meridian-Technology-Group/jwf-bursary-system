@@ -1,14 +1,22 @@
 "use client";
 
 /**
- * Application queue data table.
+ * Applications list data table.
  *
- * Client component using @tanstack/react-table for sorting/filtering.
- * Supports per-session name reveal (calls API, writes audit log).
+ * Client component using @tanstack/react-table for sorting/filtering. The list
+ * is split into two tabs by application type:
+ *   • New applications        — applicationType === "NEW"
+ *   • Rolling-over bursaries  — applicationType === "ROLLING_OVER"
+ *
+ * The submission-date column is labelled "Submitted" on the New tab and
+ * "Received" on the Rolling-over tab, matching the state model (§3).
+ *
+ * Lead applicant name + email are shown as first-class columns. The reveal is
+ * audit-logged once per page load on the server (see the queue page), replacing
+ * the old per-session "Show names" toggle.
  */
 
 import * as React from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useTransition } from "react";
 import {
@@ -27,15 +35,13 @@ import {
   ChevronDown,
   ChevronsUpDown,
   ExternalLink,
-  MoreHorizontal,
-  Eye,
-  AlertTriangle,
   Filter,
   X,
   Loader2,
   UserPlus,
   Mail,
   RefreshCw,
+  CheckCircle2,
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { formatLondonDate } from "@/lib/datetime";
@@ -49,22 +55,8 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { Alert } from "@/components/ui/alert";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Switch } from "@/components/ui/switch";
-import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -74,6 +66,15 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
   Dialog,
   DialogContent,
   DialogHeader,
@@ -81,26 +82,27 @@ import {
   DialogDescription,
   DialogFooter,
 } from "@/components/ui/dialog";
-import {
-  FormStatusBadge,
-  AssessmentStatusBadge,
-  OutcomeBadge,
-} from "@/components/shared/lifecycle-badges";
+import Link from "next/link";
 import { cn } from "@/lib/utils";
 
-import { bulkAssignApplicationsAction } from "@/app/(admin)/applications/[id]/actions";
+import { ApplicationRowActions } from "@/components/admin/application-row-actions";
+import type { CloseReasonOption } from "@/components/admin/close-application-dialog";
+import { BulkCloseDialog } from "@/components/admin/bulk-close-dialog";
+import {
+  bulkAssignApplicationsAction,
+  bulkMarkActiveAction,
+} from "@/app/(admin)/applications/[id]/actions";
 import { bulkReassessmentInviteFromApplicationsAction } from "@/app/(admin)/invitations/actions";
+import { BulkEmailWizardAction } from "@/components/admin/bulk-email-wizard";
 
-import type {
-  ApplicationListItem,
-  SecondParentIndicator,
-} from "@/lib/db/queries/applications";
-import type { School, Role } from "@prisma/client";
+import type { ApplicationListItem } from "@/lib/db/queries/applications";
 import {
   ALL_REVIEW_PHASES,
-  matchesReviewPhase,
+  matchesQueueFilters,
   type ReviewPhase,
 } from "@/lib/applications/queue-filter";
+import { REVIEW_PHASE_LABEL } from "@/lib/applications/review-phase-labels";
+import type { School, Role } from "@prisma/client";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -112,17 +114,43 @@ type AssessorOption = {
   lastName: string | null;
 };
 
+/** Child + lead applicant names, revealed once (audited) at page load. */
+export interface ApplicantNameEntry {
+  id: string;
+  /** D13-1a: shown beside the reference, which is no longer self-describing. */
+  childName: string;
+  leadApplicantName: string;
+  leadApplicantEmail: string;
+}
+
 interface NameData {
   childName: string;
   leadApplicantName: string;
+  leadApplicantEmail: string;
 }
 
-interface ApplicationRow extends ApplicationListItem {
+/**
+ * An `ApplicationListItem` plus its server-derived review phase (Item 1.1)
+ * and effective submission deadline (Item 1.2) — both computed once in
+ * `queue/page.tsx` via the shared `deriveReviewPhase` / `effectiveSubmissionDeadline`
+ * helpers, the same ones the detail page uses, so every surface agrees.
+ */
+export type ApplicationListItemWithPhase = ApplicationListItem & {
+  reviewPhase: ReviewPhase;
+  /** The effective submission-by date (override ?? round default ?? round close). */
+  effectiveDeadline: Date;
+};
+
+interface ApplicationRow extends ApplicationListItemWithPhase {
   names?: NameData;
 }
 
+type TabKey = "new" | "rolling";
+
 interface ApplicationTableProps {
-  applications: ApplicationListItem[];
+  applications: ApplicationListItemWithPhase[];
+  /** Lead applicant names + emails, keyed by application id (always shown). */
+  names: ApplicantNameEntry[];
   rounds: RoundOption[];
   /**
    * Assessors available for the bulk-assign dropdown. Only populated (and only
@@ -138,8 +166,22 @@ interface ApplicationTableProps {
   initialRound?: string;
   /** Seed the school dropdown from a drill-in URL (defaults to "all"). */
   initialSchool?: string;
-  /** Seed the status multi-select from a drill-in URL (defaults to none). */
-  initialStatuses?: ReviewPhase[];
+  /** Seed the "Received from" date input (Item 7.1), `YYYY-MM-DD`. */
+  initialSubmittedFrom?: string;
+  /** Seed the "Received to" date input (Item 7.1), `YYYY-MM-DD`. */
+  initialSubmittedTo?: string;
+  /** Seed the "Submission-by from" date input (Item 7.2), `YYYY-MM-DD`. */
+  initialDeadlineFrom?: string;
+  /** Seed the "Submission-by to" date input (Item 7.2), `YYYY-MM-DD`. */
+  initialDeadlineTo?: string;
+  /**
+   * The current URL's query string (no leading `?`), as seen by the server
+   * component. Used to preserve every other active filter when the
+   * received-date or submission-by range navigates (Items 7.1/7.2) — avoids a
+   * client-side `useSearchParams()` call, which would require a Suspense
+   * boundary.
+   */
+  currentQueryString?: string;
   /**
    * When present, render a dismissible banner above the table describing the
    * server-side filter applied via the URL, with a "Clear filters" link.
@@ -150,6 +192,11 @@ interface ApplicationTableProps {
    * the "on" state of the Re-assessment eligible filter toggle (ADMIN only).
    */
   reassessEligibleActive?: boolean;
+  /**
+   * Active close reasons for the per-row Close dialog (item 4.1). Only
+   * populated for ADMIN — the Close action is ADMIN-only (Story 2.1).
+   */
+  closeReasons?: CloseReasonOption[];
   /**
    * Academic year of the open round re-assessment invites would target, or null
    * when there is no open round. Surfaced in the bulk-invite confirmation.
@@ -174,60 +221,48 @@ function SchoolBadge({ school }: { school: School }) {
   );
 }
 
-// Dual-parent (PR 5): compact second-parent indicator for the queue. Shows
-// nothing for single-parent applications (the common case), a coloured pill
-// otherwise. "Awaiting" warns the assessor the application is not yet gated
-// ready.
-function SecondParentBadge({
-  indicator,
-}: {
-  indicator: SecondParentIndicator;
-}) {
-  if (indicator === "NONE") {
-    return <span className="text-slate-300">—</span>;
-  }
-  const config: Record<
-    Exclude<SecondParentIndicator, "NONE">,
-    { label: string; className: string }
-  > = {
-    SUBMITTED: {
-      label: "Submitted",
-      className: "bg-green-50 text-green-700 border-green-200",
-    },
-    OVERRIDE: {
-      label: "Override",
-      className: "bg-slate-100 text-slate-600 border-slate-200",
-    },
-    AWAITING: {
-      label: "Awaiting",
-      className: "bg-amber-50 text-amber-700 border-amber-200",
-    },
-  };
-  const { label, className } = config[indicator];
+// Colours loosely mirror the raw lifecycle badges in
+// `components/shared/lifecycle-badges.tsx` (in-progress = amber/orange,
+// complete = green), with QUALIFIES/DOES_NOT_QUALIFY recoloured to match their
+// D-3 "Active"/"Closed" state-map wording rather than the legacy
+// qualify/not-qualify implication.
+const REVIEW_PHASE_BADGE_STYLES: Record<ReviewPhase, string> = {
+  PRE_SUBMISSION: "bg-neutral-100 text-neutral-600",
+  SUBMITTED: "bg-blue-50 text-blue-700",
+  NOT_STARTED: "bg-orange-50 text-orange-700",
+  PAUSED: "bg-yellow-50 text-yellow-700",
+  COMPLETED: "bg-green-50 text-green-700",
+  QUALIFIES: "bg-emerald-50 text-emerald-700",
+  DOES_NOT_QUALIFY: "bg-neutral-100 text-neutral-500",
+  // Item 2's unified terminal state — same neutral treatment as the legacy
+  // DOES_NOT_QUALIFY row it converges with.
+  CLOSED: "bg-neutral-100 text-neutral-500",
+};
+
+/** Status column badge (Item 1.1) — read-only; same wording as the detail page. */
+function ReviewPhaseBadge({ phase }: { phase: ReviewPhase }) {
   return (
     <span
       className={cn(
-        "inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-medium",
-        className
+        "inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium",
+        REVIEW_PHASE_BADGE_STYLES[phase]
       )}
-      title="Second parent (dual-parent application)"
     >
-      {label}
+      {REVIEW_PHASE_LABEL[phase]}
     </span>
   );
 }
 
-function SortIcon({
-  sorted,
-}: {
-  sorted: false | "asc" | "desc";
-}) {
+function SortIcon({ sorted }: { sorted: false | "asc" | "desc" }) {
   if (sorted === "asc")
     return <ChevronUp className="ml-1 inline h-3 w-3" aria-hidden="true" />;
   if (sorted === "desc")
     return <ChevronDown className="ml-1 inline h-3 w-3" aria-hidden="true" />;
   return (
-    <ChevronsUpDown className="ml-1 inline h-3 w-3 opacity-40" aria-hidden="true" />
+    <ChevronsUpDown
+      className="ml-1 inline h-3 w-3 opacity-40"
+      aria-hidden="true"
+    />
   );
 }
 
@@ -248,122 +283,23 @@ function formatSubmittedDate(date: Date | null): React.ReactNode {
 }
 
 /**
- * Composite lifecycle cell for the queue (Epic 01 PR-4). Shows the real
- * per-lifecycle values: form status, then assessment status + outcome once
- * those exist. Replaces the old single mislabelled StatusBadge (e.g. COMPLETED
- * was shown as "In Review"). The status FILTER below still keys off the legacy
- * fused `status` (dual-written until PR-6) — only the DISPLAY moved.
+ * Deadline column (Item 1.2). `effectiveDeadline` is typed non-null (the D-1
+ * chain always resolves to at least `round.closeDate`), so the em-dash below
+ * is a defensive fallback only — not an expected path.
  */
-function ApplicationLifecycleCell({ row }: { row: ApplicationRow }) {
-  // Once an outcome is set, it is the headline; before that show the most
-  // advanced lifecycle the row has reached.
-  if (row.outcome) {
-    return <OutcomeBadge outcome={row.outcome} />;
-  }
-  if (row.assessmentStatus && row.assessmentStatus !== "NOT_STARTED") {
-    return <AssessmentStatusBadge status={row.assessmentStatus} />;
-  }
-  return (
-    <FormStatusBadge
-      status={row.formStatus}
-      applicationType={row.applicationType}
-    />
-  );
-}
-
-// ─── Status multi-select popover ──────────────────────────────────────────────
-
-// The status multi-select speaks the 7-value review-phase vocabulary (Epic 01
-// PR-6a) — derived from the lifecycle columns, not the deprecated fused enum.
-const ALL_STATUSES: ReviewPhase[] = ALL_REVIEW_PHASES;
-
-const STATUS_LABELS: Record<ReviewPhase, string> = {
-  PRE_SUBMISSION: "Pre-Submission",
-  SUBMITTED: "Submitted",
-  NOT_STARTED: "Not Started",
-  PAUSED: "Paused",
-  COMPLETED: "Completed",
-  QUALIFIES: "Qualifies",
-  DOES_NOT_QUALIFY: "Does Not Qualify",
-};
-
-interface StatusFilterProps {
-  selected: ReviewPhase[];
-  onChange: (statuses: ReviewPhase[]) => void;
-}
-
-function StatusFilter({ selected, onChange }: StatusFilterProps) {
-  const toggle = (status: ReviewPhase) => {
-    if (selected.includes(status)) {
-      onChange(selected.filter((s) => s !== status));
-    } else {
-      onChange([...selected, status]);
-    }
-  };
-
-  return (
-    <Popover>
-      <PopoverTrigger asChild>
-        <Button variant="outline" size="sm" className="h-9 border-neutral-200 bg-white text-slate-600 hover:bg-neutral-50">
-          Status
-          {selected.length > 0 && (
-            <Badge className="ml-1.5 h-4 w-4 rounded-full p-0 text-[10px] flex items-center justify-center bg-primary-700 text-white">
-              {selected.length}
-            </Badge>
-          )}
-        </Button>
-      </PopoverTrigger>
-      <PopoverContent align="start" className="w-52 p-2">
-        <div className="space-y-1">
-          {ALL_STATUSES.map((status) => (
-            <label
-              key={status}
-              className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 hover:bg-neutral-50"
-            >
-              <Checkbox
-                checked={selected.includes(status)}
-                onCheckedChange={() => toggle(status)}
-              />
-              <span className="text-sm text-slate-700">
-                {STATUS_LABELS[status]}
-              </span>
-            </label>
-          ))}
-          {selected.length > 0 && (
-            <div className="border-t pt-1 mt-1">
-              <Button
-                variant="ghost"
-                size="sm"
-                className="w-full h-7 text-xs text-slate-500"
-                onClick={() => onChange([])}
-              >
-                Clear filters
-              </Button>
-            </div>
-          )}
-        </div>
-      </PopoverContent>
-    </Popover>
-  );
+function formatDeadlineDate(date: Date | null | undefined): React.ReactNode {
+  if (!date) return <span className="text-slate-400">—</span>;
+  return <span className="text-slate-700">{formatLondonDate(new Date(date))}</span>;
 }
 
 // ─── Bulk-action toolbar ────────────────────────────────────────────────────────
 
-// Sentinel value for the "Unassigned" option in the bulk-assign Select
-// (mirrors AssignAssessorSelect — Radix Select cannot use an empty string).
 const BULK_UNASSIGNED_VALUE = "__unassigned__";
 
 type BulkFeedback = { kind: "success" | "error"; message: string } | null;
 
-/**
- * Descriptor for a bulk action. Keeping these in an array makes it cheap to add
- * further actions later (e.g. bulk status change, export-selected) — each one
- * renders its own control inside the toolbar. For now there is a single action:
- * Assign assessor (which also covers Unassign via the sentinel option).
- */
 interface BulkAction {
   id: string;
-  /** Renders the action's control. */
   render: (ctx: {
     selectedIds: string[];
     isPending: boolean;
@@ -371,12 +307,6 @@ interface BulkAction {
   }) => React.ReactNode;
 }
 
-/**
- * Self-contained control for the "Send re-assessment invite" bulk action.
- * Because this sends real emails it gates behind a confirmation Dialog before
- * calling the server action. Result feedback is surfaced via the toolbar's
- * shared `onFeedback` banner (which outlives the toolbar on success).
- */
 function ReassessmentBulkAction({
   selectedIds,
   isPending,
@@ -411,11 +341,8 @@ function ReassessmentBulkAction({
             result.targetRound ? ` · → ${result.targetRound}` : ""
           }`,
         });
-        // Clear selection + refresh once at least one invite landed.
         if (result.sent > 0) onActionComplete();
       } else {
-        // Nothing sent: surface the first error (e.g. "No open round to invite
-        // into") rather than a misleading success summary.
         onFeedback({
           kind: "error",
           message:
@@ -436,7 +363,10 @@ function ReassessmentBulkAction({
         className="h-8 shrink-0 whitespace-nowrap border-primary-200 bg-white text-xs text-slate-600"
       >
         {isPending ? (
-          <Loader2 className="mr-1.5 h-3 w-3 shrink-0 animate-spin" aria-hidden="true" />
+          <Loader2
+            className="mr-1.5 h-3 w-3 shrink-0 animate-spin"
+            aria-hidden="true"
+          />
         ) : (
           <Mail className="mr-1.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
         )}
@@ -473,25 +403,108 @@ function ReassessmentBulkAction({
   );
 }
 
+/**
+ * Bulk "Mark as Active" (Story 3.1) — the school's OFFERED decision, direct
+ * activation per D-4 (no outcome write, no email). Non-destructive, so a
+ * lightweight confirm is enough (no reason, no purge-aware warning — that's
+ * the Close action's job below).
+ */
+function MarkActiveBulkAction({
+  selectedIds,
+  isPending,
+  run,
+  onFeedback,
+  onActionComplete,
+}: {
+  selectedIds: string[];
+  isPending: boolean;
+  run: (fn: () => Promise<void>) => void;
+  onFeedback: (feedback: BulkFeedback) => void;
+  onActionComplete: () => void;
+}) {
+  const [open, setOpen] = React.useState(false);
+  const count = selectedIds.length;
+
+  const handleConfirm = () => {
+    setOpen(false);
+    run(async () => {
+      const result = await bulkMarkActiveAction(selectedIds);
+      if (result.success) {
+        onFeedback({
+          kind: result.skipped.length > 0 ? "error" : "success",
+          message: `Activated ${result.succeeded} · skipped ${result.skipped.length}`,
+        });
+        if (result.succeeded > 0) onActionComplete();
+      } else {
+        onFeedback({
+          kind: "error",
+          message: result.error ?? "Bulk activation failed.",
+        });
+      }
+    });
+  };
+
+  return (
+    <>
+      <Button
+        variant="outline"
+        size="sm"
+        disabled={isPending || count === 0}
+        onClick={() => setOpen(true)}
+        className="h-8 shrink-0 whitespace-nowrap border-green-200 bg-white text-xs text-green-700 hover:bg-green-50"
+      >
+        {isPending ? (
+          <Loader2
+            className="mr-1.5 h-3 w-3 shrink-0 animate-spin"
+            aria-hidden="true"
+          />
+        ) : (
+          <CheckCircle2 className="mr-1.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+        )}
+        Mark as Active
+      </Button>
+
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>
+              Mark {count} application{count === 1 ? "" : "s"} active
+            </DialogTitle>
+            <DialogDescription>
+              Activates the bursary account for each selected application (or
+              continues an existing one) and attaches the forward schedule.
+              <span className="mt-2 block text-xs text-slate-500">
+                Applications that are closed, not yet fully assessed, or that
+                already have a recorded outcome are skipped.
+              </span>
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={handleConfirm}
+              className="bg-green-600 text-white hover:bg-green-700"
+            >
+              Confirm
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+}
+
 interface BulkToolbarProps {
   selectedIds: string[];
   assessors: AssessorOption[];
-  /** Target round year for re-assessment invites (null = no open round). */
   reassessTargetRound: string | null;
-  /**
-   * The id of the round the queue is scoped to (Epic 03). Passed explicitly to
-   * the re-assessment invite action so it targets THIS round and never silently
-   * fans into another open round. null when the queue is not round-scoped.
-   */
   reassessTargetRoundId: string | null;
+  /** Active close reasons for the bulk Close dialog (item 4.1/4.2). */
+  closeReasons: CloseReasonOption[];
   onClear: () => void;
-  /**
-   * Called after a successful action so the parent can refresh + clear the
-   * selection. Note: clearing unmounts this toolbar, so success feedback is
-   * surfaced by the parent (which outlives the toolbar), not here.
-   */
   onActionComplete: () => void;
-  /** Report feedback up so it survives the toolbar unmounting on success. */
   onFeedback: (feedback: BulkFeedback) => void;
 }
 
@@ -500,6 +513,7 @@ function BulkToolbar({
   assessors,
   reassessTargetRound,
   reassessTargetRoundId,
+  closeReasons,
   onClear,
   onActionComplete,
   onFeedback,
@@ -508,7 +522,6 @@ function BulkToolbar({
 
   const count = selectedIds.length;
 
-  // Wraps an async action in a transition. Shared by every BulkAction.
   const run = React.useCallback(
     (fn: () => Promise<void>) => {
       onFeedback(null);
@@ -519,7 +532,6 @@ function BulkToolbar({
     [onFeedback]
   );
 
-  // The set of available bulk actions. Extend this array to add more.
   const actions: BulkAction[] = [
     {
       id: "assign-assessor",
@@ -527,8 +539,7 @@ function BulkToolbar({
         <Select
           disabled={isPending || selectedIds.length === 0}
           onValueChange={(value) => {
-            const assessorId =
-              value === BULK_UNASSIGNED_VALUE ? null : value;
+            const assessorId = value === BULK_UNASSIGNED_VALUE ? null : value;
             run(async () => {
               const result = await bulkAssignApplicationsAction(
                 selectedIds,
@@ -554,7 +565,10 @@ function BulkToolbar({
           <SelectTrigger className="h-8 w-[190px] shrink-0 border-primary-200 bg-white text-xs">
             {isPending ? (
               <span className="flex items-center gap-1.5 whitespace-nowrap text-slate-400">
-                <Loader2 className="h-3 w-3 shrink-0 animate-spin" aria-hidden="true" />
+                <Loader2
+                  className="h-3 w-3 shrink-0 animate-spin"
+                  aria-hidden="true"
+                />
                 Saving…
               </span>
             ) : (
@@ -597,6 +611,45 @@ function BulkToolbar({
         />
       ),
     },
+    {
+      id: "mark-active",
+      render: ({ selectedIds, isPending, run }) => (
+        <MarkActiveBulkAction
+          selectedIds={selectedIds}
+          isPending={isPending}
+          run={run}
+          onFeedback={onFeedback}
+          onActionComplete={onActionComplete}
+        />
+      ),
+    },
+    {
+      id: "bulk-close",
+      render: ({ selectedIds, isPending, run }) => (
+        <BulkCloseDialog
+          selectedIds={selectedIds}
+          isPending={isPending}
+          run={run}
+          reasons={closeReasons}
+          onActionComplete={onActionComplete}
+        />
+      ),
+    },
+    {
+      id: "send-email",
+      render: ({ selectedIds, isPending }) => (
+        // Deliberately NOT wired through the shared `run` — this is a
+        // multi-step wizard whose dialog must stay open across the send and
+        // result phases. `onActionComplete` (clears selection + refreshes)
+        // is called only when the admin dismisses the result view; see the
+        // component's file header for why calling it earlier breaks the flow.
+        <BulkEmailWizardAction
+          selectedIds={selectedIds}
+          triggerDisabled={isPending}
+          onDone={onActionComplete}
+        />
+      ),
+    },
   ];
 
   return (
@@ -630,21 +683,24 @@ function BulkToolbar({
 
 export function ApplicationTable({
   applications,
+  names,
   rounds,
   assessors = [],
   userRole,
   initialRound,
   initialSchool,
-  initialStatuses,
+  initialSubmittedFrom,
+  initialSubmittedTo,
+  initialDeadlineFrom,
+  initialDeadlineTo,
+  currentQueryString,
   activeFilter,
   reassessEligibleActive = false,
   reassessTargetRound = null,
+  closeReasons = [],
 }: ApplicationTableProps) {
   const router = useRouter();
 
-  // Selection + bulk actions are ADMIN-only. Non-ADMIN users (ASSESSOR/VIEWER)
-  // have no bulk actions available, so we hide the checkbox column and toolbar
-  // entirely rather than show a dead UI.
   const bulkEnabled = userRole === "ADMIN";
 
   // Filter state — seeded from drill-in props when present, else current defaults.
@@ -654,18 +710,37 @@ export function ApplicationTable({
   const [selectedSchool, setSelectedSchool] = React.useState<string>(
     initialSchool ?? "all"
   );
-  const [selectedStatuses, setSelectedStatuses] = React.useState<
-    ReviewPhase[]
-  >(initialStatuses ?? []);
+  // Status multi-select (Item 1.3) — client-side only, composes (AND) with the
+  // other filters below. Independent of the `?status=` server drill-in.
+  const [selectedStatuses, setSelectedStatuses] = React.useState<ReviewPhase[]>(
+    []
+  );
   const [searchText, setSearchText] = React.useState("");
+  const [activeTab, setActiveTab] = React.useState<TabKey>("new");
 
-  // Name reveal state
-  const [namesRevealed, setNamesRevealed] = React.useState(false);
-  const [namesLoading, setNamesLoading] = React.useState(false);
-  const [namesError, setNamesError] = React.useState<string | null>(null);
-  const [nameMap, setNameMap] = React.useState<
-    Map<string, NameData>
-  >(new Map());
+  // Received-date range (Item 7.1) — server-side; changing either date
+  // navigates (router.replace) so `listApplications` re-runs with the new
+  // bounds. Seeded from the URL so the inputs reflect whatever was actually
+  // applied (an invalid hand-edited range renders blank — see queue/page.tsx).
+  const [submittedFrom, setSubmittedFrom] = React.useState(
+    initialSubmittedFrom ?? ""
+  );
+  const [submittedTo, setSubmittedTo] = React.useState(
+    initialSubmittedTo ?? ""
+  );
+  const [receivedRangeError, setReceivedRangeError] = React.useState<
+    string | null
+  >(null);
+
+  // Submission-by (deadline) range (Item 7.2) — same server-side navigation
+  // pattern as the received-date range above, independently clearable.
+  const [deadlineFrom, setDeadlineFrom] = React.useState(
+    initialDeadlineFrom ?? ""
+  );
+  const [deadlineTo, setDeadlineTo] = React.useState(initialDeadlineTo ?? "");
+  const [deadlineRangeError, setDeadlineRangeError] = React.useState<
+    string | null
+  >(null);
 
   // Table state
   const [sorting, setSorting] = React.useState<SortingState>([]);
@@ -674,16 +749,27 @@ export function ApplicationTable({
   const [rowSelection, setRowSelection] = React.useState<RowSelectionState>({});
   const [bulkFeedback, setBulkFeedback] = React.useState<BulkFeedback>(null);
 
-  // Selection coherence: clear the selection whenever any filter changes so we
-  // never act on rows that have scrolled out of the filtered view. Keeping
-  // hidden rows selected would let a bulk action hit applications the user can
-  // no longer see. Simplest safe behaviour: reset on filter change.
+  // Name map keyed by application id — always populated (revealed on the server).
+  const nameMap = React.useMemo(() => {
+    const map = new Map<string, NameData>();
+    for (const entry of names) {
+      map.set(entry.id, {
+        childName: entry.childName,
+        leadApplicantName: entry.leadApplicantName,
+        leadApplicantEmail: entry.leadApplicantEmail,
+      });
+    }
+    return map;
+  }, [names]);
+
+  // Clear selection whenever a filter OR the tab changes so we never act on rows
+  // that have scrolled out of the visible view.
   React.useEffect(() => {
     setRowSelection({});
     setBulkFeedback(null);
-  }, [selectedRound, selectedSchool, selectedStatuses, searchText]);
+  }, [selectedRound, selectedSchool, selectedStatuses, searchText, activeTab]);
 
-  // Derived rows with optional names merged in
+  // Derived rows with names merged in.
   const rows: ApplicationRow[] = React.useMemo(() => {
     return applications.map((app) => ({
       ...app,
@@ -691,96 +777,96 @@ export function ApplicationTable({
     }));
   }, [applications, nameMap]);
 
-  // Client-side filtering
+  // Shared (round / school / status / search) filtering — applied before the
+  // tab split, so composing with the tab is automatic. The received-date
+  // range (7.1) is NOT filtered here — it's applied server-side (see
+  // `applyReceivedDateFilter` below), so these rows are already scoped to it.
   const filteredRows = React.useMemo(() => {
-    return rows.filter((row) => {
-      if (selectedRound !== "all" && row.round.id !== selectedRound)
-        return false;
-      if (selectedSchool !== "all" && row.school !== selectedSchool)
-        return false;
-      // Match the row's lifecycle state against any selected review phase
-      // (Epic 01 PR-6a) — derived from form_status + assessment status/outcome,
-      // not the dropped fused status.
-      if (
-        selectedStatuses.length > 0 &&
-        !selectedStatuses.some((phase) =>
-          matchesReviewPhase(
-            {
-              formStatus: row.formStatus,
-              assessmentStatus: row.assessmentStatus,
-              outcome: row.outcome,
-            },
-            phase
-          )
-        )
+    return rows.filter((row) =>
+      matchesQueueFilters(
+        {
+          round: row.round,
+          school: row.school,
+          reviewPhase: row.reviewPhase,
+          reference: row.reference,
+          leadApplicantName: row.names?.leadApplicantName,
+          leadApplicantEmail: row.names?.leadApplicantEmail,
+        },
+        {
+          roundId: selectedRound,
+          school: selectedSchool,
+          statuses: selectedStatuses,
+          searchText,
+        }
       )
-        return false;
-      if (searchText) {
-        const q = searchText.toLowerCase();
-        const matchRef = row.reference.toLowerCase().includes(q);
-        const matchChild = row.names?.childName.toLowerCase().includes(q);
-        const matchLead = row.names?.leadApplicantName
-          .toLowerCase()
-          .includes(q);
-        if (!matchRef && !matchChild && !matchLead) return false;
-      }
-      return true;
-    });
+    );
   }, [rows, selectedRound, selectedSchool, selectedStatuses, searchText]);
 
-  // Handle name reveal toggle
-  const handleNamesToggle = async (checked: boolean) => {
-    if (!checked) {
-      setNamesRevealed(false);
-      setNamesError(null);
+  function toggleStatus(phase: ReviewPhase, checked: boolean) {
+    setSelectedStatuses((prev) =>
+      checked ? [...prev, phase] : prev.filter((p) => p !== phase)
+    );
+  }
+
+  // Received-date range (Item 7.1) — a real navigation (unlike round/school/
+  // status, which re-filter the already-fetched rows client-side) so
+  // `listApplications` re-runs server-side with the new bounds. Preserves
+  // every other current query param (roundId/school/status/reassessEligible/
+  // deadlineFrom/deadlineTo etc.) so this filter composes without clobbering
+  // the others, and is clearable independently of the deadline range below.
+  function applyReceivedDateFilter(nextFrom: string, nextTo: string) {
+    if (nextFrom && nextTo && nextFrom > nextTo) {
+      setReceivedRangeError(
+        "'Received from' must be on or before 'Received to'."
+      );
       return;
     }
+    setReceivedRangeError(null);
+    const nextParams = new URLSearchParams(currentQueryString ?? "");
+    if (nextFrom) nextParams.set("submittedFrom", nextFrom);
+    else nextParams.delete("submittedFrom");
+    if (nextTo) nextParams.set("submittedTo", nextTo);
+    else nextParams.delete("submittedTo");
+    router.replace(`/queue?${nextParams.toString()}`);
+  }
 
-    setNamesLoading(true);
-    setNamesError(null);
-    try {
-      const ids = applications.map((a) => a.id);
-      const params = new URLSearchParams();
-      ids.forEach((id) => params.append("applicationIds[]", id));
-
-      const res = await fetch(`/api/applications/names?${params.toString()}`);
-      if (!res.ok) throw new Error("Failed to fetch names");
-
-      const data = (await res.json()) as Array<{
-        id: string;
-        childName: string;
-        leadApplicantName: string;
-      }>;
-
-      const map = new Map<string, NameData>();
-      data.forEach((item) => {
-        map.set(item.id, {
-          childName: item.childName,
-          leadApplicantName: item.leadApplicantName,
-        });
-      });
-
-      setNameMap(map);
-      setNamesRevealed(true);
-    } catch (err) {
-      console.error("Name reveal failed:", err);
-      // Surface the failure to the user and reset the toggle so it visibly
-      // fails rather than silently no-opping (see defect plan §2.1).
-      setNamesError("Could not reveal names. Please try again.");
-      setNamesRevealed(false);
-    } finally {
-      setNamesLoading(false);
+  // Submission-by (deadline) range (Item 7.2) — same server-side navigation
+  // pattern, independently clearable from the received-date range above.
+  function applyDeadlineRangeFilter(nextFrom: string, nextTo: string) {
+    if (nextFrom && nextTo && nextFrom > nextTo) {
+      setDeadlineRangeError(
+        "'Submission-by from' must be on or before 'Submission-by to'."
+      );
+      return;
     }
-  };
+    setDeadlineRangeError(null);
+    const nextParams = new URLSearchParams(currentQueryString ?? "");
+    if (nextFrom) nextParams.set("deadlineFrom", nextFrom);
+    else nextParams.delete("deadlineFrom");
+    if (nextTo) nextParams.set("deadlineTo", nextTo);
+    else nextParams.delete("deadlineTo");
+    router.replace(`/queue?${nextParams.toString()}`);
+  }
 
-  // Column definitions
+  // Tab split by application type.
+  const { newRows, rollingRows } = React.useMemo(() => {
+    const newRows: ApplicationRow[] = [];
+    const rollingRows: ApplicationRow[] = [];
+    for (const row of filteredRows) {
+      if (row.applicationType === "ROLLING_OVER") rollingRows.push(row);
+      else newRows.push(row);
+    }
+    return { newRows, rollingRows };
+  }, [filteredRows]);
+
+  const visibleRows = activeTab === "new" ? newRows : rollingRows;
+  const dateHeader = activeTab === "new" ? "Submitted" : "Received";
+
+  // Column definitions — rebuilt when the tab changes (date header label).
   const columnHelper = createColumnHelper<ApplicationRow>();
 
   const columns = React.useMemo(() => {
     const base = [
-      // Leading selection column (ADMIN only). The header checkbox selects /
-      // deselects ALL currently-filtered rows (table.data === filteredRows), and
-      // shows an indeterminate state when only some are selected.
       columnHelper.display({
         id: "select",
         header: ({ table }) => (
@@ -792,9 +878,7 @@ export function ApplicationTable({
                   ? "indeterminate"
                   : false
             }
-            onCheckedChange={(value) =>
-              table.toggleAllRowsSelected(!!value)
-            }
+            onCheckedChange={(value) => table.toggleAllRowsSelected(!!value)}
             onClick={(e) => e.stopPropagation()}
             aria-label="Select all applications"
           />
@@ -811,18 +895,68 @@ export function ApplicationTable({
       }),
       columnHelper.accessor("reference", {
         header: "Reference",
+        // D13-1a: the reference is a free-text label that is routinely re-edited
+        // to the fees-system code (`TS-SMITH05-Smith, Bob`), at which point it
+        // no longer names the child. The child's name therefore renders beside
+        // it on every admin surface so the row stays identifiable.
         cell: (info) => (
-          <span className="font-mono text-sm font-medium text-slate-800">
-            {info.getValue()}
-          </span>
+          <div className="flex flex-col">
+            <span className="font-mono text-sm font-medium text-slate-800">
+              {info.getValue()}
+            </span>
+            {info.row.original.names?.childName ? (
+              <span className="text-xs text-slate-500">
+                {info.row.original.names.childName}
+              </span>
+            ) : null}
+          </div>
+        ),
+      }),
+      columnHelper.accessor((row) => row.round.academicYear, {
+        id: "round",
+        header: "Round",
+        cell: (info) => (
+          <span className="text-slate-700">{info.getValue()}</span>
         ),
       }),
       columnHelper.accessor("school", {
         header: "School",
         cell: (info) => <SchoolBadge school={info.getValue()} />,
       }),
+      columnHelper.accessor("reviewPhase", {
+        header: "Status",
+        cell: (info) => <ReviewPhaseBadge phase={info.getValue()} />,
+      }),
+      columnHelper.display({
+        id: "leadApplicant",
+        header: "Lead applicant",
+        cell: (info) =>
+          info.row.original.names?.leadApplicantName ? (
+            <span className="text-slate-700">
+              {info.row.original.names.leadApplicantName}
+            </span>
+          ) : (
+            <span className="text-slate-400">—</span>
+          ),
+      }),
+      columnHelper.display({
+        id: "email",
+        header: "Email",
+        cell: (info) =>
+          info.row.original.names?.leadApplicantEmail ? (
+            <a
+              href={`mailto:${info.row.original.names.leadApplicantEmail}`}
+              onClick={(e) => e.stopPropagation()}
+              className="text-primary-700 hover:underline"
+            >
+              {info.row.original.names.leadApplicantEmail}
+            </a>
+          ) : (
+            <span className="text-slate-400">—</span>
+          ),
+      }),
       columnHelper.accessor("submittedAt", {
-        header: "Submitted",
+        header: dateHeader,
         cell: (info) => formatSubmittedDate(info.getValue()),
         sortingFn: (a, b) => {
           const dateA = a.original.submittedAt
@@ -834,65 +968,35 @@ export function ApplicationTable({
           return dateA - dateB;
         },
       }),
-      // Status is a DERIVED lifecycle projection (Epic 01 PR-6a), not a single
-      // stored column — render it as a display column (sorting on a fused string
-      // was never meaningful).
-      columnHelper.display({
-        id: "status",
-        header: "Status",
-        cell: (info) => <ApplicationLifecycleCell row={info.row.original} />,
+      columnHelper.accessor("effectiveDeadline", {
+        header: "Submission-by",
+        cell: (info) => formatDeadlineDate(info.getValue()),
+        sortingFn: (a, b) => {
+          const dateA = a.original.effectiveDeadline
+            ? new Date(a.original.effectiveDeadline).getTime()
+            : 0;
+          const dateB = b.original.effectiveDeadline
+            ? new Date(b.original.effectiveDeadline).getTime()
+            : 0;
+          return dateA - dateB;
+        },
       }),
-      columnHelper.accessor("secondParent", {
-        header: "2nd Parent",
-        cell: (info) => <SecondParentBadge indicator={info.getValue()} />,
-        enableSorting: false,
-      }),
-      columnHelper.accessor("entryYear", {
-        header: "Entry Year",
-        cell: (info) =>
-          info.getValue() ? (
-            <span className="text-slate-700">{info.getValue()}</span>
+      columnHelper.accessor("closeReasonLabel", {
+        header: "Close reason",
+        cell: (info) => {
+          const label = info.getValue();
+          return label ? (
+            <span className="text-slate-700">{label}</span>
           ) : (
             <span className="text-slate-400">—</span>
-          ),
+          );
+        },
       }),
-    ];
-
-    if (namesRevealed) {
-      base.push(
-        columnHelper.display({
-          id: "childName",
-          header: "Child Name",
-          cell: (info) =>
-            info.row.original.names?.childName ? (
-              <span className="text-slate-700">
-                {info.row.original.names.childName}
-              </span>
-            ) : (
-              <span className="text-slate-400">—</span>
-            ),
-        }) as typeof base[0],
-        columnHelper.display({
-          id: "leadApplicant",
-          header: "Lead Applicant",
-          cell: (info) =>
-            info.row.original.names?.leadApplicantName ? (
-              <span className="text-slate-700">
-                {info.row.original.names.leadApplicantName}
-              </span>
-            ) : (
-              <span className="text-slate-400">—</span>
-            ),
-        }) as typeof base[0]
-      );
-    }
-
-    base.push(
       columnHelper.display({
         id: "actions",
         header: "",
         cell: (info) => {
-          const id = info.row.original.id;
+          const row = info.row.original;
           return (
             <div className="flex items-center justify-end gap-1">
               <Button
@@ -901,45 +1005,34 @@ export function ApplicationTable({
                 className="h-7 px-2.5 text-xs"
                 onClick={(e) => {
                   e.stopPropagation();
-                  router.push(`/applications/${id}`);
+                  router.push(`/applications/${row.id}`);
                 }}
               >
                 <ExternalLink className="mr-1 h-3 w-3" aria-hidden="true" />
                 Open
               </Button>
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-7 w-7 p-0"
-                    onClick={(e) => e.stopPropagation()}
-                    aria-label="More options"
-                  >
-                    <MoreHorizontal className="h-4 w-4" aria-hidden="true" />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end">
-                  <DropdownMenuItem
-                    onClick={() => router.push(`/applications/${id}`)}
-                  >
-                    <Eye className="mr-2 h-4 w-4" />
-                    View details
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
+              <ApplicationRowActions
+                applicationId={row.id}
+                reference={row.reference}
+                formStatus={row.formStatus}
+                assessmentStatus={row.assessmentStatus}
+                outcome={row.outcome}
+                closedAt={row.closedAt}
+                isAdmin={userRole === "ADMIN"}
+                closeReasons={closeReasons}
+              />
             </div>
           );
         },
-      }) as typeof base[0]
-    );
+      }),
+    ];
 
     // Drop the leading select column for non-ADMIN viewers (no bulk actions).
     return bulkEnabled ? base : base.filter((col) => col.id !== "select");
-  }, [namesRevealed, columnHelper, router, bulkEnabled]);
+  }, [columnHelper, router, bulkEnabled, dateHeader]);
 
   const table = useReactTable({
-    data: filteredRows,
+    data: visibleRows,
     columns,
     state: { sorting, columnFilters, rowSelection },
     enableRowSelection: bulkEnabled,
@@ -952,8 +1045,6 @@ export function ApplicationTable({
     getFilteredRowModel: getFilteredRowModel(),
   });
 
-  // Selected application ids (stable across re-renders via getRowId === app id).
-  // Reading from rowSelection keys is sufficient because getRowId uses the id.
   const selectedIds = React.useMemo(
     () => Object.keys(rowSelection).filter((id) => rowSelection[id]),
     [rowSelection]
@@ -963,7 +1054,6 @@ export function ApplicationTable({
     setRowSelection({});
   }, []);
 
-  // After a successful bulk action: clear selection and refresh server data.
   const handleBulkComplete = React.useCallback(() => {
     setRowSelection({});
     router.refresh();
@@ -975,7 +1065,10 @@ export function ApplicationTable({
       {activeFilter && (
         <Alert className="flex items-center justify-between gap-3 border-primary-200 bg-primary-50/60 py-2.5 text-primary-900">
           <span className="flex items-center gap-2 text-sm">
-            <Filter className="h-4 w-4 shrink-0 text-primary-700" aria-hidden="true" />
+            <Filter
+              className="h-4 w-4 shrink-0 text-primary-700"
+              aria-hidden="true"
+            />
             <span>
               <span className="font-medium">Showing:</span> {activeFilter.label}
             </span>
@@ -992,7 +1085,6 @@ export function ApplicationTable({
 
       {/* Filter bar */}
       <div className="flex flex-wrap items-center gap-3 rounded-lg bg-neutral-50 px-4 py-3 border border-neutral-200">
-        {/* Round selector */}
         <Select value={selectedRound} onValueChange={setSelectedRound}>
           <SelectTrigger className="h-9 w-[160px] border-neutral-200 bg-white text-sm">
             <SelectValue placeholder="All rounds" />
@@ -1007,7 +1099,6 @@ export function ApplicationTable({
           </SelectContent>
         </Select>
 
-        {/* School filter */}
         <Select value={selectedSchool} onValueChange={setSelectedSchool}>
           <SelectTrigger className="h-9 w-[140px] border-neutral-200 bg-white text-sm">
             <SelectValue placeholder="All schools" />
@@ -1019,11 +1110,49 @@ export function ApplicationTable({
           </SelectContent>
         </Select>
 
-        {/* Status filter */}
-        <StatusFilter
-          selected={selectedStatuses}
-          onChange={setSelectedStatuses}
-        />
+        {/* Status multi-select (Item 1.3) — client-side, composes with the rest */}
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              variant="outline"
+              size="sm"
+              className={cn(
+                "h-9 shrink-0 whitespace-nowrap border-neutral-200 bg-white text-sm",
+                selectedStatuses.length > 0
+                  ? "border-primary-300 bg-primary-50 text-primary-800 hover:bg-primary-100"
+                  : "text-slate-600 hover:bg-neutral-50"
+              )}
+            >
+              <Filter className="mr-1.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+              Status
+              {selectedStatuses.length > 0 && (
+                <span className="ml-1.5 rounded-full bg-primary-200 px-1.5 text-[11px] text-primary-900">
+                  {selectedStatuses.length}
+                </span>
+              )}
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" className="w-56">
+            {ALL_REVIEW_PHASES.map((phase) => (
+              <DropdownMenuCheckboxItem
+                key={phase}
+                checked={selectedStatuses.includes(phase)}
+                onSelect={(e) => e.preventDefault()}
+                onCheckedChange={(checked) => toggleStatus(phase, checked)}
+              >
+                {REVIEW_PHASE_LABEL[phase]}
+              </DropdownMenuCheckboxItem>
+            ))}
+            {selectedStatuses.length > 0 && (
+              <>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onSelect={() => setSelectedStatuses([])}>
+                  Clear status filter
+                </DropdownMenuItem>
+              </>
+            )}
+          </DropdownMenuContent>
+        </DropdownMenu>
 
         {/* Re-assessment-eligible toggle (ADMIN only, URL-driven server filter) */}
         {bulkEnabled && (
@@ -1043,56 +1172,118 @@ export function ApplicationTable({
                 : "text-slate-600 hover:bg-neutral-50"
             )}
           >
-            <RefreshCw className="mr-1.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+            <RefreshCw
+              className="mr-1.5 h-3.5 w-3.5 shrink-0"
+              aria-hidden="true"
+            />
             Re-assessment eligible
           </Button>
         )}
 
-        {/* Search */}
         <Input
-          placeholder="Search reference…"
+          placeholder="Search name, email or reference…"
           value={searchText}
           onChange={(e) => setSearchText(e.target.value)}
-          className="h-9 w-[200px] border-neutral-200 bg-white text-sm placeholder:text-slate-400"
+          className="h-9 w-[240px] border-neutral-200 bg-white text-sm placeholder:text-slate-400"
         />
 
-        {/* Spacer */}
-        <div className="flex-1" />
-
-        {/* Name reveal toggle */}
-        <div className="flex items-center gap-2.5">
-          {namesError && (
-            <span
-              role="alert"
-              className="flex items-center gap-1 rounded-full bg-rose-50 px-2.5 py-1 text-xs font-medium text-rose-700 border border-rose-200"
-            >
-              <AlertTriangle className="h-3 w-3" aria-hidden="true" />
-              {namesError}
-            </span>
-          )}
-          {namesRevealed && (
-            <span className="flex items-center gap-1 rounded-full bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-700 border border-amber-200">
-              <AlertTriangle className="h-3 w-3" aria-hidden="true" />
-              Names visible — audit logged
-            </span>
-          )}
-          <div className="flex items-center gap-2">
-            <Switch
-              id="show-names"
-              checked={namesRevealed}
-              onCheckedChange={handleNamesToggle}
-              disabled={namesLoading}
-              aria-label="Show applicant names"
+        {/* Received-date range (Item 7.1) — server-side, navigates on change */}
+        <div className="flex flex-col gap-1">
+          <div className="flex items-center gap-1.5">
+            <span className="text-xs font-medium text-slate-500">Received</span>
+            <Input
+              type="date"
+              aria-label="Received from"
+              value={submittedFrom}
+              max={submittedTo || undefined}
+              onChange={(e) => {
+                setSubmittedFrom(e.target.value);
+                applyReceivedDateFilter(e.target.value, submittedTo);
+              }}
+              className="h-9 w-[150px] border-neutral-200 bg-white text-sm"
             />
-            <Label
-              htmlFor="show-names"
-              className="cursor-pointer text-sm text-slate-600 whitespace-nowrap"
-            >
-              Show names
-            </Label>
+            <span className="text-xs text-slate-400" aria-hidden="true">
+              –
+            </span>
+            <Input
+              type="date"
+              aria-label="Received to"
+              value={submittedTo}
+              min={submittedFrom || undefined}
+              onChange={(e) => {
+                setSubmittedTo(e.target.value);
+                applyReceivedDateFilter(submittedFrom, e.target.value);
+              }}
+              className="h-9 w-[150px] border-neutral-200 bg-white text-sm"
+            />
           </div>
+          {receivedRangeError && (
+            <span role="alert" className="text-xs text-red-600">
+              {receivedRangeError}
+            </span>
+          )}
+        </div>
+
+        {/* Submission-by (deadline) range (Item 7.2) — server-side, independently clearable */}
+        <div className="flex flex-col gap-1">
+          <div className="flex items-center gap-1.5">
+            <span className="text-xs font-medium text-slate-500">
+              Submission-by
+            </span>
+            <Input
+              type="date"
+              aria-label="Submission-by from"
+              value={deadlineFrom}
+              max={deadlineTo || undefined}
+              onChange={(e) => {
+                setDeadlineFrom(e.target.value);
+                applyDeadlineRangeFilter(e.target.value, deadlineTo);
+              }}
+              className="h-9 w-[150px] border-neutral-200 bg-white text-sm"
+            />
+            <span className="text-xs text-slate-400" aria-hidden="true">
+              –
+            </span>
+            <Input
+              type="date"
+              aria-label="Submission-by to"
+              value={deadlineTo}
+              min={deadlineFrom || undefined}
+              onChange={(e) => {
+                setDeadlineTo(e.target.value);
+                applyDeadlineRangeFilter(deadlineFrom, e.target.value);
+              }}
+              className="h-9 w-[150px] border-neutral-200 bg-white text-sm"
+            />
+          </div>
+          {deadlineRangeError && (
+            <span role="alert" className="text-xs text-red-600">
+              {deadlineRangeError}
+            </span>
+          )}
         </div>
       </div>
+
+      {/* Section tabs: New applications vs Rolling-over bursaries */}
+      <Tabs
+        value={activeTab}
+        onValueChange={(v) => setActiveTab(v as TabKey)}
+      >
+        <TabsList>
+          <TabsTrigger value="new">
+            New applications
+            <span className="ml-1.5 rounded-full bg-neutral-200 px-1.5 text-xs text-slate-600">
+              {newRows.length}
+            </span>
+          </TabsTrigger>
+          <TabsTrigger value="rolling">
+            Rolling-over bursaries
+            <span className="ml-1.5 rounded-full bg-neutral-200 px-1.5 text-xs text-slate-600">
+              {rollingRows.length}
+            </span>
+          </TabsTrigger>
+        </TabsList>
+      </Tabs>
 
       {/* Bulk-action toolbar — ADMIN only, shown when ≥1 row is selected */}
       {bulkEnabled && selectedIds.length > 0 && (
@@ -1100,19 +1291,14 @@ export function ApplicationTable({
           selectedIds={selectedIds}
           assessors={assessors}
           reassessTargetRound={reassessTargetRound}
-          // Epic 03 (concurrent rounds): pass the round the queue is scoped to
-          // so the re-assessment invite targets it explicitly and never fans
-          // into the wrong open round. "all" ⇒ no explicit round (the server
-          // refuses when >1 round is OPEN).
           reassessTargetRoundId={selectedRound !== "all" ? selectedRound : null}
+          closeReasons={closeReasons}
           onClear={handleClearSelection}
           onActionComplete={handleBulkComplete}
           onFeedback={setBulkFeedback}
         />
       )}
 
-      {/* Bulk-action result — lives in the parent so a success message survives
-          the toolbar unmounting after the selection is cleared. */}
       {bulkEnabled && bulkFeedback && (
         <div
           role="status"
@@ -1137,94 +1323,90 @@ export function ApplicationTable({
 
       {/* Table — horizontal scroll wrapper for mobile */}
       <div className="overflow-x-auto -mx-4 md:mx-0">
-        <div className="min-w-[640px] md:min-w-0 rounded-lg border border-neutral-200 bg-white overflow-hidden">
-        <Table>
-          <TableHeader>
-            {table.getHeaderGroups().map((headerGroup) => (
-              <TableRow
-                key={headerGroup.id}
-                className="border-b border-neutral-200 hover:bg-transparent"
-              >
-                {headerGroup.headers.map((header) => {
-                  const canSort = header.column.getCanSort();
-                  const sorted = header.column.getIsSorted();
-                  return (
-                    <TableHead
-                      key={header.id}
-                      className="h-10 px-4 text-xs font-semibold uppercase tracking-wide text-slate-500"
-                    >
-                      {header.isPlaceholder ? null : (
-                        <span
-                          className={cn(
-                            canSort
-                              ? "cursor-pointer select-none hover:text-slate-800 flex items-center"
-                              : ""
-                          )}
-                          onClick={
-                            canSort
-                              ? header.column.getToggleSortingHandler()
-                              : undefined
-                          }
-                        >
-                          {flexRender(
-                            header.column.columnDef.header,
-                            header.getContext()
-                          )}
-                          {canSort && <SortIcon sorted={sorted} />}
-                        </span>
-                      )}
-                    </TableHead>
-                  );
-                })}
-              </TableRow>
-            ))}
-          </TableHeader>
-          <TableBody>
-            {table.getRowModel().rows.length === 0 ? (
-              <TableRow>
-                <TableCell
-                  colSpan={columns.length}
-                  className="py-16 text-center"
-                >
-                  <div className="flex flex-col items-center gap-2">
-                    <p className="text-sm font-medium text-slate-500">
-                      No applications match the current filters
-                    </p>
-                    <p className="text-xs text-slate-400">
-                      Try adjusting or clearing the filters above
-                    </p>
-                  </div>
-                </TableCell>
-              </TableRow>
-            ) : (
-              table.getRowModel().rows.map((row) => (
+        <div className="min-w-[720px] md:min-w-0 rounded-lg border border-neutral-200 bg-white overflow-hidden">
+          <Table>
+            <TableHeader>
+              {table.getHeaderGroups().map((headerGroup) => (
                 <TableRow
-                  key={row.id}
-                  className="cursor-pointer border-b border-neutral-100 py-3 hover:bg-neutral-50 transition-colors"
-                  onClick={() =>
-                    router.push(`/applications/${row.original.id}`)
-                  }
+                  key={headerGroup.id}
+                  className="border-b border-neutral-200 hover:bg-transparent"
                 >
-                  {row.getVisibleCells().map((cell) => (
-                    <TableCell key={cell.id} className="px-4 py-3">
-                      {flexRender(
-                        cell.column.columnDef.cell,
-                        cell.getContext()
-                      )}
-                    </TableCell>
-                  ))}
+                  {headerGroup.headers.map((header) => {
+                    const canSort = header.column.getCanSort();
+                    const sorted = header.column.getIsSorted();
+                    return (
+                      <TableHead
+                        key={header.id}
+                        className="h-10 px-4 text-xs font-semibold uppercase tracking-wide text-slate-500"
+                      >
+                        {header.isPlaceholder ? null : (
+                          <span
+                            className={cn(
+                              canSort
+                                ? "cursor-pointer select-none hover:text-slate-800 flex items-center"
+                                : ""
+                            )}
+                            onClick={
+                              canSort
+                                ? header.column.getToggleSortingHandler()
+                                : undefined
+                            }
+                          >
+                            {flexRender(
+                              header.column.columnDef.header,
+                              header.getContext()
+                            )}
+                            {canSort && <SortIcon sorted={sorted} />}
+                          </span>
+                        )}
+                      </TableHead>
+                    );
+                  })}
                 </TableRow>
-              ))
-            )}
-          </TableBody>
-        </Table>
+              ))}
+            </TableHeader>
+            <TableBody>
+              {table.getRowModel().rows.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={columns.length} className="py-16 text-center">
+                    <div className="flex flex-col items-center gap-2">
+                      <p className="text-sm font-medium text-slate-500">
+                        {activeTab === "new"
+                          ? "No new applications match the current filters"
+                          : "No rolling-over bursaries match the current filters"}
+                      </p>
+                      <p className="text-xs text-slate-400">
+                        Try adjusting or clearing the filters above
+                      </p>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ) : (
+                table.getRowModel().rows.map((row) => (
+                  <TableRow
+                    key={row.id}
+                    className="cursor-pointer border-b border-neutral-100 py-3 hover:bg-neutral-50 transition-colors"
+                    onClick={() => router.push(`/applications/${row.original.id}`)}
+                  >
+                    {row.getVisibleCells().map((cell) => (
+                      <TableCell key={cell.id} className="px-4 py-3">
+                        {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                      </TableCell>
+                    ))}
+                  </TableRow>
+                ))
+              )}
+            </TableBody>
+          </Table>
         </div>
       </div>
 
       {/* Row count */}
       <p className="text-xs text-slate-400">
-        Showing {table.getRowModel().rows.length} of {applications.length}{" "}
-        application{applications.length !== 1 ? "s" : ""}
+        Showing {table.getRowModel().rows.length} of {visibleRows.length}{" "}
+        {activeTab === "new"
+          ? `new application${visibleRows.length === 1 ? "" : "s"}`
+          : `rolling-over bursar${visibleRows.length === 1 ? "y" : "ies"}`}
       </p>
     </div>
   );

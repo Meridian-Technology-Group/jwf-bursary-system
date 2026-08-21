@@ -31,12 +31,15 @@ import { createAuditLog } from "@/lib/audit/log";
 import { submitApplicationData } from "@/lib/applications/status";
 import { getSectionGapStatuses, type SectionGap } from "@/lib/portal/section-gaps";
 import { SECTION_ORDER } from "@/lib/portal/sections";
+import { familyIdConsistencyIssues } from "@/lib/schemas/family-id";
+import { isTwoParentHousehold } from "@/lib/schemas/parent-details";
 import { isSubmissionDeadlinePassed } from "@/lib/rounds/submission-deadline";
 import { mirrorApplicationToSchedule } from "@/lib/bursary-accounts/lifecycle";
 import { TERMS_AND_CONDITIONS_VERSION } from "@/lib/portal/terms";
 import { logError } from "@/lib/log";
 
 import { AUDIT_ENTITY_TYPES, type AuditAction } from "@/lib/audit/actions";
+import { SUBMISSION_DEADLINE_PASSED_MESSAGE } from "@/lib/applications/submission-error";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -53,6 +56,16 @@ export interface SubmitBlockedByGapsError {
     label: string;
     fieldRef?: string;
   }>;
+}
+
+/**
+ * Thrown when sections are still incomplete. The `.message` is unchanged (staff
+ * surfaces render it verbatim); `incompleteSections` carries the same list in a
+ * structured form so the applicant-facing sanitiser can name the sections in
+ * plain English instead of leaking enum values.
+ */
+export interface SubmitIncompleteSectionsError extends Error {
+  incompleteSections: ApplicationSectionType[];
 }
 
 export interface SubmitApplicationCoreInput {
@@ -135,11 +148,20 @@ export async function submitApplicationCore(
           childDob: true,
           school: true,
           entryYear: true,
-          entryYearGroup: true,
           submissionDeadlineAt: true,
+          // Selects which typed round default the deadline guard below reads
+          // (E1/D13-8).
+          applicationType: true,
           bursaryAccountId: true,
           roundId: true,
-          round: { select: { academicYear: true, closeDate: true } },
+          round: {
+            select: {
+              academicYear: true,
+              closeDate: true,
+              defaultSubmissionDeadlineNew: true,
+              defaultSubmissionDeadlineRolling: true,
+            },
+          },
           sections: {
             where: { ownerContributorId },
             select: { section: true, isComplete: true, data: true },
@@ -188,19 +210,21 @@ export async function submitApplicationCore(
   // ── Deadline lockout (Epic 05 §3.2) ───────────────────────────────────────
   // Server-side enforcement of the per-application submission deadline so a
   // stale tab cannot post after the cut-off. The effective deadline is the ONE
-  // source of truth (Epic 03): per-app submissionDeadlineAt ?? round.closeDate
-  // end-of-day. The UI also hides the submit control + renders read-only, but
-  // this guard is authoritative.
+  // source of truth (Epic 03/12/E1): per-app submissionDeadlineAt ?? the round
+  // default FOR THIS APPLICATION TYPE ?? round.closeDate, end-of-day. The UI
+  // also hides the submit control + renders read-only, but this guard is
+  // authoritative.
   if (
     enforceDeadline &&
     isSubmissionDeadlinePassed(
-      { submissionDeadlineAt: application.submissionDeadlineAt },
-      { closeDate: application.round.closeDate }
+      {
+        submissionDeadlineAt: application.submissionDeadlineAt,
+        applicationType: application.applicationType,
+      },
+      application.round
     )
   ) {
-    throw new Error(
-      "The submission deadline for this application has passed, so it can no longer be submitted. Forms submitted late cannot be assessed — please contact the Foundation if you believe this is an error."
-    );
+    throw new Error(SUBMISSION_DEADLINE_PASSED_MESSAGE);
   }
 
   // ── Validate all 10 sections are complete ─────────────────────────────────
@@ -214,9 +238,13 @@ export async function submitApplicationCore(
 
   if (incompleteSections.length > 0) {
     const labels = incompleteSections.join(", ");
-    throw new Error(
+    const error = new Error(
       `The following sections are not yet complete: ${labels}. Please complete them before submitting.`
-    );
+    ) as SubmitIncompleteSectionsError;
+    // Same list, structured — the portal turns it into section names the
+    // applicant recognises rather than showing them these enum values (CF-25).
+    error.incompleteSections = incompleteSections;
+    throw error;
   }
 
   // ── Validate no error-severity gaps remain (defence-in-depth) ────────────
@@ -234,42 +262,82 @@ export async function submitApplicationCore(
     gs.gaps.filter((g) => g.severity === "error")
   );
 
-  if (errorGaps.length > 0) {
+  // ── Cross-section Family Identification consistency (per-section schema is
+  // scoped to one section, so the child-count / partner-adult rules are also
+  // enforced HERE where every section's data is in hand). Only runs when the
+  // FAMILY_ID section carries members (skipped for rolling-over re-assessments
+  // where it is hidden). Mirrors makeFamilyIdSchema exactly. ─────────────────
+  const sectionData = new Map(
+    application.sections.map((s) => [s.section, s.data])
+  );
+  const familyIdData = sectionData.get("FAMILY_ID") as {
+    familyMembers?: { role?: string; memberType?: string }[];
+  } | null;
+  const crossSectionGaps: SubmitBlockedByGapsError["gaps"] = [];
+  if (Array.isArray(familyIdData?.familyMembers)) {
+    const depData = sectionData.get("DEPENDENT_CHILDREN") as {
+      numberOfDependentChildren?: number;
+      children?: unknown[];
+    } | null;
+    const dependentChildrenCount =
+      typeof depData?.numberOfDependentChildren === "number"
+        ? depData.numberOfDependentChildren
+        : Array.isArray(depData?.children)
+          ? depData!.children!.length
+          : undefined;
+    const parentData = sectionData.get("PARENT_DETAILS") as {
+      isSoleParent?: boolean;
+      relationshipStatus?: string;
+    } | null;
+    for (const issue of familyIdConsistencyIssues(familyIdData!.familyMembers!, {
+      dependentChildrenCount,
+      requiresPartnerAdult: isTwoParentHousehold({
+        isSoleParent: parentData?.isSoleParent,
+        relationshipStatus: parentData?.relationshipStatus,
+      }),
+    })) {
+      crossSectionGaps.push({
+        id: issue.id,
+        sectionType: "FAMILY_ID",
+        label: issue.message,
+        fieldRef: "familyMembers",
+      });
+    }
+  }
+
+  if (errorGaps.length > 0 || crossSectionGaps.length > 0) {
     const payload: SubmitBlockedByGapsError = {
       code: "GAPS_BLOCKING_SUBMISSION",
-      gaps: errorGaps.map((g) => ({
-        id: g.id,
-        sectionType: g.sectionType,
-        label: g.label,
-        fieldRef: g.fieldRef,
-      })),
+      gaps: [
+        ...errorGaps.map((g) => ({
+          id: g.id,
+          sectionType: g.sectionType,
+          label: g.label,
+          fieldRef: g.fieldRef,
+        })),
+        ...crossSectionGaps,
+      ],
     };
     // Encode the structured payload as a JSON string inside the Error message
     // so the client-side catch block can parse and display it.
     throw new Error(JSON.stringify(payload));
   }
 
-  // ── Promote entry year-group + entry calendar year onto the columns ───────
-  // The applicant picks the entry year-group in CHILD_DETAILS (spec §4); it
-  // lives in section JSONB until submit, when we copy it to the first-class
-  // `entryYearGroup` column that the assessment engine + reports read. A new
-  // entrant's entry *calendar* year is the round they're applying to. We never
-  // clobber values already set (e.g. carried into a re-assessment application).
+  // ── Backfill the entry calendar year onto the column ─────────────────────
+  // The entry year-group is JWF-facing ONLY (Q1, Brian 2026-08-14): it is set
+  // admin-side on `Application.entryYearGroup` and is NEVER read out of the
+  // CHILD_DETAILS blob here — the applicant cannot enter it, so there is
+  // nothing to promote and no way for a submit to clobber the admin value.
+  // A new entrant's entry *calendar* year is still derived from the round they
+  // applied to when the column has not been set. Never clobber a value already
+  // set (e.g. carried into a re-assessment application).
   const childDetailsData = application.sections.find(
     (s) => s.section === "CHILD_DETAILS"
-  )?.data as { entryYearGroup?: unknown; dateOfBirth?: unknown } | undefined;
-  const VALID_GROUPS = ["Y6", "Y7", "Y9", "Y12", "OTHER"] as const;
-  const rawGroup = childDetailsData?.entryYearGroup;
-  const childEntryYearGroup =
-    typeof rawGroup === "string" &&
-    (VALID_GROUPS as readonly string[]).includes(rawGroup)
-      ? (rawGroup as (typeof VALID_GROUPS)[number])
-      : null;
+  )?.data as { dateOfBirth?: unknown } | undefined;
   const roundStartYear = Number.parseInt(
     application.round.academicYear.slice(0, 4),
     10
   );
-  const entryYearGroupToPersist = application.entryYearGroup ?? childEntryYearGroup;
   const entryYearToPersist =
     application.entryYear ?? (Number.isNaN(roundStartYear) ? null : roundStartYear);
 
@@ -328,7 +396,8 @@ export async function submitApplicationCore(
               termsAcceptedAt: submittedAt,
               termsVersion: TERMS_AND_CONDITIONS_VERSION,
             }),
-        entryYearGroup: entryYearGroupToPersist,
+        // entryYearGroup is intentionally NOT written here — it is JWF-facing
+        // and admin-set only (Q1). Submitting must never change it.
         entryYear: entryYearToPersist,
         childDob: childDobToPersist,
         custodyArrangement: custodyToPersist,

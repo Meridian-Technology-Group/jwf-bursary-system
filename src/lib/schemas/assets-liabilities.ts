@@ -11,9 +11,9 @@ export const rentAgreementSchema = z.enum(
   { message: "Please select your rent arrangement" }
 );
 
-/** Q5 — car ownership vs lease. */
-export const carOwnershipSchema = z.enum(["OWN", "LEASE"] as const, {
-  message: "Please select whether you own or lease a car",
+/** Q5 — car ownership vs lease (or neither). */
+export const carOwnershipSchema = z.enum(["OWN", "LEASE", "NEITHER"] as const, {
+  message: "Please select whether you own, lease, or have neither",
 });
 
 /** Q2 — an additional owned property. */
@@ -72,7 +72,6 @@ export const assetsLiabilitiesSchema = z
     }),
     publicTransportMonthly: currencyField.optional(), // Q6
     otherPossessionsValue: currencyField, // Q7
-    otherNonFinancialAssetsValue: currencyField, // Q8
 
     // ── FINANCIAL ASSETS & DEBT ─────────────────────────────────────────────────
     totalCashBalance: currencyField, // Q9
@@ -95,6 +94,7 @@ export const assetsLiabilitiesSchema = z
     bankOverdraft: currencyField.optional(),
     loansToAgencies: currencyField.optional(),
     loanStatementDocumentIds: z.array(z.string()).default([]),
+    loanAgreementDocumentIds: z.array(z.string()).default([]),
     loansToFriendsFamily: currencyField.optional(),
     schoolFeesOwed: currencyField.optional(),
     otherDebtDocumentIds: z.array(z.string()).default([]),

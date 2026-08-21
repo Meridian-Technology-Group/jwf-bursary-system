@@ -8,7 +8,7 @@
  * When the user has no Application but does have an accepted Invitation, they
  * see an onboarding card to confirm school + child name before entering the
  * form. When there is no invitation at all, a neutral fallback message is
- * shown directing them to contact the Foundation.
+ * shown directing them to the bursary team's email address.
  */
 
 import { redirect } from "next/navigation";
@@ -29,6 +29,7 @@ import { projectFormStatusForApplicant } from "@/components/shared/lifecycle-bad
 import { ApplicationTypeChooser } from "@/app/(portal)/application-type-chooser";
 import { PortalPage } from "@/components/portal/portal-page";
 import { SubmissionCountdown } from "@/components/portal/submission-countdown";
+import { ContactBursaryTeam } from "@/components/portal/contact-bursary-team";
 import {
   effectiveSubmissionDeadline,
   isSubmissionDeadlinePassed,
@@ -39,13 +40,19 @@ import {
   SECTION_TO_SLUG,
   SECTION_TITLES,
 } from "@/lib/portal/sections";
+import { getScheduleHomeForUser } from "@/lib/db/queries/schedule";
+import { getActiveApplicationId } from "@/lib/portal/active-application";
+import { buildScheduleHomeRows } from "@/lib/bursary-accounts/schedule-home";
+import {
+  ScheduleHome,
+  type ScheduleHomeBlock,
+} from "@/components/portal/schedule-home";
 import {
   FileText,
   ArrowRight,
   ClipboardList,
   Upload,
   Lock,
-  History,
   HelpCircle,
 } from "lucide-react";
 import Link from "next/link";
@@ -104,11 +111,18 @@ export default async function PortalDashboardPage() {
     inviteRoundYear,
   } = user
     ? await (async () => {
+        // E2: the dashboard describes the ACTIVE application (cookie
+        // preference; most-recent when unset — pre-E2 behaviour).
+        const activeApplicationId = await getActiveApplicationId();
         const userScope = await withUserContext(
           user.id,
           user.role as RlsRole,
           async (tx) => {
-            const app = await getCurrentApplicationForUser(tx, user.id);
+            const app = await getCurrentApplicationForUser(
+              tx,
+              user.id,
+              activeApplicationId
+            );
             let completed = 0;
             let totalSections = TOTAL_SECTIONS;
             let deadlinePast = false;
@@ -170,18 +184,25 @@ export default async function PortalDashboardPage() {
               if (app.formStatus !== "SUBMITTED") {
                 const round = await tx.round.findUnique({
                   where: { id: app.roundId },
-                  select: { closeDate: true },
+                  select: {
+                    closeDate: true,
+                    // Both typed defaults (E1/D13-8); the resolver branches on
+                    // the application's own type.
+                    defaultSubmissionDeadlineNew: true,
+                    defaultSubmissionDeadlineRolling: true,
+                  },
                 });
                 if (round) {
+                  const deadlineApp = {
+                    submissionDeadlineAt: app.submissionDeadlineAt,
+                    applicationType: app.applicationType,
+                  };
                   const { deadline } = effectiveSubmissionDeadline(
-                    { submissionDeadlineAt: app.submissionDeadlineAt },
-                    { closeDate: round.closeDate }
+                    deadlineApp,
+                    round
                   );
                   deadlineIso = deadline.toISOString();
-                  deadlinePast = isSubmissionDeadlinePassed(
-                    { submissionDeadlineAt: app.submissionDeadlineAt },
-                    { closeDate: round.closeDate }
-                  );
+                  deadlinePast = isSubmissionDeadlinePassed(deadlineApp, round);
                 }
               }
             }
@@ -278,6 +299,28 @@ export default async function PortalDashboardPage() {
         inviteRoundYear: null,
       };
 
+  // D3 (CG-02): returning parents — ≥1 ACTIVE bursary account led by this
+  // profile — get the per-child Bursary Application Schedule as the lead
+  // section. First-time applicants (no account) keep the single-path home
+  // (CG-03). Admin context is required (round_windows is staff-read under
+  // RLS); the query is hard-scoped to this user and returns derived,
+  // parent-safe rows only.
+  const scheduleBlocks: ScheduleHomeBlock[] = user
+    ? (
+        await withAdminContext((tx) => getScheduleHomeForUser(tx, user.id))
+      ).map((account) => ({
+        accountId: account.accountId,
+        childName: account.childName,
+        school: account.school,
+        rows: buildScheduleHomeRows({
+          entryYearGroup: account.entryYearGroup,
+          entries: account.entries,
+          today: new Date(),
+        }),
+      }))
+    : [];
+  const hasSchedule = scheduleBlocks.some((b) => b.rows.length > 0);
+
   const isDraft =
     application != null && application.formStatus !== "SUBMITTED";
   // Past-deadline lockout (Epic 05 §3.2): only meaningful while still drafting.
@@ -321,7 +364,8 @@ export default async function PortalDashboardPage() {
   // PAUSED bit under service-role context (see getApplicationPausedStateForUser).
   const hasOutstandingDocRequest =
     user && application
-      ? (await getApplicationPausedStateForUser(user.id)).isPaused
+      ? (await getApplicationPausedStateForUser(user.id, application.id))
+          .isPaused
       : false;
 
   return (
@@ -339,6 +383,14 @@ export default async function PortalDashboardPage() {
             : "Your bursary portal is ready."}
         </p>
       </div>
+
+      {/* D3 (CG-02): returning families lead with the per-child schedule. */}
+      {hasSchedule && (
+        <ScheduleHome
+          blocks={scheduleBlocks.filter((b) => b.rows.length > 0)}
+          hasStartAffordance={!application && invitation != null}
+        />
+      )}
 
       {application ? (
         <>
@@ -503,27 +555,6 @@ export default async function PortalDashboardPage() {
                 />
               </a>
 
-              {/* Application history (multi-round account view, Epic 05 §3.4) */}
-              <a
-                href="/history"
-                className="group flex items-center gap-4 rounded-xl border border-slate-200 bg-white p-5 shadow-sm transition-shadow hover:shadow-md focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-600"
-              >
-                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-600">
-                  <History className="h-5 w-5" aria-hidden="true" />
-                </div>
-                <div className="min-w-0 flex-1">
-                  <p className="font-medium text-slate-900 group-hover:text-primary-900">
-                    Application History
-                  </p>
-                  <p className="mt-0.5 text-sm text-slate-500">
-                    View past rounds &amp; download submissions
-                  </p>
-                </div>
-                <ArrowRight
-                  className="h-4 w-4 shrink-0 text-slate-300 group-hover:text-primary-600 transition-colors"
-                  aria-hidden="true"
-                />
-              </a>
             </div>
           </div>
 
@@ -540,12 +571,15 @@ export default async function PortalDashboardPage() {
            below is the one ELEVATED tier (Decision 7) — first-timers benefit
            most from the guidance before they start. */
         <>
-          <ApplicationTypeChooser
-            eligibleType={invitation.bursaryAccountId ? "ROLLING_OVER" : "NEW"}
-            defaultChildName={invitation.childName}
-            school={invitation.school}
-            academicYear={inviteRoundYear}
-          />
+          {/* D3: schedule rows' START APPLICATION buttons anchor here. */}
+          <div id="start-application">
+            <ApplicationTypeChooser
+              eligibleType={invitation.bursaryAccountId ? "ROLLING_OVER" : "NEW"}
+              defaultChildName={invitation.childName}
+              school={invitation.school}
+              academicYear={inviteRoundYear}
+            />
+          </div>
 
           {/* Elevated help card (Decision 7) — same destination as the quiet
               link, more prominence for first-timers. NOTE: this is currently
@@ -587,8 +621,8 @@ export default async function PortalDashboardPage() {
               No invitation found
             </h2>
             <p className="mt-2 text-sm text-slate-500">
-              We can&rsquo;t find an invitation linked to your account. Please
-              contact the Foundation if you believe this is an error.
+              We can&rsquo;t find an invitation linked to your account. If you
+              believe this is an error, <ContactBursaryTeam />.
             </p>
           </div>
 

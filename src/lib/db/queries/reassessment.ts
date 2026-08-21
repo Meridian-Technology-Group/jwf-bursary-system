@@ -8,9 +8,17 @@
 import type { Tx } from "@/lib/db/prisma";
 import type { ApplicationSectionType, Invitation } from "@prisma/client";
 import { ApplicationContributorRole } from "@prisma/client";
-import { generateApplicationReference } from "@/lib/applications/reference";
+import {
+  resolveRolloverReference,
+  type ApplicationReferenceInput,
+} from "@/lib/applications/reference";
 import { applicationCreateData } from "@/lib/applications/status";
 import { ensurePrimaryContributor } from "@/lib/db/queries/contributors";
+import {
+  selectPreviousWatchOutNotes,
+  type WatchOutCandidate,
+  type WatchOutSelection,
+} from "@/lib/assessment/watch-out-notes";
 
 // ─── Section types that are pre-populated from the previous year ─────────────
 
@@ -87,6 +95,30 @@ export interface PreviousYearApplication {
 }
 
 /**
+ * The "most recent prior-round application for this account" selector, shared
+ * by `getPreviousYearApplication` and `getPreviousYearReferenceSource` so the
+ * reference a rollover inherits always comes from the same application whose
+ * sections it pre-populates from. Keep the two callers on this one definition.
+ *
+ * PR-6a: "reached submission" is form_status SUBMITTED (the lifecycle
+ * equivalent of the old fused SUBMITTED/COMPLETED/QUALIFIES/DNQ set), not the
+ * deprecated fused applications.status.
+ */
+function previousYearApplicationQuery(
+  bursaryAccountId: string,
+  currentRoundId: string
+) {
+  return {
+    where: {
+      bursaryAccountId,
+      roundId: { not: currentRoundId },
+      formStatus: "SUBMITTED" as const,
+    },
+    orderBy: { submittedAt: "desc" as const },
+  };
+}
+
+/**
  * Returns the most recent application for a bursary account that is NOT in
  * the current round. Includes section data and assessment snapshot for
  * year-on-year comparison.
@@ -97,15 +129,7 @@ export async function getPreviousYearApplication(
   currentRoundId: string
 ): Promise<PreviousYearApplication | null> {
   const application = await tx.application.findFirst({
-    where: {
-      bursaryAccountId,
-      roundId: { not: currentRoundId },
-      // PR-6a: "reached submission" is form_status SUBMITTED (the lifecycle
-      // equivalent of the old fused SUBMITTED/COMPLETED/QUALIFIES/DNQ set), not
-      // the deprecated fused applications.status.
-      formStatus: "SUBMITTED",
-    },
-    orderBy: { submittedAt: "desc" },
+    ...previousYearApplicationQuery(bursaryAccountId, currentRoundId),
     select: {
       id: true,
       reference: true,
@@ -160,6 +184,47 @@ export async function getPreviousYearApplication(
             application.assessment.schoolingYearsRemaining ?? null,
         }
       : null,
+  };
+}
+
+// ─── getPreviousYearReferenceSource ───────────────────────────────────────────
+
+/**
+ * The prior-year application as `resolveRolloverReference` needs to see it: its
+ * current reference plus the four facts that determined its OWN default label.
+ * Recomputing that default and comparing is how an untouched default is told
+ * apart from a human-entered fees-system code (D13-1a, Q5) — no audit lookup,
+ * no extra column.
+ *
+ * Deliberately narrow and separate from `getPreviousYearApplication`, which is
+ * the heavyweight sections+assessment read used by the year-on-year comparison
+ * UI. Both use `previousYearApplicationQuery`, so they always resolve to the
+ * same application.
+ */
+export async function getPreviousYearReferenceSource(
+  tx: Tx,
+  bursaryAccountId: string,
+  currentRoundId: string
+): Promise<(ApplicationReferenceInput & { reference: string }) | null> {
+  const prior = await tx.application.findFirst({
+    ...previousYearApplicationQuery(bursaryAccountId, currentRoundId),
+    select: {
+      reference: true,
+      childName: true,
+      school: true,
+      entryYearGroup: true,
+      round: { select: { academicYear: true } },
+    },
+  });
+
+  if (!prior) return null;
+
+  return {
+    reference: prior.reference,
+    childName: prior.childName,
+    school: prior.school,
+    entryYearGroup: prior.entryYearGroup,
+    academicYear: prior.round.academicYear,
   };
 }
 
@@ -331,11 +396,31 @@ export async function createReassessmentApplicationFromInvitation(
     where: { id: roundId },
     select: { academicYear: true },
   });
-  const reference = await generateApplicationReference(
+
+  // D13-1a / Q5: a ROLLING_OVER application INHERITS the prior year's
+  // reference, because once it has been edited to the external fees-system
+  // code that code is what reconciliation depends on. It is regenerated only
+  // when the prior reference is still the untouched default — inheriting that
+  // verbatim would drag a stale academic year onto the new year's application.
+  // The decision itself is pure (`resolveRolloverReference`); all this does is
+  // feed it the prior application's own reference-defining facts.
+  //
+  // `entryYearGroup` is passed as null on purpose: this create does not persist
+  // one (only `entryYear`), so the label is built from exactly the fields the
+  // row will hold — which is what keeps next year's recompute-and-compare
+  // consistent. Populating `entryYearGroup` on rollovers would also feed the
+  // schooling-years calculation, so it is deliberately left to a separate change.
+  const prior = await getPreviousYearReferenceSource(
     tx,
-    school,
-    round?.academicYear ?? ""
+    bursaryAccountId,
+    roundId
   );
+  const reference = resolveRolloverReference(prior, {
+    childName,
+    school,
+    entryYearGroup: null,
+    academicYear: round?.academicYear,
+  });
 
   const application = await tx.application.create({
     data: {
@@ -388,6 +473,15 @@ export interface PreviousAssessmentSnapshot {
 /**
  * Returns the assessment from the previous year for a given bursary account.
  * Used in the admin year-on-year comparison component.
+ *
+ * CALC-12: a v2 assessment never writes the legacy `assessment.bursaryAward` /
+ * `yearlyPayableFees` / `monthlyPayableFees` columns directly (those are
+ * v1-only outputs of `calculator.ts`) — the v2 confirmed figures are
+ * dual-written onto `Recommendation` instead (`recommendation-form-v2.tsx`).
+ * Without a fallback, a previous-year v2 assessment showed blank "—" rows here.
+ * Same fallback-walk pattern as `getSchoolComparison` / `account-promotion.ts`:
+ * prefer the recommendation's (dual-written, always-current) figure, then the
+ * legacy assessment column (v1 rows, or a v2 row with no recommendation yet).
  */
 export async function getPreviousAssessment(
   tx: Tx,
@@ -415,6 +509,13 @@ export async function getPreviousAssessment(
           yearlyPayableFees: true,
           monthlyPayableFees: true,
           schoolingYearsRemaining: true,
+          recommendation: {
+            select: {
+              bursaryAward: true,
+              yearlyPayableFees: true,
+              monthlyPayableFees: true,
+            },
+          },
         },
       },
     },
@@ -423,6 +524,7 @@ export async function getPreviousAssessment(
   if (!previous?.assessment) return null;
 
   const a = previous.assessment;
+  const rec = a.recommendation;
   return {
     applicationReference: previous.reference,
     academicYear: previous.round.academicYear,
@@ -431,9 +533,11 @@ export async function getPreviousAssessment(
     hndiAfterNs: a.hndiAfterNs?.toString() ?? null,
     requiredBursary: a.requiredBursary?.toString() ?? null,
     grossFees: a.grossFees?.toString() ?? null,
-    bursaryAward: a.bursaryAward?.toString() ?? null,
-    yearlyPayableFees: a.yearlyPayableFees?.toString() ?? null,
-    monthlyPayableFees: a.monthlyPayableFees?.toString() ?? null,
+    bursaryAward: (rec?.bursaryAward ?? a.bursaryAward)?.toString() ?? null,
+    yearlyPayableFees:
+      (rec?.yearlyPayableFees ?? a.yearlyPayableFees)?.toString() ?? null,
+    monthlyPayableFees:
+      (rec?.monthlyPayableFees ?? a.monthlyPayableFees)?.toString() ?? null,
     schoolingYearsRemaining: a.schoolingYearsRemaining ?? null,
   };
 }
@@ -531,4 +635,51 @@ export async function getPriorYearSecondaryContributor(
     firstName: priorSecondary.profile.firstName,
     lastName: priorSecondary.profile.lastName,
   };
+}
+
+// ─── getPreviousWatchOutNotes (CALC-10) ────────────────────────────────────────
+
+/**
+ * "Assessor's wizard — things to look out for with this family" read path
+ * (implementation-plan.md §CALC-10). Loads every assessment linked to the
+ * bursary account and hands them to the pure selector
+ * (`src/lib/assessment/watch-out-notes.ts`), which picks the most recently
+ * COMPLETED assessment (excluding the current application) that left a
+ * non-blank note.
+ *
+ * Returns `null` when the account has no bursary account id, no other
+ * completed assessment, or none of them left a note.
+ */
+export async function getPreviousWatchOutNotes(
+  tx: Tx,
+  bursaryAccountId: string,
+  currentApplicationId: string
+): Promise<WatchOutSelection | null> {
+  const applications = await tx.application.findMany({
+    where: {
+      bursaryAccountId,
+      assessment: { isNot: null },
+    },
+    select: {
+      id: true,
+      round: { select: { academicYear: true } },
+      assessment: {
+        select: { status: true, completedAt: true, watchOutNotes: true },
+      },
+    },
+  });
+
+  const candidates: WatchOutCandidate[] = applications
+    .filter((app): app is typeof app & { assessment: NonNullable<typeof app.assessment> } =>
+      app.assessment !== null
+    )
+    .map((app) => ({
+      applicationId: app.id,
+      academicYear: app.round.academicYear,
+      status: app.assessment.status,
+      completedAt: app.assessment.completedAt,
+      watchOutNotes: app.assessment.watchOutNotes,
+    }));
+
+  return selectPreviousWatchOutNotes(candidates, currentApplicationId);
 }

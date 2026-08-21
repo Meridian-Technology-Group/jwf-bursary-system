@@ -21,6 +21,7 @@ import { getCurrentUser } from "@/lib/auth/roles";
 import { withUserContext, type RlsRole } from "@/lib/db/prisma";
 import { getLatestMissingDocsRequest } from "@/lib/db/queries/missing-docs";
 import { getApplicationPausedState } from "@/lib/db/queries/applications";
+import { getActiveApplicationId } from "@/lib/portal/active-application";
 import { PortalPage } from "@/components/portal/portal-page";
 import { RespondMissingDocsClient } from "./respond-client";
 
@@ -34,29 +35,39 @@ export default async function RespondPage() {
 
   // Load the applicant's own application under their RLS context. This
   // establishes ownership: `leadApplicantId: user.id` plus RLS guarantees the
-  // returned row belongs to the logged-in applicant.
+  // returned row belongs to the logged-in applicant. E2: the active-application
+  // preference picks between the caller's own applications; ownership WHERE
+  // is identical on both branches.
+  const activeApplicationId = await getActiveApplicationId();
+  const respondSelect = {
+    id: true,
+    reference: true,
+    childName: true,
+    documents: {
+      select: {
+        id: true,
+        slot: true,
+        filename: true,
+        fileSize: true,
+        uploadedAt: true,
+      },
+      orderBy: { uploadedAt: "desc" as const },
+    },
+  } as const;
   const application = await withUserContext(
     user.id,
     user.role as RlsRole,
-    (tx) =>
+    async (tx) =>
+      (activeApplicationId
+        ? await tx.application.findFirst({
+            where: { id: activeApplicationId, leadApplicantId: user.id },
+            select: respondSelect,
+          })
+        : null) ??
       tx.application.findFirst({
         where: { leadApplicantId: user.id },
         orderBy: { updatedAt: "desc" },
-        select: {
-          id: true,
-          reference: true,
-          childName: true,
-          documents: {
-            select: {
-              id: true,
-              slot: true,
-              filename: true,
-              fileSize: true,
-              uploadedAt: true,
-            },
-            orderBy: { uploadedAt: "desc" },
-          },
-        },
+        select: respondSelect,
       })
   );
 

@@ -10,6 +10,7 @@ import {
   BursaryAccountStatus,
   type EntryYearGroup,
   type Invitation,
+  type InvitationSituation,
   type School,
 } from "@prisma/client";
 
@@ -43,7 +44,6 @@ export interface InvitationWithCreator extends Invitation {
 
 export interface ActiveBursaryHolder {
   id: string;
-  reference: string;
   school: School;
   childName: string;
   leadApplicant: {
@@ -115,6 +115,11 @@ export async function createInvitation(
     firstName?: string;
     lastName?: string;
     childName?: string;
+    /** Epic 15 G2 (CH-09) — split child identity + DOB, carried onto the
+     *  application at acceptance. */
+    childFirstName?: string | null;
+    childLastName?: string | null;
+    childDob?: Date | null;
     school?: School;
     entryYear?: number | null;
     entryYearGroup?: EntryYearGroup | null;
@@ -123,6 +128,8 @@ export async function createInvitation(
     contactId?: string;
     applicationId?: string;
     authUserId?: string;
+    /** Epic 14 B3 — which invitation template variant this invite uses. */
+    situation?: InvitationSituation | null;
     token?: string;
     createdBy: string;
     expiresAt: Date;
@@ -134,9 +141,13 @@ export async function createInvitation(
       firstName: data.firstName ?? null,
       lastName: data.lastName ?? null,
       childName: data.childName ?? null,
+      childFirstName: data.childFirstName ?? null,
+      childLastName: data.childLastName ?? null,
+      childDob: data.childDob ?? null,
       school: data.school ?? null,
       entryYear: data.entryYear ?? null,
       entryYearGroup: data.entryYearGroup ?? null,
+      situation: data.situation ?? null,
       roundId: data.roundId ?? null,
       bursaryAccountId: data.bursaryAccountId ?? null,
       contactId: data.contactId ?? null,
@@ -344,12 +355,12 @@ export async function getActiveBursaryHolders(
         },
       },
     },
-    orderBy: { reference: "asc" },
+    // D13-1a: the account reference this used to order by is gone.
+    orderBy: { childName: "asc" },
   });
 
   return accounts.map((account) => ({
     id: account.id,
-    reference: account.reference,
     school: account.school,
     childName: account.childName,
     leadApplicant: account.leadApplicant,

@@ -16,9 +16,6 @@ import Link from "next/link";
 import {
   FileEdit,
   Send,
-  Search,
-  CheckCircle2,
-  XCircle,
   Circle,
   ArrowLeft,
   Upload,
@@ -32,6 +29,7 @@ import {
   type ParentStep,
 } from "@/lib/portal/status-projection";
 import { getDeadlineStatus } from "@/lib/portal/deadline";
+import { getActiveApplicationId } from "@/lib/portal/active-application";
 import { SubmissionCountdown } from "@/components/portal/submission-countdown";
 import { PortalPage } from "@/components/portal/portal-page";
 import { formatLondonDate } from "@/lib/datetime";
@@ -43,41 +41,53 @@ export const metadata = {
 const STEP_ICON: Record<ParentStep, React.ElementType> = {
   draft: FileEdit,
   submitted: Send,
-  assessing: Search,
-  outcome: CheckCircle2,
 };
 
 export default async function StatusPage() {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
 
+  // E2: honour the active-application context (preference folded into the
+  // ownership WHERE; most-recent fallback keeps pre-E2 behaviour).
+  const activeApplicationId = await getActiveApplicationId();
+  const statusSelect = {
+    id: true,
+    reference: true,
+    formStatus: true,
+    applicationType: true,
+    submittedAt: true,
+    createdAt: true,
+    childName: true,
+    submissionDeadlineAt: true,
+    round: {
+      select: {
+        academicYear: true,
+        decisionDate: true,
+        closeDate: true,
+        // Both typed round defaults (E1/D13-8) — the resolver picks the
+        // one matching this application's `applicationType`.
+        defaultSubmissionDeadlineNew: true,
+        defaultSubmissionDeadlineRolling: true,
+      },
+    },
+    assessment: {
+      select: { status: true, outcome: true, completedAt: true },
+    },
+  } as const;
   const application = await withUserContext(
     user.id,
     user.role as RlsRole,
-    (tx) =>
+    async (tx) =>
+      (activeApplicationId
+        ? await tx.application.findFirst({
+            where: { id: activeApplicationId, leadApplicantId: user.id },
+            select: statusSelect,
+          })
+        : null) ??
       tx.application.findFirst({
         where: { leadApplicantId: user.id },
         orderBy: { updatedAt: "desc" },
-        select: {
-          id: true,
-          reference: true,
-          formStatus: true,
-          applicationType: true,
-          submittedAt: true,
-          createdAt: true,
-          childName: true,
-          submissionDeadlineAt: true,
-          round: {
-            select: {
-              academicYear: true,
-              decisionDate: true,
-              closeDate: true,
-            },
-          },
-          assessment: {
-            select: { status: true, outcome: true, completedAt: true },
-          },
-        },
+        select: statusSelect,
       })
   );
 
@@ -93,8 +103,11 @@ export default async function StatusPage() {
   const isDraft = application.formStatus !== "SUBMITTED";
   const deadline = isDraft
     ? getDeadlineStatus(
-        { submissionDeadlineAt: application.submissionDeadlineAt },
-        { closeDate: application.round.closeDate }
+        {
+          submissionDeadlineAt: application.submissionDeadlineAt,
+          applicationType: application.applicationType,
+        },
+        application.round
       )
     : null;
 
@@ -102,8 +115,6 @@ export default async function StatusPage() {
   const stepDates: Record<ParentStep, Date | null | undefined> = {
     draft: application.createdAt,
     submitted: application.submittedAt,
-    assessing: application.submittedAt,
-    outcome: application.assessment?.completedAt ?? null,
   };
 
   return (
@@ -254,83 +265,6 @@ export default async function StatusPage() {
         </ol>
       </div>
 
-      {/* Outcome card — parent-safe outcome view (no enum names) */}
-      {projection.showOutcome && projection.outcome && (
-        <div
-          className={cn(
-            "rounded-xl border p-6 shadow-sm",
-            projection.outcome.awarded
-              ? "border-green-200 bg-green-50"
-              : "border-slate-200 bg-slate-50"
-          )}
-        >
-          <div className="flex items-start gap-4">
-            <div
-              className={cn(
-                "flex h-12 w-12 shrink-0 items-center justify-center rounded-full",
-                projection.outcome.awarded ? "bg-green-100" : "bg-slate-200"
-              )}
-            >
-              {projection.outcome.awarded ? (
-                <CheckCircle2
-                  className="h-6 w-6 text-green-600"
-                  aria-hidden="true"
-                />
-              ) : (
-                <XCircle className="h-6 w-6 text-slate-500" aria-hidden="true" />
-              )}
-            </div>
-            <div>
-              <h2
-                className={cn(
-                  "text-base font-semibold",
-                  projection.outcome.awarded
-                    ? "text-green-900"
-                    : "text-slate-800"
-                )}
-              >
-                {projection.outcome.title}
-              </h2>
-              <p
-                className={cn(
-                  "mt-1 text-sm",
-                  projection.outcome.awarded
-                    ? "text-green-700"
-                    : "text-slate-600"
-                )}
-              >
-                {projection.outcome.body}
-              </p>
-              {application.assessment?.completedAt && (
-                <p
-                  className={cn(
-                    "mt-2 text-xs",
-                    projection.outcome.awarded
-                      ? "text-green-600"
-                      : "text-slate-500"
-                  )}
-                >
-                  Decided on {formatLondonDate(application.assessment.completedAt)}
-                </p>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Decision date notice (only before an outcome is available) */}
-      {!projection.showOutcome && application.round.decisionDate && (
-        <div className="rounded-xl border border-blue-100 bg-blue-50 p-4">
-          <p className="text-sm text-blue-800">
-            Decisions for the {application.round.academicYear} round are expected
-            by{" "}
-            <span className="font-semibold">
-              {formatLondonDate(application.round.decisionDate)}
-            </span>
-            . You will be notified by email when your outcome is available.
-          </p>
-        </div>
-      )}
 
       {/* Back link */}
       <Link

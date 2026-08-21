@@ -20,12 +20,12 @@ import {
   resolveOwningContributorId,
 } from "@/lib/db/queries/contributors";
 import { getSectionGapStatuses } from "@/lib/portal/section-gaps";
+import { getActiveApplicationId } from "@/lib/portal/active-application";
 import {
   SECTION_ORDER,
   SECTION_TITLES,
   SECTION_TO_SLUG as SECTION_SLUGS,
 } from "@/lib/portal/sections";
-import { ENTRY_YEAR_GROUP_LABELS } from "@/lib/assessment/schooling-years";
 import { PortalPage } from "@/components/portal/portal-page";
 import { cn } from "@/lib/utils";
 import type {
@@ -95,7 +95,6 @@ function totalAssets(d: AssetsLiabilitiesData): number {
     (d.residenceValue ?? 0) +
     (d.carValue ?? 0) +
     (d.otherPossessionsValue ?? 0) +
-    (d.otherNonFinancialAssetsValue ?? 0) +
     (d.totalCashBalance ?? 0) +
     (d.investmentsValue ?? 0) +
     otherProperties.reduce((sum, p) => sum + (p.value ?? 0), 0)
@@ -136,12 +135,14 @@ function renderChildDetails(raw: unknown): SummaryRow[] {
     { label: "Name", value: d.childFullName || "—" },
     { label: "Date of birth", value: fmtDate(d.dateOfBirth) },
     { label: "School applying for", value: fmtSchool(d.school) },
-    {
-      label: "Year of entry",
-      value: d.entryYearGroup ? ENTRY_YEAR_GROUP_LABELS[d.entryYearGroup] ?? d.entryYearGroup : "—",
-    },
+    // No "Year of entry" row: the entry year is JWF-facing only (Q1, Brian
+    // 2026-08-14) and is never shown to the applicant.
     { label: "Current school", value: d.currentSchool || "—" },
-    { label: "Place of birth", value: d.placeOfBirth || "—" },
+    {
+      label: "Place of birth",
+      value:
+        [d.placeOfBirthCity, d.placeOfBirth].filter(Boolean).join(", ") || "—",
+    },
   ];
   if (!d.sameAddressAsParent1 && d.childAddress) {
     rows.push({
@@ -358,17 +359,27 @@ export default async function ReviewPage() {
   // is scoped to their owned section/document rows (dual-parent, PR 4b) — the
   // review page must never surface the secondary's data. A SELECT under
   // applicant RLS; self-heal under admin context only if (impossibly) missing.
+  // E2: honour the active-application context (ownership WHERE intact).
+  const activeApplicationId = await getActiveApplicationId();
   const appIdForOwner = await withUserContext(
     user.id,
     user.role as RlsRole,
-    (tx) =>
-      tx.application
+    async (tx) => {
+      if (activeApplicationId) {
+        const preferred = await tx.application.findFirst({
+          where: { id: activeApplicationId, leadApplicantId: user.id },
+          select: { id: true },
+        });
+        if (preferred) return preferred.id;
+      }
+      return tx.application
         .findFirst({
           where: { leadApplicantId: user.id },
           orderBy: { updatedAt: "desc" },
           select: { id: true },
         })
-        .then((a) => a?.id ?? null)
+        .then((a) => a?.id ?? null);
+    }
   );
 
   if (!appIdForOwner) redirect("/");
@@ -385,13 +396,14 @@ export default async function ReviewPage() {
   }
 
   // Load application with the PRIMARY-owned section data + documents only
+  // The full load is pinned to the id resolved above, so both reads describe
+  // the SAME application even if another draft's updatedAt moves in between.
   const application = await withUserContext(
     user.id,
     user.role as RlsRole,
     (tx) =>
       tx.application.findFirst({
-        where: { leadApplicantId: user.id },
-        orderBy: { updatedAt: "desc" },
+        where: { id: appIdForOwner, leadApplicantId: user.id },
         include: {
           sections: {
             where: { ownerContributorId: ownerContributorId! },
@@ -864,7 +876,7 @@ const SECTION_DOC_SLOTS: Partial<Record<ApplicationSectionType, string[]>> = {
   CHILD_DETAILS: ["BIRTH_CERTIFICATE"],
   FAMILY_ID: ["UK_PASSPORT_PARENT_1", "PASSPORT_PARENT_1", "UK_PASSPORT_PARENT_2", "PASSPORT_PARENT_2"],
   PARENTS_INCOME: ["P60_PARENT_1", "P60_PARENT_2", "SELF_ASSESSMENT_PARENT_1", "SELF_ASSESSMENT_PARENT_2", "BENEFITS_EVIDENCE_PARENT_1", "BENEFITS_EVIDENCE_PARENT_2", "CAPITAL_REPAYMENTS_PARENT_1", "CAPITAL_REPAYMENTS_PARENT_2"],
-  ASSETS_LIABILITIES: ["COUNCIL_TAX", "MAIN_MORTGAGE_STATEMENT", "TENANCY_AGREEMENT", "HOUSING_BENEFIT_LETTER", "RELATIVE_LETTER", "BANK_STATEMENT_CURRENT_PARENT_1", "BANK_STATEMENT_CURRENT_PARENT_2", "BANK_STATEMENT_SAVINGS_PARENT_1", "BANK_STATEMENT_SAVINGS_PARENT_2", "INVESTMENT_PARENT_1", "INVESTMENT_PARENT_2", "CREDIT_CARD_STATEMENT", "LOAN_STATEMENT", "OTHER_DEBT_DOCUMENT", "CAR_LEASE_AGREEMENT"],
+  ASSETS_LIABILITIES: ["COUNCIL_TAX", "MAIN_MORTGAGE_STATEMENT", "TENANCY_AGREEMENT", "HOUSING_BENEFIT_LETTER", "RELATIVE_LETTER", "BANK_STATEMENT_CURRENT_PARENT_1", "BANK_STATEMENT_CURRENT_PARENT_2", "BANK_STATEMENT_SAVINGS_PARENT_1", "BANK_STATEMENT_SAVINGS_PARENT_2", "INVESTMENT_PARENT_1", "INVESTMENT_PARENT_2", "CREDIT_CARD_STATEMENT", "LOAN_STATEMENT", "LOAN_AGREEMENT", "OTHER_DEBT_DOCUMENT", "CAR_LEASE_AGREEMENT"],
 };
 
 function DocumentCount({

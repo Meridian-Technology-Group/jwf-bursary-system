@@ -24,12 +24,80 @@ import type { EmailTemplateType } from "./types";
  * Resolve the configured "from" address.
  * Falls back to a safe default if the env var is missing so that the module
  * does not crash during testing when the variable is not set.
+ *
+ * Exported so the bulk "Send Email" wizard (item 8) can surface the sending
+ * address to admins on Step 2 before they confirm a batch send.
  */
-function fromAddress(): string {
+export function fromAddress(): string {
   return (
     process.env.RESEND_FROM_EMAIL ??
     "bursary@updates.meridiantech.group"
   );
+}
+
+/**
+ * Resolve the reply-to address every outbound email carries (CG-05 / D14-5).
+ *
+ * The from-address lives on a send-only subdomain, so a parent hitting Reply
+ * previously wrote to a black hole. `replyTo` routes replies to the bursary
+ * team's real inbox natively — no inbound-mail infrastructure needed.
+ *
+ * The bursary team's REAL inbox is a production-only fallback: on any other
+ * environment an unset `RESEND_REPLY_TO_EMAIL` means NO reply-to header at
+ * all (undefined), so test sends can never route replies to the client's
+ * live mailbox. Setting the env var always wins, in every environment —
+ * point nonprod at a test inbox if reply behaviour needs exercising there.
+ * Same production gate as `isStaffMfaEnforced()`.
+ *
+ * Exported so the bulk "Send Email" wizard can surface it beside the sending
+ * address before an admin confirms a batch.
+ */
+export function replyToAddress(): string | undefined {
+  if (process.env.RESEND_REPLY_TO_EMAIL) {
+    return process.env.RESEND_REPLY_TO_EMAIL;
+  }
+  return process.env.VERCEL_ENV === "production"
+    ? "fees@johnwhitgiftfoundation.org"
+    : undefined;
+}
+
+// ---------------------------------------------------------------------------
+// Sent-emails log (Epic 15 X1 / CI-02)
+// ---------------------------------------------------------------------------
+
+type EmailLogEntry = {
+  toEmail: string;
+  templateType?: EmailTemplateType | null;
+  subject: string;
+  status: "SENT" | "FAILED" | "SKIPPED";
+  error?: string | null;
+  resendId?: string | null;
+};
+
+/**
+ * Best-effort write to the email_log table — a logging failure must NEVER
+ * fail (or delay the classification of) a send, so errors are swallowed into
+ * a structured log line. History starts at the X1 merge; no backfill exists.
+ */
+async function recordEmailLog(entry: EmailLogEntry): Promise<void> {
+  try {
+    await withAdminContext((tx) =>
+      tx.emailLog.create({
+        data: {
+          toEmail: entry.toEmail,
+          templateType: entry.templateType ?? null,
+          subject: entry.subject,
+          status: entry.status,
+          error: entry.error ?? null,
+          resendId: entry.resendId ?? null,
+        },
+      })
+    );
+  } catch (err) {
+    logError("email.log_write_failed", err, {
+      recipientHash: hashEmail(entry.toEmail),
+    });
+  }
 }
 
 /**
@@ -88,6 +156,12 @@ export async function sendEmail(
         recipientHash: hashEmail(to),
         reason: "template_disabled",
       });
+      await recordEmailLog({
+        toEmail: to,
+        templateType,
+        subject: template.subject,
+        status: "SKIPPED",
+      });
       return { success: true, skipped: true };
     }
 
@@ -103,6 +177,7 @@ export async function sendEmail(
     // 4. Send via Resend.
     const { data, error } = await resend.emails.send({
       from: fromAddress(),
+      replyTo: replyToAddress(),
       to,
       subject,
       html,
@@ -114,6 +189,13 @@ export async function sendEmail(
         templateType,
         recipientHash: hashEmail(to),
       });
+      await recordEmailLog({
+        toEmail: to,
+        templateType,
+        subject,
+        status: "FAILED",
+        error: `${error.name}: ${error.message}`,
+      });
       return {
         success: false,
         error: `${error.name}: ${error.message}`,
@@ -124,6 +206,13 @@ export async function sendEmail(
       templateType,
       recipientHash: hashEmail(to),
       messageId: data?.id,
+    });
+    await recordEmailLog({
+      toEmail: to,
+      templateType,
+      subject,
+      status: "SENT",
+      resendId: data?.id,
     });
 
     return {
@@ -220,6 +309,7 @@ export async function sendBatchEmails(
 
       const { data, error } = await resend.emails.send({
         from: fromAddress(),
+      replyTo: replyToAddress(),
         to: email,
         subject,
         html,
@@ -235,12 +325,26 @@ export async function sendBatchEmails(
           templateType,
           recipientHash: hashEmail(email),
         });
+        await recordEmailLog({
+          toEmail: email,
+          templateType,
+          subject,
+          status: "FAILED",
+          error: `${error.name}: ${error.message}`,
+        });
       } else {
         result.sent++;
         logInfo("email.sent", {
           templateType,
           recipientHash: hashEmail(email),
           messageId: data?.id,
+        });
+        await recordEmailLog({
+          toEmail: email,
+          templateType,
+          subject,
+          status: "SENT",
+          resendId: data?.id,
         });
       }
     } catch (err) {
@@ -284,7 +388,11 @@ export async function sendBatchEmails(
 export async function sendRawEmail(
   to: string,
   subject: string,
-  body: string
+  body: string,
+  options?: {
+    /** Epic 15 X2 (CI-05) — optional blind copy on ad-hoc/bulk sends. */
+    bcc?: string;
+  }
 ): Promise<SendEmailResult> {
   try {
     const htmlFragment = plainTextToHtml(body);
@@ -292,7 +400,9 @@ export async function sendRawEmail(
 
     const { data, error } = await resend.emails.send({
       from: fromAddress(),
+      replyTo: replyToAddress(),
       to,
+      ...(options?.bcc ? { bcc: options.bcc } : {}),
       subject,
       html,
       text: htmlToPlainText(html),
@@ -302,6 +412,13 @@ export async function sendRawEmail(
       logError("email.failed", error, {
         templateType: "RAW",
         recipientHash: hashEmail(to),
+      });
+      await recordEmailLog({
+        toEmail: to,
+        templateType: null,
+        subject,
+        status: "FAILED",
+        error: `${error.name}: ${error.message}`,
       });
       return {
         success: false,
@@ -313,6 +430,13 @@ export async function sendRawEmail(
       templateType: "RAW",
       recipientHash: hashEmail(to),
       messageId: data?.id,
+    });
+    await recordEmailLog({
+      toEmail: to,
+      templateType: null,
+      subject,
+      status: "SENT",
+      resendId: data?.id,
     });
 
     return {

@@ -30,6 +30,16 @@ export const AUDIT_ACTIONS = {
   APPLICATION_RESUMED: "APPLICATION_RESUMED",
   /** Full rejection: rejected application hard-deleted + a fresh one created (restart). */
   APPLICATION_REJECTED_RESTART: "APPLICATION_REJECTED_RESTART",
+  /** Unified close (item 2): the single terminal state, reason-driven. */
+  APPLICATION_CLOSED: "APPLICATION_CLOSED",
+  /** Reason-driven close purge (item 10): PII anonymised, financials kept. */
+  APPLICATION_PURGED: "APPLICATION_PURGED",
+  /**
+   * The school's OFFERED decision (D-4): activates the rolling BursaryAccount
+   * (creates or re-activates it) and attaches the forward schedule. No outcome
+   * is written — this is lifecycle-only, direct activation (item 3).
+   */
+  APPLICATION_MARKED_ACTIVE: "APPLICATION_MARKED_ACTIVE",
   INTERNAL_REQUEST_CREATED: "INTERNAL_REQUEST_CREATED",
   MISSING_DOCS_RESPONDED: "MISSING_DOCS_RESPONDED",
   NAME_REVEAL: "NAME_REVEAL",
@@ -48,6 +58,17 @@ export const AUDIT_ACTIONS = {
    * cleared by the same write. Carries `{ applicationId, reason, changedFields }`.
    */
   ASSESSMENT_DISCARDED: "ASSESSMENT_DISCARDED",
+  /**
+   * A COMPLETED assessment was REOPENED for correction (Epic 13 / C1, D13-2) —
+   * status COMPLETED → IN_PROGRESS, `completedAt` cleared, the existing
+   * recommendation marked stale (its confirmed figure cleared) and any
+   * close-on-complete account/schedule effects reverted. Distinct from
+   * ASSESSMENT_DISCARDED: nothing is invalidated, the data survives. Only ever
+   * written while NO outcome exists — the action refuses once one is set.
+   * Carries `{ applicationId, assessmentId, reason, recommendationCleared,
+   * accountReopened, scheduleEntryReopened }`.
+   */
+  ASSESSMENT_REOPENED: "ASSESSMENT_REOPENED",
   ASSESSMENT_SECOND_PARENT_OVERRIDE: "ASSESSMENT_SECOND_PARENT_OVERRIDE",
   RECOMMENDATION_SAVE: "RECOMMENDATION_SAVE",
 
@@ -77,6 +98,9 @@ export const AUDIT_ACTIONS = {
   ROUND_CLOSED: "ROUND_CLOSED",
   RECOMMENDATION_EXPORT: "RECOMMENDATION_EXPORT",
   SET_SUBMISSION_DEADLINE: "SET_SUBMISSION_DEADLINE",
+
+  // Bursary reference (item 11) — freely editable by ADMIN at any lifecycle stage.
+  UPDATE_REFERENCE: "UPDATE_REFERENCE",
 
   // Reassessment
   CREATE_REASSESSMENT_APPLICATION: "CREATE_REASSESSMENT_APPLICATION",
@@ -119,8 +143,30 @@ export const AUDIT_ACTIONS = {
   SETTINGS_COUNCIL_TAX_UPDATE: "SETTINGS_COUNCIL_TAX_UPDATE",
   SETTINGS_REASON_CODE_CREATE: "SETTINGS_REASON_CODE_CREATE",
   SETTINGS_REASON_CODE_UPDATE: "SETTINGS_REASON_CODE_UPDATE",
+  SETTINGS_CLOSE_REASON_CREATE: "SETTINGS_CLOSE_REASON_CREATE",
+  SETTINGS_CLOSE_REASON_UPDATE: "SETTINGS_CLOSE_REASON_UPDATE",
   SETTINGS_EMAIL_TEMPLATE_UPDATE: "SETTINGS_EMAIL_TEMPLATE_UPDATE",
   UPDATE_EMAIL_TEMPLATE_ENABLED: "UPDATE_EMAIL_TEMPLATE_ENABLED",
+  SETTINGS_EMAIL_TEMPLATE_CREATE: "SETTINGS_EMAIL_TEMPLATE_CREATE",
+  SETTINGS_EMAIL_TEMPLATE_DELETE: "SETTINGS_EMAIL_TEMPLATE_DELETE",
+
+  // CALC-11 — settings editors for the CALC-01 reference tables. Every one of
+  // these is a whole-generation "create new version" insert (never an
+  // update-in-place), except the gap-reason create/update pair which mirrors
+  // reason_codes exactly.
+  SETTINGS_NOTIONAL_COST_CONFIG_VERSION_CREATE: "SETTINGS_NOTIONAL_COST_CONFIG_VERSION_CREATE",
+  SETTINGS_FAMILY_CATEGORY_META_VERSION_CREATE: "SETTINGS_FAMILY_CATEGORY_META_VERSION_CREATE",
+  SETTINGS_AFFORDABILITY_BAND_VERSION_CREATE: "SETTINGS_AFFORDABILITY_BAND_VERSION_CREATE",
+  SETTINGS_INCOME_CATEGORY_BAND_VERSION_CREATE: "SETTINGS_INCOME_CATEGORY_BAND_VERSION_CREATE",
+  SETTINGS_PROPERTY_EQUITY_BAND_VERSION_CREATE: "SETTINGS_PROPERTY_EQUITY_BAND_VERSION_CREATE",
+  SETTINGS_FINANCIAL_EQUITY_BAND_VERSION_CREATE: "SETTINGS_FINANCIAL_EQUITY_BAND_VERSION_CREATE",
+  SETTINGS_DEBT_RATIO_BAND_VERSION_CREATE: "SETTINGS_DEBT_RATIO_BAND_VERSION_CREATE",
+  SETTINGS_LIFESTYLE_SQUEEZE_BAND_VERSION_CREATE: "SETTINGS_LIFESTYLE_SQUEEZE_BAND_VERSION_CREATE",
+  SETTINGS_GAP_REASON_CREATE: "SETTINGS_GAP_REASON_CREATE",
+  SETTINGS_GAP_REASON_UPDATE: "SETTINGS_GAP_REASON_UPDATE",
+
+  // Bulk email wizard (item 8) — one row per attempted recipient send.
+  BULK_EMAIL_SENT: "BULK_EMAIL_SENT",
 
   // GDPR / retention
   GDPR_DELETION: "GDPR_DELETION",
@@ -132,6 +178,16 @@ export const AUDIT_ACTIONS = {
   SCHEDULE_SHOW_ON_PORTAL_TOGGLED: "SCHEDULE_SHOW_ON_PORTAL_TOGGLED",
   /** Assessor/admin closed (withdrew) a bursary account at account level (gap F1). */
   BURSARY_ACCOUNT_WITHDRAWN: "BURSARY_ACCOUNT_WITHDRAWN",
+  /**
+   * CALC-10 — the account's fees-account code field was edited.
+   *
+   * **RETIRED, deliberately kept.** Epic 13 (C4b / D13-1a) dropped
+   * `BursaryAccount.feesAccountCode` and deleted its editor, so nothing writes
+   * this action any more. It stays defined because `audit_logs` is append-only:
+   * historic rows still carry the string, and removing the constant would leave
+   * them unlabelled (and uncoloured) in the audit UI. Do not add new writers.
+   */
+  BURSARY_ACCOUNT_FEES_CODE_UPDATED: "BURSARY_ACCOUNT_FEES_CODE_UPDATED",
 } as const;
 
 export type AuditAction = (typeof AUDIT_ACTIONS)[keyof typeof AUDIT_ACTIONS];
@@ -161,9 +217,21 @@ export const AUDIT_ENTITY_TYPES = {
   SchoolFees: "SchoolFees",
   CouncilTaxDefault: "CouncilTaxDefault",
   ReasonCode: "ReasonCode",
+  CloseReason: "CloseReason",
   EmailTemplate: "EmailTemplate",
   BursaryAccount: "BursaryAccount",
   BursaryScheduleEntry: "BursaryScheduleEntry",
+
+  // CALC-11 — reference tables introduced by CALC-01/CALC-02.
+  NotionalCostConfig: "NotionalCostConfig",
+  FamilyCategoryMeta: "FamilyCategoryMeta",
+  AffordabilityBand: "AffordabilityBand",
+  IncomeCategoryBand: "IncomeCategoryBand",
+  PropertyEquityBand: "PropertyEquityBand",
+  FinancialEquityBand: "FinancialEquityBand",
+  DebtRatioBand: "DebtRatioBand",
+  LifestyleSqueezeBand: "LifestyleSqueezeBand",
+  GapReason: "GapReason",
 } as const;
 
 export type AuditEntityType =
@@ -261,12 +329,23 @@ const ACTION_COLOUR: Partial<Record<AuditAction, string>> = {
   [AUDIT_ACTIONS.APPLICATION_STATUS_CHANGED]: "bg-red-400",
   [AUDIT_ACTIONS.APPLICATION_REJECTED_RESTART]: "bg-red-400",
   [AUDIT_ACTIONS.ASSESSMENT_DISCARDED]: "bg-red-400",
+  // Reopen is a deliberate correction, not a destruction (DISCARDED) and not a
+  // fresh start (BEGIN) — it shares the amber "attention" bucket. The explicit
+  // entry also matters: the heuristic fallback below would match "OPENED"
+  // inside "REOPENED" and render it green, i.e. as a completion.
+  [AUDIT_ACTIONS.ASSESSMENT_REOPENED]: "bg-orange-400",
   [AUDIT_ACTIONS.GDPR_DELETION]: "bg-red-400",
   [AUDIT_ACTIONS.RETENTION_PURGE_CRON]: "bg-red-400",
   [AUDIT_ACTIONS.NAME_REVEAL]: "bg-orange-400",
   [AUDIT_ACTIONS.SCHEDULE_REGENERATED]: "bg-blue-500",
   [AUDIT_ACTIONS.SCHEDULE_SHOW_ON_PORTAL_TOGGLED]: "bg-blue-500",
   [AUDIT_ACTIONS.BURSARY_ACCOUNT_WITHDRAWN]: "bg-red-400",
+  [AUDIT_ACTIONS.BURSARY_ACCOUNT_FEES_CODE_UPDATED]: "bg-blue-500",
+  [AUDIT_ACTIONS.UPDATE_REFERENCE]: "bg-blue-500",
+  [AUDIT_ACTIONS.APPLICATION_CLOSED]: "bg-red-400",
+  [AUDIT_ACTIONS.APPLICATION_PURGED]: "bg-red-400",
+  [AUDIT_ACTIONS.APPLICATION_MARKED_ACTIVE]: "bg-green-500",
+  [AUDIT_ACTIONS.BULK_EMAIL_SENT]: "bg-blue-500",
 };
 
 /**

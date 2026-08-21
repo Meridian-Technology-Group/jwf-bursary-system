@@ -22,14 +22,15 @@ Navigate from the queue into the four-tab application detail view.
      **Re-assessment** appears for year 2+ applications.
    - The current **StatusBadge** (top-right).
    - For admins, the **Assign Assessor** select.
-3. Below the header sits the **Actions** bar (hidden for terminal
-   statuses `PRE_SUBMISSION`, `QUALIFIES`, `DOES_NOT_QUALIFY`). The
+3. Below the header sits the **Actions** bar (hidden for `PRE_SUBMISSION`,
+   `COMPLETED` and the terminal statuses `QUALIFIES`, `DOES_NOT_QUALIFY`). The
    bar's context label reads e.g. *"Actions › Awaiting review"* and
    surfaces the next-step buttons:
    - `SUBMITTED` → **Begin Review**.
    - `NOT_STARTED` → **Request Missing Documents** | **Mark Complete**.
    - `PAUSED` → **Resume Review**.
-   - `COMPLETED` → **Set Does Not Qualify** | **Set Qualifies**.
+   - `COMPLETED` → no actions here; the outcome is recorded by the 3-way
+     decision on the **Recommendation** tab.
 4. Use the tab strip to move between:
    - **Applicant Data** — read-only submission (see
      [[05-read-submitted-application]]).

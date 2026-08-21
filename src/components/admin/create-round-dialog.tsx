@@ -7,7 +7,7 @@
  * Zod validation. Delegates to the createRoundAction server action.
  */
 
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -33,6 +33,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { createRoundAction } from "@/app/(admin)/rounds/actions";
+import { defaultRollingDeadlineFor } from "@/lib/rounds/submission-deadline";
 
 // ---------------------------------------------------------------------------
 // Schema (mirrors server-side, but client-side for instant feedback)
@@ -47,6 +48,13 @@ const schema = z
     openDate: z.string().min(1, "Open date is required"),
     closeDate: z.string().min(1, "Close date is required"),
     decisionDate: z.string().optional(),
+    // Item 12, split by application type in E1/D13-8: one optional round-level
+    // default submission-by date for new applicants, one for bursary holders
+    // rolling over. No cross-field refinement — a round with no default is
+    // valid, and either date may sit before or after closeDate (e.g. a grace
+    // period), so this is permissive.
+    defaultSubmissionDeadlineNew: z.string().optional(),
+    defaultSubmissionDeadlineRolling: z.string().optional(),
   })
   .refine(
     (data) =>
@@ -85,8 +93,28 @@ export function CreateRoundDialog() {
       openDate: "",
       closeDate: "",
       decisionDate: "",
+      defaultSubmissionDeadlineNew: "",
+      defaultSubmissionDeadlineRolling: "",
     },
   });
+
+  // Q4 (Brian, 2026-08-14): the rolling-over deadline is one global date per
+  // round, "defaulting to April". Prefill it from the academic year as soon as
+  // that field reads as `YYYY/YY` — but only while the admin has not touched
+  // the rolling field themselves, so a deliberate choice is never overwritten.
+  // A suggestion, not an implied value: clearing the field still means "no
+  // rolling default" and falls back to the close date.
+  const academicYear = form.watch("academicYear");
+  const rollingTouched = Boolean(
+    form.formState.dirtyFields.defaultSubmissionDeadlineRolling
+  );
+  useEffect(() => {
+    if (rollingTouched) return;
+    const suggested = defaultRollingDeadlineFor(academicYear ?? "");
+    if (!suggested) return;
+    if (form.getValues("defaultSubmissionDeadlineRolling") === suggested) return;
+    form.setValue("defaultSubmissionDeadlineRolling", suggested);
+  }, [academicYear, rollingTouched, form]);
 
   function handleOpenChange(next: boolean) {
     setOpen(next);
@@ -104,6 +132,18 @@ export function CreateRoundDialog() {
     formData.set("closeDate", values.closeDate);
     if (values.decisionDate) {
       formData.set("decisionDate", values.decisionDate);
+    }
+    if (values.defaultSubmissionDeadlineNew) {
+      formData.set(
+        "defaultSubmissionDeadlineNew",
+        values.defaultSubmissionDeadlineNew
+      );
+    }
+    if (values.defaultSubmissionDeadlineRolling) {
+      formData.set(
+        "defaultSubmissionDeadlineRolling",
+        values.defaultSubmissionDeadlineRolling
+      );
     }
 
     startTransition(async () => {
@@ -216,6 +256,56 @@ export function CreateRoundDialog() {
                   <FormControl>
                     <Input type="date" {...field} disabled={isPending} />
                   </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            {/* Default submission-by dates (optional, Item 12 / E1 D13-8) */}
+            <FormField
+              control={form.control}
+              name="defaultSubmissionDeadlineNew"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>
+                    Submission-by date — new applications{" "}
+                    <span className="text-xs font-normal text-slate-400">
+                      (optional)
+                    </span>
+                  </FormLabel>
+                  <FormControl>
+                    <Input type="date" {...field} disabled={isPending} />
+                  </FormControl>
+                  <p className="text-xs text-slate-400">
+                    Every new application in this round inherits this deadline
+                    unless it has its own override. Leave blank to fall back to
+                    the close date.
+                  </p>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <FormField
+              control={form.control}
+              name="defaultSubmissionDeadlineRolling"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>
+                    Submission-by date — rolling over{" "}
+                    <span className="text-xs font-normal text-slate-400">
+                      (optional)
+                    </span>
+                  </FormLabel>
+                  <FormControl>
+                    <Input type="date" {...field} disabled={isPending} />
+                  </FormControl>
+                  <p className="text-xs text-slate-400">
+                    Applies to existing bursary holders being re-assessed —
+                    usually earlier than the date for new applications.
+                    Pre-filled with 30 April of the academic year; change or
+                    clear it as needed.
+                  </p>
                   <FormMessage />
                 </FormItem>
               )}

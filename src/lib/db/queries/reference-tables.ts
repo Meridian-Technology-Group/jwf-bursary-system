@@ -326,11 +326,43 @@ export async function getAllReasonCodes(tx: Tx): Promise<ReasonCodeRow[]> {
   }));
 }
 
+// ─── Close Reasons ────────────────────────────────────────────────────────────
+
+export interface CloseReasonRow {
+  id: string;
+  label: string;
+  purgeOnClose: boolean;
+  isDeprecated: boolean;
+  sortOrder: number;
+  createdAt: Date;
+}
+
+/**
+ * Returns ALL close reasons including deprecated ones.
+ * Ordered by sortOrder ascending.
+ */
+export async function getAllCloseReasons(tx: Tx): Promise<CloseReasonRow[]> {
+  const rows = await tx.closeReason.findMany({
+    orderBy: { sortOrder: "asc" },
+  });
+
+  return rows.map((row) => ({
+    id: row.id,
+    label: row.label,
+    purgeOnClose: row.purgeOnClose,
+    isDeprecated: row.isDeprecated,
+    sortOrder: row.sortOrder,
+    createdAt: row.createdAt,
+  }));
+}
+
 // ─── Email Templates ──────────────────────────────────────────────────────────
 
 export interface EmailTemplateRow {
   id: string;
-  type: EmailTemplateType;
+  type: EmailTemplateType | null;
+  name: string | null;
+  isSystem: boolean;
   subject: string;
   body: string;
   enabled: boolean;
@@ -339,16 +371,22 @@ export interface EmailTemplateRow {
 }
 
 /**
- * Returns all email templates ordered by type.
+ * Returns all non-deleted email templates: system templates first (ordered by
+ * type, matching the fixed EmailTemplateType enum order used elsewhere),
+ * then custom templates ordered by name. Soft-deleted custom templates
+ * (`deletedAt` set) are excluded — see Story 9.4.
  */
 export async function getAllEmailTemplates(tx: Tx): Promise<EmailTemplateRow[]> {
   const rows = await tx.emailTemplate.findMany({
-    orderBy: { type: "asc" },
+    where: { deletedAt: null },
+    orderBy: [{ isSystem: "desc" }, { type: "asc" }, { name: "asc" }],
   });
 
   return rows.map((row) => ({
     id: row.id,
     type: row.type,
+    name: row.name,
+    isSystem: row.isSystem,
     subject: row.subject,
     body: row.body,
     enabled: row.enabled,
@@ -362,4 +400,324 @@ export async function getAllEmailTemplates(tx: Tx): Promise<EmailTemplateRow[]> 
  */
 export async function getCouncilTaxRate(tx: Tx): Promise<CouncilTaxDefaultRow | null> {
   return getCouncilTaxDefault(tx);
+}
+
+// ─── CALC-01 — Notional & profiling reference tables ─────────────────────
+//
+// NotionalCostConfig and FamilyCategoryMeta are versioned PER natural key
+// (category [+ costType]), like FamilyTypeConfig above — "latest effective"
+// means the newest row per key.
+//
+// The six band tables (AffordabilityBand, IncomeCategoryBand,
+// PropertyEquityBand, FinancialEquityBand, DebtRatioBand,
+// LifestyleSqueezeBand) are versioned as a WHOLE GENERATION: every row of a
+// table is seeded with the same `effectiveFrom`, so "latest effective" means
+// "all rows sharing the newest effectiveFrom present" — `latestGeneration`
+// below implements that once and every band-table getter reuses it. Band
+// RESOLUTION (value → row) is pure and lives in
+// `src/lib/assessment/reference-bands.ts`; these getters only fetch rows.
+
+/** Picks the rows belonging to the newest `effectiveFrom` in a list (a "generation"). */
+function latestGeneration<T extends { effectiveFrom: Date }>(rows: readonly T[]): T[] {
+  if (rows.length === 0) return [];
+  const newest = rows.reduce((max, r) => (r.effectiveFrom > max ? r.effectiveFrom : max), rows[0].effectiveFrom);
+  return rows.filter((r) => r.effectiveFrom.getTime() === newest.getTime());
+}
+
+export interface NotionalCostConfigRow {
+  id: string;
+  category: number;
+  costType: import("@prisma/client").NotionalCostType;
+  amount: number;
+  effectiveFrom: Date;
+}
+
+/** Returns the most recent NotionalCostConfig row per (category, costType). */
+export async function getNotionalCostConfigs(tx: Tx): Promise<NotionalCostConfigRow[]> {
+  const rows = await tx.notionalCostConfig.findMany({
+    orderBy: [{ category: "asc" }, { costType: "asc" }, { effectiveFrom: "desc" }, { createdAt: "desc" }],
+  });
+
+  const seen = new Set<string>();
+  const result: NotionalCostConfigRow[] = [];
+  for (const row of rows) {
+    const key = `${row.category}:${row.costType}`;
+    if (!seen.has(key)) {
+      seen.add(key);
+      result.push({
+        id: row.id,
+        category: row.category,
+        costType: row.costType,
+        amount: Number(row.amount),
+        effectiveFrom: row.effectiveFrom,
+      });
+    }
+  }
+  return result;
+}
+
+export interface FamilyCategoryMetaRow {
+  id: string;
+  category: number;
+  familyMembers: number;
+  schoolAgeChildren: number;
+  description: string;
+  effectiveFrom: Date;
+}
+
+/** Returns the most recent FamilyCategoryMeta row per category. */
+export async function getFamilyCategoryMetas(tx: Tx): Promise<FamilyCategoryMetaRow[]> {
+  const rows = await tx.familyCategoryMeta.findMany({
+    orderBy: [{ category: "asc" }, { effectiveFrom: "desc" }, { createdAt: "desc" }],
+  });
+
+  const seen = new Set<number>();
+  const result: FamilyCategoryMetaRow[] = [];
+  for (const row of rows) {
+    if (!seen.has(row.category)) {
+      seen.add(row.category);
+      result.push({
+        id: row.id,
+        category: row.category,
+        familyMembers: row.familyMembers,
+        schoolAgeChildren: row.schoolAgeChildren,
+        description: row.description,
+        effectiveFrom: row.effectiveFrom,
+      });
+    }
+  }
+  return result;
+}
+
+export interface AffordabilityBandRow {
+  id: string;
+  bandFloor: number;
+  bandCeiling: number;
+  basePct: number;
+  effectiveFrom: Date;
+}
+
+/** Returns every row of the newest AffordabilityBand generation, floor ascending. */
+export async function getAffordabilityBands(tx: Tx): Promise<AffordabilityBandRow[]> {
+  const rows = await tx.affordabilityBand.findMany({ orderBy: { bandFloor: "asc" } });
+  return latestGeneration(
+    rows.map((r) => ({
+      id: r.id,
+      bandFloor: Number(r.bandFloor),
+      bandCeiling: Number(r.bandCeiling),
+      basePct: Number(r.basePct),
+      effectiveFrom: r.effectiveFrom,
+    })),
+  ).sort((a, b) => a.bandFloor - b.bandFloor);
+}
+
+export interface IncomeCategoryBandRow {
+  id: string;
+  bandFloor: number | null;
+  bandCeiling: number | null;
+  category: number;
+  feesBenchmarkPct: number;
+  effectiveFrom: Date;
+}
+
+/** Returns every row of the newest IncomeCategoryBand generation. */
+export async function getIncomeCategoryBands(tx: Tx): Promise<IncomeCategoryBandRow[]> {
+  const rows = await tx.incomeCategoryBand.findMany();
+  return latestGeneration(
+    rows.map((r) => ({
+      id: r.id,
+      bandFloor: r.bandFloor === null ? null : Number(r.bandFloor),
+      bandCeiling: r.bandCeiling === null ? null : Number(r.bandCeiling),
+      category: r.category,
+      feesBenchmarkPct: Number(r.feesBenchmarkPct),
+      effectiveFrom: r.effectiveFrom,
+    })),
+  );
+}
+
+export interface PropertyEquityBandRow {
+  id: string;
+  bandFloor: number | null;
+  bandCeiling: number | null;
+  category: number;
+  effectiveFrom: Date;
+}
+
+/** Returns every row of the newest PropertyEquityBand generation. */
+export async function getPropertyEquityBands(tx: Tx): Promise<PropertyEquityBandRow[]> {
+  const rows = await tx.propertyEquityBand.findMany();
+  return latestGeneration(
+    rows.map((r) => ({
+      id: r.id,
+      bandFloor: r.bandFloor === null ? null : Number(r.bandFloor),
+      bandCeiling: r.bandCeiling === null ? null : Number(r.bandCeiling),
+      category: r.category,
+      effectiveFrom: r.effectiveFrom,
+    })),
+  );
+}
+
+export interface FinancialEquityBandRow {
+  id: string;
+  bandFloor: number | null;
+  bandCeiling: number | null;
+  label: string;
+  effectiveFrom: Date;
+}
+
+/** Returns every row of the newest FinancialEquityBand generation. */
+export async function getFinancialEquityBands(tx: Tx): Promise<FinancialEquityBandRow[]> {
+  const rows = await tx.financialEquityBand.findMany();
+  return latestGeneration(
+    rows.map((r) => ({
+      id: r.id,
+      bandFloor: r.bandFloor === null ? null : Number(r.bandFloor),
+      bandCeiling: r.bandCeiling === null ? null : Number(r.bandCeiling),
+      label: r.label,
+      effectiveFrom: r.effectiveFrom,
+    })),
+  );
+}
+
+export interface DebtRatioBandRow {
+  id: string;
+  ratioFloor: number | null;
+  ratioCeiling: number | null;
+  minRepaymentMonths: number | null;
+  statusLabel: string;
+  effectiveFrom: Date;
+}
+
+/** Returns every row of the newest DebtRatioBand generation. */
+export async function getDebtRatioBands(tx: Tx): Promise<DebtRatioBandRow[]> {
+  const rows = await tx.debtRatioBand.findMany();
+  return latestGeneration(
+    rows.map((r) => ({
+      id: r.id,
+      ratioFloor: r.ratioFloor === null ? null : Number(r.ratioFloor),
+      ratioCeiling: r.ratioCeiling === null ? null : Number(r.ratioCeiling),
+      minRepaymentMonths: r.minRepaymentMonths,
+      statusLabel: r.statusLabel,
+      effectiveFrom: r.effectiveFrom,
+    })),
+  );
+}
+
+export interface LifestyleSqueezeBandRow {
+  id: string;
+  ratioFloor: number | null;
+  ratioCeiling: number | null;
+  statusLabel: string;
+  effectiveFrom: Date;
+}
+
+/** Returns every row of the newest LifestyleSqueezeBand generation. */
+export async function getLifestyleSqueezeBands(tx: Tx): Promise<LifestyleSqueezeBandRow[]> {
+  const rows = await tx.lifestyleSqueezeBand.findMany();
+  return latestGeneration(
+    rows.map((r) => ({
+      id: r.id,
+      ratioFloor: r.ratioFloor === null ? null : Number(r.ratioFloor),
+      ratioCeiling: r.ratioCeiling === null ? null : Number(r.ratioCeiling),
+      statusLabel: r.statusLabel,
+      effectiveFrom: r.effectiveFrom,
+    })),
+  );
+}
+
+// ─── CALC-11 — Gap Reasons (Appendix E) ────────────────────────────────────
+
+export interface GapReasonRow {
+  id: string;
+  code: number;
+  label: string;
+  isDeprecated: boolean;
+  sortOrder: number;
+  createdAt: Date;
+}
+
+/**
+ * Returns ALL gap reasons including deprecated ones, ordered by sortOrder
+ * ascending. Mirrors `getAllReasonCodes` exactly — GapReason has the same
+ * shape and the same deprecate-never-delete convention.
+ */
+export async function getAllGapReasons(tx: Tx): Promise<GapReasonRow[]> {
+  const rows = await tx.gapReason.findMany({
+    orderBy: { sortOrder: "asc" },
+  });
+
+  return rows.map((row) => ({
+    id: row.id,
+    code: row.code,
+    label: row.label,
+    isDeprecated: row.isDeprecated,
+    sortOrder: row.sortOrder,
+    createdAt: row.createdAt,
+  }));
+}
+
+// ─── CALC-07 — ReferenceBundle assembly for the v2 engine ─────────────────
+//
+// Assembles the single `ReferenceBundle` (src/lib/assessment/v2/types.ts) the
+// v2 engine consumes, from the eight CALC-01 fetchers above. Each fetcher
+// already resolves "latest effective" (latest row per key / newest generation);
+// there is no per-date anchor on these fetchers as merged, so the bundle is the
+// current effective reference set. School fees stay year-anchored via the
+// existing `getConfigsForAssessment` path (Round.academicYear) — they are NOT
+// part of `ReferenceBundle`, which carries only the notional/profiling tables.
+//
+// FAIL-SOFT: the v2 assessor page must render a "reference data not seeded"
+// callout — never crash — when a reference table is empty (the expected state on
+// nonprod until `seed:reference` is run). `resolveReferenceBundle` (a pure
+// helper, unit-tested) reports exactly which tables are missing so the callout
+// can name them; the DB read here just fetches the rows.
+
+/** The eight reference-table row sets, as fetched (before completeness checks). */
+export interface ReferenceBundleRows {
+  notionalCosts: NotionalCostConfigRow[];
+  familyCategoryMetas: FamilyCategoryMetaRow[];
+  affordabilityBands: AffordabilityBandRow[];
+  incomeCategoryBands: IncomeCategoryBandRow[];
+  propertyEquityBands: PropertyEquityBandRow[];
+  financialEquityBands: FinancialEquityBandRow[];
+  debtRatioBands: DebtRatioBandRow[];
+  lifestyleSqueezeBands: LifestyleSqueezeBandRow[];
+}
+
+/**
+ * Fetches every reference-table row set needed for the v2 engine in one round
+ * trip. Pure resolution/completeness lives in `resolveReferenceBundle`
+ * (src/lib/assessment/v2/reference-bundle.ts) so it can be unit-tested without a DB.
+ */
+export async function getReferenceBundleRows(tx: Tx): Promise<ReferenceBundleRows> {
+  const [
+    notionalCosts,
+    familyCategoryMetas,
+    affordabilityBands,
+    incomeCategoryBands,
+    propertyEquityBands,
+    financialEquityBands,
+    debtRatioBands,
+    lifestyleSqueezeBands,
+  ] = await Promise.all([
+    getNotionalCostConfigs(tx),
+    getFamilyCategoryMetas(tx),
+    getAffordabilityBands(tx),
+    getIncomeCategoryBands(tx),
+    getPropertyEquityBands(tx),
+    getFinancialEquityBands(tx),
+    getDebtRatioBands(tx),
+    getLifestyleSqueezeBands(tx),
+  ]);
+
+  return {
+    notionalCosts,
+    familyCategoryMetas,
+    affordabilityBands,
+    incomeCategoryBands,
+    propertyEquityBands,
+    financialEquityBands,
+    debtRatioBands,
+    lifestyleSqueezeBands,
+  };
 }

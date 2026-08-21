@@ -32,11 +32,13 @@ import {
 } from "@/lib/db/prisma";
 import { refreshFormStatus } from "@/lib/applications/status";
 import { submitApplicationCore } from "@/lib/applications/submission";
+import { applicantSubmissionMessage } from "@/lib/applications/submission-error";
 import {
   diffSectionPaths,
   clearProvenance,
 } from "@/lib/applications/section-diff";
 import { logError } from "@/lib/log";
+import { getActiveApplicationId } from "@/lib/portal/active-application";
 
 import { AUDIT_ACTIONS } from "@/lib/audit/actions";
 
@@ -74,10 +76,11 @@ async function resolveApplicationId(): Promise<string | null> {
   const user = await getCurrentUser();
   if (!user) return null;
 
+  const activeId = await getActiveApplicationId();
   const application = await withUserContext(
     user.id,
     user.role as RlsRole,
-    (tx) => getApplicationForUser(tx, user.id)
+    (tx) => getApplicationForUser(tx, user.id, activeId)
   );
   return application?.id ?? null;
 }
@@ -87,20 +90,35 @@ async function resolveApplicationId(): Promise<string | null> {
  *
  * Intentionally ignores any client-supplied applicationId — every section
  * action must operate exclusively on the caller's own application to
- * prevent IDOR (audit finding 2.3).
+ * prevent IDOR (audit finding 2.3). The E2 active-application cookie is a
+ * server-read preference folded into the same ownership WHERE, so it cannot
+ * widen that guarantee — only pick BETWEEN the caller's own drafts.
  */
 async function getOwnedApplicationId(): Promise<string | null> {
   const user = await getCurrentUser();
   if (!user) return null;
 
+  const activeId = await getActiveApplicationId();
   const application = await withUserContext(
     user.id,
     user.role as RlsRole,
-    (tx) =>
-      tx.application.findFirst({
+    async (tx) => {
+      if (activeId) {
+        const preferred = await tx.application.findFirst({
+          where: {
+            id: activeId,
+            leadApplicantId: user.id,
+            formStatus: { not: "SUBMITTED" },
+          },
+          select: { id: true },
+        });
+        if (preferred) return preferred;
+      }
+      return tx.application.findFirst({
         where: { leadApplicantId: user.id, formStatus: { not: "SUBMITTED" } },
         select: { id: true },
-      })
+      });
+    }
   );
   return application?.id ?? null;
 }
@@ -134,14 +152,28 @@ async function getOwnedApplicationContext(): Promise<{
   const user = await getCurrentUser();
   if (!user) return null;
 
+  const activeId = await getActiveApplicationId();
   const resolved = await withUserContext(
     user.id,
     user.role as RlsRole,
     async (tx) => {
-      const application = await tx.application.findFirst({
-        where: { leadApplicantId: user.id, formStatus: { not: "SUBMITTED" } },
-        select: { id: true },
-      });
+      // E2: same active-application preference as getOwnedApplicationId, so
+      // section reads and writes always target the same child's application.
+      const application =
+        (activeId
+          ? await tx.application.findFirst({
+              where: {
+                id: activeId,
+                leadApplicantId: user.id,
+                formStatus: { not: "SUBMITTED" },
+              },
+              select: { id: true },
+            })
+          : null) ??
+        (await tx.application.findFirst({
+          where: { leadApplicantId: user.id, formStatus: { not: "SUBMITTED" } },
+          select: { id: true },
+        }));
       if (!application) return null;
 
       const ownerContributorId = await resolveOwningContributorId(
@@ -396,7 +428,9 @@ export async function getSectionStatus(
  * ownership check (`expectedLeadApplicantId`), the enforced deadline, and the
  * redirects.
  *
- * Throws an error (which the client submit button will surface) if validation fails.
+ * Throws if validation fails. What it throws is applicant copy, not the gate's
+ * own diagnostic — the client submit button renders the message verbatim, so
+ * the sanitising happens here (CF-25) and the real error goes to `logError`.
  */
 export async function submitApplication(applicationId: string): Promise<never> {
   const user = await getCurrentUser();
@@ -424,19 +458,32 @@ export async function submitApplication(applicationId: string): Promise<never> {
     );
   }
 
-  const result = await submitApplicationCore({
-    actor: { id: user.id, role: user.role as RlsRole },
-    applicationId,
-    ownerContributorId,
-    expectedLeadApplicantId: user.id,
-    enforceDeadline: true,
-    auditAction: AUDIT_ACTIONS.APPLICATION_SUBMITTED,
-    confirmation: {
-      to: user.email,
-      applicantName:
-        `${user.firstName ?? ""} ${user.lastName ?? ""}`.trim() || user.email,
-    },
-  });
+  // Every gate below throws for whoever is debugging it — a JSON gap payload, a
+  // list of section enum values, a Prisma/RLS failure — and the portal's submit
+  // handler renders `err.message` straight into the form's error banner. So the
+  // diagnostic is logged HERE, in full, and what leaves this action is the plain
+  // sentence the applicant can act on (CF-25). The core never redirects, so
+  // nothing thrown from it is Next's NEXT_REDIRECT control-flow error; the
+  // redirects below stay outside the catch where they belong.
+  let result: Awaited<ReturnType<typeof submitApplicationCore>>;
+  try {
+    result = await submitApplicationCore({
+      actor: { id: user.id, role: user.role as RlsRole },
+      applicationId,
+      ownerContributorId,
+      expectedLeadApplicantId: user.id,
+      enforceDeadline: true,
+      auditAction: AUDIT_ACTIONS.APPLICATION_SUBMITTED,
+      confirmation: {
+        to: user.email,
+        applicantName:
+          `${user.firstName ?? ""} ${user.lastName ?? ""}`.trim() || user.email,
+      },
+    });
+  } catch (err) {
+    logError("submitApplication", err, { applicationId });
+    throw new Error(applicantSubmissionMessage(err));
+  }
 
   // ── Guard: already submitted ───────────────────────────────────────────────
   if (result.alreadySubmitted) {

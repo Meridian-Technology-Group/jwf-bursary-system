@@ -12,8 +12,10 @@
 import { usePathname } from "next/navigation";
 import Link from "next/link";
 import {
+  MailCheck,
   LayoutDashboard,
   ClipboardList,
+  FileCheck2,
   Gauge,
   CalendarRange,
   Mail,
@@ -51,6 +53,9 @@ const NAV_GROUPS: NavGroup[] = [
     heading: "Assessment Rounds",
     items: [
       { label: "Applications", href: "/queue", icon: ClipboardList },
+      // Epic 14 C1 (CG-17) — assessments get their own queue, separate from
+      // application-lifecycle admin.
+      { label: "Assessments", href: "/assessments", icon: FileCheck2 },
       { label: "All Rounds", href: "/rounds", icon: CalendarRange },
       { label: "Current Round", href: "/rounds/current", icon: Gauge },
     ],
@@ -60,6 +65,8 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { label: "Contacts", href: "/contacts", icon: ContactIcon },
       { label: "Send Invitations", href: "/invitations", icon: Mail },
+      // Epic 15 X1 (CI-02) — what the system has sent, from 21 Aug 2026.
+      { label: "Sent Emails", href: "/emails", icon: MailCheck },
     ],
   },
   {

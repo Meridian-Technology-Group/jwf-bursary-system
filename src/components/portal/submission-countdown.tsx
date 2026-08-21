@@ -17,6 +17,7 @@
 import * as React from "react";
 import { Clock, AlertTriangle, Lock } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { ContactBursaryTeam } from "@/components/portal/contact-bursary-team";
 import {
   CLOSING_SOON_HOURS,
   formatTimeRemaining,
@@ -83,7 +84,8 @@ export function SubmissionCountdown({
           <p className="mt-0.5 text-sm text-rose-800">
             The deadline was {deadlineLabel}. This application can no longer be
             edited or submitted — forms submitted late cannot be assessed. If you
-            believe this is an error, please contact the Foundation.
+            believe this is an error,{" "}
+            <ContactBursaryTeam linkClassName="text-rose-900 hover:text-rose-950" />.
           </p>
         </div>
       </div>

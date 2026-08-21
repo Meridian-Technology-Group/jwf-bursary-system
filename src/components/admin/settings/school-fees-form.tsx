@@ -13,6 +13,7 @@ import { TableCell, TableRow } from "@/components/ui/table";
 import { upsertSchoolFeesAction } from "@/app/(admin)/settings/actions";
 import type { SchoolFeesRow } from "@/lib/db/queries/reference-tables";
 import type { School } from "@prisma/client";
+import { academicYearLabelFor } from "@/lib/schools/academic-year";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -54,6 +55,12 @@ export function SchoolFeesRow({ fees }: SchoolFeesRowProps) {
     const fd = new FormData();
     fd.set("school", fees.school);
     fd.set("annualFees", annualFees);
+    // Epic 15 M2 (CH-17): edits update THIS academic year's row — the key is
+    // [school, effectiveFrom], not "a new version from today".
+    fd.set(
+      "effectiveFrom",
+      new Date(fees.effectiveFrom).toISOString().slice(0, 10)
+    );
 
     startTransition(async () => {
       const result = await upsertSchoolFeesAction(fd);
@@ -66,16 +73,14 @@ export function SchoolFeesRow({ fees }: SchoolFeesRowProps) {
   }
 
   const schoolLabel = SCHOOL_LABELS[fees.school] ?? fees.school;
-  const effectiveYear = fees.effectiveFrom.getFullYear?.() ?? new Date(fees.effectiveFrom).getFullYear();
+  const yearLabel = academicYearLabelFor(new Date(fees.effectiveFrom));
 
   if (!editing) {
     return (
       <TableRow>
         <TableCell className="font-medium text-slate-700">{schoolLabel}</TableCell>
         <TableCell className="tabular-nums">{formatGBP(fees.annualFees)}</TableCell>
-        <TableCell className="text-sm text-slate-500">
-          From {effectiveYear}
-        </TableCell>
+        <TableCell className="text-sm text-slate-500">{yearLabel}</TableCell>
         <TableCell>
           <Button
             variant="ghost"
@@ -110,9 +115,7 @@ export function SchoolFeesRow({ fees }: SchoolFeesRowProps) {
           />
         </div>
       </TableCell>
-      <TableCell className="text-sm text-slate-500">
-        New version from today
-      </TableCell>
+      <TableCell className="text-sm text-slate-500">{yearLabel}</TableCell>
       <TableCell>
         <div className="flex items-center gap-1">
           <Button

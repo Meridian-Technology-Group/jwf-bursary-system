@@ -58,6 +58,8 @@ import type {
 import type { Tx } from "@/lib/db/prisma";
 import { createAuditLog } from "@/lib/audit/log";
 import { AUDIT_ACTIONS, AUDIT_ENTITY_TYPES } from "@/lib/audit/actions";
+import type { ReviewPhase } from "@/lib/applications/queue-filter";
+import { CURRENT_CALCULATION_VERSION, selectEngineVersion } from "@/lib/assessment/engine-version";
 
 // ───────────────────────────────────────────────────────────────────────────
 // Review phase — the application-detail review-track vocabulary
@@ -78,21 +80,23 @@ import { AUDIT_ACTIONS, AUDIT_ENTITY_TYPES } from "@/lib/audit/actions";
  *   COMPLETED        assessment completed, no outcome yet
  *   QUALIFIES        outcome AWARDED or QUALIFIES_NOT_AWARDED
  *   DOES_NOT_QUALIFY outcome DOES_NOT_QUALIFY
+ *   CLOSED           unified terminal state (item 2) — closedAt != null,
+ *                    TOP precedence over every other phase
+ *
+ * Canonical definition lives in `queue-filter.ts` (client-import-safe, zero
+ * server-only dependencies) — re-exported here (see the import above) so this
+ * module's many existing consumers are unaffected. Do not redefine it in a
+ * second place (Item 1.1's consolidation).
  */
-export type ReviewPhase =
-  | "PRE_SUBMISSION"
-  | "SUBMITTED"
-  | "NOT_STARTED"
-  | "PAUSED"
-  | "COMPLETED"
-  | "QUALIFIES"
-  | "DOES_NOT_QUALIFY";
+export type { ReviewPhase };
 
 /** The lifecycle facts `deriveReviewPhase` reasons over. */
 export interface LifecycleStatusInput {
   formStatus: ApplicationFormStatus;
   assessmentStatus: AssessmentStatus | null;
   outcome: AssessmentOutcome | null;
+  /** Unified close marker (item 2) — non-null wins over everything else. */
+  closedAt: Date | null;
 }
 
 /**
@@ -101,7 +105,8 @@ export interface LifecycleStatusInput {
  * application-detail gating, round counts, reports) now funnels through, so the
  * intent of the old fused enum is preserved in one place.
  *
- * Mirrors the PR-2 backfill table exactly:
+ * Mirrors the PR-2 backfill table exactly, with the item-2 CLOSED rule on top:
+ *   closedAt set                       → CLOSED (wins over everything)
  *   outcome set                        → QUALIFIES / DOES_NOT_QUALIFY
  *   assessment COMPLETED               → COMPLETED
  *   assessment PAUSED                  → PAUSED
@@ -110,8 +115,9 @@ export interface LifecycleStatusInput {
  *   form not SUBMITTED                 → PRE_SUBMISSION
  */
 export function deriveReviewPhase(input: LifecycleStatusInput): ReviewPhase {
-  const { formStatus, assessmentStatus, outcome } = input;
+  const { formStatus, assessmentStatus, outcome, closedAt } = input;
 
+  if (closedAt != null) return "CLOSED";
   if (outcome != null) {
     return outcome === "DOES_NOT_QUALIFY" ? "DOES_NOT_QUALIFY" : "QUALIFIES";
   }
@@ -162,13 +168,43 @@ const FORM_TRANSITIONS: Record<ApplicationFormStatus, ApplicationFormStatus[]> =
  * source form invalidates an in-progress/paused assessment, resetting it to
  * NOT_STARTED so it must be re-run (state-model §4/§6.5/§7.2, D-G6/D3). There is
  * deliberately NO COMPLETED → NOT_STARTED edge — a finished assessment is never
- * auto-invalidated in v1 (edit-on-behalf is itself blocked once COMPLETED).
+ * AUTO-invalidated (edit-on-behalf is itself blocked once COMPLETED), so nothing
+ * may silently throw away a completed assessment's work.
+ *
+ * ──────────────────────────────────────────────────────────────────────────
+ * COMPLETED → IN_PROGRESS — the REOPEN exception (Epic 13 / C1, decision D13-2)
+ * ──────────────────────────────────────────────────────────────────────────
+ * COMPLETED was terminal until Epic 13. UAT (CF-10/CF-01) showed assessors are
+ * routinely locked out by their own "Mark complete" click while the assessment
+ * is still demonstrably wrong — with no way back. D13-2 opens ONE deliberate
+ * exit edge, COMPLETED → IN_PROGRESS, owned by `reopenAssessmentRow` and driven
+ * only by `reopenAssessmentAction` (an explicit, audited, human decision).
+ *
+ * The edge is narrow on purpose. Read it together with its gate:
+ *
+ *   - It is REOPEN, not discard: COMPLETED → NOT_STARTED stays illegal, so the
+ *     assessment's data survives the round trip. Only `completedAt` is cleared.
+ *   - It is gated on "no outcome yet". `reopenAssessmentAction` refuses once
+ *     `assessments.outcome` is set (or the application is CLOSED), because a
+ *     decision has by then been communicated to the applicant and may have
+ *     promoted a BursaryAccount. Reopening is allowed only UNTIL an outcome
+ *     exists — the table alone cannot express that, so the guard lives in the
+ *     action and MUST stay there.
+ *   - Outcome-setting re-blocks itself: `canSetOutcome` requires COMPLETED, so a
+ *     reopened assessment must be completed again before any outcome can be set.
+ *   - The existing recommendation is marked stale on reopen (its confirmed
+ *     figure is cleared) so it must be re-confirmed, never silently reused.
+ *
+ * Nothing else may use this edge. A future automatic invalidation of completed
+ * work would need its own decision — do not reach for this one.
  */
 const ASSESSMENT_TRANSITIONS: Record<AssessmentStatus, AssessmentStatus[]> = {
   NOT_STARTED: ["IN_PROGRESS"],
   IN_PROGRESS: ["PAUSED", "COMPLETED", "NOT_STARTED"],
   PAUSED: ["IN_PROGRESS", "COMPLETED", "NOT_STARTED"],
-  COMPLETED: [],
+  // The single exit edge — see the REOPEN exception above. Deliberately does
+  // NOT include NOT_STARTED (that would be a discard) or PAUSED.
+  COMPLETED: ["IN_PROGRESS"],
 };
 
 export function isLegalFormTransition(
@@ -377,6 +413,14 @@ export function assertSubmittedAtUnset(submittedAt: Date | null | undefined): vo
  * assessment in scope; PR-6a unifies them onto the assessment lifecycle, so they
  * need the row to exist. `assessorId` is the staff member performing the action
  * (used only when creating). Idempotent — never overwrites an existing row.
+ *
+ * CALC-14: this is the SECOND assessment-creation path (the app-detail
+ * "Begin Review" track, reached via `beginReview`/`resumeReview` below) —
+ * distinct from `createAssessment` in `db/queries/assessments.ts` (the
+ * "Begin Assessment" wizard track). Both must stamp the same
+ * `calculationVersion` default so a row's engine doesn't depend on which
+ * button the assessor clicked; it is sourced from the shared
+ * `CURRENT_CALCULATION_VERSION` constant, not a locally-declared magic number.
  */
 async function ensureAssessmentRow(
   tx: Tx,
@@ -393,6 +437,7 @@ async function ensureAssessmentRow(
     data: {
       applicationId,
       assessorId,
+      calculationVersion: CURRENT_CALCULATION_VERSION,
       status: ASSESSMENT_INITIAL_STATUS,
       scholarshipPct: 0,
       vatRate: 20,
@@ -663,6 +708,14 @@ export function defaultPausedUntil(from: Date = new Date()): Date {
 export const ASSESSMENT_INITIAL_STATUS: AssessmentStatus = "NOT_STARTED";
 
 /**
+ * CALC-15 — thrown by `completeAssessmentRow` when a v2 assessment has no
+ * persisted calculation snapshot. Distinct from the generic illegal-transition
+ * `Error` so callers that want to surface the specific reason (rather than a
+ * generic "failed to complete" string) can `instanceof`-check for it.
+ */
+export class AssessmentSnapshotMissingError extends Error {}
+
+/**
  * Complete an assessment row: status → COMPLETED + completedAt. Validates the
  * transition. Used by both the assessor-workspace track and the
  * application-detail review track (`markReviewComplete`).
@@ -678,9 +731,68 @@ export async function completeAssessmentRow(
   if (from !== "NOT_STARTED" && !isLegalAssessmentTransition(from, "COMPLETED")) {
     throw new Error(`Illegal assessment transition ${from} → COMPLETED`);
   }
+
+  // CALC-15 — defence in depth: a v2 assessment must have its calculation
+  // snapshot persisted before it can be marked COMPLETED. Client-side gating
+  // (assessment-form-v2's save-before-complete) is the first line of defence;
+  // this guard is the backstop for ANY caller of this primitive (a stale
+  // Prisma client, a retried request racing a failed save, the
+  // application-detail "mark complete" track, etc.) — it must never be
+  // possible to produce a COMPLETED v2 assessment whose snapshot columns are
+  // all null, because the recommendation screen then treats the missing
+  // `recommendedPayableFees` as an implicit £0.
+  const current = await tx.assessment.findUniqueOrThrow({
+    where: { id: assessmentId },
+    select: { calculationVersion: true, totalHouseholdNetIncome: true },
+  });
+  if (
+    selectEngineVersion(current.calculationVersion) === "v2" &&
+    current.totalHouseholdNetIncome == null
+  ) {
+    throw new AssessmentSnapshotMissingError(
+      "This assessment's calculation snapshot has not been saved. Save the assessment data before completing it."
+    );
+  }
+
   await tx.assessment.update({
     where: { id: assessmentId },
     data: { status: "COMPLETED", completedAt: new Date() },
+  });
+}
+
+/**
+ * REOPEN a completed assessment: status COMPLETED → IN_PROGRESS and clear
+ * `completedAt`. The sole user of the COMPLETED → IN_PROGRESS exception edge
+ * (Epic 13 / C1, D13-2 — see the ASSESSMENT_TRANSITIONS docstring).
+ *
+ * Deliberately narrow:
+ *   - Only COMPLETED is a legal source. Reopening anything else is a caller bug,
+ *     not a no-op, so it throws rather than silently doing nothing.
+ *   - NO assessment data is cleared. Reopen exists so the assessor can
+ *     CORRECT the assessment, not restart it; the discard path
+ *     (`discardAssessment` → NOT_STARTED) is the one that invalidates work, and
+ *     it still refuses a COMPLETED row.
+ *   - `outcome` is NOT cleared, because a reopen must never happen after an
+ *     outcome exists in the first place. That gate lives in
+ *     `reopenAssessmentAction` (it also owns authorisation and the audit row);
+ *     this primitive is only the status writer.
+ */
+export async function reopenAssessmentRow(
+  tx: Tx,
+  assessmentId: string,
+  from: AssessmentStatus
+): Promise<void> {
+  if (from !== "COMPLETED") {
+    throw new Error(
+      `Cannot reopen an assessment that is not completed (status ${from}).`
+    );
+  }
+  if (!isLegalAssessmentTransition(from, "IN_PROGRESS")) {
+    throw new Error(`Illegal assessment transition ${from} → IN_PROGRESS`);
+  }
+  await tx.assessment.update({
+    where: { id: assessmentId },
+    data: { status: "IN_PROGRESS", completedAt: null },
   });
 }
 

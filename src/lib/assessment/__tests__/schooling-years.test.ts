@@ -102,3 +102,32 @@ describe("calculateSchoolingYearsRemaining (existing group-number API)", () => {
     expect(calculateSchoolingYearsRemaining(12, "2030-31", "2025-26")).toBe(0);
   });
 });
+
+// ── Epic 15 M1 (CH-12): the full Year 6–13 → remaining-years matrix ─────────
+import { remainingYearsForEntrySchoolYear } from "../schooling-years";
+
+describe("remainingYearsForEntrySchoolYear (CH-12 matrix)", () => {
+  it("matches Charlotte's matrix exactly (Y6→8 … Y13→1)", () => {
+    const expected: Array<[number, number]> = [
+      [6, 8],
+      [7, 7],
+      [8, 6],
+      [9, 5],
+      [10, 4],
+      [11, 3],
+      [12, 2],
+      [13, 1],
+    ];
+    for (const [entry, remaining] of expected) {
+      expect(remainingYearsForEntrySchoolYear(entry)).toBe(remaining);
+    }
+  });
+
+  it("out-of-range or missing input yields null (no autofill)", () => {
+    expect(remainingYearsForEntrySchoolYear(5)).toBeNull();
+    expect(remainingYearsForEntrySchoolYear(14)).toBeNull();
+    expect(remainingYearsForEntrySchoolYear(7.5)).toBeNull();
+    expect(remainingYearsForEntrySchoolYear(null)).toBeNull();
+    expect(remainingYearsForEntrySchoolYear(undefined)).toBeNull();
+  });
+});

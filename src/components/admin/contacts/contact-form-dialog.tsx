@@ -45,16 +45,21 @@ import {
   createContactAction,
   updateContactAction,
 } from "@/app/(admin)/contacts/actions";
+import { ADULT_TITLES } from "@/lib/contacts/titles";
 
 export interface ContactFormValues {
   id?: string;
+  title: string;
   firstName: string;
   lastName: string;
   email: string;
   phone: string;
-  childName: string;
+  childTitle: string;
+  childFirstName: string;
+  childLastName: string;
   childDob: string;
   school: "TRINITY" | "WHITGIFT" | "";
+  situation: "NEW" | "INTERNAL" | "ROLLING_OVER";
   entryYear: string;
   entryYearGroup: "Y6" | "Y7" | "Y9" | "Y12" | "OTHER" | "";
   addressLine1: string;
@@ -65,18 +70,29 @@ export interface ContactFormValues {
 }
 
 const schema = z.object({
+  title: z.string().optional(),
   firstName: z.string().optional(),
   lastName: z.string().min(1, "Parent surname is required"),
   email: z.string().email("A valid email address is required"),
   phone: z.string().optional(),
-  childName: z.string().min(1, "Child's name is required"),
-  childDob: z.string().optional(),
+  childTitle: z.string().optional(),
+  // Epic 15 G2 (CH-09): first name, surname and DOB are all required — the
+  // invitation cannot be prepared without the full child identity.
+  childFirstName: z.string().min(1, "Child's first name is required"),
+  childLastName: z.string().min(1, "Child's surname is required"),
+  childDob: z.string().min(1, "Child's date of birth is required"),
   school: z.enum(["TRINITY", "WHITGIFT"], { error: "A school is required" }),
+  // B3 (CG-26) — the invitation-template situation; defaults to NEW.
+  situation: z.enum(["NEW", "INTERNAL", "ROLLING_OVER"]),
   entryYear: z
     .string()
     .min(1, "Entry year is required")
     .regex(/^\d{4}$/, "Enter a 4-digit year"),
-  entryYearGroup: z.enum(["Y6", "Y7", "Y9", "Y12", "OTHER"]).optional(),
+  // Required as of Q1: the entry year-group is JWF-facing only and the parent
+  // can never supply it, so it must be captured here.
+  entryYearGroup: z.enum(["Y6", "Y7", "Y9", "Y12", "OTHER"], {
+    error: "An entry year group is required",
+  }),
   addressLine1: z.string().optional(),
   addressLine2: z.string().optional(),
   town: z.string().optional(),
@@ -87,13 +103,17 @@ const schema = z.object({
 type Values = z.infer<typeof schema>;
 
 const EMPTY: ContactFormValues = {
+  title: "",
   firstName: "",
   lastName: "",
   email: "",
   phone: "",
-  childName: "",
+  childTitle: "",
+  childFirstName: "",
+  childLastName: "",
   childDob: "",
   school: "",
+  situation: "NEW",
   entryYear: "",
   entryYearGroup: "",
   addressLine1: "",
@@ -122,6 +142,7 @@ export function ContactFormDialog({
     defaultValues: {
       ...(initial ?? EMPTY),
       school: (initial?.school as Values["school"]) || undefined,
+      situation: (initial?.situation as Values["situation"]) || "NEW",
       entryYearGroup:
         (initial?.entryYearGroup as Values["entryYearGroup"]) || undefined,
     },
@@ -139,6 +160,7 @@ export function ContactFormDialog({
     reset({
       ...(initial ?? EMPTY),
       school: (initial?.school as Values["school"]) || undefined,
+      situation: (initial?.situation as Values["situation"]) || "NEW",
       entryYearGroup:
         (initial?.entryYearGroup as Values["entryYearGroup"]) || undefined,
     });
@@ -148,15 +170,19 @@ export function ContactFormDialog({
   function onSubmit(values: Values) {
     setServerError(null);
     const fd = new FormData();
+    if (values.title) fd.set("title", values.title);
     if (values.firstName) fd.set("firstName", values.firstName);
     fd.set("lastName", values.lastName);
     fd.set("email", values.email);
     if (values.phone) fd.set("phone", values.phone);
-    fd.set("childName", values.childName);
+    if (values.childTitle) fd.set("childTitle", values.childTitle);
+    if (values.childFirstName) fd.set("childFirstName", values.childFirstName);
+    fd.set("childLastName", values.childLastName);
     if (values.childDob) fd.set("childDob", values.childDob);
     fd.set("school", values.school);
+    fd.set("situation", values.situation);
     fd.set("entryYear", values.entryYear);
-    if (values.entryYearGroup) fd.set("entryYearGroup", values.entryYearGroup);
+    fd.set("entryYearGroup", values.entryYearGroup);
     if (values.addressLine1) fd.set("addressLine1", values.addressLine1);
     if (values.addressLine2) fd.set("addressLine2", values.addressLine2);
     if (values.town) fd.set("town", values.town);
@@ -202,6 +228,34 @@ export function ContactFormDialog({
                 Lead applicant (parent)
               </legend>
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <FormField
+                  control={form.control}
+                  name="title"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Title</FormLabel>
+                      <Select
+                        onValueChange={field.onChange}
+                        value={field.value ?? ""}
+                        disabled={isPending}
+                      >
+                        <FormControl>
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select title" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          {ADULT_TITLES.map((t) => (
+                            <SelectItem key={t.value} value={t.value}>
+                              {t.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
                 <FormField
                   control={form.control}
                   name="firstName"
@@ -266,14 +320,31 @@ export function ContactFormDialog({
               <legend className="text-xs font-semibold uppercase tracking-wide text-slate-500">
                 Child
               </legend>
+              {/* No child title — the recipient record is first name, surname,
+                  DOB, school and year of entry only (CH-09). */}
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <FormField
                   control={form.control}
-                  name="childName"
+                  name="childFirstName"
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>
-                        Child&apos;s name <span className="text-red-500">*</span>
+                        First name <span className="text-red-500">*</span>
+                      </FormLabel>
+                      <FormControl>
+                        <Input {...field} disabled={isPending} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="childLastName"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>
+                        Surname <span className="text-red-500">*</span>
                       </FormLabel>
                       <FormControl>
                         <Input {...field} disabled={isPending} />
@@ -287,12 +358,14 @@ export function ContactFormDialog({
                   name="childDob"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Date of birth</FormLabel>
+                      <FormLabel>
+                        Date of birth <span className="text-red-500">*</span>
+                      </FormLabel>
                       <FormControl>
                         <Input type="date" {...field} disabled={isPending} />
                       </FormControl>
                       <FormDescription>
-                        Recommended — distinguishes twins (one account per child).
+                        Also distinguishes twins (one account per child).
                       </FormDescription>
                       <FormMessage />
                     </FormItem>
@@ -338,6 +411,38 @@ export function ContactFormDialog({
                 />
                 <FormField
                   control={form.control}
+                  name="situation"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>
+                        Situation <span className="text-red-500">*</span>
+                      </FormLabel>
+                      <Select
+                        onValueChange={field.onChange}
+                        value={field.value ?? "NEW"}
+                        disabled={isPending}
+                      >
+                        <FormControl>
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select situation" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          <SelectItem value="NEW">New application</SelectItem>
+                          <SelectItem value="INTERNAL">
+                            Internal bursary application
+                          </SelectItem>
+                          <SelectItem value="ROLLING_OVER">
+                            Rolling over
+                          </SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
                   name="entryYear"
                   render={({ field }) => (
                     <FormItem>
@@ -361,7 +466,9 @@ export function ContactFormDialog({
                   name="entryYearGroup"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Entry year group</FormLabel>
+                      <FormLabel>
+                        Entry year group <span className="text-red-500">*</span>
+                      </FormLabel>
                       <Select
                         onValueChange={field.onChange}
                         value={field.value ?? ""}

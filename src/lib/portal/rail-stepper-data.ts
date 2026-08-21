@@ -26,6 +26,7 @@ import "server-only";
 import { getCurrentUser } from "@/lib/auth/roles";
 import { withUserContext, type RlsRole } from "@/lib/db/prisma";
 import { getApplicationForUser } from "@/lib/db/queries/applications";
+import { getActiveApplicationId } from "@/lib/portal/active-application";
 import { resolveOwningContributorId } from "@/lib/db/queries/contributors";
 import { getSectionGapStatuses } from "@/lib/portal/section-gaps";
 import {
@@ -51,6 +52,9 @@ export async function loadRailStepper(): Promise<RailStepperData | null> {
   const user = await getCurrentUser();
   if (!user) return null;
 
+  // E2: the stepper must describe the ACTIVE application's sections.
+  const activeApplicationId = await getActiveApplicationId();
+
   // One transaction under the lead applicant's RLS context: resolve the app +
   // owning contributor AND compute the gap statuses. getSectionGapStatuses
   // reads RLS-protected tables, so it MUST share this context — running it off
@@ -59,7 +63,11 @@ export async function loadRailStepper(): Promise<RailStepperData | null> {
     user.id,
     user.role as RlsRole,
     async (tx) => {
-      const application = await getApplicationForUser(tx, user.id);
+      const application = await getApplicationForUser(
+        tx,
+        user.id,
+        activeApplicationId
+      );
       if (!application) return null;
       const ownerContributorId = await resolveOwningContributorId(
         tx,

@@ -10,7 +10,12 @@
  */
 
 import type { Tx } from "@/lib/db/prisma";
-import type { Contact, EntryYearGroup, School } from "@prisma/client";
+import type {
+  Contact,
+  EntryYearGroup,
+  InvitationSituation,
+  School,
+} from "@prisma/client";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -19,15 +24,20 @@ import type { Contact, EntryYearGroup, School } from "@prisma/client";
 /** A contact row plus the derived register state for the table UI. */
 export interface ContactListItem {
   id: string;
+  title: string | null;
   firstName: string | null;
   lastName: string;
   email: string;
   phone: string | null;
+  childTitle: string | null;
+  childFirstName: string | null;
+  childLastName: string | null;
   childName: string;
   childDob: Date | null;
   school: School;
   entryYear: number;
   entryYearGroup: EntryYearGroup | null;
+  situation: InvitationSituation | null;
   addressLine1: string | null;
   addressLine2: string | null;
   town: string | null;
@@ -44,15 +54,21 @@ export interface ContactListItem {
 }
 
 export interface ContactWriteData {
+  title?: string | null;
   firstName?: string | null;
   lastName: string;
   email: string;
   phone?: string | null;
+  childTitle?: string | null;
+  childFirstName?: string | null;
+  childLastName?: string | null;
   childName: string;
   childDob?: Date | null;
   school: School;
   entryYear: number;
   entryYearGroup?: EntryYearGroup | null;
+  /** Epic 14 B3 (CG-26) — situation for the invitation template variant. */
+  situation?: InvitationSituation | null;
   addressLine1?: string | null;
   addressLine2?: string | null;
   town?: string | null;
@@ -82,15 +98,20 @@ export async function listContacts(
 
   return rows.map((c) => ({
     id: c.id,
+    title: c.title,
     firstName: c.firstName,
     lastName: c.lastName,
     email: c.email,
     phone: c.phone,
+    childTitle: c.childTitle,
+    childFirstName: c.childFirstName,
+    childLastName: c.childLastName,
     childName: c.childName,
     childDob: c.childDob,
     school: c.school,
     entryYear: c.entryYear,
     entryYearGroup: c.entryYearGroup,
+    situation: c.situation,
     addressLine1: c.addressLine1,
     addressLine2: c.addressLine2,
     town: c.town,
@@ -127,15 +148,20 @@ export async function createContact(
 ): Promise<Contact> {
   return tx.contact.create({
     data: {
+      title: data.title ?? null,
       firstName: data.firstName ?? null,
       lastName: data.lastName,
       email: data.email,
       phone: data.phone ?? null,
+      childTitle: data.childTitle ?? null,
+      childFirstName: data.childFirstName ?? null,
+      childLastName: data.childLastName ?? null,
       childName: data.childName,
       childDob: data.childDob ?? null,
       school: data.school,
       entryYear: data.entryYear,
       entryYearGroup: data.entryYearGroup ?? null,
+      situation: data.situation ?? null,
       addressLine1: data.addressLine1 ?? null,
       addressLine2: data.addressLine2 ?? null,
       town: data.town ?? null,
@@ -158,15 +184,20 @@ export async function updateContact(
   return tx.contact.update({
     where: { id },
     data: {
+      title: data.title ?? null,
       firstName: data.firstName ?? null,
       lastName: data.lastName,
       email: data.email,
       phone: data.phone ?? null,
+      childTitle: data.childTitle ?? null,
+      childFirstName: data.childFirstName ?? null,
+      childLastName: data.childLastName ?? null,
       childName: data.childName,
       childDob: data.childDob ?? null,
       school: data.school,
       entryYear: data.entryYear,
       entryYearGroup: data.entryYearGroup ?? null,
+      situation: data.situation ?? null,
       addressLine1: data.addressLine1 ?? null,
       addressLine2: data.addressLine2 ?? null,
       town: data.town ?? null,

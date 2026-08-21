@@ -7,7 +7,15 @@
  * and collapses the entire post-submission assessment machinery (IN_PROGRESS,
  * PAUSED, raw outcome enum names) into a small parent-meaningful step model:
  *
- *     Draft → Submitted/Received → Being assessed → Outcome
+ *     Not started → In Progress → Ready to Submit → Submitted/Received
+ *
+ * These are exactly the canonical Application-track states (state-model.md §3)
+ * from the applicant's point of view. The Assessment track (Not Started / In
+ * Progress / Paused / Complete) and the decision outcome are Foundation-side and
+ * are NEVER shown to the applicant — a submitted application simply stays on
+ * "Submitted"/"Received"; a document request surfaces only as an action (the
+ * /respond CTA), not a status; and an awarded family's portal switches to the
+ * rounds view separately.
  *
  * No internal enum name ever crosses into a portal view through this module.
  * `status/page.tsx` and the dashboard read ONLY this projection (replacing the
@@ -30,8 +38,13 @@ import type {
   AssessmentOutcome,
 } from "@prisma/client";
 
-/** The ordered parent-facing steps. */
-export type ParentStep = "draft" | "submitted" | "assessing" | "outcome";
+/**
+ * The ordered parent-facing steps. The applicant only ever sees THEIR OWN
+ * state — drafting or submitted. The Foundation's assessment progress and the
+ * decision outcome are deliberately NOT parent-facing steps (an awarded family's
+ * portal switches to the rounds view separately).
+ */
+export type ParentStep = "draft" | "submitted";
 
 export type ParentTone = "neutral" | "info" | "progress" | "success" | "muted";
 
@@ -61,19 +74,7 @@ export interface ParentStatusProjection {
   tone: ParentTone;
   /** Which step the application is currently on. */
   step: ParentStep;
-  /** Whether a parent-meaningful outcome is available to show. */
-  showOutcome: boolean;
-  /**
-   * The parent-facing outcome view, present only when `showOutcome`. Never
-   * exposes the raw outcome enum name — only an awarded / not-awarded shape
-   * with parent copy.
-   */
-  outcome?: {
-    awarded: boolean;
-    title: string;
-    body: string;
-  };
-  /** The full four-step timeline for the status page. */
+  /** The applicant-facing timeline (Application started → Submitted). */
   timeline: ParentTimelineStep[];
 }
 
@@ -107,73 +108,30 @@ function draftLabel(formStatus: ApplicationFormStatus): string {
 }
 
 /**
- * Projects the internal lifecycle onto the parent-safe view. The only inputs
- * that matter to a parent: are they still drafting, have they submitted, is it
- * being assessed, and is there a decision. The assessment's internal status
- * (NOT_STARTED / IN_PROGRESS / PAUSED) is deliberately NOT surfaced — to a
- * parent, anything submitted-but-undecided reads as "Being assessed".
+ * Projects the internal lifecycle onto the applicant-safe view. The only thing
+ * an applicant ever sees is THEIR OWN Application-track state: are they still
+ * drafting (Not started / In Progress / Ready to Submit) or have they submitted
+ * (Submitted / Received). The Assessment track and the decision outcome are
+ * Foundation-side and are never surfaced here — a submitted application simply
+ * stays on "Submitted"/"Received" until the portal moves to the rounds view on
+ * award (handled separately).
  */
 export function projectParentStatus(
   input: ParentStatusInput
 ): ParentStatusProjection {
-  const { formStatus, applicationType, outcome } = input;
+  const { formStatus, applicationType } = input;
 
   const isSubmitted = formStatus === "SUBMITTED";
-  const isDecided = isSubmitted && outcome != null;
+  const step: ParentStep = isSubmitted ? "submitted" : "draft";
 
-  // Determine the current step.
-  let step: ParentStep;
-  if (!isSubmitted) {
-    step = "draft";
-  } else if (isDecided) {
-    step = "outcome";
-  } else {
-    // Submitted but no decision yet — to the parent this is "being assessed",
-    // regardless of whether the assessor has opened it / paused it internally.
-    step = "assessing";
-  }
-
-  // Current label + tone. Note: the parent never sits on a bare "submitted"
-  // step — once submitted, the projection moves them straight to "assessing"
-  // (the assessment begins at submission). The "submitted" timeline node is
-  // therefore always reached-but-not-current.
-  let label: string;
-  let tone: ParentTone;
-  if (step === "draft") {
-    label = draftLabel(formStatus);
-    tone = formStatus === "FILLED_IN" ? "info" : "neutral";
-  } else if (step === "assessing") {
-    label = "Being assessed";
-    tone = "progress";
-  } else {
-    // outcome
-    const awarded = outcome === "AWARDED";
-    label = awarded ? "Bursary awarded" : "Decision available";
-    tone = awarded ? "success" : "muted";
-  }
-
-  // Parent-facing outcome view (never the enum name).
-  let outcomeView: ParentStatusProjection["outcome"];
-  if (isDecided) {
-    const awarded = outcome === "AWARDED";
-    outcomeView = awarded
-      ? {
-          awarded: true,
-          title: "Your application has been awarded a bursary",
-          body: "Congratulations. The John Whitgift Foundation will be in touch with further details about your bursary award.",
-        }
-      : {
-          awarded: false,
-          title: "A decision has been made on your application",
-          body: "Thank you for your application. The Foundation will be in touch with the outcome and any next steps. If you have questions, please contact the bursaries team.",
-        };
-  }
-
-  // Build the four-step timeline. "reached" is cumulative; "current" marks the
-  // active step.
-  const reachedSubmitted = isSubmitted;
-  const reachedAssessing = isSubmitted; // assessment begins at submission
-  const reachedOutcome = isDecided;
+  const label = isSubmitted
+    ? submittedLabel(applicationType)
+    : draftLabel(formStatus);
+  const tone: ParentTone = isSubmitted
+    ? "success"
+    : formStatus === "FILLED_IN"
+      ? "info"
+      : "neutral";
 
   const timeline: ParentTimelineStep[] = [
     {
@@ -190,34 +148,12 @@ export function projectParentStatus(
         applicationType === "NEW"
           ? "Your application has been submitted."
           : "Your re-assessment has been received.",
-      reached: reachedSubmitted,
-      // Never current — submitted collapses into "assessing" for the parent.
-      current: false,
-    },
-    {
-      id: "assessing",
-      label: "Being assessed",
-      description: "The Foundation is reviewing your application.",
-      reached: reachedAssessing,
-      current: step === "assessing",
-    },
-    {
-      id: "outcome",
-      label: "Outcome",
-      description: "A decision has been made.",
-      reached: reachedOutcome,
-      current: step === "outcome",
+      reached: isSubmitted,
+      current: step === "submitted",
     },
   ];
 
-  return {
-    label,
-    tone,
-    step,
-    showOutcome: isDecided,
-    outcome: outcomeView,
-    timeline,
-  };
+  return { label, tone, step, timeline };
 }
 
 /** Tailwind classes for a parent badge tone (kept here so callers stay dumb). */

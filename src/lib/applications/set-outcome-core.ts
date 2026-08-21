@@ -24,7 +24,10 @@
  *   6. exactly one canonical audit row (APPLICATION_OUTCOME_SET) carrying the
  *      chosen outcome + both award figures
  *
- * The thin server-action wrappers keep their existing call signatures.
+ * `setApplicationOutcome` is the module's only entry point. The recommendation
+ * server action calls it with an explicit 3-value decision plus the award
+ * figures. (Epic 13: C3 removed the legacy binary `setOutcome` action, F4 the
+ * `setApplicationOutcomeLegacy` shim it wrapped.)
  */
 
 import { requireRole, Role } from "@/lib/auth/roles";
@@ -39,6 +42,7 @@ import {
   promoteToActiveAccount,
   type AwardFigures,
 } from "@/lib/applications/account-promotion";
+import { selectEngineVersion } from "@/lib/assessment/engine-version";
 import { EmailTemplateType } from "@prisma/client";
 
 import { AUDIT_ACTIONS, AUDIT_ENTITY_TYPES } from "@/lib/audit/actions";
@@ -46,9 +50,6 @@ import { AUDIT_ACTIONS, AUDIT_ENTITY_TYPES } from "@/lib/audit/actions";
 export type SetOutcomeResult =
   | { success: true }
   | { success: false; error: string };
-
-/** Legacy binary outcome the pre-Epic-08 callers still pass. */
-export type Outcome = "QUALIFIES" | "DOES_NOT_QUALIFY";
 
 /** The 3-value award decision (Epic 08). */
 export type AwardDecision = LifecycleOutcome; // AWARDED | QUALIFIES_NOT_AWARDED | DOES_NOT_QUALIFY
@@ -60,6 +61,45 @@ export type AwardDecision = LifecycleOutcome; // AWARDED | QUALIFIES_NOT_AWARDED
  */
 function isValidOutcomeSource(assessmentStatus: string | null): boolean {
   return assessmentStatus === "COMPLETED";
+}
+
+/** User-facing refusal when a recommendation's payable fees are unconfirmed. */
+export const RECOMMENDATION_NOT_RECONFIRMED_MESSAGE =
+  "The payable fees on this recommendation have not been confirmed — " +
+  "reopening an assessment clears the previous confirmation. Confirm them on " +
+  "the recommendation screen before setting an outcome.";
+
+/**
+ * Re-confirmation gate (Epic 13 / C1, D13-2).
+ *
+ * Reopening a COMPLETED assessment clears the recommendation's
+ * `confirmedPayableFees` — the assessor's sign-off on a figure derived from an
+ * assessment that has since been reopened and possibly corrected. Deciding on
+ * it afterwards would promote a bursary account off a number nobody has looked
+ * at since the correction (`promoteToActiveAccount` walks confirmed →
+ * recommended → legacy for the benchmark). So: a v2 recommendation that exists
+ * but carries no confirmed figure is stale, and cannot decide anything.
+ *
+ * Scoped so no pre-existing flow changes:
+ *   - v1 assessments never populate `confirmedPayableFees` (a CALC-08/v2
+ *     field), so they are exempt outright.
+ *   - An assessment with NO recommendation row is exempt — nothing was ever
+ *     recorded, so there is nothing stale, and the pre-recommendation outcome
+ *     paths keep working unchanged.
+ *
+ * Reopen is the main way to reach the blocked state, but deliberately not the
+ * only one: a v2 recommendation whose payable fees were NEVER confirmed is the
+ * same defect wearing different clothes, and it should not decide an award
+ * either. Both clear the same way — confirm the figure and save.
+ */
+function needsRecommendationReconfirmation(assessment: {
+  calculationVersion: number | null;
+  recommendation: { confirmedPayableFees: unknown } | null;
+} | null): boolean {
+  if (!assessment) return false;
+  if (selectEngineVersion(assessment.calculationVersion) !== "v2") return false;
+  if (!assessment.recommendation) return false;
+  return assessment.recommendation.confirmedPayableFees == null;
 }
 
 async function fetchApplicationForOutcome(tx: Tx, applicationId: string) {
@@ -85,15 +125,22 @@ async function fetchApplicationForOutcome(tx: Tx, applicationId: string) {
         select: { academicYear: true, openDate: true, closeDate: true },
       },
       assessment: {
-        select: { id: true, status: true, outcome: true, yearlyPayableFees: true },
+        select: {
+          id: true,
+          status: true,
+          outcome: true,
+          // Epic 13 / C1: engine version scopes the re-confirmation gate to v2.
+          calculationVersion: true,
+          // CALC-08: the account benchmark walks recommendation confirmed →
+          // v2 recommended snapshot → legacy yearly (see account-promotion.ts).
+          yearlyPayableFees: true,
+          recommendedPayableFees: true,
+          recommendation: { select: { confirmedPayableFees: true } },
+        },
       },
     },
   });
 }
-
-type OutcomeApplication = NonNullable<
-  Awaited<ReturnType<typeof fetchApplicationForOutcome>>
->;
 
 /** The email template that backs each outcome. */
 function templateForOutcome(outcome: AwardDecision): EmailTemplateType {
@@ -158,6 +205,15 @@ export async function setApplicationOutcome(
           return {
             success: false as const,
             error: `Cannot set outcome ${outcome}: the assessment is not completed.`,
+          };
+        }
+
+        // Epic 13 / C1 — a reopened assessment's recommendation must be
+        // re-confirmed before it can decide anything.
+        if (needsRecommendationReconfirmation(application.assessment)) {
+          return {
+            success: false as const,
+            error: RECOMMENDATION_NOT_RECONFIRMED_MESSAGE,
           };
         }
 
@@ -245,41 +301,4 @@ export async function setApplicationOutcome(
     console.error("[setApplicationOutcome]", err);
     return { success: false, error: "Failed to set application outcome." };
   }
-}
-
-/**
- * Back-compat shim for the legacy binary outcome callers
- * (application-detail "Set Outcome" buttons). Maps QUALIFIES → AWARDED when the
- * application is already linked to an account (a re-assessment) or
- * QUALIFIES_NOT_AWARDED otherwise; DOES_NOT_QUALIFY maps to itself. The
- * award-aware recommendation surface (Epic 08 PR-2) calls
- * `setApplicationOutcome` with the explicit 3-value decision + award figures.
- */
-export async function setApplicationOutcomeLegacy(
-  applicationId: string,
-  legacy: Outcome
-): Promise<SetOutcomeResult> {
-  if (legacy === "DOES_NOT_QUALIFY") {
-    return setApplicationOutcome(applicationId, "DOES_NOT_QUALIFY");
-  }
-  // Resolve AWARDED vs QUALIFIES_NOT_AWARDED from existing account linkage —
-  // the same discriminator the status service uses. A new qualifying
-  // application (no account yet) defaults to AWARDED so today's
-  // "QUALIFIES creates an ACTIVE account" behaviour is preserved.
-  const user = await requireRole([Role.ADMIN, Role.ASSESSOR]);
-  const hasAccount = await withUserContext(
-    user.id,
-    user.role as RlsRole,
-    async (tx) => {
-      const app = await tx.application.findUnique({
-        where: { id: applicationId },
-        select: { bursaryAccountId: true },
-      });
-      return app?.bursaryAccountId != null;
-    }
-  );
-  // Preserve the historical behaviour: a QUALIFIES outcome opens/continues an
-  // ACTIVE account, i.e. it is AWARDED in the new model.
-  void hasAccount;
-  return setApplicationOutcome(applicationId, "AWARDED");
 }

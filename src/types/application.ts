@@ -20,14 +20,24 @@ export interface ChildAddress {
 export interface ChildDetailsData {
   /** School applying for */
   school: School;
-  /** Year group the child enters at (Y6/Y7/Y9/Y12/Other). Per §4 spec. */
-  entryYearGroup: EntryYearGroup;
-  /** Child's full legal name */
+  // NOTE: no entry year / entry year-group. Per Q1 (Brian, 2026-08-14) the entry
+  // year is JWF-facing only — it lives on `Application.entryYear` /
+  // `entryYearGroup`, is set admin-side, and is never captured, validated or
+  // displayed on the applicant side.
+  /** Child's title (Master/Miss/Mr/Ms/Other) — optional */
+  childTitle?: string;
+  /** Child's first name(s) */
+  childFirstName: string;
+  /** Child's surname */
+  childSurname: string;
+  /** Child's full legal name — derived from first name + surname on write */
   childFullName: string;
   /** Gender */
   gender: string;
   /** ISO date string YYYY-MM-DD */
   dateOfBirth: string;
+  /** Town or city of birth */
+  placeOfBirthCity: string;
   /** Country of birth */
   placeOfBirth: string;
   /** Document slot ID for birth certificate */
@@ -56,9 +66,12 @@ export interface FamilyMemberIdentity {
   /** Child vs adult — only used for OTHER rows (Q1). */
   memberType?: "CHILD" | "ADULT";
   isBritishCitizen: boolean;
-  /** Document slot ID for UK passport (when British citizen) */
+  /**
+   * LEGACY (pre-F2): passports uploaded through the old separate "UK Passport"
+   * control. Read-only — resolve via `passportDocumentIdOf`.
+   */
   ukPassportDocumentId?: string;
-  /** Document slot ID for passport (when not British citizen) */
+  /** The member's passport document, whatever their citizenship. */
   passportDocumentId?: string;
   /** Document slot ID for ILR evidence (when not British citizen) */
   ilrDocumentId?: string;
@@ -93,13 +106,6 @@ export type EmploymentStatus =
 
 /** Self-employment position (when status === "SELF_EMPLOYED"). */
 export type SelfEmploymentPosition = "DIRECTOR" | "PARTNER" | "SOLE_TRADER";
-
-/**
- * The school year-group the child enters at. Mandated by §4 of the
- * spec; admin-side `Application.entryYear` (calendar Int) is set by the
- * invitation flow and is independent of this field.
- */
-export type EntryYearGroup = "Y6" | "Y7" | "Y9" | "Y12" | "OTHER";
 
 export type ParentTitle = "MR" | "MRS" | "MS" | "MISS" | "DR" | "PROF" | "OTHER";
 
@@ -272,8 +278,11 @@ export interface BenefitsIncome {
   other: number;
   /** UC 12-month statement. */
   ucStatementDocumentId?: string;
-  /** 3 separate detailed monthly UC payment docs. */
-  ucMonthlyDocumentIds?: string[];
+  /**
+   * 3 separate detailed monthly UC payment docs — positional (month 1/2/3), so
+   * an entry not yet uploaded is `null` rather than missing (CF-28).
+   */
+  ucMonthlyDocumentIds?: (string | null)[];
   housingBenefitDocumentId?: string;
   otherBenefitsDocumentId?: string;
 }
@@ -398,7 +407,7 @@ export type RentAgreementType =
   | "COUNCIL_NO_RENT"
   | "RELATIVES";
 
-export type CarOwnership = "OWN" | "LEASE";
+export type CarOwnership = "OWN" | "LEASE" | "NEITHER";
 
 export interface AssetsLiabilitiesData {
   // Property
@@ -429,7 +438,6 @@ export interface AssetsLiabilitiesData {
   usesPublicTransport: boolean;
   publicTransportMonthly?: number;
   otherPossessionsValue: number;
-  otherNonFinancialAssetsValue: number;
   // Financial assets & debt
   totalCashBalance: number;
   investmentsValue: number;
@@ -447,6 +455,7 @@ export interface AssetsLiabilitiesData {
   bankOverdraft?: number;
   loansToAgencies?: number;
   loanStatementDocumentIds: string[];
+  loanAgreementDocumentIds: string[];
   loansToFriendsFamily?: number;
   schoolFeesOwed?: number;
   otherDebtDocumentIds: string[];

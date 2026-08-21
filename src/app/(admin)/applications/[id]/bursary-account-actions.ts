@@ -38,6 +38,12 @@ export type WithdrawBursaryAccountResult =
  * Allowed in ANY state — no schedule, document, or lifecycle gate. Idempotent:
  * a CLOSED account stays CLOSED and `closedAt` is never rewritten.
  */
+/**
+ * @deprecated Item 2 (unified close): the UI affordances that called this were
+ * replaced by `closeApplication` / CloseApplicationDialog, which closes the
+ * application AND its live account under a structured close reason. Kept for
+ * any in-flight callers; do not add new call sites.
+ */
 export async function withdrawBursaryAccount(
   input: WithdrawBursaryAccountInput
 ): Promise<WithdrawBursaryAccountResult> {
@@ -55,7 +61,7 @@ export async function withdrawBursaryAccount(
       async (tx) => {
         const account = await tx.bursaryAccount.findUnique({
           where: { id: input.accountId },
-          select: { id: true, status: true, reference: true },
+          select: { id: true, status: true, childName: true },
         });
         if (!account) {
           return { success: false as const, error: "Bursary account not found." };
@@ -76,7 +82,10 @@ export async function withdrawBursaryAccount(
           action: AUDIT_ACTIONS.BURSARY_ACCOUNT_WITHDRAWN,
           entityType: AUDIT_ENTITY_TYPES.BursaryAccount,
           entityId: account.id,
-          context: `Bursary account ${account.reference} withdrawn (closed)`,
+          // Epic 13 (D13-1a): the account no longer carries a reference, so
+          // audit context names the child instead — the account's only
+          // human-recognisable identifier.
+          context: `Bursary account for ${account.childName} withdrawn (closed)`,
           metadata: { accountId: account.id, reason },
         });
 
@@ -91,3 +100,18 @@ export async function withdrawBursaryAccount(
     return { success: false, error: "Failed to withdraw the bursary account." };
   }
 }
+
+// ─── updateFeesAccountCodeAction — REMOVED (Epic 13, C4b / D13-1a) ────────────
+//
+// CALC-10's fees-account code lived on `BursaryAccount.feesAccountCode` so an
+// awarded account could be reconciled against the school finance system. That
+// job now belongs to `Application.reference`, which C4a made free-text and
+// re-editable after award for exactly this purpose — so the column, its editor
+// (`components/admin/fees-account-code-field.tsx`) and this action are gone,
+// along with the column itself (migration
+// `20260814140000_bursary_account_drop_identifiers`).
+//
+// `AUDIT_ACTIONS.BURSARY_ACCOUNT_FEES_CODE_UPDATED` is deliberately KEPT in
+// `src/lib/audit/actions.ts` even though nothing writes it any more: audit_logs
+// is append-only, so historic rows still carry the string and would render
+// unlabelled in the audit UI without it.

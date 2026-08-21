@@ -132,6 +132,7 @@ export function buildOptionScenarios(
   }
 
   // (iii)/(iv) With vs without sibling absorption (only when siblings exist).
+  // (see buildV2AwardLegs below for the v2 three-leg comparison.)
   if (hasSiblings) {
     const withSiblings = project(
       grossFees,
@@ -169,4 +170,50 @@ export function buildOptionScenarios(
   }
 
   return scenarios;
+}
+
+// ─── CALC-08 — v2 three-leg comparison ─────────────────────────────────────────
+
+/**
+ * The v2 recommendation surface compares the THREE award legs the engine
+ * produced (Actual remaining DI / Theoretical benchmark DI / Affordability-
+ * adjusted DI) rather than the v1 bursary/scholarship/sibling scenarios — the
+ * min of the three (floored at £0) is `recommendedPayableFees` (plan §CALC-08
+ * item 2). Pure: it reads the assessment's persisted snapshot legs; it does not
+ * recompute anything.
+ */
+export interface AwardLegRow {
+  key: "actual" | "theoretical" | "affordability";
+  label: string;
+  /** The leg's disposable-income value from the assessment snapshot (may be negative). */
+  value: number;
+  /** True for the smallest leg — the one the recommended payable fees derives from. */
+  isMin: boolean;
+}
+
+/**
+ * Builds the ordered three-leg comparison for the v2 recommendation screen,
+ * flagging the minimum leg (before the £0 floor `recommendedPayableFees`
+ * applies). Ties flag every leg at the minimum.
+ */
+export function buildV2AwardLegs(input: {
+  actualRemainingDi: number;
+  theoreticalBenchmarkDi: number;
+  affordabilityAdjustedDi: number;
+}): AwardLegRow[] {
+  const legs: Array<Omit<AwardLegRow, "isMin">> = [
+    { key: "actual", label: "Actual remaining DI", value: input.actualRemainingDi },
+    {
+      key: "theoretical",
+      label: "Theoretical benchmark DI",
+      value: input.theoreticalBenchmarkDi,
+    },
+    {
+      key: "affordability",
+      label: "Affordability-adjusted DI",
+      value: input.affordabilityAdjustedDi,
+    },
+  ];
+  const min = Math.min(...legs.map((l) => l.value));
+  return legs.map((l) => ({ ...l, isMin: l.value === min }));
 }

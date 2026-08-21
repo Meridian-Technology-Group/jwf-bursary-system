@@ -28,6 +28,11 @@
  * routes but are configurable via UploadEndpointProvider, so the admin
  * edit-on-behalf layout can retarget the widget at the staff endpoints
  * (CR-001). The signed-url GET is shared and stays fixed.
+ *
+ * Two upload transports are supported (see upload-endpoints.tsx): the portal's
+ * presigned three-step flow (A1 — bytes go straight to Supabase Storage, so a
+ * 20 MB file no longer hits Vercel's ~4.5 MB request-body cap) and the staff
+ * path's original single multipart POST.
  */
 
 import * as React from "react";
@@ -35,6 +40,7 @@ import {
   UploadCloud,
   CheckCircle2,
   AlertCircle,
+  AlertTriangle,
   FileText,
   Eye,
   Trash2,
@@ -45,6 +51,21 @@ import {
   useUploadEndpoints,
   type UploadEndpoints,
 } from "@/components/portal/upload-endpoints";
+import {
+  ACCEPTED_MIME,
+  ACCEPTED_EXTENSIONS,
+  ACCEPTED_FORMATS_LABEL,
+  MAX_SIZE_MB,
+  MAX_SIZE_BYTES,
+  isWordDocument,
+  UNSUPPORTED_TYPE_MESSAGE,
+  WORD_DOCUMENT_MESSAGE,
+} from "@/lib/uploads/accepted-types";
+import {
+  uploadFile,
+  uploadErrorFrom,
+  type UploadedDocument,
+} from "@/lib/uploads/upload-transport";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -55,16 +76,10 @@ export interface ExistingDocument {
   uploadedAt: string;
 }
 
-export interface UploadedDocument {
-  id: string;
-  filename: string;
-  fileSize: number;
-  mimeType: string;
-  storagePath: string;
-  uploadedAt: string;
-  applicationId: string;
-  slot: string;
-}
+// Re-exported so the many `import type { UploadedDocument } from
+// "@/components/portal/file-upload"` call sites keep working after the
+// transport moved out of this file (A1).
+export type { UploadedDocument };
 
 interface FileUploadBaseProps {
   /** Document slot identifier (e.g. "BIRTH_CERTIFICATE", "P60_PARENT_1") */
@@ -111,14 +126,9 @@ export interface MultiFileUploadProps extends FileUploadBaseProps {
 export type FileUploadProps = SingleFileUploadProps | MultiFileUploadProps;
 
 // ─── Constants ────────────────────────────────────────────────────────────────
+// ACCEPTED_MIME / ACCEPTED_EXTENSIONS / MAX_SIZE_BYTES / Word detection are all
+// imported from the shared allowlist module (item 14, Story 14.4) — see above.
 
-const ACCEPTED_MIME = ["application/pdf", "image/jpeg", "image/png"] as const;
-const ACCEPTED_EXTENSIONS = ".pdf, .jpg, .jpeg, .png";
-const WORD_MIME = [
-  "application/msword",
-  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-] as const;
-const MAX_SIZE_BYTES = 20 * 1024 * 1024; // 20 MB
 const MAX_CONCURRENT_UPLOADS = 5;
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -131,44 +141,15 @@ function formatBytes(bytes: number): string {
 
 function validateFile(file: File): string | null {
   if (file.size > MAX_SIZE_BYTES) {
-    return "File too large — maximum 20 MB";
+    return `File too large — maximum ${MAX_SIZE_MB} MB`;
   }
-  if (!(ACCEPTED_MIME as readonly string[]).includes(file.type)) {
-    if (
-      (WORD_MIME as readonly string[]).includes(file.type) ||
-      /\.docx?$/i.test(file.name)
-    ) {
-      return "Word documents can't be accepted. Please save or print your document as a PDF, or take a photo of it (JPG or PNG), and upload that instead.";
+  if (!ACCEPTED_MIME.includes(file.type)) {
+    if (isWordDocument(file.name, file.type)) {
+      return WORD_DOCUMENT_MESSAGE;
     }
-    return "Unsupported file type — please upload PDF, JPG, or PNG";
+    return UNSUPPORTED_TYPE_MESSAGE;
   }
   return null;
-}
-
-async function uploadFile(
-  file: File,
-  applicationId: string,
-  slot: string,
-  endpoints: UploadEndpoints
-): Promise<UploadedDocument> {
-  const formData = new FormData();
-  formData.append("file", file);
-  formData.append("applicationId", applicationId);
-  formData.append("slot", slot);
-
-  const response = await fetch(endpoints.uploadUrl, {
-    method: "POST",
-    body: formData,
-  });
-
-  if (!response.ok) {
-    const body = await response.json().catch(() => ({}));
-    throw new Error(
-      (body as { error?: string }).error ?? `Upload failed (${response.status})`
-    );
-  }
-
-  return (await response.json()) as UploadedDocument;
 }
 
 async function deleteDocument(
@@ -179,11 +160,35 @@ async function deleteDocument(
     method: "DELETE",
   });
   if (!response.ok) {
-    const body = await response.json().catch(() => ({}));
-    throw new Error(
-      (body as { error?: string }).error ?? `Remove failed (${response.status})`
-    );
+    throw await uploadErrorFrom(response, "Remove failed");
   }
+}
+
+/**
+ * DOM ids for one upload control, unique per rendered instance (F11a).
+ *
+ * These were once derived from the `slot` prop — `file-upload-${slot}`. That
+ * is only safe while no two controls share a slot, and nothing enforced it:
+ * the Family Identification form rendered a "UK Passport" and a "Passport"
+ * upload against `FAMILY_ID_PASSPORT_<i>`, so the page carried two file inputs
+ * with the SAME id. A `<label for>` binds to the FIRST element with that id, so
+ * clicking one control's label opened the other control's file picker and the
+ * file was written to the wrong field — invisibly, because the twin was
+ * collapsed.
+ *
+ * It looked handled and was not: `ConditionalField` collapses with CSS rather
+ * than unmounting, and neither of its guards helps here — `aria-hidden` does
+ * not block activation, and `pointer-events: none` does not apply to
+ * label-for activation, which is not a pointer event on the input.
+ *
+ * `useId` is stable across server and client render, so it is hydration-safe;
+ * it is already the codebase's pattern for this (see `ui/form.tsx`). Keeping
+ * ids per-instance means a future form CANNOT reproduce the collision, whatever
+ * slots it passes.
+ */
+function useUploadControlIds(): { inputId: string; descId: string } {
+  const uid = React.useId();
+  return { inputId: `file-upload-${uid}`, descId: `file-upload-desc-${uid}` };
 }
 
 async function openDocumentUrl(docId: string): Promise<void> {
@@ -225,11 +230,16 @@ function SingleFileUpload({
   const [uploadState, setUploadState] = React.useState<UploadState>(
     existingDocument ? "uploaded" : "empty"
   );
+  // CG-10 — true once every byte is sent and the server is verifying the file.
+  const [processing, setProcessing] = React.useState(false);
   const [uploadedDoc, setUploadedDoc] = React.useState<
     ExistingDocument | undefined
   >(existingDocument);
   const [errorMessage, setErrorMessage] = React.useState<string>("");
   const [removing, setRemoving] = React.useState(false);
+  // CF-28 — the server accepted the file but recognised the same bytes
+  // elsewhere on this application. Advisory only; never blocks.
+  const [duplicateNotice, setDuplicateNotice] = React.useState<string>("");
 
   // Sync external existingDocument prop (e.g. pre-fetched from server)
   React.useEffect(() => {
@@ -249,16 +259,20 @@ function SingleFileUpload({
 
     setUploadState("uploading");
     setUploadProgress(0);
+    setProcessing(false);
     setErrorMessage("");
-
-    const progressInterval = setInterval(() => {
-      setUploadProgress((prev) => Math.min(prev + 10, 85));
-    }, 150);
+    setDuplicateNotice("");
 
     try {
-      const doc = await uploadFile(file, applicationId, slot, endpoints);
-      clearInterval(progressInterval);
+      // Progress is REAL (CG-10): the transport reports the bytes actually
+      // sent to storage, then an explicit "processing" beat while the server
+      // verifies the file — no simulated counter parked at 85%.
+      const doc = await uploadFile(file, applicationId, slot, endpoints, (e) => {
+        setUploadProgress(Math.round(e.percent));
+        setProcessing(e.phase === "processing");
+      });
       setUploadProgress(100);
+      setProcessing(false);
       setUploadedDoc({
         id: doc.id,
         filename: doc.filename,
@@ -266,9 +280,10 @@ function SingleFileUpload({
         uploadedAt: doc.uploadedAt,
       });
       setUploadState("uploaded");
+      setDuplicateNotice(doc.duplicateWarning ?? "");
       onUploadComplete?.(doc);
     } catch (err) {
-      clearInterval(progressInterval);
+      setProcessing(false);
       const message =
         err instanceof Error ? err.message : "Upload failed. Please try again.";
       setErrorMessage(message);
@@ -284,6 +299,7 @@ function SingleFileUpload({
       onRemove?.(uploadedDoc.id);
       setUploadedDoc(undefined);
       setUploadState("empty");
+      setDuplicateNotice("");
       if (inputRef.current) inputRef.current.value = "";
     } catch (err) {
       const message =
@@ -322,8 +338,8 @@ function SingleFileUpload({
     if (!disabled) inputRef.current?.click();
   }
 
-  const inputId = `file-upload-${slot}`;
-  const descId = `file-upload-desc-${slot}`;
+  // Per-instance, NOT per-slot — see the note above `useUploadControlIds`.
+  const { inputId, descId } = useUploadControlIds();
 
   // ── Inline (spreadsheet) variant ──────────────────────────────────────────
   // One-line control, no block label / drop-zone. The whole element is still a
@@ -357,17 +373,20 @@ function SingleFileUpload({
         )}
 
         {uploadState === "uploading" && (
-          <InlineUploadingChip progress={uploadProgress} />
+          <InlineUploadingChip progress={uploadProgress} processing={processing} />
         )}
 
         {uploadState === "uploaded" && uploadedDoc && (
-          <InlineUploadedChip
-            doc={uploadedDoc}
-            disabled={disabled}
-            removing={removing}
-            onView={() => openDocumentUrl(uploadedDoc.id)}
-            onRemove={handleRemove}
-          />
+          <>
+            <InlineUploadedChip
+              doc={uploadedDoc}
+              disabled={disabled}
+              removing={removing}
+              onView={() => openDocumentUrl(uploadedDoc.id)}
+              onRemove={handleRemove}
+            />
+            {duplicateNotice && <DuplicateNotice message={duplicateNotice} />}
+          </>
         )}
 
         {uploadState === "error" && (
@@ -430,17 +449,20 @@ function SingleFileUpload({
       )}
 
       {uploadState === "uploading" && (
-        <UploadingRow progress={uploadProgress} />
+        <UploadingRow progress={uploadProgress} processing={processing} />
       )}
 
       {uploadState === "uploaded" && uploadedDoc && (
-        <UploadedRow
-          doc={uploadedDoc}
-          disabled={disabled}
-          removing={removing}
-          onView={() => openDocumentUrl(uploadedDoc.id)}
-          onRemove={handleRemove}
-        />
+        <>
+          <UploadedRow
+            doc={uploadedDoc}
+            disabled={disabled}
+            removing={removing}
+            onView={() => openDocumentUrl(uploadedDoc.id)}
+            onRemove={handleRemove}
+          />
+          {duplicateNotice && <DuplicateNotice message={duplicateNotice} />}
+        </>
       )}
 
       {uploadState === "error" && (
@@ -465,6 +487,8 @@ interface InflightUpload {
   key: string;
   filename: string;
   progress: number;
+  /** All bytes sent; server-side verification running (CG-10). */
+  processing?: boolean;
   /** Set once the request resolves with a failure */
   error?: string;
 }
@@ -487,6 +511,10 @@ function MultiFileUpload({
   );
   const [inflight, setInflight] = React.useState<InflightUpload[]>([]);
   const [removingId, setRemovingId] = React.useState<string | null>(null);
+  // CF-28 — doc id → "these bytes are already on this application" notice.
+  const [duplicateNotices, setDuplicateNotices] = React.useState<
+    Record<string, string>
+  >({});
 
   // Sync external existingDocuments prop (e.g. when documentMap arrives later)
   React.useEffect(() => {
@@ -502,7 +530,20 @@ function MultiFileUpload({
 
   async function uploadOne(file: File, key: string) {
     try {
-      const doc = await uploadFile(file, applicationId, slot, endpoints);
+      // Real per-file progress (CG-10) — no shared fake counter.
+      const doc = await uploadFile(file, applicationId, slot, endpoints, (e) =>
+        setInflight((prev) =>
+          prev.map((u) =>
+            u.key === key && !u.error
+              ? {
+                  ...u,
+                  progress: Math.round(e.percent),
+                  processing: e.phase === "processing",
+                }
+              : u
+          )
+        )
+      );
       setInflight((prev) => prev.filter((u) => u.key !== key));
       setUploadedDocs((prev) => [
         ...prev,
@@ -513,6 +554,12 @@ function MultiFileUpload({
           uploadedAt: doc.uploadedAt,
         },
       ]);
+      if (doc.duplicateWarning) {
+        setDuplicateNotices((prev) => ({
+          ...prev,
+          [doc.id]: doc.duplicateWarning as string,
+        }));
+      }
       onUploadComplete?.(doc);
     } catch (err) {
       const message =
@@ -566,23 +613,10 @@ function MultiFileUpload({
       })),
     ]);
 
-    // Cap concurrency by chunking
+    // Cap concurrency by chunking; each upload reports its own real progress.
     for (let i = 0; i < accepted.length; i += MAX_CONCURRENT_UPLOADS) {
       const batch = accepted.slice(i, i + MAX_CONCURRENT_UPLOADS);
-
-      // Animate progress for the batch until requests resolve
-      const interval = setInterval(() => {
-        setInflight((prev) =>
-          prev.map((u) =>
-            batch.some((b) => b.key === u.key) && !u.error
-              ? { ...u, progress: Math.min(u.progress + 10, 85) }
-              : u
-          )
-        );
-      }, 150);
-
       await Promise.all(batch.map(({ file, key }) => uploadOne(file, key)));
-      clearInterval(interval);
     }
 
     if (inputRef.current) inputRef.current.value = "";
@@ -645,8 +679,8 @@ function MultiFileUpload({
     if (!disabled) inputRef.current?.click();
   }
 
-  const inputId = `file-upload-${slot}`;
-  const descId = `file-upload-desc-${slot}`;
+  // Per-instance, NOT per-slot — see the note above `useUploadControlIds`.
+  const { inputId, descId } = useUploadControlIds();
 
   return (
     <div className="space-y-1.5">
@@ -697,6 +731,9 @@ function MultiFileUpload({
                 onView={() => openDocumentUrl(doc.id)}
                 onRemove={() => handleRemove(doc.id)}
               />
+              {duplicateNotices[doc.id] && (
+                <DuplicateNotice message={duplicateNotices[doc.id]} />
+              )}
             </li>
           ))}
           {inflight.map((u) =>
@@ -711,7 +748,11 @@ function MultiFileUpload({
               </li>
             ) : (
               <li key={u.key}>
-                <UploadingRow progress={u.progress} filename={u.filename} />
+                <UploadingRow
+                  progress={u.progress}
+                  filename={u.filename}
+                  processing={u.processing}
+                />
               </li>
             )
           )}
@@ -722,6 +763,26 @@ function MultiFileUpload({
 }
 
 // ─── Shared sub-components ────────────────────────────────────────────────────
+
+/**
+ * CF-28 — advisory "we've seen these exact bytes on this application already"
+ * note. Amber, not red, and it never replaces the uploaded chip: the document
+ * IS stored and the parent may legitimately be evidencing two lines with one
+ * letter. (Inside the Universal Credit slots the same detection REFUSES the
+ * upload instead, and that surfaces through the normal error path.)
+ * `role="status"` so a screen reader announces it without stealing focus.
+ */
+function DuplicateNotice({ message }: { message: string }) {
+  return (
+    <p
+      role="status"
+      className="mt-1 flex items-start gap-1.5 rounded-md bg-amber-50 px-2 py-1.5 text-[11px] leading-tight text-amber-800"
+    >
+      <AlertTriangle className="mt-px h-3 w-3 shrink-0" aria-hidden="true" />
+      <span>{message}</span>
+    </p>
+  );
+}
 
 interface DropZoneProps {
   label: string;
@@ -794,7 +855,7 @@ function DropZone({
       </button>
 
       <p className="mt-2 text-xs text-slate-400">
-        PDF, JPG, or PNG — max 20 MB
+        {ACCEPTED_FORMATS_LABEL} — max {MAX_SIZE_MB} MB
         {multiple ? " each" : ""}
       </p>
     </div>
@@ -804,10 +865,20 @@ function DropZone({
 function UploadingRow({
   progress,
   filename,
+  processing,
 }: {
   progress: number;
   filename?: string;
+  /** All bytes sent; the server is verifying the file (CG-10). */
+  processing?: boolean;
 }) {
+  const label = processing
+    ? filename
+      ? `Checking ${filename}…`
+      : "Checking your file…"
+    : filename
+      ? `Uploading ${filename}…`
+      : "Uploading…";
   return (
     <div className="rounded-xl border border-slate-200 bg-white p-4">
       <div className="flex items-center gap-3">
@@ -816,24 +887,27 @@ function UploadingRow({
           aria-hidden="true"
         />
         <div className="flex-1 min-w-0">
-          <p className="text-sm font-medium text-slate-700 truncate">
-            {filename ? `Uploading ${filename}…` : "Uploading…"}
-          </p>
+          <p className="text-sm font-medium text-slate-700 truncate">{label}</p>
           <div
             role="progressbar"
-            aria-valuenow={progress}
+            aria-valuenow={processing ? undefined : progress}
             aria-valuemin={0}
             aria-valuemax={100}
-            aria-label="Upload progress"
+            aria-label={processing ? "Checking your file" : "Upload progress"}
             className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-slate-200"
           >
             <div
-              className="h-full rounded-full bg-accent-600 transition-all duration-150"
-              style={{ width: `${progress}%` }}
+              className={cn(
+                "h-full rounded-full bg-accent-600 transition-all duration-150",
+                processing && "animate-pulse"
+              )}
+              style={{ width: processing ? "100%" : `${progress}%` }}
             />
           </div>
         </div>
-        <span className="text-xs text-slate-500 shrink-0">{progress}%</span>
+        <span className="text-xs text-slate-500 shrink-0">
+          {processing ? "Almost done" : `${progress}%`}
+        </span>
       </div>
     </div>
   );
@@ -958,11 +1032,17 @@ function InlineDropButton({
   );
 }
 
-function InlineUploadingChip({ progress }: { progress: number }) {
+function InlineUploadingChip({
+  progress,
+  processing,
+}: {
+  progress: number;
+  processing?: boolean;
+}) {
   return (
     <span className="inline-flex min-h-9 w-full items-center gap-1.5 rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-600">
       <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-accent-600" aria-hidden="true" />
-      <span>Uploading… {progress}%</span>
+      <span>{processing ? "Checking your file…" : `Uploading… ${progress}%`}</span>
     </span>
   );
 }

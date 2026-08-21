@@ -6,7 +6,7 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { RoundStatus } from "@prisma/client";
+import { RoundScenario, RoundStatus } from "@prisma/client";
 import { requireRole, Role } from "@/lib/auth/roles";
 import { createRound, updateRound, closeRound } from "@/lib/db/queries/rounds";
 import { withUserContext, type RlsRole } from "@/lib/db/prisma";
@@ -41,6 +41,16 @@ const RoundSchema = z
     openDate: z.string().min(1, "Open date is required"),
     closeDate: z.string().min(1, "Close date is required"),
     decisionDate: z.string().optional(),
+    // Item 12, made type-aware by E1/D13-8: the round carries TWO default
+    // submission-by dates — one for new applicants, one for bursary holders
+    // rolling over into the annual re-assessment (conventionally April; Q4:
+    // one global date per round, not per school). Each is optional — a round
+    // with no default for a type simply has none (those applications fall back
+    // to closeDate, D-1) — and neither is refined against openDate/closeDate:
+    // the Foundation may legitimately want a default before or after closeDate
+    // (e.g. a grace period past close), so this is deliberately permissive.
+    defaultSubmissionDeadlineNew: z.string().optional(),
+    defaultSubmissionDeadlineRolling: z.string().optional(),
   })
   .refine(
     (data) => new Date(data.closeDate) > new Date(data.openDate),
@@ -76,6 +86,10 @@ export async function createRoundAction(
     openDate: formData.get("openDate") as string,
     closeDate: formData.get("closeDate") as string,
     decisionDate: (formData.get("decisionDate") as string) || undefined,
+    defaultSubmissionDeadlineNew:
+      (formData.get("defaultSubmissionDeadlineNew") as string) || undefined,
+    defaultSubmissionDeadlineRolling:
+      (formData.get("defaultSubmissionDeadlineRolling") as string) || undefined,
   };
 
   const parsed = RoundSchema.safeParse(raw);
@@ -86,7 +100,14 @@ export async function createRoundAction(
     };
   }
 
-  const { academicYear, openDate, closeDate, decisionDate } = parsed.data;
+  const {
+    academicYear,
+    openDate,
+    closeDate,
+    decisionDate,
+    defaultSubmissionDeadlineNew,
+    defaultSubmissionDeadlineRolling,
+  } = parsed.data;
 
   try {
     await withUserContext(user.id, user.role as RlsRole, async (tx) => {
@@ -95,6 +116,12 @@ export async function createRoundAction(
         openDate: new Date(openDate),
         closeDate: new Date(closeDate),
         decisionDate: decisionDate ? new Date(decisionDate) : undefined,
+        defaultSubmissionDeadlineNew: defaultSubmissionDeadlineNew
+          ? new Date(defaultSubmissionDeadlineNew)
+          : undefined,
+        defaultSubmissionDeadlineRolling: defaultSubmissionDeadlineRolling
+          ? new Date(defaultSubmissionDeadlineRolling)
+          : undefined,
       });
 
       await createAuditLog(tx, {
@@ -103,7 +130,14 @@ export async function createRoundAction(
         entityType: AUDIT_ENTITY_TYPES.Round,
         entityId: round.id,
         context: `Created round ${academicYear}`,
-        metadata: { academicYear, openDate, closeDate },
+        metadata: {
+          academicYear,
+          openDate,
+          closeDate,
+          defaultSubmissionDeadlineNew: defaultSubmissionDeadlineNew ?? null,
+          defaultSubmissionDeadlineRolling:
+            defaultSubmissionDeadlineRolling ?? null,
+        },
       });
     });
 
@@ -144,6 +178,10 @@ export async function updateRoundAction(
     openDate: formData.get("openDate") as string,
     closeDate: formData.get("closeDate") as string,
     decisionDate: (formData.get("decisionDate") as string) || undefined,
+    defaultSubmissionDeadlineNew:
+      (formData.get("defaultSubmissionDeadlineNew") as string) || undefined,
+    defaultSubmissionDeadlineRolling:
+      (formData.get("defaultSubmissionDeadlineRolling") as string) || undefined,
   };
 
   const parsed = RoundSchema.safeParse(raw);
@@ -154,7 +192,18 @@ export async function updateRoundAction(
     };
   }
 
-  const { academicYear, openDate, closeDate, decisionDate } = parsed.data;
+  const {
+    academicYear,
+    openDate,
+    closeDate,
+    decisionDate,
+    defaultSubmissionDeadlineNew,
+    defaultSubmissionDeadlineRolling,
+  } = parsed.data;
+
+  const newDeadline = defaultSubmissionDeadlineNew
+    ? new Date(defaultSubmissionDeadlineNew)
+    : null;
 
   try {
     await withUserContext(user.id, user.role as RlsRole, async (tx) => {
@@ -163,6 +212,13 @@ export async function updateRoundAction(
         openDate: new Date(openDate),
         closeDate: new Date(closeDate),
         decisionDate: decisionDate ? new Date(decisionDate) : null,
+        defaultSubmissionDeadlineNew: newDeadline,
+        defaultSubmissionDeadlineRolling: defaultSubmissionDeadlineRolling
+          ? new Date(defaultSubmissionDeadlineRolling)
+          : null,
+        // Legacy mirror (E1) — no readers left; kept in step with the NEW date
+        // so a code-only revert behaves as before. E1b drops the column.
+        defaultSubmissionDeadline: newDeadline,
       });
 
       await createAuditLog(tx, {
@@ -171,7 +227,20 @@ export async function updateRoundAction(
         entityType: AUDIT_ENTITY_TYPES.Round,
         entityId: id,
         context: `Updated round ${academicYear}`,
-        metadata: { academicYear, openDate, closeDate },
+        // decisionDate + defaultSubmissionDeadline were missing from this
+        // metadata (Item 12 plan note) — added here so the audit trail on an
+        // update covers every field the dialog can change, matching 12.1's
+        // "audit entry records who changed it and when" AC and 12.3's "single
+        // round-level audit entry" (no per-application entries on cascade).
+        metadata: {
+          academicYear,
+          openDate,
+          closeDate,
+          decisionDate: decisionDate ?? null,
+          defaultSubmissionDeadlineNew: defaultSubmissionDeadlineNew ?? null,
+          defaultSubmissionDeadlineRolling:
+            defaultSubmissionDeadlineRolling ?? null,
+        },
       });
     });
 
@@ -328,4 +397,100 @@ export async function closeRoundAction(
       err instanceof Error ? err.message : "Failed to close round";
     return { success: false, error: message };
   }
+}
+
+// ─── Epic 14 D1 (CG-01) — round scenario windows ─────────────────────────────
+
+const RoundWindowInputSchema = z.object({
+  scenario: z.nativeEnum(RoundScenario),
+  opensOn: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .nullable(),
+  submitBy: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .nullable(),
+  defaultTaxYear: z
+    .string()
+    .trim()
+    .regex(/^\d{4}\/\d{2}$/, "Tax year must look like 2025/26")
+    .nullable(),
+});
+
+const RoundWindowsSchema = z.array(RoundWindowInputSchema).max(4);
+
+export interface SaveRoundWindowsResult {
+  success: boolean;
+  error?: string;
+}
+
+/**
+ * Upserts the four scenario windows for a round (ADMIN only — mirrors the
+ * round create/edit actions). A window with every field null is deleted so
+ * the pure resolver's derived defaults apply again.
+ */
+export async function saveRoundWindowsAction(
+  roundId: string,
+  windows: unknown
+): Promise<SaveRoundWindowsResult> {
+  const user = await requireRole([Role.ADMIN]);
+
+  const parsed = RoundWindowsSchema.safeParse(windows);
+  if (!parsed.success) {
+    return {
+      success: false,
+      error: parsed.error.issues[0]?.message ?? "Invalid window rows.",
+    };
+  }
+
+  try {
+    await withUserContext(user.id, user.role as RlsRole, async (tx) => {
+      const round = await tx.round.findUnique({
+        where: { id: roundId },
+        select: { id: true, academicYear: true },
+      });
+      if (!round) throw new Error("Round not found.");
+
+      for (const w of parsed.data) {
+        const empty = !w.opensOn && !w.submitBy && !w.defaultTaxYear;
+        if (empty) {
+          await tx.roundWindow.deleteMany({
+            where: { roundId, scenario: w.scenario },
+          });
+          continue;
+        }
+        await tx.roundWindow.upsert({
+          where: { roundId_scenario: { roundId, scenario: w.scenario } },
+          create: {
+            roundId,
+            scenario: w.scenario,
+            opensOn: w.opensOn ? new Date(`${w.opensOn}T00:00:00.000Z`) : null,
+            submitBy: w.submitBy ? new Date(`${w.submitBy}T00:00:00.000Z`) : null,
+            defaultTaxYear: w.defaultTaxYear,
+          },
+          update: {
+            opensOn: w.opensOn ? new Date(`${w.opensOn}T00:00:00.000Z`) : null,
+            submitBy: w.submitBy ? new Date(`${w.submitBy}T00:00:00.000Z`) : null,
+            defaultTaxYear: w.defaultTaxYear,
+          },
+        });
+      }
+
+      await createAuditLog(tx, {
+        userId: user.id,
+        action: AUDIT_ACTIONS.UPDATE_ROUND,
+        entityType: AUDIT_ENTITY_TYPES.Round,
+        entityId: roundId,
+        context: `Round scenario windows updated (${round.academicYear})`,
+        metadata: { windows: parsed.data },
+      });
+    });
+  } catch (err) {
+    console.error("[saveRoundWindowsAction]", err);
+    return { success: false, error: "Failed to save the scenario windows." };
+  }
+
+  revalidatePath(`/rounds/${roundId}`);
+  return { success: true };
 }

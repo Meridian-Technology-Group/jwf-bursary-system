@@ -10,6 +10,10 @@ import {
   undecidedWhere,
   type ReviewPhase,
 } from "@/lib/applications/queue-filter";
+import { londonStartOfDayUtc, londonEndOfDayUtc } from "@/lib/datetime";
+// Value import (not type-only): the deadline-range filter branches on the
+// application type at runtime (E1/D13-8).
+import { ApplicationType } from "@prisma/client";
 import type {
   School,
   Application,
@@ -19,9 +23,9 @@ import type {
   ApplicationContributorRole,
   ApplicationContributorStatus,
   ApplicationFormStatus,
-  ApplicationType,
   AssessmentStatus,
   AssessmentOutcome,
+  BursaryAccountStatus,
   Document,
   Assessment,
   Profile,
@@ -58,10 +62,43 @@ export interface ApplicationListItem {
   outcome: AssessmentOutcome | null;
   entryYear: number | null;
   submittedAt: Date | null;
+  /** Per-application submission deadline override (Epic 03); null = inherit. */
+  submissionDeadlineAt: Date | null;
   isReassessment: boolean;
   assignedToId: string | null;
-  round: Pick<Round, "id" | "academicYear">;
+  /**
+   * Carries `closeDate` + BOTH typed round defaults (E1/D13-8) alongside the
+   * round identity fields so callers can compute the effective deadline via
+   * `effectiveSubmissionDeadline()` (src/lib/rounds/submission-deadline.ts)
+   * without a second query. Both are needed because the helper branches on the
+   * row's own `applicationType`.
+   */
+  round: Pick<
+    Round,
+    | "id"
+    | "academicYear"
+    | "closeDate"
+    | "defaultSubmissionDeadlineNew"
+    | "defaultSubmissionDeadlineRolling"
+  >;
   secondParent: SecondParentIndicator;
+  /**
+   * The rolling BursaryAccount this application is linked to, or null when none
+   * exists yet (a NEW application only gains an account on AWARD). Drives the
+   * queue's "Withdraw account" action availability.
+   */
+  bursaryAccountId: string | null;
+  /** Status of the linked account (null when there is no account). */
+  bursaryAccountStatus: BursaryAccountStatus | null;
+  /** Unified close marker (item 2) — non-null means CLOSED. */
+  closedAt: Date | null;
+  /**
+   * The close reason label recorded at close time (item 4.4), or null when
+   * the application is not closed. Read through the FK, so it survives the
+   * reason later being deprecated — not re-looked-up from the live reason
+   * list.
+   */
+  closeReasonLabel: string | null;
 }
 
 export interface ListApplicationsFilters {
@@ -92,6 +129,166 @@ export interface ListApplicationsFilters {
    * lifecycle filter, not a watchlist rule.
    */
   undecided?: boolean;
+  /**
+   * Received-date range filter (Item 7.1) — inclusive UTC instant bounds on
+   * `submittedAt`. Callers convert a Europe/London calendar-date input via
+   * `londonStartOfDayUtc`/`londonEndOfDayUtc` (src/lib/datetime.ts) before
+   * passing it here so a boundary day is fully included regardless of
+   * GMT/BST. An application with no `submittedAt` (not yet submitted) is
+   * excluded automatically whenever either bound is set — Prisma/SQL never
+   * matches a `gte`/`lte` comparison against NULL.
+   */
+  submittedFrom?: Date;
+  submittedTo?: Date;
+  /**
+   * Submission-by (deadline) range filter (Item 7.2) — plain `YYYY-MM-DD`
+   * calendar-date strings (NOT pre-converted instants, unlike
+   * `submittedFrom`/`submittedTo` above — see `effectiveDeadlineRangeWhere`
+   * for why the three-tier effective-deadline chain needs two different
+   * conversions of the same bound). Matches each application's EFFECTIVE
+   * deadline (override ?? round default ?? round close date — Item 12/D-1),
+   * the same chain `effectiveSubmissionDeadline()` computes.
+   */
+  deadlineFrom?: string;
+  deadlineTo?: string;
+}
+
+/**
+ * Builds the Prisma where-fragment for the received-date range filter (Item
+ * 7.1), mirroring the story's inclusive from/to semantics:
+ *   - neither bound set  → `undefined` (no filter)
+ *   - only `from`        → `submittedAt >= from` (open upper bound)
+ *   - only `to`          → `submittedAt <= to` (open lower bound)
+ *   - both               → `submittedAt` between `from` and `to` inclusive
+ * A row with a null `submittedAt` never satisfies a `gte`/`lte` comparison, so
+ * unsubmitted applications are excluded automatically whenever a bound is
+ * active — no explicit `not: null` needed.
+ */
+export function submittedDateRangeWhere(
+  from: Date | undefined,
+  to: Date | undefined
+): Prisma.ApplicationWhereInput | undefined {
+  if (!from && !to) return undefined;
+  return {
+    submittedAt: {
+      ...(from ? { gte: from } : {}),
+      ...(to ? { lte: to } : {}),
+    },
+  };
+}
+
+/**
+ * Builds the Prisma where-fragment for the submission-by (deadline) range
+ * filter (Item 7.2), matching the SAME three-tier chain
+ * `effectiveSubmissionDeadline()` computes (src/lib/rounds/submission-deadline.ts,
+ * Item 12/D-1): `application.submissionDeadlineAt` (override) ?? the round
+ * default FOR THAT ROW'S APPLICATION TYPE ?? round's `closeDate`. Only the
+ * first tier that is SET applies for a given row — a round default, if present,
+ * is checked INSTEAD OF closeDate, never in addition (matches the helper's
+ * precedence).
+ *
+ * Type-awareness (E1/D13-8): the middle tier reads
+ * `defaultSubmissionDeadlineNew` for `applicationType = NEW` rows and
+ * `defaultSubmissionDeadlineRolling` for `ROLLING_OVER` rows, so each row is
+ * filtered against the same date the queue's Deadline column displays. The
+ * close-date tier inherits the same branch — "this row has no round default"
+ * means "no default ON ITS OWN CLOCK", not "no default at all", or a NEW-only
+ * round would wrongly push its rolling-over rows onto closeDate twice.
+ *
+ * `from`/`to` are plain `YYYY-MM-DD` calendar-date strings. The three tiers
+ * need two different conversions of the same bound:
+ *
+ *   - Override tier (`submissionDeadlineAt`, a `timestamptz` — an explicit
+ *     instant an admin chose, verbatim, possibly with a time-of-day):
+ *     compared against the UTC INSTANT bounds of the London calendar day
+ *     (`londonStartOfDayUtc`/`londonEndOfDayUtc`), exactly like the
+ *     received-date filter (7.1) compares `submittedAt`. An instant `X`
+ *     falls in `[from, to]` iff `X`'s LONDON CALENDAR DATE is within
+ *     `[from, to]` — which is exactly what testing `X` against those two
+ *     instant bounds does, regardless of the server runtime's own timezone.
+ *   - Round-default / close-date tiers (`@db.Date` columns — pure calendar
+ *     dates with no time-of-day at all): compared DIRECTLY against `from`/`to`
+ *     as calendar-date values (UTC-midnight `Date`s, exactly how Prisma always
+ *     represents a `@db.Date` field), with NO end-of-day shift. This
+ *     sidesteps the end-of-day-instant arithmetic entirely for these two
+ *     tiers — "does this deadline DATE fall within `[from, to]`" is a plain
+ *     date-vs-date comparison, and it provably agrees with whatever instant
+ *     `effectiveSubmissionDeadline()`'s `endOfDay()` shift produces for
+ *     display: shifting a date to its last millisecond never changes WHICH
+ *     calendar date it belongs to, so filtering on the date is equivalent to
+ *     filtering on the (shifted) instant, without needing to replicate the
+ *     shift's timezone assumptions here.
+ *
+ * A row with neither an override, nor a round default, nor (impossible in
+ * practice — `closeDate` is required) a close date is excluded automatically
+ * whenever a bound is active, via the same null gte/lte semantics as 7.1.
+ */
+export function effectiveDeadlineRangeWhere(
+  from: string | undefined,
+  to: string | undefined
+): Prisma.ApplicationWhereInput | undefined {
+  if (!from && !to) return undefined;
+
+  const instantFrom = from ? londonStartOfDayUtc(from) : undefined;
+  const instantTo = to ? londonEndOfDayUtc(to) : undefined;
+  // Calendar-date literals for the two `@db.Date` tiers — UTC midnight, the
+  // same representation Prisma uses for `@db.Date` fields (no time-of-day).
+  const dateFrom = from ? new Date(`${from}T00:00:00.000Z`) : undefined;
+  const dateTo = to ? new Date(`${to}T00:00:00.000Z`) : undefined;
+
+  const overrideInRange: Prisma.ApplicationWhereInput = {
+    submissionDeadlineAt: {
+      ...(instantFrom ? { gte: instantFrom } : {}),
+      ...(instantTo ? { lte: instantTo } : {}),
+    },
+  };
+
+  const dateInRange = {
+    ...(dateFrom ? { gte: dateFrom } : {}),
+    ...(dateTo ? { lte: dateTo } : {}),
+  };
+
+  // Only reached when there's no override (D-1 precedence: override wins). The
+  // column consulted depends on the row's application type (E1/D13-8).
+  const roundDefaultInRange: Prisma.ApplicationWhereInput = {
+    submissionDeadlineAt: null,
+    OR: [
+      {
+        applicationType: ApplicationType.NEW,
+        round: { defaultSubmissionDeadlineNew: dateInRange },
+      },
+      {
+        applicationType: ApplicationType.ROLLING_OVER,
+        round: { defaultSubmissionDeadlineRolling: dateInRange },
+      },
+    ],
+  };
+
+  // Only reached when there's no override AND no round default ON THIS ROW'S
+  // CLOCK — a round with a default set for this application type never falls
+  // through to closeDate, even if the default itself is out of range (matches
+  // the helper's strict precedence).
+  const closeDateInRange: Prisma.ApplicationWhereInput = {
+    submissionDeadlineAt: null,
+    OR: [
+      {
+        applicationType: ApplicationType.NEW,
+        round: {
+          defaultSubmissionDeadlineNew: null,
+          closeDate: dateInRange,
+        },
+      },
+      {
+        applicationType: ApplicationType.ROLLING_OVER,
+        round: {
+          defaultSubmissionDeadlineRolling: null,
+          closeDate: dateInRange,
+        },
+      },
+    ],
+  };
+
+  return { OR: [overrideInRange, roundDefaultInRange, closeDateInRange] };
 }
 
 /**
@@ -146,6 +343,22 @@ export async function listApplications(
     and.push(undecidedWhere());
   }
 
+  const submittedWhere = submittedDateRangeWhere(
+    filters.submittedFrom,
+    filters.submittedTo
+  );
+  if (submittedWhere) {
+    and.push(submittedWhere);
+  }
+
+  const deadlineWhere = effectiveDeadlineRangeWhere(
+    filters.deadlineFrom,
+    filters.deadlineTo
+  );
+  if (deadlineWhere) {
+    and.push(deadlineWhere);
+  }
+
   if (and.length > 0) {
     where.AND = and;
   }
@@ -160,10 +373,26 @@ export async function listApplications(
       applicationType: true,
       entryYear: true,
       submittedAt: true,
+      submissionDeadlineAt: true,
       isReassessment: true,
       assignedToId: true,
+      bursaryAccountId: true,
+      closedAt: true,
+      // Item 4.4 — read through the FK so the originally-recorded label
+      // survives the reason later being deprecated (soft-deactivated, never
+      // hard-deleted — see the CloseReason model).
+      closeReason: { select: { label: true } },
       round: {
-        select: { id: true, academicYear: true },
+        select: {
+          id: true,
+          academicYear: true,
+          closeDate: true,
+          defaultSubmissionDeadlineNew: true,
+          defaultSubmissionDeadlineRolling: true,
+        },
+      },
+      bursaryAccount: {
+        select: { status: true },
       },
       // Only the SECONDARY contributor (at most one) drives the indicator.
       contributors: {
@@ -182,7 +411,7 @@ export async function listApplications(
   });
 
   return applications.map((a) => {
-    const { contributors, assessment, ...rest } = a;
+    const { contributors, assessment, bursaryAccount, closeReason, ...rest } = a;
     const secondary = contributors[0];
     let secondParent: SecondParentIndicator = "NONE";
     if (secondary) {
@@ -199,6 +428,8 @@ export async function listApplications(
       assessmentStatus: assessment?.status ?? null,
       outcome: assessment?.outcome ?? null,
       secondParent,
+      bursaryAccountStatus: bursaryAccount?.status ?? null,
+      closeReasonLabel: closeReason?.label ?? null,
     };
   });
 }
@@ -252,6 +483,8 @@ export type ApplicationWithDetails = Omit<
   documents: Document[];
   assessment: Assessment | null;
   leadApplicant: Pick<Profile, "id">;
+  /** Close reason (item 2) for the closed banner; null when not closed. */
+  closeReason: { id: string; label: string; purgeOnClose: boolean } | null;
 };
 
 /**
@@ -285,6 +518,11 @@ export async function getApplicationWithDetails(
       archivedAt: true,
       submittedAt: true,
       submissionDeadlineAt: true,
+      closedAt: true,
+      closedById: true,
+      closeReasonId: true,
+      purgedAt: true,
+      closeReason: { select: { id: true, label: true, purgeOnClose: true } },
       createdAt: true,
       updatedAt: true,
       round: true,
@@ -348,6 +586,47 @@ export async function getApplicationNamesForReveal(
   return application;
 }
 
+/**
+ * Fetches JUST the child's name for the application-detail header, writing a
+ * NAME_REVEAL audit entry — the same GDPR trail the queue and the Applicant
+ * Data tab keep.
+ *
+ * Why this exists (Epic 13, D13-1a): `Application.reference` is now a free-text
+ * label that is routinely re-edited to the external fees-system code, at which
+ * point it identifies nothing to a human. The child's name therefore renders
+ * beside the reference on every admin surface — including the assessment
+ * workspace, which previously excluded it. That exclusion is deliberately
+ * retired for the child's name only: the default reference format embeds the
+ * child's name anyway, so withholding it from the header alongside it would be
+ * theatre. Lead-applicant names remain behind `getApplicationNamesForReveal`.
+ *
+ * Returns null when the application does not exist; writes no audit entry in
+ * that case.
+ */
+export async function getApplicationChildNameForHeader(
+  tx: Tx,
+  applicationId: string,
+  userId: string
+): Promise<string | null> {
+  const application = await tx.application.findUnique({
+    where: { id: applicationId },
+    select: { childName: true },
+  });
+
+  if (!application) return null;
+
+  await createAuditLog(tx, {
+    userId,
+    action: AUDIT_ACTIONS.NAME_REVEAL,
+    entityType: AUDIT_ENTITY_TYPES.Application,
+    entityId: applicationId,
+    context: "Application header — child name shown beside the reference",
+    metadata: { applicationId },
+  });
+
+  return application.childName;
+}
+
 // ─── Round list (for filter dropdown) ────────────────────────────────────────
 
 export async function listRounds(
@@ -378,18 +657,34 @@ export interface SectionStatusResult {
  * PR-6a: "draft" is `form_status` ≠ SUBMITTED (the lifecycle equivalent of the
  * old fused PRE_SUBMISSION), not the deprecated fused `applications.status`.
  */
-export async function getApplicationForUser(tx: Tx, userId: string) {
+export async function getApplicationForUser(
+  tx: Tx,
+  userId: string,
+  preferredId: string | null = null
+) {
+  // E2: the active-application cookie is a PREFERENCE, not an authority —
+  // the id is folded into the SAME ownership/status WHERE, so a stale or
+  // foreign id fails the match and the legacy most-recent draft wins.
+  const where = {
+    leadApplicantId: userId,
+    formStatus: { not: "SUBMITTED" as const },
+  };
+  const include = {
+    round: {
+      select: { academicYear: true as const, status: true as const },
+    },
+  };
+  if (preferredId) {
+    const preferred = await tx.application.findFirst({
+      where: { ...where, id: preferredId },
+      include,
+    });
+    if (preferred) return preferred;
+  }
   return tx.application.findFirst({
-    where: {
-      leadApplicantId: userId,
-      formStatus: { not: "SUBMITTED" },
-    },
+    where,
     orderBy: { updatedAt: "desc" },
-    include: {
-      round: {
-        select: { academicYear: true, status: true },
-      },
-    },
+    include,
   });
 }
 
@@ -400,22 +695,35 @@ export async function getApplicationForUser(tx: Tx, userId: string) {
  * decided application is still returned — which the dashboard needs so it
  * reflects the real state instead of falling back to onboarding.
  */
-export async function getCurrentApplicationForUser(tx: Tx, userId: string) {
+export async function getCurrentApplicationForUser(
+  tx: Tx,
+  userId: string,
+  preferredId: string | null = null
+) {
+  const include = {
+    round: {
+      select: { academicYear: true as const, status: true as const },
+    },
+    // PR-6a: the portal "awaiting documents" CTA reads the assessment
+    // lifecycle (PAUSED) instead of the deprecated fused applications.status.
+    assessment: {
+      select: { status: true as const },
+    },
+  };
+  // E2: preference folded into the ownership WHERE — see getApplicationForUser.
+  if (preferredId) {
+    const preferred = await tx.application.findFirst({
+      where: { leadApplicantId: userId, id: preferredId },
+      include,
+    });
+    if (preferred) return preferred;
+  }
   return tx.application.findFirst({
     where: {
       leadApplicantId: userId,
     },
     orderBy: { updatedAt: "desc" },
-    include: {
-      round: {
-        select: { academicYear: true, status: true },
-      },
-      // PR-6a: the portal "awaiting documents" CTA reads the assessment
-      // lifecycle (PAUSED) instead of the deprecated fused applications.status.
-      assessment: {
-        select: { status: true },
-      },
-    },
+    include,
   });
 }
 
@@ -439,8 +747,18 @@ export interface PortalNavState {
 
 export async function getPortalNavState(
   tx: Tx,
-  userId: string
+  userId: string,
+  preferredId: string | null = null
 ): Promise<PortalNavState | null> {
+  // E2: the nav must describe the SAME application the pages show, so the
+  // active-application preference applies here too (ownership WHERE intact).
+  if (preferredId) {
+    const preferred = await tx.application.findFirst({
+      where: { leadApplicantId: userId, id: preferredId },
+      select: { formStatus: true },
+    });
+    if (preferred) return { formStatus: preferred.formStatus };
+  }
   const app = await tx.application.findFirst({
     where: { leadApplicantId: userId },
     orderBy: { updatedAt: "desc" },
@@ -480,14 +798,27 @@ export interface ApplicationPausedState {
  * always matches the application the rest of the portal is showing.
  */
 export async function getApplicationPausedStateForUser(
-  userId: string
+  userId: string,
+  preferredId: string | null = null
 ): Promise<ApplicationPausedState> {
   return withAdminContext(async (tx) => {
-    const app = await tx.application.findFirst({
-      where: { leadApplicantId: userId },
-      orderBy: { updatedAt: "desc" },
-      select: { assessment: { select: { status: true, pausedUntil: true } } },
-    });
+    const select = {
+      assessment: { select: { status: true as const, pausedUntil: true as const } },
+    };
+    // E2: follow the same active-application preference as the pages, so the
+    // paused CTA always describes the application being shown.
+    const app =
+      (preferredId
+        ? await tx.application.findFirst({
+            where: { leadApplicantId: userId, id: preferredId },
+            select,
+          })
+        : null) ??
+      (await tx.application.findFirst({
+        where: { leadApplicantId: userId },
+        orderBy: { updatedAt: "desc" },
+        select,
+      }));
     return {
       isPaused: app?.assessment?.status === "PAUSED",
       pausedUntil: app?.assessment?.pausedUntil ?? null,

@@ -24,9 +24,24 @@ import { RoundStatus } from "@prisma/client";
 import { requireRole, Role } from "@/lib/auth/roles";
 import { withAdminContext } from "@/lib/db/prisma";
 import { createSupabaseAdminClient } from "@/lib/auth/supabase-admin";
+import { provisionApplicantAuthUser } from "@/lib/auth/provision-applicant";
 import { createProfile } from "@/lib/auth/create-profile";
 import { createInvitation } from "@/lib/db/queries/invitations";
 import { getAppUrl } from "@/lib/app-url";
+import {
+  deadlineTypeForSituation,
+  openingDateMergeField,
+  resolveInvitationTemplate,
+} from "@/lib/email/invitation-template";
+import {
+  invitationDeadlineFields,
+  INVITATION_ROUND_DEADLINE_SELECT,
+} from "@/lib/email/invitation-deadline";
+import type { SubmissionDeadlineRound } from "@/lib/rounds/submission-deadline";
+import {
+  invitationScenarioFields,
+  ROUND_WINDOWS_SELECT,
+} from "@/lib/rounds/window-consumption";
 import { sendEmail } from "@/lib/email/send";
 import { createAuditLog } from "@/lib/audit/log";
 import { AUDIT_ACTIONS, AUDIT_ENTITY_TYPES } from "@/lib/audit/actions";
@@ -39,11 +54,19 @@ import {
 export interface InviteFromContactResult {
   success: boolean;
   error?: string;
+  /** Epic 15 X2 (CI-04): set on a no-send create — the admin copies this
+   *  link and sends it from their own mailbox. */
+  registrationLink?: string;
 }
 
 export async function sendInvitationFromContactAction(
   contactId: string,
-  roundId: string
+  roundId: string,
+  options?: {
+    /** CI-04: create the invitation (auth user, token, audit) WITHOUT
+     *  emailing — the returned registrationLink is sent by the admin. */
+    skipEmail?: boolean;
+  }
 ): Promise<InviteFromContactResult> {
   const user = await requireRole([Role.ADMIN]);
 
@@ -59,12 +82,20 @@ export async function sendInvitationFromContactAction(
     lastName: string;
     email: string;
     childName: string;
+    childFirstName: string | null;
+    childLastName: string | null;
+    childDob: Date | null;
     school: import("@prisma/client").School;
     entryYear: number;
     entryYearGroup: import("@prisma/client").EntryYearGroup | null;
+    situation: import("@prisma/client").InvitationSituation | null;
     profileId: string | null;
   };
   let academicYear = "";
+  // Round deadline columns for the invitation's {{deadline}} field (E1).
+  let deadlineRound: SubmissionDeadlineRound | null = null;
+  // B3 — feeds the rolling template's {{opening_date}}.
+  let roundOpenDate: Date | null = null;
   try {
     const loaded = await withAdminContext(async (tx) => {
       const c = await tx.contact.findUnique({
@@ -75,9 +106,13 @@ export async function sendInvitationFromContactAction(
           lastName: true,
           email: true,
           childName: true,
+          childFirstName: true,
+          childLastName: true,
+          childDob: true,
           school: true,
           entryYear: true,
           entryYearGroup: true,
+          situation: true,
           profileId: true,
           archivedAt: true,
         },
@@ -89,7 +124,13 @@ export async function sendInvitationFromContactAction(
 
       const round = await tx.round.findUnique({
         where: { id: roundId },
-        select: { academicYear: true, status: true },
+        select: {
+          academicYear: true,
+          status: true,
+          openDate: true,
+          ...INVITATION_ROUND_DEADLINE_SELECT,
+          ...ROUND_WINDOWS_SELECT,
+        },
       });
       if (!round) return { ok: false as const, error: "Round not found." };
       if (round.status !== RoundStatus.OPEN) {
@@ -99,12 +140,37 @@ export async function sendInvitationFromContactAction(
         };
       }
 
-      return { ok: true as const, contact: c, academicYear: round.academicYear };
+      return {
+        ok: true as const,
+        contact: c,
+        academicYear: round.academicYear,
+        roundOpenDate: round.openDate,
+        roundWindows: round.windows,
+        deadlineRound: {
+          closeDate: round.closeDate,
+          defaultSubmissionDeadlineNew: round.defaultSubmissionDeadlineNew,
+          defaultSubmissionDeadlineRolling:
+            round.defaultSubmissionDeadlineRolling,
+        },
+      };
     });
 
     if (!loaded.ok) return { success: false, error: loaded.error };
     contact = loaded.contact;
     academicYear = loaded.academicYear;
+    roundOpenDate = loaded.roundOpenDate;
+    // D2 (CG-01): the stored scenario window fills null round defaults and
+    // supplies the opening date (window > openDate > derived default).
+    const scenario = invitationScenarioFields({
+      situation: loaded.contact.situation,
+      academicYear,
+      onDate: new Date(),
+      deadlineRound: loaded.deadlineRound,
+      roundOpenDate,
+      windows: loaded.roundWindows,
+    });
+    deadlineRound = scenario.deadlineRound;
+    roundOpenDate = scenario.openingDate;
   } catch (err) {
     const message = err instanceof Error ? err.message : "Failed to load contact";
     console.error("[contacts] sendInvitationFromContactAction load error:", err);
@@ -117,6 +183,9 @@ export async function sendInvitationFromContactAction(
     lastName: contact.lastName,
     email: contact.email,
     childName: contact.childName,
+    childFirstName: contact.childFirstName,
+    childLastName: contact.childLastName,
+    childDob: contact.childDob,
     school: contact.school,
     entryYear: contact.entryYear,
     entryYearGroup: contact.entryYearGroup,
@@ -135,28 +204,25 @@ export async function sendInvitationFromContactAction(
   const appUrl = getAppUrl();
   const applicantName = contactDisplayName(contact);
 
-  // 3. Provision the auth user up front (reuse an existing profile when the
-  //    contact is already bound, so we never create a duplicate auth user).
+  // 3. Provision the auth user up front. Epic 14 E1 (CG-04): a SECOND child
+  //    contact shares the parent's email, so the provisioning helper reuses
+  //    the existing APPLICANT profile/auth user (one login, many children) —
+  //    creating fresh only for a genuinely new email.
   let authUserId: string;
   let createdAuthUser = false;
   if (contact.profileId) {
     authUserId = contact.profileId;
   } else {
-    const tempPassword = randomBytes(24).toString("base64url");
-    const { data: created, error: supabaseError } =
-      await supabase.auth.admin.createUser({
-        email: contact.email,
-        password: tempPassword,
-        email_confirm: true,
-        app_metadata: { role: "APPLICANT" },
-      });
-    if (supabaseError || !created?.user) {
-      const message = supabaseError?.message ?? "Failed to create auth user";
-      console.error("[contacts] sendInvitationFromContactAction createUser error:", supabaseError);
-      return { success: false, error: message };
+    const provisioned = await provisionApplicantAuthUser(supabase, contact.email);
+    if (!provisioned.ok) {
+      console.error(
+        "[contacts] sendInvitationFromContactAction provisioning error:",
+        provisioned.error
+      );
+      return { success: false, error: provisioned.error };
     }
-    authUserId = created.user.id;
-    createdAuthUser = true;
+    authUserId = provisioned.authUserId;
+    createdAuthUser = provisioned.created;
   }
 
   const rollbackAuthUser = async () => {
@@ -196,11 +262,17 @@ export async function sendInvitationFromContactAction(
         firstName: contact.firstName ?? undefined,
         lastName: contact.lastName,
         childName: contact.childName,
+        childFirstName: contact.childFirstName,
+        childLastName: contact.childLastName,
+        childDob: contact.childDob,
         school: contact.school,
         entryYear: contact.entryYear,
         entryYearGroup: contact.entryYearGroup,
         roundId,
         contactId: contact.id,
+        // B3 — the situation chosen when the contact was created; resends
+        // then reuse it from the invitation row.
+        situation: contact.situation,
         authUserId,
         createdBy: user.id,
         expiresAt,
@@ -238,15 +310,42 @@ export async function sendInvitationFromContactAction(
     return { success: false, error: message };
   }
 
+  // Epic 15 X2 (CI-04): a no-send create stops here — the invitation exists
+  // (30-day token, resend available later); the admin sends the link.
+  if (options?.skipEmail) {
+    revalidatePath("/contacts");
+    revalidatePath("/invitations");
+    return {
+      success: true,
+      registrationLink: `${appUrl}/register?token=${invitationToken}`,
+    };
+  }
+
   // 5. Send the branded INVITATION email inside the rollback boundary.
-  const emailResult = await sendEmail(contact.email, "INVITATION", {
-    applicant_name: applicantName,
-    child_name: contact.childName,
-    school: schoolLabel(contact.school),
-    round_year: academicYear,
-    registration_link: `${appUrl}/register?token=${invitationToken}`,
-    deadline: expiresAt.toLocaleDateString("en-GB"),
-  });
+  // B3 (CG-26): the template follows the contact's situation × school;
+  // legacy contacts (situation NULL) keep the generic INVITATION.
+  const emailResult = await sendEmail(
+    contact.email,
+    resolveInvitationTemplate(contact.situation, contact.school),
+    {
+      applicant_name: applicantName,
+      child_name: contact.childName,
+      school: schoolLabel(contact.school),
+      round_year: academicYear,
+      registration_link: `${appUrl}/register?token=${invitationToken}`,
+      opening_date: openingDateMergeField(
+        roundOpenDate ? { openDate: roundOpenDate } : null
+      ),
+      // E1/CF-11: {{deadline}} is the round's SUBMISSION deadline (typed by
+      // situation), not the 30-day token expiry — that now has its own
+      // {{link_expiry}} field.
+      ...invitationDeadlineFields(
+        deadlineRound,
+        deadlineTypeForSituation(contact.situation),
+        expiresAt
+      ),
+    }
+  );
 
   if (!emailResult.success) {
     console.error("[contacts] sendInvitationFromContactAction email error:", emailResult.error);

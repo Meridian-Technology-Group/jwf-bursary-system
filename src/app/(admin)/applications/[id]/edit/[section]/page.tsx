@@ -79,6 +79,7 @@ export default async function EditSectionPage({ params }: PageProps) {
           school: true,
           childName: true,
           formStatus: true,
+          closedAt: true,
           isReassessment: true,
           applicationType: true,
           leadApplicantId: true,
@@ -97,6 +98,7 @@ export default async function EditSectionPage({ params }: PageProps) {
     formStatus: application.formStatus,
     assessmentStatus: application.assessment?.status ?? null,
     outcome: application.assessment?.outcome ?? null,
+    closedAt: application.closedAt,
   });
   if (!canEditOnBehalf(phase)) {
     redirect(`/applications/${params.id}`);
@@ -143,6 +145,7 @@ export default async function EditSectionPage({ params }: PageProps) {
     parent1Status,
     parent2Status,
     relationshipStatus,
+    dependentChildrenCount,
     parent1Address,
   } = await withUserContext(user.id, user.role as RlsRole, (tx) =>
     loadSectionPageData(tx, params.id, sectionType, primaryContributorId)
@@ -189,6 +192,7 @@ export default async function EditSectionPage({ params }: PageProps) {
       parent1EmploymentStatus={parent1Status}
       parent2EmploymentStatus={parent2Status}
       relationshipStatus={relationshipStatus}
+      dependentChildrenCount={dependentChildrenCount}
       nextLabel={nextLabel}
       backHref={backHref}
       nextHref={nextHref}

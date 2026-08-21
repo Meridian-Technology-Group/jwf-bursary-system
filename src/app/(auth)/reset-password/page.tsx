@@ -5,7 +5,8 @@
  *
  * Sends a "reset password" email via Supabase. After submission the user sees
  * a confirmation message. The email contains a link that Supabase redirects
- * through /auth/callback?next=/reset-password/update (handled in WP-04).
+ * through /auth/callback?next=/reset-password/update (the set-new-password
+ * page at ./update/page.tsx).
  *
  * This page handles only the request step (entering an email address).
  */

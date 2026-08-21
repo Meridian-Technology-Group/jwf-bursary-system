@@ -202,3 +202,140 @@ describe("saveSectionDraft — draft saves reclaim too", () => {
     });
   });
 });
+
+/**
+ * WP B2 (autosave, CF-29) turns `saveSectionDraft` from a never-called action
+ * into one that fires every few seconds while an applicant types — and every
+ * one of those calls runs `clearedProvenanceForApplicantSave`. Before wiring
+ * the debounced writer we had to know that path could take the traffic:
+ *
+ *  - **Idempotent** — the reclaim diffs the incoming values against what is
+ *    ALREADY STORED, so once a path has been reclaimed, re-saving the same
+ *    values diffs to nothing and rewrites the identical map. Repeated autosaves
+ *    converge instead of eroding stamps the applicant never touched.
+ *  - **Cheap** — one narrow indexed read (`data` + `assessorProvenance` on the
+ *    section's unique key), and on the overwhelmingly common no-provenance row
+ *    it returns before doing any diffing, leaving the upsert payload
+ *    byte-identical to a pre-CR-001 save.
+ *
+ * These tests hold both properties in place. If someone later moves the reclaim
+ * to fire on every write regardless of the stored values, the first one fails.
+ */
+describe("saveSectionDraft — repeated autosaves do not churn provenance", () => {
+  /**
+   * A tx whose upsert actually persists, so save N+1 sees what save N wrote —
+   * which is the whole point: the diff is against STORED data.
+   */
+  function makeStatefulTx(initial: {
+    data: unknown;
+    assessorProvenance: unknown;
+  }) {
+    let row = { ...initial };
+    return {
+      application: {
+        findFirst: vi.fn(async () => ({ id: "app-1" })),
+        findUniqueOrThrow: vi.fn(async () => ({
+          formStatus: "SUBMITTED",
+          applicationType: "NEW",
+        })),
+        update: vi.fn(async () => ({})),
+      },
+      applicationContributor: {
+        findUnique: vi.fn(async () => ({ id: "contrib-1" })),
+        upsert: vi.fn(async () => ({ id: "contrib-1" })),
+      },
+      applicationSection: {
+        findUnique: vi.fn(async (..._args: unknown[]): Promise<unknown> => row),
+        upsert: vi.fn(async (args: { update: Record<string, unknown> }) => {
+          row = {
+            data: args.update.data,
+            assessorProvenance:
+              "assessorProvenance" in args.update
+                ? args.update.assessorProvenance
+                : row.assessorProvenance,
+          };
+          return { id: "sec-row-1" };
+        }),
+        count: vi.fn(async () => 0),
+      },
+    };
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    getCurrentUserMock.mockImplementation(async () => APPLICANT_USER);
+  });
+
+  it("reclaims a path once, then leaves the remaining stamps alone", async () => {
+    fakeTx = makeStatefulTx(STORED_ROW) as unknown as typeof fakeTx;
+
+    // The applicant is mid-edit of the assessor's narrative. The debounced
+    // writer fires three times over the same field, then once more with the
+    // final text.
+    const drafts = [
+      "The applicant's",
+      "The applicant's own",
+      "The applicant's own words.",
+      "The applicant's own words.", // an idle write with nothing new typed
+    ];
+    for (const additionalNarrative of drafts) {
+      const res = await saveSectionDraft(null, "ADDITIONAL_INFO", {
+        additionalNarrative,
+        additionalDocumentIds: ["doc-1"],
+      });
+      expect(res).toEqual({ success: true });
+    }
+
+    // Every write agrees: the narrative is the applicant's now, the document
+    // the assessor attached is still theirs. Four saves, no erosion.
+    const calls = fakeTx.applicationSection.upsert.mock.calls;
+    expect(calls).toHaveLength(4);
+    for (const [arg] of calls as unknown as Array<[UpsertArg]>) {
+      expect(arg.update.assessorProvenance).toEqual({
+        "additionalDocumentIds.0": DOC_STAMP,
+      });
+    }
+  });
+
+  it("costs one narrow indexed read per save", async () => {
+    fakeTx = makeStatefulTx(STORED_ROW) as unknown as typeof fakeTx;
+
+    await saveSectionDraft(null, "ADDITIONAL_INFO", {
+      additionalNarrative: "Mine.",
+      additionalDocumentIds: ["doc-1"],
+    });
+
+    expect(fakeTx.applicationSection.findUnique).toHaveBeenCalledTimes(1);
+    const readArg = fakeTx.applicationSection.findUnique.mock
+      .calls[0]![0] as { where: unknown; select: Record<string, boolean> };
+    // The unique key, and only the two columns the diff needs.
+    expect(readArg.where).toEqual({
+      applicationId_section_ownerContributorId: {
+        applicationId: "app-1",
+        section: "ADDITIONAL_INFO",
+        ownerContributorId: "contrib-1",
+      },
+    });
+    expect(readArg.select).toEqual({ data: true, assessorProvenance: true });
+  });
+
+  it("never touches provenance at all on a section no assessor has edited", async () => {
+    // The normal case: no stamps stored, so the diff is skipped entirely.
+    fakeTx = makeStatefulTx({
+      data: { additionalNarrative: "" },
+      assessorProvenance: {},
+    }) as unknown as typeof fakeTx;
+
+    for (const additionalNarrative of ["W", "We ", "We moved."]) {
+      await saveSectionDraft(null, "ADDITIONAL_INFO", { additionalNarrative });
+    }
+
+    const calls = fakeTx.applicationSection.upsert.mock.calls;
+    expect(calls).toHaveLength(3);
+    for (const [arg] of calls as unknown as Array<[UpsertArg]>) {
+      expect(arg.update).not.toHaveProperty("assessorProvenance");
+      expect(arg.create).not.toHaveProperty("assessorProvenance");
+      expect(arg.update.isComplete).toBe(false);
+    }
+  });
+});

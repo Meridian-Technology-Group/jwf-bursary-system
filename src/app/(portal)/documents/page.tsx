@@ -39,6 +39,7 @@ import {
   getAllDocumentsForApplication,
   type DocumentMeta,
 } from "@/lib/db/queries/applications";
+import { getActiveApplicationId } from "@/lib/portal/active-application";
 import {
   ensurePrimaryContributor,
   resolveOwningContributorId,
@@ -89,13 +90,15 @@ export default async function DocumentsPage() {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
 
-  // Resolve the lead applicant's current application (any status, most recently
-  // updated) and the assessment status the paused card keys on. Under the
-  // applicant's RLS context.
+  // Resolve the lead applicant's current application (E2: active-application
+  // context first; any status, most recently updated otherwise) and the
+  // assessment status the paused card keys on. Under the applicant's RLS
+  // context.
+  const activeApplicationId = await getActiveApplicationId();
   const application = await withUserContext(
     user.id,
     user.role as RlsRole,
-    (tx) => getCurrentApplicationForUser(tx, user.id)
+    (tx) => getCurrentApplicationForUser(tx, user.id, activeApplicationId)
   );
 
   // State 3 — no application at all (invited-not-started, or no invitation):

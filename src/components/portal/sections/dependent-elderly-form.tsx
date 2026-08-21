@@ -20,6 +20,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { YesNoToggle } from "@/components/portal/form-fields/yes-no-toggle";
+import { CountInput } from "@/components/portal/form-fields/count-input";
 import { CurrencyInput } from "@/components/portal/form-fields/currency-input";
 import { DateInput } from "@/components/portal/form-fields/date-input";
 import { ConditionalField } from "@/components/portal/form-fields/conditional-field";
@@ -77,13 +78,11 @@ export function DependentElderlyForm({
                   How many? <span className="text-error-600">*</span>
                 </FormLabel>
                 <FormControl>
-                  <Input
-                    type="number"
-                    min={0}
+                  <CountInput
                     className="w-24"
                     {...field}
-                    onChange={(e) => field.onChange(parseInt(e.target.value, 10) || 0)}
                     value={field.value ?? ""}
+                    onChange={(count) => field.onChange(count)}
                   />
                 </FormControl>
                 <FormMessage />
@@ -117,13 +116,11 @@ export function DependentElderlyForm({
                   How many? <span className="text-error-600">*</span>
                 </FormLabel>
                 <FormControl>
-                  <Input
-                    type="number"
-                    min={0}
+                  <CountInput
                     className="w-24"
                     {...field}
-                    onChange={(e) => field.onChange(parseInt(e.target.value, 10) || 0)}
                     value={field.value ?? ""}
+                    onChange={(count) => field.onChange(count)}
                   />
                 </FormControl>
                 <FormMessage />

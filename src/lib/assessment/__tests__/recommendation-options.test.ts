@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { buildOptionScenarios } from "../recommendation-options";
+import { buildOptionScenarios, buildV2AwardLegs } from "../recommendation-options";
 import { calculatePayableFees } from "../payable-fees";
 
 const base = {
@@ -55,5 +55,50 @@ describe("buildOptionScenarios (Epic 08)", () => {
     expect(scholarshipScenario.monthlyPayableFees).toBe(
       single.adjustedMonthlyPayableFees
     );
+  });
+});
+
+describe("buildV2AwardLegs (CALC-08)", () => {
+  it("returns the three legs in order", () => {
+    const legs = buildV2AwardLegs({
+      actualRemainingDi: 5000,
+      theoreticalBenchmarkDi: 8000,
+      affordabilityAdjustedDi: 3000,
+    });
+    expect(legs.map((l) => l.key)).toEqual([
+      "actual",
+      "theoretical",
+      "affordability",
+    ]);
+    expect(legs.map((l) => l.value)).toEqual([5000, 8000, 3000]);
+  });
+
+  it("flags only the minimum leg", () => {
+    const legs = buildV2AwardLegs({
+      actualRemainingDi: 5000,
+      theoreticalBenchmarkDi: 8000,
+      affordabilityAdjustedDi: 3000,
+    });
+    expect(legs.find((l) => l.key === "affordability")!.isMin).toBe(true);
+    expect(legs.find((l) => l.key === "actual")!.isMin).toBe(false);
+    expect(legs.find((l) => l.key === "theoretical")!.isMin).toBe(false);
+  });
+
+  it("handles negative legs (min-of-three can be negative before the £0 floor)", () => {
+    const legs = buildV2AwardLegs({
+      actualRemainingDi: -7859,
+      theoreticalBenchmarkDi: -100,
+      affordabilityAdjustedDi: 652,
+    });
+    expect(legs.find((l) => l.key === "actual")!.isMin).toBe(true);
+  });
+
+  it("flags every leg at the minimum on a tie", () => {
+    const legs = buildV2AwardLegs({
+      actualRemainingDi: 1000,
+      theoreticalBenchmarkDi: 1000,
+      affordabilityAdjustedDi: 1000,
+    });
+    expect(legs.every((l) => l.isMin)).toBe(true);
   });
 });

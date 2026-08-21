@@ -21,11 +21,13 @@ model Profile {
   updatedAt               DateTime                 @updatedAt @map("updated_at") @db.Timestamptz(6)
   assignedApplications    Application[]            @relation("ApplicationAssignee")
   applicationsAsLead      Application[]            @relation("ApplicationLeadApplicant")
+  applicationsClosed      Application[]            @relation("ApplicationClosedBy")
   assessmentsAsOwner      Assessment[]             @relation("AssessmentAssessor")
   auditLogs               AuditLog[]
   bursaryAccounts         BursaryAccount[]
   documentsUploaded       Document[]
   emailTemplateUpdates    EmailTemplate[]
+  emailTemplatesCreated   EmailTemplate[]          @relation("EmailTemplateCreator")
   invitationsCreated      Invitation[]             @relation("InvitationCreator")
   staffInvitationsCreated StaffInvitation[]        @relation("StaffInvitationCreator")
   contributorLinks        ApplicationContributor[] @relation("ContributorProfile")
@@ -38,24 +40,89 @@ model Profile {
 
 /// An assessment cycle for one academic year.
 model Round {
-  id              String           @id @default(uuid()) @db.Uuid
-  academicYear    String           @unique @map("academic_year")
-  openDate        DateTime         @map("open_date") @db.Date
-  closeDate       DateTime         @map("close_date") @db.Date
-  decisionDate    DateTime?        @map("decision_date") @db.Date
-  status          RoundStatus      @default(DRAFT)
-  createdAt       DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
-  applications    Application[]
-  invitations     Invitation[]
-  recommendations Recommendation[]
+  id                               String           @id @default(uuid()) @db.Uuid
+  academicYear                     String           @unique @map("academic_year")
+  openDate                         DateTime         @map("open_date") @db.Date
+  closeDate                        DateTime         @map("close_date") @db.Date
+  decisionDate                     DateTime?        @map("decision_date") @db.Date
+  /// LEGACY, NO READERS (Epic 13 / E1, D13-8). The single round-level default
+  /// submission-by date, superseded by the two application-type-aware columns
+  /// below. Retained for one release only so E1 can be rolled back without data
+  /// loss; the follow-up PR (E1b) drops it once staging is verified — the same
+  /// two-step precedent as Epic 01 PR-6 / #177. Still WRITTEN (mirrored from
+  /// `defaultSubmissionDeadlineNew`) so a code rollback lands on a sane value,
+  /// but nothing reads it. Do not add a reader.
+  defaultSubmissionDeadline        DateTime?        @map("default_submission_deadline") @db.Date
+  /// Round-level default submission-by date for NEW applications (D13-8,
+  /// date-only, optional). Every `applicationType = NEW` application in the
+  /// round inherits this unless it has its own `Application.submissionDeadlineAt`
+  /// override. Derived (not copied) at read time by
+  /// `effectiveSubmissionDeadline()` (src/lib/rounds/submission-deadline.ts),
+  /// which resolves the full chain:
+  ///   application.submissionDeadlineAt (override)
+  ///     ?? endOfDay(round default FOR THIS APPLICATION TYPE)  (THIS)
+  ///     ?? endOfDay(round.closeDate)                          (fallback — D-1)
+  /// NULL means the round has no NEW default; those applications fall through
+  /// to the close-date fallback above.
+  defaultSubmissionDeadlineNew     DateTime?        @map("default_submission_deadline_new") @db.Date
+  /// Round-level default submission-by date for ROLLING_OVER (re-assessment)
+  /// applications (D13-8, date-only, optional). Q4 (Brian, 2026-08-14): this is
+  /// ONE GLOBAL date per round, conventionally in April — deliberately NOT
+  /// per-school, so two columns on `Round` are the whole model. Same three-tier
+  /// derivation and same NULL semantics as `defaultSubmissionDeadlineNew`.
+  defaultSubmissionDeadlineRolling DateTime?        @map("default_submission_deadline_rolling") @db.Date
+  status                           RoundStatus      @default(DRAFT)
+  createdAt                        DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+  applications                     Application[]
+  invitations                      Invitation[]
+  recommendations                  Recommendation[]
+  windows                          RoundWindow[]
 
   @@map("rounds")
 }
 
+/// Epic 14 D1 (CG-01, US-D1) — Charlotte's four operating scenarios per round.
+/// Admin-editable window config: opening date, submission date and the
+/// DEFAULT TAX YEAR the income form should assume for applications started in
+/// that window. Rows are optional — a round with no row for a scenario falls
+/// back to the pure resolver's derived defaults (round-scenario.ts). The Epic
+/// 13 E1 per-type deadline columns on `Round` remain the authority for the
+/// effective-submission-deadline chain; these windows are the richer scenario
+/// config that D2 consumes for merge fields and tax-year derivation.
+model RoundWindow {
+  id             String        @id @default(uuid()) @db.Uuid
+  roundId        String        @map("round_id") @db.Uuid
+  scenario       RoundScenario
+  opensOn        DateTime?     @map("opens_on") @db.Date
+  submitBy       DateTime?     @map("submit_by") @db.Date
+  /// e.g. "2025/26" — the tax year label the income form defaults to.
+  defaultTaxYear String?       @map("default_tax_year")
+  round          Round         @relation(fields: [roundId], references: [id], onDelete: Cascade)
+
+  @@unique([roundId, scenario])
+  @@map("round_windows")
+}
+
+/// The four scenarios of CG-01: three new-application windows + the rolling
+/// re-assessment window (12 Apr – 22 May, fixed by default).
+enum RoundScenario {
+  NA_CURRENT
+  NA_NEXT_WINTER
+  NA_NEXT_SPRING
+  RA
+}
+
 /// A persistent account per child, spanning multiple assessment years.
+///
+/// Epic 13, D13-1a: the account is an INTERNAL container for awarded
+/// applicants and exposes NO reference or ID to the user — its identity is
+/// this UUID primary key, and the one user-facing label lives on
+/// `Application.reference`. The former `reference` (`BA-…`) and CALC-10
+/// `feesAccountCode` columns were dropped by
+/// `20260814140000_bursary_account_drop_identifiers`; sibling-picker and
+/// report surfaces show `childName` instead.
 model BursaryAccount {
   id                   String                 @id @default(uuid()) @db.Uuid
-  reference            String                 @unique
   school               School
   childName            String                 @map("child_name")
   childDob             DateTime?              @map("child_dob") @db.Date
@@ -69,7 +136,22 @@ model BursaryAccount {
   benchmarkPayableFees Decimal?               @map("benchmark_payable_fees") @db.Decimal(10, 2)
   leadApplicantId      String                 @map("lead_applicant_id") @db.Uuid
   status               BursaryAccountStatus   @default(ACTIVE)
+  /// Set when the account closes — normally exactly once, either by an ADMIN
+  /// manual close or automatically by `closeAccountIfComplete` once every
+  /// schedule year is COMPLETE. Treat it as write-once everywhere EXCEPT the
+  /// single documented exception: reopening a COMPLETED assessment
+  /// (`reopenAccountForAssessmentYear`, Epic 13 / C1, D13-2) clears it and
+  /// returns the account to ACTIVE, because the completion that triggered the
+  /// auto-close has itself been withdrawn. That reversal only ever undoes an
+  /// automatic close, and only while no outcome has been set. Nothing else may
+  /// rewrite this field. `Application.closedAt` mirrors this rule.
   closedAt             DateTime?              @map("closed_at") @db.Timestamptz(6)
+  /// Epic 14 C8 (CG-24, LA-7) — manual pre-system YoY history rows for
+  /// families that predate the system: `[{ academicYear, netIncome, savings,
+  /// propertyEquity, debtExposure, livingArrangement, lifestyleSqueeze }]`.
+  /// Display data only — feeds the ASSESSMENT ADMIN tab's history table,
+  /// never a calculation. System years derive from assessment snapshots.
+  preSystemHistory     Json?                  @map("pre_system_history")
   createdAt            DateTime               @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt            DateTime               @updatedAt @map("updated_at") @db.Timestamptz(6)
   applications         Application[]
@@ -113,21 +195,37 @@ model BursaryScheduleEntry {
 
 /// One application per child per round.
 model Application {
-  id                   String                   @id @default(uuid()) @db.Uuid
-  reference            String                   @unique
-  roundId              String                   @map("round_id") @db.Uuid
-  bursaryAccountId     String?                  @map("bursary_account_id") @db.Uuid
-  contactId            String?                  @map("contact_id") @db.Uuid
-  leadApplicantId      String                   @map("lead_applicant_id") @db.Uuid
-  school               School
-  childName            String                   @map("child_name")
-  childDob             DateTime?                @map("child_dob") @db.Date
-  entryYear            Int?                     @map("entry_year")
-  entryYearGroup       EntryYearGroup?          @map("entry_year_group")
-  isReassessment       Boolean                  @default(false) @map("is_reassessment")
-  isInternal           Boolean                  @default(false) @map("is_internal")
-  formStatus           ApplicationFormStatus    @default(CREATED) @map("form_status")
-  applicationType      ApplicationType          @default(NEW) @map("application_type")
+  id                        String                   @id @default(uuid()) @db.Uuid
+  /// The ONE user-facing label for this application (Epic 13, D13-1a). It is a
+  /// LABEL, NOT AN IDENTITY: identity is `id`, and no FK anywhere points here.
+  /// Defaults to `{Child} – {School} – {Year group} – {Academic year}` (see
+  /// lib/applications/reference.ts) and is freely editable by ADMIN at any
+  /// lifecycle stage, including after award — its primary use is being re-set
+  /// to the external fees-system code (e.g. `TS-SMITH05-Smith, Bob`) for
+  /// reconciliation. **NOT UNIQUE at any layer**: duplicates are legitimate, so
+  /// migration 20260814120000_application_reference_non_unique dropped both the
+  /// `@unique` and the `lower(reference)` unique index and replaced the latter
+  /// with a non-unique functional index (`applications_reference_lower_idx`,
+  /// invisible here — Prisma cannot express a functional index).
+  reference                 String
+  roundId                   String                   @map("round_id") @db.Uuid
+  bursaryAccountId          String?                  @map("bursary_account_id") @db.Uuid
+  contactId                 String?                  @map("contact_id") @db.Uuid
+  leadApplicantId           String                   @map("lead_applicant_id") @db.Uuid
+  school                    School
+  childName                 String                   @map("child_name")
+  /// Epic 15 G2 (CH-09) — split child identity carried from the invitation;
+  /// `childName` stays the composed backing store. Null on legacy rows (the
+  /// assessment falls back to a whitespace split for those).
+  childFirstName            String?                  @map("child_first_name")
+  childLastName             String?                  @map("child_last_name")
+  childDob                  DateTime?                @map("child_dob") @db.Date
+  entryYear                 Int?                     @map("entry_year")
+  entryYearGroup            EntryYearGroup?          @map("entry_year_group")
+  isReassessment            Boolean                  @default(false) @map("is_reassessment")
+  isInternal                Boolean                  @default(false) @map("is_internal")
+  formStatus                ApplicationFormStatus    @default(CREATED) @map("form_status")
+  applicationType           ApplicationType          @default(NEW) @map("application_type")
   /// Shared-custody arrangement (Epic 09, Decision D15). SOLE is the default
   /// (single resident parent/guardian, or a two-resident-parent household).
   /// SHARED_5050 ⇒ both natural parents are lead applicants (either may hold
@@ -135,35 +233,61 @@ model Application {
   /// Additive/non-null with a SOLE default so existing rows are unaffected; the
   /// "either may hold the account" rule is policy (see lib/household/rules.ts),
   /// not a second lead FK — the one-account-per-child unique is NOT widened.
-  custodyArrangement   CustodyArrangement       @default(SOLE) @map("custody_arrangement")
-  archivedAt           DateTime?                @map("archived_at") @db.Timestamptz(6)
-  submittedAt          DateTime?                @map("submitted_at") @db.Timestamptz(6)
+  custodyArrangement        CustodyArrangement       @default(SOLE) @map("custody_arrangement")
+  archivedAt                DateTime?                @map("archived_at") @db.Timestamptz(6)
+  submittedAt               DateTime?                @map("submitted_at") @db.Timestamptz(6)
   /// When the parent accepted the Terms & Conditions for THIS submission
   /// (Epic 05, Decision D10). NULL until submitted. Stamped at submit and
   /// rendered into the submitted summary + submission PDF. Additive/nullable.
-  termsAcceptedAt      DateTime?                @map("terms_accepted_at") @db.Timestamptz(6)
+  termsAcceptedAt           DateTime?                @map("terms_accepted_at") @db.Timestamptz(6)
   /// Which T&Cs document/version the parent accepted at submission (D10), so a
   /// later document swap never rewrites a historic acceptance. See
   /// lib/portal/terms.ts (TERMS_AND_CONDITIONS_VERSION).
-  termsVersion         String?                  @map("terms_version")
+  termsVersion              String?                  @map("terms_version")
+  /// Consumed-flag for the ONE-TIME submission PDF (Epic 13, D13-4). NULL ⇒ the
+  /// applicant's single download is unspent; NOT NULL ⇒ when it was taken, and
+  /// GET /api/pdf/submission/[id] answers 410 Gone from then on, permanently.
+  /// Stamped by a conditional UPDATE (… WHERE submission_pdf_downloaded_at IS
+  /// NULL) run ONLY after `renderToBuffer` has succeeded, so a failed render
+  /// never consumes the download and concurrent requests resolve to exactly one
+  /// winner. Additive/nullable, never backfilled — see migration
+  /// 20260814160000_application_submission_pdf_downloaded_at.
+  submissionPdfDownloadedAt DateTime?                @map("submission_pdf_downloaded_at") @db.Timestamptz(6)
   /// Per-applicant submit-by override (Epic 03). NULL ⇒ fall back to
   /// round.closeDate. Distinct from Assessment.pausedUntil (post-submission
   /// doc deadline, Epic 01) and from Round.closeDate (round-level intake
   /// window). Read via effectiveSubmissionDeadline() — never compared raw.
-  submissionDeadlineAt DateTime?                @map("submission_deadline_at") @db.Timestamptz(6)
-  createdAt            DateTime                 @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt            DateTime                 @updatedAt @map("updated_at") @db.Timestamptz(6)
-  assignedToId         String?                  @map("assigned_to_id") @db.Uuid
-  sections             ApplicationSection[]
-  assignedTo           Profile?                 @relation("ApplicationAssignee", fields: [assignedToId], references: [id])
-  bursaryAccount       BursaryAccount?          @relation(fields: [bursaryAccountId], references: [id])
-  contact              Contact?                 @relation(fields: [contactId], references: [id])
-  leadApplicant        Profile                  @relation("ApplicationLeadApplicant", fields: [leadApplicantId], references: [id])
-  round                Round                    @relation(fields: [roundId], references: [id])
-  assessment           Assessment?
-  documents            Document[]
-  contributors         ApplicationContributor[]
-  invitations          Invitation[]
+  submissionDeadlineAt      DateTime?                @map("submission_deadline_at") @db.Timestamptz(6)
+  /// Unified Closed state (item 2). NULL ⇒ not closed. Set exactly once by
+  /// `closeApplication` (never rewritten — the original close is immutable).
+  /// Unlike BursaryAccount.closedAt, which the assessment-reopen path may clear
+  /// (Epic 13 / C1 — see that field's note), this one has NO exception: an
+  /// application close is final, and reopen refuses to run on a closed
+  /// application rather than undoing it. closedAt != null takes precedence
+  /// over every other derived review phase (CLOSED wins). A close always
+  /// carries a close reason; the reason's purgeOnClose flag decides whether
+  /// the close also anonymised PII (purgedAt below).
+  closedAt                  DateTime?                @map("closed_at") @db.Timestamptz(6)
+  closedById                String?                  @map("closed_by") @db.Uuid
+  closeReasonId             String?                  @map("close_reason_id") @db.Uuid
+  /// Stamped when the reason-driven close purge (item 10) ran for this
+  /// application — the idempotency gate: a second close/purge attempt no-ops.
+  purgedAt                  DateTime?                @map("purged_at") @db.Timestamptz(6)
+  createdAt                 DateTime                 @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt                 DateTime                 @updatedAt @map("updated_at") @db.Timestamptz(6)
+  assignedToId              String?                  @map("assigned_to_id") @db.Uuid
+  sections                  ApplicationSection[]
+  assignedTo                Profile?                 @relation("ApplicationAssignee", fields: [assignedToId], references: [id])
+  bursaryAccount            BursaryAccount?          @relation(fields: [bursaryAccountId], references: [id])
+  contact                   Contact?                 @relation(fields: [contactId], references: [id])
+  leadApplicant             Profile                  @relation("ApplicationLeadApplicant", fields: [leadApplicantId], references: [id])
+  closedBy                  Profile?                 @relation("ApplicationClosedBy", fields: [closedById], references: [id], onDelete: SetNull)
+  closeReason               CloseReason?             @relation(fields: [closeReasonId], references: [id], onDelete: Restrict)
+  round                     Round                    @relation(fields: [roundId], references: [id])
+  assessment                Assessment?
+  documents                 Document[]
+  contributors              ApplicationContributor[]
+  invitations               Invitation[]
 
   // One application per child per round, keyed including DOB so twins (same
   // first name, distinct DOB) no longer collide (Epic 04, D12). This composite
@@ -270,6 +394,13 @@ model Document {
   mimeType                String                  @map("mime_type")
   fileSize                Int                     @map("file_size")
   storagePath             String                  @map("storage_path")
+  /// CF-28 — sha-256 fingerprint of the stored bytes, computed server-side in
+  /// the confirm leg of the presigned upload flow. Used ONLY to spot the same
+  /// file uploaded twice inside one application (she was sent the same UC
+  /// payment PDF three times). NULL on every row created before this column
+  /// existed, and on the staff multipart path — a NULL simply opts that row out
+  /// of duplicate detection, it is never treated as a match.
+  contentDigest           String?                 @map("content_digest")
   isVerified              Boolean                 @default(false) @map("is_verified")
   uploadedBy              String                  @map("uploaded_by") @db.Uuid
   uploadedByContributorId String?                 @map("uploaded_by_contributor_id") @db.Uuid
@@ -279,6 +410,7 @@ model Document {
   uploadedByContributor   ApplicationContributor? @relation(fields: [uploadedByContributorId], references: [id], onDelete: SetNull)
 
   @@index([applicationId, slot])
+  @@index([applicationId, contentDigest])
   @@index([uploadedByContributorId])
   @@map("documents")
 }
@@ -289,6 +421,18 @@ model Assessment {
   applicationId                 String                @unique @map("application_id") @db.Uuid
   assessorId                    String                @map("assessor_id") @db.Uuid
   familyTypeCategory            Int?                  @map("family_type_category")
+  /// CALC-02 — dispatches v1 vs v2 engine (architecture decision #1). `1` = the
+  /// existing abridged 4-stage calculator (default, untouched); `2` = the full
+  /// notional model (CALC-03..06), stamped at assessment creation from CALC-07
+  /// onward. Every engine call site branches on this value.
+  calculationVersion            Int                   @default(1) @map("calculation_version")
+  /// Epic 15 M1 (CH-11/14) — the school THIS assessment runs against, picked
+  /// (and switchable) by the assessor; drives the fee lookup. Backfilled from
+  /// the application for pre-M1 rows; NULL (no prefill) on new assessments.
+  assessmentSchool              School?               @map("assessment_school")
+  /// Epic 15 M1 (CH-10/12) — the entry SCHOOL year (6–13); the hidden matrix
+  /// autofills remaining-years from it. NULL until the assessor picks.
+  entrySchoolYear               Int?                  @map("entry_school_year")
   notionalRent                  Decimal?              @map("notional_rent") @db.Decimal(10, 2)
   utilityCosts                  Decimal?              @map("utility_costs") @db.Decimal(10, 2)
   foodCosts                     Decimal?              @map("food_costs") @db.Decimal(10, 2)
@@ -299,6 +443,42 @@ model Assessment {
   netAssetsYearlyValuation      Decimal?              @map("net_assets_yearly_valuation") @db.Decimal(10, 2)
   hndiAfterNs                   Decimal?              @map("hndi_after_ns") @db.Decimal(10, 2)
   requiredBursary               Decimal?              @map("required_bursary") @db.Decimal(10, 2)
+  /// CALC-02 — v2 notional toggles/inputs (all nullable; v1 assessments never
+  /// set these). `rentAddBackType` replaces v1's binary `isMortgageFree` add-back
+  /// for v2 (CALC-03 §notional-spend); the other flags gate their respective
+  /// notional deduction lines. See implementation-plan.md §CALC-02.
+  rentAddBackType               RentAddBackType?      @map("rent_add_back_type")
+  multiPropertyRentAddBack      Boolean?              @map("multi_property_rent_add_back")
+  councilTaxSupport             Boolean?              @map("council_tax_support")
+  usesCar                       Boolean?              @map("uses_car")
+  usesPublicTransport           Boolean?              @map("uses_public_transport")
+  feeInsuranceAnnual            Decimal?              @map("fee_insurance_annual") @db.Decimal(10, 2)
+  behindOnFees                  Boolean?              @map("behind_on_fees")
+  /// CALC-02 — v2 snapshot columns (CALC-03..06 outputs). All nullable; only
+  /// populated for `calculationVersion: 2` assessments. `debtOverNdiRatio` and
+  /// `lifestyleSqueezeRatio` carry extra decimal precision (ratios, not £).
+  notionalEssentials            Decimal?              @map("notional_essentials") @db.Decimal(10, 2)
+  notionalCar                   Decimal?              @map("notional_car") @db.Decimal(10, 2)
+  notionalPublicTransport       Decimal?              @map("notional_public_transport") @db.Decimal(10, 2)
+  notionalJwfAllowance          Decimal?              @map("notional_jwf_allowance") @db.Decimal(10, 2)
+  notionalSavingsBenchmark      Decimal?              @map("notional_savings_benchmark") @db.Decimal(10, 2)
+  savingsTestNumber             Decimal?              @map("savings_test_number") @db.Decimal(10, 2)
+  totalNotionalSpend            Decimal?              @map("total_notional_spend") @db.Decimal(10, 2)
+  ndiAfterNotionalSpend         Decimal?              @map("ndi_after_notional_spend") @db.Decimal(10, 2)
+  derivedYearlyDebtRepayments   Decimal?              @map("derived_yearly_debt_repayments") @db.Decimal(10, 2)
+  yearlyDebtExposure            Decimal?              @map("yearly_debt_exposure") @db.Decimal(10, 2)
+  debtOverNdiRatio              Decimal?              @map("debt_over_ndi_ratio") @db.Decimal(10, 4)
+  debtStatusLabel               String?               @map("debt_status_label")
+  incomeCategory                Int?                  @map("income_category")
+  propertyCategoryDerived       Int?                  @map("property_category_derived")
+  propertyEquityCategory        Int?                  @map("property_equity_category")
+  financialEquityLabel          String?               @map("financial_equity_label")
+  lifestyleSqueezeRatio         Decimal?              @map("lifestyle_squeeze_ratio") @db.Decimal(10, 4)
+  lifestyleSqueezeLabel         String?               @map("lifestyle_squeeze_label")
+  actualRemainingDi             Decimal?              @map("actual_remaining_di") @db.Decimal(10, 2)
+  theoreticalBenchmarkDi        Decimal?              @map("theoretical_benchmark_di") @db.Decimal(10, 2)
+  affordabilityAdjustedDi       Decimal?              @map("affordability_adjusted_di") @db.Decimal(10, 2)
+  recommendedPayableFees        Decimal?              @map("recommended_payable_fees") @db.Decimal(10, 2)
   grossFees                     Decimal?              @map("gross_fees") @db.Decimal(10, 2)
   scholarshipPct                Decimal?              @default(0) @map("scholarship_pct") @db.Decimal(5, 2)
   bursaryAward                  Decimal?              @map("bursary_award") @db.Decimal(10, 2)
@@ -325,6 +505,19 @@ model Assessment {
   /// permissive). Backfilled from the eight legacy boxes (those columns are
   /// retained, read-only, until the 08 cutover). Additive + nullable.
   synopsis                      String?               @map("synopsis")
+  /// Epic 14 C4/C7 (CG-16/CG-22, field-map LA-8 №2) — the workbook's three
+  /// sibling rows: `[{ name, school, netPayableFees }]`. Assessor-entered
+  /// display data (Part 1 names; the award tab adds school + fees) — feeds
+  /// `siblingPayableFees` presentation only, never computed maths beyond the
+  /// existing sequential-absorption input. Additive + nullable.
+  siblingDetails                Json?                 @map("sibling_details")
+  /// CALC-10 — "Assessor's wizard — things to look out for with this family"
+  /// (workbook §3.16). Forward-looking notes for NEXT year's assessor,
+  /// distinct from `synopsis` (this year's narrative). On the account's next
+  /// assessment, the most recent COMPLETED assessment's notes for the same
+  /// `BursaryAccount` render as a prominent callout (see
+  /// `src/lib/assessment/watch-out-notes.ts`). Additive/nullable.
+  watchOutNotes                 String?               @map("watch_out_notes")
   propertyCategory              Int?                  @map("property_category")
   propertyExceedsThreshold      Boolean               @default(false) @map("property_exceeds_threshold")
   dishonestyFlag                Boolean               @default(false) @map("dishonesty_flag")
@@ -362,6 +555,11 @@ model AssessmentEarner {
   benefitsExcluded       Decimal          @default(0) @map("benefits_excluded") @db.Decimal(10, 2)
   benefitsExcludedDetail Json             @default("{}") @map("benefits_excluded_detail")
   totalIncome            Decimal          @default(0) @map("total_income") @db.Decimal(10, 2)
+  /// CALC-02 — v2 status-driven sub-table record (`AssessorIncomeRecord`,
+  /// src/types/assessment-v2.ts), mirroring the parent-form `ParentIncomeRecord`
+  /// pattern (architecture decision #2). Nullable/additive; the 6 legacy numeric
+  /// buckets above remain untouched and keep powering v1.
+  incomeDetail           Json?            @map("income_detail")
   createdAt              DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt              DateTime         @updatedAt @map("updated_at") @db.Timestamptz(6)
   assessment             Assessment       @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
@@ -381,6 +579,13 @@ model AssessmentProperty {
   isasPepsShares            Decimal    @default(0) @map("isas_peps_shares") @db.Decimal(10, 2)
   schoolAgeChildrenCount    Int        @default(1) @map("school_age_children_count")
   derivedSavingsAnnualTotal Decimal    @default(0) @map("derived_savings_annual_total") @db.Decimal(10, 2)
+  /// CALC-02 — v2 itemised JSONB (`PropertyAssetsRecord`, src/types/assessment-v2.ts):
+  /// `{ home: {value, mortgageBalance}, second: {...}, other: {...} }` (aggregate
+  /// "other" per workbook C101/C102). Nullable/additive.
+  propertyAssets            Json?      @map("property_assets")
+  /// CALC-02 — v2 itemised JSONB (`DebtsRecord`, src/types/assessment-v2.ts):
+  /// `{ creditCards, loans, leaseBalances, schoolFeesOwedOrOther }`. Nullable/additive.
+  debts                     Json?
   createdAt                 DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt                 DateTime   @updatedAt @map("updated_at") @db.Timestamptz(6)
   assessment                Assessment @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
@@ -403,32 +608,41 @@ model AssessmentChecklist {
 
 /// Structured recommendation output per assessment.
 model Recommendation {
-  id                  String                     @id @default(uuid()) @db.Uuid
-  assessmentId        String                     @unique @map("assessment_id") @db.Uuid
-  bursaryAccountId    String?                    @map("bursary_account_id") @db.Uuid
-  roundId             String                     @map("round_id") @db.Uuid
-  familySynopsis      String?                    @map("family_synopsis")
-  accommodationStatus String?                    @map("accommodation_status")
-  incomeCategory      String?                    @map("income_category")
-  propertyCategory    Int?                       @map("property_category")
-  bursaryAward        Decimal?                   @map("bursary_award") @db.Decimal(10, 2)
+  id                      String                     @id @default(uuid()) @db.Uuid
+  assessmentId            String                     @unique @map("assessment_id") @db.Uuid
+  bursaryAccountId        String?                    @map("bursary_account_id") @db.Uuid
+  roundId                 String                     @map("round_id") @db.Uuid
+  familySynopsis          String?                    @map("family_synopsis")
+  accommodationStatus     String?                    @map("accommodation_status")
+  incomeCategory          String?                    @map("income_category")
+  propertyCategory        Int?                       @map("property_category")
+  bursaryAward            Decimal?                   @map("bursary_award") @db.Decimal(10, 2)
   /// Distinct merit/academic scholarship award (£), recorded alongside the
   /// means-tested bursary award (Epic 08, Decision D9). Additive/nullable —
   /// NULL means no scholarship award was recorded for this recommendation.
   /// The 0–100 Assessment.scholarshipPct remains the fee-calculation lever; this
   /// is the recorded £ figure the rolling account carries forward (Epic 10).
-  scholarshipAward    Decimal?                   @map("scholarship_award") @db.Decimal(10, 2)
-  yearlyPayableFees   Decimal?                   @map("yearly_payable_fees") @db.Decimal(10, 2)
-  monthlyPayableFees  Decimal?                   @map("monthly_payable_fees") @db.Decimal(10, 2)
-  dishonestyFlag      Boolean                    @default(false) @map("dishonesty_flag")
-  creditRiskFlag      Boolean                    @default(false) @map("credit_risk_flag")
-  summary             String?
-  createdAt           DateTime                   @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt           DateTime                   @updatedAt @map("updated_at") @db.Timestamptz(6)
-  reasonCodes         RecommendationReasonCode[]
-  assessment          Assessment                 @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
-  bursaryAccount      BursaryAccount?            @relation(fields: [bursaryAccountId], references: [id])
-  round               Round                      @relation(fields: [roundId], references: [id])
+  scholarshipAward        Decimal?                   @map("scholarship_award") @db.Decimal(10, 2)
+  yearlyPayableFees       Decimal?                   @map("yearly_payable_fees") @db.Decimal(10, 2)
+  monthlyPayableFees      Decimal?                   @map("monthly_payable_fees") @db.Decimal(10, 2)
+  dishonestyFlag          Boolean                    @default(false) @map("dishonesty_flag")
+  creditRiskFlag          Boolean                    @default(false) @map("credit_risk_flag")
+  summary                 String?
+  /// CALC-02 — v2 min-of-three award + gap tracking (CALC-06, CALC-08). All
+  /// nullable/additive; null for every v1 recommendation.
+  recommendedPayableFees  Decimal?                   @map("recommended_payable_fees") @db.Decimal(10, 2)
+  confirmedPayableFees    Decimal?                   @map("confirmed_payable_fees") @db.Decimal(10, 2)
+  gapAmount               Decimal?                   @map("gap_amount") @db.Decimal(10, 2)
+  lastPayableFees         Decimal?                   @map("last_payable_fees") @db.Decimal(10, 2)
+  scholarshipValueInclVat Decimal?                   @map("scholarship_value_incl_vat") @db.Decimal(10, 2)
+  bursarySpendBeforeVat   Decimal?                   @map("bursary_spend_before_vat") @db.Decimal(10, 2)
+  createdAt               DateTime                   @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt               DateTime                   @updatedAt @map("updated_at") @db.Timestamptz(6)
+  reasonCodes             RecommendationReasonCode[]
+  gapReasons              RecommendationGapReason[]
+  assessment              Assessment                 @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+  bursaryAccount          BursaryAccount?            @relation(fields: [bursaryAccountId], references: [id])
+  round                   Round                      @relation(fields: [roundId], references: [id])
 
   @@map("recommendations")
 }
@@ -455,6 +669,33 @@ model RecommendationReasonCode {
 
   @@id([recommendationId, reasonCodeId])
   @@map("recommendation_reason_codes")
+}
+
+/// CALC-02 — Reference: reasons for a gap between the recommended (min-of-three)
+/// and confirmed payable fees (Appendix E). Mirrors `ReasonCode`'s shape exactly.
+model GapReason {
+  id              String                    @id @default(uuid()) @db.Uuid
+  code            Int                       @unique
+  label           String
+  isDeprecated    Boolean                   @default(false) @map("is_deprecated")
+  sortOrder       Int                       @map("sort_order")
+  createdAt       DateTime                  @default(now()) @map("created_at") @db.Timestamptz(6)
+  recommendations RecommendationGapReason[]
+
+  @@map("gap_reasons")
+}
+
+/// Junction table: Recommendation ↔ GapReason. Required (≥1) whenever a
+/// recommendation's `gapAmount` is non-zero (CALC-08). Mirrors
+/// `RecommendationReasonCode`.
+model RecommendationGapReason {
+  recommendationId String         @map("recommendation_id") @db.Uuid
+  gapReasonId      String         @map("gap_reason_id") @db.Uuid
+  gapReason        GapReason      @relation(fields: [gapReasonId], references: [id])
+  recommendation   Recommendation @relation(fields: [recommendationId], references: [id], onDelete: Cascade)
+
+  @@id([recommendationId, gapReasonId])
+  @@map("recommendation_gap_reasons")
 }
 
 /// Links bursary accounts as siblings for sequential income absorption.
@@ -509,6 +750,177 @@ model CouncilTaxDefault {
   @@map("council_tax_defaults")
 }
 
+/// CALC-01 — Reference: notional cost-of-living figures per family category
+/// (Appendix A), versioned by `effectiveFrom` like the other reference tables.
+/// Feeds the v2 notional-spend engine (CALC-03); `costType` picks out which
+/// line of the workbook's notional block this row is (rent, council tax,
+/// essentials composite, car, public transport, JWF allowance, the notional
+/// savings benchmark, and the savings-cushion allowance shown for context).
+model NotionalCostConfig {
+  id            String           @id @default(uuid()) @db.Uuid
+  category      Int
+  costType      NotionalCostType @map("cost_type")
+  amount        Decimal          @db.Decimal(10, 2)
+  effectiveFrom DateTime         @map("effective_from") @db.Date
+  createdAt     DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@unique([category, costType, effectiveFrom])
+  @@map("notional_cost_configs")
+}
+
+/// CALC-01 — Reference: family-category metadata (Appendix A row 1) — the
+/// household shape each of the 6 notional-cost categories represents. Feeds
+/// the default `schoolAgeChildrenCount` used by `calculateDerivedSavings`
+/// (v1, reused as-is in v2) when not overridden by the assessor.
+model FamilyCategoryMeta {
+  id                String   @id @default(uuid()) @db.Uuid
+  category          Int
+  familyMembers     Int      @map("family_members")
+  schoolAgeChildren Int      @map("school_age_children")
+  description       String
+  effectiveFrom     DateTime @map("effective_from") @db.Date
+  createdAt         DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@unique([category, effectiveFrom])
+  @@map("family_category_metas")
+}
+
+/// CALC-01 — Reference: affordability grid (Appendix B) driving the
+/// "affordability-adjusted DI" leg of the min-of-three award rule (CALC-06).
+/// `basePct` is the category-1 base percentage; the category adjustment
+/// (`basePct − 0.5 × (category−1)`) is applied by the engine, not stored here.
+/// Every row in this table has a real, non-null `bandFloor`/`bandCeiling` —
+/// the grid's own outside-range handling (≤£27k / >£105k, assumption
+/// CALC-A6) is implemented in the CALC-06 award engine, not as sentinel rows
+/// here. See `src/lib/assessment/reference-bands.ts` for the shared band
+/// resolution convention (floor-inclusive, ceiling-inclusive, ties broken
+/// toward the lower band).
+model AffordabilityBand {
+  id            String   @id @default(uuid()) @db.Uuid
+  bandFloor     Decimal  @map("band_floor") @db.Decimal(10, 2)
+  bandCeiling   Decimal  @map("band_ceiling") @db.Decimal(10, 2)
+  basePct       Decimal  @map("base_pct") @db.Decimal(5, 2)
+  effectiveFrom DateTime @map("effective_from") @db.Date
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@unique([bandFloor, effectiveFrom])
+  @@map("affordability_bands")
+}
+
+/// CALC-01 — Reference: income-category bands + fees-benchmark % (Appendix
+/// C.1; merges PROFILING tables 1 + 6 — same bands). `bandFloor`/`bandCeiling`
+/// are nullable to represent the open-ended bottom (<27,000) and top
+/// (≥120,000) bands. Bands are floor-inclusive, CEILING-EXCLUSIVE per the
+/// appendix's own note — the one table that differs from the other bands'
+/// inclusive/inclusive convention; see `reference-bands.ts`. The
+/// 1,2,3,4,5,6,7,7,8,7,8 category tail (category 7 reappearing after 8) is the
+/// workbook's own anomaly, preserved verbatim per assumption CALC-A1.
+model IncomeCategoryBand {
+  id               String   @id @default(uuid()) @db.Uuid
+  bandFloor        Decimal? @map("band_floor") @db.Decimal(10, 2)
+  bandCeiling      Decimal? @map("band_ceiling") @db.Decimal(10, 2)
+  category         Int
+  feesBenchmarkPct Decimal  @map("fees_benchmark_pct") @db.Decimal(5, 2)
+  effectiveFrom    DateTime @map("effective_from") @db.Date
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@unique([bandCeiling, effectiveFrom])
+  @@map("income_category_bands")
+}
+
+/// CALC-01 — Reference: property-equity category bands (Appendix C.2).
+/// `bandFloor` null on the bottom (no/negative equity → category 1);
+/// `bandCeiling` null on the top (>£1.6m → category 12). Floor-inclusive,
+/// ceiling-inclusive; see `reference-bands.ts`.
+model PropertyEquityBand {
+  id            String   @id @default(uuid()) @db.Uuid
+  bandFloor     Decimal? @map("band_floor") @db.Decimal(12, 2)
+  bandCeiling   Decimal? @map("band_ceiling") @db.Decimal(12, 2)
+  category      Int
+  effectiveFrom DateTime @map("effective_from") @db.Date
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@unique([bandCeiling, effectiveFrom])
+  @@map("property_equity_bands")
+}
+
+/// CALC-01 — Reference: financial-equity labels (Appendix C.3). The workbook
+/// carries a genuine isolated single-point band ("0 → no debt, no equity")
+/// wedged between "<0 → in debt" and "0–50k → some savings"; represented here
+/// with the "in debt" row's `bandCeiling` set one penny below zero (-0.01) so
+/// the £0.00-exactly row resolves unambiguously to "no debt, no equity" — the
+/// only band table needing this penny-epsilon (money is genuinely quantised
+/// to the penny, so this isn't a fudge). See `reference-bands.ts`.
+model FinancialEquityBand {
+  id            String   @id @default(uuid()) @db.Uuid
+  bandFloor     Decimal? @map("band_floor") @db.Decimal(12, 2)
+  bandCeiling   Decimal? @map("band_ceiling") @db.Decimal(12, 2)
+  label         String
+  effectiveFrom DateTime @map("effective_from") @db.Date
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@unique([bandCeiling, effectiveFrom])
+  @@map("financial_equity_bands")
+}
+
+/// CALC-01 — Reference: debt-over-NDI ratio bands (Appendix C.4), normalised
+/// to non-overlapping ranges per assumption CALC-A3 (the workbook's own
+/// 0.1–1/0.3–1/0.5–1/0.8–1 all shared a common upper bound of 1). `ratioFloor`
+/// null on the bottom (≤0 → zero debt); `ratioCeiling` null on the top (>10).
+/// `minRepaymentMonths` is null only for the "n/a" zero-debt row; the "<1mo"
+/// row is stored as 0. Floor-inclusive, ceiling-inclusive; see
+/// `reference-bands.ts`.
+model DebtRatioBand {
+  id                 String   @id @default(uuid()) @db.Uuid
+  ratioFloor         Decimal? @map("ratio_floor") @db.Decimal(7, 4)
+  ratioCeiling       Decimal? @map("ratio_ceiling") @db.Decimal(7, 4)
+  minRepaymentMonths Int?     @map("min_repayment_months")
+  statusLabel        String   @map("status_label")
+  effectiveFrom      DateTime @map("effective_from") @db.Date
+  createdAt          DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@unique([ratioCeiling, effectiveFrom])
+  @@map("debt_ratio_bands")
+}
+
+/// CALC-01 — Reference: lifestyle-squeeze ratio bands (Appendix C.5), stored
+/// as percentage points (100 = 100%) to match the appendix's own "%" labels.
+/// `ratioCeiling` null on the top (>170%). Floor-inclusive, ceiling-inclusive;
+/// see `reference-bands.ts`.
+model LifestyleSqueezeBand {
+  id            String   @id @default(uuid()) @db.Uuid
+  ratioFloor    Decimal? @map("ratio_floor") @db.Decimal(6, 2)
+  ratioCeiling  Decimal? @map("ratio_ceiling") @db.Decimal(6, 2)
+  statusLabel   String   @map("status_label")
+  effectiveFrom DateTime @map("effective_from") @db.Date
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@unique([ratioCeiling, effectiveFrom])
+  @@map("lifestyle_squeeze_bands")
+}
+
+/// Reference: Reasons an application/bursary account can be closed for
+/// (item 4.3). Drives the unified close action (items 2/4): `purgeOnClose`
+/// decides whether closing with this reason purges the applicant's PII
+/// (item 10) or retains all data under the normal retention policy. Reasons
+/// are soft-deactivated via `isDeprecated` — never hard-deleted — so a
+/// closed application recorded against a reason keeps showing that reason's
+/// label even after it is removed from the picker (Story 4.4). No relation
+/// to Application yet; the FK arrives with the close action itself (A3).
+model CloseReason {
+  id           String        @id @default(uuid()) @db.Uuid
+  /// Unique natural key (close_reasons_label_key) — the idempotent
+  /// seed upserts by label; there is no numeric code like reason_codes.
+  label        String        @unique
+  purgeOnClose Boolean       @default(false) @map("purge_on_close")
+  isDeprecated Boolean       @default(false) @map("is_deprecated")
+  sortOrder    Int           @map("sort_order")
+  createdAt    DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+  applications Application[]
+
+  @@map("close_reasons")
+}
+
 /// Admin-managed lead-applicant contact: the pre-application record of a
 /// family (parent + child + school + entry year + address). Exists
 /// independently of any Application; it is the source from which an
@@ -519,19 +931,30 @@ model Contact {
   id String @id @default(uuid()) @db.Uuid
 
   // Parent (lead applicant) — identity & reachability. lastName required.
+  title     String? @map("title")
   firstName String? @map("first_name")
   lastName  String  @map("last_name")
   email     String  @map("email")
   phone     String? @map("phone")
 
   // Child — name (required) + DOB form the per-child identity key (twins).
-  childName String    @map("child_name")
-  childDob  DateTime? @map("child_dob") @db.Date
+  // `childName` is the derived single-string backing store (first + surname)
+  // kept for existing consumers (invitations, applications); the split
+  // title/first/surname fields are the entry fields.
+  childTitle     String?   @map("child_title")
+  childFirstName String?   @map("child_first_name")
+  childLastName  String?   @map("child_last_name")
+  childName      String    @map("child_name")
+  childDob       DateTime? @map("child_dob") @db.Date
 
   // School & year — set by admin, LOCKED for the parent (D1).
   school         School
-  entryYear      Int             @map("entry_year")
-  entryYearGroup EntryYearGroup? @map("entry_year_group")
+  /// Epic 14 B3 (CG-26) — the situation chosen at contact creation (new /
+  /// internal / rolling-over); the invite-send step defaults from it and the
+  /// school half of the template resolves from `school` above.
+  situation      InvitationSituation?
+  entryYear      Int                  @map("entry_year")
+  entryYearGroup EntryYearGroup?      @map("entry_year_group")
 
   // Home address — structured, so the portal can show the stored address
   // when the child is "at the same address" (Epic 02 reads it).
@@ -573,30 +996,39 @@ model Contact {
 
 /// Tracks invitations sent by assessors.
 model Invitation {
-  id               String           @id @default(uuid()) @db.Uuid
+  id               String               @id @default(uuid()) @db.Uuid
   email            String
-  firstName        String?          @map("first_name")
-  lastName         String?          @map("last_name")
-  childName        String?          @map("child_name")
+  firstName        String?              @map("first_name")
+  lastName         String?              @map("last_name")
+  childName        String?              @map("child_name")
+  /// Epic 15 G2 (CH-09) — split child identity carried from the contact /
+  /// quick-invite so the application (and Part 1 of the assessment) never has
+  /// to whitespace-split `childName`. Null on legacy rows.
+  childFirstName   String?              @map("child_first_name")
+  childLastName    String?              @map("child_last_name")
+  childDob         DateTime?            @map("child_dob") @db.Date
   school           School?
-  roundId          String?          @map("round_id") @db.Uuid
-  bursaryAccountId String?          @map("bursary_account_id") @db.Uuid
-  contactId        String?          @map("contact_id") @db.Uuid
-  applicationId    String?          @map("application_id") @db.Uuid
-  authUserId       String?          @map("auth_user_id") @db.Uuid
-  entryYear        Int?             @map("entry_year")
-  entryYearGroup   EntryYearGroup?  @map("entry_year_group")
-  token            String           @unique
-  status           InvitationStatus @default(PENDING)
-  expiresAt        DateTime         @map("expires_at") @db.Timestamptz(6)
-  acceptedAt       DateTime?        @map("accepted_at") @db.Timestamptz(6)
-  createdBy        String           @map("created_by") @db.Uuid
-  createdAt        DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
-  bursaryAccount   BursaryAccount?  @relation(fields: [bursaryAccountId], references: [id])
-  contact          Contact?         @relation(fields: [contactId], references: [id])
-  application      Application?     @relation(fields: [applicationId], references: [id], onDelete: Cascade)
-  creator          Profile          @relation("InvitationCreator", fields: [createdBy], references: [id])
-  round            Round?           @relation(fields: [roundId], references: [id])
+  roundId          String?              @map("round_id") @db.Uuid
+  bursaryAccountId String?              @map("bursary_account_id") @db.Uuid
+  contactId        String?              @map("contact_id") @db.Uuid
+  applicationId    String?              @map("application_id") @db.Uuid
+  authUserId       String?              @map("auth_user_id") @db.Uuid
+  entryYear        Int?                 @map("entry_year")
+  entryYearGroup   EntryYearGroup?      @map("entry_year_group")
+  /// Epic 14 B3 — which of the five invitation templates this invite used;
+  /// persisted so resends reuse the same variant. Null on legacy rows.
+  situation        InvitationSituation?
+  token            String               @unique
+  status           InvitationStatus     @default(PENDING)
+  expiresAt        DateTime             @map("expires_at") @db.Timestamptz(6)
+  acceptedAt       DateTime?            @map("accepted_at") @db.Timestamptz(6)
+  createdBy        String               @map("created_by") @db.Uuid
+  createdAt        DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
+  bursaryAccount   BursaryAccount?      @relation(fields: [bursaryAccountId], references: [id])
+  contact          Contact?             @relation(fields: [contactId], references: [id])
+  application      Application?         @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  creator          Profile              @relation("InvitationCreator", fields: [createdBy], references: [id])
+  round            Round?               @relation(fields: [roundId], references: [id])
 
   @@index([token])
   @@index([email])
@@ -629,16 +1061,64 @@ model StaffInvitation {
 }
 
 /// Configurable email templates with merge fields.
+/// System templates (`isSystem: true`) are seeded via the
+/// `*_seed_email_templates` migrations and keyed one-to-one to
+/// `EmailTemplateType` (`type` NOT NULL, `@unique`) — every send-path
+/// `findUnique({ where: { type } })` call depends on that invariant.
+/// Custom templates (`isSystem: false`, admin-created) carry `type: null`
+/// and are identified by `name` instead; the unique index on `type` still
+/// holds because Postgres treats NULLs as distinct. `name` uniqueness among
+/// ACTIVE custom templates is enforced by a partial index
+/// (`email_templates_name_active_key`, case-insensitive, `name IS NOT NULL
+/// AND deleted_at IS NULL`) defined in raw SQL — not expressible in the
+/// Prisma schema DSL.
+/// Epic 15 X1 (CI-02) — sent-emails log. Written best-effort by the three
+/// senders in src/lib/email/send.ts (a log failure never fails a send);
+/// history starts at the X1 merge (no backfill exists). Staff-read,
+/// server-write, append-only at the app layer (see the migration's RLS).
+model EmailLog {
+  id           String             @id @default(uuid()) @db.Uuid
+  createdAt    DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
+  toEmail      String             @map("to_email")
+  templateType EmailTemplateType? @map("template_type")
+  subject      String
+  status       EmailLogStatus
+  /// Failure detail when status = FAILED (provider message, no PII beyond the address).
+  error        String?
+  resendId     String?            @map("resend_id")
+
+  @@index([toEmail])
+  @@index([createdAt])
+  @@map("email_log")
+}
+
+enum EmailLogStatus {
+  SENT
+  FAILED
+  SKIPPED
+}
+
 model EmailTemplate {
-  id          String            @id @default(uuid()) @db.Uuid
-  type        EmailTemplateType @unique
+  id          String             @id @default(uuid()) @db.Uuid
+  type        EmailTemplateType? @unique
+  /// Admin-facing label for a custom template. Null for system templates
+  /// (those are labelled via TEMPLATE_LABELS keyed off `type` in the UI).
+  name        String?
   subject     String
   body        String
-  enabled     Boolean           @default(true) @map("enabled")
-  mergeFields Json              @map("merge_fields")
-  updatedBy   String?           @map("updated_by") @db.Uuid
-  updatedAt   DateTime          @updatedAt @map("updated_at") @db.Timestamptz(6)
-  updater     Profile?          @relation(fields: [updatedBy], references: [id])
+  enabled     Boolean            @default(true) @map("enabled")
+  mergeFields Json               @map("merge_fields")
+  /// True for the 16 seeded system templates; false for admin-created ones.
+  isSystem    Boolean            @default(true) @map("is_system")
+  /// Soft-delete tombstone for custom templates (system templates are
+  /// non-deletable — see setEmailTemplateEnabledAction / deleteEmailTemplateAction).
+  /// A re-run of the seed migration and getAllEmailTemplates both respect this.
+  deletedAt   DateTime?          @map("deleted_at") @db.Timestamptz(6)
+  createdBy   String?            @map("created_by") @db.Uuid
+  updatedBy   String?            @map("updated_by") @db.Uuid
+  updatedAt   DateTime           @updatedAt @map("updated_at") @db.Timestamptz(6)
+  creator     Profile?           @relation("EmailTemplateCreator", fields: [createdBy], references: [id])
+  updater     Profile?           @relation(fields: [updatedBy], references: [id])
 
   @@map("email_templates")
 }
@@ -671,6 +1151,16 @@ enum Role {
 enum School {
   TRINITY
   WHITGIFT
+}
+
+/// Epic 14 B3 (CG-26, LA-3) — the 3-way situation an invitation is sent for.
+/// Combined with `Contact.school` / `Invitation.school` it selects one of the
+/// five invitation template variants; null (legacy rows) falls back to the
+/// generic INVITATION template.
+enum InvitationSituation {
+  NEW
+  INTERNAL
+  ROLLING_OVER
 }
 
 /// School year-group at which a child enters (spec §4). The numeric year-group
@@ -798,6 +1288,13 @@ enum InvitationStatus {
 
 enum EmailTemplateType {
   INVITATION
+  /// Epic 14 B3 (CG-26) — situation × school invitation variants. The legacy
+  /// INVITATION stays as the fallback when no situation is recorded.
+  INVITATION_NEW_TS
+  INVITATION_NEW_WS
+  INVITATION_INTERNAL_TS
+  INVITATION_INTERNAL_WS
+  INVITATION_ROLLING
   CONFIRMATION
   MISSING_DOCS
   OUTCOME_QUALIFIES
@@ -831,4 +1328,28 @@ enum ScheduleEntryStatus {
   SCHEDULED
   RECEIVED
   COMPLETE
+}
+
+/// CALC-01 — the eight notional cost-of-living lines the v2 engine's
+/// notional-spend module (CALC-03) reads per family category (Appendix A).
+enum NotionalCostType {
+  RENT
+  COUNCIL_TAX
+  ESSENTIALS
+  CAR
+  PUBLIC_TRANSPORT
+  JWF_ALLOWANCE
+  NOTIONAL_SAVINGS
+  SAVINGS_CUSHION
+}
+
+/// CALC-02 — v2 rent notional add-back type (workbook C57), replacing v1's
+/// binary `Assessment.isMortgageFree`-style reliance for v2 assessments.
+/// NONE = no add-back; FULL_MORTGAGE_FREE / FULL_RENT_FREE = +100% add-back;
+/// PARTIAL_LOWER_RENT = +25% add-back (assessor judges which applies).
+enum RentAddBackType {
+  NONE
+  FULL_MORTGAGE_FREE
+  FULL_RENT_FREE
+  PARTIAL_LOWER_RENT
 }

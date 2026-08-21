@@ -46,6 +46,13 @@ const schema = z
     openDate: z.string().min(1, "Open date is required"),
     closeDate: z.string().min(1, "Close date is required"),
     decisionDate: z.string().optional(),
+    // Item 12, split by application type in E1/D13-8: one optional round-level
+    // default submission-by date for new applicants, one for bursary holders
+    // rolling over. No cross-field refinement — a round with no default is
+    // valid, and either date may sit before or after closeDate (e.g. a grace
+    // period), so this is permissive.
+    defaultSubmissionDeadlineNew: z.string().optional(),
+    defaultSubmissionDeadlineRolling: z.string().optional(),
   })
   .refine(
     (data) =>
@@ -75,6 +82,10 @@ export interface EditRoundDialogProps {
   openDate: string;
   closeDate: string;
   decisionDate: string;
+  /** ISO yyyy-MM-dd, or "" when the round has no NEW default (E1/D13-8). */
+  defaultSubmissionDeadlineNew: string;
+  /** ISO yyyy-MM-dd, or "" when the round has no ROLLING_OVER default. */
+  defaultSubmissionDeadlineRolling: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }
@@ -86,6 +97,8 @@ export function EditRoundDialog({
   openDate,
   closeDate,
   decisionDate,
+  defaultSubmissionDeadlineNew,
+  defaultSubmissionDeadlineRolling,
   open,
   onOpenChange,
 }: EditRoundDialogProps) {
@@ -95,13 +108,25 @@ export function EditRoundDialog({
 
   const form = useForm<FormValues>({
     resolver: zodResolver(schema),
-    defaultValues: { openDate, closeDate, decisionDate },
+    defaultValues: {
+      openDate,
+      closeDate,
+      decisionDate,
+      defaultSubmissionDeadlineNew,
+      defaultSubmissionDeadlineRolling,
+    },
   });
 
   function handleOpenChange(next: boolean) {
     onOpenChange(next);
     if (!next) {
-      form.reset({ openDate, closeDate, decisionDate });
+      form.reset({
+        openDate,
+        closeDate,
+        decisionDate,
+        defaultSubmissionDeadlineNew,
+        defaultSubmissionDeadlineRolling,
+      });
       setServerError(null);
     }
   }
@@ -114,6 +139,21 @@ export function EditRoundDialog({
     formData.set("openDate", values.openDate);
     formData.set("closeDate", values.closeDate);
     if (values.decisionDate) formData.set("decisionDate", values.decisionDate);
+    // Only non-empty values are sent; an empty field means "clear the round
+    // default for this application type" and is simply absent from the
+    // FormData, which the action reads as `undefined` → NULL.
+    if (values.defaultSubmissionDeadlineNew) {
+      formData.set(
+        "defaultSubmissionDeadlineNew",
+        values.defaultSubmissionDeadlineNew
+      );
+    }
+    if (values.defaultSubmissionDeadlineRolling) {
+      formData.set(
+        "defaultSubmissionDeadlineRolling",
+        values.defaultSubmissionDeadlineRolling
+      );
+    }
 
     startTransition(async () => {
       const result = await updateRoundAction(roundId, formData);
@@ -195,6 +235,54 @@ export function EditRoundDialog({
                   <FormControl>
                     <Input type="date" {...field} disabled={isPending} />
                   </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <FormField
+              control={form.control}
+              name="defaultSubmissionDeadlineNew"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>
+                    Submission-by date — new applications{" "}
+                    <span className="text-xs font-normal text-slate-400">
+                      (optional)
+                    </span>
+                  </FormLabel>
+                  <FormControl>
+                    <Input type="date" {...field} disabled={isPending} />
+                  </FormControl>
+                  <p className="text-xs text-slate-400">
+                    Every new application in this round inherits this deadline
+                    unless it has its own override. Clear the field and save to
+                    remove it.
+                  </p>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <FormField
+              control={form.control}
+              name="defaultSubmissionDeadlineRolling"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>
+                    Submission-by date — rolling over{" "}
+                    <span className="text-xs font-normal text-slate-400">
+                      (optional)
+                    </span>
+                  </FormLabel>
+                  <FormControl>
+                    <Input type="date" {...field} disabled={isPending} />
+                  </FormControl>
+                  <p className="text-xs text-slate-400">
+                    Applies to existing bursary holders being re-assessed —
+                    usually earlier than the date for new applications, by
+                    convention in April. Clear the field and save to remove it.
+                  </p>
                   <FormMessage />
                 </FormItem>
               )}

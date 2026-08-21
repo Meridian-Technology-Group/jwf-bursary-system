@@ -25,16 +25,29 @@ import {
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { setSubmissionDeadlineAction } from "@/app/(admin)/applications/[id]/actions";
+import type {
+  SubmissionDeadlineApplicationType,
+  SubmissionDeadlineSource,
+} from "@/lib/rounds/submission-deadline";
 
 interface SubmissionDeadlineCardProps {
   applicationId: string;
   /** Current per-application override as an ISO string, or null. */
   submissionDeadlineAt: string | null;
-  /** The round close date (ISO) shown as the inherited fallback. */
+  /** The round close date (ISO) shown as the ultimate fallback. */
   roundCloseDate: string;
-  /** Pre-computed effective deadline (ISO) + whether it is an override. */
+  /**
+   * The round default that applies to THIS application (ISO), or null. Already
+   * resolved for `applicationType` by the caller (E1/D13-8) — the round holds a
+   * separate date for new and rolling-over applications.
+   */
+  roundDefaultDeadline: string | null;
+  /** Which round default the row is on — labels the provenance chip. */
+  applicationType: SubmissionDeadlineApplicationType;
+  /** Pre-computed effective deadline (ISO). */
   effectiveDeadline: string;
-  isOverride: boolean;
+  /** Which tier produced `effectiveDeadline` — drives the provenance label. */
+  source: SubmissionDeadlineSource;
 }
 
 /** Converts an ISO instant to the `datetime-local` input value (local time). */
@@ -62,8 +75,10 @@ export function SubmissionDeadlineCard({
   applicationId,
   submissionDeadlineAt,
   roundCloseDate,
+  roundDefaultDeadline,
+  applicationType,
   effectiveDeadline,
-  isOverride,
+  source,
 }: SubmissionDeadlineCardProps) {
   const router = useRouter();
   const [value, setValue] = useState<string>(toLocalInput(submissionDeadlineAt));
@@ -106,9 +121,15 @@ export function SubmissionDeadlineCard({
           <span className="font-medium text-slate-800">
             {formatDisplay(effectiveDeadline)}
           </span>{" "}
-          {isOverride ? (
+          {source === "override" ? (
             <span className="rounded-full bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-700">
               Override
+            </span>
+          ) : source === "roundDefault" ? (
+            <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-500">
+              From round default (
+              {applicationType === "ROLLING_OVER" ? "rolling over" : "new"})
+              {roundDefaultDeadline && ` — ${formatDisplay(roundDefaultDeadline)}`}
             </span>
           ) : (
             <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-500">

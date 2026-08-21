@@ -29,6 +29,8 @@ function makeTx() {
       applicationSection: { deleteMany: vi.fn() },
       document: { deleteMany: vi.fn() },
       application: { update: vi.fn() },
+      contact: { updateMany: vi.fn() },
+      bursaryAccount: { updateMany: vi.fn() },
       invitation: { deleteMany: vi.fn() },
       profile: {
         findUnique: vi.fn(async () => ({ email: "lead@x.test" })),
@@ -94,6 +96,22 @@ describe("purgeApplication — single parent", () => {
     expect(deleteAuthUser).toHaveBeenCalledWith("lead-1");
     expect(result.secondary).toBeNull();
     expect(result.storageErrors).toEqual([]);
+    // Item 10.5 residue-gap fixes: contact register + account child identity.
+    expect(tx.contact.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { profileId: "lead-1" },
+        data: expect.objectContaining({
+          lastName: "[Removed]",
+          childName: "[Child Removed]",
+          postcode: null,
+          notes: null,
+        }),
+      })
+    );
+    expect(tx.bursaryAccount.updateMany).toHaveBeenCalledWith({
+      where: { leadApplicantId: "lead-1" },
+      data: { childName: "[Child Removed]", childDob: null },
+    });
   });
 
   it("storage failures are non-fatal and recorded", async () => {

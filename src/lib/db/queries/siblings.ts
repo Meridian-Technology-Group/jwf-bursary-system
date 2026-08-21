@@ -19,17 +19,30 @@ export interface SiblingLinkRow {
     id: string;
     childName: string;
     school: string;
-    reference: string;
-    /** yearlyPayableFees from the most recent completed assessment, or null */
+    /**
+     * Calendar year the child entered the school. Epic 13 (D13-1a): the
+     * account no longer carries a reference, so the sibling surfaces identify
+     * an account by child name + school + entry year instead of `BA-…`.
+     */
+    entryYear: number;
+    /**
+     * The most recent assessed payable-fees figure for this sibling, or null.
+     * CALC-08: sourced with the same fallback walk as `selectLastPayableFees`
+     * — recommendation `confirmedPayableFees` → recommendation
+     * `recommendedPayableFees` → legacy `assessment.yearlyPayableFees` — so a
+     * v2-assessed sibling (whose legacy column is null) still contributes to
+     * sequential income absorption.
+     */
     latestPayableFees: number | null;
   };
 }
 
 export interface BursaryAccountSearchResult {
   id: string;
-  reference: string;
   childName: string;
   school: string;
+  /** Entry year — disambiguates two accounts at the same school (D13-1a). */
+  entryYear: number;
   leadApplicantEmail: string;
 }
 
@@ -39,8 +52,12 @@ export interface BursaryAccountSearchResult {
  * Returns all sibling links for the family group that contains the given
  * bursary account. Results are ordered by priorityOrder ascending.
  *
- * Each result includes the latest completed assessment's yearlyPayableFees
- * so the assessment form can use it for sequential income absorption.
+ * Each result includes the sibling's latest assessed payable-fees figure so
+ * the assessment form can use it for sequential income absorption. CALC-08:
+ * the figure walks recommendation `confirmedPayableFees` →
+ * `recommendedPayableFees` → legacy `assessment.yearlyPayableFees` (the v2
+ * pipeline no longer writes the legacy column, so a v2-assessed sibling's
+ * fees live on its Recommendation).
  *
  * Returns an empty array when the account has no sibling links.
  */
@@ -70,18 +87,39 @@ export async function getSiblingLinks(
           id: true,
           childName: true,
           school: true,
-          reference: true,
+          entryYear: true,
           applications: {
+            // A fee figure can live on the legacy assessment column (v1) OR on
+            // the recommendation's v2 columns — match whichever is present so
+            // the most recent assessed application is found for both engines.
             where: {
-              assessment: {
-                yearlyPayableFees: { not: null },
-              },
+              OR: [
+                { assessment: { yearlyPayableFees: { not: null } } },
+                {
+                  assessment: {
+                    recommendation: { confirmedPayableFees: { not: null } },
+                  },
+                },
+                {
+                  assessment: {
+                    recommendation: { recommendedPayableFees: { not: null } },
+                  },
+                },
+              ],
             },
             orderBy: { submittedAt: "desc" },
             take: 1,
             select: {
               assessment: {
-                select: { yearlyPayableFees: true },
+                select: {
+                  yearlyPayableFees: true,
+                  recommendation: {
+                    select: {
+                      confirmedPayableFees: true,
+                      recommendedPayableFees: true,
+                    },
+                  },
+                },
               },
             },
           },
@@ -91,8 +129,14 @@ export async function getSiblingLinks(
   });
 
   return links.map((link) => {
-    const latestApp = link.bursaryAccount.applications[0];
-    const rawFees = latestApp?.assessment?.yearlyPayableFees ?? null;
+    const latestAssessment = link.bursaryAccount.applications[0]?.assessment;
+    // CALC-08 fallback walk (mirrors `selectLastPayableFees`): confirmed →
+    // recommended → legacy yearly.
+    const rawFees =
+      latestAssessment?.recommendation?.confirmedPayableFees ??
+      latestAssessment?.recommendation?.recommendedPayableFees ??
+      latestAssessment?.yearlyPayableFees ??
+      null;
     const latestPayableFees =
       rawFees !== null ? Number(rawFees) : null;
 
@@ -106,7 +150,7 @@ export async function getSiblingLinks(
         id: link.bursaryAccount.id,
         childName: link.bursaryAccount.childName,
         school: link.bursaryAccount.school,
-        reference: link.bursaryAccount.reference,
+        entryYear: link.bursaryAccount.entryYear,
         latestPayableFees,
       },
     };
@@ -116,10 +160,12 @@ export async function getSiblingLinks(
 // ─── searchBursaryAccounts ────────────────────────────────────────────────────
 
 /**
- * Searches bursary accounts by child name, account reference, or lead
- * applicant email. Returns up to 10 matches.
+ * Searches bursary accounts by child name or lead applicant email. Returns up
+ * to 10 matches.
  *
- * Used by the sibling linker search input.
+ * Used by the sibling linker search input. Epic 13 (D13-1a) removed the
+ * account reference, and with it the third search term — staff never had a
+ * `BA-…` code to type in anyway, since it was never communicated to anyone.
  */
 export async function searchBursaryAccounts(
   tx: Tx,
@@ -132,7 +178,6 @@ export async function searchBursaryAccounts(
     where: {
       OR: [
         { childName: { contains: trimmed, mode: "insensitive" } },
-        { reference: { contains: trimmed, mode: "insensitive" } },
         {
           leadApplicant: {
             email: { contains: trimmed, mode: "insensitive" },
@@ -144,9 +189,9 @@ export async function searchBursaryAccounts(
     take: 10,
     select: {
       id: true,
-      reference: true,
       childName: true,
       school: true,
+      entryYear: true,
       leadApplicant: {
         select: { email: true },
       },
@@ -155,9 +200,9 @@ export async function searchBursaryAccounts(
 
   return accounts.map((a) => ({
     id: a.id,
-    reference: a.reference,
     childName: a.childName,
     school: a.school,
+    entryYear: a.entryYear,
     leadApplicantEmail: a.leadApplicant.email,
   }));
 }

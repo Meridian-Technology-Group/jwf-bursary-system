@@ -1,9 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-const generateRefMock = vi.fn(async () => "BA-20252026-0001");
-vi.mock("@/lib/bursary-accounts/reference", () => ({
-  generateBursaryAccountReference: () => generateRefMock(),
-}));
+// Epic 13 (C4b / D13-1a): `@/lib/bursary-accounts/reference` is deleted — the
+// account mints no reference at all, so there is no generator left to mock.
 
 import {
   promoteToActiveAccount,

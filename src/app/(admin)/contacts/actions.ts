@@ -15,7 +15,7 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { EntryYearGroup, School } from "@prisma/client";
+import { EntryYearGroup, InvitationSituation, School } from "@prisma/client";
 import { requireRole, Role } from "@/lib/auth/roles";
 import { withAdminContext } from "@/lib/db/prisma";
 import { createAuditLog } from "@/lib/audit/log";
@@ -44,25 +44,44 @@ const optionalString = z
  * write 202 or 20255; the contact register is curated by hand, not imported.
  */
 const ContactSchema = z.object({
+  title: optionalString,
   firstName: optionalString,
   lastName: z.string().trim().min(1, "Parent surname is required").max(120),
   email: z.string().trim().email("A valid email address is required"),
   phone: optionalString,
-  childName: z.string().trim().min(1, "Child's name is required").max(200),
-  // YYYY-MM-DD from a <input type="date">, optional.
+  childTitle: optionalString,
+  // Epic 15 G2 (CH-09): child first name, surname and DOB are all REQUIRED —
+  // the recipient record is first name + surname + DOB + school + entry year.
+  childFirstName: z
+    .string()
+    .trim()
+    .min(1, "Child's first name is required")
+    .max(120),
+  childLastName: z
+    .string()
+    .trim()
+    .min(1, "Child's surname is required")
+    .max(120),
+  // YYYY-MM-DD from a <input type="date">.
   childDob: z
     .string()
     .trim()
-    .regex(/^\d{4}-\d{2}-\d{2}$/, "Enter a valid date")
-    .optional()
-    .or(z.literal("").transform(() => undefined)),
+    .regex(/^\d{4}-\d{2}-\d{2}$/, "Enter the child's date of birth"),
   school: z.nativeEnum(School, { error: "A school is required" }),
+  // B3 (CG-26, LA-3) — situation chosen at contact creation; the invite path
+  // resolves the template variant from it (school half from `school`).
+  situation: z.nativeEnum(InvitationSituation).default(InvitationSituation.NEW),
   entryYear: z.coerce
     .number()
     .int()
     .min(2000, "Enter a valid entry year")
     .max(2100, "Enter a valid entry year"),
-  entryYearGroup: z.nativeEnum(EntryYearGroup).optional(),
+  // MANDATORY as of Q1 (Brian, 2026-08-14). The applicant can no longer supply
+  // an entry year-group anywhere, so the contact — the root of the invite →
+  // application chain — must always carry one.
+  entryYearGroup: z.nativeEnum(EntryYearGroup, {
+    error: () => ({ message: "An entry year group is required" }),
+  }),
   addressLine1: optionalString,
   addressLine2: optionalString,
   town: optionalString,
@@ -83,13 +102,17 @@ export interface ContactActionResult {
 
 function rawFromFormData(formData: FormData) {
   return {
+    title: (formData.get("title") as string) || undefined,
     firstName: (formData.get("firstName") as string) || undefined,
     lastName: (formData.get("lastName") as string) || "",
     email: (formData.get("email") as string) || "",
     phone: (formData.get("phone") as string) || undefined,
-    childName: (formData.get("childName") as string) || "",
+    childTitle: (formData.get("childTitle") as string) || undefined,
+    childFirstName: (formData.get("childFirstName") as string) || undefined,
+    childLastName: (formData.get("childLastName") as string) || "",
     childDob: (formData.get("childDob") as string) || undefined,
     school: (formData.get("school") as string) || undefined,
+    situation: (formData.get("situation") as string) || undefined,
     entryYear: (formData.get("entryYear") as string) || undefined,
     entryYearGroup: (formData.get("entryYearGroup") as string) || undefined,
     addressLine1: (formData.get("addressLine1") as string) || undefined,
@@ -106,19 +129,35 @@ function parseDob(dob: string | undefined): Date | null {
   return new Date(`${dob}T00:00:00.000Z`);
 }
 
+/** Derive the single-string child name backing store from the split fields. */
+function composeChildName(
+  firstName: string | undefined,
+  lastName: string
+): string {
+  return [firstName, lastName]
+    .map((s) => (s ?? "").trim())
+    .filter(Boolean)
+    .join(" ");
+}
+
 function toWriteData(
   parsed: z.infer<typeof ContactSchema>
 ): ContactWriteData {
   return {
+    title: parsed.title ?? null,
     firstName: parsed.firstName ?? null,
     lastName: parsed.lastName,
     email: parsed.email,
     phone: parsed.phone ?? null,
-    childName: parsed.childName,
+    childTitle: parsed.childTitle ?? null,
+    childFirstName: parsed.childFirstName ?? null,
+    childLastName: parsed.childLastName,
+    childName: composeChildName(parsed.childFirstName, parsed.childLastName),
     childDob: parseDob(parsed.childDob),
     school: parsed.school,
     entryYear: parsed.entryYear,
-    entryYearGroup: parsed.entryYearGroup ?? null,
+    entryYearGroup: parsed.entryYearGroup,
+    situation: parsed.situation,
     addressLine1: parsed.addressLine1 ?? null,
     addressLine2: parsed.addressLine2 ?? null,
     town: parsed.town ?? null,

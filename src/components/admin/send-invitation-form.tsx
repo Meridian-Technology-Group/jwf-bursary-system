@@ -66,8 +66,19 @@ const schema = z.object({
   // form (parity with the contact register) so partial invites can't slip
   // through. The `__none__` school sentinel is gone.
   lastName: z.string().min(1, "A surname is required"),
-  childName: z.string().min(1, "The child's name is required"),
+  // Epic 15 G2 (CH-09): split child identity + DOB, all required.
+  childFirstName: z.string().min(1, "The child's first name is required"),
+  childLastName: z.string().min(1, "The child's surname is required"),
+  childDob: z.string().min(1, "The child's date of birth is required"),
   school: z.enum(["TRINITY", "WHITGIFT"], { error: "A school is required" }),
+  // B3 (CG-26, LA-3) — the 3-way situation choice selecting the invitation
+  // template variant; the school half resolves from `school` above.
+  situation: z.enum(["NEW", "INTERNAL", "ROLLING_OVER"]),
+  // Q1 (Brian, 2026-08-14): the entry year-group is JWF-facing only and the
+  // parent can never supply it, so the quick invite has to capture it.
+  entryYearGroup: z.enum(["Y6", "Y7", "Y9", "Y12", "OTHER"], {
+    error: "An entry year group is required",
+  }),
   roundId: z
     .string()
     .uuid("An application round is required")
@@ -86,6 +97,10 @@ export function SendInvitationForm({
 }: SendInvitationFormProps) {
   const [serverError, setServerError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  // Epic 15 X2 (CI-04): create without emailing; the returned link is shown
+  // for the admin to copy into their own mail client.
+  const [skipEmail, setSkipEmail] = useState(false);
+  const [registrationLink, setRegistrationLink] = useState<string | null>(null);
   const [pendingValues, setPendingValues] = useState<FormValues | null>(null);
   const [isPending, startTransition] = useTransition();
   const router = useRouter();
@@ -101,8 +116,12 @@ export function SendInvitationForm({
       email: "",
       firstName: "",
       lastName: "",
-      childName: "",
+      childFirstName: "",
+      childLastName: "",
+      childDob: "",
       school: undefined,
+      situation: "NEW",
+      entryYearGroup: undefined,
       roundId: defaultRoundId ?? "__none__",
     },
   });
@@ -125,20 +144,34 @@ export function SendInvitationForm({
     formData.set("email", values.email);
     if (values.firstName) formData.set("firstName", values.firstName);
     if (values.lastName) formData.set("lastName", values.lastName);
-    formData.set("childName", values.childName);
+    formData.set("childFirstName", values.childFirstName);
+    formData.set("childLastName", values.childLastName);
+    formData.set("childDob", values.childDob);
     formData.set("school", values.school);
+    formData.set("situation", values.situation);
+    formData.set("entryYearGroup", values.entryYearGroup);
     formData.set("roundId", values.roundId);
+    if (skipEmail) formData.set("skipEmail", "1");
 
     startTransition(async () => {
       const result = await createInvitationAction(formData);
       if (result.success) {
-        setSuccessMessage(`Invitation sent to ${values.email}`);
+        setRegistrationLink(result.registrationLink ?? null);
+        setSuccessMessage(
+          result.registrationLink
+            ? `Invitation created for ${values.email} — no email sent. Copy the registration link below.`
+            : `Invitation sent to ${values.email}`
+        );
         form.reset({
           email: "",
           firstName: "",
           lastName: "",
-          childName: "",
+          childFirstName: "",
+          childLastName: "",
+          childDob: "",
           school: undefined,
+          situation: "NEW",
+          entryYearGroup: undefined,
           roundId: defaultRoundId ?? "__none__",
         });
         router.refresh();
@@ -173,8 +206,9 @@ export function SendInvitationForm({
         Quick invite a family
       </h2>
       <p className="mb-4 mt-0.5 text-xs text-slate-500">
-        A one-off parent invite. Surname, child name and school are required —
-        the school is locked and the parent cannot change it.
+        A one-off parent invite. Surname, child name, school and entry year
+        group are required — they are locked and the parent cannot see or
+        change them.
       </p>
 
       <Form {...form}>
@@ -249,21 +283,47 @@ export function SendInvitationForm({
               )}
             />
 
-            {/* Child Name */}
+            {/* Child — split identity + DOB (CH-09; no title) */}
             <FormField
               control={form.control}
-              name="childName"
+              name="childFirstName"
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>
-                    Child Name <span className="text-red-500">*</span>
+                    Child First Name <span className="text-red-500">*</span>
                   </FormLabel>
                   <FormControl>
-                    <Input
-                      placeholder="Alex Smith"
-                      {...field}
-                      disabled={isPending}
-                    />
+                    <Input placeholder="Alex" {...field} disabled={isPending} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="childLastName"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>
+                    Child Surname <span className="text-red-500">*</span>
+                  </FormLabel>
+                  <FormControl>
+                    <Input placeholder="Smith" {...field} disabled={isPending} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="childDob"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>
+                    Child Date of Birth <span className="text-red-500">*</span>
+                  </FormLabel>
+                  <FormControl>
+                    <Input type="date" {...field} disabled={isPending} />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -292,6 +352,76 @@ export function SendInvitationForm({
                     <SelectContent>
                       <SelectItem value="TRINITY">Trinity School</SelectItem>
                       <SelectItem value="WHITGIFT">Whitgift School</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            {/* Situation — B3 (CG-26): picks the invitation template
+                variant (new / internal / rolling-over); school resolves the
+                TS/WS half automatically. */}
+            <FormField
+              control={form.control}
+              name="situation"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>
+                    Situation <span className="text-red-500">*</span>
+                  </FormLabel>
+                  <Select
+                    onValueChange={field.onChange}
+                    value={field.value ?? "NEW"}
+                    disabled={isPending}
+                  >
+                    <FormControl>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select situation" />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                      <SelectItem value="NEW">New application</SelectItem>
+                      <SelectItem value="INTERNAL">
+                        Internal bursary application
+                      </SelectItem>
+                      <SelectItem value="ROLLING_OVER">
+                        Rolling over (existing bursary family)
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            {/* Entry year group — JWF-facing only (Q1). Captured here because
+                the parent can never supply it and the application created on
+                acceptance needs it for the assessment engine. */}
+            <FormField
+              control={form.control}
+              name="entryYearGroup"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>
+                    Entry year group <span className="text-red-500">*</span>
+                  </FormLabel>
+                  <Select
+                    onValueChange={field.onChange}
+                    value={field.value ?? ""}
+                    disabled={isPending}
+                  >
+                    <FormControl>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select entry year group" />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                      <SelectItem value="Y6">Year 6</SelectItem>
+                      <SelectItem value="Y7">Year 7</SelectItem>
+                      <SelectItem value="Y9">Year 9</SelectItem>
+                      <SelectItem value="Y12">Year 12</SelectItem>
+                      <SelectItem value="OTHER">Other</SelectItem>
                     </SelectContent>
                   </Select>
                   <FormMessage />
@@ -376,15 +506,47 @@ export function SendInvitationForm({
           {successMessage && (
             <p className="text-sm text-green-600">{successMessage}</p>
           )}
+          {registrationLink && (
+            <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+              <p className="mb-1 text-xs font-medium text-slate-500">
+                Registration link (30-day expiry) — send it from your own
+                mailbox:
+              </p>
+              <Input
+                readOnly
+                value={registrationLink}
+                onFocus={(e) => e.currentTarget.select()}
+                className="font-mono text-xs"
+                aria-label="Registration link"
+              />
+            </div>
+          )}
 
-          <div className="flex justify-end pt-2">
+          <div className="flex items-center justify-between gap-4 pt-2">
+            {/* Epic 15 X2 (CI-04) */}
+            <label className="flex items-center gap-2 text-sm text-slate-600">
+              <input
+                type="checkbox"
+                checked={skipEmail}
+                onChange={(e) => setSkipEmail(e.target.checked)}
+                disabled={isPending}
+                className="h-4 w-4 rounded border-slate-300"
+              />
+              Don&apos;t email — I&apos;ll send the registration link myself
+            </label>
             <Button
               type="submit"
               disabled={isPending || rounds.length === 0}
               className="gap-2"
             >
               <Send className="h-4 w-4" aria-hidden="true" />
-              {isPending ? "Sending..." : "Send Invitation"}
+              {isPending
+                ? skipEmail
+                  ? "Creating..."
+                  : "Sending..."
+                : skipEmail
+                  ? "Create Invitation"
+                  : "Send Invitation"}
             </Button>
           </div>
         </form>
@@ -421,7 +583,9 @@ export function SendInvitationForm({
                 <p className="text-xs text-slate-500">
                   Child:{" "}
                   <span className="font-medium text-slate-700">
-                    {pendingValues?.childName || "—"}
+                    {[pendingValues?.childFirstName, pendingValues?.childLastName]
+                      .filter(Boolean)
+                      .join(" ") || "—"}
                   </span>{" "}
                   · School:{" "}
                   <span className="font-medium text-slate-700">
@@ -429,8 +593,9 @@ export function SendInvitationForm({
                   </span>
                 </p>
                 <p className="pt-1 text-xs text-slate-400">
-                  This emails the applicant a link to start their bursary
-                  application. The school is locked.
+                  {skipEmail
+                    ? "No email will be sent — you will get a registration link to send yourself. The school is locked."
+                    : "This emails the applicant a link to start their bursary application. The school is locked."}
                 </p>
               </div>
             </DialogDescription>

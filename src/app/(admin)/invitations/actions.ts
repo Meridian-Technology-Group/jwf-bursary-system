@@ -25,9 +25,12 @@ import { z } from "zod";
 import {
   ApplicationContributorRole,
   ApplicationContributorStatus,
+  EntryYearGroup,
+  InvitationSituation,
   InvitationStatus,
   RoundStatus,
   School,
+  type ApplicationType,
 } from "@prisma/client";
 import { requireRole, Role } from "@/lib/auth/roles";
 import {
@@ -36,14 +39,35 @@ import {
   getActiveBursaryHolders,
 } from "@/lib/db/queries/invitations";
 import { createSupabaseAdminClient } from "@/lib/auth/supabase-admin";
+import { provisionApplicantAuthUser } from "@/lib/auth/provision-applicant";
 import { createProfile } from "@/lib/auth/create-profile";
 import { getAppUrl } from "@/lib/app-url";
 import { sendEmail } from "@/lib/email/send";
+import {
+  invitationDeadlineFields,
+  INVITATION_ROUND_DEADLINE_SELECT,
+} from "@/lib/email/invitation-deadline";
+import {
+  deadlineTypeForSituation,
+  openingDateMergeField,
+  resolveInvitationTemplate,
+} from "@/lib/email/invitation-template";
+import type { SubmissionDeadlineRound } from "@/lib/rounds/submission-deadline";
+import {
+  invitationScenarioFields,
+  ROUND_WINDOWS_SELECT,
+} from "@/lib/rounds/window-consumption";
 import { withAdminContext } from "@/lib/db/prisma";
 import { createAuditLog } from "@/lib/audit/log";
-import { prepopulateReassessment, getPreviousYearApplication } from "@/lib/db/queries/reassessment";
+import {
+  prepopulateReassessment,
+  getPreviousYearApplication,
+  getPreviousYearReferenceSource,
+} from "@/lib/db/queries/reassessment";
 import { ensurePrimaryContributor } from "@/lib/db/queries/contributors";
 import { applicationCreateData } from "@/lib/applications/status";
+import { resolveRolloverReference } from "@/lib/applications/reference";
+import { composeChildName } from "@/lib/applications/child-name";
 import { listOpenRounds } from "@/lib/db/queries/reports";
 
 import { AUDIT_ACTIONS, AUDIT_ENTITY_TYPES } from "@/lib/audit/actions";
@@ -60,9 +84,30 @@ const InvitationSchema = z.object({
   email: z.string().email("A valid email address is required"),
   firstName: z.string().optional(),
   lastName: z.string().trim().min(1, "A surname is required"),
-  childName: z.string().trim().min(1, "The child's name is required"),
+  // Epic 15 G2 (CH-09): the child's identity is captured SPLIT (first name +
+  // surname) plus date of birth — the single `childName` string is composed
+  // server-side for the legacy backing store.
+  childFirstName: z
+    .string()
+    .trim()
+    .min(1, "The child's first name is required"),
+  childLastName: z.string().trim().min(1, "The child's surname is required"),
+  childDob: z
+    .string()
+    .trim()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, "Enter the child's date of birth"),
   school: z.nativeEnum(School, { error: "A school is required" }),
+  // Q1 (Brian, 2026-08-14): the entry year-group is JWF-facing only — the
+  // applicant can never enter one — so the quick-invite must capture it here or
+  // the application created on acceptance would have no year-group at all.
+  entryYearGroup: z.nativeEnum(EntryYearGroup, {
+    error: () => ({ message: "An entry year group is required" }),
+  }),
   roundId: z.string().uuid("An application round is required"),
+  // Epic 14 B3 (CG-26, LA-3) — the 3-way situation choice; the school half of
+  // the template resolves from `school`. Defaults to NEW so the quick-invite
+  // keeps working for callers that don't send it.
+  situation: z.nativeEnum(InvitationSituation).default(InvitationSituation.NEW),
 });
 
 // ---------------------------------------------------------------------------
@@ -73,6 +118,9 @@ export interface InvitationActionResult {
   success: boolean;
   error?: string;
   fieldErrors?: Record<string, string[]>;
+  /** Epic 15 X2 (CI-04): set on a no-send create — the admin copies this
+   *  link and sends it from their own mailbox. */
+  registrationLink?: string;
 }
 
 export interface BatchInviteResult {
@@ -114,10 +162,16 @@ export async function createInvitationAction(
     email: formData.get("email") as string,
     firstName: (formData.get("firstName") as string) || undefined,
     lastName: (formData.get("lastName") as string) || undefined,
-    childName: (formData.get("childName") as string) || undefined,
+    childFirstName: (formData.get("childFirstName") as string) || undefined,
+    childLastName: (formData.get("childLastName") as string) || undefined,
+    childDob: (formData.get("childDob") as string) || undefined,
     school: (formData.get("school") as string) || undefined,
+    entryYearGroup: (formData.get("entryYearGroup") as string) || undefined,
     roundId: (formData.get("roundId") as string) || undefined,
+    situation: (formData.get("situation") as string) || undefined,
   };
+  // Epic 15 X2 (CI-04): "Don't email — I'll send the link myself".
+  const skipEmail = formData.get("skipEmail") === "1";
 
   const parsed = InvitationSchema.safeParse(raw);
   if (!parsed.success) {
@@ -127,8 +181,21 @@ export async function createInvitationAction(
     };
   }
 
-  const { email, firstName, lastName, childName, school, roundId } =
-    parsed.data;
+  const {
+    email,
+    firstName,
+    lastName,
+    childFirstName,
+    childLastName,
+    school,
+    entryYearGroup,
+    roundId,
+    situation,
+  } = parsed.data;
+
+  // The composed backing store (legacy consumers read `childName`).
+  const childName = composeChildName(childFirstName, childLastName);
+  const childDob = new Date(`${parsed.data.childDob}T00:00:00.000Z`);
 
   const effectiveApplicantName = composeApplicantName(firstName, lastName);
 
@@ -138,30 +205,33 @@ export async function createInvitationAction(
   const supabase = createSupabaseAdminClient();
   const appUrl = getAppUrl();
 
-  // 1. Create Supabase auth user silently. email_confirm: true suppresses
-  //    the built-in OTP email — only the branded Resend message will reach
-  //    the applicant.
-  const tempPassword = randomBytes(24).toString("base64url");
-  const { data: created, error: supabaseError } =
-    await supabase.auth.admin.createUser({
-      email,
-      password: tempPassword,
-      email_confirm: true,
-      app_metadata: { role: "APPLICANT" },
-    });
-
-  if (supabaseError || !created?.user) {
-    const message = supabaseError?.message ?? "Failed to create auth user";
-    console.error("[invitations] createInvitationAction createUser error:", supabaseError);
-    return { success: false, error: message };
+  // 1. Provision the auth user. Epic 14 E1 (CG-04): an email that already
+  //    belongs to a registered parent is REUSED (a second child on one
+  //    login), not an error; only genuinely new emails create an auth user.
+  //    email_confirm: true suppresses the built-in OTP email — only the
+  //    branded Resend message reaches the applicant.
+  const provisioned = await provisionApplicantAuthUser(supabase, email);
+  if (!provisioned.ok) {
+    console.error(
+      "[invitations] createInvitationAction provisioning error:",
+      provisioned.error
+    );
+    return { success: false, error: provisioned.error };
   }
-  const authUserId = created.user.id;
+  const authUserId = provisioned.authUserId;
+  const createdAuthUser = provisioned.created;
 
   // 2. Profile + Invitation + audit log under one admin context. Any throw
   //    rolls back the auth user.
   let invitationId: string;
   let invitationToken: string;
   let academicYear = "";
+  // Deadline columns for the {{deadline}} merge field (E1) — read inside the
+  // same tx that resolves the academic year, so no extra round query.
+  let deadlineRound: SubmissionDeadlineRound | null = null;
+  // B3 — the round's portal opening date feeds the rolling template's
+  // {{opening_date}}; null when the invitation carries no round.
+  let roundOpenDate: Date | null = null;
   try {
     const result = await withAdminContext(async (tx) => {
       const profile = await createProfile(tx, {
@@ -180,20 +250,52 @@ export async function createInvitationAction(
         firstName,
         lastName,
         childName,
+        childFirstName,
+        childLastName,
+        childDob,
         school,
+        entryYearGroup,
         roundId,
+        situation,
         authUserId,
         createdBy: user.id,
         expiresAt,
       });
 
       let year = "";
+      let roundDeadline: SubmissionDeadlineRound | null = null;
+      let openDate: Date | null = null;
       if (roundId) {
         const round = await tx.round.findUnique({
           where: { id: roundId },
-          select: { academicYear: true },
+          select: {
+            academicYear: true,
+            openDate: true,
+            ...INVITATION_ROUND_DEADLINE_SELECT,
+            ...ROUND_WINDOWS_SELECT,
+          },
         });
         year = round?.academicYear ?? "";
+        // D2 (CG-01): the stored scenario window fills null round defaults
+        // and supplies the opening date (window > openDate > derived default).
+        const scenario = invitationScenarioFields({
+          situation,
+          academicYear: round?.academicYear,
+          onDate: new Date(),
+          deadlineRound: round
+            ? {
+                closeDate: round.closeDate,
+                defaultSubmissionDeadlineNew:
+                  round.defaultSubmissionDeadlineNew,
+                defaultSubmissionDeadlineRolling:
+                  round.defaultSubmissionDeadlineRolling,
+              }
+            : null,
+          roundOpenDate: round?.openDate ?? null,
+          windows: round?.windows ?? [],
+        });
+        openDate = scenario.openingDate;
+        roundDeadline = scenario.deadlineRound;
       }
 
       await createAuditLog(tx, {
@@ -214,16 +316,22 @@ export async function createInvitationAction(
         invitationId: inv.id,
         token: inv.token,
         academicYear: year,
+        roundDeadline,
+        roundOpenDate: openDate,
       };
     });
 
     if (!result.success) {
-      await supabase.auth.admin.deleteUser(authUserId).catch((err) => {
-        console.error(
-          "[invitations] createInvitationAction auth rollback failed:",
-          err
-        );
-      });
+      // E1: only a FRESHLY created auth user is rolled back — deleting a
+      // reused one would destroy the parent's real login.
+      if (createdAuthUser) {
+        await supabase.auth.admin.deleteUser(authUserId).catch((err) => {
+          console.error(
+            "[invitations] createInvitationAction auth rollback failed:",
+            err
+          );
+        });
+      }
       return {
         success: false,
         error: result.error ?? "Failed to create invitation",
@@ -233,17 +341,31 @@ export async function createInvitationAction(
     invitationId = result.invitationId;
     invitationToken = result.token;
     academicYear = result.academicYear;
+    deadlineRound = result.roundDeadline;
+    roundOpenDate = result.roundOpenDate;
   } catch (err) {
-    await supabase.auth.admin.deleteUser(authUserId).catch((rollbackErr) => {
-      console.error(
-        "[invitations] createInvitationAction auth rollback failed:",
-        rollbackErr
-      );
-    });
+    if (createdAuthUser) {
+      await supabase.auth.admin.deleteUser(authUserId).catch((rollbackErr) => {
+        console.error(
+          "[invitations] createInvitationAction auth rollback failed:",
+          rollbackErr
+        );
+      });
+    }
     const message =
       err instanceof Error ? err.message : "Failed to send invitation";
     console.error("[invitations] createInvitationAction error:", err);
     return { success: false, error: message };
+  }
+
+  // Epic 15 X2 (CI-04): a no-send create stops here — the invitation exists
+  // (30-day token, resend available later); the admin sends the link.
+  if (skipEmail) {
+    revalidatePath("/invitations");
+    return {
+      success: true,
+      registrationLink: `${appUrl}/register?token=${invitationToken}`,
+    };
   }
 
   // 3. Send branded INVITATION email. The email is now inside the rollback
@@ -252,14 +374,31 @@ export async function createInvitationAction(
   //    recipient. On failure we hard-roll-back — delete the invitation row,
   //    delete the auth user, and write a failure audit entry so the attempt
   //    stays visible — then surface a clear error to the admin.
-  const emailResult = await sendEmail(email, "INVITATION", {
-    applicant_name: effectiveApplicantName || email,
-    child_name: childName ?? "",
-    school: schoolLabel(school),
-    round_year: academicYear,
-    registration_link: `${appUrl}/register?token=${invitationToken}`,
-    deadline: expiresAt.toLocaleDateString("en-GB"),
-  });
+  // B3 (CG-26): the template variant follows the chosen situation and the
+  // school; the {{deadline}} default follows the situation too (rolling-over
+  // invites get the round's rolling date).
+  const emailResult = await sendEmail(
+    email,
+    resolveInvitationTemplate(situation, school),
+    {
+      applicant_name: effectiveApplicantName || email,
+      child_name: childName ?? "",
+      school: schoolLabel(school),
+      round_year: academicYear,
+      registration_link: `${appUrl}/register?token=${invitationToken}`,
+      opening_date: openingDateMergeField(
+        roundOpenDate ? { openDate: roundOpenDate } : null
+      ),
+      // E1/CF-11: {{deadline}} is the SUBMISSION deadline for the round this
+      // invitation is for; {{link_expiry}} carries the token expiry that used
+      // to masquerade as it.
+      ...invitationDeadlineFields(
+        deadlineRound,
+        deadlineTypeForSituation(situation),
+        expiresAt
+      ),
+    }
+  );
 
   if (!emailResult.success) {
     console.error(
@@ -295,13 +434,16 @@ export async function createInvitationAction(
       );
     });
 
-    // Roll back the auth user so we never leave an orphan account behind.
-    await supabase.auth.admin.deleteUser(authUserId).catch((err) => {
-      console.error(
-        "[invitations] createInvitationAction auth rollback failed:",
-        err
-      );
-    });
+    // Roll back the auth user so we never leave an orphan account behind —
+    // but only one WE created this call (E1: a reused login must survive).
+    if (createdAuthUser) {
+      await supabase.auth.admin.deleteUser(authUserId).catch((err) => {
+        console.error(
+          "[invitations] createInvitationAction auth rollback failed:",
+          err
+        );
+      });
+    }
 
     revalidatePath("/invitations");
     return {
@@ -337,6 +479,12 @@ async function sendReassessmentInviteForHolder(
   ctx: {
     roundId: string;
     academicYear: string;
+    /**
+     * The target round's deadline columns, resolved once by the batch caller —
+     * every holder in a batch shares one round, so this is not re-read per row.
+     * Null only if the round could not be read.
+     */
+    deadlineRound: SubmissionDeadlineRound | null;
     userId: string;
     supabase: ReturnType<typeof createSupabaseAdminClient>;
     appUrl: string;
@@ -427,7 +575,14 @@ async function sendReassessmentInviteForHolder(
       school: schoolLabel(holder.school),
       round_year: academicYear,
       registration_link: `${appUrl}/register?token=${txResult.token}`,
-      deadline: txResult.expiresAt.toLocaleDateString("en-GB"),
+      // E1/CF-12: a re-assessment invitation is by definition ROLLING_OVER, so
+      // {{deadline}} resolves against the round's rolling submission date (the
+      // April one), NOT the 30-day token expiry it used to carry.
+      ...invitationDeadlineFields(
+        ctx.deadlineRound,
+        "ROLLING_OVER",
+        txResult.expiresAt
+      ),
     });
 
     if (emailResult.success) {
@@ -469,17 +624,48 @@ async function runReassessmentInvites(
 
   let eligible: EligibleHolder[] = [];
   let academicYear = "";
+  // Read once for the whole batch — every holder is invited into the SAME
+  // round, so the rolling-over submission deadline is identical for all of
+  // them (E1; Q4: one global rolling date per round).
+  let deadlineRound: SubmissionDeadlineRound | null = null;
   try {
     const loaded = await withAdminContext(async (tx) => {
       const h = await getActiveBursaryHolders(tx, roundId);
       const round = await tx.round.findUnique({
         where: { id: roundId },
-        select: { academicYear: true },
+        select: {
+          academicYear: true,
+          ...INVITATION_ROUND_DEADLINE_SELECT,
+          ...ROUND_WINDOWS_SELECT,
+        },
       });
-      return { holders: h, academicYear: round?.academicYear ?? "" };
+      return {
+        holders: h,
+        academicYear: round?.academicYear ?? "",
+        roundWindows: round?.windows ?? [],
+        deadlineRound: round
+          ? {
+              closeDate: round.closeDate,
+              defaultSubmissionDeadlineNew: round.defaultSubmissionDeadlineNew,
+              defaultSubmissionDeadlineRolling:
+                round.defaultSubmissionDeadlineRolling,
+            }
+          : null,
+      };
     });
     eligible = loaded.holders;
     academicYear = loaded.academicYear;
+    // D2 (CG-01): a stored RA window's submit-by fills the rolling default
+    // when the round column is null — resolved ONCE for the whole batch
+    // (every holder is invited into the same round on the same clock).
+    deadlineRound = invitationScenarioFields({
+      situation: InvitationSituation.ROLLING_OVER,
+      academicYear,
+      onDate: new Date(),
+      deadlineRound: loaded.deadlineRound,
+      roundOpenDate: null,
+      windows: loaded.roundWindows,
+    }).deadlineRound;
   } catch (err) {
     const message =
       err instanceof Error ? err.message : "Failed to load bursary holders";
@@ -503,7 +689,14 @@ async function runReassessmentInvites(
 
   const supabase = createSupabaseAdminClient();
   const appUrl = getAppUrl();
-  const ctx = { roundId, academicYear, userId: user.id, supabase, appUrl };
+  const ctx = {
+    roundId,
+    academicYear,
+    deadlineRound,
+    userId: user.id,
+    supabase,
+    appUrl,
+  };
 
   for (let i = 0; i < holders.length; i++) {
     await sendReassessmentInviteForHolder(holders[i], ctx, result);
@@ -804,7 +997,20 @@ export async function resendInvitationAction(
       tx.invitation.findUnique({
         where: { id: invitationId },
         include: {
-          round: { select: { academicYear: true } },
+          round: {
+            select: {
+              academicYear: true,
+              openDate: true,
+              ...INVITATION_ROUND_DEADLINE_SELECT,
+              ...ROUND_WINDOWS_SELECT,
+            },
+          },
+          // A resend must reproduce the ORIGINAL invitation's submission
+          // deadline, so it needs the linked application's own type + override
+          // when there is one (second-parent invites) — E1.
+          application: {
+            select: { applicationType: true, submissionDeadlineAt: true },
+          },
         },
       })
     );
@@ -853,14 +1059,43 @@ export async function resendInvitationAction(
         invitation.lastName ?? undefined
       ) || invitation.email;
 
-    const emailResult = await sendEmail(invitation.email, "INVITATION", {
+    // B3: a resend reuses the SAME template variant the original send chose
+    // (situation persisted on the row; legacy NULL rows fall back to the
+    // generic INVITATION).
+    // D2 (CG-01): same window consumption as the original send.
+    const scenario = invitationScenarioFields({
+      situation: invitation.situation,
+      academicYear: invitation.round?.academicYear,
+      onDate: new Date(),
+      deadlineRound: invitation.round,
+      roundOpenDate: invitation.round?.openDate ?? null,
+      windows: invitation.round?.windows ?? [],
+    });
+    const emailResult = await sendEmail(
+      invitation.email,
+      resolveInvitationTemplate(invitation.situation, invitation.school),
+      {
       applicant_name: applicantName,
       child_name: invitation.childName ?? "",
       school: schoolLabel(invitation.school),
       round_year: invitation.round?.academicYear ?? "",
       registration_link: `${appUrl}/register?token=${newToken}`,
-      deadline: newExpiresAt.toLocaleDateString("en-GB"),
-    });
+      opening_date: openingDateMergeField(
+        scenario.openingDate ? { openDate: scenario.openingDate } : null
+      ),
+      // E1: a resend re-states the SAME submission deadline as the original
+      // send — only {{link_expiry}} moves, because only the token was renewed.
+      // Before this, every resend silently pushed the advertised "deadline"
+      // another 30 days into the future.
+      ...invitationDeadlineFields(
+        scenario.deadlineRound,
+        invitation.application?.applicationType ??
+          deadlineTypeForSituation(invitation.situation),
+        newExpiresAt,
+        invitation.application?.submissionDeadlineAt ?? null
+      ),
+      }
+    );
 
     if (!emailResult.success) {
       console.error(
@@ -1014,8 +1249,49 @@ export async function createReassessmentApplicationAction(
         return { success: false as const, error: "Bursary account not found." };
       }
 
-      // Generate reference
-      const reference = `REA-${account.reference}-${roundId.slice(0, 8).toUpperCase()}`;
+      // Reference (Epic 13, C4a/C4b). This used to be
+      // `REA-${account.reference}-${roundId.slice(0,8)}` — built from the
+      // bursary account's own `BA-…` code, which no longer exists.
+      //
+      // D13-1a / Q5: this creates a ROLLING_OVER application, so it INHERITS
+      // the prior year's reference. Once that reference has been edited to the
+      // external fees-system code (`TS-SMITH05-Smith, Bob`), that code is what
+      // reconciliation depends on — regenerating it here would silently break
+      // the link, which is exactly what Q5 was decided to prevent. It is
+      // regenerated ONLY when the prior reference is still the untouched
+      // default, since inheriting that verbatim would drag a stale academic
+      // year onto the new year's application. A human-entered value is never
+      // discarded.
+      //
+      // Same helper as `createReassessmentApplicationFromInvitation` — the
+      // comparison lives in `resolveRolloverReference` and is deliberately NOT
+      // duplicated here. `getPreviousYearReferenceSource` is its own narrow
+      // read (not the heavyweight `getPreviousYearApplication` below), but both
+      // share `previousYearApplicationQuery`, so they always resolve to the
+      // same prior application. With no prior application it falls back to the
+      // generated default.
+      //
+      // Unlike the invitation path, this create DOES persist `entryYearGroup`,
+      // so it is passed through — the label is built from exactly the fields
+      // the row will hold, which is what keeps next year's
+      // recompute-and-compare consistent.
+      const round = await tx.round.findUnique({
+        where: { id: roundId },
+        select: { academicYear: true },
+      });
+
+      const priorReferenceSource = await getPreviousYearReferenceSource(
+        tx,
+        bursaryAccountId,
+        roundId
+      );
+
+      const reference = resolveRolloverReference(priorReferenceSource, {
+        childName: account.childName,
+        school: account.school,
+        entryYearGroup: account.entryYearGroup,
+        academicYear: round?.academicYear,
+      });
 
       // Create the re-assessment application
       const application = await tx.application.create({
@@ -1153,6 +1429,12 @@ export async function addSecondParentAction(
     school: School;
     childName: string;
     academicYear: string;
+    /** Selects which round default the invite's {{deadline}} uses (E1). */
+    applicationType: ApplicationType;
+    /** The application's own submit-by override, when set (E1, tier 1). */
+    submissionDeadlineAt: Date | null;
+    /** The round's deadline columns for tiers 2–3 (E1). */
+    deadlineRound: SubmissionDeadlineRound;
   };
   let existingProfileId: string | null = null;
   try {
@@ -1164,7 +1446,14 @@ export async function addSecondParentAction(
           roundId: true,
           school: true,
           childName: true,
-          round: { select: { academicYear: true } },
+          applicationType: true,
+          submissionDeadlineAt: true,
+          round: {
+            select: {
+              academicYear: true,
+              ...INVITATION_ROUND_DEADLINE_SELECT,
+            },
+          },
           contributors: {
             where: { role: ApplicationContributorRole.SECONDARY },
             select: { id: true },
@@ -1195,6 +1484,14 @@ export async function addSecondParentAction(
           school: app.school,
           childName: app.childName,
           academicYear: app.round.academicYear,
+          applicationType: app.applicationType,
+          submissionDeadlineAt: app.submissionDeadlineAt,
+          deadlineRound: {
+            closeDate: app.round.closeDate,
+            defaultSubmissionDeadlineNew: app.round.defaultSubmissionDeadlineNew,
+            defaultSubmissionDeadlineRolling:
+              app.round.defaultSubmissionDeadlineRolling,
+          },
         },
         existingProfileId: profile?.id ?? null,
       };
@@ -1346,7 +1643,16 @@ export async function addSecondParentAction(
     school: schoolLabel(application.school),
     round_year: application.academicYear,
     registration_link: `${appUrl}/register?token=${invitationToken}`,
-    deadline: expiresAt.toLocaleDateString("en-GB"),
+    // E1: the second parent is contributing to an EXISTING application, so
+    // {{deadline}} is that application's own effective submission deadline —
+    // its override first, else the round default on its type's clock.
+    // Previously the 30-day token expiry.
+    ...invitationDeadlineFields(
+      application.deadlineRound,
+      application.applicationType,
+      expiresAt,
+      application.submissionDeadlineAt
+    ),
   });
 
   if (!emailResult.success) {

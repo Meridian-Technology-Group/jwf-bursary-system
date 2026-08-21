@@ -15,7 +15,24 @@
  *
  * This is a UX convenience, not a hard security control — see
  * `src/lib/auth/idle-timeout.ts`. The authoritative session boundary is the
- * Supabase token expiry checked in middleware.
+ * Supabase token expiry checked in middleware. That is what licenses the two
+ * data-safety concessions below (Epic 13 / WP B1, CF-15):
+ *
+ *  1. **Never sign out a tab that cannot see the warning.** Background tabs get
+ *     their timers throttled, so the whole warn→logout window could elapse
+ *     unseen: the applicant switched away for half an hour, came back to the
+ *     login page and lost everything typed since her last save. The warning is
+ *     now deferred until the document is visible, so the countdown is always
+ *     actually shown before anyone is signed out.
+ *  2. **Flush unsaved form work before signing out.** The forced logout is a
+ *     full-page form POST, which tears down the section form. It now asks the
+ *     unsaved-changes guard to persist first (a draft save when the section does
+ *     not yet validate), so being signed out costs the applicant their session,
+ *     not their afternoon.
+ *
+ * Neither concession applies outside a portal/contribute layout: the admin shell
+ * mounts this watcher with no `UnsavedChangesProvider` above it, so the flush is
+ * an inert no-op there.
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -33,6 +50,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { useUnsavedChanges } from "@/components/portal/unsaved-changes-context";
 
 /** Activity signals that reset the idle timer. Passive listeners, no preventDefault. */
 const ACTIVITY_EVENTS: Array<keyof WindowEventMap> = [
@@ -47,18 +65,40 @@ const ACTIVITY_EVENTS: Array<keyof WindowEventMap> = [
 /** Throttle window for the high-frequency activity reset (avoids per-pixel work). */
 const ACTIVITY_THROTTLE_MS = 1_000;
 
+/**
+ * How often to re-check whether the tab has come back to the foreground before
+ * showing the sign-out warning. A hidden tab is never warned (and so never
+ * signed out); `visibilitychange` normally reschedules the whole idle window the
+ * moment it returns, so this poll is only the belt to that braces.
+ */
+const HIDDEN_RECHECK_MS = 15_000;
+
 export function IdleLogoutWatcher({
   /** Override for tests; production resolves from NEXT_PUBLIC_* env. */
   config,
+  /**
+   * Layout-specific fallback window in minutes, used only when
+   * `NEXT_PUBLIC_SESSION_IDLE_MINUTES` is unset (the env override always
+   * wins). The portal passes 60 (CG-12); the admin shell keeps the default.
+   */
+  defaultIdleMinutes,
 }: {
   config?: IdleTimeoutConfig;
+  defaultIdleMinutes?: number;
 }) {
   // Resolve once on mount. Env is build-time inlined for NEXT_PUBLIC_* vars, so
   // there is nothing to re-resolve on re-render.
   const resolved = useRef<IdleTimeoutConfig>(
-    config ?? resolveIdleTimeoutConfig()
+    config ??
+      resolveIdleTimeoutConfig(undefined, { idleMinutes: defaultIdleMinutes })
   );
   const { enabled, idleMs, warnMs } = resolved.current;
+  // "Stay signed in" reschedules the whole idle window, so the extension it
+  // grants IS the window (CG-12: 60 more minutes on the portal).
+  const extendMinutes = Math.max(1, Math.round(idleMs / 60_000));
+
+  // Inert outside an `UnsavedChangesProvider` (i.e. in the admin shell).
+  const { flush: flushUnsavedChanges } = useUnsavedChanges();
 
   const [warning, setWarning] = useState(false);
   const [secondsLeft, setSecondsLeft] = useState(Math.round(warnMs / 1000));
@@ -83,15 +123,34 @@ export function IdleLogoutWatcher({
     if (loggingOut.current) return;
     loggingOut.current = true;
     clearTimers();
-    // Reuse the existing same-origin logout route (clears cookies + redirects).
-    const form = document.createElement("form");
-    form.method = "POST";
-    form.action = "/api/auth/logout";
-    document.body.appendChild(form);
-    form.submit();
-  }, [clearTimers]);
+    const submit = () => {
+      // Reuse the existing same-origin logout route (clears cookies + redirects).
+      const form = document.createElement("form");
+      form.method = "POST";
+      form.action = "/api/auth/logout";
+      document.body.appendChild(form);
+      form.submit();
+    };
+    // Persist whatever is in the section form first (CF-15). `flush` resolves
+    // true when there was nothing to save; either way the sign-out proceeds —
+    // a failed write must not strand the user in a half-logged-out state.
+    void flushUnsavedChanges().then(submit, submit);
+  }, [clearTimers, flushUnsavedChanges]);
 
   const beginWarning = useCallback(() => {
+    // A hidden tab cannot show a countdown, and its timers are throttled, so
+    // warning it means signing it out with no warning at all. Wait for the tab
+    // to come back instead (CF-15).
+    if (
+      typeof document !== "undefined" &&
+      document.visibilityState !== "visible"
+    ) {
+      warnTimer.current = setTimeout(
+        () => beginWarningRef.current(),
+        HIDDEN_RECHECK_MS
+      );
+      return;
+    }
     setWarning(true);
     setSecondsLeft(Math.round(warnMs / 1000));
     countdownTimer.current = setInterval(() => {
@@ -99,6 +158,11 @@ export function IdleLogoutWatcher({
     }, 1_000);
     logoutTimer.current = setTimeout(doLogout, warnMs);
   }, [warnMs, doLogout]);
+
+  // Self-reference for the deferred re-check above, kept in a ref so the
+  // callback identity stays stable (the listener effect depends on it).
+  const beginWarningRef = useRef(beginWarning);
+  beginWarningRef.current = beginWarning;
 
   const scheduleIdle = useCallback(() => {
     clearTimers();
@@ -167,7 +231,9 @@ export function IdleLogoutWatcher({
           <Button variant="outline" onClick={doLogout}>
             Sign out now
           </Button>
-          <Button onClick={stayActive}>Stay signed in</Button>
+          <Button onClick={stayActive}>
+            Stay signed in (+{extendMinutes} min)
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

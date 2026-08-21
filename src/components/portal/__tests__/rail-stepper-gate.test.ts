@@ -30,7 +30,7 @@ describe("isApplyRoute — the route gate that scopes the rail stepper to the wi
     expect(isApplyRoute("/")).toBe(false);
     expect(isApplyRoute("/help")).toBe(false);
     expect(isApplyRoute("/documents")).toBe(false);
-    expect(isApplyRoute("/history")).toBe(false);
+    expect(isApplyRoute("/submitted")).toBe(false);
     expect(isApplyRoute("/status")).toBe(false);
   });
 

@@ -22,6 +22,15 @@ export interface RoundWithCounts {
   openDate: Date;
   closeDate: Date;
   decisionDate: Date | null;
+  /**
+   * Round-level default submission-by dates (Item 12, split by application type
+   * in E1/D13-8); null = no round default for that type, so those applications
+   * fall back to `closeDate`. The superseded single `defaultSubmissionDeadline`
+   * column is deliberately NOT surfaced here — it has no readers left and is
+   * dropped in E1b.
+   */
+  defaultSubmissionDeadlineNew: Date | null;
+  defaultSubmissionDeadlineRolling: Date | null;
   status: RoundStatus;
   createdAt: Date;
   counts: {
@@ -64,6 +73,7 @@ export async function listRounds(tx: Tx): Promise<RoundWithCounts[]> {
       applications: {
         select: {
           formStatus: true,
+          closedAt: true,
           assessment: { select: { status: true, outcome: true } },
         },
       },
@@ -94,6 +104,7 @@ export async function getRound(tx: Tx, id: string): Promise<RoundDetail | null> 
       applications: {
         select: {
           formStatus: true,
+          closedAt: true,
           school: true,
           assessment: { select: { status: true, outcome: true } },
         },
@@ -135,6 +146,10 @@ export async function createRound(
     openDate: Date;
     closeDate: Date;
     decisionDate?: Date;
+    /** Round default submit-by for NEW applications (E1/D13-8). */
+    defaultSubmissionDeadlineNew?: Date;
+    /** Round default submit-by for ROLLING_OVER applications (E1/D13-8). */
+    defaultSubmissionDeadlineRolling?: Date;
   }
 ): Promise<Round> {
   return tx.round.create({
@@ -143,6 +158,13 @@ export async function createRound(
       openDate: data.openDate,
       closeDate: data.closeDate,
       decisionDate: data.decisionDate ?? null,
+      defaultSubmissionDeadlineNew: data.defaultSubmissionDeadlineNew ?? null,
+      defaultSubmissionDeadlineRolling:
+        data.defaultSubmissionDeadlineRolling ?? null,
+      // Legacy mirror (E1): nothing reads `defaultSubmissionDeadline` any more,
+      // but it is kept in step with the NEW date so reverting the E1 code alone
+      // restores today's behaviour. E1b drops the column and this line.
+      defaultSubmissionDeadline: data.defaultSubmissionDeadlineNew ?? null,
       status: RoundStatus.DRAFT,
     },
   });
@@ -159,7 +181,17 @@ export async function updateRound(
   tx: Tx,
   id: string,
   data: Partial<
-    Pick<Round, "academicYear" | "openDate" | "closeDate" | "decisionDate" | "status">
+    Pick<
+      Round,
+      | "academicYear"
+      | "openDate"
+      | "closeDate"
+      | "decisionDate"
+      | "defaultSubmissionDeadline"
+      | "defaultSubmissionDeadlineNew"
+      | "defaultSubmissionDeadlineRolling"
+      | "status"
+    >
   >
 ): Promise<Round> {
   return tx.round.update({
@@ -193,6 +225,7 @@ export async function closeRound(tx: Tx, id: string): Promise<Round> {
  */
 function reviewPhaseFor(app: {
   formStatus: import("@prisma/client").ApplicationFormStatus;
+  closedAt: Date | null;
   assessment: {
     status: import("@prisma/client").AssessmentStatus;
     outcome: import("@prisma/client").AssessmentOutcome | null;
@@ -202,6 +235,7 @@ function reviewPhaseFor(app: {
     formStatus: app.formStatus,
     assessmentStatus: app.assessment?.status ?? null,
     outcome: app.assessment?.outcome ?? null,
+    closedAt: app.closedAt,
   });
 }
 

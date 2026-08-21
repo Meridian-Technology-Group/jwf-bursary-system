@@ -21,9 +21,12 @@ import {
  * Cross-section reads per section:
  *   - DEPENDENT_CHILDREN reads CHILD_DETAILS childFullName.
  *   - CHILD_DETAILS reads PARENT_DETAILS parent1Contact (address).
- *   - DECLARATION and ASSETS_LIABILITIES read PARENT_DETAILS isSoleParent.
+ *   - DECLARATION and ASSETS_LIABILITIES read PARENT_DETAILS isSoleParent +
+ *     relationshipStatus (a coupled status expands their Parent 2 blocks).
  *   - PARENTS_INCOME reads PARENT_DETAILS isSoleParent / relationshipStatus /
  *     per-parent employment statuses.
+ *   - FAMILY_ID reads DEPENDENT_CHILDREN count + PARENT_DETAILS household to
+ *     gate the cross-section identity-list consistency rules.
  */
 export async function loadSectionPageData(
   tx: Tx,
@@ -82,6 +85,30 @@ export async function loadSectionPageData(
   let parent1Status: string | undefined;
   let parent2Status: string | undefined;
   let relationshipStatus: string | undefined;
+  let dependentChildrenCount: number | undefined;
+  // FAMILY_ID cross-section rules: the declared dependent-children count and the
+  // household relationship both gate whether the identity list is consistent.
+  if (sectionType === "FAMILY_ID") {
+    const [depSection, parentSection] = await Promise.all([
+      getSectionData(tx, applicationId, "DEPENDENT_CHILDREN", ownerContributorId),
+      getSectionData(tx, applicationId, "PARENT_DETAILS", ownerContributorId),
+    ]);
+    const depData = depSection?.data as
+      | { numberOfDependentChildren?: number; children?: unknown[] }
+      | null;
+    dependentChildrenCount =
+      typeof depData?.numberOfDependentChildren === "number"
+        ? depData.numberOfDependentChildren
+        : Array.isArray(depData?.children)
+          ? depData!.children!.length
+          : undefined;
+    const parentData = parentSection?.data as {
+      isSoleParent?: boolean;
+      relationshipStatus?: string;
+    } | null;
+    soleParent = parentData?.isSoleParent;
+    relationshipStatus = parentData?.relationshipStatus;
+  }
   // DECLARATION needs isSoleParent to decide whether to show the P2 tick;
   // ASSETS_LIABILITIES needs it to decide whether to show the Parent 2 block.
   if (sectionType === "DECLARATION" || sectionType === "ASSETS_LIABILITIES") {
@@ -91,8 +118,14 @@ export async function loadSectionPageData(
       "PARENT_DETAILS",
       ownerContributorId
     );
-    const parentData = parentSection?.data as { isSoleParent?: boolean } | null;
+    const parentData = parentSection?.data as {
+      isSoleParent?: boolean;
+      relationshipStatus?: string;
+    } | null;
     soleParent = parentData?.isSoleParent;
+    // Relationship status also expands the Parent 2 blocks here (a coupled
+    // status implies a two-parent household even if sole-parent = yes).
+    relationshipStatus = parentData?.relationshipStatus;
   }
   if (sectionType === "PARENTS_INCOME") {
     const parentSection = await getSectionData(
@@ -121,6 +154,7 @@ export async function loadSectionPageData(
     parent1Status,
     parent2Status,
     relationshipStatus,
+    dependentChildrenCount,
     parent1Address,
   };
 }

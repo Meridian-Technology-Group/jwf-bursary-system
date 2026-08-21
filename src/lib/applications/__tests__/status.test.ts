@@ -11,13 +11,19 @@ import {
   defaultPausedUntil,
   PAUSE_WINDOW_DAYS,
   pauseAssessmentRow,
+  completeAssessmentRow,
+  AssessmentSnapshotMissingError,
   assertSubmittedAtUnset,
   SUBMITTED_AT_IMMUTABLE_MESSAGE,
   discardAssessment,
+  reopenAssessmentRow,
   reopenAssessmentForMaterialChange,
   refreshFormStatus,
+  beginReview,
+  resumeReview,
 } from "../status";
 import { AUDIT_ACTIONS, AUDIT_ENTITY_TYPES } from "@/lib/audit/actions";
+import { CURRENT_CALCULATION_VERSION } from "@/lib/assessment/engine-version";
 
 describe("status service — review-phase derivation (PR-6a)", () => {
   it("projects the lifecycle columns onto the 7-value review phase (backfill table)", () => {
@@ -27,6 +33,7 @@ describe("status service — review-phase derivation (PR-6a)", () => {
         formStatus: "IN_PROGRESS",
         assessmentStatus: null,
         outcome: null,
+        closedAt: null,
       })
     ).toBe("PRE_SUBMISSION");
     // submitted, no assessment / NOT_STARTED → SUBMITTED (awaiting review)
@@ -35,6 +42,7 @@ describe("status service — review-phase derivation (PR-6a)", () => {
         formStatus: "SUBMITTED",
         assessmentStatus: null,
         outcome: null,
+        closedAt: null,
       })
     ).toBe("SUBMITTED");
     expect(
@@ -42,6 +50,7 @@ describe("status service — review-phase derivation (PR-6a)", () => {
         formStatus: "SUBMITTED",
         assessmentStatus: "NOT_STARTED",
         outcome: null,
+        closedAt: null,
       })
     ).toBe("SUBMITTED");
     // assessment IN_PROGRESS → NOT_STARTED (review in progress)
@@ -50,6 +59,7 @@ describe("status service — review-phase derivation (PR-6a)", () => {
         formStatus: "SUBMITTED",
         assessmentStatus: "IN_PROGRESS",
         outcome: null,
+        closedAt: null,
       })
     ).toBe("NOT_STARTED");
     // assessment PAUSED → PAUSED
@@ -58,6 +68,7 @@ describe("status service — review-phase derivation (PR-6a)", () => {
         formStatus: "SUBMITTED",
         assessmentStatus: "PAUSED",
         outcome: null,
+        closedAt: null,
       })
     ).toBe("PAUSED");
     // assessment COMPLETED, no outcome → COMPLETED
@@ -66,6 +77,7 @@ describe("status service — review-phase derivation (PR-6a)", () => {
         formStatus: "SUBMITTED",
         assessmentStatus: "COMPLETED",
         outcome: null,
+        closedAt: null,
       })
     ).toBe("COMPLETED");
     // outcomes → QUALIFIES / DOES_NOT_QUALIFY
@@ -74,6 +86,7 @@ describe("status service — review-phase derivation (PR-6a)", () => {
         formStatus: "SUBMITTED",
         assessmentStatus: "COMPLETED",
         outcome: "AWARDED",
+        closedAt: null,
       })
     ).toBe("QUALIFIES");
     expect(
@@ -81,6 +94,7 @@ describe("status service — review-phase derivation (PR-6a)", () => {
         formStatus: "SUBMITTED",
         assessmentStatus: "COMPLETED",
         outcome: "QUALIFIES_NOT_AWARDED",
+        closedAt: null,
       })
     ).toBe("QUALIFIES");
     expect(
@@ -88,6 +102,7 @@ describe("status service — review-phase derivation (PR-6a)", () => {
         formStatus: "SUBMITTED",
         assessmentStatus: "COMPLETED",
         outcome: "DOES_NOT_QUALIFY",
+        closedAt: null,
       })
     ).toBe("DOES_NOT_QUALIFY");
   });
@@ -160,9 +175,11 @@ describe("status service — assessment lifecycle (strict, PR-4)", () => {
     expect(isLegalAssessmentTransition("NOT_STARTED", "COMPLETED")).toBe(false);
   });
 
-  it("treats COMPLETED as terminal", () => {
+  it("opens exactly one exit edge from COMPLETED — the C1 reopen (D13-2)", () => {
+    // Epic 13 / C1: COMPLETED was terminal; it now has a single exit edge so a
+    // completed-by-mistake assessment can be corrected. IN_PROGRESS only.
+    expect(isLegalAssessmentTransition("COMPLETED", "IN_PROGRESS")).toBe(true);
     expect(isLegalAssessmentTransition("COMPLETED", "PAUSED")).toBe(false);
-    expect(isLegalAssessmentTransition("COMPLETED", "IN_PROGRESS")).toBe(false);
   });
 
   it("allows the discard edges IN_PROGRESS/PAUSED → NOT_STARTED (D-G6/D3)", () => {
@@ -171,8 +188,49 @@ describe("status service — assessment lifecycle (strict, PR-4)", () => {
   });
 
   it("does NOT allow COMPLETED → NOT_STARTED (no auto-invalidation of a finished assessment)", () => {
+    // Still false after C1: reopen preserves the assessment's data (→
+    // IN_PROGRESS); discarding a completed assessment remains illegal.
     expect(isLegalAssessmentTransition("COMPLETED", "NOT_STARTED")).toBe(false);
   });
+});
+
+describe("status service — reopenAssessmentRow (Epic 13 / C1)", () => {
+  function makeTx() {
+    return {
+      assessment: { update: vi.fn(async (_args: unknown) => ({})) },
+    };
+  }
+
+  it("moves COMPLETED → IN_PROGRESS and clears completedAt", async () => {
+    const tx = makeTx();
+    await reopenAssessmentRow(tx as never, "asmt-1", "COMPLETED");
+    expect(tx.assessment.update).toHaveBeenCalledWith({
+      where: { id: "asmt-1" },
+      data: { status: "IN_PROGRESS", completedAt: null },
+    });
+  });
+
+  it("preserves the assessment's data — reopen is not discard", async () => {
+    const tx = makeTx();
+    await reopenAssessmentRow(tx as never, "asmt-1", "COMPLETED");
+    const { data } = tx.assessment.update.mock.calls[0]![0] as unknown as {
+      data: Record<string, unknown>;
+    };
+    // Only the two status fields are touched: no outcome reset, no snapshot
+    // clearing. Correcting an assessment must not throw its figures away.
+    expect(Object.keys(data).sort()).toEqual(["completedAt", "status"]);
+  });
+
+  it.each(["NOT_STARTED", "IN_PROGRESS", "PAUSED"] as const)(
+    "throws (never silently no-ops) when the source is %s",
+    async (from) => {
+      const tx = makeTx();
+      await expect(
+        reopenAssessmentRow(tx as never, "asmt-1", from)
+      ).rejects.toThrow(/not completed/i);
+      expect(tx.assessment.update).not.toHaveBeenCalled();
+    }
+  );
 });
 
 describe("status service — legacy outcome shim", () => {
@@ -377,6 +435,63 @@ describe("status service — discardAssessment (D-G6/D3 invalidation primitive)"
   });
 });
 
+describe("status service — ensureAssessmentRow via beginReview/resumeReview (CALC-14)", () => {
+  /**
+   * Fake tx exposing the assessment surface `ensureAssessmentRow` +
+   * `beginReview`/`resumeReview` use. Mirrors the `discardAssessment` fake tx
+   * above but adds `create` since these paths (unlike `discardAssessment`) can
+   * create the row.
+   */
+  function makeTx(existing: { id: string; status: string } | null) {
+    return {
+      assessment: {
+        findUnique: vi.fn(async () => existing),
+        create: vi.fn(async (args: { data: Record<string, unknown> }) => ({
+          id: "asmt-new",
+          status: args.data.status,
+        })),
+        update: vi.fn(async () => ({})),
+      },
+    };
+  }
+
+  it("beginReview creates a new assessment row stamped with CURRENT_CALCULATION_VERSION (not the schema's v1 default)", async () => {
+    const tx = makeTx(null);
+    const id = await beginReview(tx as never, "app-1", "assessor-1");
+
+    expect(id).toBe("asmt-new");
+    expect(tx.assessment.create).toHaveBeenCalledTimes(1);
+    const arg = tx.assessment.create.mock.calls[0]![0] as {
+      data: Record<string, unknown>;
+    };
+    expect(arg.data).toMatchObject({
+      applicationId: "app-1",
+      assessorId: "assessor-1",
+      calculationVersion: CURRENT_CALCULATION_VERSION,
+    });
+    expect(arg.data.calculationVersion).toBe(2);
+  });
+
+  it("resumeReview also creates via the same v2-stamped path when no row exists yet", async () => {
+    const tx = makeTx(null);
+    await resumeReview(tx as never, "app-1", "assessor-1");
+
+    expect(tx.assessment.create).toHaveBeenCalledTimes(1);
+    const arg = tx.assessment.create.mock.calls[0]![0] as {
+      data: Record<string, unknown>;
+    };
+    expect(arg.data.calculationVersion).toBe(CURRENT_CALCULATION_VERSION);
+  });
+
+  it("does NOT re-create (or re-stamp) an existing assessment row", async () => {
+    const tx = makeTx({ id: "asmt-existing", status: "NOT_STARTED" });
+    const id = await beginReview(tx as never, "app-1", "assessor-1");
+
+    expect(id).toBe("asmt-existing");
+    expect(tx.assessment.create).not.toHaveBeenCalled();
+  });
+});
+
 describe("status service — reopenAssessmentForMaterialChange (soft send-back)", () => {
   function makeTx(
     formStatus: string,
@@ -440,5 +555,113 @@ describe("status service — reopenAssessmentForMaterialChange (soft send-back)"
     );
     expect(res).toEqual({ formStatus: "IN_PROGRESS", assessmentDiscarded: false });
     expect(tx.application.update).toHaveBeenCalledTimes(1);
+  });
+});
+
+// ─── Item 2: CLOSED phase precedence ─────────────────────────────────────────
+
+import { deriveReviewPhase as derive } from "../status";
+
+describe("deriveReviewPhase — CLOSED (item 2)", () => {
+  const closedAt = new Date("2026-07-01T00:00:00Z");
+
+  it("closedAt wins over every other lifecycle state", () => {
+    expect(
+      derive({
+        formStatus: "SUBMITTED",
+        assessmentStatus: "COMPLETED",
+        outcome: "AWARDED",
+        closedAt,
+      })
+    ).toBe("CLOSED");
+    expect(
+      derive({
+        formStatus: "IN_PROGRESS",
+        assessmentStatus: null,
+        outcome: null,
+        closedAt,
+      })
+    ).toBe("CLOSED");
+    expect(
+      derive({
+        formStatus: "SUBMITTED",
+        assessmentStatus: "PAUSED",
+        outcome: null,
+        closedAt,
+      })
+    ).toBe("CLOSED");
+  });
+
+  it("null closedAt leaves the existing mapping untouched", () => {
+    expect(
+      derive({
+        formStatus: "SUBMITTED",
+        assessmentStatus: "COMPLETED",
+        outcome: "AWARDED",
+        closedAt: null,
+      })
+    ).toBe("QUALIFIES");
+  });
+});
+
+// ─── CALC-15: completeAssessmentRow — v2 snapshot guard ──────────────────────
+
+describe("completeAssessmentRow — v2 snapshot guard (CALC-15)", () => {
+  /**
+   * Fake tx exposing the assessment surface `completeAssessmentRow` uses: the
+   * pre-flight snapshot read (`findUniqueOrThrow`) and the status-flip write.
+   */
+  function makeTx(snapshot: {
+    calculationVersion: number;
+    totalHouseholdNetIncome: number | null;
+  }) {
+    return {
+      assessment: {
+        findUniqueOrThrow: vi.fn(async () => snapshot),
+        update: vi.fn(async () => ({})),
+      },
+    };
+  }
+
+  it("REJECTS completing a v2 assessment whose snapshot was never saved (null totalHouseholdNetIncome)", async () => {
+    const tx = makeTx({
+      calculationVersion: CURRENT_CALCULATION_VERSION,
+      totalHouseholdNetIncome: null,
+    });
+
+    await expect(
+      completeAssessmentRow(tx as never, "asmt-1", "IN_PROGRESS")
+    ).rejects.toBeInstanceOf(AssessmentSnapshotMissingError);
+    expect(tx.assessment.update).not.toHaveBeenCalled();
+  });
+
+  it("ALLOWS completing a v2 assessment with a persisted snapshot", async () => {
+    const tx = makeTx({
+      calculationVersion: CURRENT_CALCULATION_VERSION,
+      totalHouseholdNetIncome: 45000,
+    });
+
+    await completeAssessmentRow(tx as never, "asmt-1", "IN_PROGRESS");
+    expect(tx.assessment.update).toHaveBeenCalledWith({
+      where: { id: "asmt-1" },
+      data: { status: "COMPLETED", completedAt: expect.any(Date) },
+    });
+  });
+
+  it("does NOT guard a v1 assessment (calculationVersion 1) even with a null total", async () => {
+    const tx = makeTx({ calculationVersion: 1, totalHouseholdNetIncome: null });
+
+    await completeAssessmentRow(tx as never, "asmt-1", "IN_PROGRESS");
+    expect(tx.assessment.update).toHaveBeenCalledTimes(1);
+  });
+
+  it("still tolerates a NOT_STARTED source (pre-existing behaviour) when the v2 snapshot IS present", async () => {
+    const tx = makeTx({
+      calculationVersion: CURRENT_CALCULATION_VERSION,
+      totalHouseholdNetIncome: 12000,
+    });
+
+    await completeAssessmentRow(tx as never, "asmt-1", "NOT_STARTED");
+    expect(tx.assessment.update).toHaveBeenCalledTimes(1);
   });
 });

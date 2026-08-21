@@ -11,13 +11,17 @@ import { withUserContext, type RlsRole } from "@/lib/db/prisma";
 import {
   listApplications,
   listRounds,
+  getApplicationNames,
   type ListApplicationsFilters,
 } from "@/lib/db/queries/applications";
+import { createAuditLog } from "@/lib/audit/log";
+import { AUDIT_ACTIONS, AUDIT_ENTITY_TYPES } from "@/lib/audit/actions";
 import { getRoundWatchlist } from "@/lib/db/queries/round-watchlist";
 import { getActiveRound } from "@/lib/db/queries/reports";
 import { getActiveBursaryHolders } from "@/lib/db/queries/invitations";
 import { RoundStatus } from "@prisma/client";
 import { listAssessors } from "@/lib/db/queries/profiles";
+import { getAllCloseReasons } from "@/lib/db/queries/reference-tables";
 import type { WatchlistRuleId } from "@/lib/db/queries/round-watchlist";
 import { ApplicationTable } from "@/components/admin/application-table";
 import { InternalRequestDialog } from "@/components/admin/internal-request-dialog";
@@ -26,6 +30,14 @@ import {
   ALL_REVIEW_PHASES,
   type ReviewPhase,
 } from "@/lib/applications/queue-filter";
+import { deriveReviewPhase } from "@/lib/applications/status";
+import { REVIEW_PHASE_LABEL } from "@/lib/applications/review-phase-labels";
+import { effectiveSubmissionDeadline } from "@/lib/rounds/submission-deadline";
+import {
+  londonStartOfDayUtc,
+  londonEndOfDayUtc,
+  formatLondonDateString,
+} from "@/lib/datetime";
 
 export const metadata = {
   title: "Applications",
@@ -64,6 +76,33 @@ function parseSchool(
   return raw && SCHOOLS.has(raw) ? (raw as School) : undefined;
 }
 
+// Received-date range (Item 7.1). A plain `YYYY-MM-DD` calendar-date string —
+// the client always produces this (from a `<input type="date">`), but the URL
+// is user-editable, so malformed values are ignored rather than crashing.
+const DATE_PARAM_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+
+function parseDateParam(value: string | string[] | undefined): string | undefined {
+  const raw = firstValue(value);
+  return raw && DATE_PARAM_PATTERN.test(raw) ? raw : undefined;
+}
+
+/**
+ * Serialises the current search params back to a query string. Passed to the
+ * client table so the received-date filter (7.1) can preserve every other
+ * active param when it navigates, without a client-side `useSearchParams()`
+ * call (which would require wrapping the table in a Suspense boundary).
+ */
+function buildQueryString(params: SearchParams): string {
+  const usp = new URLSearchParams();
+  for (const [key, value] of Object.entries(params)) {
+    if (value === undefined) continue;
+    for (const v of Array.isArray(value) ? value : [value]) {
+      usp.append(key, v);
+    }
+  }
+  return usp.toString();
+}
+
 // Each derived flag maps to exactly one watchlist rule whose deduped `appIds`
 // define the drill-in set (keeps the queue identical to the lane's count).
 const DERIVED_RULE_BY_FLAG: Record<string, WatchlistRuleId> = {
@@ -86,6 +125,25 @@ export default async function QueuePage({
   const status = parseStatus(params.status);
   const school = parseSchool(params.school);
   const undecided = isTruthyFlag(params.undecided);
+
+  // Received-date range (Item 7.1). Parsed as Europe/London calendar dates;
+  // an inverted range from a hand-edited URL is silently ignored (not
+  // applied) rather than erroring — the filter bar's own client-side
+  // validation is what stops a valid session from ever producing one.
+  const submittedFromParam = parseDateParam(params.submittedFrom);
+  const submittedToParam = parseDateParam(params.submittedTo);
+  const submittedRangeValid =
+    !submittedFromParam ||
+    !submittedToParam ||
+    submittedFromParam <= submittedToParam;
+
+  // Submission-by (deadline) range (Item 7.2) — same parsing/validation
+  // approach as the received-date range above.
+  const deadlineFromParam = parseDateParam(params.deadlineFrom);
+  const deadlineToParam = parseDateParam(params.deadlineTo);
+  const deadlineRangeValid =
+    !deadlineFromParam || !deadlineToParam || deadlineFromParam <= deadlineToParam;
+
   // Re-assessment-eligible drill-in: ADMIN-only. Shows the prior-round winning
   // applications linked to bursary holders who are eligible to be invited into
   // the open round (cross-round is intended).
@@ -104,8 +162,27 @@ export default async function QueuePage({
   if (status) applicationFilters.reviewPhases = [status];
   if (school) applicationFilters.school = school;
   if (undecided) applicationFilters.undecided = true;
+  if (submittedRangeValid && submittedFromParam) {
+    applicationFilters.submittedFrom = londonStartOfDayUtc(submittedFromParam);
+  }
+  if (submittedRangeValid && submittedToParam) {
+    applicationFilters.submittedTo = londonEndOfDayUtc(submittedToParam);
+  }
+  if (deadlineRangeValid && deadlineFromParam) {
+    applicationFilters.deadlineFrom = deadlineFromParam;
+  }
+  if (deadlineRangeValid && deadlineToParam) {
+    applicationFilters.deadlineTo = deadlineToParam;
+  }
 
-  const { applications, rounds, assessors, reassessRoundYear } =
+  const {
+    applications,
+    names,
+    rounds,
+    assessors,
+    closeReasons,
+    reassessRoundYear,
+  } =
     await withUserContext(
     profile.id,
     profile.role as RlsRole,
@@ -157,20 +234,104 @@ export default async function QueuePage({
         applicationFilters.ids = [];
       }
 
-      // Assessor list only needed for the ADMIN bulk-assign dropdown.
-      const [applications, rounds, assessors] = await Promise.all([
+      // Assessor list only needed for the ADMIN bulk-assign dropdown; close
+      // reasons only for the ADMIN-only per-row Close action (item 2/4.1).
+      const [applications, rounds, assessors, closeReasons] = await Promise.all([
         listApplications(tx, applicationFilters),
         listRounds(tx),
         profile.role === Role.ADMIN ? listAssessors(tx) : Promise.resolve([]),
+        profile.role === Role.ADMIN
+          ? getAllCloseReasons(tx)
+          : Promise.resolve([]),
       ]);
-      return { applications, rounds, assessors, reassessRoundYear };
+
+      // Child name + lead applicant name/email are shown as first-class columns
+      // (they are no longer behind a per-session reveal toggle). Fetch them for
+      // exactly the applications the viewer can see and write ONE audit entry
+      // per page load so the GDPR name-disclosure trail is preserved.
+      const nameRows =
+        applications.length > 0
+          ? await getApplicationNames(
+              tx,
+              applications.map((a) => a.id)
+            )
+          : [];
+      if (nameRows.length > 0) {
+        await createAuditLog(tx, {
+          userId: profile.id,
+          action: AUDIT_ACTIONS.NAME_REVEAL,
+          entityType: AUDIT_ENTITY_TYPES.Application,
+          context: "Applications list — child + lead applicant names shown",
+          metadata: {
+            applicationIds: nameRows.map((n) => n.id),
+            count: nameRows.length,
+          },
+        });
+      }
+      const names = nameRows.map((n) => ({
+        id: n.id,
+        // D13-1a: rendered beside the reference, which is a free-text label and
+        // may have been re-edited to the fees-system code. Already inside the
+        // single NAME_REVEAL audit entry written above.
+        childName: n.childName,
+        leadApplicantName:
+          [n.leadApplicant.firstName, n.leadApplicant.lastName]
+            .filter(Boolean)
+            .join(" ") || n.leadApplicant.email,
+        leadApplicantEmail: n.leadApplicant.email,
+      }));
+
+      // Status column (Item 1.1): derive each row's review phase server-side
+      // via the same `deriveReviewPhase` the detail page uses, so the list and
+      // detail page always agree. Computed here (not in the query layer) since
+      // it's a presentational concern of this one list, not of every
+      // `listApplications` caller. `closedAt` participates so a unified close
+      // (item 2) projects to CLOSED with top precedence.
+      //
+      // Deadline column (Item 1.2): same treatment, via the ONE shared
+      // `effectiveSubmissionDeadline()` helper (Epic 03 / Item 12/D-1) — do
+      // not re-derive the override/round-default/close-date chain here.
+      const applicationsWithPhase = applications.map((app) => ({
+        ...app,
+        reviewPhase: deriveReviewPhase({
+          formStatus: app.formStatus,
+          assessmentStatus: app.assessmentStatus,
+          outcome: app.outcome,
+          closedAt: app.closedAt,
+        }),
+        effectiveDeadline: effectiveSubmissionDeadline(
+          {
+            submissionDeadlineAt: app.submissionDeadlineAt,
+            applicationType: app.applicationType,
+          },
+          app.round
+        ).deadline,
+      }));
+
+      return {
+        applications: applicationsWithPhase,
+        names,
+        rounds,
+        assessors,
+        closeReasons,
+        reassessRoundYear,
+      };
     }
   );
 
-  // Seed values for the client table UI (simple filters only).
+  // Seed values for the client table UI (simple filters only). The `?status=`
+  // drill-in still filters server-side and is surfaced by the `activeFilter`
+  // banner below; the client-side status MULTI-select (1.3) is independent
+  // client-only state, not seeded from this param.
   const initialRound = roundId;
   const initialSchool = school;
-  const initialStatuses = status ? [status] : undefined;
+  // Only seed the date inputs with a range that was actually applied — an
+  // invalid (from > to) hand-edited URL shows blank inputs rather than a
+  // filter that silently isn't in effect.
+  const initialSubmittedFrom = submittedRangeValid ? submittedFromParam : undefined;
+  const initialSubmittedTo = submittedRangeValid ? submittedToParam : undefined;
+  const initialDeadlineFrom = deadlineRangeValid ? deadlineFromParam : undefined;
+  const initialDeadlineTo = deadlineRangeValid ? deadlineToParam : undefined;
 
   // Plain-English descriptor of the active filter for the dismissible banner.
   // The re-assessment-eligible drill-in owns the banner when active (it is the
@@ -191,6 +352,10 @@ export default async function QueuePage({
         undecided,
         activeDerivedFlags,
         rounds,
+        submittedFrom: initialSubmittedFrom,
+        submittedTo: initialSubmittedTo,
+        deadlineFrom: initialDeadlineFrom,
+        deadlineTo: initialDeadlineTo,
       });
 
   return (
@@ -211,15 +376,27 @@ export default async function QueuePage({
       {/* Data table */}
       <ApplicationTable
         applications={applications}
+        names={names}
         rounds={rounds}
         assessors={assessors}
         userRole={profile.role}
         initialRound={initialRound}
         initialSchool={initialSchool}
-        initialStatuses={initialStatuses}
+        initialSubmittedFrom={initialSubmittedFrom}
+        initialSubmittedTo={initialSubmittedTo}
+        initialDeadlineFrom={initialDeadlineFrom}
+        initialDeadlineTo={initialDeadlineTo}
+        currentQueryString={buildQueryString(params)}
         activeFilter={activeFilter}
         reassessEligibleActive={reassessEligible}
         reassessTargetRound={reassessRoundYear}
+        closeReasons={closeReasons
+          .filter((r) => !r.isDeprecated)
+          .map((r) => ({
+            id: r.id,
+            label: r.label,
+            purgeOnClose: r.purgeOnClose,
+          }))}
       />
     </div>
   );
@@ -231,16 +408,6 @@ const DERIVED_LABELS: Record<string, string> = {
   docsMissing: "Submitted applications missing required documents",
   stale: "Assessments with no activity for over 5 days",
   awaitingOutcome: "Awaiting outcome",
-};
-
-const STATUS_LABELS: Record<ReviewPhase, string> = {
-  PRE_SUBMISSION: "Pre-submission",
-  SUBMITTED: "Submitted",
-  NOT_STARTED: "Not started",
-  PAUSED: "Paused",
-  COMPLETED: "Completed",
-  QUALIFIES: "Qualifies",
-  DOES_NOT_QUALIFY: "Does not qualify",
 };
 
 const SCHOOL_LABELS: Record<School, string> = {
@@ -255,6 +422,10 @@ function describeActiveFilter({
   undecided,
   activeDerivedFlags,
   rounds,
+  submittedFrom,
+  submittedTo,
+  deadlineFrom,
+  deadlineTo,
 }: {
   roundId: string | undefined;
   status: ReviewPhase | undefined;
@@ -262,6 +433,12 @@ function describeActiveFilter({
   undecided: boolean;
   activeDerivedFlags: string[];
   rounds: { id: string; academicYear: string }[];
+  /** Received-date range (Item 7.1), as the applied `YYYY-MM-DD` strings. */
+  submittedFrom?: string;
+  submittedTo?: string;
+  /** Submission-by (deadline) range (Item 7.2), as the applied `YYYY-MM-DD` strings. */
+  deadlineFrom?: string;
+  deadlineTo?: string;
 }): { label: string; clearHref: string } | undefined {
   const parts: string[] = [];
 
@@ -277,10 +454,26 @@ function describeActiveFilter({
     }
   } else {
     if (undecided) parts.push("Undecided");
-    if (status) parts.push(STATUS_LABELS[status]);
+    if (status) parts.push(REVIEW_PHASE_LABEL[status]);
   }
 
   if (school) parts.push(SCHOOL_LABELS[school]);
+
+  if (submittedFrom || submittedTo) {
+    const fromLabel = submittedFrom
+      ? formatLondonDateString(submittedFrom)
+      : "the start";
+    const toLabel = submittedTo ? formatLondonDateString(submittedTo) : "now";
+    parts.push(`Received ${fromLabel} – ${toLabel}`);
+  }
+
+  if (deadlineFrom || deadlineTo) {
+    const fromLabel = deadlineFrom
+      ? formatLondonDateString(deadlineFrom)
+      : "the start";
+    const toLabel = deadlineTo ? formatLondonDateString(deadlineTo) : "now";
+    parts.push(`Submission-by ${fromLabel} – ${toLabel}`);
+  }
 
   if (parts.length === 0) return undefined;
 

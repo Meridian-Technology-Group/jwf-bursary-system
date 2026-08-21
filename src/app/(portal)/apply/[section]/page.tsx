@@ -18,6 +18,7 @@ import { ApplicationSectionType } from "@prisma/client";
 import { getCurrentUser } from "@/lib/auth/roles";
 import { withUserContext, withAdminContext, type RlsRole } from "@/lib/db/prisma";
 import { getApplicationForUser } from "@/lib/db/queries/applications";
+import { getActiveApplicationId } from "@/lib/portal/active-application";
 import { loadSectionPageData } from "@/lib/portal/section-page-data";
 import {
   ensurePrimaryContributor,
@@ -36,6 +37,7 @@ import {
   SLUG_TO_SECTION,
   SECTION_TITLES as CANONICAL_SECTION_TITLES,
 } from "@/lib/portal/sections";
+import { SUBMIT_APPLICATION_LABEL } from "@/lib/portal/declaration-submit";
 
 // ─── Section metadata ─────────────────────────────────────────────────────────
 // Order / slug maps come from the canonical `@/lib/portal/sections` (single
@@ -78,11 +80,12 @@ export default async function SectionPage({ params }: PageProps) {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
 
-  // Load application
+  // Load application (E2: honour the active-application context).
+  const activeApplicationId = await getActiveApplicationId();
   const application = await withUserContext(
     user.id,
     user.role as RlsRole,
-    (tx) => getApplicationForUser(tx, user.id)
+    (tx) => getApplicationForUser(tx, user.id, activeApplicationId)
   );
   if (!application) {
     // No application yet — redirect to portal home
@@ -106,14 +109,23 @@ export default async function SectionPage({ params }: PageProps) {
     (tx) =>
       tx.round.findUnique({
         where: { id: application.roundId },
-        select: { closeDate: true },
+        select: {
+          closeDate: true,
+          // Both typed defaults (E1/D13-8) — a rolling-over draft is judged
+          // against the round's rolling date, not the NEW one.
+          defaultSubmissionDeadlineNew: true,
+          defaultSubmissionDeadlineRolling: true,
+        },
       })
   );
   if (
     deadlineRound &&
     isSubmissionDeadlinePassed(
-      { submissionDeadlineAt: application.submissionDeadlineAt },
-      { closeDate: deadlineRound.closeDate }
+      {
+        submissionDeadlineAt: application.submissionDeadlineAt,
+        applicationType: application.applicationType,
+      },
+      deadlineRound
     )
   ) {
     redirect("/status");
@@ -165,6 +177,7 @@ export default async function SectionPage({ params }: PageProps) {
     parent1Status,
     parent2Status,
     relationshipStatus,
+    dependentChildrenCount,
     parent1Address,
   } = await withUserContext(user.id, user.role as RlsRole, (tx) =>
     loadSectionPageData(tx, application.id, sectionType, ownerContributorId)
@@ -195,20 +208,28 @@ export default async function SectionPage({ params }: PageProps) {
 
   // Wizard wiring:
   //   ADDITIONAL_INFO (step 9) → /apply/review
-  //   DECLARATION (step 10)   → /apply/review  (back button returns to review)
+  //   DECLARATION (step 10)   → /apply/review  (both directions: Back returns
+  //                             there, and a plain SAVE now lands there too —
+  //                             that IS the "Review" action of the D4/CF-32
+  //                             split. Submission leaves via the server
+  //                             action's redirect to /submitted, not via this
+  //                             href, so it is unaffected.)
   //   All other sections      → next section slug as usual
   const nextHref =
-    sectionType === "ADDITIONAL_INFO"
+    sectionType === "ADDITIONAL_INFO" || sectionType === "DECLARATION"
       ? "/apply/review"
       : nextSection
         ? `/apply/${SECTION_TO_SLUG[nextSection]}`
         : "/";
 
+  // The Declaration's commit label comes from the shared constant the sticky
+  // footer also reads, so the two can never disagree again (they used to say
+  // "Submit Application" and "Review and Submit" for the same control).
   const nextLabel =
     sectionType === "ADDITIONAL_INFO"
       ? "Review Application"
       : sectionType === "DECLARATION"
-        ? "Submit Application"
+        ? SUBMIT_APPLICATION_LABEL
         : undefined;
 
   return (
@@ -231,6 +252,7 @@ export default async function SectionPage({ params }: PageProps) {
       parent1EmploymentStatus={parent1Status}
       parent2EmploymentStatus={parent2Status}
       relationshipStatus={relationshipStatus}
+      dependentChildrenCount={dependentChildrenCount}
       nextLabel={nextLabel}
       backHref={backHref}
       nextHref={nextHref}

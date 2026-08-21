@@ -15,32 +15,49 @@
  */
 
 import { notFound, redirect } from "next/navigation";
+import type { ReactNode } from "react";
 import type { Decimal } from "@prisma/client/runtime/library";
 import { requireRole, Role, type CurrentUser } from "@/lib/auth/roles";
 import {
   getApplicationWithDetails,
-  getSectionData,
 } from "@/lib/db/queries/applications";
 import { getApplicationContributors } from "@/lib/db/queries/contributors";
-import { buildContributorLabelMap } from "@/lib/contributors/dual-view";
 import { getAssessment } from "@/lib/db/queries/assessments";
-import { getConfigsForAssessment } from "@/lib/db/queries/reference-tables";
+import {
+  getConfigsForAssessment,
+  getSchoolFeesForYear,
+  getReferenceBundleRows,
+} from "@/lib/db/queries/reference-tables";
+import { resolveReferenceBundle } from "@/lib/assessment/v2/reference-bundle";
+import { selectEngineVersion } from "@/lib/assessment/engine-version";
+import { emptyAssessmentPrefill } from "@/lib/assessment/v2/prefill";
+import {
+  AssessmentFormV2,
+  type SerialisedAssessmentV2,
+  type AssessmentV2Prefill,
+} from "@/components/admin/assessment-form-v2";
+import type {
+  AssessorIncomeRecord,
+  PropertyAssetsRecord,
+  DebtsRecord,
+  SiblingDetail,
+} from "@/types/assessment-v2";
+import type { EntryYearGroupCode } from "@/lib/assessment/schooling-years";
 import { feeYearLabels } from "@/lib/assessment/fee-year";
-import { getPreviousAssessment } from "@/lib/db/queries/reassessment";
+import {
+  getPreviousAssessment,
+  getPreviousWatchOutNotes,
+} from "@/lib/db/queries/reassessment";
 import { getSiblingLinks } from "@/lib/db/queries/siblings";
 import { withUserContext, type RlsRole } from "@/lib/db/prisma";
 import { YearComparison } from "@/components/admin/year-comparison";
 import { BenchmarkDisplay } from "@/components/admin/benchmark-display";
-import { SplitScreen } from "@/components/admin/split-screen";
 import { AssessmentForm, type SerialisedAssessment } from "@/components/admin/assessment-form";
-import { AssessmentSynopsis } from "@/components/admin/assessment-synopsis";
-import { HouseholdDecisionAid } from "@/components/admin/household-decision-aid";
-import { deriveHouseholdFromSources, type HouseholdSources } from "@/lib/household/from-sections";
 import { deriveReviewPhase } from "@/lib/applications/status";
 import { BeginAssessmentButton } from "@/components/admin/begin-assessment-button";
+import { ReopenAssessmentBanner } from "@/components/admin/reopen-assessment-banner";
 import { SecondParentGate } from "@/components/admin/second-parent-gate";
-import { DocumentListClient } from "@/components/admin/document-list-client";
-import { ClipboardList } from "lucide-react";
+import { ClipboardList, Lightbulb } from "lucide-react";
 
 export const metadata = {
   title: "Assessment",
@@ -120,6 +137,62 @@ async function ReassessmentContext({
   );
 }
 
+// ─── Account context bar (CALC-10) ─────────────────────────────────────────────
+
+interface AccountContextBarProps {
+  applicationId: string;
+  bursaryAccountId: string;
+  user: CurrentUser;
+}
+
+/**
+ * CALC-10 — the "Assessor's wizard" callout: the most recently COMPLETED
+ * assessment's `watchOutNotes` for this bursary account, excluding the current
+ * application. Renders nothing when there is no previous note, so it never adds
+ * empty chrome to the page.
+ *
+ * Epic 13 (C4b / D13-1a): this bar also carried a read-only fees-account-code
+ * field. That column is gone — reconciliation now rides on
+ * `Application.reference` — so the account lookup and the two-way render guard
+ * went with it, leaving the callout as the bar's only content.
+ */
+async function AccountContextBar({
+  applicationId,
+  bursaryAccountId,
+  user,
+}: AccountContextBarProps) {
+  const watchOut = await withUserContext(
+    user.id,
+    user.role as RlsRole,
+    (tx) => getPreviousWatchOutNotes(tx, bursaryAccountId, applicationId)
+  );
+
+  if (!watchOut) return null;
+
+  return (
+    <div className="mb-5">
+      <div
+        role="note"
+        aria-label="Assessor's wizard"
+        className="flex items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3"
+      >
+        <Lightbulb
+          className="mt-0.5 h-4 w-4 shrink-0 text-amber-600"
+          aria-hidden="true"
+        />
+        <div>
+          <p className="text-sm font-semibold text-amber-900">
+            Assessor&apos;s wizard — from {watchOut.academicYear}
+          </p>
+          <p className="mt-1 whitespace-pre-wrap text-sm text-amber-800">
+            {watchOut.watchOutNotes}
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 interface Props {
@@ -130,7 +203,14 @@ export default async function AssessmentPage({ params }: Props) {
   const user = await requireRole([Role.ADMIN, Role.ASSESSOR, Role.VIEWER]);
   const isViewer = user.role === Role.VIEWER;
 
-  const { application, assessment, contributors, householdSources } =
+  const {
+    application,
+    assessment,
+    contributors,
+    childName,
+    childFirstName,
+    childLastName,
+  } =
     await withUserContext(
       user.id,
       user.role as RlsRole,
@@ -141,34 +221,30 @@ export default async function AssessmentPage({ params }: Props) {
             application: null,
             assessment: null,
             contributors: [],
-            householdSources: null as HouseholdSources | null,
+            childName: null as string | null,
+            childFirstName: null as string | null,
+            childLastName: null as string | null,
           };
         const a = await getAssessment(tx, params.id);
         const ctribs = await getApplicationContributors(tx, params.id);
 
-        // Epic 09: read the PRIMARY contributor's PARENT_DETAILS + OTHER_INFO
-        // JSONB so the household decision aid can derive the scenario from the
-        // same data the form branches on. Defensive — degrades to single
-        // sole-parent when the primary or a section is absent.
-        const primary = ctribs.find((c) => c.role === "PRIMARY");
-        let household: HouseholdSources | null = null;
-        if (primary) {
-          const [pd, oi] = await Promise.all([
-            getSectionData(tx, app.id, "PARENT_DETAILS", primary.id),
-            getSectionData(tx, app.id, "OTHER_INFO", primary.id),
-          ]);
-          household = {
-            parentDetails: (pd?.data ?? null) as HouseholdSources["parentDetails"],
-            otherInfo: (oi?.data ?? null) as HouseholdSources["otherInfo"],
-            applicationCustodyArrangement: app.custodyArrangement ?? null,
-          };
-        }
+        // Part 1 rows 1–2 (CG-22) — the recipient's name. NOT separately
+        // audited: the detail layout's header already discloses (and audits,
+        // NAME_REVEAL) the child's name for every assessment-route render, so
+        // a second entry for the same page view would be a duplicate record
+        // of one disclosure.
+        const nameRow = await tx.application.findUnique({
+          where: { id: params.id },
+          select: { childName: true, childFirstName: true, childLastName: true },
+        });
 
         return {
           application: app,
           assessment: a,
           contributors: ctribs,
-          householdSources: household,
+          childName: nameRow?.childName ?? null,
+          childFirstName: nameRow?.childFirstName ?? null,
+          childLastName: nameRow?.childLastName ?? null,
         };
       }
     );
@@ -184,15 +260,11 @@ export default async function AssessmentPage({ params }: Props) {
     formStatus: application.formStatus,
     assessmentStatus: assessment?.status ?? null,
     outcome: assessment?.outcome ?? null,
+    closedAt: application.closedAt,
   });
   if (reviewPhase === "PRE_SUBMISSION") {
     redirect(`/applications/${params.id}`);
   }
-
-  // Derive the household scenario + handling (Epic 09) for the decision aid.
-  const householdHandling = householdSources
-    ? deriveHouseholdFromSources(householdSources)
-    : null;
 
   // ── Dual-parent context ────────────────────────────────────────────────────
   // The SECONDARY contributor (second parent), if any, plus the PRIMARY's id
@@ -205,26 +277,22 @@ export default async function AssessmentPage({ params }: Props) {
   const hasUnsubmittedSecondary =
     !!secondaryContributor && secondaryContributor.status !== "SUBMITTED";
 
-  // Document grouping passed to the workspace document list. Only built when a
-  // secondary exists, so single-parent applications render exactly as before.
-  const contributorGroups = secondaryContributor
-    ? {
-        labelByContributorId: Object.fromEntries(
-          Object.entries(buildContributorLabelMap(contributors)).map(
-            ([id, v]) => [id, v.shortLabel]
-          )
-        ),
-        primaryContributorId: primaryContributor?.id ?? null,
-      }
-    : undefined;
-
-  const { documents, isReassessment, bursaryAccountId, round } = application;
+  const { isReassessment, bursaryAccountId, round } = application;
 
   // ── No assessment record yet ───────────────────────────────────────────────
 
   if (!assessment) {
     return (
       <div className="space-y-5">
+        {/* CALC-10 — fees account code + assessor's-wizard callout */}
+        {bursaryAccountId && (
+          <AccountContextBar
+            applicationId={params.id}
+            bursaryAccountId={bursaryAccountId}
+            user={user}
+          />
+        )}
+
         {/* Re-assessment context (if applicable) */}
         {isReassessment && bursaryAccountId && (
           <ReassessmentContext
@@ -290,7 +358,7 @@ export default async function AssessmentPage({ params }: Props) {
   // ── Assessment exists — build full workspace ───────────────────────────────
 
   // Load reference configs + sibling links under RLS context
-  const { configs, siblingPayableFees } = await withUserContext(
+  const { configs, siblingPayableFees, feesBySchool } = await withUserContext(
     user.id,
     user.role as RlsRole,
     async (tx) => {
@@ -303,6 +371,24 @@ export default async function AssessmentPage({ params }: Props) {
         // canonical year source.
         round.academicYear
       );
+
+      // Epic 15 M1 (CH-11/14): the v2 form needs BOTH schools' fee pairs so
+      // the assessor's school pick (and mid-assessment switch) recalculates
+      // instantly. Same fee-year anchor as above.
+      const [trinityFees, whitgiftFees] = await Promise.all([
+        getSchoolFeesForYear(tx, "TRINITY", round.academicYear),
+        getSchoolFeesForYear(tx, "WHITGIFT", round.academicYear),
+      ]);
+      const bySchool = {
+        TRINITY: {
+          annual: trinityFees?.currentYearAnnualFees ?? null,
+          nextYear: trinityFees?.nextYearAnnualFees ?? null,
+        },
+        WHITGIFT: {
+          annual: whitgiftFees?.currentYearAnnualFees ?? null,
+          nextYear: whitgiftFees?.nextYearAnnualFees ?? null,
+        },
+      };
 
       // Load sibling payable fees for sequential income absorption.
       // Only siblings with a lower priority order than this child are used —
@@ -324,9 +410,25 @@ export default async function AssessmentPage({ params }: Props) {
           }
         }
       }
-      return { configs: cfgs, siblingPayableFees: siblingFees };
+      return { configs: cfgs, siblingPayableFees: siblingFees, feesBySchool: bySchool };
     }
   );
+
+  // ── CALC-07 — engine dispatch. v1 assessments keep the OLD form/engine/save
+  // path byte-for-byte; only `calculationVersion: 2` assessments get the v2
+  // form. The branch lives here at the page level (implementation-plan §CALC-07).
+  const engineVersion = selectEngineVersion(assessment.calculationVersion);
+
+  // For v2, additionally load the ReferenceBundle. Epic 14 C4 (CG-15/D14-3):
+  // the applicant's submitted income/assets sections are NO LONGER read here —
+  // the assessment opens empty except the sanctioned autofill, and declared
+  // values live on the APPLICATION FORM tab for cross-reference.
+  const v2Sources =
+    engineVersion === "v2"
+      ? await withUserContext(user.id, user.role as RlsRole, async (tx) => ({
+          rows: await getReferenceBundleRows(tx),
+        }))
+      : null;
 
   // Normalise assessment data: convert all Decimal → number for client.
   // This avoids Prisma Decimal objects crossing the server/client boundary.
@@ -417,38 +519,137 @@ export default async function AssessmentPage({ params }: Props) {
   const forceTwoEarner =
     hasSubmittedSecondary && !serialisedAssessment.secondaryParentOverride;
 
-  // Build the form panel
-  const formPanel = (
-    <AssessmentForm
-      assessment={serialisedAssessment}
-      applicationId={params.id}
-      school={application.school}
-      applicationEntryYear={application.entryYear}
-      applicationEntryYearGroup={application.entryYearGroup}
-      familyTypeConfigs={configs.familyTypeConfigs}
-      defaultAnnualFees={configs.annualFees}
-      defaultNextYearAnnualFees={configs.nextYearAnnualFees}
-      currentFeeYearLabel={feeYearLabels(round.academicYear).current ?? undefined}
-      nextFeeYearLabel={feeYearLabels(round.academicYear).next ?? undefined}
-      defaultCouncilTax={configs.councilTax}
-      siblingPayableFees={siblingPayableFees}
-      forceTwoEarner={forceTwoEarner}
-      secondaryParentOverride={serialisedAssessment.secondaryParentOverride}
-    />
-  );
+  // Build the form panel — v1 (untouched) or v2 (full notional model).
+  let formPanel: ReactNode;
+  if (engineVersion === "v2" && v2Sources) {
+    const resolved = resolveReferenceBundle(v2Sources.rows);
 
-  // Build the document panel (left side of split-screen).
-  // The client component owns its own toolbar / empty state. When a second
-  // parent exists, documents are labelled by uploading contributor.
-  const documentListPanel = (
-    <DocumentListClient
-      documents={documents}
-      contributorGroups={contributorGroups}
-    />
-  );
+    if (!resolved.isComplete) {
+      // Fail-soft: reference data not yet seeded on this environment. Render a
+      // clear callout instead of crashing (expected on nonprod until
+      // `seed:reference` has run) — implementation-plan §CALC-07 item 2.
+      formPanel = (
+        <div className="flex h-full flex-col items-center justify-center gap-4 rounded-xl border border-dashed border-amber-300 bg-amber-50 px-6 py-16 text-center">
+          <ClipboardList className="h-12 w-12 text-amber-300" aria-hidden="true" />
+          <div>
+            <p className="text-base font-semibold text-amber-800">
+              Reference data not seeded
+            </p>
+            <p className="mx-auto mt-1.5 max-w-md text-sm text-amber-700">
+              The v2 calculation needs the notional-cost and profiling reference
+              tables, which are not yet populated on this environment. An
+              administrator must run <code>npm run seed:reference</code> before this
+              assessment can be calculated.
+            </p>
+            <p className="mt-3 text-xs text-amber-600">
+              Missing: {resolved.missingTables.join(", ")}
+            </p>
+          </div>
+        </div>
+      );
+    } else {
+      // D14-3: the form opens empty; stored assessor records always win.
+      const prefill: AssessmentV2Prefill = emptyAssessmentPrefill();
+
+      const serialisedV2: SerialisedAssessmentV2 = {
+        id: assessment.id,
+        applicationId: assessment.applicationId,
+        calculationVersion: assessment.calculationVersion,
+        status: assessment.status,
+        assessmentSchool: assessment.assessmentSchool,
+        entrySchoolYear: assessment.entrySchoolYear,
+        familyTypeCategory: assessment.familyTypeCategory,
+        annualFees: toNumber(assessment.annualFees),
+        schoolingYearsRemaining: assessment.schoolingYearsRemaining,
+        scholarshipPct: toNumber(assessment.scholarshipPct),
+        vatRate: toNumber(assessment.vatRate),
+        rentAddBackType: assessment.rentAddBackType,
+        multiPropertyRentAddBack: assessment.multiPropertyRentAddBack,
+        councilTaxSupport: assessment.councilTaxSupport,
+        usesCar: assessment.usesCar,
+        usesPublicTransport: assessment.usesPublicTransport,
+        feeInsuranceAnnual: toNumber(assessment.feeInsuranceAnnual),
+        behindOnFees: assessment.behindOnFees,
+        // Epic 13 / C2 — the manual income-adjustment line.
+        manualAdjustment: toNumber(assessment.manualAdjustment),
+        manualAdjustmentReason: assessment.manualAdjustmentReason,
+        dishonestyFlag: assessment.dishonestyFlag,
+        watchOutNotes: assessment.watchOutNotes,
+        siblingDetails: (assessment.siblingDetails ?? null) as
+          | SiblingDetail[]
+          | null,
+        earners: assessment.earners
+          .filter((e) => e.earnerLabel === "PARENT_1" || e.earnerLabel === "PARENT_2")
+          .map((e) => ({
+            earnerLabel: e.earnerLabel as "PARENT_1" | "PARENT_2",
+            employmentStatus: e.employmentStatus,
+            incomeDetail: (e.incomeDetail ?? null) as AssessorIncomeRecord | null,
+          })),
+        property: assessment.property
+          ? {
+              propertyAssets:
+                (assessment.property.propertyAssets ?? null) as PropertyAssetsRecord | null,
+              debts: (assessment.property.debts ?? null) as DebtsRecord | null,
+              cashSavings: toNumber(assessment.property.cashSavings),
+              isasPepsShares: toNumber(assessment.property.isasPepsShares),
+              schoolAgeChildrenCount: assessment.property.schoolAgeChildrenCount,
+            }
+          : null,
+      };
+
+      formPanel = (
+        <AssessmentFormV2
+          assessment={serialisedV2}
+          applicationId={params.id}
+          referenceBundle={resolved.bundle}
+          prefill={prefill}
+          feesBySchool={feesBySchool}
+          applicationEntryYear={application.entryYear}
+          applicationEntryYearGroup={
+            application.entryYearGroup as EntryYearGroupCode | null
+          }
+          childName={childName}
+          childFirstName={childFirstName}
+          childLastName={childLastName}
+          siblingPayableFees={siblingPayableFees}
+          forceTwoEarner={forceTwoEarner}
+          secondaryParentOverride={serialisedAssessment.secondaryParentOverride}
+          readOnly={isViewer}
+        />
+      );
+    }
+  } else {
+    formPanel = (
+      <AssessmentForm
+        assessment={serialisedAssessment}
+        applicationId={params.id}
+        school={application.school}
+        applicationEntryYear={application.entryYear}
+        applicationEntryYearGroup={application.entryYearGroup}
+        familyTypeConfigs={configs.familyTypeConfigs}
+        defaultAnnualFees={configs.annualFees}
+        defaultNextYearAnnualFees={configs.nextYearAnnualFees}
+        currentFeeYearLabel={feeYearLabels(round.academicYear).current ?? undefined}
+        nextFeeYearLabel={feeYearLabels(round.academicYear).next ?? undefined}
+        defaultCouncilTax={configs.councilTax}
+        siblingPayableFees={siblingPayableFees}
+        forceTwoEarner={forceTwoEarner}
+        secondaryParentOverride={serialisedAssessment.secondaryParentOverride}
+      />
+    );
+  }
 
   return (
     <div className="space-y-5">
+      {/* CALC-10 — fees account code + assessor's-wizard callout */}
+      {bursaryAccountId && (
+        <AccountContextBar
+          applicationId={params.id}
+          bursaryAccountId={bursaryAccountId}
+          user={user}
+        />
+      )}
+
       {/* Re-assessment context (if applicable) */}
       {isReassessment && bursaryAccountId && (
         <ReassessmentContext
@@ -460,28 +661,26 @@ export default async function AssessmentPage({ params }: Props) {
         />
       )}
 
-      {/* Household decision aid (Epic 09) — derived scenario + expected
-          handling; H7/H9 surface as advisory flags, never auto-decline. */}
-      {householdHandling && (
-        <HouseholdDecisionAid handling={householdHandling} />
+      {/* Epic 13 / C1 — completed assessments render read-only; say so, and
+          offer the way back while no outcome has been recorded (D13-2). */}
+      {assessment.status === "COMPLETED" && (
+        <ReopenAssessmentBanner
+          assessmentId={assessment.id}
+          applicationId={params.id}
+          canReopen={!isViewer && assessment.outcome == null}
+        />
       )}
 
-      {/* Split-screen workspace */}
-      <div className="h-[calc(100vh-220px)] min-h-[600px]">
-        <SplitScreen
-          leftPanel={documentListPanel}
-          rightPanel={formPanel}
-        />
-      </div>
+      {/* Epic 15 W2 (CH-08): the household summary card is REMOVED from the
+          assessment view at client request — the household facts stay on the
+          Applicant Data tab / APPLICATION FORM tab. The derived handling still
+          feeds the form's branching below. */}
 
-      {/* Single qualitative synopsis — docked below the workspace, always
-          visible, and editable even after the assessment is COMPLETED. */}
-      <AssessmentSynopsis
-        assessmentId={serialisedAssessment.id}
-        applicationId={params.id}
-        synopsis={serialisedAssessment.synopsis}
-        assessmentCompleted={serialisedAssessment.status === "COMPLETED"}
-      />
+      {/* Epic 14 C3 (CG-23, D14-2): the split-screen documents panel is
+          RETIRED at client request — documents live on the UPLOADED DOCUMENTS
+          DISPLAY tab. This tab is the ASSESSMENT MODEL (1-5) workspace; the
+          synopsis moved to the ASSESSMENT ADMIN tab. */}
+      {formPanel}
     </div>
   );
 }

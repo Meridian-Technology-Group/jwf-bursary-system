@@ -55,10 +55,29 @@ export const ALL_DOCUMENT_SLOTS = [
   // Assets & Liabilities — debt
   "CREDIT_CARD_STATEMENT",
   "LOAN_STATEMENT",
+  "LOAN_AGREEMENT",
   "OTHER_DEBT_DOCUMENT",
 ] as const;
 
 export type DocumentSlot = (typeof ALL_DOCUMENT_SLOTS)[number];
+
+/**
+ * Slot identifiers that are legal in a storage path.
+ *
+ * Deliberately a shape check rather than membership of ALL_DOCUMENT_SLOTS:
+ * several live portal slots (ADDITIONAL_DOCUMENT, COURT_ORDER,
+ * DEATH_CERTIFICATE, INSURANCE_POLICY, MAINTENANCE_DECREE_ABSOLUTE …) are not
+ * in that registry, so an allowlist check here would reject working uploads.
+ * What actually matters is that the slot is interpolated into an object key —
+ * so it must not carry a path separator, `..`, or anything else that could
+ * escape `documents/{appId}/…`. SCREAMING_SNAKE_CASE guarantees that.
+ */
+const SLOT_IDENTIFIER_RE = /^[A-Z0-9_]{1,64}$/;
+
+/** True when `slot` is safe to interpolate into a Storage object key. */
+export function isValidSlotIdentifier(slot: string): boolean {
+  return SLOT_IDENTIFIER_RE.test(slot);
+}
 
 // ─── Formatting helpers ───────────────────────────────────────────────────────
 

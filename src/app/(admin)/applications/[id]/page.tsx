@@ -21,7 +21,10 @@ import { deriveReviewPhase } from "@/lib/applications/status";
 import { canEditOnBehalf } from "@/lib/applications/edit-on-behalf";
 import { getSiblingLinks } from "@/lib/db/queries/siblings";
 import { getScheduleForAccount, type ScheduleEntryRow } from "@/lib/db/queries/schedule";
+import { getYoyFinancialsRows } from "@/lib/db/queries/assessments";
+import type { YoyFinancialsTableRow } from "@/lib/assessment/yoy-financials";
 import { ScheduleGrid } from "@/components/admin/schedule-grid";
+import { YoyFinancialsTable } from "@/components/admin/yoy-financials-table";
 import {
   Card,
   CardContent,
@@ -29,10 +32,18 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import {
+  SECTION_LABELS,
+  asProvenanceMap,
+  DataBlock,
+} from "@/components/admin/application-section-cards";
 import { DocumentChecklist } from "@/components/admin/document-checklist";
 import { AdminUpload } from "@/components/admin/admin-upload";
 import { SubmissionDeadlineCard } from "@/components/admin/submission-deadline-card";
-import { effectiveSubmissionDeadline } from "@/lib/rounds/submission-deadline";
+import {
+  effectiveSubmissionDeadline,
+  roundDefaultForType,
+} from "@/lib/rounds/submission-deadline";
 import { SiblingLinkerCard } from "@/components/admin/sibling-linker";
 import { SiblingListCard } from "@/components/admin/sibling-list";
 import type {
@@ -43,248 +54,6 @@ import type {
 export const metadata = {
   title: "Applicant Data",
 };
-
-// ─── Section display config ───────────────────────────────────────────────────
-
-const SECTION_LABELS: Record<ApplicationSectionType, string> = {
-  CHILD_DETAILS: "Child Details",
-  FAMILY_ID: "Family Identity",
-  PARENT_DETAILS: "Parent Details",
-  DEPENDENT_CHILDREN: "Dependent Children",
-  DEPENDENT_ELDERLY: "Dependent Elderly",
-  OTHER_INFO: "Other Information",
-  PARENTS_INCOME: "Parents' Income",
-  ASSETS_LIABILITIES: "Assets & Liabilities",
-  ADDITIONAL_INFO: "Additional Information",
-  DECLARATION: "Declaration",
-};
-
-// ─── Assessor provenance (CR-001) ─────────────────────────────────────────────
-// `application_sections.assessor_provenance` maps leaf dot-paths (matching the
-// DataBlock recursion, e.g. "parent1Contact.addressLine1", "children.0.fullName")
-// to who entered the value on the applicant's behalf. Shown to ALL staff roles
-// including VIEWER — the badges indicate data origin, not an action.
-
-/** Display-side provenance entry — fields are optional defensively. */
-interface ProvenanceDisplayEntry {
-  editedByName?: string;
-  editedAt?: string;
-}
-
-type ProvenanceDisplayMap = Record<string, ProvenanceDisplayEntry>;
-
-/**
- * Parses stored provenance JSONB defensively: non-objects (null, arrays,
- * primitives) become `{}` and malformed entries are dropped.
- */
-function asProvenanceMap(raw: unknown): ProvenanceDisplayMap {
-  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return {};
-  const map: ProvenanceDisplayMap = {};
-  for (const [path, entry] of Object.entries(raw)) {
-    if (typeof entry !== "object" || entry === null || Array.isArray(entry)) {
-      continue;
-    }
-    const { editedByName, editedAt } = entry as Record<string, unknown>;
-    map[path] = {
-      editedByName:
-        typeof editedByName === "string" ? editedByName : undefined,
-      editedAt: typeof editedAt === "string" ? editedAt : undefined,
-    };
-  }
-  return map;
-}
-
-function provenancePillTitle(
-  entry: ProvenanceDisplayEntry
-): string | undefined {
-  if (!entry.editedByName) return undefined;
-  const date = entry.editedAt ? new Date(entry.editedAt) : null;
-  if (date && !Number.isNaN(date.getTime())) {
-    return `Entered by ${entry.editedByName} on ${date.toLocaleDateString("en-GB")}`;
-  }
-  return `Entered by ${entry.editedByName}`;
-}
-
-function AssessorPill({ entry }: { entry: ProvenanceDisplayEntry }) {
-  return (
-    <span
-      className="ml-2 inline-block whitespace-nowrap rounded-full bg-purple-100 px-2 py-0.5 text-[11px] text-purple-700"
-      title={provenancePillTitle(entry)}
-    >
-      Entered by assessor
-    </span>
-  );
-}
-
-// ─── Field rendering ──────────────────────────────────────────────────────────
-
-function formatValue(
-  key: string,
-  value: unknown,
-  provenance: ProvenanceDisplayMap,
-  path: string
-): React.ReactNode {
-  if (value === null || value === undefined) {
-    return <span className="text-slate-400 italic">Not provided</span>;
-  }
-
-  if (typeof value === "boolean") {
-    return (
-      <span
-        className={
-          value ? "text-green-700 font-medium" : "text-slate-500"
-        }
-      >
-        {value ? "Yes" : "No"}
-      </span>
-    );
-  }
-
-  if (typeof value === "number") {
-    // Currency fields
-    const currencyKeys = [
-      "amount",
-      "fees",
-      "income",
-      "pay",
-      "salary",
-      "pension",
-      "benefits",
-      "value",
-      "balance",
-      "rent",
-      "dividends",
-      "profit",
-      "interest",
-      "credits",
-      "bonds",
-      "maintenance",
-      "bursaries",
-    ];
-    const isCurrency = currencyKeys.some((k) =>
-      key.toLowerCase().includes(k)
-    );
-    if (isCurrency) {
-      return (
-        <span className="font-mono">
-          {new Intl.NumberFormat("en-GB", {
-            style: "currency",
-            currency: "GBP",
-          }).format(value)}
-        </span>
-      );
-    }
-    return <span>{String(value)}</span>;
-  }
-
-  if (typeof value === "string") {
-    // Skip document ID fields — they are displayed separately
-    if (key.toLowerCase().includes("documentid")) {
-      return <span className="text-slate-400 italic text-xs">Document ref</span>;
-    }
-    return <span>{value}</span>;
-  }
-
-  if (Array.isArray(value)) {
-    if (value.length === 0) {
-      return <span className="text-slate-400 italic">None</span>;
-    }
-    return (
-      <ol className="ml-4 list-decimal space-y-1">
-        {value.map((item, i) => {
-          // Array elements extend the dot-path with their numeric index
-          // ("children.0.fullName"), matching diffSectionPaths.
-          const itemPath = `${path}.${i}`;
-          const itemEntry = provenance[itemPath];
-          return (
-            <li key={i} className="text-slate-700">
-              {typeof item === "object" ? (
-                <DataBlock
-                  data={item as Record<string, unknown>}
-                  indent
-                  provenance={provenance}
-                  pathPrefix={itemPath}
-                />
-              ) : (
-                <>
-                  {String(item)}
-                  {itemEntry && <AssessorPill entry={itemEntry} />}
-                </>
-              )}
-            </li>
-          );
-        })}
-      </ol>
-    );
-  }
-
-  if (typeof value === "object") {
-    return (
-      <DataBlock
-        data={value as Record<string, unknown>}
-        indent
-        provenance={provenance}
-        pathPrefix={path}
-      />
-    );
-  }
-
-  return <span>{String(value)}</span>;
-}
-
-function humaniseKey(key: string): string {
-  // Convert camelCase to "Title Case With Spaces"
-  return key
-    .replace(/([A-Z])/g, " $1")
-    .replace(/^./, (s) => s.toUpperCase())
-    .trim();
-}
-
-function DataBlock({
-  data,
-  indent = false,
-  provenance = {},
-  pathPrefix = "",
-}: {
-  data: Record<string, unknown>;
-  indent?: boolean;
-  provenance?: ProvenanceDisplayMap;
-  pathPrefix?: string;
-}) {
-  const entries = Object.entries(data);
-  if (entries.length === 0)
-    return <span className="text-slate-400 italic">Empty</span>;
-
-  return (
-    <dl
-      className={
-        indent
-          ? "space-y-1 border-l-2 border-neutral-200 pl-3 my-1"
-          : "space-y-3"
-      }
-    >
-      {entries.map(([key, val]) => {
-        const path = pathPrefix ? `${pathPrefix}.${key}` : key;
-        // Provenance paths are leaf paths, so containers never match —
-        // the pill only ever lands on the leaf row that was edited.
-        const entry = provenance[path];
-        return (
-          <div key={key} className="flex flex-col gap-0.5 sm:flex-row sm:gap-4">
-            <dt className="min-w-[180px] text-xs font-medium text-slate-500 shrink-0">
-              {humaniseKey(key)}
-            </dt>
-            <dd className="text-sm text-slate-700">
-              {formatValue(key, val, provenance, path)}
-              {entry && <AssessorPill entry={entry} />}
-            </dd>
-          </div>
-        );
-      })}
-    </dl>
-  );
-}
-
-// ─── Page ─────────────────────────────────────────────────────────────────────
 
 interface Props {
   params: { id: string };
@@ -301,6 +70,7 @@ export default async function ApplicantDataPage({ params }: Props) {
     contributors,
     scheduleEntries,
     accountStatus,
+    yoyRows,
   } = await withUserContext(user.id, user.role as RlsRole, async (tx) => {
     const app = await getApplicationWithDetails(tx, params.id);
     if (!app)
@@ -311,6 +81,7 @@ export default async function ApplicantDataPage({ params }: Props) {
         contributors: [],
         scheduleEntries: [] as ScheduleEntryRow[],
         accountStatus: null as BursaryAccountStatus | null,
+        yoyRows: [] as YoyFinancialsTableRow[],
       };
     const siblings = app.bursaryAccountId
       ? await getSiblingLinks(tx, app.bursaryAccountId)
@@ -324,6 +95,11 @@ export default async function ApplicantDataPage({ params }: Props) {
           select: { status: true },
         })
       : null;
+    // CALC-10 — YoY financials history (read-only projection over the
+    // account's COMPLETED assessments; no new write path).
+    const yoy = app.bursaryAccountId
+      ? await getYoyFinancialsRows(tx, app.bursaryAccountId)
+      : [];
     const revealed = await getApplicationNamesForReveal(tx, app.id, user.id);
     const ctribs = await getApplicationContributors(tx, params.id);
     return {
@@ -333,6 +109,7 @@ export default async function ApplicantDataPage({ params }: Props) {
       contributors: ctribs,
       scheduleEntries: schedule,
       accountStatus: account?.status ?? null,
+      yoyRows: yoy,
     };
   });
 
@@ -348,8 +125,18 @@ export default async function ApplicantDataPage({ params }: Props) {
   // this display and Epic 05's parent countdown agree.
   const isAdmin = user.role === Role.ADMIN;
   const effective = effectiveSubmissionDeadline(
-    { submissionDeadlineAt: application.submissionDeadlineAt },
-    { closeDate: application.round.closeDate }
+    {
+      submissionDeadlineAt: application.submissionDeadlineAt,
+      applicationType: application.applicationType,
+    },
+    application.round
+  );
+  // The round default that actually applies to THIS application (E1/D13-8) —
+  // NEW and ROLLING_OVER read different columns, so the card must be shown the
+  // one on this application's clock, not "the round default" in the abstract.
+  const roundDefaultDeadline = roundDefaultForType(
+    application.round,
+    application.applicationType
   );
 
   // ── Edit on behalf (CR-001) ─────────────────────────────────────────────────
@@ -361,6 +148,7 @@ export default async function ApplicantDataPage({ params }: Props) {
     formStatus: application.formStatus,
     assessmentStatus: application.assessment?.status ?? null,
     outcome: application.assessment?.outcome ?? null,
+    closedAt: application.closedAt,
   });
   const showEditOnBehalf =
     canEditOnBehalf(reviewPhase) &&
@@ -426,6 +214,9 @@ export default async function ApplicantDataPage({ params }: Props) {
           </p>
         </div>
 
+        {/* CALC-10 — YoY financials history */}
+        {bursaryAccountId && <AccountAdminSection yoyRows={yoyRows} />}
+
         {/* Forward schedule — shown when the account is linked (Epic 10) */}
         {bursaryAccountId && (
           <ScheduleGrid
@@ -434,7 +225,6 @@ export default async function ApplicantDataPage({ params }: Props) {
             canManage={user.role === Role.ADMIN}
             accountId={bursaryAccountId}
             accountStatus={accountStatus ?? "ACTIVE"}
-            canWithdraw={isAssessor}
           />
         )}
 
@@ -475,8 +265,12 @@ export default async function ApplicantDataPage({ params }: Props) {
               : null
           }
           roundCloseDate={application.round.closeDate.toISOString()}
+          roundDefaultDeadline={
+            roundDefaultDeadline ? roundDefaultDeadline.toISOString() : null
+          }
+          applicationType={application.applicationType}
           effectiveDeadline={effective.deadline.toISOString()}
-          isOverride={effective.isOverride}
+          source={effective.source}
         />
       )}
 
@@ -542,6 +336,9 @@ export default async function ApplicantDataPage({ params }: Props) {
         );
       })}
 
+      {/* CALC-10 — YoY financials history */}
+      {bursaryAccountId && <AccountAdminSection yoyRows={yoyRows} />}
+
       {/* Forward schedule — only when the application has a bursary account (Epic 10) */}
       {bursaryAccountId && (
         <ScheduleGrid
@@ -550,7 +347,6 @@ export default async function ApplicantDataPage({ params }: Props) {
           canManage={user.role === Role.ADMIN}
           accountId={bursaryAccountId}
           accountStatus={accountStatus ?? "ACTIVE"}
-          canWithdraw={isAssessor}
         />
       )}
 
@@ -612,6 +408,39 @@ function SiblingSection({
           />
         )}
       </div>
+    </section>
+  );
+}
+
+// ─── Account Admin Section (CALC-10) ───────────────────────────────────────────
+
+/**
+ * Epic 13 (C4b / D13-1a): this section used to pair the fees-account-code
+ * editor with the YoY history. The account no longer exposes any identifier —
+ * reconciliation against the fees system happens on `Application.reference` —
+ * so only the read-only YoY projection remains, and the section needs neither
+ * the account id nor an edit permission.
+ */
+interface AccountAdminSectionProps {
+  yoyRows: YoyFinancialsTableRow[];
+}
+
+function AccountAdminSection({ yoyRows }: AccountAdminSectionProps) {
+  return (
+    <section
+      aria-labelledby="account-admin-heading"
+      className="space-y-3 rounded-xl border border-slate-200 bg-white p-5 shadow-sm"
+    >
+      <h2
+        id="account-admin-heading"
+        className="text-sm font-semibold text-slate-700"
+      >
+        Account Admin
+      </h2>
+
+      {/* CALC-10 — YoY financials history table, mirroring the workbook's
+          per-assessment-year comparison (gap-analysis.md §2.2 rows 195–203). */}
+      <YoyFinancialsTable rows={yoyRows} />
     </section>
   );
 }

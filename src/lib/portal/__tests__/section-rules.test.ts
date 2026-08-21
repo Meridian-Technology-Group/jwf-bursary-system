@@ -108,6 +108,55 @@ describe("PARENTS_INCOME (status-driven sub-tables — D3)", () => {
     expect(gapIds("PARENTS_INCOME", { parent1Income: {} })).toEqual([]);
   });
 
+  // CF-21 (A4). The zero-income household's block was diagnosed as a VALIDATION
+  // failure, not a phantom document gap. This pins the other half of that
+  // diagnosis: with every sub-block present for BOTH parents and every figure at
+  // £0 — the exact blob the form's mount-time seeding produces — the document
+  // rules emit nothing, because every PARENTS_INCOME rule is `requiredIfValueGt0`
+  // and no upload control is even rendered at £0. If a future rule is added here
+  // that fires at zero, this test fails and the zero path is blocked again.
+  it("no document rules fire for an all-zero blob — both parents (CF-21)", () => {
+    const zeroSubBlocks = {
+      employed: { annualSalaryPaye: 0 },
+      selfEmployed: {
+        grossSalaried: 0,
+        propertyIncome: 0,
+        dividends: 0,
+        otherInvestmentIncome: 0,
+      },
+      benefits: {
+        universalCredit: 0,
+        housingBenefit: 0,
+        childBenefit: 0,
+        childWorkingTaxCredit: 0,
+        esa: 0,
+        pipOrDla: 0,
+        carersAllowance: 0,
+        childcareSupport: 0,
+        other: 0,
+      },
+      unemployed: {
+        finalGrossPay: 0,
+        redundancy: 0,
+        jsa: 0,
+        grantSupport: 0,
+        leavePay: 0,
+      },
+      retired: { statePension: 0, privatePension: 0 },
+      divorcedSeparated: { maintenanceReceived: 0, sharedCustodyNote: "" },
+      thirdParty: { incomeSupportReceived: 0, supportNote: "" },
+      total: 0,
+      noIncomeConfirmed: true,
+      documentsConfirmed: false,
+    };
+    expect(
+      gapIds("PARENTS_INCOME", {
+        parent1Income: zeroSubBlocks,
+        parent2Income: zeroSubBlocks,
+      })
+    ).toEqual([]);
+  });
+
   it("employed: BOTH P60 and March payslip required when salary > 0, not when 0", () => {
     expect(
       gapIds("PARENTS_INCOME", {
@@ -174,6 +223,143 @@ describe("PARENTS_INCOME (status-driven sub-tables — D3)", () => {
       "PARENTS_INCOME:UC_MONTHLY_PARENT_1",
       "PARENTS_INCOME:UC_STATEMENT_PARENT_1",
     ]);
+  });
+
+  // ── CF-28 — the UC monthly rule means "3", not "at least one" ────────────
+  //
+  // The label always promised 3 monthly documents; before D2 a single upload
+  // satisfied it, so applications arrived carrying one month's evidence. The
+  // statement is a separate rule, so Universal Credit needs 4 documents total.
+  it("benefits: two monthly UC documents are NOT enough", () => {
+    expect(
+      gapIds("PARENTS_INCOME", {
+        parent1Income: {
+          benefits: {
+            universalCredit: 1200,
+            ucStatementDocumentId: "stmt",
+            ucMonthlyDocumentIds: ["m1", "m2"],
+          },
+        },
+      })
+    ).toEqual(["PARENTS_INCOME:UC_MONTHLY_PARENT_1"]);
+  });
+
+  it("benefits: three monthly UC documents + the statement clear the section", () => {
+    expect(
+      gapIds("PARENTS_INCOME", {
+        parent1Income: {
+          benefits: {
+            universalCredit: 1200,
+            ucStatementDocumentId: "stmt",
+            ucMonthlyDocumentIds: ["m1", "m2", "m3"],
+          },
+        },
+      })
+    ).toEqual([]);
+  });
+
+  it("benefits: three monthly UC documents do NOT stand in for the statement", () => {
+    expect(
+      gapIds("PARENTS_INCOME", {
+        parent1Income: {
+          benefits: {
+            universalCredit: 1200,
+            ucMonthlyDocumentIds: ["m1", "m2", "m3"],
+          },
+        },
+      })
+    ).toEqual(["PARENTS_INCOME:UC_STATEMENT_PARENT_1"]);
+  });
+
+  it("benefits: the same document id in all three UC monthly entries counts once", () => {
+    // "Could the form detect whether one same document is uploaded three
+    // times?" — at the id level, yes. (Byte-identical *re-uploads* are caught
+    // separately, by the digest check in the confirm route.)
+    expect(
+      gapIds("PARENTS_INCOME", {
+        parent1Income: {
+          benefits: {
+            universalCredit: 1200,
+            ucStatementDocumentId: "stmt",
+            ucMonthlyDocumentIds: ["same", "same", "same"],
+          },
+        },
+      })
+    ).toEqual(["PARENTS_INCOME:UC_MONTHLY_PARENT_1"]);
+  });
+
+  it("benefits: positional gaps (null entries) never count as documents", () => {
+    expect(
+      gapIds("PARENTS_INCOME", {
+        parent1Income: {
+          benefits: {
+            universalCredit: 1200,
+            ucStatementDocumentId: "stmt",
+            ucMonthlyDocumentIds: [null, "m2", null],
+          },
+        },
+      })
+    ).toEqual(["PARENTS_INCOME:UC_MONTHLY_PARENT_1"]);
+  });
+
+  it("benefits: the three UC monthly upload slots satisfy the rule on their own", () => {
+    const blob = {
+      parent1Income: {
+        benefits: { universalCredit: 1200, ucStatementDocumentId: "stmt" },
+      },
+    };
+    // Two of the three repeat slots — still short.
+    expect(
+      gapIds(
+        "PARENTS_INCOME",
+        blob,
+        new Set(["UC_MONTHLY_1_PARENT_1", "UC_MONTHLY_2_PARENT_1"])
+      )
+    ).toEqual(["PARENTS_INCOME:UC_MONTHLY_PARENT_1"]);
+    // All three.
+    expect(
+      gapIds(
+        "PARENTS_INCOME",
+        blob,
+        new Set([
+          "UC_MONTHLY_1_PARENT_1",
+          "UC_MONTHLY_2_PARENT_1",
+          "UC_MONTHLY_3_PARENT_1",
+        ])
+      )
+    ).toEqual([]);
+    // The legacy single slot still counts as one of the three, so a document
+    // uploaded before D2 is not thrown away.
+    expect(
+      gapIds(
+        "PARENTS_INCOME",
+        blob,
+        new Set([
+          "UC_MONTHLY_PARENT_1",
+          "UC_MONTHLY_2_PARENT_1",
+          "UC_MONTHLY_3_PARENT_1",
+        ])
+      )
+    ).toEqual([]);
+  });
+
+  it("benefits: ids and slots are the same uploads, so they do not add up", () => {
+    // 2 saved ids + the same 2 uploads seen as slots must not reach 3.
+    expect(
+      gapIds(
+        "PARENTS_INCOME",
+        {
+          parent1Income: {
+            benefits: {
+              universalCredit: 1200,
+              ucStatementDocumentId: "stmt",
+              ucMonthlyDocumentIds: ["m1", "m2"],
+            },
+          },
+        },
+        new Set(["UC_MONTHLY_1_PARENT_1", "UC_MONTHLY_2_PARENT_1"])
+      )
+    ).toEqual(["PARENTS_INCOME:UC_MONTHLY_PARENT_1"]);
   });
 
   it("benefits: Child Benefit value alone requires NO upload (workbook exception)", () => {
@@ -282,27 +468,40 @@ describe("ASSETS_LIABILITIES", () => {
     ).toEqual(["ASSETS_LIABILITIES:BANK_STATEMENT_CURRENT_PARENT_2"]);
   });
   it("mortgage statement required when hasMortgage, satisfied by the doc", () => {
-    expect(gapIds("ASSETS_LIABILITIES", { ...base, hasMortgage: true })).toEqual([
-      "ASSETS_LIABILITIES:MAIN_MORTGAGE_STATEMENT",
-    ]);
+    expect(
+      gapIds("ASSETS_LIABILITIES", { ...base, propertyOwnership: "OWN", hasMortgage: true })
+    ).toEqual(["ASSETS_LIABILITIES:MAIN_MORTGAGE_STATEMENT"]);
     expect(
       gapIds("ASSETS_LIABILITIES", {
         ...base,
+        propertyOwnership: "OWN",
         hasMortgage: true,
         mortgageStatementDocumentId: "m",
       })
     ).toEqual([]);
   });
   it("rent-arrangement uploads gate by type", () => {
-    expect(gapIds("ASSETS_LIABILITIES", { ...base, rentAgreementType: "PRIVATE" })).toEqual([
-      "ASSETS_LIABILITIES:TENANCY_AGREEMENT",
-    ]);
     expect(
-      gapIds("ASSETS_LIABILITIES", { ...base, rentAgreementType: "COUNCIL_NO_RENT" })
+      gapIds("ASSETS_LIABILITIES", {
+        ...base,
+        propertyOwnership: "RENT",
+        rentAgreementType: "PRIVATE",
+      })
+    ).toEqual(["ASSETS_LIABILITIES:TENANCY_AGREEMENT"]);
+    expect(
+      gapIds("ASSETS_LIABILITIES", {
+        ...base,
+        propertyOwnership: "RENT",
+        rentAgreementType: "COUNCIL_NO_RENT",
+      })
     ).toEqual(["ASSETS_LIABILITIES:HOUSING_BENEFIT_LETTER"]);
-    expect(gapIds("ASSETS_LIABILITIES", { ...base, rentAgreementType: "RELATIVES" })).toEqual([
-      "ASSETS_LIABILITIES:RELATIVE_LETTER",
-    ]);
+    expect(
+      gapIds("ASSETS_LIABILITIES", {
+        ...base,
+        propertyOwnership: "RENT",
+        rentAgreementType: "RELATIVES",
+      })
+    ).toEqual(["ASSETS_LIABILITIES:RELATIVE_LETTER"]);
   });
   it("investment docs required per parent when stocks/bonds declared", () => {
     expect(gapIds("ASSETS_LIABILITIES", { ...base, parent1OwnsInvestments: true })).toEqual([
@@ -316,6 +515,86 @@ describe("ASSETS_LIABILITIES", () => {
     expect(
       gapIds("ASSETS_LIABILITIES", { ...base, hasPersonalDebt: true, creditCardBalance: 0 })
     ).toEqual([]);
+  });
+
+  // CF-30. A declared credit-agency loan makes BOTH the statement (previously
+  // labelled optional) and the new agreement compulsory.
+  it("loan statement AND agreement required when a loan balance is declared", () => {
+    expect(
+      gapIds("ASSETS_LIABILITIES", { ...base, hasPersonalDebt: true, loansToAgencies: 4000 })
+    ).toEqual([
+      "ASSETS_LIABILITIES:LOAN_AGREEMENT",
+      "ASSETS_LIABILITIES:LOAN_STATEMENT",
+    ]);
+    expect(
+      gapIds("ASSETS_LIABILITIES", {
+        ...base,
+        hasPersonalDebt: true,
+        loansToAgencies: 4000,
+        loanStatementDocumentIds: ["s"],
+      })
+    ).toEqual(["ASSETS_LIABILITIES:LOAN_AGREEMENT"]);
+    expect(
+      gapIds("ASSETS_LIABILITIES", {
+        ...base,
+        hasPersonalDebt: true,
+        loansToAgencies: 4000,
+        loanStatementDocumentIds: ["s"],
+        loanAgreementDocumentIds: ["a"],
+      })
+    ).toEqual([]);
+  });
+
+  it("no loan documents required when no loan balance is declared", () => {
+    expect(
+      gapIds("ASSETS_LIABILITIES", { ...base, hasPersonalDebt: true, loansToAgencies: 0 })
+    ).toEqual([]);
+    expect(
+      gapIds("ASSETS_LIABILITIES", { ...base, hasPersonalDebt: false })
+    ).toEqual([]);
+  });
+
+  // ── Invisible-requirement guard ────────────────────────────────────────────
+  // `ConditionalField` hides its children with CSS only — it never unmounts
+  // them — so a value entered in a branch SURVIVES in the saved blob after the
+  // branch is switched off. Every rule whose upload lives inside a branch must
+  // therefore re-check that branch, or it raises a gap pointing at a control
+  // the applicant cannot see, and the section can never be completed (the CF-17
+  // / CF-21 failure mode). These pin the guards.
+  it("stale loan balance raises nothing once personal debt is switched back to no", () => {
+    expect(
+      gapIds("ASSETS_LIABILITIES", {
+        ...base,
+        hasPersonalDebt: false,
+        loansToAgencies: 4000,
+        creditCardBalance: 500,
+      })
+    ).toEqual([]);
+  });
+
+  it("stale hasMortgage raises nothing once the household switches OWN → RENT", () => {
+    expect(
+      gapIds("ASSETS_LIABILITIES", {
+        ...base,
+        propertyOwnership: "RENT",
+        rentAgreementType: "PRIVATE",
+        tenancyAgreementDocumentId: "t",
+        hasMortgage: true,
+      })
+    ).toEqual([]);
+  });
+
+  it("stale rentAgreementType raises nothing once the household switches RENT → OWN", () => {
+    for (const type of ["PRIVATE", "COUNCIL", "COUNCIL_NO_RENT", "RELATIVES"]) {
+      expect(
+        gapIds("ASSETS_LIABILITIES", {
+          ...base,
+          propertyOwnership: "OWN",
+          hasMortgage: false,
+          rentAgreementType: type,
+        })
+      ).toEqual([]);
+    }
   });
 });
 
@@ -332,6 +611,7 @@ describe("DEPENDENT_ELDERLY — per in-care elder invoice (PR-3)", () => {
   it("requires an invoice for each in-care elder", () => {
     expect(
       gapIds("DEPENDENT_ELDERLY", {
+        hasElderlyInCare: true,
         elderlyInCare: [{ firstName: "Ada" }, { firstName: "Bob" }],
       })
     ).toEqual([
@@ -343,9 +623,20 @@ describe("DEPENDENT_ELDERLY — per in-care elder invoice (PR-3)", () => {
     expect(
       gapIds(
         "DEPENDENT_ELDERLY",
-        { elderlyInCare: [{ firstName: "Ada", careHomeInvoiceDocumentId: "x" }, { firstName: "Bob" }] },
+        {
+          hasElderlyInCare: true,
+          elderlyInCare: [{ firstName: "Ada", careHomeInvoiceDocumentId: "x" }, { firstName: "Bob" }],
+        },
         new Set(["CARE_HOME_INVOICE_1"])
       )
+    ).toEqual([]);
+  });
+  it("requires nothing for a stale elder left behind by hasElderlyInCare = false", () => {
+    expect(
+      gapIds("DEPENDENT_ELDERLY", {
+        hasElderlyInCare: false,
+        elderlyInCare: [{ firstName: "Ada" }],
+      })
     ).toEqual([]);
   });
 });
@@ -374,7 +665,11 @@ describe("OTHER_INFO — court / insurance / maintenance uploads (PR-3)", () => 
 });
 
 describe("ASSETS_LIABILITIES — per other-property mortgage statement (PR-3)", () => {
-  const base = { councilTaxDocumentId: "x", parent1CurrentAccountDocumentIds: ["a"] };
+  const base = {
+    councilTaxDocumentId: "x",
+    parent1CurrentAccountDocumentIds: ["a"],
+    hasOtherProperties: true,
+  };
   it("requires a mortgage statement only for properties with a balance > 0", () => {
     expect(
       gapIds("ASSETS_LIABILITIES", {
@@ -388,6 +683,15 @@ describe("ASSETS_LIABILITIES — per other-property mortgage statement (PR-3)", 
       gapIds("ASSETS_LIABILITIES", {
         ...base,
         otherProperties: [{ mortgageBalance: 100000, mortgageStatementDocumentId: "m" }],
+      })
+    ).toEqual([]);
+  });
+  it("requires nothing for a stale property left behind by hasOtherProperties = false", () => {
+    expect(
+      gapIds("ASSETS_LIABILITIES", {
+        ...base,
+        hasOtherProperties: false,
+        otherProperties: [{ mortgageBalance: 100000 }],
       })
     ).toEqual([]);
   });

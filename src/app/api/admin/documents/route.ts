@@ -22,9 +22,14 @@ import { sniffContentType } from "@/lib/storage/sniff";
 import { createAuditLog } from "@/lib/audit/log";
 
 import { AUDIT_ACTIONS, AUDIT_ENTITY_TYPES } from "@/lib/audit/actions";
-
-const ACCEPTED_MIME = ["application/pdf", "image/jpeg", "image/png"];
-const MAX_SIZE_BYTES = 20 * 1024 * 1024; // 20 MB
+import {
+  ACCEPTED_MIME,
+  MAX_SIZE_MB,
+  MAX_SIZE_BYTES,
+  isWordDocument,
+  UNSUPPORTED_TYPE_MESSAGE,
+  WORD_DOCUMENT_MESSAGE,
+} from "@/lib/uploads/accepted-types";
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
   // ── Auth: staff (ADMIN or ASSESSOR) only ─────────────────────────────────────
@@ -70,13 +75,19 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   // ── File validation ────────────────────────────────────────────────────────
   if (file.size > MAX_SIZE_BYTES) {
     return NextResponse.json(
-      { error: "File too large — maximum 20 MB" },
+      { error: `File too large — maximum ${MAX_SIZE_MB} MB` },
       { status: 422 }
     );
   }
+  // Word (item 14, Story 14.2): checked BEFORE the generic allowlist rejection
+  // so staff get the specific convert-to-PDF guidance rather than the generic
+  // message. Defence-in-depth backstop to admin-upload.tsx's client-side check.
+  if (isWordDocument(file.name, file.type)) {
+    return NextResponse.json({ error: WORD_DOCUMENT_MESSAGE }, { status: 422 });
+  }
   if (!ACCEPTED_MIME.includes(file.type)) {
     return NextResponse.json(
-      { error: "Unsupported file type — please upload PDF, JPG, or PNG" },
+      { error: UNSUPPORTED_TYPE_MESSAGE },
       { status: 422 }
     );
   }
@@ -86,8 +97,11 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   const headerBuf = Buffer.from(await file.slice(0, 8).arrayBuffer());
   const { contentType: verifiedContentType } = sniffContentType(headerBuf);
   if (!verifiedContentType) {
+    // Catches e.g. a Word file renamed to .pdf with a spoofed Content-Type —
+    // isWordDocument() above can't detect that case. Surfaced as the same
+    // shared generic message so staff still learn the accepted formats.
     return NextResponse.json(
-      { error: "File contents do not match an allowed type (PDF, JPG, or PNG)" },
+      { error: UNSUPPORTED_TYPE_MESSAGE },
       { status: 422 }
     );
   }

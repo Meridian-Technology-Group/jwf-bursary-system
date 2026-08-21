@@ -36,7 +36,6 @@ import {
   regenerateScheduleAction,
   toggleScheduleShowOnPortalAction,
 } from "@/app/(admin)/applications/[id]/schedule-actions";
-import { WithdrawAccountDialog } from "@/components/admin/withdraw-account-dialog";
 
 const STATUS_VARIANT: Record<
   ScheduleEntryRow["status"],
@@ -68,7 +67,6 @@ interface ScheduleGridProps {
   /** Current account status — the withdraw control only shows while ACTIVE. */
   accountStatus: BursaryAccountStatus;
   /** True for ADMIN/ASSESSOR — shows the destructive "Withdraw account" control (F1). */
-  canWithdraw: boolean;
 }
 
 export function ScheduleGrid({
@@ -77,7 +75,6 @@ export function ScheduleGrid({
   canManage,
   accountId,
   accountStatus,
-  canWithdraw,
 }: ScheduleGridProps) {
   const router = useRouter();
   const [pendingId, setPendingId] = React.useState<string | null>(null);
@@ -130,17 +127,13 @@ export function ScheduleGrid({
           Assessment Schedule
         </CardTitle>
         <div className="flex items-center gap-2">
-          {accountStatus === "CLOSED" ? (
+          {/* Item 2: account withdrawal is subsumed by the unified
+              application Close (the Manage card) — the old per-account
+              Withdraw dialog is retired so there is exactly one close path. */}
+          {accountStatus === "CLOSED" && (
             <Badge variant="outline" className="text-rose-700 border-rose-200">
               Account closed
             </Badge>
-          ) : (
-            canWithdraw && (
-              <WithdrawAccountDialog
-                accountId={accountId}
-                applicationId={applicationId}
-              />
-            )
           )}
           {canManage && (
             <Button

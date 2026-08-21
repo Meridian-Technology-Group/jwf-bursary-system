@@ -39,7 +39,7 @@ function makeFakeTx(overrides: Record<string, unknown> = {}) {
       findUnique: vi.fn(async () => ({
         id: "acc-1",
         status: "ACTIVE",
-        reference: "BA-1",
+        childName: "Bob Smith",
       })),
       update: vi.fn(async () => ({})),
     },
@@ -91,13 +91,30 @@ describe("withdrawBursaryAccount", () => {
     });
   });
 
+  it("names the child in the audit context, not an account reference (D13-1a)", async () => {
+    // Epic 13 C4b dropped `bursary_accounts.reference`, so the account has no
+    // identifier to interpolate. The child's name is the only human-readable
+    // handle left — this pins that the context uses it and never reintroduces
+    // a `BA-…` string.
+    fakeTx = makeFakeTx();
+    await withdrawBursaryAccount(baseInput);
+
+    const auditArg = (auditMock.mock.calls[0] as unknown[])[1] as {
+      context: string;
+    };
+    expect(auditArg.context).toBe(
+      "Bursary account for Bob Smith withdrawn (closed)"
+    );
+    expect(auditArg.context).not.toMatch(/BA-/);
+  });
+
   it("is idempotent: already-CLOSED account is a no-op (no second closedAt write, no audit)", async () => {
     fakeTx = makeFakeTx({
       bursaryAccount: {
         findUnique: vi.fn(async () => ({
           id: "acc-1",
           status: "CLOSED",
-          reference: "BA-1",
+          childName: "Bob Smith",
         })),
         update: vi.fn(async () => ({})),
       },
@@ -117,7 +134,7 @@ describe("withdrawBursaryAccount", () => {
     expect(res.success).toBe(true);
     expect(fakeTx.bursaryAccount.findUnique).toHaveBeenCalledWith({
       where: { id: "acc-1" },
-      select: { id: true, status: true, reference: true },
+      select: { id: true, status: true, childName: true },
     });
   });
 

@@ -9,6 +9,16 @@
  * The workbook (application-form-scoping.md §6) hard-codes 2025-26; in the build
  * those become the labels produced here.
  *
+ * Epic 14 D2 (CG-01) — documented disagreement, deliberately unresolved: this
+ * rule engine keys the tax year to the ROUND'S academic year alone, so a
+ * next-year application filled in DURING the winter window (before the 12 Apr
+ * cutover, LA-4) is still asked for the (Y-1)/Y tax year even though that year
+ * has not ended yet; Charlotte's scenario table wants the PREVIOUS year there.
+ * Per the Epic 14 plan the rule engine WINS until Brian/Charlotte decide —
+ * the scenario default lives in `round-scenario.ts`/`RoundWindow.defaultTaxYear`
+ * and is NOT read here. Flip point if the decision goes the other way: pass the
+ * scenario's default tax year into `getTaxYearLabels` and prefer it.
+ *
  * Pure module — safe to import on the client (no server-only deps).
  */
 

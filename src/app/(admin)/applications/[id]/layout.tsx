@@ -10,7 +10,10 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { requireRole, Role } from "@/lib/auth/roles";
-import { getApplicationWithDetails } from "@/lib/db/queries/applications";
+import {
+  getApplicationWithDetails,
+  getApplicationChildNameForHeader,
+} from "@/lib/db/queries/applications";
 import { getSecondaryContributor } from "@/lib/db/queries/contributors";
 import { getPriorYearSecondaryContributor } from "@/lib/db/queries/reassessment";
 import { listAssessors } from "@/lib/db/queries/profiles";
@@ -21,10 +24,22 @@ import {
   OutcomeBadge,
 } from "@/components/shared/lifecycle-badges";
 import { deriveReviewPhase } from "@/lib/applications/status";
+import { formatLondonDate } from "@/lib/datetime";
+import { getAllCloseReasons } from "@/lib/db/queries/reference-tables";
 import { ApplicationActions } from "@/components/admin/application-actions";
 import { AssignAssessorSelect } from "@/components/admin/assign-assessor-select";
 import { GdprDeleteAction } from "@/components/admin/gdpr-delete-action";
 import { AddSecondParentCard } from "@/components/admin/add-second-parent-card";
+import { EditReferenceDialog } from "@/components/admin/edit-reference-dialog";
+import { CloseApplicationDialog } from "@/components/admin/close-application-dialog";
+import { AssessmentHeaderActions } from "@/components/admin/assessment-header-actions";
+import { AssessmentLifecycleStrip } from "@/components/admin/assessment-lifecycle-strip";
+import { deriveAssessmentLifecycleState } from "@/lib/assessments/lifecycle-state";
+import {
+  HideOnAssessmentRoute,
+  ManageDisclosure,
+  ShowOnAssessmentRoute,
+} from "@/components/admin/assessment-route-chrome";
 
 function SchoolBadge({ school }: { school: "WHITGIFT" | "TRINITY" }) {
   if (school === "WHITGIFT") {
@@ -47,9 +62,14 @@ interface TabItem {
   label: string;
   href: string;
   isPlaceholder?: boolean;
+  disabled?: boolean;
+  disabledReason?: string;
 }
 
-function getTabItems(applicationId: string): TabItem[] {
+function getTabItems(
+  applicationId: string,
+  { assessmentGated }: { assessmentGated: boolean }
+): TabItem[] {
   return [
     {
       label: "Applicant Data",
@@ -58,6 +78,11 @@ function getTabItems(applicationId: string): TabItem[] {
     {
       label: "Assessment",
       href: `/applications/${applicationId}/assessment`,
+      // B1 gate: the assessment workspace redirects back here until the form is
+      // submitted. Render the tab inert with an explanation rather than letting
+      // the click silently bounce (which reads as the tab being "stuck").
+      disabled: assessmentGated,
+      disabledReason: "Available once the applicant submits their form",
     },
     {
       label: "Recommendation",
@@ -90,12 +115,18 @@ export default async function ApplicationDetailLayout({
     secondary,
     secondaryOverride,
     priorYearSecondary,
+    closeReasons,
+    childName,
   } = await withUserContext(
     user.id,
     user.role as RlsRole,
     async (tx) => {
       const app = await getApplicationWithDetails(tx, params.id);
       const asrs = user.role === Role.ADMIN ? await listAssessors(tx) : [];
+
+      // Active close reasons for the ADMIN-only Close card (item 2/4.1).
+      const reasons =
+        user.role === Role.ADMIN ? await getAllCloseReasons(tx) : [];
 
       // ASSESSORs may only access applications assigned to them
       let ok = true;
@@ -126,13 +157,31 @@ export default async function ApplicationDetailLayout({
           ? await getPriorYearSecondaryContributor(tx, params.id)
           : null;
 
+      // D13-1a: the child's name renders beside the reference in the header,
+      // which is shared by every tab (including Assessment). Audited as a
+      // NAME_REVEAL like every other name disclosure. Skipped when the viewer
+      // is an unassigned ASSESSOR — they are about to be redirected, and an
+      // audit entry claiming a disclosure that never rendered would be false.
+      const child =
+        app && ok
+          ? await getApplicationChildNameForHeader(tx, params.id, user.id)
+          : null;
+
       return {
         application: app,
+        childName: child,
         assessors: asrs,
         assignedOk: ok,
         secondary: sec,
         secondaryOverride: overrideRow?.secondaryParentOverride ?? false,
         priorYearSecondary: prior,
+        closeReasons: reasons
+          .filter((r) => !r.isDeprecated)
+          .map((r) => ({
+            id: r.id,
+            label: r.label,
+            purgeOnClose: r.purgeOnClose,
+          })),
       };
     }
   );
@@ -145,7 +194,26 @@ export default async function ApplicationDetailLayout({
     redirect("/admin");
   }
 
-  const tabs = getTabItems(params.id);
+  // Review phase drives both the primary actions bar and the tab gating. It is
+  // DERIVED from the lifecycle columns (Epic 01 PR-6a), not the deprecated fused
+  // `applications.status`, and mirrors the gate in the assessment workspace page.
+  const reviewPhase = deriveReviewPhase({
+    formStatus: application.formStatus,
+    assessmentStatus: application.assessment?.status ?? null,
+    outcome: application.assessment?.outcome ?? null,
+    closedAt: application.closedAt,
+  });
+
+  // Epic 15 W1/W2 — the four-state strip's input (CH-05, LA15-1).
+  const lifecycleState = deriveAssessmentLifecycleState({
+    assessmentStatus: application.assessment?.status ?? null,
+    outcome: application.assessment?.outcome ?? null,
+    closedAt: application.closedAt,
+  });
+
+  const tabs = getTabItems(params.id, {
+    assessmentGated: reviewPhase === "PRE_SUBMISSION",
+  });
 
   // Secondary "Manage" affordances are demoted beneath the primary outcome
   // actions. Role gating is unchanged from the original layout:
@@ -159,31 +227,53 @@ export default async function ApplicationDetailLayout({
     Boolean(secondary);
   const showManageCard = canManageGdpr || showSecondParent;
 
+  // Unified close (item 2): ADMIN-only, never re-offered once closed.
+  const isClosed = application.closedAt != null;
+  const canClose = user.role === Role.ADMIN && !isClosed;
+
   return (
     <div className="space-y-4">
-      {/* Breadcrumb */}
-      <nav
-        className="flex items-center gap-1.5 text-sm text-slate-500"
-        aria-label="Breadcrumb"
-      >
-        <Link
-          href="/queue"
-          className="hover:text-primary-700 transition-colors"
+      {/* Breadcrumb — hidden on assessment routes (Epic 15 W2 / CH-03: the
+          three stacked layers compress into the single header card). */}
+      <HideOnAssessmentRoute>
+        <nav
+          className="flex items-center gap-1.5 text-sm text-slate-500"
+          aria-label="Breadcrumb"
         >
-          Applications
-        </Link>
-        <span aria-hidden="true">/</span>
-        <span className="font-medium text-slate-700">{application.reference}</span>
-      </nav>
+          <Link
+            href="/queue"
+            className="hover:text-primary-700 transition-colors"
+          >
+            Applications
+          </Link>
+          <span aria-hidden="true">/</span>
+          <span className="font-medium text-slate-700">{application.reference}</span>
+        </nav>
+      </HideOnAssessmentRoute>
 
       {/* Header card */}
       <div className="rounded-xl border border-slate-200 bg-white px-6 py-5 shadow-sm">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
             <div className="flex flex-wrap items-center gap-3 mb-1">
-              <h1 className="font-mono text-2xl font-semibold text-primary-900">
+              <h1 className="flex items-center gap-1 font-mono text-2xl font-semibold text-primary-900">
                 {application.reference}
+                {/* item 11: reference is freely editable by ADMIN at any
+                    lifecycle stage; ASSESSOR/VIEWER see it as plain text. */}
+                {user.role === Role.ADMIN && (
+                  <EditReferenceDialog
+                    applicationId={application.id}
+                    currentReference={application.reference}
+                  />
+                )}
               </h1>
+              {/* D13-1a: the reference is a free-text label, routinely re-edited
+                  to the fees-system code, so the child's name sits beside it. */}
+              {childName && (
+                <span className="text-lg font-medium text-slate-600">
+                  {childName}
+                </span>
+              )}
               <SchoolBadge school={application.school} />
             </div>
             <div className="flex flex-wrap items-center gap-3 text-sm text-slate-500">
@@ -199,29 +289,75 @@ export default async function ApplicationDetailLayout({
             </div>
           </div>
 
-          <div className="flex flex-wrap items-center gap-3">
-            {/* Three independent lifecycles (Epic 01): form → assessment →
-                outcome. Staff see the real internal values. */}
-            <FormStatusBadge
-              status={application.formStatus}
-              applicationType={application.applicationType}
-            />
-            {application.assessment && (
-              <AssessmentStatusBadge status={application.assessment.status} />
-            )}
-            {application.assessment?.outcome && (
-              <OutcomeBadge outcome={application.assessment.outcome} />
-            )}
-            {user.role === Role.ADMIN && (
-              <AssignAssessorSelect
-                applicationId={application.id}
-                currentAssessorId={application.assignedToId}
-                assessors={assessors}
+          {/* Epic 14 C2 (CG-18): on the ASSESSMENT view the application
+              status block is hidden — the header keeps only the reference,
+              child and school on the left. Every other tab keeps it. */}
+          <HideOnAssessmentRoute>
+            <div className="flex flex-wrap items-center gap-3">
+              {/* Three independent lifecycles (Epic 01): form → assessment →
+                  outcome. Staff see the real internal values. */}
+              <FormStatusBadge
+                status={application.formStatus}
+                applicationType={application.applicationType}
               />
-            )}
-          </div>
+              {application.assessment && (
+                <AssessmentStatusBadge status={application.assessment.status} />
+              )}
+              {application.assessment?.outcome && (
+                <OutcomeBadge outcome={application.assessment.outcome} />
+              )}
+              {user.role === Role.ADMIN && (
+                <AssignAssessorSelect
+                  applicationId={application.id}
+                  currentAssessorId={application.assignedToId}
+                  assessors={assessors}
+                />
+              )}
+            </div>
+          </HideOnAssessmentRoute>
+
+          {/* Epic 15 W2 (CH-03): on the assessment view the header carries
+              the four-state strip + the working actions — one compressed
+              banner instead of three stacked layers. */}
+          <ShowOnAssessmentRoute>
+            <div className="flex flex-col items-end gap-3">
+              <AssessmentLifecycleStrip state={lifecycleState} />
+              <AssessmentHeaderActions
+                applicationId={application.id}
+                status={reviewPhase}
+                documents={application.documents}
+              />
+            </div>
+          </ShowOnAssessmentRoute>
         </div>
       </div>
+
+      {/* Closed banner (item 2) — the single terminal state. Shown on every
+          tab; the reason, date and purge outcome are the record Story 2.1
+          requires visible. Actor attribution lives on the History tab. */}
+      {isClosed && (
+        <div
+          className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-xl border border-rose-200 bg-rose-50 px-6 py-3"
+          role="status"
+        >
+          <span className="text-sm font-semibold text-rose-800">Closed</span>
+          {application.closeReason && (
+            <span className="text-sm text-rose-700">
+              {application.closeReason.label}
+            </span>
+          )}
+          {application.closedAt && (
+            <span className="text-sm text-rose-600">
+              {formatLondonDate(application.closedAt)}
+            </span>
+          )}
+          <span className="text-xs text-rose-600">
+            {application.purgedAt
+              ? "Personal data was removed when this application was closed."
+              : "All data is retained under the retention policy."}
+          </span>
+        </div>
+      )}
 
       {/* WP-15: Primary outcome actions — the prominent decision surface.
           Hidden for terminal statuses (handled inside the component). The review
@@ -229,11 +365,7 @@ export default async function ApplicationDetailLayout({
           deprecated fused `applications.status`. */}
       <ApplicationActions
         applicationId={application.id}
-        status={deriveReviewPhase({
-          formStatus: application.formStatus,
-          assessmentStatus: application.assessment?.status ?? null,
-          outcome: application.assessment?.outcome ?? null,
-        })}
+        status={reviewPhase}
         documents={application.documents}
       />
 
@@ -244,6 +376,10 @@ export default async function ApplicationDetailLayout({
           GDPR is ADMIN-only; the second-parent row follows the original
           ADMIN/ASSESSOR-or-existing-secondary rule. */}
       {showManageCard && (
+        // Epic 14 C2 (CG-19): on assessment routes this card collapses behind
+        // a quiet Manage disclosure (closed by default); other tabs keep the
+        // always-open card. Content and role gating unchanged.
+        <ManageDisclosure>
         <section
           className="rounded-xl border border-slate-200 bg-white shadow-sm"
           aria-label="Manage application"
@@ -271,6 +407,28 @@ export default async function ApplicationDetailLayout({
               />
             )}
 
+            {/* Unified close (item 2) — ADMIN only; replaces the old Decline /
+                Withdraw-account paths. Hidden once closed (no double-close). */}
+            {canClose && (
+              <div className="flex items-start justify-between gap-4 px-6 py-4">
+                <div>
+                  <p className="text-sm font-medium text-slate-700">
+                    Close application
+                  </p>
+                  <p className="mt-0.5 text-xs text-slate-500">
+                    Move this application to its single terminal Closed state.
+                    The close reason decides whether personal data is retained
+                    or removed; a live bursary account is closed with it.
+                  </p>
+                </div>
+                <CloseApplicationDialog
+                  applicationId={application.id}
+                  reference={application.reference}
+                  reasons={closeReasons}
+                />
+              </div>
+            )}
+
             {/* B7: GDPR right-to-erasure — ADMIN only. The server action also
                 enforces ADMIN/ASSESSOR + the 7-year retention guard. */}
             {canManageGdpr && (
@@ -282,24 +440,32 @@ export default async function ApplicationDetailLayout({
             )}
           </div>
         </section>
+        </ManageDisclosure>
       )}
 
-      {/* Tab navigation */}
-      <div className="border-b border-slate-200 pt-2">
-        <nav
-          className="-mb-px flex gap-0"
-          aria-label="Application detail tabs"
-        >
-          {tabs.map((tab) => (
-            <TabLink
-              key={tab.href}
-              label={tab.label}
-              href={tab.href}
-              isPlaceholder={tab.isPlaceholder}
-            />
-          ))}
-        </nav>
-      </div>
+      {/* Tab navigation — hidden on assessment routes (Epic 15 W2 / CH-07):
+          the workbook's five tabs are the only tab row there. The Applicant
+          Data / Recommendation / History surfaces stay reachable from the
+          applications queue (LA15-3). */}
+      <HideOnAssessmentRoute>
+        <div className="border-b border-slate-200 pt-2">
+          <nav
+            className="-mb-px flex gap-0"
+            aria-label="Application detail tabs"
+          >
+            {tabs.map((tab) => (
+              <TabLink
+                key={tab.href}
+                label={tab.label}
+                href={tab.href}
+                isPlaceholder={tab.isPlaceholder}
+                disabled={tab.disabled}
+                disabledReason={tab.disabledReason}
+              />
+            ))}
+          </nav>
+        </div>
+      </HideOnAssessmentRoute>
 
       {/* Page content */}
       {children}
@@ -315,16 +481,22 @@ function TabLink({
   label,
   href,
   isPlaceholder,
+  disabled,
+  disabledReason,
 }: {
   label: string;
   href: string;
   isPlaceholder?: boolean;
+  disabled?: boolean;
+  disabledReason?: string;
 }) {
   return (
     <ApplicationDetailTabLink
       label={label}
       href={href}
       isPlaceholder={isPlaceholder}
+      disabled={disabled}
+      disabledReason={disabledReason}
     />
   );
 }
