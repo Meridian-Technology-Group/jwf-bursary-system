@@ -147,8 +147,12 @@ export interface AssessmentSaveInput {
 
   // ── CALC-07 — v2 notional toggles/inputs ──────────────────────────────────
   rentAddBackType?: RentAddBackType;
+  /** CH-21 — manual £ override of the rent add-back; explicit null clears it. */
+  rentAddBackOverride?: number | null;
   multiPropertyRentAddBack?: boolean;
   councilTaxSupport?: boolean;
+  /** CH-22 — manual £ override of the council-tax deduct; explicit null clears it. */
+  councilTaxOverride?: number | null;
   usesCar?: boolean;
   usesPublicTransport?: boolean;
   feeInsuranceAnnual?: number;
@@ -334,8 +338,10 @@ export async function saveAssessment(
   // nullable label/category fields.
   const v2ScalarKeys = [
     "rentAddBackType",
+    "rentAddBackOverride",
     "multiPropertyRentAddBack",
     "councilTaxSupport",
+    "councilTaxOverride",
     "usesCar",
     "usesPublicTransport",
     "feeInsuranceAnnual",

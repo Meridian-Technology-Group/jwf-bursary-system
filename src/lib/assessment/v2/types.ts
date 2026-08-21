@@ -111,10 +111,26 @@ export interface NotionalSpendInput {
   /** Household net income (C40, from `calculateHouseholdNetIncome`) — used for C87. */
   netIncome: number
   rentAddBackType: RentAddBackType
+  /**
+   * CH-21 — assessor's manual £ override of the C57 rent add-back. `null` /
+   * absent = the dropdown-derived figure (byte-identical pre-CH-21 behaviour).
+   * A non-negative finite value replaces the derived amount on the C57 line
+   * only — C56 (rent deduct) and C58 (multi-property add-back) stay on the
+   * reference notional rent.
+   */
+  rentAddBackOverride?: number | null
   /** C58 — independent of `rentAddBackType`; assessor-judged (assumption CALC-A7). */
   multiPropertyRentAddBack: boolean
   /** C60 — full council-tax-support add-back. */
   councilTaxSupport: boolean
+  /**
+   * CH-22 — assessor's manual £ override of the C59 annual council-tax
+   * deduction. `null` / absent = the reference-band default (byte-identical
+   * pre-CH-22 behaviour). The override is the EFFECTIVE council-tax amount,
+   * so the C60 support add-back (which recharges the deduction) adds back
+   * the same overridden figure when `councilTaxSupport` is set.
+   */
+  councilTaxOverride?: number | null
   /** C65/66 — deduct notional car spend only when true. */
   usesCar: boolean
   /** C67/68 — deduct notional public-transport spend only when true. */
