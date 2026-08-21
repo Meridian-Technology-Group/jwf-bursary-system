@@ -60,14 +60,24 @@ in review · merged`.
   to CH/CI. The X-lane comms items are the most arguable — confirm.
 - Separately (not in this epic): reissue the 2026-27 invoice dated in
   August without the "due 30/09/2026" line (PO114282 thread, 18 Aug).
-- **CH-21/CH-22 need your call (M4 escalation)**: Charlotte wants manual £
+- ~~**CH-21/CH-22 need your call (M4 escalation)**: Charlotte wants manual £
   overrides of the notional-rent add-back and the annual council-tax deduct.
   Both amounts are ENGINE-DERIVED from reference data with no override input,
   so building them means touching `v2/notional-spend.ts` — outside this
   sprint's authority (engine read-only). Proposed shape when you approve:
   two OPTIONAL engine inputs (`rentAddBackOverride`, `councilTaxOverride`),
   default null = today's behaviour byte-for-byte (existing fixtures prove
-  parity), UI = editable £ cell beside the dropdown/toggle. ~half a day.
+  parity), UI = editable £ cell beside the dropdown/toggle. ~half a day.~~
+  **APPROVED + BUILT 2026-08-21** (`feature/ch21-22-notional-overrides`):
+  the proposed shape exactly — `rentAddBackOverride` / `councilTaxOverride`
+  optional engine inputs (null = byte-identical, pinned by parity tests),
+  additive nullable columns (pre-applied to nonprod, IF NOT EXISTS), CH-21
+  £ field beside the kept dropdown, CH-22 £ field + Apply-default button;
+  the C60 support add-back recharges the overridden council-tax figure.
+  Browser E2E on the nonprod fixture: override → live line/total change →
+  autosave (DB-verified) → reload rehydration → clear → nulls restored.
+  NOTE: merged AFTER the #293 prod promotion — needs its own staging→main
+  promotion to reach Charlotte's live assessments.
 - **CH-18 answer for Charlotte** (M3 investigation): the £40,000/£32,000 she
   saw in Part 2 are values SAVED onto her TS-Skrzynski assessment by the old
   prefill (before Epic 14 C4 removed it) — stored records win on load, so

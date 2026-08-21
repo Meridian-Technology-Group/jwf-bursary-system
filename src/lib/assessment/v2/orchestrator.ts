@@ -75,10 +75,14 @@ export interface AssessmentV2Input {
 
   // ── Notional-spend toggles (CALC-03) ──────────────────────────────────
   rentAddBackType: RentAddBackType
+  /** CH-21 — manual £ override of the C57 rent add-back; null/absent = dropdown-derived. */
+  rentAddBackOverride?: number | null
   /** C58 — assessor-judged, independent of `rentAddBackType` (assumption CALC-A7). */
   multiPropertyRentAddBack: boolean
   /** C60 — full council-tax-support add-back. */
   councilTaxSupport: boolean
+  /** CH-22 — manual £ override of the C59 council-tax deduct; null/absent = reference default. */
+  councilTaxOverride?: number | null
   /** C65/66 — deduct notional car spend only when true. */
   usesCar: boolean
   /** C67/68 — deduct notional public-transport spend only when true. */
@@ -203,8 +207,10 @@ export function calculateAssessmentV2(input: AssessmentV2Input, ref: ReferenceBu
       familyTypeCategory: category,
       netIncome: householdNetIncome,
       rentAddBackType: input.rentAddBackType,
+      rentAddBackOverride: input.rentAddBackOverride,
       multiPropertyRentAddBack: input.multiPropertyRentAddBack,
       councilTaxSupport: input.councilTaxSupport,
+      councilTaxOverride: input.councilTaxOverride,
       usesCar: input.usesCar,
       usesPublicTransport: input.usesPublicTransport,
       feeInsuranceAnnual: input.feeInsuranceAnnual,

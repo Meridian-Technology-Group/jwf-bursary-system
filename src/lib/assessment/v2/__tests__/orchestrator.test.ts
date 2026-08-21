@@ -314,3 +314,59 @@ describe('calculateAssessmentV2 — manual income adjustment (Epic 13 / C2)', ()
     expectContractPopulated(added)
   })
 })
+
+// ─── CH-21/22 — manual override passthrough ─────────────────────────────────
+
+describe('calculateAssessmentV2 — CH-21/22 override passthrough', () => {
+  const base: AssessmentV2Input = {
+    earners: [earner(60_000)],
+    familyTypeCategory: 3,
+    rentAddBackType: 'FULL_MORTGAGE_FREE',
+    multiPropertyRentAddBack: false,
+    councilTaxSupport: true,
+    usesCar: false,
+    usesPublicTransport: false,
+    feeInsuranceAnnual: 0,
+    cashSavings: 0,
+    isasPepsShares: 0,
+    schoolingYearsRemaining: 5,
+    propertyAssets: {},
+    portfolioType: 'SINGLE',
+    debts: {},
+    siblingPayableFees: [],
+    annualFees: 20_000,
+    scholarshipPct: 0,
+  }
+
+  it('omitted overrides = byte-identical output to the pre-override engine', () => {
+    const withoutKeys = calculateAssessmentV2(base, ref)
+    const withNulls = calculateAssessmentV2(
+      { ...base, rentAddBackOverride: null, councilTaxOverride: null },
+      ref,
+    )
+    expect(withNulls).toEqual(withoutKeys)
+  })
+
+  it('both overrides flow through to the notional-spend lines and shift the total', () => {
+    const derived = calculateAssessmentV2(base, ref)
+    const overridden = calculateAssessmentV2(
+      { ...base, rentAddBackOverride: 10_000, councilTaxOverride: 1_500 },
+      ref,
+    )
+    const line = (out: AssessmentV2Output, key: string) =>
+      out.notionalSpendLines.find((l) => l.key === key)!
+
+    // Cat 3: derived rent add-back 22,000 → 10,000; council tax 2,480 → 1,500
+    // (support add-back recharges the overridden figure on both sides).
+    expect(line(derived, 'rentAddBack').amount).toBe(22_000)
+    expect(line(overridden, 'rentAddBack').amount).toBe(10_000)
+    expect(line(overridden, 'councilTax').amount).toBe(1_500)
+    expect(line(overridden, 'councilTaxAddBack').amount).toBe(1_500)
+
+    // The only delta in the signed total is the rent add-back change
+    // (council-tax deduct + recharge cancel in both runs).
+    expect(overridden.totalNotionalSpend).toBeCloseTo(derived.totalNotionalSpend - 12_000, 6)
+    expect(overridden.ndiAfterNotionalSpend).toBeCloseTo(derived.ndiAfterNotionalSpend - 12_000, 6)
+    expectContractPopulated(overridden)
+  })
+})

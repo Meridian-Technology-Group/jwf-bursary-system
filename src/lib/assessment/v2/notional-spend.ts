@@ -45,6 +45,17 @@ function addBack(key: NotionalSpendLine['key'], label: string, amount: number): 
 }
 
 /**
+ * CH-21/22 — normalises an assessor override: a finite, non-negative number
+ * is an override; anything else (`null`, `undefined`, NaN, negatives) means
+ * "no override" and the engine-derived figure applies. Line amounts are
+ * non-negative magnitudes by convention (see module header), so a negative
+ * override is invalid input, not a sign flip.
+ */
+function normaliseOverride(value: number | null | undefined): number | null {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : null
+}
+
+/**
  * Calculates the full notional-spend block for one assessment.
  *
  * Line order mirrors the workbook (C56 → C83):
@@ -81,19 +92,21 @@ export function calculateNotionalSpend(
 
   // ── C56/C57 — rent + primary add-back ──────────────────────────────────
   const rentLine = deduction('rent', 'Notional rent (C56)', rentAmount)
-  let rentAddBackAmount = 0
+  let derivedRentAddBack = 0
   switch (input.rentAddBackType) {
     case 'FULL_MORTGAGE_FREE':
     case 'FULL_RENT_FREE':
-      rentAddBackAmount = rentAmount
+      derivedRentAddBack = rentAmount
       break
     case 'PARTIAL_LOWER_RENT':
-      rentAddBackAmount = rentAmount * 0.25
+      derivedRentAddBack = rentAmount * 0.25
       break
     case 'NONE':
     default:
-      rentAddBackAmount = 0
+      derivedRentAddBack = 0
   }
+  // CH-21 — the assessor's manual £ figure wins over the dropdown-derived one.
+  const rentAddBackAmount = normaliseOverride(input.rentAddBackOverride) ?? derivedRentAddBack
   const rentAddBackLine = addBack('rentAddBack', 'Rent add-back (C57)', rentAddBackAmount)
 
   // ── C58 — independent multi-property add-back ──────────────────────────
@@ -105,8 +118,12 @@ export function calculateNotionalSpend(
   )
 
   // ── C59/C60 — council tax + support add-back ────────────────────────────
-  const councilTaxLine = deduction('councilTax', 'Notional council tax (C59)', councilTaxAmount)
-  const councilTaxAddBackAmount = input.councilTaxSupport ? councilTaxAmount : 0
+  // CH-22 — the assessor's manual £ figure replaces the reference default as
+  // the EFFECTIVE council-tax amount; the C60 support add-back recharges the
+  // same effective figure so it still exactly cancels the deduction.
+  const effectiveCouncilTax = normaliseOverride(input.councilTaxOverride) ?? councilTaxAmount
+  const councilTaxLine = deduction('councilTax', 'Notional council tax (C59)', effectiveCouncilTax)
+  const councilTaxAddBackAmount = input.councilTaxSupport ? effectiveCouncilTax : 0
   const councilTaxAddBackLine = addBack(
     'councilTaxAddBack',
     'Council tax support add-back (C60)',
