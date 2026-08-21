@@ -448,6 +448,11 @@ model Assessment {
   /// for v2 (CALC-03 §notional-spend); the other flags gate their respective
   /// notional deduction lines. See implementation-plan.md §CALC-02.
   rentAddBackType               RentAddBackType?      @map("rent_add_back_type")
+  /// CH-21/22 (Epic 15 M4 follow-up) — assessor's manual £ overrides of the
+  /// C57 rent add-back and the C59 council-tax deduct. NULL = engine-derived
+  /// figure (pre-override behaviour, byte-identical); non-negative value wins.
+  rentAddBackOverride           Decimal?              @map("rent_add_back_override") @db.Decimal(10, 2)
+  councilTaxOverride            Decimal?              @map("council_tax_override") @db.Decimal(10, 2)
   multiPropertyRentAddBack      Boolean?              @map("multi_property_rent_add_back")
   councilTaxSupport             Boolean?              @map("council_tax_support")
   usesCar                       Boolean?              @map("uses_car")

@@ -102,6 +102,9 @@ export interface SerialisedAssessmentV2 {
   scholarshipPct: number | null;
   vatRate: number | null;
   rentAddBackType: RentAddBackType | null;
+  /** CH-21/22 — manual £ overrides; null = engine-derived figure. */
+  rentAddBackOverride: number | null;
+  councilTaxOverride: number | null;
   multiPropertyRentAddBack: boolean | null;
   councilTaxSupport: boolean | null;
   usesCar: boolean | null;
@@ -501,6 +504,14 @@ export function AssessmentFormV2({
   const [councilTaxSupport, setCouncilTaxSupport] = React.useState<boolean>(
     assessment.councilTaxSupport ?? false
   );
+  // CH-21/22 — manual £ overrides. 0 = "no override" (the CurrencyInput's
+  // empty state), matching the manual-adjustment idiom; persisted as null.
+  const [rentAddBackOverride, setRentAddBackOverride] = React.useState<number>(
+    Number(assessment.rentAddBackOverride ?? 0) || 0
+  );
+  const [councilTaxOverride, setCouncilTaxOverride] = React.useState<number>(
+    Number(assessment.councilTaxOverride ?? 0) || 0
+  );
   const [usesCar, setUsesCar] = React.useState<boolean>(
     assessment.usesCar ?? prefill.usesCar
   );
@@ -547,8 +558,10 @@ export function AssessmentFormV2({
       manualAdjustment,
       familyTypeCategory,
       rentAddBackType,
+      rentAddBackOverride: rentAddBackOverride > 0 ? rentAddBackOverride : null,
       multiPropertyRentAddBack,
       councilTaxSupport,
+      councilTaxOverride: councilTaxOverride > 0 ? councilTaxOverride : null,
       usesCar,
       usesPublicTransport,
       feeInsuranceAnnual,
@@ -572,8 +585,10 @@ export function AssessmentFormV2({
     manualAdjustment,
     familyTypeCategory,
     rentAddBackType,
+    rentAddBackOverride,
     multiPropertyRentAddBack,
     councilTaxSupport,
+    councilTaxOverride,
     usesCar,
     usesPublicTransport,
     feeInsuranceAnnual,
@@ -724,8 +739,12 @@ export function AssessmentFormV2({
       scholarshipPct: typeof scholarshipPct === "number" ? scholarshipPct : 0,
       schoolingYearsRemaining,
       rentAddBackType,
+      // CH-21/22 — persisted as null when unset so stored rows read as "no
+      // override" (an explicit null is a valid clear in the save whitelist).
+      rentAddBackOverride: rentAddBackOverride > 0 ? rentAddBackOverride : null,
       multiPropertyRentAddBack,
       councilTaxSupport,
+      councilTaxOverride: councilTaxOverride > 0 ? councilTaxOverride : null,
       usesCar,
       usesPublicTransport,
       feeInsuranceAnnual,
@@ -795,8 +814,10 @@ export function AssessmentFormV2({
     nextYearAnnualFees,
     schoolingYearsRemaining,
     rentAddBackType,
+    rentAddBackOverride,
     multiPropertyRentAddBack,
     councilTaxSupport,
+    councilTaxOverride,
     usesCar,
     usesPublicTransport,
     feeInsuranceAnnual,
@@ -1261,26 +1282,47 @@ export function AssessmentFormV2({
             label="IF THE FAMILY HOME IS MORTGAGE FREE/ or LIVING RENT FREE, ADD FULL NOTIONAL BACK IN - or if FAMILY HAS A LOWER RENT, ADD 25% BACK IN OF THE NOTIONAL RENT"
             sublabel="ADD BACK IN NOTIONAL RENT APPLIED"
             auto={lineSigned("rentAddBack")}
+            note={
+              rentAddBackOverride > 0
+                ? "Manual override applied — clear the £ field to return to the dropdown value."
+                : undefined
+            }
           >
-            <Select
-              value={rentAddBackType}
-              onValueChange={(v) => {
-                setRentAddBackType(v as RentAddBackType);
-                scheduleAutoSave();
-              }}
-              disabled={isReadOnly}
-            >
-              <SelectTrigger id="v2-rent-add-back" className="h-9 text-sm">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {RENT_ADD_BACK_OPTIONS.map((o) => (
-                  <SelectItem key={o.value} value={o.value} className="text-sm">
-                    {o.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            {/* CH-21 — the dropdown stays; a filled £ field overrides its derived value. */}
+            <div className="space-y-1.5">
+              <Select
+                value={rentAddBackType}
+                onValueChange={(v) => {
+                  setRentAddBackType(v as RentAddBackType);
+                  scheduleAutoSave();
+                }}
+                disabled={isReadOnly}
+              >
+                <SelectTrigger id="v2-rent-add-back" className="h-9 text-sm">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {RENT_ADD_BACK_OPTIONS.map((o) => (
+                    <SelectItem key={o.value} value={o.value} className="text-sm">
+                      {o.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <CurrencyInput
+                id="v2-rent-add-back-override"
+                value={rentAddBackOverride}
+                disabled={isReadOnly}
+                ariaLabel="Rent add-back manual £ override"
+                onChange={(v) => {
+                  setRentAddBackOverride(v);
+                  scheduleAutoSave();
+                }}
+              />
+              <span className="block text-[11px] leading-tight text-slate-400">
+                Manual £ override — leave empty to use the dropdown value.
+              </span>
+            </div>
           </WBRow>
           <WBRow
             label="IF HOUSEHOLD OWNS AT LEAST TWO PROPERTIES AND EITHER 1- PROPERTY INCOME IS NOT MAIN INCOME OR 2- EVIDENCE OF STABLE (PAYE OVER S-E) MEDIUM TO HIGH OR HIGH INCOME 3- CASH DRAWDOWN NOT SOLELY TO DEBT CONSOLIDATE"
@@ -1298,7 +1340,47 @@ export function AssessmentFormV2({
               }}
             />
           </WBRow>
-          <WBRow label="DEDUCT ANNUAL COUNCIL TAX" auto={lineSigned("councilTax")} />
+          <WBRow
+            label="DEDUCT ANNUAL COUNCIL TAX"
+            auto={lineSigned("councilTax")}
+            note={
+              councilTaxOverride > 0
+                ? "Manual figure applied — clear the £ field to return to the notional default."
+                : undefined
+            }
+          >
+            {/* CH-22 — manual, fully editable £ figure; "Apply default" fills
+                it with the reference notional (still editable afterwards).
+                Empty = the notional default applies, exactly as before. */}
+            <div className="space-y-1.5">
+              <CurrencyInput
+                id="v2-council-tax-override"
+                value={councilTaxOverride}
+                disabled={isReadOnly}
+                ariaLabel="Annual council tax manual £ figure"
+                onChange={(v) => {
+                  setCouncilTaxOverride(v);
+                  scheduleAutoSave();
+                }}
+              />
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-7 px-2 text-[11px]"
+                disabled={isReadOnly}
+                onClick={() => {
+                  setCouncilTaxOverride(notionalAuto("COUNCIL_TAX") ?? 0);
+                  scheduleAutoSave();
+                }}
+              >
+                Apply default
+              </Button>
+              <span className="block text-[11px] leading-tight text-slate-400">
+                Manual £ figure — leave empty to use the notional default.
+              </span>
+            </div>
+          </WBRow>
           <WBRow
             label="IF HOUSEHOLD RECEIVES FULL COUNCIL TAX SUPPORT"
             sublabel="ADD BACK IN COUNCIL TAX NOTIONAL"
