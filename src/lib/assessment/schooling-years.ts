@@ -12,6 +12,10 @@
  *   Year 7  entry → 7 years total (Years 7–13)
  *   Year 9  entry → 5 years total (Years 9–13)
  *   Year 12 entry → 2 years total (Years 12–13)
+ *
+ * CH-26 (Charlotte, 2026-08-22): the four "main" entry points above are the
+ * common ones, but an internal bursary request can arrive for a child in ANY
+ * school year, so every year 6–13 is a valid entry school year.
  */
 
 /**
@@ -22,8 +26,12 @@
 const TOTAL_YEARS_BY_ENTRY: Record<number, number> = {
   6: 8,
   7: 7,
+  8: 6,
   9: 5,
+  10: 4,
+  11: 3,
   12: 2,
+  13: 1,
 };
 
 /**
@@ -44,7 +52,7 @@ function parseAcademicYearStart(academicYear: string): number {
 /**
  * Calculates the number of schooling years remaining for a bursary holder.
  *
- * @param entryYear             The school year the child entered (6, 7, 9, or 12).
+ * @param entryYear             The school year the child entered (6–13).
  * @param currentAcademicYear   The academic year being assessed, e.g. "2025-26".
  * @param firstAssessmentYear   The academic year of the first bursary assessment,
  *                              e.g. "2023-24".
@@ -114,14 +122,27 @@ export const SUPPORTED_ENTRY_YEARS = Object.keys(TOTAL_YEARS_BY_ENTRY).map(
 // = currentAcademicYearStart − entryCalendarYear.
 
 /** The school year-group a child enters at. Mirrors the Prisma enum. */
-export type EntryYearGroupCode = "Y6" | "Y7" | "Y9" | "Y12" | "OTHER";
+export type EntryYearGroupCode =
+  | "Y6"
+  | "Y7"
+  | "Y8"
+  | "Y9"
+  | "Y10"
+  | "Y11"
+  | "Y12"
+  | "Y13"
+  | "OTHER";
 
 /** Human-readable labels for each entry year-group. */
 export const ENTRY_YEAR_GROUP_LABELS: Record<EntryYearGroupCode, string> = {
   Y6: "Year 6",
   Y7: "Year 7",
+  Y8: "Year 8",
   Y9: "Year 9",
+  Y10: "Year 10",
+  Y11: "Year 11",
   Y12: "Year 12",
+  Y13: "Year 13",
   OTHER: "Other",
 };
 
@@ -129,10 +150,45 @@ export const ENTRY_YEAR_GROUP_LABELS: Record<EntryYearGroupCode, string> = {
 const ENTRY_YEAR_GROUP_NUMBER: Record<EntryYearGroupCode, number | null> = {
   Y6: 6,
   Y7: 7,
+  Y8: 8,
   Y9: 9,
+  Y10: 10,
+  Y11: 11,
   Y12: 12,
+  Y13: 13,
   OTHER: null,
 };
+
+/**
+ * Select-option list for the entry school year, in school order with `OTHER`
+ * last. Every dropdown that captures the entry year-group (contacts, quick
+ * invite, internal request) renders THIS list, so a new enum value can never
+ * be missed on one surface and present on another.
+ */
+export const ENTRY_YEAR_GROUP_OPTIONS: {
+  value: EntryYearGroupCode;
+  label: string;
+}[] = (
+  ["Y6", "Y7", "Y8", "Y9", "Y10", "Y11", "Y12", "Y13", "OTHER"] as const
+).map((value) => ({ value, label: ENTRY_YEAR_GROUP_LABELS[value] }));
+
+/** Every valid `EntryYearGroup` code, for zod enums and validation. */
+export const ENTRY_YEAR_GROUP_CODES = ENTRY_YEAR_GROUP_OPTIONS.map(
+  (o) => o.value
+) as [EntryYearGroupCode, ...EntryYearGroupCode[]];
+
+/**
+ * The school-year NUMBER a year-group represents (Y6 → 6). `OTHER`, null and
+ * unrecognised codes → null, which every caller treats as "no deterministic
+ * school year; fall back". Single source of truth for the schedule builders.
+ */
+export function schoolYearForEntryYearGroup(
+  group: string | null | undefined
+): number | null {
+  if (!group) return null;
+  const n = ENTRY_YEAR_GROUP_NUMBER[group as EntryYearGroupCode];
+  return n ?? null;
+}
 
 /**
  * Returns the calendar year in which the current UK academic year started.

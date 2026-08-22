@@ -9,7 +9,7 @@
  * disambiguates twins (D12).
  */
 
-import { useEffect, useState, useTransition } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -46,6 +46,15 @@ import {
   updateContactAction,
 } from "@/app/(admin)/contacts/actions";
 import { ADULT_TITLES } from "@/lib/contacts/titles";
+import {
+  ENTRY_YEAR_GROUP_CODES,
+  ENTRY_YEAR_GROUP_OPTIONS,
+  type EntryYearGroupCode,
+} from "@/lib/assessment/schooling-years";
+import {
+  entryAcademicYearLabelOrNull,
+  entryAcademicYearOptions,
+} from "@/lib/schools/academic-year";
 
 export interface ContactFormValues {
   id?: string;
@@ -60,8 +69,9 @@ export interface ContactFormValues {
   childDob: string;
   school: "TRINITY" | "WHITGIFT" | "";
   situation: "NEW" | "INTERNAL" | "ROLLING_OVER";
+  /** START year of the academic year of entry — 2027 means "2027/2028". */
   entryYear: string;
-  entryYearGroup: "Y6" | "Y7" | "Y9" | "Y12" | "OTHER" | "";
+  entryYearGroup: EntryYearGroupCode | "";
   addressLine1: string;
   addressLine2: string;
   town: string;
@@ -84,14 +94,16 @@ const schema = z.object({
   school: z.enum(["TRINITY", "WHITGIFT"], { error: "A school is required" }),
   // B3 (CG-26) — the invitation-template situation; defaults to NEW.
   situation: z.enum(["NEW", "INTERNAL", "ROLLING_OVER"]),
+  // CH-26: captured (and shown back) as the academic year "2027/2028"; the
+  // value on the wire stays the 4-digit START year the DB column holds.
   entryYear: z
     .string()
-    .min(1, "Entry year is required")
-    .regex(/^\d{4}$/, "Enter a 4-digit year"),
+    .min(1, "An academic year is required")
+    .regex(/^\d{4}$/, "Select an academic year"),
   // Required as of Q1: the entry year-group is JWF-facing only and the parent
   // can never supply it, so it must be captured here.
-  entryYearGroup: z.enum(["Y6", "Y7", "Y9", "Y12", "OTHER"], {
-    error: "An entry year group is required",
+  entryYearGroup: z.enum(ENTRY_YEAR_GROUP_CODES, {
+    error: "An entry school year is required",
   }),
   addressLine1: z.string().optional(),
   addressLine2: z.string().optional(),
@@ -136,6 +148,23 @@ export function ContactFormDialog({
   const [serverError, setServerError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
   const router = useRouter();
+
+  // CH-26: the academic-year dropdown offers a rolling window, but a record
+  // being edited may sit outside it (a back-dated entrant). Always include the
+  // record's own year, so opening and saving an old contact can never silently
+  // blank the field.
+  const academicYearOptions = useMemo(() => {
+    const options = entryAcademicYearOptions();
+    const current = initial?.entryYear;
+    if (current && !options.some((o) => o.value === current)) {
+      const label = entryAcademicYearLabelOrNull(current);
+      if (label) {
+        options.push({ value: current, label });
+        options.sort((a, b) => a.value.localeCompare(b.value));
+      }
+    }
+    return options;
+  }, [initial?.entryYear]);
 
   const form = useForm<Values>({
     resolver: zodResolver(schema),
@@ -216,7 +245,7 @@ export function ContactFormDialog({
           <DialogTitle>{isEdit ? "Edit contact" : "New contact"}</DialogTitle>
           <DialogDescription>
             A contact is a family record held before any invitation. The school
-            and entry year set here are locked — the parent cannot change them.
+            and academic year set here are locked — the parent cannot change them.
           </DialogDescription>
         </DialogHeader>
 
@@ -377,7 +406,7 @@ export function ContactFormDialog({
             {/* School & year — LOCKED for the parent */}
             <fieldset className="space-y-3">
               <legend className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                School &amp; entry year (locked for the parent)
+                School &amp; academic year (locked for the parent)
               </legend>
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
                 <FormField
@@ -447,16 +476,29 @@ export function ContactFormDialog({
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>
-                        Entry year <span className="text-red-500">*</span>
+                        Academic year <span className="text-red-500">*</span>
                       </FormLabel>
-                      <FormControl>
-                        <Input
-                          inputMode="numeric"
-                          placeholder="2026"
-                          {...field}
-                          disabled={isPending}
-                        />
-                      </FormControl>
+                      <Select
+                        onValueChange={field.onChange}
+                        value={field.value ?? ""}
+                        disabled={isPending}
+                      >
+                        <FormControl>
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select an academic year" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          {academicYearOptions.map((opt) => (
+                            <SelectItem key={opt.value} value={opt.value}>
+                              {opt.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <FormDescription>
+                        The academic year of entry, e.g. 2027/2028.
+                      </FormDescription>
                       <FormMessage />
                     </FormItem>
                   )}
@@ -467,7 +509,8 @@ export function ContactFormDialog({
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>
-                        Entry year group <span className="text-red-500">*</span>
+                        Entry school year{" "}
+                        <span className="text-red-500">*</span>
                       </FormLabel>
                       <Select
                         onValueChange={field.onChange}
@@ -480,11 +523,11 @@ export function ContactFormDialog({
                           </SelectTrigger>
                         </FormControl>
                         <SelectContent>
-                          <SelectItem value="Y6">Year 6</SelectItem>
-                          <SelectItem value="Y7">Year 7</SelectItem>
-                          <SelectItem value="Y9">Year 9</SelectItem>
-                          <SelectItem value="Y12">Year 12</SelectItem>
-                          <SelectItem value="OTHER">Other</SelectItem>
+                          {ENTRY_YEAR_GROUP_OPTIONS.map((opt) => (
+                            <SelectItem key={opt.value} value={opt.value}>
+                              {opt.label}
+                            </SelectItem>
+                          ))}
                         </SelectContent>
                       </Select>
                       <FormMessage />

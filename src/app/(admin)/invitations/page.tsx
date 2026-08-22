@@ -154,7 +154,7 @@ export default async function InvitationsPage({
             </p>
             <p className="text-xs text-slate-500">
               Recommended — invite a family from their stored record, with the
-              school and entry year already locked in.
+              school and academic year already locked in.
             </p>
           </div>
         </div>

@@ -31,6 +31,7 @@ import {
 import { cn } from "@/lib/utils";
 import { sendInvitationFromContactAction } from "@/app/(admin)/contacts/invite-actions";
 import type { ContactListItem } from "@/lib/db/queries/contacts";
+import { entryAcademicYearLabelOrNull } from "@/lib/schools/academic-year";
 
 interface RoundOption {
   id: string;
@@ -116,8 +117,8 @@ export function InviteFromContactDialog({
         <DialogHeader>
           <DialogTitle>Invite this family to apply</DialogTitle>
           <DialogDescription>
-            Sends a parent invite seeded from this contact. The school and entry
-            year are locked — the parent cannot change them.
+            Sends a parent invite seeded from this contact. The school and
+            academic year are locked — the parent cannot change them.
           </DialogDescription>
         </DialogHeader>
 
@@ -135,8 +136,10 @@ export function InviteFromContactDialog({
               <dd className="col-span-2 text-slate-700">
                 {schoolLabel(contact.school)}
               </dd>
-              <dt className="col-span-1 text-slate-500">Entry year</dt>
-              <dd className="col-span-2 text-slate-700">{contact.entryYear}</dd>
+              <dt className="col-span-1 text-slate-500">Academic year</dt>
+              <dd className="col-span-2 text-slate-700">
+                {entryAcademicYearLabelOrNull(contact.entryYear) ?? "—"}
+              </dd>
               <dt className="col-span-1 text-slate-500">Email</dt>
               <dd className="col-span-2 text-slate-700">{contact.email}</dd>
             </dl>

@@ -35,3 +35,46 @@ export function academicYearLabelFor(date: Date): string {
 export function academicYearLabel(startYear: number): string {
   return `${startYear}-${String((startYear + 1) % 100).padStart(2, "0")}`;
 }
+
+// ─── Entry academic year (CH-26) ─────────────────────────────────────────────
+//
+// `Contact.entryYear` / `Application.entryYear` / `BursaryAccount.entryYear`
+// store the START calendar year of the academic year of entry (an Int). Charlotte
+// (2026-08-22) asked that admin surfaces never show the bare start year, because
+// "2027" is ambiguous about which academic year is meant: a 2027 entry means the
+// 2027/2028 academic year. Storage is unchanged — these helpers are display and
+// dropdown-entry only.
+
+/** Full both-years label for an entry start year: 2027 → "2027/2028". */
+export function entryAcademicYearLabel(startYear: number): string {
+  return `${startYear}/${startYear + 1}`;
+}
+
+/**
+ * Same, tolerating the nullable/loose shapes the admin tables carry. Returns
+ * `null` when there is no parsable start year, so callers render their own
+ * placeholder ("—") rather than a bogus year.
+ */
+export function entryAcademicYearLabelOrNull(
+  startYear: number | string | null | undefined
+): string | null {
+  if (startYear == null || startYear === "") return null;
+  const n = typeof startYear === "number" ? startYear : parseInt(startYear, 10);
+  if (!Number.isInteger(n)) return null;
+  return entryAcademicYearLabel(n);
+}
+
+/**
+ * The window of entry academic years offered in admin dropdowns: one year back
+ * (back-dated entries) through six years ahead, as start years. Same window the
+ * internal-request dialog has always offered, now labelled "2026/2027".
+ */
+export function entryAcademicYearOptions(
+  now: Date = new Date()
+): { value: string; label: string }[] {
+  const first = now.getFullYear() - 1;
+  return Array.from({ length: 8 }, (_, i) => first + i).map((startYear) => ({
+    value: String(startYear),
+    label: entryAcademicYearLabel(startYear),
+  }));
+}

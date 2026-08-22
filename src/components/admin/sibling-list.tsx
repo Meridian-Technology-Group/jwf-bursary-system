@@ -29,6 +29,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
+import { entryAcademicYearLabel } from "@/lib/schools/academic-year";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -289,7 +290,10 @@ export function SiblingList({
                     <ChevronRight className="h-3 w-3 text-slate-300" aria-hidden="true" />
                     {/* D13-1a: no account reference — the entry year sits
                         beside the school as the disambiguator. */}
-                    <span>Entered {sibling.bursaryAccount.entryYear}</span>
+                    <span>
+                      Entered{" "}
+                      {entryAcademicYearLabel(sibling.bursaryAccount.entryYear)}
+                    </span>
                     {sibling.bursaryAccount.latestPayableFees !== null && (
                       <>
                         <ChevronRight className="h-3 w-3 text-slate-300" aria-hidden="true" />

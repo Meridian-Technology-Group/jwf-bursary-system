@@ -30,6 +30,7 @@ import {
 import { withUserContext, type RlsRole } from "@/lib/db/prisma";
 import { HorizontalBarChart } from "@/components/admin/charts/horizontal-bar-chart";
 import { RoundSelector } from "@/components/admin/charts/round-selector";
+import { entryAcademicYearLabelOrNull } from "@/lib/schools/academic-year";
 
 export const metadata: Metadata = {
   title: "Reports",
@@ -259,8 +260,8 @@ function FinalYearTable({ rows }: { rows: FinalYearBursaryRow[] }) {
             <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
               School
             </th>
-            <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500 w-24">
-              Entry year
+            <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500 w-28">
+              Academic year
             </th>
             <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500 w-28">
               Current year
@@ -283,7 +284,7 @@ function FinalYearTable({ rows }: { rows: FinalYearBursaryRow[] }) {
                 {SCHOOL_LABEL[row.school] ?? row.school}
               </td>
               <td className="px-4 py-3 tabular-nums text-slate-700">
-                {row.entryYear}
+                {entryAcademicYearLabelOrNull(row.entryYear) ?? "—"}
               </td>
               <td className="px-4 py-3 text-slate-700">
                 <span className="inline-flex items-center rounded-full bg-accent-50 px-2 py-0.5 text-xs font-semibold text-accent-700">

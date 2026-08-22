@@ -27,6 +27,9 @@ import {
   parseAcademicYearStart,
   formatAcademicYearLabel,
 } from "@/lib/assessment/fee-year";
+// Single source of truth for group → school-year (CH-26 added Y8/Y10/Y11/Y13);
+// OTHER / null / unrecognised → null and the caller falls back to the default.
+import { schoolYearForEntryYearGroup as schoolYearForGroup } from "@/lib/assessment/schooling-years";
 
 /** The final school year a bursary can run to (Year 13 / Upper Sixth). */
 export const FINAL_ELIGIBLE_SCHOOL_YEAR = 13;
@@ -36,23 +39,6 @@ export const MAX_SCHEDULE_YEARS = 8;
 
 /** How many future years (incl. the award year) are shown on the portal by default. */
 const DEFAULT_PORTAL_VISIBLE_YEARS = 2;
-
-/** Maps an entry year-group to the school year number it represents. */
-function schoolYearForGroup(group: EntryYearGroup | null): number | null {
-  switch (group) {
-    case "Y6":
-      return 6;
-    case "Y7":
-      return 7;
-    case "Y9":
-      return 9;
-    case "Y12":
-      return 12;
-    // OTHER / null → no deterministic mapping; caller falls back to the default.
-    default:
-      return null;
-  }
-}
 
 /**
  * D19 horizon: number of assessment years to generate, counting the award year

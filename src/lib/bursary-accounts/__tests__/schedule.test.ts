@@ -26,6 +26,25 @@ describe("resolveScheduleHorizon (D19)", () => {
     expect(resolveScheduleHorizon("OTHER")).toBe(MAX_SCHEDULE_YEARS);
     expect(resolveScheduleHorizon(null)).toBe(MAX_SCHEDULE_YEARS);
   });
+
+  // CH-26: the four historic entry points are no longer the only ones. A Y8 or
+  // Y10 entrant used to be recorded as OTHER and silently got the 8-year
+  // default horizon; now each derives its own.
+  it("derives a real horizon for every school year 6–13 (CH-26)", () => {
+    const expected: Array<[Parameters<typeof resolveScheduleHorizon>[0], number]> = [
+      ["Y6", 8],
+      ["Y7", 7],
+      ["Y8", 6],
+      ["Y9", 5],
+      ["Y10", 4],
+      ["Y11", 3],
+      ["Y12", 2],
+      ["Y13", 1],
+    ];
+    for (const [group, horizon] of expected) {
+      expect(resolveScheduleHorizon(group)).toBe(horizon);
+    }
+  });
 });
 
 describe("planSchedule — dates + labels + show/hide", () => {

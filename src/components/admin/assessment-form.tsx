@@ -1101,10 +1101,10 @@ export function AssessmentForm({
               />
             </FieldRow>
 
-            {/* Entry year-group (source of truth), entry calendar year, and
-                derived schooling years remaining. */}
+            {/* Entry school year (source of truth), academic year of entry,
+                and derived schooling years remaining. */}
             <FieldRow
-              label="Entry Year Group"
+              label="Entry School Year"
               htmlFor="entry-year-group"
               hint="Set by the applicant (spec §4); drives schooling years"
             >
@@ -1123,9 +1123,9 @@ export function AssessmentForm({
             </FieldRow>
 
             <FieldRow
-              label="Entry Year"
+              label="Academic Year"
               htmlFor="entry-year"
-              hint="Calendar year of school entry (e.g. 2019)"
+              hint="Start year of the academic year of entry (2019 = 2019/2020)"
             >
               <Input
                 id="entry-year"
@@ -1157,7 +1157,7 @@ export function AssessmentForm({
             <FieldRow
               label="Schooling Years Remaining"
               htmlFor="schooling-years"
-              hint="Derived from entry year-group + entry year (0–13)"
+              hint="Derived from entry school year + academic year (0–13)"
             >
               <Input
                 id="schooling-years"

@@ -48,6 +48,11 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { createInternalRequestAction } from "@/app/(admin)/queue/actions";
+import {
+  ENTRY_YEAR_GROUP_CODES,
+  ENTRY_YEAR_GROUP_OPTIONS,
+} from "@/lib/assessment/schooling-years";
+import { entryAcademicYearOptions } from "@/lib/schools/academic-year";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -73,26 +78,22 @@ const schema = z.object({
   }),
   roundId: z.string().min(1, "Please select a round"),
   reason: z.string().max(500, "Reason must be 500 characters or fewer").optional(),
-  entryYearGroup: z.enum(["Y6", "Y7", "Y9", "Y12", "OTHER"], {
-    error: "Please select an entry year group",
+  entryYearGroup: z.enum(ENTRY_YEAR_GROUP_CODES, {
+    error: "Please select an entry school year",
   }),
-  entryYear: z.string().min(1, "Please select an entry year"),
+  entryYear: z.string().min(1, "Please select an academic year"),
 });
 
 type FormValues = z.infer<typeof schema>;
 
-// ─── Entry year options ───────────────────────────────────────────────────────
+// ─── Academic-year options (CH-26) ───────────────────────────────────────────
+//
+// Same rolling window as before, now labelled as the full academic year
+// ("2027/2028"); the submitted value is still the 4-digit START year the
+// `entry_year` column holds. The entry-school-year list comes from the shared
+// `ENTRY_YEAR_GROUP_OPTIONS` so every capture surface offers Years 6–13.
 
-const currentYear = new Date().getFullYear();
-const ENTRY_YEARS = Array.from({ length: 8 }, (_, i) => currentYear + i - 1);
-
-const ENTRY_YEAR_GROUP_OPTIONS: { value: string; label: string }[] = [
-  { value: "Y6", label: "Year 6" },
-  { value: "Y7", label: "Year 7" },
-  { value: "Y9", label: "Year 9" },
-  { value: "Y12", label: "Year 12" },
-  { value: "OTHER", label: "Other" },
-];
+const ACADEMIC_YEARS = entryAcademicYearOptions();
 
 /** Parses the start calendar year from an academic-year string ("2026/27" → 2026). */
 function roundStartYear(academicYear: string): string {
@@ -358,13 +359,13 @@ export function InternalRequestDialog({ rounds }: InternalRequestDialogProps) {
                     )}
                   />
 
-                  {/* Entry year-group (select) — source of truth for schooling years */}
+                  {/* Entry school year (select) — source of truth for schooling years */}
                   <FormField
                     control={form.control}
                     name="entryYearGroup"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Entry Year Group</FormLabel>
+                        <FormLabel>Entry School Year</FormLabel>
                         <Select
                           value={field.value}
                           onValueChange={field.onChange}
@@ -372,7 +373,7 @@ export function InternalRequestDialog({ rounds }: InternalRequestDialogProps) {
                         >
                           <FormControl>
                             <SelectTrigger>
-                              <SelectValue placeholder="Select year group" />
+                              <SelectValue placeholder="Select school year" />
                             </SelectTrigger>
                           </FormControl>
                           <SelectContent>
@@ -388,7 +389,7 @@ export function InternalRequestDialog({ rounds }: InternalRequestDialogProps) {
                     )}
                   />
 
-                  {/* Entry calendar year (select) — defaults to the round's
+                  {/* Academic year of entry (select) — defaults to the round's
                       start year; edit for back-dated ad-hoc entrants. */}
                   <FormField
                     control={form.control}
@@ -396,9 +397,9 @@ export function InternalRequestDialog({ rounds }: InternalRequestDialogProps) {
                     render={({ field }) => (
                       <FormItem>
                         <FormLabel>
-                          Entry Calendar Year{" "}
+                          Academic Year{" "}
                           <span className="text-xs font-normal text-slate-400">
-                            (year they started at the school)
+                            (academic year they started at the school)
                           </span>
                         </FormLabel>
                         <Select
@@ -408,13 +409,13 @@ export function InternalRequestDialog({ rounds }: InternalRequestDialogProps) {
                         >
                           <FormControl>
                             <SelectTrigger>
-                              <SelectValue placeholder="Select entry year" />
+                              <SelectValue placeholder="Select academic year" />
                             </SelectTrigger>
                           </FormControl>
                           <SelectContent>
-                            {ENTRY_YEARS.map((year) => (
-                              <SelectItem key={year} value={String(year)}>
-                                {year}
+                            {ACADEMIC_YEARS.map((opt) => (
+                              <SelectItem key={opt.value} value={opt.value}>
+                                {opt.label}
                               </SelectItem>
                             ))}
                           </SelectContent>
