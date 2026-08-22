@@ -168,15 +168,43 @@ There is also an ordering constraint that rules out fixing it early: writing `Y1
 
 Full guarded script with pre-flight and post-check: `scratchpad/ch30-prod-fix.sql`.
 
-## Outstanding
+## ✅ Shipped to production — 22 Aug 2026, 09:01 UTC
 
 | Item | Status |
 |---|---|
-| CH-26 | Fixed in PR #339, CI green — **awaiting `staging → main` promotion** (Brian) |
-| CH-28 | No build needed; picker fix in #339 |
-| CH-29 | No build needed; tell her where Delete is |
-| CH-30 | **Blocked on the promotion**, then set Y11 on the two contacts **and the two already-sent invitations** — before a parent registers (see E6) |
-| CH-31 | No build needed; Sent Emails already exists at Invitations → Sent Emails |
-| CH-27 | **Deferred** (Brian, 22 Aug) — preview + editable-for-this-send, to be built as a later change. Design note: an edited send must be recorded as the sent text in the `email_log` (CI-02), not as the template, or the sent-emails log will misreport what the parent received. |
-| Her stray template | `50f29de6-7397-418e-b8ac-99df38670cb2` — "Invitation - new application - generic", custom, not deleted. To be soft-deleted after the promotion. |
-| Reply | None sent on CH-26…30. She is also still waiting on a timeline for the CH/CI batch. |
+| CH-26 | **Live in production.** PR #339 → `staging`, promoted via #340 (merge `090a604`) |
+| CH-28 | **Live.** Picker grouping + legacy relabel shipped in the same PR; nothing new had to be built |
+| CH-29 | **No build needed** — Delete already exists for custom templates; she needs telling where |
+| CH-30 | **Done.** Y11 set on both contacts *and* both already-sent invitations |
+| CH-31 | **No build needed** — Sent Emails already exists at Invitations → Sent Emails |
+| CH-27 | **Deferred** (Brian, 22 Aug) — preview + editable-for-this-send, as a later change. Design note: an edited send must be recorded as the sent text in the `email_log` (CI-02), not as the template, or the Sent Emails log will misreport what the parent received. |
+| Her stray template | **Soft-deleted** at 09:01:41 UTC (`50f29de6-…`, `deleted_at` set, row retained) |
+| Reply | Drafted for Brian to review and send |
+
+### Promotion sequence, as executed
+
+| Step | Evidence |
+|---|---|
+| #339 → `staging` (squash `781cd14`) | lint/typecheck/test + Vercel green |
+| `staging` CI + DB push | both success; migration recorded on nonprod at 08:55:58 with `applied_steps_count = 1` — **despite those `ALTER TYPE` statements having already been applied by hand**, proving the `IF NOT EXISTS` idempotency |
+| #340 `staging` → `main` (merge `090a604`) | all checks green before merge |
+| Production migration | applied 08:59:10; prod enum reads `Y6, Y7, Y8, Y9, Y10, Y11, Y12, Y13, OTHER` |
+| Production deploy | `dpl_9d8etxYsr99PoTxBC8yz4pvtod1a` READY, `target: production`, aliased to `jwf-bursary-system.vercel.app` |
+| **Only then** the `Y11` writes | ordering rule respected — see the Prisma-client hazard in E6 |
+| Post-write health | zero Vercel runtime errors and zero new Sentry issues across the window covering the deploy and the writes |
+
+### Before / after
+
+| Child | School | Before (contact / invitation) | After |
+|---|---|---|---|
+| Aditya JAYAPRAKASH | Trinity | `OTHER` / `OTHER` | **`Y11` / `Y11`** |
+| Jack Curror | Whitgift | `OTHER` / `OTHER` | **`Y11` / `Y11`** |
+| Denzel Williams | Trinity | `Y12` / `Y12` | `Y12` / `Y12` — untouched |
+
+All three invitations remain `PENDING` with `accepted_at = null` and their original `expires_at`, so **the links already in the parents' inboxes are unaffected**. The fix landed while production still had 0 applications and 0 bursary accounts, so nothing downstream inherited `OTHER`.
+
+### Known verification gap
+
+The writes and reads were confirmed at the database and production is error-free, but **the production UI was not visually confirmed** — there is no prod app login for Brian (Charlotte's is her own). The same screens were driven end-to-end against nonprod and the deployed preview. Worth provisioning a prod staff account so future production changes can be eyeballed.
+
+For the same reason these SQL writes bypassed the app's audit log.
