@@ -11,6 +11,7 @@
  */
 
 import type { Tx } from "@/lib/db/prisma";
+import { schoolYearForEntryYearGroup } from "@/lib/assessment/schooling-years";
 
 export interface PayableFeesScheduleTableRow {
   scheduleYear: number;
@@ -33,20 +34,9 @@ function toNum(value: unknown): number | null {
   return isNaN(n) ? null : n;
 }
 
-function schoolYearBase(group: string | null): number | null {
-  switch (group) {
-    case "Y6":
-      return 6;
-    case "Y7":
-      return 7;
-    case "Y9":
-      return 9;
-    case "Y12":
-      return 12;
-    default:
-      return null;
-  }
-}
+// Single source of truth for group → school-year (CH-26 added Y8/Y10/Y11/Y13);
+// OTHER / null / unrecognised → null and the row's school-year label is omitted.
+const schoolYearBase = schoolYearForEntryYearGroup;
 
 /** "2026-27" and "2026/27" are the same academic year — one comparable key. */
 function normaliseAcademicYear(value: string): string {

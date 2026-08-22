@@ -46,9 +46,9 @@ export default async function ContactsPage() {
             Contact register
           </h1>
           <p className="mt-1 text-sm text-slate-500">
-            Curate the families you intend to invite. The school and entry year
-            recorded here are locked — they carry through to the application and
-            the parent cannot change them.
+            Curate the families you intend to invite. The school and academic
+            year recorded here are locked — they carry through to the
+            application and the parent cannot change them.
           </p>
         </div>
       </div>

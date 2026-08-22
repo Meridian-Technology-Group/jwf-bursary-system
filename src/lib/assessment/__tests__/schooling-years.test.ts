@@ -131,3 +131,85 @@ describe("remainingYearsForEntrySchoolYear (CH-12 matrix)", () => {
     expect(remainingYearsForEntrySchoolYear(undefined)).toBeNull();
   });
 });
+
+// ── CH-26 (Charlotte, 2026-08-22): every school year 6–13 is a valid entry ───
+import {
+  ENTRY_YEAR_GROUP_CODES,
+  ENTRY_YEAR_GROUP_LABELS,
+  ENTRY_YEAR_GROUP_OPTIONS,
+  schoolYearForEntryYearGroup,
+} from "../schooling-years";
+
+describe("entry year-group model (CH-26: Years 6–13)", () => {
+  it("offers every school year 6–13, in school order, with OTHER last", () => {
+    expect(ENTRY_YEAR_GROUP_OPTIONS.map((o) => o.value)).toEqual([
+      "Y6",
+      "Y7",
+      "Y8",
+      "Y9",
+      "Y10",
+      "Y11",
+      "Y12",
+      "Y13",
+      "OTHER",
+    ]);
+    expect(ENTRY_YEAR_GROUP_OPTIONS.map((o) => o.label)).toEqual([
+      "Year 6",
+      "Year 7",
+      "Year 8",
+      "Year 9",
+      "Year 10",
+      "Year 11",
+      "Year 12",
+      "Year 13",
+      "Other",
+    ]);
+  });
+
+  it("keeps the option list, label map and code list in lockstep", () => {
+    expect(ENTRY_YEAR_GROUP_CODES).toEqual(
+      ENTRY_YEAR_GROUP_OPTIONS.map((o) => o.value)
+    );
+    expect(Object.keys(ENTRY_YEAR_GROUP_LABELS).sort()).toEqual(
+      [...ENTRY_YEAR_GROUP_CODES].sort()
+    );
+  });
+
+  it("maps every new year-group to its school-year number", () => {
+    expect(schoolYearForEntryYearGroup("Y8")).toBe(8);
+    expect(schoolYearForEntryYearGroup("Y10")).toBe(10);
+    expect(schoolYearForEntryYearGroup("Y11")).toBe(11);
+    expect(schoolYearForEntryYearGroup("Y13")).toBe(13);
+  });
+
+  it("returns null for OTHER, null and unrecognised codes", () => {
+    expect(schoolYearForEntryYearGroup("OTHER")).toBeNull();
+    expect(schoolYearForEntryYearGroup(null)).toBeNull();
+    expect(schoolYearForEntryYearGroup(undefined)).toBeNull();
+    expect(schoolYearForEntryYearGroup("Y99")).toBeNull();
+  });
+
+  it("derives total schooling years for the new groups (14 − N)", () => {
+    expect(getTotalSchoolingYearsForGroup("Y8")).toBe(6);
+    expect(getTotalSchoolingYearsForGroup("Y10")).toBe(4);
+    expect(getTotalSchoolingYearsForGroup("Y11")).toBe(3);
+    expect(getTotalSchoolingYearsForGroup("Y13")).toBe(1);
+  });
+
+  it("agrees with the CH-12 matrix for every group 6–13", () => {
+    for (const { value } of ENTRY_YEAR_GROUP_OPTIONS) {
+      if (value === "OTHER") continue;
+      const n = schoolYearForEntryYearGroup(value)!;
+      expect(getTotalSchoolingYearsForGroup(value)).toBe(
+        remainingYearsForEntrySchoolYear(n)
+      );
+    }
+  });
+
+  it("derives remaining years from a Year 10 entry", () => {
+    // Y10 → 4 total (Years 10–13); entered calendar 2025, now academic 2026 →
+    // 1 elapsed → 3 remaining, and the child is in Year 11.
+    expect(calculateSchoolingYearsRemainingFromEntry("Y10", 2025, OCT_2026)).toBe(3);
+    expect(deriveCurrentYearGroupNumber("Y10", 2025, OCT_2026)).toBe(11);
+  });
+});

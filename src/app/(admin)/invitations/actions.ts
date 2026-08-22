@@ -101,7 +101,7 @@ const InvitationSchema = z.object({
   // applicant can never enter one — so the quick-invite must capture it here or
   // the application created on acceptance would have no year-group at all.
   entryYearGroup: z.nativeEnum(EntryYearGroup, {
-    error: () => ({ message: "An entry year group is required" }),
+    error: () => ({ message: "An entry school year is required" }),
   }),
   roundId: z.string().uuid("An application round is required"),
   // Epic 14 B3 (CG-26, LA-3) — the 3-way situation choice; the school half of

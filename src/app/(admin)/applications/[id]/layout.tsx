@@ -35,6 +35,7 @@ import { CloseApplicationDialog } from "@/components/admin/close-application-dia
 import { AssessmentHeaderActions } from "@/components/admin/assessment-header-actions";
 import { AssessmentLifecycleStrip } from "@/components/admin/assessment-lifecycle-strip";
 import { deriveAssessmentLifecycleState } from "@/lib/assessments/lifecycle-state";
+import { entryAcademicYearLabel } from "@/lib/schools/academic-year";
 import {
   HideOnAssessmentRoute,
   ManageDisclosure,
@@ -279,7 +280,9 @@ export default async function ApplicationDetailLayout({
             <div className="flex flex-wrap items-center gap-3 text-sm text-slate-500">
               <span>Round: {application.round.academicYear}</span>
               {application.entryYear && (
-                <span>Entry: {application.entryYear}</span>
+                <span>
+                  Entry: {entryAcademicYearLabel(application.entryYear)}
+                </span>
               )}
               {application.isReassessment && (
                 <span className="rounded-full bg-orange-50 px-2 py-0.5 text-xs font-medium text-orange-700 border border-orange-200">
