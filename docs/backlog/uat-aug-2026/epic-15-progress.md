@@ -44,7 +44,11 @@ in review · merged`.
   30/11/2026; moving it to 27/08 is a one-field edit on the 2026/27 round's
   NEW scenario window (affects the whole round, not just these three).
   Runbook: `docs/operations/go-live-runbook-2026-08.md`.
-- Timeline reply to Charlotte (she asked twice): epic §4 has the suggested
+- ~~Timeline reply to Charlotte (she asked twice)~~ **MOOT / SENT
+  2026-08-22** — the whole CH/CI batch reached production, so there was no
+  timeline left to give. Brian sent the CH-26..31 reply that day (timeline
+  paragraph removed deliberately). Original suggested points kept below for
+  the record. Original note: epic §4 has the suggested
   dates — confirm/adjust before relaying. Suggested points for the E7 reply:
   (1) go ahead and set the three families up on the current system tomorrow —
   password reset + invitation contract are fixed and verified; (2) child
@@ -55,11 +59,14 @@ in review · merged`.
   CH-02 = yes once the workspace train merges.
 - X2 will need a Vercel Preview-scope env value for the reply-to
   (see plan) — flag lands here when the WP merges; do not set early.
-- Commercial position: this plan assumes the Epic 14 stance (pre-go-live
+- ~~Commercial position: this plan assumes the Epic 14 stance (pre-go-live
   acceptance remediation under the Build Fee, no new scope) carries over
-  to CH/CI. The X-lane comms items are the most arguable — confirm.
-- Separately (not in this epic): reissue the 2026-27 invoice dated in
-  August without the "due 30/09/2026" line (PO114282 thread, 18 Aug).
+  to CH/CI. The X-lane comms items are the most arguable — confirm.~~
+  **CONFIRMED 2026-08-22 (Brian): no scope expansion, no commercial change.**
+  Carries forward to Epic 16.
+- ~~Separately (not in this epic): reissue the 2026-27 invoice dated in
+  August without the "due 30/09/2026" line (PO114282 thread, 18 Aug).~~
+  **RESOLVED 2026-08-22 (Brian).**
 - ~~**CH-21/CH-22 need your call (M4 escalation)**: Charlotte wants manual £
   overrides of the notional-rent add-back and the annual council-tax deduct.
   Both amounts are ENGINE-DERIVED from reference data with no override input,
@@ -78,13 +85,16 @@ in review · merged`.
   autosave (DB-verified) → reload rehydration → clear → nulls restored.
   NOTE: merged AFTER the #293 prod promotion — needs its own staging→main
   promotion to reach Charlotte's live assessments.
-- **CH-18 answer for Charlotte** (M3 investigation): the £40,000/£32,000 she
+- **CH-18 answer for Charlotte** — asked in the 2026-08-22 follow-up email;
+  awaiting her yes/no on the reset. Low urgency: production holds 0
+  assessments, so the affected record is on the test system only.
+  (M3 investigation: the £40,000/£32,000 she
   saw in Part 2 are values SAVED onto her TS-Skrzynski assessment by the old
   prefill (before Epic 14 C4 removed it) — stored records win on load, so
   they are not a live link to the form. Fresh assessments open blank. If she
   wants that assessment's income cells cleared rather than hand-zeroed, say
   the word and we reset its two earner records (they carry the old prefill's
-  document-id fingerprint, so they are provably not her manual entries).
+  document-id fingerprint, so they are provably not her manual entries.)
 
 ## Post-merge verification (evidence promised in PR bodies)
 

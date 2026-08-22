@@ -265,6 +265,12 @@ DOM-dependent behaviour cannot be proven by the current suite — the repo has n
 
 ---
 
+> **Status update 2026-08-22.** The §2 fixes, the §3 human checks and the §1
+> decisions are now tracked as [Epic 16 — post-go-live residue
+> sprint](./epic-16-post-go-live-residue.md). §3a's promotion gate is **CLOSED**
+> (see below). §4's prod read-only blocker is resolved — production is
+> queryable again.
+
 ## 3a. Check before promoting `staging` → `main`
 
 **Legacy blobs and the new branch guards.** D3's six guards and F7's two use
@@ -278,19 +284,21 @@ will therefore now raise **no** gap where previously it raised one. That is the
   `hasOtherProperties`, and 0 `DEPENDENT_ELDERLY` sections with `elderlyInCare`
   entries and no `hasElderlyInCare` (across 9 and 10 sections respectively).
   The concern is empirically moot for Charlotte's testing.
-- **Prod: UNVERIFIED**, because the read-only credential is broken (§4). Prod is
-  live and holds real applications, so **run the same two counts against prod
-  before promoting this stack to `main`.** If any legacy blob exists, decide
-  deliberately whether to backfill the flag or accept the suppression.
+- ~~**Prod: UNVERIFIED**, because the read-only credential is broken (§4).~~
+  ✅ **CLOSED 2026-08-22.** Both counts run against production: **0 and 0** —
+  and production holds **0 `application_sections` rows** in total, so the
+  concern is empirically moot there as well as on nonprod. No backfill needed,
+  no suppression accepted. (Run before the CH-26/28 promotion, #340.)
 
-This is not a blocker for UAT — it is a promotion gate.
+This is not a blocker for UAT — it is a promotion gate. **Gate satisfied.**
 
 ## 4. Infrastructure / process
 
-- **Fix the `supabase-prod` read-only credential.** It has rejected the read-only
-  user (`FATAL 28P01`) throughout the sprint, so **no prod data check was
-  possible at any point**. C4b's column drops and F2's data audit are both
-  nonprod-verified only. This blocks every prod check, not just these.
+- ~~**Fix the `supabase-prod` read-only credential.**~~ ✅ **RESOLVED
+  2026-08-22** — production is queryable again (the §3a counts, the CH-30 data
+  fix and the reference-data audit all ran against prod). Note the standing
+  posture: `.mcp.json` keeps `supabase-prod` on `read_only=true`, deliberately,
+  so a write needs a considered removal first.
 - **`prisma format` is a CI gate that no local command runs.** D1 failed CI on it
   after a column name reflowed the schema's alignment. It is now in the plan's
   ground rules; consider adding it to a pre-commit hook.
