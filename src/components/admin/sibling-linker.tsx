@@ -17,6 +17,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
+import { entryAcademicYearLabel } from "@/lib/schools/academic-year";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -221,7 +222,7 @@ export function SiblingLinker({
                         <p className="text-xs text-slate-500 truncate">
                           {SCHOOL_LABELS[account.school] ?? account.school}
                           {" · "}
-                          Entered {account.entryYear}
+                          Entered {entryAcademicYearLabel(account.entryYear)}
                         </p>
                         <p className="text-xs text-slate-400 truncate">
                           {account.leadApplicantEmail}

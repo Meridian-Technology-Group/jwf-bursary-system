@@ -20,7 +20,9 @@ import { Badge } from "@/components/ui/badge";
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
+  SelectLabel,
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
@@ -45,7 +47,11 @@ import {
   upsertEmailTemplateAction,
 } from "@/app/(admin)/settings/actions";
 import { isLockedEmailTemplateType } from "@/lib/email/locked-types";
-import { emailTemplateLabel } from "@/lib/email/template-labels";
+import {
+  INVITATION_TEMPLATE_TYPES,
+  emailTemplateLabel,
+  isLegacyInvitationFallback,
+} from "@/lib/email/template-labels";
 import type { EmailTemplateRow } from "@/lib/db/queries/reference-tables";
 
 // templateLabel is a thin local alias so the rest of this file (and its
@@ -74,6 +80,46 @@ const COMMON_MERGE_FIELDS = [
   "{{link_expiry}}",
 ];
 
+// ─── Picker grouping (CH-28) ──────────────────────────────────────────────────
+
+/**
+ * Splits the flat template list into the three groups the picker renders.
+ *
+ * The DB returns system templates in `EmailTemplateType` enum order, which puts
+ * the legacy generic `INVITATION` first and the five situation variants — added
+ * later — last, behind fifteen unrelated emails. Charlotte consequently
+ * concluded the per-situation templates did not exist and asked for them to be
+ * built, while editing a fallback no live send uses. Grouping is presentation
+ * only: the query contract and every other consumer are untouched.
+ */
+function groupTemplates(templates: EmailTemplateRow[]): {
+  invitations: EmailTemplateRow[];
+  other: EmailTemplateRow[];
+  custom: EmailTemplateRow[];
+} {
+  const invitationOrder = new Map(
+    INVITATION_TEMPLATE_TYPES.map((t, i) => [t as string, i])
+  );
+
+  const invitations: EmailTemplateRow[] = [];
+  const other: EmailTemplateRow[] = [];
+  const custom: EmailTemplateRow[] = [];
+
+  for (const tpl of templates) {
+    if (!tpl.isSystem) custom.push(tpl);
+    else if (tpl.type && invitationOrder.has(tpl.type)) invitations.push(tpl);
+    else other.push(tpl);
+  }
+
+  invitations.sort(
+    (a, b) =>
+      (invitationOrder.get(a.type ?? "") ?? 99) -
+      (invitationOrder.get(b.type ?? "") ?? 99)
+  );
+
+  return { invitations, other, custom };
+}
+
 // ─── Props ────────────────────────────────────────────────────────────────────
 
 interface EmailTemplateEditorProps {
@@ -83,8 +129,21 @@ interface EmailTemplateEditorProps {
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export function EmailTemplateEditor({ templates }: EmailTemplateEditorProps) {
+  const { invitations, other, custom } = React.useMemo(
+    () => groupTemplates(templates),
+    [templates]
+  );
+
+  // Open on the first template in GROUPED order — an invitation variant that
+  // real sends actually use — rather than the enum-order first row, which is
+  // the legacy fallback (CH-28).
+  const orderedTemplates = React.useMemo(
+    () => [...invitations, ...other, ...custom],
+    [invitations, other, custom]
+  );
+
   const [selectedId, setSelectedId] = React.useState<string>(
-    templates.length > 0 ? templates[0].id : ""
+    orderedTemplates.length > 0 ? orderedTemplates[0].id : ""
   );
   const [subject, setSubject] = React.useState("");
   const [body, setBody] = React.useState("");
@@ -201,17 +260,31 @@ export function EmailTemplateEditor({ templates }: EmailTemplateEditorProps) {
             <SelectTrigger id="templateId" className="w-72">
               <SelectValue placeholder="Select a template..." />
             </SelectTrigger>
-            <SelectContent>
-              {templates.map((tpl) => (
-                <SelectItem key={tpl.id} value={tpl.id}>
-                  <span className="flex items-center gap-2">
-                    {templateLabel(tpl)}
-                    <Badge variant={tpl.isSystem ? "secondary" : "outline"} className="text-[10px]">
-                      {tpl.isSystem ? "System" : "Custom"}
-                    </Badge>
-                  </span>
-                </SelectItem>
-              ))}
+            <SelectContent className="max-h-[26rem]">
+              {[
+                { label: "Invitations — sent to parents", rows: invitations },
+                { label: "Other system emails", rows: other },
+                { label: "Custom templates", rows: custom },
+              ]
+                .filter((group) => group.rows.length > 0)
+                .map((group) => (
+                  <SelectGroup key={group.label}>
+                    <SelectLabel>{group.label}</SelectLabel>
+                    {group.rows.map((tpl) => (
+                      <SelectItem key={tpl.id} value={tpl.id}>
+                        <span className="flex items-center gap-2">
+                          {templateLabel(tpl)}
+                          <Badge
+                            variant={tpl.isSystem ? "secondary" : "outline"}
+                            className="text-[10px]"
+                          >
+                            {tpl.isSystem ? "System" : "Custom"}
+                          </Badge>
+                        </span>
+                      </SelectItem>
+                    ))}
+                  </SelectGroup>
+                ))}
             </SelectContent>
           </Select>
         </div>
@@ -228,6 +301,28 @@ export function EmailTemplateEditor({ templates }: EmailTemplateEditorProps) {
 
       {selected && (
         <>
+          {/* CH-28: editing the legacy fallback is almost always a mistake —
+              say so, rather than letting an edit be written that no parent
+              will ever receive. */}
+          {isLegacyInvitationFallback(selected.type) && (
+            <div
+              className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900"
+              role="note"
+            >
+              <p className="font-medium">
+                Editing this will not change the invitations you send.
+              </p>
+              <p className="mt-1 text-amber-800">
+                Every invitation sent from Contacts or Send Invitations uses the
+                variant matching that family&apos;s situation and school —
+                listed above under{" "}
+                <span className="font-medium">Invitations — sent to parents</span>.
+                This generic version is only a fallback for older records that
+                have no situation recorded, and is kept for those.
+              </p>
+            </div>
+          )}
+
           {/* Enable / disable toggle */}
           <div className="flex items-start justify-between gap-4 rounded-lg border border-slate-200 bg-white px-4 py-3">
             <div className="space-y-0.5">

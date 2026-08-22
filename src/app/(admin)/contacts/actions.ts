@@ -40,8 +40,10 @@ const optionalString = z
   .transform((v) => (v && v.length > 0 ? v : undefined));
 
 /**
- * Entry year is a calendar year. Constrain to a sane window so a typo can't
- * write 202 or 20255; the contact register is curated by hand, not imported.
+ * `entryYear` is the START year of the academic year of entry (2027 = the
+ * 2027/2028 academic year — CH-26; the UI captures and displays the full
+ * label). Constrain to a sane window so a typo can't write 202 or 20255; the
+ * contact register is curated by hand, not imported.
  */
 const ContactSchema = z.object({
   title: optionalString,
@@ -74,13 +76,13 @@ const ContactSchema = z.object({
   entryYear: z.coerce
     .number()
     .int()
-    .min(2000, "Enter a valid entry year")
-    .max(2100, "Enter a valid entry year"),
+    .min(2000, "Enter a valid academic year")
+    .max(2100, "Enter a valid academic year"),
   // MANDATORY as of Q1 (Brian, 2026-08-14). The applicant can no longer supply
   // an entry year-group anywhere, so the contact — the root of the invite →
   // application chain — must always carry one.
   entryYearGroup: z.nativeEnum(EntryYearGroup, {
-    error: () => ({ message: "An entry year group is required" }),
+    error: () => ({ message: "An entry school year is required" }),
   }),
   addressLine1: optionalString,
   addressLine2: optionalString,

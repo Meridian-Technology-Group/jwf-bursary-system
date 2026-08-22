@@ -52,13 +52,13 @@ const InternalRequestSchema = z.object({
   roundId: z.string().uuid("Please select an assessment round"),
   reason: z.string().max(500, "Reason must be 500 characters or fewer").optional(),
   entryYearGroup: z.nativeEnum(EntryYearGroup, {
-    error: () => ({ message: "Please select an entry year group" }),
+    error: () => ({ message: "Please select an entry school year" }),
   }),
   entryYear: z.coerce
     .number()
     .int()
-    .min(2020, "Entry year must be 2020 or later")
-    .max(2040, "Entry year must be 2040 or earlier"),
+    .min(2020, "Academic year must start in 2020 or later")
+    .max(2040, "Academic year must start in 2040 or earlier"),
 });
 
 // ─── Result type ──────────────────────────────────────────────────────────────

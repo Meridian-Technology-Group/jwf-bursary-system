@@ -45,6 +45,7 @@ import {
   windowForScenario,
   type StoredRoundWindow,
 } from "@/lib/rounds/window-consumption";
+import { schoolYearForEntryYearGroup } from "@/lib/assessment/schooling-years";
 
 export type ScheduleHomeRowState =
   | "submitted"
@@ -100,20 +101,9 @@ const STATE_LABELS: Record<ScheduleHomeRowState, string> = {
   closed: "CLOSED",
 };
 
-function schoolYearForGroup(group: EntryYearGroup | null): number | null {
-  switch (group) {
-    case "Y6":
-      return 6;
-    case "Y7":
-      return 7;
-    case "Y9":
-      return 9;
-    case "Y12":
-      return 12;
-    default:
-      return null;
-  }
-}
+// Single source of truth for group → school-year (CH-26 added Y8/Y10/Y11/Y13);
+// OTHER / null / unrecognised → null and the caller falls back.
+const schoolYearForGroup = schoolYearForEntryYearGroup;
 
 /** End of a date-only deadline's day, so "due 22 May" includes 22 May. */
 function endOfDay(d: Date): Date {

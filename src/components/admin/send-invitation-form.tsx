@@ -40,6 +40,10 @@ import {
 } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 import { createInvitationAction } from "@/app/(admin)/invitations/actions";
+import {
+  ENTRY_YEAR_GROUP_CODES,
+  ENTRY_YEAR_GROUP_OPTIONS,
+} from "@/lib/assessment/schooling-years";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -76,8 +80,8 @@ const schema = z.object({
   situation: z.enum(["NEW", "INTERNAL", "ROLLING_OVER"]),
   // Q1 (Brian, 2026-08-14): the entry year-group is JWF-facing only and the
   // parent can never supply it, so the quick invite has to capture it.
-  entryYearGroup: z.enum(["Y6", "Y7", "Y9", "Y12", "OTHER"], {
-    error: "An entry year group is required",
+  entryYearGroup: z.enum(ENTRY_YEAR_GROUP_CODES, {
+    error: "An entry school year is required",
   }),
   roundId: z
     .string()
@@ -206,8 +210,8 @@ export function SendInvitationForm({
         Quick invite a family
       </h2>
       <p className="mb-4 mt-0.5 text-xs text-slate-500">
-        A one-off parent invite. Surname, child name, school and entry year
-        group are required — they are locked and the parent cannot see or
+        A one-off parent invite. Surname, child name, school and entry school
+        year are required — they are locked and the parent cannot see or
         change them.
       </p>
 
@@ -395,7 +399,7 @@ export function SendInvitationForm({
               )}
             />
 
-            {/* Entry year group — JWF-facing only (Q1). Captured here because
+            {/* Entry school year — JWF-facing only (Q1). Captured here because
                 the parent can never supply it and the application created on
                 acceptance needs it for the assessment engine. */}
             <FormField
@@ -404,7 +408,7 @@ export function SendInvitationForm({
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>
-                    Entry year group <span className="text-red-500">*</span>
+                    Entry school year <span className="text-red-500">*</span>
                   </FormLabel>
                   <Select
                     onValueChange={field.onChange}
@@ -413,15 +417,15 @@ export function SendInvitationForm({
                   >
                     <FormControl>
                       <SelectTrigger>
-                        <SelectValue placeholder="Select entry year group" />
+                        <SelectValue placeholder="Select entry school year" />
                       </SelectTrigger>
                     </FormControl>
                     <SelectContent>
-                      <SelectItem value="Y6">Year 6</SelectItem>
-                      <SelectItem value="Y7">Year 7</SelectItem>
-                      <SelectItem value="Y9">Year 9</SelectItem>
-                      <SelectItem value="Y12">Year 12</SelectItem>
-                      <SelectItem value="OTHER">Other</SelectItem>
+                      {ENTRY_YEAR_GROUP_OPTIONS.map((opt) => (
+                        <SelectItem key={opt.value} value={opt.value}>
+                          {opt.label}
+                        </SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
                   <FormMessage />

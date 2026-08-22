@@ -29,6 +29,7 @@ import { InviteFromContactDialog } from "./invite-from-contact-dialog";
 import { archiveContactAction } from "@/app/(admin)/contacts/actions";
 import type { ContactListItem } from "@/lib/db/queries/contacts";
 import { ADULT_TITLES, titleLabel } from "@/lib/contacts/titles";
+import { entryAcademicYearLabelOrNull } from "@/lib/schools/academic-year";
 
 interface RoundOption {
   id: string;
@@ -194,7 +195,7 @@ export function ContactsTable({
                     "Child last",
                     "DOB",
                     "School",
-                    "Entry year",
+                    "Academic year",
                     "State",
                     "Actions",
                   ].map((h) => (
@@ -234,7 +235,7 @@ export function ContactsTable({
                       {schoolShort(c.school)}
                     </td>
                     <td className="whitespace-nowrap px-4 py-3 text-sm text-slate-600">
-                      {c.entryYear}
+                      {entryAcademicYearLabelOrNull(c.entryYear) ?? "—"}
                     </td>
                     <td className="whitespace-nowrap px-4 py-3">
                       <div className="flex flex-wrap gap-1">

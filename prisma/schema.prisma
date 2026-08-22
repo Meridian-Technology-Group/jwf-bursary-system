@@ -1176,8 +1176,12 @@ enum InvitationSituation {
 enum EntryYearGroup {
   Y6
   Y7
+  Y8
   Y9
+  Y10
+  Y11
   Y12
+  Y13
   OTHER
 }
 

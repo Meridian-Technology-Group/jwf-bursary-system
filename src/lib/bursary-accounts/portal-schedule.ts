@@ -31,23 +31,9 @@ import {
   formatAcademicYearLabel,
 } from "@/lib/assessment/fee-year";
 import { FINAL_ELIGIBLE_SCHOOL_YEAR } from "@/lib/bursary-accounts/schedule";
-
-/** Maps an entry year-group to the school-year number it represents. */
-function schoolYearForGroup(group: EntryYearGroup | null): number | null {
-  switch (group) {
-    case "Y6":
-      return 6;
-    case "Y7":
-      return 7;
-    case "Y9":
-      return 9;
-    case "Y12":
-      return 12;
-    // OTHER / null → no deterministic school year; caller falls back.
-    default:
-      return null;
-  }
-}
+// Single source of truth for group → school-year (CH-26 added Y8/Y10/Y11/Y13);
+// OTHER / null / unrecognised → null and the caller falls back.
+import { schoolYearForEntryYearGroup as schoolYearForGroup } from "@/lib/assessment/schooling-years";
 
 /** Per-row visual + a11y state of a calendar row. */
 export type PortalScheduleRowState = "current" | "active" | "greyed";
