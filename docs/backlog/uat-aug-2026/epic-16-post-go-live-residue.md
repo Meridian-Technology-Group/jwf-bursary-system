@@ -181,6 +181,24 @@ against Charlotte's or any real family's data.
    told it is coming rather than imminent.
 5. **B4, B5, B6** as their decisions land. **B7** only on a symptom.
 
+## Parked — only if Charlotte asks again
+
+### P1 · Default application-reference format `S`
+
+She described the new-application reference as school-letters-first with no
+school year; the generated default is
+`{Child name} – {School name} – {Year group} – {Academic year}`. Same
+information, different arrangement, and she overwrites it when the bursary
+becomes active — so she was told the recommendation is to leave it. Parked
+unless she pushes.
+
+⚠️ **If it is ever changed**, `resolveRolloverReference` detects an "untouched"
+default by **recomputing the current default and comparing**. Changing the
+format makes every previously-untouched default stop matching, so it is treated
+as human-entered and inherited forward — dragging stale academic years onto new
+applications. Add the outgoing format to `LEGACY_GENERATED_REFERENCE` in the
+same change, and cover it with a test.
+
 ## Out of scope
 
 - Anything Charlotte raises next — that starts its own thread and follows the
