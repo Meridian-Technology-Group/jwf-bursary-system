@@ -45,6 +45,81 @@ Shipped in `fix/ch26-academic-year-and-year-groups`:
 
 **Validated**: 2164 unit tests (new coverage for the label helpers, the full 6–13 group model and every group's schedule horizon); `tsc` / `next build` / ESLint clean; migration run against nonprod with the enum confirmed in school order; and driven through the real UI on both local-against-nonprod and the deployed preview — a `Y10` contact saved and round-tripped to Postgres.
 
-### Follow-up for Charlotte
+## E3 — 08:37 · RE: Entry year within the contacts tab
 
-Once this promotes, **`Jack Curror` should be re-opened and given his real entry school year** — he is currently `OTHER`, which suppresses the schooling-years and schedule derivation for that account.
+- **Message ID**: `1a028676d155d539` · [open message](https://mail.google.com/mail/u/0/#all/1a028676d155d539)
+- 📷 image003 — the contact she has just created; image004 — the Send Invitation screen; image001 — the settings template picker.
+- Restates CH-26 as a **blocker**, not a preference: *"I have created the first contact but to be able to proceed, I need the entry year to show as 'academic year' and the field to be 2026/2027… I need to be able to pick year 11 for that one."* Confirms the full list she wants: years 6, 7, 8, 9, 10, 11, 12, 13.
+
+| ID | Type | Item |
+|---|---|---|
+| CH-27 | Feature | **Preview the invitation email before sending, with the option to edit it for that one send.** *"When I click on send the invitation: would it be possible to have a preview of the email about to be sent, with an editable functionality? So that when I click on 'send invitation', it is exactly as required in that particular case?"* |
+| CH-28 | Already built | Asks for per-situation invitation templates — *"Invitation - new application - generic / rolling over / internal bursary… could you add two more and link each to each situation."* |
+
+## E4 — 09:03 · RE: Entry year within the contacts tab
+
+- **Message ID**: `1a0287f4dd90b2f0` · [open message](https://mail.google.com/mail/u/0/#all/1a0287f4dd90b2f0)
+- *"Oops I tried to create an additional template and I can see that Mr Bot is working on it so please delete it."*
+
+| ID | Type | Item |
+|---|---|---|
+| CH-29 | Already built | *"There is no option to delete a new email template once created."* |
+
+## E5 — 09:21 · RE: Entry year within the contacts tab · **most recent**
+
+- **Message ID**: `1a028900301ec618` · [open message](https://mail.google.com/mail/u/0/#all/1a028900301ec618)
+- 📷 image001 — the three real contacts she is proceeding with.
+- *"I am going to proceed with those three… Could you change for all of them the 'entry year: 2026' to academic year: 2026/27'. Could you edit the school year (as the option is only other at the moment) to show as year 11 for both Jack Curror and Aditya J."*
+
+| ID | Type | Item |
+|---|---|---|
+| CH-30 | Data fix 🚨 | Set the entry school year to **Year 11** for **Jack Curror** and **Aditya JAYAPRAKASH** — both currently `OTHER` because Year 11 was not offered. Blocked on the CH-26 enum reaching production. |
+
+### The three live contacts (production, all `situation = INTERNAL`, `entry_year = 2026`)
+
+| Child | Parent | School | Entry school year |
+|---|---|---|---|
+| Jack Curror | Ms Helen Cord · helencord@hotmail.com | Whitgift | `OTHER` → **Y11** |
+| Aditya JAYAPRAKASH | Mr J Raveendran · jayaprakash.raveendran@gmail.com | Trinity | `OTHER` → **Y11** |
+| Denzel Williams | Mr Dima Williams · williams.dima@gmail.com | Trinity | `Y12` — already correct, no change |
+
+---
+
+## CH-28 and CH-29 were already built — the real defect was discoverability
+
+Both asks describe features that shipped in Epic 14. Worth recording *why* she could not find them, because the cause was a live risk, not a misunderstanding.
+
+**CH-28.** The five per-situation invitation templates exist and are selected automatically by `resolveInvitationTemplate(situation, school)` — new/internal per school, plus rolling-over for both. Her three internal invitations resolve to `INVITATION_INTERNAL_WS` (Jack) and `INVITATION_INTERNAL_TS` (Aditya, Denzel). What she asked for is not only built, it is *finer-grained* than her three (it splits by school as well).
+
+She could not see them because the settings picker listed templates in `EmailTemplateType` enum order: the legacy generic `INVITATION` came **first** and was the default selection, and the five real variants came **last**, behind fifteen unrelated emails. Her screenshot shows "Invitation (generic fallback)" selected.
+
+> 🚨 **This was a live wrong-email risk.** Had she edited the generic fallback — the one the picker opened on — and then sent her three real invitations, none of her edits would have reached the parents, because no current send path resolves to that template. Nothing would have errored.
+
+**CH-29.** Delete is implemented for custom templates (`deleteEmailTemplateAction`, soft-delete via `deletedAt`; system templates are deliberately non-deletable). The button renders next to **Save Template** — but at the *bottom* of the editor, below the subject field, a tall body textarea and the merge-field panel, and only when a Custom template is selected. Verified end-to-end on nonprod: creating a custom template shows **Delete**, and confirming it sets the tombstone and drops the row from the picker.
+
+### Resolution — same PR (#339)
+
+The picker now groups templates and names the trap:
+
+- **"Invitations — sent to parents"** first, with the five live variants at the top and the legacy fallback last, relabelled **"Invitation — legacy fallback (not used for new sends)"**.
+- Then **"Other system emails"**, then **"Custom templates"**.
+- The editor opens on a real invitation variant rather than the fallback.
+- Selecting the fallback shows an amber note: *"Editing this will not change the invitations you send."*
+
+Grouping is presentation-only — `getAllEmailTemplates` and every other consumer are untouched. Pinned by tests that assert every template `resolveInvitationTemplate` can return is in the invitation group (exhaustive over situation × school), that the fallback sorts last, and that its label still says "legacy" and "not used".
+
+No code needed for CH-29 — she should be told where the button is.
+
+---
+
+## Outstanding
+
+| Item | Status |
+|---|---|
+| CH-26 | Fixed in PR #339, CI green — **awaiting `staging → main` promotion** (Brian) |
+| CH-28 | No build needed; picker fix in #339 |
+| CH-29 | No build needed; tell her where Delete is |
+| CH-30 | **Blocked on the promotion**, then set the two contacts to Y11 |
+| CH-27 | **Deferred** (Brian, 22 Aug) — preview + editable-for-this-send, to be built as a later change. Design note: an edited send must be recorded as the sent text in the `email_log` (CI-02), not as the template, or the sent-emails log will misreport what the parent received. |
+| Her stray template | `50f29de6-7397-418e-b8ac-99df38670cb2` — "Invitation - new application - generic", custom, not deleted. To be soft-deleted after the promotion. |
+| Reply | None sent on CH-26…30. She is also still waiting on a timeline for the CH/CI batch. |
