@@ -112,6 +112,62 @@ No code needed for CH-29 — she should be told where the button is.
 
 ---
 
+## E6 — 09:35 · Three invitations have been sent out · **most recent**
+
+- **Message ID**: `1a0289c4a546787f` · [open message](https://mail.google.com/mail/u/0/#all/1a0289c4a546787f) · Cc: Alex Skrzynski
+- *"Okay I have taken a leap of faith and sent the three invitations. I have scrolled down the list of email templates and found the Trinity/Whitgift internal bursary ones and updated those templates. Is there any way to see the emails sent?"*
+
+| ID | Type | Item |
+|---|---|---|
+| CH-31 | Already built | *"Is there any way to see the emails sent?"* — **Invitations → Sent Emails** (`/emails`), shipped as CI-02 / E15-X1 in PR #334. It is the UI over the `email_log` table verified below. |
+
+### ✅ The invitations went out correctly
+
+She found the per-situation templates herself by scrolling — so the CH-28 wrong-template risk **did not materialise**. Verified against production `email_log`:
+
+| Recipient | Template used | Status | Resend id |
+|---|---|---|---|
+| jayaprakash.raveendran@gmail.com | `INVITATION_INTERNAL_TS` | SENT | `47cb8cfd…` |
+| williams.dima@gmail.com | `INVITATION_INTERNAL_TS` | SENT | `4a99412f…` |
+| helencord@hotmail.com | `INVITATION_INTERNAL_WS` | SENT | `3e8861d6…` |
+
+Correct school variant in every case, no failures. And the edit-then-send ordering worked out — her template edits landed **before** all three sends:
+
+| Time (UTC) | Event |
+|---|---|
+| 08:25:52 | She edits `INVITATION_INTERNAL_TS` (Trinity) |
+| 08:28:38 | She edits `INVITATION_INTERNAL_WS` (Whitgift) |
+| 08:29:22 | Aditya JAYAPRAKASH invited — Trinity → TS |
+| 08:30:10 | Denzel Williams invited — Trinity → TS |
+| 08:30:17 | Jack Curror invited — Whitgift → WS |
+
+So all three parents received her updated wording. Nothing to redo.
+
+### 🚨 But CH-30 is now bigger — and time-limited
+
+`entryYearGroup` is **copied forward**, not looked up:
+
+```
+contact ──(invite-actions.ts)──▶ invitation ──(register/actions.ts,
+                                  createFirstYearApplicationFromSource)──▶ application + bursary account
+```
+
+Because she invited before the year group could be corrected, `OTHER` is now baked into the two **invitation** rows as well as the contacts:
+
+| Invitation id | Child | School | Value | Status |
+|---|---|---|---|---|
+| `1c5f1496-89e8-49a4-91a4-7ecbbc2c16bf` | Aditya JAYAPRAKASH | Trinity | `OTHER` | PENDING |
+| `bf32df5f-3a18-495a-b2b9-0cdfd4c8b8f8` | Jack Curror | Whitgift | `OTHER` | PENDING |
+| `28775133-f31e-4a6b-97e3-8a1bfd1459a0` | Denzel Williams | Trinity | `Y12` ✅ | PENDING |
+
+**Fixing `contacts` alone is not enough** — the application is stamped from `invitation.entryYearGroup`.
+
+Right now this is still cheap: all three invitations are `PENDING` with `accepted_at = null`, and production has **0 applications and 0 bursary accounts**. The moment a parent clicks their link and registers, `OTHER` propagates into an application (and later a bursary account and its schedule), turning a 2-row fix into a 4-row one — and any assessment calculated in between would derive its schooling-years from `OTHER`, i.e. fall back rather than derive.
+
+There is also an ordering constraint that rules out fixing it early: writing `Y11` while production still runs the **pre-#339 Prisma client** would make Prisma throw on deserialising those rows, because the old generated enum has no `Y11`. The promotion must deploy the code *and* apply the migration before any `Y11` is written.
+
+Full guarded script with pre-flight and post-check: `scratchpad/ch30-prod-fix.sql`.
+
 ## Outstanding
 
 | Item | Status |
@@ -119,7 +175,8 @@ No code needed for CH-29 — she should be told where the button is.
 | CH-26 | Fixed in PR #339, CI green — **awaiting `staging → main` promotion** (Brian) |
 | CH-28 | No build needed; picker fix in #339 |
 | CH-29 | No build needed; tell her where Delete is |
-| CH-30 | **Blocked on the promotion**, then set the two contacts to Y11 |
+| CH-30 | **Blocked on the promotion**, then set Y11 on the two contacts **and the two already-sent invitations** — before a parent registers (see E6) |
+| CH-31 | No build needed; Sent Emails already exists at Invitations → Sent Emails |
 | CH-27 | **Deferred** (Brian, 22 Aug) — preview + editable-for-this-send, to be built as a later change. Design note: an edited send must be recorded as the sent text in the `email_log` (CI-02), not as the template, or the sent-emails log will misreport what the parent received. |
 | Her stray template | `50f29de6-7397-418e-b8ac-99df38670cb2` — "Invitation - new application - generic", custom, not deleted. To be soft-deleted after the promotion. |
 | Reply | None sent on CH-26…30. She is also still waiting on a timeline for the CH/CI batch. |
