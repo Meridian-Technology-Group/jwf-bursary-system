@@ -69,7 +69,7 @@ describe("invitation template grouping (CH-28)", () => {
       }
     }
 
-    for (const type of resolved) {
+    for (const type of Array.from(resolved)) {
       expect(
         INVITATION_TEMPLATE_TYPES,
         `${type} is resolvable but missing from the invitation group`
