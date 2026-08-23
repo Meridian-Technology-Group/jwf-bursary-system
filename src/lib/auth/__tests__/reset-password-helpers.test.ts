@@ -2,6 +2,7 @@ import { describe, expect, it, vi, beforeEach } from "vitest";
 
 import {
   mapAuthCallbackError,
+  pickRecoveryToken,
   postUpdateDestination,
   validateNewPassword,
 } from "../reset-password-helpers";
@@ -34,6 +35,33 @@ describe("validateNewPassword", () => {
       "a-long-enough-password"
     );
     expect(result).toEqual({ ok: true });
+  });
+});
+
+describe("pickRecoveryToken", () => {
+  it("returns the hash for a recovery link", () => {
+    expect(pickRecoveryToken("abc123", "recovery")).toBe("abc123");
+  });
+
+  it("accepts an absent type (template variants omit it)", () => {
+    expect(pickRecoveryToken("abc123", undefined)).toBe("abc123");
+  });
+
+  it("takes the first value when Next passes repeated params as arrays", () => {
+    expect(pickRecoveryToken(["abc123", "def456"], ["recovery"])).toBe("abc123");
+  });
+
+  it("refuses a hash minted for a different flow", () => {
+    // An invite or email-change hash must not be spendable on this form.
+    expect(pickRecoveryToken("abc123", "invite")).toBeNull();
+    expect(pickRecoveryToken("abc123", "email_change")).toBeNull();
+    expect(pickRecoveryToken("abc123", "signup")).toBeNull();
+  });
+
+  it("returns null for a direct visit or a truncated link", () => {
+    expect(pickRecoveryToken(undefined, undefined)).toBeNull();
+    expect(pickRecoveryToken("", "recovery")).toBeNull();
+    expect(pickRecoveryToken("   ", "recovery")).toBeNull();
   });
 });
 

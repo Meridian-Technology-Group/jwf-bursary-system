@@ -16,10 +16,12 @@ email at any time.
 6. You'll see a green tick and the message **Check your email**,
    confirming that — if an account exists for that address — a
    reset link has been sent.
-7. Open the email from the Foundation, click the reset link, and
-   choose a new password (at least 12 characters).
-8. After the password is set you'll be returned to the login page
-   to sign in.
+7. Open the email from the Foundation and click the reset link. You'll
+   land on a page titled **Choose a new password**.
+8. Type your new password (at least 12 characters) into both boxes and
+   click **Save new password**.
+9. You're signed in straight away — click **Continue to your account**
+   to carry on. There's no need to sign in again.
 
 ## If something goes wrong
 
