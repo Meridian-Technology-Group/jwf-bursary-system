@@ -5,7 +5,11 @@
  * - Email confirmation (after sign-up)
  * - Magic link sign-in
  * - OAuth provider sign-in
- * - Password reset email link
+ *
+ * NOT password reset. Recovery links go straight to /reset-password/update
+ * with a `token_hash`, because the code exchange below spends the token on
+ * the first GET — which mail-security link scanners perform on arrival,
+ * burning the link before the recipient clicks it.
  *
  * The `code` query param is exchanged for a session via
  * supabase.auth.exchangeCodeForSession(). Cookies are then set by

@@ -1,6 +1,6 @@
 /**
  * Pure helpers for the password-reset flow (request → email link →
- * /auth/callback → /reset-password/update).
+ * /reset-password/update?token_hash=…).
  *
  * Kept free of Supabase imports so they can be unit-tested directly.
  */
@@ -28,8 +28,38 @@ export async function validateNewPassword(
 }
 
 /**
+ * Pull the recovery token out of the reset link's query string.
+ *
+ * The recovery email links straight here carrying Supabase's `token_hash`
+ * (see the template in docs/operations/password-reset-email-template.md).
+ * Returns null when the token is absent, empty or carries a `type` other
+ * than `recovery` — an invite or email-change hash must not be spendable
+ * on the set-a-new-password form.
+ *
+ * Next passes repeated query params as arrays; take the first value.
+ */
+export function pickRecoveryToken(
+  tokenHash: string | string[] | undefined,
+  type: string | string[] | undefined
+): string | null {
+  const hash = (Array.isArray(tokenHash) ? tokenHash[0] : tokenHash)?.trim();
+  if (!hash) return null;
+
+  const linkType = (Array.isArray(type) ? type[0] : type)?.trim();
+  // Supabase omits `type` on some template variants; absent is treated as
+  // recovery because this route is only ever linked from the reset email.
+  if (linkType && linkType !== "recovery") return null;
+
+  return hash;
+}
+
+/**
  * Map the /auth/callback error codes (surfaced as /login?error=…) to a
  * human message. Unknown codes return null so nothing leaks to the UI.
+ *
+ * Recovery no longer runs through /auth/callback (see pickRecoveryToken),
+ * but the callback still serves magic-link and OAuth sign-in, so these
+ * codes remain reachable.
  */
 export function mapAuthCallbackError(code: string | null): string | null {
   switch (code) {
