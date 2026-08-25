@@ -51,6 +51,85 @@ Also visible in the same image, incidentally confirming the fee reference is
 correct: Trinity £25,390.00 / Whitgift £26,175.00 for 2026-27, and £24,366.67 /
 £25,200.00 for 2025-26.
 
+## 25 Aug follow-up (msg `1a03a0ef60dcb5b9`, 17:54 UTC) — Q1 + Q2 answered
+
+| File | Feeds | What it settles |
+|---|---|---|
+| `ch41-property-option-and-total-value.png` | **CH-41** | The two inputs to match: the existing 4-option `Property asset structure` dropdown, and **`DISPLAY ONLY — HOUSEHOLD'S TOTAL PROPERTY VALUE`** (£450,000 in her case). Her annotation: *"the sum of the values entered into the **market value** fields"*. |
+| `ch41-property-benchmark-table2.png` | **CH-41** | Her scoping-document Table 2 in full — Single / Double / Multiple portfolio blocks, each row a value band × an equity condition → a category. |
+| `ch52-affordability-lower-band.png` | **CH-52** | The bottom band as it stands: `27001 → 29000 @ 0%`. |
+| `ch52-affordability-upper-bands.png` | **CH-52** | The top three bands: `98001–100000 @ 35%`, `100001–103000 @ 40%`, `103001–105000 @ 45%`. |
+| `ch50-51-school-fees-admin.png` | **CH-50/51** | The School Annual Fees admin table she wants relabelled and extended. |
+
+### CH-41 — the screenshot corrects her prose, twice
+
+Her email says *"the assessor enters the **equity** value of these properties"*. The
+screenshot says the matched figure is the **total market value** — she boxed the
+three `MARKET VALUE` rows and the `HOUSEHOLD'S TOTAL PROPERTY VALUE` total, not
+the mortgage-balance rows. The screenshot wins (WP0 rule), and it is
+self-consistent with her footnote: the mortgage/equity dimension is handled by
+the *separate* property equity category, so the property category keys off gross
+value.
+
+**And this is a spec change, not the bug we called it.** Her household carries a
+**£179,000 mortgage on the £450,000 home** (`assessment_properties`:
+`is_mortgage_free: false`). Under Table 2 as written, Single Property × £360K–£500K
+× *with mortgage* → category **3** — exactly what the engine returns. Her expected
+**5** is the `if C103 = C96` row, i.e. owned outright. So the engine is faithful to
+her table; what she is actually asking for is the footnote:
+
+> *"since we have now a property equity category, you may want to ignore all the
+> rows referring to 'with mortgage' and only keep in the table the rows starting
+> with 'if'."*
+
+Dropping the with-mortgage rows gives, for Single Property:
+
+| Total property value | Category |
+|---|---|
+| under £360K | 4 |
+| £360K – £500K | **5** ← her case |
+| £500K – £800K | 7 |
+| £800K – £1.2m | 9 |
+| over £1.2m | 11 |
+
+Double and Multiple portfolios follow the same shape with two extra bands
+(£1.2m–£1.6m → 11, over £1.6m → 13). Renting → 1.
+
+⚠️ **Consequence to put to her before building:** with the with-mortgage rows
+gone, categories **2, 3, 6, 8, 10 and 12 become unreachable** — the property
+category could only ever return 1, 4, 5, 7, 9, 11 or 13. Her wording is
+tentative (*"you may want to"*), so this is a decision, not an instruction.
+
+### CH-52 — the affordability cap, and an example that does not reconcile
+
+Two halves:
+
+- **Lower end.** She confirms 0% should apply from **£0 to £29,000**. The system
+  already behaves that way (a 0% clamp below the table's floor, plus the
+  `27001–29000 @ 0%` row), so this is a no-op behaviourally — worth dropping the
+  first band's floor to `0` so the table documents itself instead of relying on
+  the clamp.
+- **Upper end.** Not "hold the top percentage" as we implemented, but
+  **capped at the full VAT-inclusive school fees for the school in question**.
+  That is a real engine change: the affordability leg becomes
+  `min(pct × income, feesInclVat)`.
+
+**Her worked example does not survive her own grid**, and should be queried
+rather than built to. She says a Whitgift family stops qualifying at
+**£89,257.14**. Against the seeded bands:
+
+- £89,257.14 falls in `88001–90000`, which is **25%** → £22,314, nowhere near the fees.
+- Her figure implies `fees ÷ 0.35 = 89,257.14`, i.e. fees of **£31,240** — which is
+  neither £31,410 (Whitgift 2026-27 incl. VAT) nor £30,240 (2025-26 incl. VAT),
+  the two figures she quotes in the same paragraph.
+- Even taking £31,410 ÷ 0.35 = £89,742.86, that income sits in the **25%** band, so
+  35% cannot apply there.
+
+Working her grid properly, a Whitgift 2026-27 family stops qualifying at
+**£98,001** — the first income in the 35% band, where £34,300 first exceeds
+£31,410. The *principle* is unambiguous and buildable; only the illustration is
+off.
+
 ## Still to pull
 
 The remaining 14 inline images from `1a036115b3877a5f`, plus:

@@ -25,8 +25,11 @@ Board for [`epic-17-assessment-verification-sprint.md`](epic-17-assessment-verif
 | 1 | CH-38 · savings band table (14 rows) | ⬜ next | |
 | 1 | CH-39 · income categories 1→11 | ⬜ blocked on WP0 decode of `1a033733c3550e80/image001` | |
 | 1 | CH-40 · debt-ratio `<` verification | ⬜ | |
-| 1 | CH-41 · property category → 5 | 🔶 blocked on Q1 (her plain-English matrix) | |
+| 1 | CH-41 · property category → 5 | 🔶 **Q1 answered**; now gated on **Q7** (dropping with-mortgage rows kills 6 categories) | |
+| 1 | CH-52 · affordability cap at full incl-VAT fees | ⬜ **Q2 answered**, ready | |
 | 2 | CH-43…CH-49 | ⬜ | |
+| 2 | CH-50 · fees column header "(excluding VAT)" | ⬜ ready | |
+| 2 | CH-51 · fees admin: max payable incl. VAT column | ⬜ ready | |
 | 3 | CH-32 · single-invite BCC | ⬜ buildable on default (option 1) | |
 | 3 | CH-33/CH-34 · progress view + forward view | 🔶 blocked on Q5 (her layout email) | |
 
@@ -86,6 +89,32 @@ prove, since it crosses a route boundary — was exercised on a throwaway of
 mine instead (`R-9`, assessment `1a27e962-…`): status → `COMPLETED`,
 `completed_at` set, `ASSESSMENT_COMPLETE` audit row written, then reopened via
 the UI back to `IN_PROGRESS` to leave it as found.
+
+## 25 Aug follow-up from Charlotte (msg `1a03a0ef60dcb5b9`)
+
+Arrived 17:54 UTC — **25 minutes before the promotion merged**, so it responds to
+the morning email, not to what is now live. Decoded in full; five screenshots
+committed.
+
+- **Q1 and Q2 both answered**, unblocking CH-41 and creating CH-52.
+- **CH-41 is a spec change, not a bug.** Her household has a £179,000 mortgage on
+  a £450,000 home, so her Table 2 as written genuinely yields category 3 — what
+  the engine returns. Her expected 5 comes from her footnote asking to drop the
+  "with mortgage" rows entirely. The morning email called it a bug; it was not.
+- **Her matched figure is total market value, not equity** — her prose and her
+  screenshot disagree, and the screenshot wins.
+- **New Q7 gates CH-41**: dropping those rows makes categories 2, 3, 6, 8, 10, 12
+  unreachable. Her wording was tentative; she should decide that knowingly.
+- **New Q6**: her £89,257.14 illustration does not reconcile with her own grid
+  (that income is in the 25% band; her arithmetic implies fees of £31,240, which
+  is neither figure she quotes). The rule is clear, the example is not — build the
+  rule.
+- **Two new trivial items**, CH-50 and CH-51, on the School Annual Fees admin.
+- She confirmed the Kaluba explanation, and apologised for a block that never
+  happened — Lane 0 shipped without either answer.
+- **Outside the sprint**: she is proposing a Grant Tracker call on data migration
+  and integration, next week or the week of 7 Sept, and awaits Brian's
+  availability.
 
 ## Notes for the next session
 
