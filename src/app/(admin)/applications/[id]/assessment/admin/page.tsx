@@ -253,7 +253,13 @@ export default async function AssessmentAdminPage({ params }: Props) {
             <table className="w-full min-w-[1080px] text-sm">
               <thead>
                 <tr className="border-b border-slate-200 bg-slate-50 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                  <th className="px-3 py-2">Assessment Year</th>
+                  {/* CH-56b — Charlotte, 25 Aug: "Let's call it 'Financial Assessment
+                      year' as it could be the previous tax year or the one
+                      before that." CH-56 moved the value back a year and left
+                      this header saying "Assessment Year", which was then
+                      wrong. Her wording is deliberately loose because the
+                      figures are not always the immediately preceding year. */}
+                  <th className="px-3 py-2">Financial Assessment year</th>
                   <th className="px-3 py-2 text-right">Overall net income</th>
                   <th className="px-3 py-2 text-right">Total savings</th>
                   <th className="px-3 py-2 text-right">Property equity</th>
@@ -289,7 +295,13 @@ export default async function AssessmentAdminPage({ params }: Props) {
             <table className="w-full min-w-[1080px] text-sm">
               <thead>
                 <tr className="border-b border-slate-200 bg-slate-50 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                  <th className="px-3 py-2">Assessment Year</th>
+                  {/* CH-56b — Charlotte, 25 Aug: "Let's call it 'Financial Assessment
+                      year' as it could be the previous tax year or the one
+                      before that." CH-56 moved the value back a year and left
+                      this header saying "Assessment Year", which was then
+                      wrong. Her wording is deliberately loose because the
+                      figures are not always the immediately preceding year. */}
+                  <th className="px-3 py-2">Financial Assessment year</th>
                   <th className="px-3 py-2 text-right">Overall net income</th>
                   <th className="px-3 py-2 text-right">Total savings</th>
                   <th className="px-3 py-2 text-right">Property equity</th>
