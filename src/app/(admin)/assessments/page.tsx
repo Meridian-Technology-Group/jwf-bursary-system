@@ -14,6 +14,7 @@
  */
 
 import Link from "next/link";
+import { ChevronUp, ChevronDown, ChevronsUpDown } from "lucide-react";
 import { requireRole, Role } from "@/lib/auth/roles";
 import { withUserContext, type RlsRole } from "@/lib/db/prisma";
 import {
@@ -35,6 +36,24 @@ export const metadata = {
 };
 
 type SearchParams = Record<string, string | string[] | undefined>;
+
+/**
+ * CH-45 — sortable Submitted column. Charlotte: *"Can I have the option when I
+ * click on the submitted column header for the assessments to be re-ordered
+ * chronologically?"* She later confirmed the sort she had seen was on the
+ * Applications page, not here.
+ *
+ * Done as a search param on this server component rather than by converting the
+ * table to the Applications page's client-side `@tanstack/react-table` setup —
+ * that would be a large refactor of a page she uses daily, for one column. The
+ * affordance and the chevrons match the other table.
+ */
+type SubmittedSort = "submitted_asc" | "submitted_desc";
+
+function parseSort(value: string | string[] | undefined): SubmittedSort | undefined {
+  const raw = firstValue(value);
+  return raw === "submitted_asc" || raw === "submitted_desc" ? raw : undefined;
+}
 
 function firstValue(value: string | string[] | undefined): string | undefined {
   return Array.isArray(value) ? value[0] : value;
@@ -79,6 +98,7 @@ export default async function AssessmentsPage({
   const params = await searchParams;
 
   const statusFilter = parseStatus(params.status);
+  const sort = parseSort(params.sort);
   const assigneeFilter =
     user.role === Role.ASSESSOR ? user.id : firstValue(params.assignee);
 
@@ -98,9 +118,24 @@ export default async function AssessmentsPage({
     }
   );
 
-  const visible = statusFilter
+  const filtered = statusFilter
     ? rows.filter((r) => r.status === statusFilter)
     : rows;
+
+  // CH-45 — the query already returns submittedAt ascending, so no sort param
+  // leaves the existing order untouched. Nulls sort last either way: an
+  // application with no submission date has nothing to order by, and burying it
+  // at the bottom beats it jumping to the top when she flips direction.
+  const visible = sort
+    ? [...filtered].sort((a, b) => {
+        const at = a.submittedAt?.getTime();
+        const bt = b.submittedAt?.getTime();
+        if (at === undefined && bt === undefined) return 0;
+        if (at === undefined) return 1;
+        if (bt === undefined) return -1;
+        return sort === "submitted_asc" ? at - bt : bt - at;
+      })
+    : filtered;
 
   const counts = new Map<AssessmentQueueStatus, number>();
   for (const r of rows) counts.set(r.status, (counts.get(r.status) ?? 0) + 1);
@@ -111,8 +146,21 @@ export default async function AssessmentsPage({
     if (user.role !== Role.ASSESSOR && assigneeFilter) {
       qp.set("assignee", assigneeFilter);
     }
+    if (sort) qp.set("sort", sort);
     const qs = qp.toString();
     return qs ? `/assessments?${qs}` : "/assessments";
+  };
+
+  // CH-45 — the header link keeps whatever filters are active and only flips
+  // the direction, so sorting never silently widens the list she is looking at.
+  const sortHref = (next: SubmittedSort) => {
+    const qp = new URLSearchParams();
+    if (statusFilter) qp.set("status", statusFilter);
+    if (user.role !== Role.ASSESSOR && assigneeFilter) {
+      qp.set("assignee", assigneeFilter);
+    }
+    qp.set("sort", next);
+    return `/assessments?${qp.toString()}`;
   };
 
   return (
@@ -209,7 +257,31 @@ export default async function AssessmentsPage({
                 <th className="px-4 py-3 font-medium">Round</th>
                 <th className="px-4 py-3 font-medium">Assessment status</th>
                 <th className="px-4 py-3 font-medium">Assignee</th>
-                <th className="px-4 py-3 font-medium">Submitted</th>
+                <th className="px-4 py-3 font-medium">
+                  <Link
+                    href={sortHref(
+                      sort === "submitted_asc" ? "submitted_desc" : "submitted_asc"
+                    )}
+                    className="inline-flex items-center hover:text-primary-700"
+                    aria-label={
+                      sort === "submitted_asc"
+                        ? "Sort by submitted date, newest first"
+                        : "Sort by submitted date, oldest first"
+                    }
+                  >
+                    Submitted
+                    {sort === "submitted_asc" ? (
+                      <ChevronUp className="ml-1 inline h-3 w-3" aria-hidden="true" />
+                    ) : sort === "submitted_desc" ? (
+                      <ChevronDown className="ml-1 inline h-3 w-3" aria-hidden="true" />
+                    ) : (
+                      <ChevronsUpDown
+                        className="ml-1 inline h-3 w-3 opacity-40"
+                        aria-hidden="true"
+                      />
+                    )}
+                  </Link>
+                </th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">

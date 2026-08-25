@@ -81,6 +81,8 @@ export interface V2AssessmentSnapshot {
   vatRate: number | null;
   scholarshipPct: number | null;
   incomeCategory: number | null;
+  /** CH-44 — the family category, shown on the categories panel. */
+  familyTypeCategory: number | null;
   propertyCategoryDerived: number | null;
   propertyEquityCategory: number | null;
   financialEquityLabel: string | null;
@@ -250,6 +252,12 @@ function AwardLegsPanel({
 
 function ProfilingStrip({ snapshot }: { snapshot: V2AssessmentSnapshot }) {
   const items: Array<{ label: string; value: string }> = [
+    // CH-44 — "Could you add the family category as well?" It leads the list
+    // because it is the input the other categories are derived against.
+    {
+      label: "Family category",
+      value: snapshot.familyTypeCategory?.toString() ?? "—",
+    },
     { label: "Income category", value: snapshot.incomeCategory?.toString() ?? "—" },
     {
       label: "Property category",

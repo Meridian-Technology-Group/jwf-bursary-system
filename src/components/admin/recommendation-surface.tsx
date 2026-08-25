@@ -248,6 +248,7 @@ export async function RecommendationSurface({
       vatRate: toNumber(assessment.vatRate),
       scholarshipPct: toNumber(assessment.scholarshipPct),
       incomeCategory: assessment.incomeCategory,
+      familyTypeCategory: assessment.familyTypeCategory,
       propertyCategoryDerived: assessment.propertyCategoryDerived,
       propertyEquityCategory: assessment.propertyEquityCategory,
       financialEquityLabel: assessment.financialEquityLabel,
