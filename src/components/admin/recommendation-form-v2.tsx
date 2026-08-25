@@ -262,11 +262,14 @@ function ProfilingStrip({ snapshot }: { snapshot: V2AssessmentSnapshot }) {
     { label: "Financial equity", value: snapshot.financialEquityLabel ?? "—" },
     { label: "Debt status", value: snapshot.debtStatusLabel ?? "—" },
     {
+      // CH-42 — status only. Charlotte: "I find odd the 7631% for the
+      // lifestyle squeeze, maybe better to keep only the status displayed
+      // there." The 7631% was itself a bug (the ratio is already in whole
+      // percentage points, and was being multiplied by 100 again), but she
+      // does not want the number on this panel either way. The figure stays
+      // available in SEE COMPUTATION, with the units fixed.
       label: "Lifestyle squeeze",
-      value:
-        snapshot.lifestyleSqueezeRatio != null
-          ? `${(snapshot.lifestyleSqueezeRatio * 100).toFixed(0)}% — ${snapshot.lifestyleSqueezeLabel ?? "—"}`
-          : snapshot.lifestyleSqueezeLabel ?? "—",
+      value: snapshot.lifestyleSqueezeLabel ?? "—",
     },
   ];
   return (

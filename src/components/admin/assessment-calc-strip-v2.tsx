@@ -235,8 +235,13 @@ export function AssessmentCalcStripV2({ output, savingsCushion, className }: Ass
               <Row
                 label="Lifestyle squeeze"
                 value={
+                  // CH-42 — `squeezeRatio` is ALREADY in whole percentage
+                  // points (`profiling.ts`: "100 = 100%"), so the old × 100
+                  // here rendered 76.31% as "7631%". This is the diagnostic
+                  // view, so it keeps the figure; the summary panel shows the
+                  // status alone, per Charlotte.
                   output.lifestyleSqueezeRatio != null
-                    ? `${(output.lifestyleSqueezeRatio * 100).toFixed(0)}% — ${output.lifestyleSqueezeLabel ?? "—"}`
+                    ? `${output.lifestyleSqueezeRatio.toFixed(0)}% — ${output.lifestyleSqueezeLabel ?? "—"}`
                     : output.lifestyleSqueezeLabel ?? "—"
                 }
               />
