@@ -435,7 +435,9 @@ function ParentIncomeColumn({
               "selfEmployed.sa302DocumentId",
               "SA302",
               `SA302 (tax year ${taxYear.sa302TaxYearLabel})`,
-              `SA302 for the tax year ${taxYear.sa302TaxYearLabel}* (* if your financial year is between April and October, please report your self-employed income one year in arrears, so upload your SA302 for the previous tax year)`
+              // CH-47 — the arrears footnote used to say "the previous tax
+              // year", leaving the parent to work out which one. It now names it.
+              `SA302 for the tax year ${taxYear.sa302TaxYearLabel}* (* if your financial year is between April and October, please report your self-employed income one year in arrears, so upload your SA302 for ${taxYear.sa302ArrearsTaxYearLabel} instead)`
             )}
           </GroupEvidenceRow>
         )}
