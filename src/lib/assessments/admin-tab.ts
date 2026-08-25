@@ -154,6 +154,30 @@ export function mergeYoyHistory(
  * plausible horizon (default 8 years — the Year 6 entry maximum; pass the
  * remaining-years figure when known to size it exactly).
  */
+/**
+ * CH-56 — the academic year one year BEFORE the given one.
+ *
+ * Charlotte (25 Aug 2026): *"I think the first row should refer to the previous
+ * tax year… it is just the first year should be always one year prior to the
+ * academic year the award is for."* So a 2026/27 award's first year-on-year
+ * history row reads **2025/26**.
+ *
+ * Her reasoning holds: that table carries income, savings, property equity and
+ * debt, which are the figures of the *completed* tax year the assessment was
+ * based on, not of the academic year the award covers. The payable-fees
+ * schedule below it is genuinely about the award year and she confirmed it
+ * should stay as it is, so this applies to the history table ONLY.
+ *
+ * Returns the input unchanged if it is not a parseable academic year, so a bad
+ * value shows as-is rather than silently becoming something else.
+ */
+export function priorAcademicYear(academicYear: string): string {
+  const m = academicYear.match(/^(\d{4})/)
+  if (!m) return academicYear
+  const start = parseInt(m[1], 10) - 1
+  return `${start}/${String((start + 1) % 100).padStart(2, '0')}`
+}
+
 export function scaffoldAcademicYears(
   roundAcademicYear: string,
   count: number | null | undefined
