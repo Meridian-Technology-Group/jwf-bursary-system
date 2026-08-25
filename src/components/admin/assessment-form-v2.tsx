@@ -1454,7 +1454,28 @@ export function AssessmentFormV2({
             auto={fmtMoney(savingsCushion)}
             note="Reference value only — feeds no calculation."
           />
-          <WBRow label="DISPLAY ONLY - SAVINGS TEST NUMBER" auto={fmtMoney(output?.savingsTestNumber)} />
+          {/* CH-37 — the savings test deducts the yearly debt repayments, which
+              are entered in PART 5, further down the form. Charlotte read that
+              as the calculation being unable to run ("the formula is linking a
+              value which is to be entered further down the model"). The engine
+              is not a spreadsheet — it takes every input and computes once, so
+              the figure has always been correct. What was missing was any way
+              to SEE the third input at the point it is consumed. Surfacing it
+              here puts all three of the test's inputs in dependency order,
+              directly above the test, without moving a line out of the total it
+              feeds (PART 3's TOTAL DEDUCTED NOTIONAL SPEND sums the add-back
+              below, so relocating that row would split a total across two
+              parts). */}
+          <WBRow
+            label="DISPLAY ONLY - DERIVED YEARLY DEBT REPAYMENTS"
+            auto={fmtMoney(output?.derivedYearlyDebtRepayments)}
+            note="Entered in PART 5. Shown here because the savings test below deducts it."
+          />
+          <WBRow
+            label="DISPLAY ONLY - SAVINGS TEST NUMBER"
+            auto={fmtMoney(output?.savingsTestNumber)}
+            note="Adjusted savings − derived yearly debt repayments − notional savings. Negative means nothing is added back."
+          />
           <WBRow label="IF SAVINGS TEST NUMBER IS POSITIVE, ADD IT IN" auto={lineSigned("savingsTestAddBack")} />
           <WBRow label="IF THE APPLICANT HAS INSURED SCHOOL FEES PAYMENT, ADD YEARLY INSURED TOTAL BACK IN">
             <CurrencyInput
