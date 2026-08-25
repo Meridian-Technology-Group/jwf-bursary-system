@@ -137,26 +137,26 @@ describe("resolveNextYearFees", () => {
     const summary = deriveRecommendationAward({
       nextYearFees: resolved.fees,
       scholarshipPct: 10,
-      bursaryAwardAfterVat: 12000,
+      bursaryAwardBeforeVat: 12000,
       confirmedPayableFees: 15676,
       recommendedPayableFees: 12000,
       vatRate: 20,
     });
     // Derived against the NEXT-year fee (31450), not the current-year 30240.
-    expect(summary.scholarshipValueInclVat).toBe(3774); // 31450 × 10% × 1.2
-    expect(summary.payableFeesNextYear).toBe(15676); // 31450 − 3774 − 12000
+    expect(summary.scholarshipSpendBeforeVat).toBe(3145); // 31450 × 10%
+    expect(summary.netFeesBeforeVat).toBe(16305); // 31450 − 3145 − 12000
   });
 });
 
 describe("deriveRecommendationAward (awardSummary wiring)", () => {
-  it("matches the engine's awardSummary output exactly (workbook Appendix F vector 6)", () => {
-    // fees 31450, scholarship 10%, bursary (after VAT) 12000, VAT 20% →
-    // scholarship value 3774; payable 31450 − 3774 − 12000 = 15676;
-    // spend-before-VAT 10000.
+  it("matches the engine's awardSummary output exactly (CH-36 before-VAT chain)", () => {
+    // fees 31450 before VAT, scholarship 10%, bursary (before VAT) 12000 →
+    // scholarship spend 3145; net 31450 − 3145 − 12000 = 16305;
+    // payable incl. VAT = 16305 × 1.2 = 19566.
     const derived = deriveRecommendationAward({
       nextYearFees: 31450,
       scholarshipPct: 10,
-      bursaryAwardAfterVat: 12000,
+      bursaryAwardBeforeVat: 12000,
       confirmedPayableFees: 15676,
       recommendedPayableFees: 12000,
       vatRate: 20,
@@ -165,38 +165,42 @@ describe("deriveRecommendationAward (awardSummary wiring)", () => {
     const expected = awardSummary({
       nextYearFees: 31450,
       scholarshipPct: 10,
-      bursaryAwardAfterVat: 12000,
+      bursaryAwardBeforeVat: 12000,
       vatRate: 20,
       confirmedPayableFees: 15676,
       recommendedPayableFees: 12000,
     });
 
     expect(derived).toEqual(expected);
-    expect(derived.scholarshipValueInclVat).toBe(3774);
-    expect(derived.payableFeesNextYear).toBe(15676);
-    expect(derived.bursarySpendBeforeVat).toBe(10000);
+    expect(derived.scholarshipSpendBeforeVat).toBe(3145);
+    expect(derived.netFeesBeforeVat).toBe(16305);
+    expect(derived.yearlyPayableFeesInclVat).toBe(19566);
   });
 
-  it("VAT identity holds: spendBeforeVat × 1.2 === award", () => {
+  it("CH-36 identity: VAT is applied once, to the net line only", () => {
     const derived = deriveRecommendationAward({
       nextYearFees: 30000,
       scholarshipPct: 0,
-      bursaryAwardAfterVat: 12000,
+      bursaryAwardBeforeVat: 12000,
       confirmedPayableFees: 0,
       recommendedPayableFees: 0,
       vatRate: 20,
     });
-    expect(Math.round(derived.bursarySpendBeforeVat * 1.2 * 100) / 100).toBe(12000);
+    // Net is the plain arithmetic remainder — no VAT anywhere upstream.
+    expect(derived.netFeesBeforeVat).toBe(18000);
+    // And the payable line is that remainder grossed up exactly once.
+    expect(derived.yearlyPayableFeesInclVat).toBe(21600);
   });
 
   it("defaults the VAT rate when omitted", () => {
     const derived = deriveRecommendationAward({
       nextYearFees: 31450,
       scholarshipPct: 10,
-      bursaryAwardAfterVat: 12000,
+      bursaryAwardBeforeVat: 12000,
       confirmedPayableFees: 15676,
       recommendedPayableFees: 12000,
     });
-    expect(derived.scholarshipValueInclVat).toBe(3774);
+    expect(derived.scholarshipSpendBeforeVat).toBe(3145);
+    expect(derived.yearlyPayableFeesInclVat).toBe(19566);
   });
 });

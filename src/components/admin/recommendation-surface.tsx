@@ -268,9 +268,10 @@ export async function RecommendationSurface({
             bursaryAward: toNumber(recommendation.bursaryAward),
             scholarshipAward: toNumber(recommendation.scholarshipAward),
             confirmedPayableFees: toNumber(recommendation.confirmedPayableFees),
-            scholarshipValueInclVat: toNumber(
-              recommendation.scholarshipValueInclVat
+            scholarshipSpendBeforeVat: toNumber(
+              recommendation.scholarshipSpendBeforeVat
             ),
+            netFeesBeforeVat: toNumber(recommendation.netFeesBeforeVat),
             bursarySpendBeforeVat: toNumber(recommendation.bursarySpendBeforeVat),
             gapAmount: toNumber(recommendation.gapAmount),
             lastPayableFees: toNumber(recommendation.lastPayableFees),

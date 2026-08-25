@@ -154,7 +154,7 @@ describe('calculateAssessmentV2 — higher-income single-property homeowner', ()
     annualFees: 25_000,
     scholarshipPct: 0,
     nextYearFees: 26_000,
-    bursaryAwardAfterVat: 3_000,
+    bursaryAwardBeforeVat: 3_000,
     confirmedPayableFees: 23_000,
   }
 
@@ -185,10 +185,13 @@ describe('calculateAssessmentV2 — higher-income single-property homeowner', ()
     expect(result.feesBenchmarkPct).toBe(27)
   })
 
-  it('computes the award summary when nextYearFees + bursaryAwardAfterVat are supplied', () => {
+  it('computes the award summary when nextYearFees + bursaryAwardBeforeVat are supplied', () => {
     expect(result.awardSummary).not.toBeNull()
-    expect(result.awardSummary?.bursarySpendBeforeVat).toBeCloseTo(2_500, 5)
-    expect(result.awardSummary?.payableFeesNextYear).toBeCloseTo(23_000, 5)
+    // CH-36: fees 26,000 before VAT, 0% scholarship, bursary 3,000 before VAT →
+    // net 23,000 before VAT, payable 27,600 including VAT.
+    expect(result.awardSummary?.scholarshipSpendBeforeVat).toBeCloseTo(0, 5)
+    expect(result.awardSummary?.netFeesBeforeVat).toBeCloseTo(23_000, 5)
+    expect(result.awardSummary?.yearlyPayableFeesInclVat).toBeCloseTo(27_600, 5)
     expect(result.awardSummary?.gapAmount).toBeCloseTo(23_000 - result.recommendedPayableFees, 5)
   })
 
@@ -199,7 +202,7 @@ describe('calculateAssessmentV2 — higher-income single-property homeowner', ()
 
 // ─── Award summary omission ─────────────────────────────────────────────────
 
-describe('calculateAssessmentV2 — award summary is null without nextYearFees/bursaryAwardAfterVat', () => {
+describe('calculateAssessmentV2 — award summary is null without nextYearFees/bursaryAwardBeforeVat', () => {
   it('leaves awardSummary null when neither is supplied', () => {
     const result = calculateAssessmentV2(
       {
