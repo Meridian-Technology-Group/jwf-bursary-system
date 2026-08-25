@@ -99,12 +99,12 @@ export function resolveNextYearFees(input: {
 
 /** Inputs the assessor supplies on the v2 recommendation screen. */
 export interface RecommendationAwardInput {
-  /** Next-year fees the summary works against (see `resolveNextYearFees`). */
+  /** Next-year fees the summary works against, before VAT (see `resolveNextYearFees`). */
   nextYearFees: number;
   /** Scholarship percentage 0–100. */
   scholarshipPct: number;
-  /** Bursary award, after VAT, assessor-entered (C166). */
-  bursaryAwardAfterVat: number;
+  /** Bursary award/spend, BEFORE VAT, assessor-entered (CH-36). */
+  bursaryAwardBeforeVat: number;
   /** What the assessor is confirming as this year's payable fees (C172). */
   confirmedPayableFees: number;
   /** The engine's min-of-three recommended payable fees (from the snapshot). */
@@ -114,11 +114,11 @@ export interface RecommendationAwardInput {
 }
 
 /**
- * Full derived award figures for the v2 recommendation surface: the after-VAT
- * scholarship value, next-year payable fees, before-VAT school spend, and the
- * recommended→confirmed gap — all via the engine's `awardSummary`
- * (`gapAmount` here always resolves to a number because both inputs are always
- * supplied on this screen).
+ * Full derived award figures for the v2 recommendation surface (CH-36): the
+ * before-VAT scholarship spend, before-VAT net fees, the VAT-inclusive yearly
+ * payable fees, and the recommended→confirmed gap — all via the engine's
+ * `awardSummary` (`gapAmount` here always resolves to a number because both
+ * inputs are always supplied on this screen).
  */
 export function deriveRecommendationAward(
   input: RecommendationAwardInput,
@@ -126,7 +126,7 @@ export function deriveRecommendationAward(
   return awardSummary({
     nextYearFees: input.nextYearFees,
     scholarshipPct: input.scholarshipPct,
-    bursaryAwardAfterVat: input.bursaryAwardAfterVat,
+    bursaryAwardBeforeVat: input.bursaryAwardBeforeVat,
     vatRate: input.vatRate ?? DEFAULT_VAT_RATE,
     confirmedPayableFees: input.confirmedPayableFees,
     recommendedPayableFees: input.recommendedPayableFees,

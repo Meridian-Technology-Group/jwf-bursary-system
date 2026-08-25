@@ -613,41 +613,50 @@ model AssessmentChecklist {
 
 /// Structured recommendation output per assessment.
 model Recommendation {
-  id                      String                     @id @default(uuid()) @db.Uuid
-  assessmentId            String                     @unique @map("assessment_id") @db.Uuid
-  bursaryAccountId        String?                    @map("bursary_account_id") @db.Uuid
-  roundId                 String                     @map("round_id") @db.Uuid
-  familySynopsis          String?                    @map("family_synopsis")
-  accommodationStatus     String?                    @map("accommodation_status")
-  incomeCategory          String?                    @map("income_category")
-  propertyCategory        Int?                       @map("property_category")
-  bursaryAward            Decimal?                   @map("bursary_award") @db.Decimal(10, 2)
+  id                        String                     @id @default(uuid()) @db.Uuid
+  assessmentId              String                     @unique @map("assessment_id") @db.Uuid
+  bursaryAccountId          String?                    @map("bursary_account_id") @db.Uuid
+  roundId                   String                     @map("round_id") @db.Uuid
+  familySynopsis            String?                    @map("family_synopsis")
+  accommodationStatus       String?                    @map("accommodation_status")
+  incomeCategory            String?                    @map("income_category")
+  propertyCategory          Int?                       @map("property_category")
+  bursaryAward              Decimal?                   @map("bursary_award") @db.Decimal(10, 2)
   /// Distinct merit/academic scholarship award (£), recorded alongside the
   /// means-tested bursary award (Epic 08, Decision D9). Additive/nullable —
   /// NULL means no scholarship award was recorded for this recommendation.
   /// The 0–100 Assessment.scholarshipPct remains the fee-calculation lever; this
   /// is the recorded £ figure the rolling account carries forward (Epic 10).
-  scholarshipAward        Decimal?                   @map("scholarship_award") @db.Decimal(10, 2)
-  yearlyPayableFees       Decimal?                   @map("yearly_payable_fees") @db.Decimal(10, 2)
-  monthlyPayableFees      Decimal?                   @map("monthly_payable_fees") @db.Decimal(10, 2)
-  dishonestyFlag          Boolean                    @default(false) @map("dishonesty_flag")
-  creditRiskFlag          Boolean                    @default(false) @map("credit_risk_flag")
-  summary                 String?
+  scholarshipAward          Decimal?                   @map("scholarship_award") @db.Decimal(10, 2)
+  yearlyPayableFees         Decimal?                   @map("yearly_payable_fees") @db.Decimal(10, 2)
+  monthlyPayableFees        Decimal?                   @map("monthly_payable_fees") @db.Decimal(10, 2)
+  dishonestyFlag            Boolean                    @default(false) @map("dishonesty_flag")
+  creditRiskFlag            Boolean                    @default(false) @map("credit_risk_flag")
+  summary                   String?
   /// CALC-02 — v2 min-of-three award + gap tracking (CALC-06, CALC-08). All
   /// nullable/additive; null for every v1 recommendation.
-  recommendedPayableFees  Decimal?                   @map("recommended_payable_fees") @db.Decimal(10, 2)
-  confirmedPayableFees    Decimal?                   @map("confirmed_payable_fees") @db.Decimal(10, 2)
-  gapAmount               Decimal?                   @map("gap_amount") @db.Decimal(10, 2)
-  lastPayableFees         Decimal?                   @map("last_payable_fees") @db.Decimal(10, 2)
-  scholarshipValueInclVat Decimal?                   @map("scholarship_value_incl_vat") @db.Decimal(10, 2)
-  bursarySpendBeforeVat   Decimal?                   @map("bursary_spend_before_vat") @db.Decimal(10, 2)
-  createdAt               DateTime                   @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt               DateTime                   @updatedAt @map("updated_at") @db.Timestamptz(6)
-  reasonCodes             RecommendationReasonCode[]
-  gapReasons              RecommendationGapReason[]
-  assessment              Assessment                 @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
-  bursaryAccount          BursaryAccount?            @relation(fields: [bursaryAccountId], references: [id])
-  round                   Round                      @relation(fields: [roundId], references: [id])
+  recommendedPayableFees    Decimal?                   @map("recommended_payable_fees") @db.Decimal(10, 2)
+  confirmedPayableFees      Decimal?                   @map("confirmed_payable_fees") @db.Decimal(10, 2)
+  gapAmount                 Decimal?                   @map("gap_amount") @db.Decimal(10, 2)
+  lastPayableFees           Decimal?                   @map("last_payable_fees") @db.Decimal(10, 2)
+  /// DEPRECATED by CH-36 — retained, no longer written. The award summary is
+  /// computed before VAT throughout, so there is no VAT-inclusive scholarship
+  /// value to store. Superseded by `scholarshipSpendBeforeVat`.
+  scholarshipValueInclVat   Decimal?                   @map("scholarship_value_incl_vat") @db.Decimal(10, 2)
+  /// CH-36 — the assessor-entered bursary award, which under the before-VAT
+  /// model IS the school's before-VAT spend for the pupil.
+  bursarySpendBeforeVat     Decimal?                   @map("bursary_spend_before_vat") @db.Decimal(10, 2)
+  /// CH-36 `autofill 4` — fees x scholarship%, before VAT.
+  scholarshipSpendBeforeVat Decimal?                   @map("scholarship_spend_before_vat") @db.Decimal(10, 2)
+  /// CH-36 `autofill 2` — fees - scholarship spend - bursary award, floored at £0.
+  netFeesBeforeVat          Decimal?                   @map("net_fees_before_vat") @db.Decimal(10, 2)
+  createdAt                 DateTime                   @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt                 DateTime                   @updatedAt @map("updated_at") @db.Timestamptz(6)
+  reasonCodes               RecommendationReasonCode[]
+  gapReasons                RecommendationGapReason[]
+  assessment                Assessment                 @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+  bursaryAccount            BursaryAccount?            @relation(fields: [bursaryAccountId], references: [id])
+  round                     Round                      @relation(fields: [roundId], references: [id])
 
   @@map("recommendations")
 }

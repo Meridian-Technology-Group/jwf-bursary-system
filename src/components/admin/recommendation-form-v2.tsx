@@ -9,10 +9,10 @@
  *    read straight from the completed assessment's snapshot columns (never
  *    recomputed), with the minimum highlighted — that min (floored at £0) is
  *    `recommendedPayableFees`;
- *  - lets the assessor enter a scholarship %, an after-VAT bursary award, and a
- *    confirmed payable-fees figure, deriving the after-VAT scholarship value,
- *    next-year payable fees and before-VAT school spend LIVE via the engine's
- *    `awardSummary` (assumption CALC-A5);
+ *  - lets the assessor enter a scholarship %, a BEFORE-VAT bursary award, and a
+ *    confirmed payable-fees figure, deriving the before-VAT scholarship spend,
+ *    before-VAT net fees and the VAT-inclusive yearly payable fees LIVE via the
+ *    engine's `awardSummary` (CH-36 — VAT applied once, at the end);
  *  - requires ≥1 reason-for-gap whenever confirmed ≠ recommended (beyond a
  *    £0.01 tolerance) — enforced here AND server-side;
  *  - pre-fills `last payable fees` from the account's previous recommendation;
@@ -25,7 +25,14 @@
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
-import { Save, ShieldAlert, DollarSign, Scale, Info } from "lucide-react";
+import {
+  Save,
+  ShieldAlert,
+  DollarSign,
+  Scale,
+  Info,
+  CheckCircle2,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -49,6 +56,7 @@ import {
   setApplicationAwardAction,
   type SaveRecommendationData,
 } from "@/app/(admin)/applications/[id]/recommendation/actions";
+import { completeAssessmentAction } from "@/app/(admin)/applications/[id]/assessment/actions";
 import {
   computeGapAmount,
   deriveRecommendationAward,
@@ -96,7 +104,8 @@ export interface SerialisedRecommendationV2 {
   bursaryAward: number | null;
   scholarshipAward: number | null;
   confirmedPayableFees: number | null;
-  scholarshipValueInclVat: number | null;
+  scholarshipSpendBeforeVat: number | null;
+  netFeesBeforeVat: number | null;
   bursarySpendBeforeVat: number | null;
   gapAmount: number | null;
   lastPayableFees: number | null;
@@ -303,6 +312,26 @@ export function RecommendationFormV2({
   const router = useRouter();
   const isReadOnly = isTerminalOutcome(assessmentOutcome);
 
+  // CH-35 — completing the assessment from this tab, so the "complete the
+  // assessment" instruction below is not a dead end. The server action carries
+  // its own snapshot guard (CALC-15), which is what makes this safe to offer
+  // away from the assessment form's client-side save-gate.
+  const [isCompletingAssessment, setIsCompletingAssessment] =
+    React.useState(false);
+  const [completeError, setCompleteError] = React.useState<string | null>(null);
+
+  const handleCompleteAssessment = async () => {
+    setIsCompletingAssessment(true);
+    setCompleteError(null);
+    const result = await completeAssessmentAction(assessmentId, applicationId);
+    setIsCompletingAssessment(false);
+    if (result.success) {
+      router.refresh();
+    } else {
+      setCompleteError(result.error);
+    }
+  };
+
   const recommendedPayableFees = snapshot.recommendedPayableFees ?? 0;
   const vatRate = snapshot.vatRate ?? 20;
   const { fees: nextYearFees, usingCurrentYearFee } = resolveNextYearFees({
@@ -329,16 +358,16 @@ export function RecommendationFormV2({
   );
 
   const scholarshipPct = parseNum(scholarshipPctInput);
-  const bursaryAwardAfterVat = parseNum(bursaryAwardInput);
+  const bursaryAwardBeforeVat = parseNum(bursaryAwardInput);
   const confirmedPayableFees = parseNum(confirmedInput);
 
-  // ── Live derivation via the engine's awardSummary (CALC-A5) ──────────────────
+  // ── Live derivation via the engine's awardSummary (CH-36) ───────────────────
   const summary = React.useMemo(
     () =>
       deriveRecommendationAward({
         nextYearFees,
         scholarshipPct,
-        bursaryAwardAfterVat,
+        bursaryAwardBeforeVat,
         confirmedPayableFees,
         recommendedPayableFees,
         vatRate,
@@ -346,7 +375,7 @@ export function RecommendationFormV2({
     [
       nextYearFees,
       scholarshipPct,
-      bursaryAwardAfterVat,
+      bursaryAwardBeforeVat,
       confirmedPayableFees,
       recommendedPayableFees,
       vatRate,
@@ -392,8 +421,8 @@ export function RecommendationFormV2({
       propertyCategory: snapshot.propertyCategoryDerived ?? null,
       // Legacy award columns carry the confirmed figures so recommendation-
       // sourced readers (exports, reports) stay coherent for v2 rows.
-      bursaryAward: bursaryAwardAfterVat,
-      scholarshipAward: summary.scholarshipValueInclVat,
+      bursaryAward: bursaryAwardBeforeVat,
+      scholarshipAward: summary.scholarshipSpendBeforeVat,
       yearlyPayableFees: confirmedPayableFees,
       monthlyPayableFees: monthly,
       dishonestyFlag: snapshot.dishonestyFlag,
@@ -405,8 +434,9 @@ export function RecommendationFormV2({
       confirmedPayableFees,
       gapAmount,
       lastPayableFees,
-      scholarshipValueInclVat: summary.scholarshipValueInclVat,
-      bursarySpendBeforeVat: summary.bursarySpendBeforeVat,
+      scholarshipSpendBeforeVat: summary.scholarshipSpendBeforeVat,
+      netFeesBeforeVat: summary.netFeesBeforeVat,
+      bursarySpendBeforeVat: bursaryAwardBeforeVat,
       gapReasonIds: selectedGapReasonIds,
       // CALC-16 — persist the entered % back onto Assessment.scholarshipPct
       // (the v1 column this form derives from) so it round-trips on reload
@@ -428,8 +458,8 @@ export function RecommendationFormV2({
     if (!pendingDecision) return;
     setIsSettingOutcome(true);
     const result = await setApplicationAwardAction(applicationId, pendingDecision, {
-      bursaryAward: bursaryAwardAfterVat,
-      scholarshipAward: summary.scholarshipValueInclVat,
+      bursaryAward: bursaryAwardBeforeVat,
+      scholarshipAward: summary.scholarshipSpendBeforeVat,
     });
     setIsSettingOutcome(false);
     setPendingDecision(null);
@@ -466,7 +496,9 @@ export function RecommendationFormV2({
       {/* Derived profiling (display-only) */}
       <ProfilingStrip snapshot={snapshot} />
 
-      {/* ── Award summary — scholarship % + bursary award (after VAT) ───────── */}
+      {/* ── Award summary (CH-36) — her six fields, her labels, in her order ──
+          Everything before VAT; VAT applied ONCE at the end, to the payable
+          line, because that is the only figure the parent actually pays. */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base">
@@ -474,21 +506,33 @@ export function RecommendationFormV2({
             Award summary
           </CardTitle>
           <p className="text-sm text-slate-500">
-            Fees for next year:{" "}
-            <span className="font-medium text-slate-700">
-              {formatCurrency(nextYearFees)}
-            </span>
+            School fees, the scholarship and the bursary award are all handled{" "}
+            <span className="font-medium text-slate-700">before VAT</span>. VAT
+            is applied once, to the yearly payable fees — the only line the
+            parent pays.
             {usingCurrentYearFee && (
-              <span className="text-amber-600"> (current-year fee — no next-year figure recorded)</span>
+              <span className="text-amber-600">
+                {" "}
+                Using the current-year fee — no next-year figure is recorded yet.
+              </span>
             )}
-            . The bursary award is entered after VAT and guided by the recommended
-            payable fees; the school&apos;s spend before VAT is derived.
           </p>
         </CardHeader>
         <CardContent className="space-y-5">
+          {/* autofill 1 */}
+          <div className="rounded-md border border-slate-200 bg-slate-50 px-4 py-3">
+            <p className="mb-1 text-xs text-slate-500">
+              Fees for next year (or applicable year) — before VAT
+            </p>
+            <p className="text-base font-semibold text-primary-900">
+              {formatCurrency(nextYearFees)}
+            </p>
+          </div>
+
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            {/* manual fill 1 */}
             <div className="space-y-1.5">
-              <Label htmlFor="scholarship-pct">Scholarship (%)</Label>
+              <Label htmlFor="scholarship-pct">Scholarship Award (%)</Label>
               <Input
                 id="scholarship-pct"
                 type="number"
@@ -502,8 +546,11 @@ export function RecommendationFormV2({
                 placeholder="0"
               />
             </div>
+            {/* manual fill 2 */}
             <div className="space-y-1.5">
-              <Label htmlFor="bursary-award">Bursary award (£, after VAT)</Label>
+              <Label htmlFor="bursary-award">
+                Bursary Award / Spend (£) — before VAT
+              </Label>
               <Input
                 id="bursary-award"
                 type="number"
@@ -518,24 +565,30 @@ export function RecommendationFormV2({
             </div>
           </div>
 
-          {/* Derived figures */}
+          {/* autofill 4, 2, 3 */}
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
             <div className="rounded-md border border-slate-200 bg-slate-50 px-4 py-3">
-              <p className="mb-1 text-xs text-slate-500">Scholarship value (incl. VAT)</p>
+              <p className="mb-1 text-xs text-slate-500">
+                Scholarship Spend — before VAT
+              </p>
               <p className="text-base font-semibold text-primary-900">
-                {formatCurrency(summary.scholarshipValueInclVat)}
+                {formatCurrency(summary.scholarshipSpendBeforeVat)}
               </p>
             </div>
             <div className="rounded-md border border-slate-200 bg-slate-50 px-4 py-3">
-              <p className="mb-1 text-xs text-slate-500">Payable fees (next year)</p>
+              <p className="mb-1 text-xs text-slate-500">
+                Net fees (or applicable year) — before VAT
+              </p>
               <p className="text-base font-semibold text-primary-900">
-                {formatCurrency(summary.payableFeesNextYear)}
+                {formatCurrency(summary.netFeesBeforeVat)}
               </p>
             </div>
-            <div className="rounded-md border border-slate-200 bg-slate-50 px-4 py-3">
-              <p className="mb-1 text-xs text-slate-500">Bursary spend (before VAT)</p>
+            <div className="rounded-md border border-primary-200 bg-primary-50 px-4 py-3">
+              <p className="mb-1 text-xs text-slate-500">
+                Yearly Payable fees — including VAT
+              </p>
               <p className="text-base font-semibold text-primary-900">
-                {formatCurrency(summary.bursarySpendBeforeVat)}
+                {formatCurrency(summary.yearlyPayableFeesInclVat)}
               </p>
             </div>
           </div>
@@ -677,10 +730,44 @@ export function RecommendationFormV2({
       )}
 
       {/* ── Award decision ───────────────────────────────────────────────── */}
+      {/* CH-35 — this used to be a bare instruction with no control anywhere on
+          the tab: the assessment's Complete button lives on the model tab, and
+          the header lifecycle strip only LOOKS clickable. Charlotte read the
+          note, clicked the header's COMPLETE chip, and nothing happened. The
+          instruction now carries the action it asks for. */}
       {!isReadOnly && outcomeLocked && (
-        <p className="text-sm text-slate-500" role="note">
-          Complete the assessment to record the outcome.
-        </p>
+        <Card className="border-amber-200 bg-amber-50/50">
+          <CardContent className="flex flex-wrap items-center justify-between gap-4 py-4">
+            <div>
+              <p className="text-sm font-medium text-slate-700">
+                Complete the assessment to record the outcome.
+              </p>
+              <p className="mt-0.5 text-sm text-slate-500">
+                Save the recommendation above first — the award figures are
+                recorded with the decision.
+              </p>
+              {completeError && (
+                <p
+                  className="mt-1.5 text-sm font-medium text-red-600"
+                  role="alert"
+                >
+                  {completeError}
+                </p>
+              )}
+            </div>
+            <Button
+              type="button"
+              onClick={handleCompleteAssessment}
+              disabled={isCompletingAssessment}
+              className="bg-success-600 text-white hover:bg-success-600/90"
+            >
+              <CheckCircle2 className="mr-2 h-4 w-4" aria-hidden="true" />
+              {isCompletingAssessment
+                ? "Completing…"
+                : "Complete assessment"}
+            </Button>
+          </CardContent>
+        </Card>
       )}
       {!isReadOnly && !outcomeLocked && (
         <Card className="border-slate-200">
@@ -720,8 +807,8 @@ export function RecommendationFormV2({
       <AwardDialog
         open={pendingDecision !== null}
         decision={pendingDecision}
-        scholarshipAward={summary.scholarshipValueInclVat}
-        bursaryAward={bursaryAwardAfterVat}
+        scholarshipAward={summary.scholarshipSpendBeforeVat}
+        bursaryAward={bursaryAwardBeforeVat}
         isPending={isSettingOutcome}
         onConfirm={handleConfirmDecision}
         onCancel={() => setPendingDecision(null)}

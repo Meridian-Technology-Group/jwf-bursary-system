@@ -109,9 +109,9 @@ export interface AssessmentV2Input {
   annualFees: number
   /** Scholarship percentage 0–100 (C164). */
   scholarshipPct: number
-  /** Bursary award, after VAT, assessor-entered (C166). Omit to skip the award summary. */
-  bursaryAwardAfterVat?: number
-  /** Next-year school fees (C163). Omit to skip the award summary. */
+  /** Bursary award/spend, BEFORE VAT, assessor-entered (CH-36). Omit to skip the award summary. */
+  bursaryAwardBeforeVat?: number
+  /** Next-year school fees, before VAT (C163). Omit to skip the award summary. */
   nextYearFees?: number
   /** Default `DEFAULT_VAT_RATE` (`../types`). */
   vatRate?: number
@@ -172,7 +172,7 @@ export interface AssessmentV2Output {
   theoreticalBenchmarkDi: number
   affordabilityAdjustedDi: number
   recommendedPayableFees: number
-  /** `null` unless both `nextYearFees` and `bursaryAwardAfterVat` were supplied on the input. */
+  /** `null` unless both `nextYearFees` and `bursaryAwardBeforeVat` were supplied on the input. */
   awardSummary: AwardSummaryResult | null
 }
 
@@ -262,12 +262,12 @@ export function calculateAssessmentV2(input: AssessmentV2Input, ref: ReferenceBu
   )
 
   const summary =
-    input.nextYearFees === undefined || input.bursaryAwardAfterVat === undefined
+    input.nextYearFees === undefined || input.bursaryAwardBeforeVat === undefined
       ? null
       : awardSummary({
           nextYearFees: input.nextYearFees,
           scholarshipPct: input.scholarshipPct,
-          bursaryAwardAfterVat: input.bursaryAwardAfterVat,
+          bursaryAwardBeforeVat: input.bursaryAwardBeforeVat,
           vatRate: input.vatRate,
           confirmedPayableFees: input.confirmedPayableFees,
           recommendedPayableFees: recommendedPayableFeesValue,

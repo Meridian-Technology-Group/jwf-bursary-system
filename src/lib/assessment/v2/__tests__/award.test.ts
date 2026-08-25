@@ -187,63 +187,110 @@ describe('recommendedPayableFees — Appendix F vector 5 (award floor)', () => {
   })
 })
 
-// ─── awardSummary (C163–C172) — Appendix F vector 6 ────────────────────────
+// ─── awardSummary (C163–C172) — CH-36 before-VAT model ─────────────────────
 
-describe('awardSummary — Appendix F vector 6 (VAT identities)', () => {
-  it('fees 31,450, 10% scholarship → scholarship value (incl VAT) 3,774', () => {
+/**
+ * CH-36 — Charlotte's award-summary spec of 24 Aug 2026 (`image012.png`),
+ * which closes D8 and OVERTURNS `ASSUMPTION(CALC-A5)`. Everything is computed
+ * before VAT; VAT is applied exactly once, at the end, to the payable line.
+ *
+ *   autofill 1  fees before VAT
+ *   manual 1    scholarship %
+ *   autofill 4  scholarship spend before VAT = autofill1 x manual1
+ *   manual 2    bursary award/spend before VAT
+ *   autofill 2  net fees before VAT          = autofill1 - autofill4 - manual2
+ *   autofill 3  yearly payable incl. VAT     = autofill2 x 1.20
+ */
+describe('awardSummary — CH-36 before-VAT chain', () => {
+  it('fees 31,450 at 10% → scholarship spend before VAT 3,145 (no VAT added)', () => {
     const result = awardSummary({
       nextYearFees: 31_450,
       scholarshipPct: 10,
-      bursaryAwardAfterVat: 0,
+      bursaryAwardBeforeVat: 0,
     })
-    expect(result.scholarshipValueInclVat).toBe(3_774)
+    expect(result.scholarshipSpendBeforeVat).toBe(3_145)
   })
 
-  it('bursary award (after VAT) 12,000 → school spend before VAT 10,000', () => {
+  it('net fees before VAT = 31,450 − 3,145 − 12,000 = 16,305', () => {
     const result = awardSummary({
       nextYearFees: 31_450,
       scholarshipPct: 10,
-      bursaryAwardAfterVat: 12_000,
+      bursaryAwardBeforeVat: 12_000,
     })
-    expect(result.bursarySpendBeforeVat).toBe(10_000)
+    expect(result.netFeesBeforeVat).toBe(16_305)
   })
 
-  it('payable = 31,450 − 3,774 − 12,000 = 15,676', () => {
+  it('yearly payable INCLUDING VAT = 16,305 × 1.20 = 19,566', () => {
     const result = awardSummary({
       nextYearFees: 31_450,
       scholarshipPct: 10,
-      bursaryAwardAfterVat: 12_000,
+      bursaryAwardBeforeVat: 12_000,
     })
-    expect(result.payableFeesNextYear).toBe(15_676)
+    expect(result.yearlyPayableFeesInclVat).toBe(19_566)
+  })
+
+  it('applies VAT ONCE — the payable line is exactly the net line grossed up', () => {
+    const result = awardSummary({
+      nextYearFees: 26_175,
+      scholarshipPct: 15,
+      bursaryAwardBeforeVat: 4_000,
+    })
+    expect(result.yearlyPayableFeesInclVat).toBeCloseTo(
+      result.netFeesBeforeVat * 1.2,
+      2,
+    )
+  })
+
+  it('a 0% scholarship leaves the fee untouched before the bursary is deducted', () => {
+    const result = awardSummary({
+      nextYearFees: 26_175,
+      scholarshipPct: 0,
+      bursaryAwardBeforeVat: 0,
+    })
+    expect(result.scholarshipSpendBeforeVat).toBe(0)
+    expect(result.netFeesBeforeVat).toBe(26_175)
+    expect(result.yearlyPayableFeesInclVat).toBe(31_410)
   })
 
   it('honours an explicit vatRate override instead of DEFAULT_VAT_RATE', () => {
     const result = awardSummary({
       nextYearFees: 10_000,
       scholarshipPct: 20,
-      bursaryAwardAfterVat: 1_000,
+      bursaryAwardBeforeVat: 1_000,
       vatRate: 0,
     })
-    // 0% VAT: scholarship = 10000*0.20*1.0 = 2000; spend before VAT = 1000/1.0 = 1000.
-    expect(result.scholarshipValueInclVat).toBe(2_000)
-    expect(result.bursarySpendBeforeVat).toBe(1_000)
-    expect(result.payableFeesNextYear).toBe(7_000)
+    // 0% VAT: scholarship spend = 2,000; net = 7,000; payable = net x 1.0.
+    expect(result.scholarshipSpendBeforeVat).toBe(2_000)
+    expect(result.netFeesBeforeVat).toBe(7_000)
+    expect(result.yearlyPayableFeesInclVat).toBe(7_000)
   })
 
-  it('floors payableFeesNextYear at £0 when scholarship + bursary exceed the fees', () => {
+  it('floors netFeesBeforeVat at £0 when scholarship + bursary exceed the fees', () => {
     const result = awardSummary({
       nextYearFees: 5_000,
       scholarshipPct: 50,
-      bursaryAwardAfterVat: 10_000,
+      bursaryAwardBeforeVat: 10_000,
     })
-    expect(result.payableFeesNextYear).toBe(0)
+    expect(result.netFeesBeforeVat).toBe(0)
+    // A floored net must not produce VAT on a negative remainder.
+    expect(result.yearlyPayableFeesInclVat).toBe(0)
+  })
+
+  it('a full bursary (award = fees) leaves the parent paying nothing', () => {
+    const result = awardSummary({
+      nextYearFees: 26_175,
+      scholarshipPct: 0,
+      bursaryAwardBeforeVat: 26_175,
+    })
+    expect(result.netFeesBeforeVat).toBe(0)
+    expect(result.yearlyPayableFeesInclVat).toBe(0)
   })
 
   it('gapAmount is null when either confirmedPayableFees or recommendedPayableFees is missing', () => {
     const result = awardSummary({
       nextYearFees: 31_450,
       scholarshipPct: 10,
-      bursaryAwardAfterVat: 12_000,
+      bursaryAwardBeforeVat: 12_000,
     })
     expect(result.gapAmount).toBeNull()
   })
@@ -252,7 +299,7 @@ describe('awardSummary — Appendix F vector 6 (VAT identities)', () => {
     const result = awardSummary({
       nextYearFees: 31_450,
       scholarshipPct: 10,
-      bursaryAwardAfterVat: 12_000,
+      bursaryAwardBeforeVat: 12_000,
       confirmedPayableFees: 18_000,
       recommendedPayableFees: 15_676,
     })
@@ -263,7 +310,7 @@ describe('awardSummary — Appendix F vector 6 (VAT identities)', () => {
     const result = awardSummary({
       nextYearFees: 31_450,
       scholarshipPct: 10,
-      bursaryAwardAfterVat: 12_000,
+      bursaryAwardBeforeVat: 12_000,
       confirmedPayableFees: 10_000,
       recommendedPayableFees: 15_676,
     })
