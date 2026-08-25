@@ -90,7 +90,7 @@ export const familyCategoryMetas = [
 // verbatim (18→20 at £75k; 25→27→29→32→35→40→45 at the top).
 
 export const affordabilityBands = [
-  { bandFloor: 27001, bandCeiling: 29000, basePct: 0 },
+  { bandFloor: 0, bandCeiling: 29000, basePct: 0 },
   { bandFloor: 29001, bandCeiling: 32000, basePct: 1 },
   { bandFloor: 32001, bandCeiling: 35000, basePct: 2 },
   { bandFloor: 35001, bandCeiling: 38000, basePct: 3 },

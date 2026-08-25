@@ -5,6 +5,7 @@ import {
   affordabilityAdjustedDI,
   recommendedPayableFees,
   awardSummary,
+  maxPayableFeesInclVat,
 } from '../award'
 import { theoreticalNotionalTotal } from '../../reference-bands'
 import type { ReferenceBundle } from '../types'
@@ -184,6 +185,63 @@ describe('recommendedPayableFees — Appendix F vector 5 (award floor)', () => {
 
   it('picks the actual leg when it is the smallest', () => {
     expect(recommendedPayableFees(1_000, 5_000, 8_000)).toBe(1_000)
+  })
+})
+
+// ─── CH-52 — maxPayableFeesInclVat + the affordability cap ─────────────────
+
+describe('maxPayableFeesInclVat — the single definition of "maximum payable fees"', () => {
+  it("grosses the school's pre-VAT fee up once", () => {
+    expect(maxPayableFeesInclVat(26_175)).toBe(31_410)
+    expect(maxPayableFeesInclVat(25_200)).toBe(30_240)
+  })
+
+  it('honours an explicit VAT rate', () => {
+    expect(maxPayableFeesInclVat(10_000, 0)).toBe(10_000)
+    expect(maxPayableFeesInclVat(10_000, 5)).toBe(10_500)
+  })
+})
+
+describe('affordabilityAdjustedDI — CH-52 cap at the full VAT-inclusive fee', () => {
+  // Whitgift 2026-27: £26,175 ex VAT → £31,410 the parent could ever pay.
+  const cap = maxPayableFeesInclVat(26_175)
+
+  it('leaves a contribution below the fee untouched', () => {
+    const uncapped = affordabilityAdjustedDI(60_000, 1, affordabilityBands)
+    const capped = affordabilityAdjustedDI(60_000, 1, affordabilityBands, cap)
+    expect(uncapped).toBeLessThan(cap)
+    expect(capped).toBe(uncapped)
+  })
+
+  it('caps a very high income at the full fee rather than holding the top %', () => {
+    // £500,000 held the top band's 45% before CH-52 — £225,000, far past the fee.
+    const uncapped = affordabilityAdjustedDI(500_000, 1, affordabilityBands)
+    expect(uncapped).toBeGreaterThan(cap)
+    expect(affordabilityAdjustedDI(500_000, 1, affordabilityBands, cap)).toBe(cap)
+  })
+
+  it('binds at her crossing point: £98,001 is where 35% first exceeds the fee', () => {
+    // Her worked example's intent. At category 1 the band % is unadjusted.
+    const at98001 = affordabilityAdjustedDI(98_001, 1, affordabilityBands)
+    expect(at98001).toBeCloseTo(34_300.35, 2)
+    expect(at98001).toBeGreaterThan(cap)
+    expect(affordabilityAdjustedDI(98_001, 1, affordabilityBands, cap)).toBe(cap)
+
+    // One band lower, 32% of £98,000 is £31,360 — still under the fee, so a
+    // family there keeps qualifying. This is the boundary, not £89,257.
+    const at98000 = affordabilityAdjustedDI(98_000, 1, affordabilityBands)
+    expect(at98000).toBeCloseTo(31_360, 2)
+    expect(at98000).toBeLessThan(cap)
+  })
+
+  it('caps on a mid-range income too when the family category lifts the %', () => {
+    // The cap is not only a top-of-grid concern.
+    const capped = affordabilityAdjustedDI(104_000, 1, affordabilityBands, 5_000)
+    expect(capped).toBe(5_000)
+  })
+
+  it('is unaffected by the cap below the grid — the leg is £0 either way', () => {
+    expect(affordabilityAdjustedDI(20_000, 1, affordabilityBands, cap)).toBe(0)
   })
 })
 

@@ -71,8 +71,16 @@ describe('resolveAffordabilityBand (Appendix B)', () => {
     expect(resolveAffordabilityBand(affordabilityBands, 105_000)?.basePct).toBe(45)
   })
 
-  it('returns null outside the seeded range (CALC-A6 clamp handled by the award engine, not here)', () => {
-    expect(resolveAffordabilityBand(affordabilityBands, 27_000)).toBeNull()
+  it('CH-52 — the grid now covers from £0, so low incomes resolve to the 0% band', () => {
+    // Her confirmation: 0% applies "for an income from £0 to £29,000". The
+    // bottom band's floor dropped from £27,001 to £0 so the table says so
+    // instead of leaving it to the engine's shortcut.
+    expect(resolveAffordabilityBand(affordabilityBands, 0)?.basePct).toBe(0)
+    expect(resolveAffordabilityBand(affordabilityBands, 27_000)?.basePct).toBe(0)
+    expect(resolveAffordabilityBand(affordabilityBands, 29_000)?.basePct).toBe(0)
+  })
+
+  it('still returns null above the seeded range — the engine holds the top band', () => {
     expect(resolveAffordabilityBand(affordabilityBands, 105_001)).toBeNull()
   })
 })

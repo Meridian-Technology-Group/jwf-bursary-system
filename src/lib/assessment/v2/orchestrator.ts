@@ -53,6 +53,7 @@ import {
   actualRemainingDI,
   theoreticalBenchmarkDI,
   affordabilityAdjustedDI,
+  maxPayableFeesInclVat,
   recommendedPayableFees,
   awardSummary,
   type AwardSummaryResult,
@@ -254,7 +255,15 @@ export function calculateAssessmentV2(input: AssessmentV2Input, ref: ReferenceBu
     input.annualFees,
   )
   const theoreticalBenchmarkDi = theoreticalBenchmarkDI(householdNetIncome, category, ref)
-  const affordabilityAdjustedDi = affordabilityAdjustedDI(householdNetIncome, category, ref.affordabilityBands)
+  // CH-52 — the affordability leg is capped at the school's full VAT-inclusive
+  // fee. `annualFees` is the fee for the year being assessed and is always
+  // present, unlike the optional `nextYearFees`, so the cap is always available.
+  const affordabilityAdjustedDi = affordabilityAdjustedDI(
+    householdNetIncome,
+    category,
+    ref.affordabilityBands,
+    maxPayableFeesInclVat(input.annualFees, input.vatRate),
+  )
   const recommendedPayableFeesValue = recommendedPayableFees(
     actualRemainingDi,
     theoreticalBenchmarkDi,
