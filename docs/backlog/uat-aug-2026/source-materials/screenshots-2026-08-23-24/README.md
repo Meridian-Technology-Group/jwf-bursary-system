@@ -11,6 +11,12 @@ Gmail account `brian@meridiantech.group`; message IDs cited per file.
 | `ch35-header-lifecycle-strip.png` | `1a036115b3877a5f` / `image013.png` | **CH-35** | The header she clicked: `NOT STARTED · PAUSED · COMPLETE · LOCKED` drawn as four bordered, filled chips — i.e. as four buttons. This is the "irresponsive COMPLETE button". |
 | `ch35-award-tab-dead-end.png` | `1a036115b3877a5f` / `image015.png` | **CH-35** | The award tab's `Complete the assessment to record the outcome.` — an instruction with no control anywhere on the tab. |
 
+## Our verification captures
+
+| File | What it shows |
+|---|---|
+| `ch36-award-summary-verified-staging.png` | The shipped CH-36 summary on the staging alias, driven against Charlotte's own assessment `WS-202627-0008`: fees £26,175 at 10% with a £12,000 before-VAT bursary → scholarship spend £2,617.50, net £11,557.50, payable **£13,869.00** incl. VAT. Her six labels, her order. The figures were typed but never saved, so her assessment was left untouched. |
+
 ## CH-36 — what the screenshot actually says
 
 Her labels and arithmetic, transcribed verbatim:
