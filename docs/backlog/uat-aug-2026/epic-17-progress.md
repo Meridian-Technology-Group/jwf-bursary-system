@@ -34,7 +34,7 @@ Board for [`epic-17-assessment-verification-sprint.md`](epic-17-assessment-verif
 | C6 | CH-47 · self-employed arrears tax year | ✅ **on `staging`** | #362 |
 | C6b | **CH-47b · winter-window switch** | ⬜ **deferred with reason** — no effect until 10 Nov | |
 | C8 | CH-49 · admin flow-through | ✅ **verified, answered — no build needed** | |
-| C4 | CH-43 · postcode + area lookup | ⬜ needs her xlsx pulled | |
+| C4 | CH-43 · postcode + area lookup | ✅ **on `staging`** | #364, #365 |
 | C7 | CH-48 · fees@ reply-to on staging | 🔶 needs Brian — env var change | |
 | C5 | CH-50/51 · fees admin VAT columns | ✅ **on `staging`** | #359 |
 | 3 | CH-32 · single-invite BCC | ⬜ buildable on default (option 1) | |
@@ -122,6 +122,44 @@ committed.
 - **Outside the sprint**: she is proposing a Grant Tracker call on data migration
   and integration, next week or the week of 7 Sept, and awaits Brian's
   availability.
+
+## ✅ CH-43 postcode lookup on `staging` — 25 Aug
+
+Her spreadsheet transcribed into a new `postcode_areas` table (94 districts) with
+RLS in the same migration. Verified live on the staging alias, all three
+behaviours:
+
+| Typed | Shows | Why |
+|---|---|---|
+| `SM4` | **`SM4-MORDEN`** | her own worked example, exactly |
+| `SM4 5AB` | `SM4-MORDEN` | a full postcode is accepted, inward code dropped |
+| `M1` | `M1-OTHER` | her `*** \| OTHER` catch-all — unlisted districts are not rejected |
+
+Design notes: the field is **manual with no prefill** (she asked explicitly —
+`Contact.postcode` already holds the household's address, worth telling her); the
+area is resolved at read time and **never stored beside the code**, so correcting
+her table fixes every assessment at once; and the lookup is deliberately kept out
+of the engine's `ReferenceBundle` since it feeds no calculation.
+
+### ⚠️ Two mistakes worth recording
+
+**The table shipped empty.** #364's migration created `postcode_areas` but the 94
+rows lived only in `seed-reference.ts`, which is run by hand per environment — so
+the lookup resolved *everything* to `OTHER` and `SM4` read `SM4-OTHER`, the exact
+opposite of her example. This is the same failure mode the CH-38/39 migration was
+written to avoid; the lesson was not applied consistently. Fixed by #365, a
+follow-up seed migration (the original was already applied and must not be
+edited). **Caught by checking `count(*)` after the DB push rather than trusting
+its green tick** — worth keeping as the habit.
+
+**I read a stale CI run.** The first `DB push | success` I checked belonged to the
+previous commit, so the row count looked wrong twice before I matched runs to
+`headSha`. Match the run to the commit, not to "most recent".
+
+**A bug its own test caught:** splitting a space-less full postcode is ambiguous
+from the front — `SM45AB` became `SM45A` under a greedy outward-code pattern. It
+is unambiguous from the back, because a UK inward code is always one digit and
+two letters.
 
 ## ✅ Tranche C batch on `staging` — 25 Aug
 
