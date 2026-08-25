@@ -56,6 +56,22 @@ export type ProvenanceDisplayMap = Record<string, ProvenanceDisplayEntry>;
  * Parses stored provenance JSONB defensively: non-objects (null, arrays,
  * primitives) become `{}` and malformed entries are dropped.
  */
+/**
+ * CH-57 — is this value something `DataBlock` can recurse into?
+ *
+ * Extracted because the bug it prevents is a one-character omission that reads
+ * as correct: `typeof null === "object"` in JavaScript, so `typeof x ===
+ * "object"` happily admits null, and `Object.entries(null)` then throws and
+ * takes the whole Applicant Data tab down with it. Real data hits this — an
+ * unfilled multi-document slot stores `[null, null, null]`.
+ *
+ * Exported so the trap is pinned by a test; this repo has no jsdom, so the
+ * predicate is the testable seam rather than the render.
+ */
+export function isRenderableObject(value: unknown): boolean {
+  return typeof value === "object" && value !== null;
+}
+
 export function asProvenanceMap(raw: unknown): ProvenanceDisplayMap {
   if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return {};
   const map: ProvenanceDisplayMap = {};
@@ -177,13 +193,21 @@ function formatValue(
           const itemEntry = provenance[itemPath];
           return (
             <li key={i} className="text-slate-700">
-              {typeof item === "object" ? (
+              {/* CH-57 — `typeof null === "object"` in JavaScript, so a null
+                  array element used to slip through this check and reach
+                  DataBlock, where Object.entries(null) threw and took the whole
+                  page down. Real applications hit this: an unfilled
+                  multi-document slot stores [null, null, null], which is what
+                  WS-202627-0010's ucMonthlyDocumentIds held. */}
+              {isRenderableObject(item) ? (
                 <DataBlock
                   data={item as Record<string, unknown>}
                   indent
                   provenance={provenance}
                   pathPrefix={itemPath}
                 />
+              ) : item === null || item === undefined ? (
+                <span className="text-slate-400 italic">Not provided</span>
               ) : (
                 <>
                   {String(item)}
@@ -197,7 +221,7 @@ function formatValue(
     );
   }
 
-  if (typeof value === "object") {
+  if (isRenderableObject(value)) {
     return (
       <DataBlock
         data={value as Record<string, unknown>}
@@ -230,7 +254,11 @@ export function DataBlock({
   provenance?: ProvenanceDisplayMap;
   pathPrefix?: string;
 }) {
-  const entries = Object.entries(data);
+  // CH-57 — `data` is TYPED as a record but arrives from JSONB, so it can be
+  // null at runtime. `Object.entries(null)` throws, which crashed the whole
+  // Applicant Data tab. Guarded here as the backstop, and at the array-element
+  // call site below where the null actually gets through.
+  const entries = isRenderableObject(data) ? Object.entries(data) : [];
   if (entries.length === 0)
     return <span className="text-slate-400 italic">Empty</span>;
 
