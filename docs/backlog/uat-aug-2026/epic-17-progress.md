@@ -25,12 +25,11 @@ Board for [`epic-17-assessment-verification-sprint.md`](epic-17-assessment-verif
 | A2 | CH-38 · savings band table (15 rows) | ✅ **on `staging`** | #355 |
 | A3 | CH-39 · income categories 1→11 | ✅ **on `staging`** | #355 |
 | — | Implementation plan | ✅ | #353 |
-| 1 | CH-40 · debt-ratio `<` verification | ⬜ | |
+| B1 | CH-40 · debt-ratio `<` logic | ✅ **on `staging`** | #358 |
 | 1 | CH-41 · property category → 5 | 🔶 **Q1 answered**; now gated on **Q7** (dropping with-mortgage rows kills 6 categories) | |
-| 1 | CH-52 · affordability cap at full incl-VAT fees | ⬜ **Q2 answered**, ready | |
+| B2 | CH-52 · affordability cap at full incl-VAT fees | ✅ **on `staging`** | #359 |
 | 2 | CH-43…CH-49 | ⬜ | |
-| 2 | CH-50 · fees column header "(excluding VAT)" | ⬜ ready | |
-| 2 | CH-51 · fees admin: max payable incl. VAT column | ⬜ ready | |
+| C5 | CH-50/51 · fees admin VAT columns | ✅ **on `staging`** | #359 |
 | 3 | CH-32 · single-invite BCC | ⬜ buildable on default (option 1) | |
 | 3 | CH-33/CH-34 · progress view + forward view | 🔶 blocked on Q5 (her layout email) | |
 
@@ -116,6 +115,54 @@ committed.
 - **Outside the sprint**: she is proposing a Grant Tracker call on data migration
   and integration, next week or the week of 7 Sept, and awaits Brian's
   availability.
+
+## ✅ Tranche B1/B2 + C5 on `staging` — 25 Aug
+
+**CH-40 was not test-only**, contrary to the plan's guess. The seeded boundaries
+were already her non-overlapping reading, but the shared resolver defaults to
+ceiling-*inclusive* and the debt resolver never opted out — so every boundary sat
+on the wrong side (`0.1` read as level 1, not level 2). Now ceiling-exclusive,
+matching the income-category resolver.
+
+**⚠️ New Q9 — zero deliberately left alone.** She puts a ratio of zero in
+level 1. Doing that would make **ZERO DEBT permanently unreachable**, because
+`calculateDebtOverNdiRatio` floors the exposure at zero
+(`Math.max(0, yearlyDebtExposure) / householdNetIncome` — there is an existing
+test asserting exactly that). Every debt-free household would then read "SMALL
+DEBT LEVEL", including one with a large savings surplus. Part 5's reported values
+are signed off, so the zero case is unchanged and the question is asked.
+Resolving Q9 most likely means removing that floor.
+
+**CH-52** caps the affordability leg at the full VAT-inclusive fee, at every
+income rather than only above the grid. Its bottom half is deliberately
+documentary: 0%-from-£0 was already the outcome, so the seeded floor moved from
+£27,001 to £0 to make the table say so, with the engine shortcut kept and no
+displayed figure moved.
+
+**Two things found and deliberately not changed under CH-52:**
+
+- The leg's percentage goes negative in the low bands for a larger family
+  (£28,000 at category 5 → −2% → −£560). Intentional — `recommendedPayableFees`
+  floors the min-of-three — but the legs are *displayed*, so it is visible. I
+  floored it, then reverted: it would alter a figure she has signed off.
+- Her worked example does not survive her own grid. The crossing point for
+  Whitgift 2026-27 is **£98,001** (35% → £34,300 first exceeds £31,410), not the
+  £89,257.14 she quotes, which sits in the 25% band at £22,314. Built to the
+  rule; the crossing point is now a test, along with the band below it.
+
+**CH-50/51** add the excluding-VAT header and a derived max-payable column. Both
+the cap and that column read `maxPayableFeesInclVat`, so they cannot drift apart
+and show the assessor a different ceiling than the one that binds.
+
+### Verified on the staging alias
+
+| Check | Result |
+|---|---|
+| Fees admin columns | ✅ all four rows exact: Trinity £25,390 → £30,468, £24,366.67 → £29,240; Whitgift £26,175 → **£31,410**, £25,200 → £30,240 |
+| Cap ceiling matches her figure | ✅ Whitgift 2026-27 renders **£31,410**, the number she quoted |
+| Affordability floor on nonprod | ✅ first band now `0 → 29,000 @ 0%` |
+
+**2,219 tests passing**; `tsc`, `prisma format --check` and `next build` clean.
 
 ## ✅ Tranche A complete on `staging` — 25 Aug
 
