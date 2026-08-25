@@ -120,12 +120,12 @@ export function recommendedPayableFees(actual: number, theoretical: number, affo
 // ─── C163–C172 — Award summary + VAT treatment ─────────────────────────────
 
 export interface AwardSummaryInput {
-  /** Next-year school fees (C163). */
+  /** `autofill 1` — next-year school fees, BEFORE VAT (C163). */
   nextYearFees: number
-  /** Scholarship percentage 0–100, assessor-entered (C164). */
+  /** `manual fill 1` — scholarship percentage 0–100, assessor-entered (C164). */
   scholarshipPct: number
-  /** Bursary award value, assessor-entered, AFTER VAT (C166) — not auto-derived, unlike v1's `bursaryAward`. */
-  bursaryAwardAfterVat: number
+  /** `manual fill 2` — bursary award/spend, assessor-entered, BEFORE VAT (CH-36). */
+  bursaryAwardBeforeVat: number
   /** Default `DEFAULT_VAT_RATE` (`../types`) — the single VAT-rate source shared with v1. */
   vatRate?: number
   /** The account's confirmed payable fees, when known — feeds `gapAmount` (C172). */
@@ -135,34 +135,49 @@ export interface AwardSummaryInput {
 }
 
 export interface AwardSummaryResult {
-  /** C165 — (fees × scholarship%) × (1 + vatRate/100). `ASSUMPTION(CALC-A5)`: VAT is added TO the scholarship value. */
-  scholarshipValueInclVat: number
-  /** C167 — fees − scholarshipValueInclVat − bursaryAwardAfterVat, floored at £0. */
-  payableFeesNextYear: number
-  /** C169 — the school's true spend for the pupil BEFORE VAT: bursaryAwardAfterVat ÷ (1 + vatRate/100). */
-  bursarySpendBeforeVat: number
+  /** `autofill 4` — scholarship spend BEFORE VAT: fees × scholarship%. */
+  scholarshipSpendBeforeVat: number
+  /** `autofill 2` — net fees BEFORE VAT: fees − scholarshipSpend − bursaryAward, floored at £0. */
+  netFeesBeforeVat: number
+  /** `autofill 3` — yearly payable fees INCLUDING VAT: netFeesBeforeVat × (1 + vatRate/100). What the parent pays. */
+  yearlyPayableFeesInclVat: number
   /** C172 concept — confirmedPayableFees − recommendedPayableFees. `null` when either input is missing. */
   gapAmount: number | null
 }
 
 /**
- * Award summary + VAT treatment (C163–C172). `ASSUMPTION(CALC-A5)` throughout
- * (pending explicit client sign-off of D8) — see implementation-plan.md §2.5
- * and gap-analysis.md §3.14 for the full workbook-vs-v1 comparison this
- * corrects: v1 (`payable-fees.ts`) applies VAT to the NET remainder after
- * scholarship/bursary are deducted; v2 instead treats the scholarship value
- * and the bursary award as already VAT-inclusive figures individually, per
- * the workbook.
+ * Award summary + VAT treatment (C163–C172), per **CH-36** — Charlotte's
+ * award-summary spec of 24 Aug 2026 (`image012.png`), which closes decision
+ * **D8** and **overturns `ASSUMPTION(CALC-A5)`**.
  *
- * Note the inversion vs v1: here the bursary award is an assessor-entered £
- * amount (after VAT), guided by (but not derived from) `recommendedPayableFees`
- * — it is not auto-computed as `fees − NDI` the way v1's `requiredBursary` is.
+ * The whole summary is computed BEFORE VAT, and VAT is applied exactly ONCE,
+ * at the end, to the net payable figure — because the fee reference data is
+ * pre-VAT, while the scholarship and the bursary award are both understood
+ * before VAT. Only the parent's payable fees carry VAT, since that is the
+ * only line they actually pay. Her chain, verbatim:
+ *
+ *     autofill 1  fees for next year (or applicable year) — before VAT
+ *     manual 1    scholarship award (%)
+ *     autofill 4  scholarship spend — before VAT   = autofill1 × manual1
+ *     manual 2    bursary award/spend — before VAT
+ *     autofill 2  net fees — before VAT            = autofill1 − (autofill1 × manual1) − manual2
+ *     autofill 3  yearly payable fees — incl. VAT  = autofill2 × 1.20
+ *
+ * This restores v1's shape (VAT on the NET remainder, per `payable-fees.ts`)
+ * rather than CALC-A5's reading, under which the scholarship value and the
+ * bursary award were each treated as individually VAT-inclusive. Her words:
+ * *"we will never need to store the bursary award inclusive of VAT"* — so no
+ * VAT-inclusive award figure is derived or persisted any more.
+ *
+ * The bursary award remains an assessor-entered £ amount guided by (not
+ * derived from) `recommendedPayableFees` — it is not auto-computed as
+ * `fees − NDI` the way v1's `requiredBursary` is.
  */
 export function awardSummary(input: AwardSummaryInput): AwardSummaryResult {
   const {
     nextYearFees,
     scholarshipPct,
-    bursaryAwardAfterVat,
+    bursaryAwardBeforeVat,
     vatRate = DEFAULT_VAT_RATE,
     confirmedPayableFees,
     recommendedPayableFees: recommended,
@@ -170,18 +185,18 @@ export function awardSummary(input: AwardSummaryInput): AwardSummaryResult {
 
   const vatMultiplier = 1 + vatRate / 100
 
-  const scholarshipValueInclVat = roundMoney(nextYearFees * (scholarshipPct / 100) * vatMultiplier)
+  const scholarshipSpendBeforeVat = roundMoney(nextYearFees * (scholarshipPct / 100))
 
-  const payableFeesNextYear = roundMoney(
-    Math.max(0, nextYearFees - scholarshipValueInclVat - bursaryAwardAfterVat),
+  const netFeesBeforeVat = roundMoney(
+    Math.max(0, nextYearFees - scholarshipSpendBeforeVat - bursaryAwardBeforeVat),
   )
 
-  const bursarySpendBeforeVat = roundMoney(bursaryAwardAfterVat / vatMultiplier)
+  const yearlyPayableFeesInclVat = roundMoney(netFeesBeforeVat * vatMultiplier)
 
   const gapAmount =
     confirmedPayableFees === undefined || recommended === undefined
       ? null
       : roundMoney(confirmedPayableFees - recommended)
 
-  return { scholarshipValueInclVat, payableFeesNextYear, bursarySpendBeforeVat, gapAmount }
+  return { scholarshipSpendBeforeVat, netFeesBeforeVat, yearlyPayableFeesInclVat, gapAmount }
 }

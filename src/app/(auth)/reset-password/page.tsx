@@ -4,9 +4,13 @@
  * Password reset request page.
  *
  * Sends a "reset password" email via Supabase. After submission the user sees
- * a confirmation message. The email contains a link that Supabase redirects
- * through /auth/callback?next=/reset-password/update (the set-new-password
- * page at ./update/page.tsx).
+ * a confirmation message. The email links straight to /reset-password/update
+ * (the set-new-password page at ./update/page.tsx) carrying Supabase's
+ * `token_hash`, which that page spends only when the form is submitted.
+ *
+ * It deliberately does NOT route through /auth/callback: that hop spent the
+ * single-use token on the first GET, so mail-security link scanners burned
+ * reset links before the recipient could click them.
  *
  * This page handles only the request step (entering an email address).
  */
@@ -32,9 +36,11 @@ export default function ResetPasswordPage() {
     const { error } = await supabase.auth.resetPasswordForEmail(
       email.trim().toLowerCase(),
       {
-        // After clicking the link in the email the user lands at /auth/callback
-        // which exchanges the code and then redirects to this redirectTo path.
-        redirectTo: `${window.location.origin}/auth/callback?next=/reset-password/update`,
+        // Surfaces in the email template as {{ .RedirectTo }}, which appends
+        // ?token_hash=…&type=recovery. Origin-derived so preview deploys and
+        // both environments resolve to their own host (the host must be on
+        // the Supabase redirect allowlist).
+        redirectTo: `${window.location.origin}/reset-password/update`,
       }
     );
 

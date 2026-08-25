@@ -36,8 +36,13 @@ export interface UpsertRecommendationInput {
   confirmedPayableFees?: number | null;
   gapAmount?: number | null;
   lastPayableFees?: number | null;
+  /** @deprecated CH-36 — no longer written; retained for v1/legacy rows. */
   scholarshipValueInclVat?: number | null;
   bursarySpendBeforeVat?: number | null;
+  /** CH-36 `autofill 4` — fees x scholarship%, before VAT. */
+  scholarshipSpendBeforeVat?: number | null;
+  /** CH-36 `autofill 2` — net fees before VAT. */
+  netFeesBeforeVat?: number | null;
   /** Reasons-for-gap selection (required ≥1 when the gap is material — CALC-08). */
   gapReasonIds?: string[];
 }
@@ -87,6 +92,8 @@ export async function upsertRecommendation(
     lastPayableFees: fields.lastPayableFees ?? null,
     scholarshipValueInclVat: fields.scholarshipValueInclVat ?? null,
     bursarySpendBeforeVat: fields.bursarySpendBeforeVat ?? null,
+    scholarshipSpendBeforeVat: fields.scholarshipSpendBeforeVat ?? null,
+    netFeesBeforeVat: fields.netFeesBeforeVat ?? null,
   };
 
   // Upsert the recommendation row
