@@ -28,7 +28,14 @@ Board for [`epic-17-assessment-verification-sprint.md`](epic-17-assessment-verif
 | B1 | CH-40 · debt-ratio `<` logic | ✅ **on `staging`** | #358 |
 | 1 | CH-41 · property category → 5 | 🔶 **Q1 answered**; now gated on **Q7** (dropping with-mortgage rows kills 6 categories) | |
 | B2 | CH-52 · affordability cap at full incl-VAT fees | ✅ **on `staging`** | #359 |
-| 2 | CH-43…CH-49 | ⬜ | |
+| C1 | CH-46 · remove unused dashboard tiles | ✅ **on `staging`** | #361 |
+| C2 | CH-44 · family category on summary | ✅ **on `staging`** | #361 |
+| C3 | CH-45 · sortable Submitted (Assessments) | ✅ **on `staging`** | #361 |
+| C6 | CH-47 · self-employed arrears tax year | ✅ **on `staging`** | #362 |
+| C6b | **CH-47b · winter-window switch** | ⬜ **deferred with reason** — no effect until 10 Nov | |
+| C8 | CH-49 · admin flow-through | ✅ **verified, answered — no build needed** | |
+| C4 | CH-43 · postcode + area lookup | ⬜ needs her xlsx pulled | |
+| C7 | CH-48 · fees@ reply-to on staging | 🔶 needs Brian — env var change | |
 | C5 | CH-50/51 · fees admin VAT columns | ✅ **on `staging`** | #359 |
 | 3 | CH-32 · single-invite BCC | ⬜ buildable on default (option 1) | |
 | 3 | CH-33/CH-34 · progress view + forward view | 🔶 blocked on Q5 (her layout email) | |
@@ -115,6 +122,62 @@ committed.
 - **Outside the sprint**: she is proposing a Grant Tracker call on data migration
   and integration, next week or the week of 7 Sept, and awaits Brian's
   availability.
+
+## ✅ Tranche C batch on `staging` — 25 Aug
+
+**CH-46** — the decode showed these are *tiles*, not banners: "Qualifies / Award
+recommended" and "Does Not Qualify / Ineligible for bursary". She is right for a
+sharper reason than she gave: the Qualifies count is `AWARDED +
+QUALIFIES_NOT_AWARDED`, so a family that qualifies but is **not** awarded was
+reported as "award recommended". Display only — the counts still feed the totals
+and the Round Cockpit watchlist rules.
+
+**CH-45** — sortable Submitted on the Assessments page, as a search param on the
+existing server component rather than converting the table to the Applications
+page's client-side tanstack setup. Unsubmitted rows stay last in both
+directions.
+
+**CH-44** — family category leads the categories panel, since it is the input the
+others are derived against.
+
+**CH-47** — her ask was the *second half* of her sentence. The primary labels
+already read 2025-26 for a 2026/27 round; what was vague was the self-employed
+arrears footnote, which said "the previous tax year" abstractly. It now names
+**2024/25**.
+
+### CH-47b — deferred, with reason
+
+She said yes to switching the winter window. Not done, because it needs the
+resolved scenario (application type + date) threaded through to the labels — a
+structural change — and it has **no effect until 10 Nov**: a current-year round
+resolves to `NA_CURRENT`, whose `defaultTaxYear` already agrees with the
+round-derived labels. Verified against `resolveRoundScenario` for today's date.
+Worth doing deliberately, well before November.
+
+### ✅ CH-49 answered — it does populate, keyed to the bursary account
+
+Her question: *"will the fields entered into the assessment get picked up and
+populated in the relevant sections as soon as the assessment is marked as
+complete?"* **Yes — once the family has a bursary account.**
+
+Verified on `WS-202627-0007` (COMPLETED, AWARDED, account present):
+
+- **Year-on-year history** 2026/27: £309,000 income · £0 savings · £1,500,000
+  property equity · £40,000 debt exposure · AFFORDABLE, NO IMPACT. Deltas read
+  `n/a` correctly — nothing prior to compare against.
+- **Payable-fees schedule**: 2026-27 → £11,752, Year 12, submit by 30 Nov 2026,
+  Received / Completed / Active — plus 2027-28 already scheduled forward as
+  Year 13.
+
+**The caveat worth telling her:** an application with **no** bursary account
+shows nothing even after completion. `completeAssessmentAction`'s schedule mirror
+early-returns on `!app.bursaryAccountId`, and the account is only created on
+AWARD. Confirmed by completing throwaway `R-9` (no account) and seeing every row
+stay `—`, then reopening it. So a first-time applicant's admin tab stays empty
+until they are awarded — which is by design, but is not obvious.
+
+One gap noticed, not raised by her: the history table's **LIVING** column renders
+`—` even on the populated row.
 
 ## ✅ Tranche B1/B2 + C5 on `staging` — 25 Aug
 
