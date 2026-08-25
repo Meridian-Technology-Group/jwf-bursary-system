@@ -153,6 +153,8 @@ export interface AssessmentSaveInput {
   councilTaxSupport?: boolean;
   /** CH-22 — manual £ override of the council-tax deduct; explicit null clears it. */
   councilTaxOverride?: number | null;
+  /** CH-43 — assessor-entered outward postcode code; free text, never validated. */
+  postcode?: string | null;
   usesCar?: boolean;
   usesPublicTransport?: boolean;
   feeInsuranceAnnual?: number;
@@ -342,6 +344,7 @@ export async function saveAssessment(
     "multiPropertyRentAddBack",
     "councilTaxSupport",
     "councilTaxOverride",
+    "postcode",
     "usesCar",
     "usesPublicTransport",
     "feeInsuranceAnnual",

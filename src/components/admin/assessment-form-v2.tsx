@@ -39,6 +39,10 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
+import {
+  formatPostcodeAreaLabel,
+  type PostcodeAreaRow,
+} from "@/lib/assessment/postcode-area";
 import type { AssessmentStatus, EmploymentStatus, RentAddBackType } from "@prisma/client";
 import type { AssessorIncomeRecord, PropertyAssetsRecord, DebtsRecord, SiblingDetail } from "@/types/assessment-v2";
 import type { ReferenceBundle } from "@/lib/assessment/v2/types";
@@ -105,6 +109,8 @@ export interface SerialisedAssessmentV2 {
   /** CH-21/22 — manual £ overrides; null = engine-derived figure. */
   rentAddBackOverride: number | null;
   councilTaxOverride: number | null;
+  /** CH-43 — assessor-entered outward postcode code. */
+  postcode: string | null;
   multiPropertyRentAddBack: boolean | null;
   councilTaxSupport: boolean | null;
   usesCar: boolean | null;
@@ -149,6 +155,13 @@ interface AssessmentFormV2Props {
   assessment: SerialisedAssessmentV2;
   applicationId: string;
   referenceBundle: ReferenceBundle;
+  /**
+   * CH-43 — her postcode district → area lookup. Deliberately NOT part of
+   * `ReferenceBundle`: it feeds no calculation, so keeping it out avoids
+   * coupling the calc engine (and its required-rows validation) to a
+   * display-only table.
+   */
+  postcodeAreas: readonly PostcodeAreaRow[];
   prefill: AssessmentV2Prefill;
   /**
    * Epic 15 M1 (CH-11/14): fee-year-resolved current/next-year gross fees for
@@ -370,6 +383,7 @@ export function AssessmentFormV2({
   assessment,
   applicationId,
   referenceBundle,
+  postcodeAreas,
   prefill,
   feesBySchool,
   applicationEntryYear,
@@ -509,6 +523,9 @@ export function AssessmentFormV2({
   const [rentAddBackOverride, setRentAddBackOverride] = React.useState<number>(
     Number(assessment.rentAddBackOverride ?? 0) || 0
   );
+  const [postcode, setPostcode] = React.useState<string>(
+    assessment.postcode ?? ""
+  );
   const [councilTaxOverride, setCouncilTaxOverride] = React.useState<number>(
     Number(assessment.councilTaxOverride ?? 0) || 0
   );
@@ -562,6 +579,7 @@ export function AssessmentFormV2({
       multiPropertyRentAddBack,
       councilTaxSupport,
       councilTaxOverride: councilTaxOverride > 0 ? councilTaxOverride : null,
+      postcode: postcode.trim() || null,
       usesCar,
       usesPublicTransport,
       feeInsuranceAnnual,
@@ -589,6 +607,7 @@ export function AssessmentFormV2({
     multiPropertyRentAddBack,
     councilTaxSupport,
     councilTaxOverride,
+    postcode,
     usesCar,
     usesPublicTransport,
     feeInsuranceAnnual,
@@ -745,6 +764,7 @@ export function AssessmentFormV2({
       multiPropertyRentAddBack,
       councilTaxSupport,
       councilTaxOverride: councilTaxOverride > 0 ? councilTaxOverride : null,
+      postcode: postcode.trim() || null,
       usesCar,
       usesPublicTransport,
       feeInsuranceAnnual,
@@ -818,6 +838,7 @@ export function AssessmentFormV2({
     multiPropertyRentAddBack,
     councilTaxSupport,
     councilTaxOverride,
+    postcode,
     usesCar,
     usesPublicTransport,
     feeInsuranceAnnual,
@@ -1199,6 +1220,33 @@ export function AssessmentFormV2({
                   onBlur={scheduleAutoSave}
                   className="w-32 text-right font-mono"
                 />
+              </div>
+              {/* CH-43 — postcode. Manual by her explicit request ("I need to
+                  fill it manually"), so no prefill from Contact.postcode, in
+                  keeping with CH-11's no-prefill stance on Part 1. Free text:
+                  her lookup covers Croydon and its surrounds, so an unlisted
+                  district must still save — it simply resolves to OTHER. The
+                  resolved area is echoed beside the input so she can see the
+                  match land without leaving Part 1. */}
+              <div className={rowClass}>
+                <label className={labelClass} htmlFor="v2-postcode">
+                  Postcode (first part)
+                </label>
+                <div className="flex items-center gap-3">
+                  <Input
+                    id="v2-postcode"
+                    value={postcode}
+                    disabled={isReadOnly}
+                    placeholder="SM4"
+                    maxLength={8}
+                    onChange={(e) => setPostcode(e.target.value)}
+                    onBlur={scheduleAutoSave}
+                    className="w-28 font-mono uppercase"
+                  />
+                  <span className="text-xs text-slate-500">
+                    {formatPostcodeAreaLabel(postcode, postcodeAreas) ?? "—"}
+                  </span>
+                </div>
               </div>
               {/* Row 11 — Annual school fees: autofill + HIDDEN (feeds the
                   engine only). Surfaced ONLY when the reference figure is
