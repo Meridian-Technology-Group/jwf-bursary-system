@@ -85,13 +85,16 @@ describe('resolveIncomeCategoryBand (Appendix C.1)', () => {
     expect(resolveIncomeCategoryBand(incomeCategoryBands, 40_000)?.category).toBe(3)
   })
 
-  it('preserves the CALC-A1 anomaly: £115,000 resolves to category 7, not 8', () => {
+  // CH-39 — the CALC-A1 anomaly is retired. The workbook's 7,8,7,8 tail was
+  // Charlotte's own slip; she confirmed on 24 Aug 2026 that the categories run
+  // 1 to 11 incrementally. £115,000 is now category 10, not 7.
+  it('CH-39 — £115,000 resolves to category 10, the anomaly retired', () => {
     const band = resolveIncomeCategoryBand(incomeCategoryBands, 115_000)
-    expect(band?.category).toBe(7)
+    expect(band?.category).toBe(10)
     expect(band?.feesBenchmarkPct).toBe(30)
   })
 
-  it('resolves the full category tail 1,2,3,4,5,6,7,7,8,7,8', () => {
+  it('resolves the full category ladder 1..11, never stepping backwards', () => {
     const points = [
       [10_000, 1],
       [30_000, 2],
@@ -100,18 +103,18 @@ describe('resolveIncomeCategoryBand (Appendix C.1)', () => {
       [65_000, 5],
       [75_000, 6],
       [85_000, 7],
-      [95_000, 7],
-      [105_000, 8],
-      [115_000, 7],
-      [125_000, 8],
+      [95_000, 8],
+      [105_000, 9],
+      [115_000, 10],
+      [125_000, 11],
     ] as const
     for (const [income, category] of points) {
       expect(resolveIncomeCategoryBand(incomeCategoryBands, income)?.category).toBe(category)
     }
   })
 
-  it('has no upper bound — very high incomes still resolve (to category 8)', () => {
-    expect(resolveIncomeCategoryBand(incomeCategoryBands, 10_000_000)?.category).toBe(8)
+  it('has no upper bound — very high incomes still resolve (to category 11)', () => {
+    expect(resolveIncomeCategoryBand(incomeCategoryBands, 10_000_000)?.category).toBe(11)
   })
 })
 
@@ -136,7 +139,9 @@ describe('resolveFinancialEquityBand (Appendix C.3)', () => {
     expect(resolveFinancialEquityBand(financialEquityBands, -100)?.label).toBe('in debt')
     expect(resolveFinancialEquityBand(financialEquityBands, -0.01)?.label).toBe('in debt')
     expect(resolveFinancialEquityBand(financialEquityBands, 0)?.label).toBe('no debt, no equity')
-    expect(resolveFinancialEquityBand(financialEquityBands, 0.01)?.label).toBe('some savings')
+    // CH-38 — the coarse 0–50,000 "some savings" band is split; just-positive
+    // equity now lands in her "negligible savings" level.
+    expect(resolveFinancialEquityBand(financialEquityBands, 0.01)?.label).toBe('negligible savings')
   })
 
   it('resolves the stratospheric levels', () => {

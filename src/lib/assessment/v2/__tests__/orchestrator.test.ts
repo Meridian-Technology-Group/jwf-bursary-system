@@ -181,7 +181,10 @@ describe('calculateAssessmentV2 — higher-income single-property homeowner', ()
   })
 
   it('derives the higher-income category and fees-benchmark %', () => {
-    expect(result.incomeCategory).toBe(7)
+    // CH-39 — this household sits in the £90k–£100k band, which was category 7
+    // under the workbook's slipped tail and is category 8 now the ladder runs
+    // 1..11. The percentage is unchanged; she corrected numbering only.
+    expect(result.incomeCategory).toBe(8)
     expect(result.feesBenchmarkPct).toBe(27)
   })
 
