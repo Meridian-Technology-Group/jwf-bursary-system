@@ -105,15 +105,35 @@ git checkout staging && git pull --ff-only
    `:286-287` (negative → `0`). **The engine is not a spreadsheet — it takes all
    inputs and computes once, so "a value entered further down the model" is a
    reading-order problem, not a calculation one.**
-2. ⚠️ **Her savings-test worked examples do not match the engine's units.** She
-   computes on **raw** savings against a **£19,000** cushion (`9,700 − 8,000 −
-   19,000 = −17,300`). The engine uses **annualised adjusted** savings against an
-   **annualised** benchmark: her assessment stores `derived_savings_annual_total =
-   692.86` (from `cash_savings = 9,700`) and `savings_test_number = −6,450`,
-   implying a benchmark of ≈ **£7,142.86**, not £19,000. Both sides are
-   annualised, so the *sign* agrees and her case is unaffected — but the
-   magnitudes are not comparable, and a household near the threshold could flip.
-   **This is Q8. Ask; do not reconcile by changing code.**
+2. ⚠️ **Her savings test and the engine's are two different calculations.**
+   Verified against her Kaluba assessment (`7c98ec69-…`) and
+   `notional_cost_configs`, 25 Aug. An **earlier note in this plan estimated the
+   benchmark at ≈£7,142.86 — that was wrong**; the real figures are below.
+
+   | | Her description | Engine |
+   |---|---|---|
+   | Savings | £9,700 raw | **£692.86** (`9,700 ÷ 2 children ÷ 7 school years`) |
+   | Debt | £8,000 raw | **£1,142.86** (`8,000 ÷ 7 years`) |
+   | Deduction | **£19,000** — `SAVINGS_CUSHION` (cat 3) | **£6,000** — `NOTIONAL_SAVINGS` (cat 3) |
+   | Result | −£17,300 | **−£6,450** |
+
+   Two divergences, not one: the engine works on **yearly** figures rather than
+   totals, **and it deducts a different reference value**. Both figures exist in
+   `notional_cost_configs` for category 3 — and the £19,000 she expects is
+   rendered on her form two rows above the test, labelled *"Reference value only
+   — feeds no calculation"* (`assessment-form-v2.tsx:1452-1456`).
+
+   Both results are negative, so her assessment is unaffected and nothing she has
+   reviewed is wrong because of it. But for a household with real savings this
+   decides whether **anything is added back at all**, so it is a live
+   award-affecting question.
+
+   Note her own remark *"The adjusted saving is calculated correctly"* endorses
+   the annualisation of savings — which points toward annualising the £19,000
+   rather than using it raw, if the cushion is the intended deduction.
+
+   **This is Q8. Ask; do not reconcile by changing code** — and per §2, do not
+   promote a change to savings treatment while it is open.
 3. Property: her household is `is_mortgage_free: false`, `mortgageBalance
    179,000`, `value 450,000`, `portfolioType SINGLE` → Table 2 as written yields
    **3**, which is what the engine returns. Her expected **5** requires dropping
@@ -446,7 +466,7 @@ a blocked question (Q5, Q7) is the only thing in the way.
 | Q5 | Assessment Admin layout email | **D2** | Charlotte |
 | Q6 | £89,257.14 does not reconcile with her own grid | nothing — build the rule | Charlotte |
 | Q7 | Dropping with-mortgage rows makes 6 categories unreachable | **B3** | Charlotte |
-| **Q8** | **Savings-test units:** her worked examples use raw savings vs a £19,000 cushion; the engine uses annualised adjusted savings vs an annualised benchmark (≈£7,142.86 in her case). Signs agree, magnitudes do not. Which is intended? | nothing today — could flip a near-threshold household | Charlotte |
+| **Q8** | **Savings test — which deduction, and raw or yearly?** The engine deducts `NOTIONAL_SAVINGS` **£6,000** from annualised figures (−£6,450); she describes deducting the `SAVINGS_CUSHION` **£19,000** from raw totals (−£17,300). Both values are seeded for category 3, and the £19,000 is on her form marked as feeding no calculation. Her case is unaffected (both negative) but a household with real savings turns on it. | **holds the Tranche A promotion** (§2) | Charlotte |
 
 ### For Brian
 

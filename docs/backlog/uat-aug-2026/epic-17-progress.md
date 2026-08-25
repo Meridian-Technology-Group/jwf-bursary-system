@@ -119,9 +119,14 @@ committed.
 
 ## ✅ Tranche A complete on `staging` — 25 Aug
 
-**Awaiting Brian: promotion to production.** She paused the real prod assessments
-for exactly these three items, so Tranche A only counts once `staging → main`
-merges.
+**Promotion is ON HOLD pending Q8**, not merely awaiting Brian. Proving CH-37
+turned up an award-affecting question about which figure the savings test
+deducts, and promoting a change to savings treatment with that open would be the
+wrong order. See Q8 in the sprint doc and §4 row 2 of the implementation plan.
+
+Everything else in the tranche is independently promotable if Brian would rather
+split it: CH-38's bands and CH-39's categories are reference-data corrections she
+supplied directly, and CH-37's change is display-only.
 
 ### The headline for her
 
@@ -158,6 +163,22 @@ including one literally named *"preserves the CALC-A1 anomaly"* — and moved wi
 the spec, each annotated. New seed-data tests assert **monotonicity as an
 invariant**, which is what her correction actually asked for and what stops the
 `7,8,7,8` shape returning.
+
+### ⚠️ Q8 — found while proving CH-37, award-affecting
+
+Her savings test and the engine's are two different calculations:
+
+| | Her description | Engine |
+|---|---|---|
+| Savings | £9,700 raw | £692.86 (÷ 2 children ÷ 7 years) |
+| Debt | £8,000 raw | £1,142.86 (÷ 7 years) |
+| Deduction | **£19,000** `SAVINGS_CUSHION` | **£6,000** `NOTIONAL_SAVINGS` |
+| Result | −£17,300 | **−£6,450** |
+
+Both negative, so her assessment is unaffected — but for a household with real
+savings this decides whether anything is added back at all. An earlier note in
+the plan estimated the benchmark at £7,142.86; that was wrong and has been
+corrected.
 
 ### ⚠️ Note for the promotion
 
