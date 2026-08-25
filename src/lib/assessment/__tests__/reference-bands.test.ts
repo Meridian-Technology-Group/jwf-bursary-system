@@ -71,8 +71,16 @@ describe('resolveAffordabilityBand (Appendix B)', () => {
     expect(resolveAffordabilityBand(affordabilityBands, 105_000)?.basePct).toBe(45)
   })
 
-  it('returns null outside the seeded range (CALC-A6 clamp handled by the award engine, not here)', () => {
-    expect(resolveAffordabilityBand(affordabilityBands, 27_000)).toBeNull()
+  it('CH-52 — the grid now covers from £0, so low incomes resolve to the 0% band', () => {
+    // Her confirmation: 0% applies "for an income from £0 to £29,000". The
+    // bottom band's floor dropped from £27,001 to £0 so the table says so
+    // instead of leaving it to the engine's shortcut.
+    expect(resolveAffordabilityBand(affordabilityBands, 0)?.basePct).toBe(0)
+    expect(resolveAffordabilityBand(affordabilityBands, 27_000)?.basePct).toBe(0)
+    expect(resolveAffordabilityBand(affordabilityBands, 29_000)?.basePct).toBe(0)
+  })
+
+  it('still returns null above the seeded range — the engine holds the top band', () => {
     expect(resolveAffordabilityBand(affordabilityBands, 105_001)).toBeNull()
   })
 })
@@ -85,13 +93,16 @@ describe('resolveIncomeCategoryBand (Appendix C.1)', () => {
     expect(resolveIncomeCategoryBand(incomeCategoryBands, 40_000)?.category).toBe(3)
   })
 
-  it('preserves the CALC-A1 anomaly: £115,000 resolves to category 7, not 8', () => {
+  // CH-39 — the CALC-A1 anomaly is retired. The workbook's 7,8,7,8 tail was
+  // Charlotte's own slip; she confirmed on 24 Aug 2026 that the categories run
+  // 1 to 11 incrementally. £115,000 is now category 10, not 7.
+  it('CH-39 — £115,000 resolves to category 10, the anomaly retired', () => {
     const band = resolveIncomeCategoryBand(incomeCategoryBands, 115_000)
-    expect(band?.category).toBe(7)
+    expect(band?.category).toBe(10)
     expect(band?.feesBenchmarkPct).toBe(30)
   })
 
-  it('resolves the full category tail 1,2,3,4,5,6,7,7,8,7,8', () => {
+  it('resolves the full category ladder 1..11, never stepping backwards', () => {
     const points = [
       [10_000, 1],
       [30_000, 2],
@@ -100,18 +111,25 @@ describe('resolveIncomeCategoryBand (Appendix C.1)', () => {
       [65_000, 5],
       [75_000, 6],
       [85_000, 7],
-      [95_000, 7],
-      [105_000, 8],
-      [115_000, 7],
-      [125_000, 8],
+      [95_000, 8],
+      [105_000, 9],
+      [115_000, 10],
+      [125_000, 11],
     ] as const
     for (const [income, category] of points) {
       expect(resolveIncomeCategoryBand(incomeCategoryBands, income)?.category).toBe(category)
     }
   })
 
-  it('has no upper bound — very high incomes still resolve (to category 8)', () => {
-    expect(resolveIncomeCategoryBand(incomeCategoryBands, 10_000_000)?.category).toBe(8)
+  it('has no upper bound — very high incomes still resolve (to category 12)', () => {
+    // CH-54 — the top band is now £140,000+ at category 12.
+    expect(resolveIncomeCategoryBand(incomeCategoryBands, 10_000_000)?.category).toBe(12)
+  })
+
+  it('CH-54 — the new band boundary at £140,000 splits 11 from 12', () => {
+    expect(resolveIncomeCategoryBand(incomeCategoryBands, 130_000)?.category).toBe(11)
+    expect(resolveIncomeCategoryBand(incomeCategoryBands, 139_999)?.category).toBe(11)
+    expect(resolveIncomeCategoryBand(incomeCategoryBands, 140_000)?.category).toBe(12)
   })
 })
 
@@ -136,7 +154,9 @@ describe('resolveFinancialEquityBand (Appendix C.3)', () => {
     expect(resolveFinancialEquityBand(financialEquityBands, -100)?.label).toBe('in debt')
     expect(resolveFinancialEquityBand(financialEquityBands, -0.01)?.label).toBe('in debt')
     expect(resolveFinancialEquityBand(financialEquityBands, 0)?.label).toBe('no debt, no equity')
-    expect(resolveFinancialEquityBand(financialEquityBands, 0.01)?.label).toBe('some savings')
+    // CH-38 — the coarse 0–50,000 "some savings" band is split; just-positive
+    // equity now lands in her "negligible savings" level.
+    expect(resolveFinancialEquityBand(financialEquityBands, 0.01)?.label).toBe('negligible savings')
   })
 
   it('resolves the stratospheric levels', () => {
@@ -150,16 +170,35 @@ describe('resolveFinancialEquityBand (Appendix C.3)', () => {
 })
 
 describe('resolveDebtRatioBand (Appendix C.4, normalised per CALC-A3)', () => {
-  it('classifies zero and negative exposure as no credit risk', () => {
-    expect(resolveDebtRatioBand(debtRatioBands, 0)?.statusLabel).toBe('ZERO DEBT, NO CREDIT RISK')
+  // CH-40 / Q9 — zero and below stay on ZERO DEBT. Her wording put zero in
+  // level 1, but the ratio is floored at zero upstream, so following that
+  // literally would make ZERO DEBT unreachable. See resolveDebtRatioBand.
+  it('keeps zero and negative ratios on ZERO DEBT (Q9 open)', () => {
     expect(resolveDebtRatioBand(debtRatioBands, -1)?.statusLabel).toBe('ZERO DEBT, NO CREDIT RISK')
+    expect(resolveDebtRatioBand(debtRatioBands, 0)?.statusLabel).toBe('ZERO DEBT, NO CREDIT RISK')
   })
 
-  it('resolves shared boundaries toward the lower band (0.1, 0.3, 1, 10)', () => {
-    expect(resolveDebtRatioBand(debtRatioBands, 0.1)?.minRepaymentMonths).toBe(0) // "<1mo" band, not "1"
-    expect(resolveDebtRatioBand(debtRatioBands, 0.3)?.minRepaymentMonths).toBe(1)
-    expect(resolveDebtRatioBand(debtRatioBands, 1)?.minRepaymentMonths).toBe(9)
-    expect(resolveDebtRatioBand(debtRatioBands, 10)?.minRepaymentMonths).toBe(108)
+  it('CH-40 — the smallest positive ratio is level 1, not ZERO DEBT', () => {
+    expect(resolveDebtRatioBand(debtRatioBands, 0.0001)?.statusLabel).toBe(
+      'SMALL DEBT LEVEL, NEGLIGIBLE CREDIT RISK - level 1',
+    )
+  })
+
+  it('resolves shared boundaries toward the UPPER band — ceiling-exclusive', () => {
+    // Each boundary now belongs to the band it opens, not the one it closes.
+    expect(resolveDebtRatioBand(debtRatioBands, 0.1)?.minRepaymentMonths).toBe(1)
+    expect(resolveDebtRatioBand(debtRatioBands, 0.3)?.minRepaymentMonths).toBe(3)
+    expect(resolveDebtRatioBand(debtRatioBands, 1)?.minRepaymentMonths).toBe(12)
+    expect(resolveDebtRatioBand(debtRatioBands, 10)?.minRepaymentMonths).toBe(120)
+  })
+
+  it('keeps values strictly inside a band unaffected by the convention change', () => {
+    expect(resolveDebtRatioBand(debtRatioBands, 0.05)?.statusLabel).toBe(
+      'SMALL DEBT LEVEL, NEGLIGIBLE CREDIT RISK - level 1',
+    )
+    expect(resolveDebtRatioBand(debtRatioBands, 0.2)?.statusLabel).toBe(
+      'SMALL DEBT LEVEL, NEGLIGIBLE CREDIT RISK - level 2',
+    )
   })
 
   it('has no upper bound — very high ratios resolve to the worst band', () => {

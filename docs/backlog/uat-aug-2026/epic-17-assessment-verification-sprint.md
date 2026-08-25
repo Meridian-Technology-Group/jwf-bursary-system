@@ -177,16 +177,47 @@ boundaries; **negative number = "zero debt, no credit risk"**; `0 ≤ x < 0.1`
 band below, negatives get the zero-debt label). Her improved status wordings
 come later ("I will have a think") — labels stay as-is until then.
 
-### CH-41 · Property category mis-derived — expected 5, derived 3 `M` — **partially blocked**
+### CH-41 · Property category — spec change, not a bug `M` — **UNBLOCKED 25 Aug**
 
-Her household should report **category 5**; the row holds
-`property_category_derived = 3` (and `property_category = null`). She
-concedes her single/double/multiple × value/equity matrix table *"is
-confusing"* — Brian has asked (reply sent 25 Aug) for the rule **in plain
-sentences** rather than reinterpreting the grid. **Blocked on her answer**
-for the fix itself; unblocked now: write the failing test from her known
-case (this household → 5) and trace which branch of the current derivation
-returns 3, so the fix is a one-liner when her wording arrives.
+Her household should report **category 5**; the engine returns **3**.
+
+**Q1 answered** (msg `1a03a0ef60dcb5b9`, 17:54 UTC 25 Aug). Full decode in
+[`source-materials/.../README.md`](source-materials/screenshots-2026-08-23-24/README.md).
+Three things it settles, two of which overturn what this sprint assumed:
+
+1. **The engine is not wrong.** Her home carries a **£179,000 mortgage on
+   £450,000** (`assessment_properties.is_mortgage_free = false`). Under her
+   Table 2 as written, Single Property × £360K–£500K × *with mortgage* → **3**.
+   That is exactly what we return. Brian's 25 Aug email called this "a bug I am
+   treating as a bug" — **it was not**; the engine is faithful to her table.
+2. **What she actually wants is her own footnote**: *"since we have now a
+   property equity category, you may want to ignore all the rows referring to
+   'with mortgage' and only keep in the table the rows starting with 'if'."*
+   Drop the with-mortgage rows and her case lands on **5**.
+3. **The matched £ figure is total MARKET value, not equity.** Her prose says
+   "equity value"; her screenshot boxes the three `MARKET VALUE` rows and
+   `HOUSEHOLD'S TOTAL PROPERTY VALUE`. Screenshot wins (WP0 rule), and it is
+   self-consistent — the mortgage dimension is handled by the separate property
+   *equity* category.
+
+**Target mapping** (option from the existing 4-way dropdown × total property
+market value):
+
+| Total value | Single | Double | Multiple |
+|---|---|---|---|
+| renting | 1 | 1 | 1 |
+| under £360K | 4 | 4 | 4 |
+| £360K – £500K | **5** | 5 | 5 |
+| £500K – £800K | 7 | 7 | 7 |
+| £800K – £1.2m | 9 | 9 | 9 |
+| £1.2m – £1.6m | 11 | 11 | 11 |
+| over £1.6m | 11 (Single: over £1.2m) | 13 | 13 |
+
+⚠️ **Gated on Q7 before building.** Removing the with-mortgage rows makes
+categories **2, 3, 6, 8, 10 and 12 unreachable** — the scale could only ever
+return 1, 4, 5, 7, 9, 11, 13. Her wording is tentative (*"you may want to"*),
+so this is a decision she should take knowingly rather than discover later.
+Everything else about the item is ready to build the moment she confirms.
 
 ### CH-42 · Lifestyle squeeze: show status only — and the ×100 unit bug `S`
 
@@ -200,6 +231,31 @@ and grep for other consumers), and per her ask show **status only** in the
 summary panel. The ratio itself she verified as correct.
 
 ---
+
+### CH-52 · Affordability grid — cap at full VAT-inclusive fees `M` — **UNBLOCKED 25 Aug**
+
+**Q2 answered** in the same email. Two halves, only one of which is work:
+
+- **Lower end — no-op.** She confirms **0% from £0 to £29,000**. The system
+  already does this (0% clamp below the table floor + the `27001–29000 @ 0%`
+  row). Worth dropping that band's floor to `0` so the reference table
+  documents itself instead of depending on a code clamp. No behaviour change.
+- **Upper end — real engine change.** Above £105,000 we currently hold the top
+  percentage (45%). She wants the contribution **capped at the full
+  VAT-inclusive school fees for the school in question**: the affordability leg
+  becomes `min(pct × income, feesInclVat)`. Rationale in her words — beyond the
+  full fee there is no bursary to compute, so the expected contribution cannot
+  exceed what the parent could possibly be asked to pay.
+
+**Her worked example does not reconcile with her own grid — see Q6.** Build the
+rule; do not calibrate to the £89,257.14 figure. Against the seeded bands that
+income sits in the 25% band (£22,314, nowhere near the fees), and her arithmetic
+implies fees of £31,240, matching neither £31,410 nor £30,240. Worked properly,
+a Whitgift 2026-27 family stops qualifying at **£98,001**.
+
+Note this interacts with **CH-36**: the cap is stated in VAT-inclusive terms, and
+the award summary now derives the VAT-inclusive payable figure, so the cap should
+read from that same derivation rather than re-grossing the fee independently.
 
 ## Lane 2 — additions to the assessment page
 
@@ -265,6 +321,20 @@ becomes a fix item on this sprint.
 
 ---
 
+### CH-50 · School Annual Fees admin — label the column "(excluding VAT)" `S`
+
+*"You may want to add into the annual fees column header (excluding VAT)"*. The
+stored fee is pre-VAT and CH-36 now makes that distinction load-bearing, so the
+header should say so. Screenshot: `ch50-51-school-fees-admin.png`.
+
+### CH-51 · School Annual Fees admin — show maximum payable fees incl. VAT `S`
+
+*"maybe create a separate column to also show the maximum level of payable fees
+each year for year school , which would be the value in the column multiplied by
+1.2."* A derived, display-only column (`annual_fees × 1.2`) beside the pre-VAT
+figure — no new storage. This is also the number CH-52's cap is expressed
+against, so the two should agree by construction: derive both from one helper.
+
 ## Lane 3 — 23 Aug items (uncatalogued until now)
 
 ### CH-32 · BCC on the single-invite step `S` — **awaiting her choice, default is decided**
@@ -308,13 +378,34 @@ lands, CH-33 + CH-34 become one design pass.
 
 ## Open with Charlotte (tracked, not blocking the train)
 
-| # | Question | Blocks |
-|---|---|---|
-| Q1 | Property matrix in plain sentences (asked 25 Aug) | CH-41 fix |
-| Q2 | Affordability grid outside £27k–£105k (her #3: "will check later") | nothing — current clamp behaviour stands |
-| Q3 | Debt-status label rewordings (hers to draft; September per her Part 5 note) | nothing |
-| Q4 | BCC option 1 vs 2 (asked 23 Aug) | CH-32 default = option 1 |
-| Q5 | Assessment Admin layout email (promised, not yet sent) | CH-34, and the joint design for CH-33 |
+| # | Question | Status | Blocks |
+|---|---|---|---|
+| Q1 | Property matrix in plain sentences | ✅ **answered 25 Aug** — reframed CH-41 as a spec change, not a bug | — |
+| Q2 | Affordability grid outside £27k–£105k | ✅ **answered 25 Aug** — became CH-52 | — |
+| Q3 | Debt-status label rewordings (hers to draft; September per her Part 5 note) | open | nothing |
+| Q4 | BCC option 1 vs 2 (asked 23 Aug) | open | CH-32 default = option 1 |
+| Q5 | Assessment Admin layout email (promised 23 Aug, still not sent) | open | CH-34, and the joint design for CH-33 |
+| **Q6** | **Her £89,257.14 "stops qualifying" figure does not reconcile** — against her own grid that income is in the 25% band (£22,314); her arithmetic implies fees of £31,240, matching neither £31,410 nor £30,240. Worked properly the answer is **£98,001** for Whitgift 2026-27. Confirm the intent, not the number. | **new, ask** | nothing — CH-52's rule is unambiguous |
+| **Q7** | **Dropping the "with mortgage" rows makes property categories 2, 3, 6, 8, 10 and 12 unreachable** — the scale would only ever return 1, 4, 5, 7, 9, 11, 13. Her wording was *"you may want to"*, so this needs a knowing yes. | **new, gating** | **CH-41** |
+| **Q9** | **Debt ratio of exactly zero.** She puts zero in level 1, reserving ZERO DEBT for negatives — but `calculateDebtOverNdiRatio` floors the exposure at zero, so the ratio can never be negative and ZERO DEBT would become unreachable, labelling every debt-free household "SMALL DEBT LEVEL". Should the floor be removed so a savings surplus reads negative, or should zero stay on ZERO DEBT? Left as-is pending her answer. | **new** | nothing — CH-40's boundary change shipped without it |
+| **Q8** | **Savings test — which deduction, and raw or yearly?** Found 25 Aug while proving CH-37. The engine deducts `NOTIONAL_SAVINGS` **£6,000** from annualised figures (savings `9,700 ÷ 2 children ÷ 7 years = £692.86`, debt `8,000 ÷ 7 = £1,142.86`) giving **−£6,450**. She describes deducting the `SAVINGS_CUSHION` **£19,000** from raw totals, giving **−£17,300**. Both values are seeded for category 3, and the £19,000 renders on her form marked *"feeds no calculation"*. Her own *"adjusted saving is calculated correctly"* endorses annualising, which points at annualising the cushion too — if the cushion is the intended figure at all. | **new, gating** | **holds the Tranche A promotion** |
+
+Also worth a line in the next reply: she apologised for possibly having blocked
+us (*"I am sorry I have just realised that you may have waited for the two points
+mentioned in your first email today"*). She did not — Lane 0 shipped without
+either answer. Worth saying so plainly.
+
+**Closed by her:** the Kaluba provenance (*"Thanks for solving that mystery"*,
+25 Aug 08:30).
+
+## Outside this sprint
+
+**Grant Tracker data migration / integration meeting** (msg `1a0393f825b09fde`,
+25 Aug 14:07). She has approached Grant Tracker proposing a Teams call with
+Brian, Alex, them and her — **next week or the week of 7 Sept** — to discuss data
+migration and integration. She is waiting on Brian's availability. Not a sprint
+item, but it signals a migration workstream that will need its own scoping, and
+it is the first mention of integrating with their existing grants system.
 
 ## Suggested order
 
@@ -323,10 +414,15 @@ lands, CH-33 + CH-34 become one design pass.
 2. **Lane 0** (CH-35, CH-36) → one PR each or one train PR → staging →
    validate on her actual staging assessment → **promote to prod before her
    evening**. CH-47 and CH-42's ×100 fix are small and ride the same train.
-3. **Lane 1** remainder (CH-37, CH-38, CH-39, CH-40; CH-41 test-first while
-   blocked) — these are what her *second* real-data comparison will exercise;
-   the sooner they land, the fewer false discrepancies she reports.
-4. **Lane 2** (CH-43, CH-44, CH-45, CH-46, CH-48, CH-49).
+3. **Lane 1** remainder — CH-37, CH-38, CH-39, CH-40, and **CH-52** (whose
+   lower-end half is a no-op and whose upper-end cap is small and
+   self-contained). **CH-41 last of these**, and only once Q7 is answered; the
+   mapping is otherwise ready. These are what her *second* real-data comparison
+   will exercise, so the sooner they land the fewer false discrepancies she
+   reports.
+4. **Lane 2** (CH-43, CH-44, CH-45, CH-46, CH-48, CH-49, **CH-50**, **CH-51** —
+   the last two are trivial and pair naturally with CH-52, since the cap and the
+   new column are the same derived figure).
 5. **Lane 3** as answers land (CH-32 buildable now on the default).
 
 ## Out of scope

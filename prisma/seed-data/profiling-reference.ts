@@ -90,7 +90,7 @@ export const familyCategoryMetas = [
 // verbatim (18→20 at £75k; 25→27→29→32→35→40→45 at the top).
 
 export const affordabilityBands = [
-  { bandFloor: 27001, bandCeiling: 29000, basePct: 0 },
+  { bandFloor: 0, bandCeiling: 29000, basePct: 0 },
   { bandFloor: 29001, bandCeiling: 32000, basePct: 1 },
   { bandFloor: 32001, bandCeiling: 35000, basePct: 2 },
   { bandFloor: 35001, bandCeiling: 38000, basePct: 3 },
@@ -136,12 +136,21 @@ export const incomeCategoryBands = [
   { bandFloor: 60000, bandCeiling: 70000, category: 5, feesBenchmarkPct: 15 },
   { bandFloor: 70000, bandCeiling: 80000, category: 6, feesBenchmarkPct: 19 },
   { bandFloor: 80000, bandCeiling: 90000, category: 7, feesBenchmarkPct: 23 },
-  { bandFloor: 90000, bandCeiling: 100000, category: 7, feesBenchmarkPct: 27 },
-  { bandFloor: 100000, bandCeiling: 110000, category: 8, feesBenchmarkPct: 30 },
-  // ASSUMPTION(CALC-A1): category drops back to 7 for £110k–£119,999 before
-  // returning to 8 at £120k+ — seeded exactly as the workbook states.
-  { bandFloor: 110000, bandCeiling: 120000, category: 7, feesBenchmarkPct: 30 },
-  { bandFloor: 120000, bandCeiling: null, category: 8, feesBenchmarkPct: 30 },
+  // CH-39 — resolves ASSUMPTION(CALC-A1). The workbook's 7,8,7,8 tail was
+  // Charlotte's own slip, confirmed 24 Aug 2026: "it should show logically and
+  // incrementally from category 1 to category 11". Eleven bands, eleven
+  // categories; boundaries and feesBenchmarkPct untouched.
+  { bandFloor: 90000, bandCeiling: 100000, category: 8, feesBenchmarkPct: 27 },
+  { bandFloor: 100000, bandCeiling: 110000, category: 9, feesBenchmarkPct: 30 },
+  { bandFloor: 110000, bandCeiling: 120000, category: 10, feesBenchmarkPct: 30 },
+  // CH-54 — she asked for a 12th band on 25 Aug 2026: "could you add an extra
+  // income category from £120K to £140K category 11, and above £140K net :
+  // category 12?" Her reasons: an even number of categories, and "sometimes an
+  // assessment needs to show that some parents are delusional in terms of their
+  // need for financial support". feesBenchmarkPct stays at 30 — she asked for
+  // bands, not new percentages.
+  { bandFloor: 120000, bandCeiling: 140000, category: 11, feesBenchmarkPct: 30 },
+  { bandFloor: 140000, bandCeiling: null, category: 12, feesBenchmarkPct: 30 },
 ].map((row) => ({ ...row, effectiveFrom: EFFECTIVE_FROM }));
 
 // ─── Appendix C.2 — property-equity category bands ────────────────────────
@@ -169,9 +178,14 @@ export const propertyEquityBands = [
 export const financialEquityBands = [
   { bandFloor: null, bandCeiling: -0.01, label: "in debt" },
   { bandFloor: 0, bandCeiling: 0, label: "no debt, no equity" },
-  { bandFloor: 0, bandCeiling: 50000, label: "some savings" },
-  { bandFloor: 50000, bandCeiling: 75000, label: "fair savings" },
-  { bandFloor: 75000, bandCeiling: 100000, label: "decent savings" },
+  // CH-38 — Charlotte's amended first seven levels (24 Aug 2026), transcribed
+  // from her table verbatim. The single 0–50,000 "some savings" band becomes
+  // three, and the two above it shift label.
+  { bandFloor: 0, bandCeiling: 3000, label: "negligible savings" },
+  { bandFloor: 3000, bandCeiling: 20000, label: "within default cushion savings" },
+  { bandFloor: 20000, bandCeiling: 50000, label: "fair savings" },
+  { bandFloor: 50000, bandCeiling: 75000, label: "decent savings" },
+  { bandFloor: 75000, bandCeiling: 100000, label: "comfortable savings" },
   { bandFloor: 100000, bandCeiling: 150000, label: "large savings" },
   { bandFloor: 150000, bandCeiling: 250000, label: "high savings" },
   { bandFloor: 250000, bandCeiling: 400000, label: "very high savings" },

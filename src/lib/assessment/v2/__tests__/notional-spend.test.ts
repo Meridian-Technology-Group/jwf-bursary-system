@@ -305,6 +305,99 @@ describe('calculateNotionalSpend — savings test (Appendix F #7)', () => {
     expect(lineByKey(result, 'savingsTestAddBack').signedAmount).toBe(4_800)
   })
 
+  // ── CH-37 — the identity Charlotte asked us to prove ────────────────────────
+  //
+  // She read the savings test as unable to run, because it deducts the yearly
+  // debt repayments and those are entered further down the form ("the formula
+  // is linking a value which is to be entered further down the model"). The
+  // engine is not a spreadsheet: it receives every input and computes once, so
+  // ordering on the FORM cannot affect the figure. These tests pin that, and
+  // pin the add-back direction she cares about — "it is a positive number so it
+  // gets added back into the yearly income total available".
+
+  it('CH-37 — the test is exactly adjustedSavings − debtRepayments − notionalSavings', () => {
+    const result = calculateNotionalSpend(
+      baseInput({
+        familyTypeCategory: 3,
+        cashSavings: 12_000,
+        isasPepsShares: 0,
+        schoolAgeChildrenCount: 1,
+        schoolingYearsRemaining: 1,
+        derivedYearlyDebtRepayments: 1_200,
+      }),
+      ref,
+    )
+    const benchmark = lineByKey(result, 'notionalSavingsBenchmark').amount
+    expect(result.savingsTestNumber).toBe(result.adjustedSavings - 1_200 - benchmark)
+  })
+
+  it('CH-37 — a positive test raises NDI by exactly the add-back, nothing else', () => {
+    const common = {
+      familyTypeCategory: 3,
+      cashSavings: 12_000,
+      isasPepsShares: 0,
+      schoolAgeChildrenCount: 1,
+      schoolingYearsRemaining: 1,
+    } as const
+
+    // Same household, two debt levels. The lower debt makes the test positive.
+    const positive = calculateNotionalSpend(
+      baseInput({ ...common, derivedYearlyDebtRepayments: 1_200 }),
+      ref,
+    )
+    expect(positive.savingsTestNumber).toBeGreaterThan(0)
+
+    // The add-back is in `lines`, so it must be inside the signed total AND
+    // inside the NDI derived from it — this is the wiring she needed proving.
+    const addBack = lineByKey(positive, 'savingsTestAddBack').signedAmount
+    expect(addBack).toBe(positive.savingsTestNumber)
+
+    const totalWithoutAddBack = positive.lines
+      .filter((l) => l.key !== 'savingsTestAddBack')
+      .reduce((sum, l) => sum + l.signedAmount, 0)
+    expect(positive.totalNotionalSpend).toBe(totalWithoutAddBack + addBack)
+    expect(positive.ndiAfterNotionalSpend).toBe(
+      baseInput({ ...common, derivedYearlyDebtRepayments: 1_200 }).netIncome +
+        positive.totalNotionalSpend,
+    )
+  })
+
+  it('CH-37 — a negative test adds nothing back, and NDI is unchanged by it', () => {
+    const negative = calculateNotionalSpend(
+      baseInput({
+        familyTypeCategory: 3,
+        cashSavings: 10_000,
+        isasPepsShares: 0,
+        schoolAgeChildrenCount: 2,
+        schoolingYearsRemaining: 1,
+        derivedYearlyDebtRepayments: 1_200,
+      }),
+      ref,
+    )
+    expect(negative.savingsTestNumber).toBeLessThan(0)
+    expect(lineByKey(negative, 'savingsTestAddBack').signedAmount).toBe(0)
+  })
+
+  it('CH-37 — form ordering is irrelevant: debt repayments drive the test directly', () => {
+    // Two runs differing ONLY in the debt figure entered "further down the
+    // form". If ordering mattered, the second would not respond.
+    const mk = (debt: number) =>
+      calculateNotionalSpend(
+        baseInput({
+          familyTypeCategory: 3,
+          cashSavings: 12_000,
+          isasPepsShares: 0,
+          schoolAgeChildrenCount: 1,
+          schoolingYearsRemaining: 1,
+          derivedYearlyDebtRepayments: debt,
+        }),
+        ref,
+      )
+    const low = mk(1_200)
+    const high = mk(3_200)
+    expect(low.savingsTestNumber - high.savingsTestNumber).toBe(2_000)
+  })
+
   it('defaults schoolAgeChildrenCount from FamilyCategoryMeta when not supplied', () => {
     // Category 4 → schoolAgeChildren 3 (Appendix A). adjustedSavings = 30000/3/1 = 10000.
     const result = calculateNotionalSpend(

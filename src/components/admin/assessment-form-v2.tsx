@@ -39,6 +39,10 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
+import {
+  formatPostcodeAreaLabel,
+  type PostcodeAreaRow,
+} from "@/lib/assessment/postcode-area";
 import type { AssessmentStatus, EmploymentStatus, RentAddBackType } from "@prisma/client";
 import type { AssessorIncomeRecord, PropertyAssetsRecord, DebtsRecord, SiblingDetail } from "@/types/assessment-v2";
 import type { ReferenceBundle } from "@/lib/assessment/v2/types";
@@ -105,6 +109,8 @@ export interface SerialisedAssessmentV2 {
   /** CH-21/22 — manual £ overrides; null = engine-derived figure. */
   rentAddBackOverride: number | null;
   councilTaxOverride: number | null;
+  /** CH-43 — assessor-entered outward postcode code. */
+  postcode: string | null;
   multiPropertyRentAddBack: boolean | null;
   councilTaxSupport: boolean | null;
   usesCar: boolean | null;
@@ -149,6 +155,13 @@ interface AssessmentFormV2Props {
   assessment: SerialisedAssessmentV2;
   applicationId: string;
   referenceBundle: ReferenceBundle;
+  /**
+   * CH-43 — her postcode district → area lookup. Deliberately NOT part of
+   * `ReferenceBundle`: it feeds no calculation, so keeping it out avoids
+   * coupling the calc engine (and its required-rows validation) to a
+   * display-only table.
+   */
+  postcodeAreas: readonly PostcodeAreaRow[];
   prefill: AssessmentV2Prefill;
   /**
    * Epic 15 M1 (CH-11/14): fee-year-resolved current/next-year gross fees for
@@ -370,6 +383,7 @@ export function AssessmentFormV2({
   assessment,
   applicationId,
   referenceBundle,
+  postcodeAreas,
   prefill,
   feesBySchool,
   applicationEntryYear,
@@ -449,6 +463,25 @@ export function AssessmentFormV2({
       return [0, 1, 2].map((i) => stored[i] ?? {});
     }
   );
+  /**
+   * CH-53 — the sibling payable fees the assessor typed into Part 1.
+   *
+   * These were never reaching the engine: the calc input took only
+   * `siblingPayableFees`, which is derived from LINKED bursary accounts and is
+   * empty until a family has an account with `latestPayableFees` recorded.
+   * Charlotte enters siblings by hand, so her figures were silently dropped.
+   *
+   * Only positive figures count — the three rows are fixed slots, so unfilled
+   * ones arrive as `{}` or with a null fee and must not become £0 deductions.
+   */
+  const assessorEnteredSiblingFees = React.useMemo(
+    () =>
+      siblingDetails
+        .map((d) => Number(d?.netPayableFees ?? 0))
+        .filter((fee) => Number.isFinite(fee) && fee > 0),
+    [siblingDetails]
+  );
+
   const setSiblingName = (i: number, name: string) => {
     setSiblingDetails((prev) =>
       prev.map((d, idx) => (idx === i ? { ...d, name } : d))
@@ -509,6 +542,9 @@ export function AssessmentFormV2({
   const [rentAddBackOverride, setRentAddBackOverride] = React.useState<number>(
     Number(assessment.rentAddBackOverride ?? 0) || 0
   );
+  const [postcode, setPostcode] = React.useState<string>(
+    assessment.postcode ?? ""
+  );
   const [councilTaxOverride, setCouncilTaxOverride] = React.useState<number>(
     Number(assessment.councilTaxOverride ?? 0) || 0
   );
@@ -562,6 +598,7 @@ export function AssessmentFormV2({
       multiPropertyRentAddBack,
       councilTaxSupport,
       councilTaxOverride: councilTaxOverride > 0 ? councilTaxOverride : null,
+      postcode: postcode.trim() || null,
       usesCar,
       usesPublicTransport,
       feeInsuranceAnnual,
@@ -573,7 +610,19 @@ export function AssessmentFormV2({
       propertyAssets,
       portfolioType,
       debts,
-      siblingPayableFees,
+      // CH-53 — the assessor-entered siblings in Part 1 were never reaching the
+      // engine. `siblingPayableFees` comes from LINKED bursary accounts
+      // (`getSiblingLinks`), which requires the family to already have an
+      // account with `latestPayableFees` recorded. Charlotte types siblings
+      // straight into Part 1 instead, so her £31,768 sibling was silently
+      // ignored and the actual leg came out £31,768 too high.
+      //
+      // What she typed wins when she has typed anything, rather than being
+      // added to the linked figures — otherwise a sibling that is both linked
+      // and typed would be counted twice.
+      siblingPayableFees: assessorEnteredSiblingFees.length
+        ? assessorEnteredSiblingFees
+        : siblingPayableFees,
       annualFees,
       scholarshipPct: typeof scholarshipPct === "number" ? scholarshipPct : 0,
       vatRate: Number(assessment.vatRate ?? 20) || 20,
@@ -589,6 +638,7 @@ export function AssessmentFormV2({
     multiPropertyRentAddBack,
     councilTaxSupport,
     councilTaxOverride,
+    postcode,
     usesCar,
     usesPublicTransport,
     feeInsuranceAnnual,
@@ -745,6 +795,7 @@ export function AssessmentFormV2({
       multiPropertyRentAddBack,
       councilTaxSupport,
       councilTaxOverride: councilTaxOverride > 0 ? councilTaxOverride : null,
+      postcode: postcode.trim() || null,
       usesCar,
       usesPublicTransport,
       feeInsuranceAnnual,
@@ -818,6 +869,7 @@ export function AssessmentFormV2({
     multiPropertyRentAddBack,
     councilTaxSupport,
     councilTaxOverride,
+    postcode,
     usesCar,
     usesPublicTransport,
     feeInsuranceAnnual,
@@ -1200,6 +1252,33 @@ export function AssessmentFormV2({
                   className="w-32 text-right font-mono"
                 />
               </div>
+              {/* CH-43 — postcode. Manual by her explicit request ("I need to
+                  fill it manually"), so no prefill from Contact.postcode, in
+                  keeping with CH-11's no-prefill stance on Part 1. Free text:
+                  her lookup covers Croydon and its surrounds, so an unlisted
+                  district must still save — it simply resolves to OTHER. The
+                  resolved area is echoed beside the input so she can see the
+                  match land without leaving Part 1. */}
+              <div className={rowClass}>
+                <label className={labelClass} htmlFor="v2-postcode">
+                  Postcode (first part)
+                </label>
+                <div className="flex items-center gap-3">
+                  <Input
+                    id="v2-postcode"
+                    value={postcode}
+                    disabled={isReadOnly}
+                    placeholder="SM4"
+                    maxLength={8}
+                    onChange={(e) => setPostcode(e.target.value)}
+                    onBlur={scheduleAutoSave}
+                    className="w-28 font-mono uppercase"
+                  />
+                  <span className="text-xs text-slate-500">
+                    {formatPostcodeAreaLabel(postcode, postcodeAreas) ?? "—"}
+                  </span>
+                </div>
+              </div>
               {/* Row 11 — Annual school fees: autofill + HIDDEN (feeds the
                   engine only). Surfaced ONLY when the reference figure is
                   missing, because Complete is gated on it. */}
@@ -1454,7 +1533,21 @@ export function AssessmentFormV2({
             auto={fmtMoney(savingsCushion)}
             note="Reference value only — feeds no calculation."
           />
-          <WBRow label="DISPLAY ONLY - SAVINGS TEST NUMBER" auto={fmtMoney(output?.savingsTestNumber)} />
+          {/* CH-55 — the derived-yearly-debt-repayments row that CH-37 added
+              here has been REMOVED at her request (25 Aug): "now that you have
+              explained that there is no excel spreadsheet logic, would you mind
+              (sorry!) putting the yearly debt repayments within the debt
+              section?" Her concern was that it put "some debt stuff in the
+              middle of the savings section" — a fair reading, and once the
+              spreadsheet-ordering worry was gone there was nothing left for it
+              to earn. The figure lives in PART 5 only. The savings-test row
+              below keeps its formula note, which is what actually made the
+              number checkable. */}
+          <WBRow
+            label="DISPLAY ONLY - SAVINGS TEST NUMBER"
+            auto={fmtMoney(output?.savingsTestNumber)}
+            note="Adjusted savings − derived yearly debt repayments − notional savings. Negative means nothing is added back."
+          />
           <WBRow label="IF SAVINGS TEST NUMBER IS POSITIVE, ADD IT IN" auto={lineSigned("savingsTestAddBack")} />
           <WBRow label="IF THE APPLICANT HAS INSURED SCHOOL FEES PAYMENT, ADD YEARLY INSURED TOTAL BACK IN">
             <CurrencyInput

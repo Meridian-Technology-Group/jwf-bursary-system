@@ -39,16 +39,21 @@ describe('incomeCategory / feesBenchmarkPct — Appendix C.1 band boundaries', (
     [79_999.99, 6, 19],
     [80_000, 7, 23],
     [89_999.99, 7, 23],
-    [90_000, 7, 27],
-    [99_999.99, 7, 27],
-    [100_000, 8, 30],
-    [109_999.99, 8, 30],
-    // ── CALC-A1 anomaly: £110k–£119,999 maps BACK to category 7 ──
-    [110_000, 7, 30],
-    [115_000, 7, 30], // the exact vector named in the work-package spec
-    [119_999.99, 7, 30],
-    [120_000, 8, 30],
-    [500_000, 8, 30],
+    // ── CH-39: the CALC-A1 anomaly is retired. Charlotte confirmed the
+    //    workbook's 7,8,7,8 tail was her own slip and the categories run 1..11
+    //    incrementally. Percentages are unchanged — she corrected numbering.
+    [90_000, 8, 27],
+    [99_999.99, 8, 27],
+    [100_000, 9, 30],
+    [109_999.99, 9, 30],
+    [110_000, 10, 30],
+    [115_000, 10, 30], // was the CALC-A1 vector; now simply the tenth band
+    [119_999.99, 10, 30],
+    // CH-54 — a twelfth band: £120–140k is 11, above £140k is 12.
+    [120_000, 11, 30],
+    [139_999.99, 11, 30],
+    [140_000, 12, 30],
+    [500_000, 12, 30],
   ])('netIncome %s → category %s, feesBenchmarkPct %s', (netIncome, expectedCategory, expectedPct) => {
     expect(incomeCategory(netIncome, incomeCategoryBands)).toBe(expectedCategory)
     expect(feesBenchmarkPct(netIncome, incomeCategoryBands)).toBe(expectedPct)
@@ -250,12 +255,18 @@ describe('financialEquityLabel — Appendix C.3 boundaries', () => {
     [-1, 'in debt'],
     [-0.01, 'in debt'],
     [0, 'no debt, no equity'],
-    [0.01, 'some savings'],
-    [50_000, 'some savings'], // shared boundary → lower band
-    [50_000.01, 'fair savings'],
-    [75_000, 'fair savings'],
-    [75_000.01, 'decent savings'],
-    [100_000, 'decent savings'],
+    // ── CH-38: her amended first seven levels. The coarse 0–50,000 "some
+    //    savings" band is split into three, and the two above it shift label.
+    [0.01, 'negligible savings'],
+    [3_000, 'negligible savings'], // shared boundary → lower band
+    [3_000.01, 'within default cushion savings'],
+    [20_000, 'within default cushion savings'],
+    [20_000.01, 'fair savings'],
+    [50_000, 'fair savings'],
+    [50_000.01, 'decent savings'],
+    [75_000, 'decent savings'],
+    [75_000.01, 'comfortable savings'],
+    [100_000, 'comfortable savings'],
     [100_000.01, 'large savings'],
     [150_000, 'large savings'],
     [150_000.01, 'high savings'],

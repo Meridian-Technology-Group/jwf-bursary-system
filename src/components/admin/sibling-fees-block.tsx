@@ -107,10 +107,17 @@ export function SiblingFeesBlock({
         <p className="text-xs font-semibold uppercase tracking-wide text-slate-600">
           SILBINGS&apos; FEES ALREADY AT A JWF SCHOOL
         </p>
+        {/* CH-53 — this note used to say a fee typed here did NOT change the
+            computed legs, which was true and deliberate: sibling absorption
+            read only LINKED bursary accounts. Charlotte types siblings by hand,
+            so her figures were being ignored and she reported the actual leg as
+            wrong. Typed fees now feed the calculation and take precedence over
+            the linked ones, so the note has to say so — left as it was, the UI
+            would be telling the assessor the opposite of what happens. */}
         <p className="mt-1 text-[11px] leading-tight text-slate-400">
-          Record of sibling fees. The calculation&apos;s sibling absorption
-          still reads the LINKED sibling bursary accounts in priority order —
-          a manually typed fee here does not change the computed legs.
+          Sibling fees feed the actual-remaining-DI leg. A fee typed here takes
+          precedence over any linked sibling bursary account, so enter it once —
+          the figures are picked up the next time the assessment model is saved.
         </p>
       </div>
       <div className="overflow-x-auto">

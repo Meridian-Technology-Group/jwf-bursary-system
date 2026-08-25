@@ -40,6 +40,7 @@ import {
   debtRatioBands,
   lifestyleSqueezeBands,
 } from "./seed-data/profiling-reference";
+import { postcodeAreas } from "./seed-data/postcode-areas";
 
 // Eyeball-confirm the target before any writes. Print the project ref only
 // (the URL subdomain), never the full URL or any secret.
@@ -255,6 +256,20 @@ async function seedPropertyEquityBands(): Promise<void> {
   log(`Upserted ${propertyEquityBands.length} property equity bands`);
 }
 
+async function seedPostcodeAreas(): Promise<void> {
+  section("Postcode areas (CH-43)");
+  for (const row of postcodeAreas) {
+    // `district` is unique, so a plain upsert is safe here — unlike the band
+    // tables, whose natural key is (effectiveFrom, ceiling) and needs findFirst.
+    await prisma.postcodeArea.upsert({
+      where: { district: row.district },
+      update: { area: row.area },
+      create: { district: row.district, area: row.area },
+    });
+  }
+  log(`Upserted ${postcodeAreas.length} postcode areas`);
+}
+
 async function seedFinancialEquityBands(): Promise<void> {
   section("Financial equity bands (CALC-01)");
   for (const band of financialEquityBands) {
@@ -350,6 +365,7 @@ async function printSummary(): Promise<void> {
     ["Income category bands", await prisma.incomeCategoryBand.count()],
     ["Property equity bands", await prisma.propertyEquityBand.count()],
     ["Financial equity bands", await prisma.financialEquityBand.count()],
+    ["Postcode areas", await prisma.postcodeArea.count()],
     ["Debt ratio bands", await prisma.debtRatioBand.count()],
     ["Lifestyle squeeze bands", await prisma.lifestyleSqueezeBand.count()],
   ];
@@ -375,6 +391,7 @@ async function main(): Promise<void> {
   await seedIncomeCategoryBands();
   await seedPropertyEquityBands();
   await seedFinancialEquityBands();
+  await seedPostcodeAreas();
   await seedDebtRatioBands();
   await seedLifestyleSqueezeBands();
   await ensureDocumentsBucket();

@@ -234,7 +234,12 @@ export default async function SettingsPage() {
                 <TableHeader>
                   <TableRow className="bg-slate-50">
                     <TableHead className="text-xs">School</TableHead>
-                    <TableHead className="text-xs">Annual Fees</TableHead>
+                    <TableHead className="text-xs">
+                      Annual Fees (excluding VAT)
+                    </TableHead>
+                    <TableHead className="text-xs">
+                      Max Payable Fees (including VAT)
+                    </TableHead>
                     <TableHead className="text-xs">Academic Year</TableHead>
                     <TableHead className="w-28 text-xs">Actions</TableHead>
                   </TableRow>
@@ -246,7 +251,7 @@ export default async function SettingsPage() {
                   {schoolFees.length === 0 && (
                     <TableRow>
                       <TableHead
-                        colSpan={4}
+                        colSpan={5}
                         className="py-8 text-center text-sm text-slate-400 font-normal"
                       >
                         No school fee records found.
@@ -258,9 +263,12 @@ export default async function SettingsPage() {
             </div>
             <AddSchoolFeesYearForm />
             <p className="mt-3 text-xs text-slate-400">
-              VAT (currently 20%) is applied on top during calculations. An
-              assessment reads the fee for the academic year of its round, plus
-              the following year&apos;s fee when recorded.
+              Fees are held excluding VAT. The maximum payable figure is the same
+              fee with VAT (currently 20%) applied — what a parent would pay with
+              no scholarship and no bursary — and is the ceiling the
+              affordability calculation caps against. An assessment reads the fee
+              for the academic year of its round, plus the following
+              year&apos;s fee when recorded.
             </p>
           </div>
         </TabsContent>

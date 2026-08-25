@@ -32,15 +32,29 @@ function roundMoney(value: number): number {
  * Actual net remaining disposable income (C154): NDI after notional spend,
  * less each older sibling's payable fees (in priority order — reuses
  * `applySiblingDeductions`'s sequential-absorption semantics verbatim, per
- * implementation-plan.md §CALC-06), less this pupil's annual fees.
+ * implementation-plan.md §CALC-06).
+ *
+ * **CH-53 — this pupil's own annual fees are no longer deducted.** Charlotte
+ * reported the leg on 25 Aug 2026 with the arithmetic she expects: *"The actual
+ * remaining DI should be : £81,141 – (total notionals) £56,234 – (sibling fee)
+ * £31,768 = -£6,861; instead it reports, -£1,268.00"* — siblings' fees in, the
+ * recipient's own fees out.
+ *
+ * She is right, and the previous behaviour inverted the leg's meaning. This is
+ * one of the three legs whose MINIMUM becomes `recommendedPayableFees`, so it
+ * must represent *what the family has available to put toward this child's
+ * fees*. Subtracting the fee we are trying to compute made a family who could
+ * comfortably afford full fees show a leg near £0 — and therefore a recommended
+ * payable of £0, i.e. a full bursary. Exactly backwards.
+ *
+ * Her other two legs she confirmed correct, which is consistent: neither
+ * deducts the recipient's own fees either.
  */
 export function actualRemainingDI(
   ndiAfterNotionalSpend: number,
   siblingPayableFees: readonly number[],
-  annualFees: number,
 ): number {
-  const afterSiblings = applySiblingDeductions(ndiAfterNotionalSpend, [...siblingPayableFees])
-  return afterSiblings - annualFees
+  return applySiblingDeductions(ndiAfterNotionalSpend, [...siblingPayableFees])
 }
 
 // ─── C156 — Theoretical leg ────────────────────────────────────────────────
@@ -82,32 +96,64 @@ function topAffordabilityBand(bands: readonly AffordabilityBandRow[]): Affordabi
 }
 
 /**
+ * CH-50/51 + CH-52 — the maximum fees a parent could ever be asked to pay for
+ * one year: the school's pre-VAT annual fee grossed up once.
+ *
+ * Charlotte's words: *"you will need the fees including VAT = maximum payable
+ * fees"*. This is the single definition of that figure. **CH-52's cap and
+ * CH-51's admin column must both read it from here** — if they compute it
+ * independently they can disagree, and the cap would then bind at a different
+ * number than the one shown to the assessor.
+ */
+export function maxPayableFeesInclVat(
+  annualFeesExVat: number,
+  vatRate: number = DEFAULT_VAT_RATE,
+): number {
+  return roundMoney(annualFeesExVat * (1 + vatRate / 100))
+}
+
+/**
  * Affordability-adjusted disposable income (C158): net income × a
  * category-adjusted percentage from the Appendix B grid
- * (`basePct − 0.5 × (category − 1)`, negatives allowed — the workbook lets
- * the min-of-three floor at £0 handle a negative affordability leg rather
- * than flooring the percentage itself).
+ * (`basePct − 0.5 × (category − 1)`).
  *
- * `ASSUMPTION(CALC-A6)` — the grid only covers £27,001–£105,000:
- *   - net income ≤ £27,000 → the affordability leg is £0 outright (not a 0%
- *     band — the grid's own bottom band starts at £27,001).
- *   - net income > £105,000 (above the top band's ceiling) → holds the top
- *     band's `basePct` (still category-adjusted) rather than extrapolating
- *     the grid further.
+ * **CH-52 (25 Aug 2026) replaces the top half of `ASSUMPTION(CALC-A6)`.**
+ * Above £105,000 the leg no longer holds the top band's percentage. She wants
+ * it **capped at the full VAT-inclusive fees for the school in question** —
+ * beyond the whole fee there is no bursary left to compute, so the expected
+ * contribution cannot exceed what the parent could possibly be asked to pay.
+ * `maxPayableFeesInclVat` is that ceiling, and the cap applies at every income
+ * rather than only above the grid, because a large family on a mid-range income
+ * can exceed the fee too.
+ *
+ * `maxPayableFees` is optional so callers with no fee to hand (unit tests of the
+ * percentage logic) keep the uncapped behaviour.
+ *
+ * The bottom half of CALC-A6 stands, deliberately. She confirmed 0% applies
+ * "from £0 to £29,000", which is already the outcome: the `netIncome <= 27_000`
+ * shortcut returns £0 and the grid's own bottom band is 0%. The seeded band's
+ * floor has been dropped from £27,001 to £0 so the table *says* so rather than
+ * relying on the shortcut, but the shortcut is kept and the percentage is still
+ * allowed to go negative — the min-of-three's `Math.max(0, …)` is what floors
+ * the award, and the three legs are displayed to the assessor, so changing a
+ * leg she has signed off is not something to slip in under this item.
  */
 export function affordabilityAdjustedDI(
   netIncome: number,
   category: number,
   bands: readonly AffordabilityBandRow[],
+  maxPayableFees?: number,
 ): number {
-  // ASSUMPTION(CALC-A6): below the bottom band.
+  // CALC-A6, bottom half: below the grid's working range the leg is £0.
   if (netIncome <= 27_000) return 0
 
   const band = resolveAffordabilityBand(bands, netIncome) ?? topAffordabilityBand(bands)
   if (!band) return 0 // defensive: empty bands array (should never happen against real seed data)
 
   const pct = band.basePct - 0.5 * (category - 1)
-  return netIncome * (pct / 100)
+  const contribution = netIncome * (pct / 100)
+
+  return maxPayableFees === undefined ? contribution : Math.min(contribution, maxPayableFees)
 }
 
 // ─── C160 — Recommended payable fees ───────────────────────────────────────

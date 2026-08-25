@@ -31,6 +31,7 @@ import { deriveReviewPhase } from "@/lib/applications/status";
 import {
   mergeYoyHistory,
   scaffoldAcademicYears,
+  priorAcademicYear,
   parsePreSystemHistory,
 } from "@/lib/assessments/admin-tab";
 import { formatLondonDate } from "@/lib/datetime";
@@ -147,6 +148,13 @@ export default async function AssessmentAdminPage({ params }: Props) {
     application.round.academicYear,
     assessment?.schoolingYearsRemaining ?? null
   );
+  // CH-56 — the history table's spine sits one year behind the schedule's. Its
+  // figures are the completed tax year the assessment was based on, not the
+  // academic year the award covers. The schedule below keeps the round year.
+  const historyScaffoldYears = scaffoldAcademicYears(
+    priorAcademicYear(application.round.academicYear),
+    assessment?.schoolingYearsRemaining ?? null
+  );
   const assessmentReadOnly =
     isViewer || !assessment || assessment.status === "COMPLETED";
 
@@ -245,7 +253,13 @@ export default async function AssessmentAdminPage({ params }: Props) {
             <table className="w-full min-w-[1080px] text-sm">
               <thead>
                 <tr className="border-b border-slate-200 bg-slate-50 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                  <th className="px-3 py-2">Assessment Year</th>
+                  {/* CH-56b — Charlotte, 25 Aug: "Let's call it 'Financial Assessment
+                      year' as it could be the previous tax year or the one
+                      before that." CH-56 moved the value back a year and left
+                      this header saying "Assessment Year", which was then
+                      wrong. Her wording is deliberately loose because the
+                      figures are not always the immediately preceding year. */}
+                  <th className="px-3 py-2">Financial Assessment year</th>
                   <th className="px-3 py-2 text-right">Overall net income</th>
                   <th className="px-3 py-2 text-right">Total savings</th>
                   <th className="px-3 py-2 text-right">Property equity</th>
@@ -259,7 +273,7 @@ export default async function AssessmentAdminPage({ params }: Props) {
                 </tr>
               </thead>
               <tbody>
-                {scaffoldYears.map((year) => (
+                {historyScaffoldYears.map((year) => (
                   <tr key={year} className="border-b border-slate-100 last:border-b-0">
                     <td className="px-3 py-2 font-mono text-xs font-semibold text-slate-400">
                       {year}
@@ -281,7 +295,13 @@ export default async function AssessmentAdminPage({ params }: Props) {
             <table className="w-full min-w-[1080px] text-sm">
               <thead>
                 <tr className="border-b border-slate-200 bg-slate-50 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                  <th className="px-3 py-2">Assessment Year</th>
+                  {/* CH-56b — Charlotte, 25 Aug: "Let's call it 'Financial Assessment
+                      year' as it could be the previous tax year or the one
+                      before that." CH-56 moved the value back a year and left
+                      this header saying "Assessment Year", which was then
+                      wrong. Her wording is deliberately loose because the
+                      figures are not always the immediately preceding year. */}
+                  <th className="px-3 py-2">Financial Assessment year</th>
                   <th className="px-3 py-2 text-right">Overall net income</th>
                   <th className="px-3 py-2 text-right">Total savings</th>
                   <th className="px-3 py-2 text-right">Property equity</th>
@@ -301,7 +321,9 @@ export default async function AssessmentAdminPage({ params }: Props) {
                     className="border-b border-slate-100 last:border-b-0"
                   >
                     <td className="px-3 py-2 font-mono text-xs font-semibold text-primary-900">
-                      {row.academicYear}
+                      {/* CH-56 — label the completed tax year the figures came
+                          from, not the award's academic year. */}
+                      {priorAcademicYear(row.academicYear)}
                       {row.source === "MANUAL" && (
                         <span className="ml-1.5 rounded bg-slate-100 px-1 py-0.5 text-[10px] font-medium text-slate-500">
                           manual

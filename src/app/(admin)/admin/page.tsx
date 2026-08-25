@@ -18,8 +18,6 @@ import {
   ClipboardList,
   Loader2,
   FileCheck2,
-  CheckCircle2,
-  XCircle,
   CalendarRange,
   ChevronRight,
   ArrowRight,
@@ -221,30 +219,20 @@ export default async function AdminDashboardPage({
       },
       count: counts.awaitingRecommendation,
     },
-    {
-      config: {
-        label: "Qualifies",
-        subLabel: "Award recommended",
-        icon: CheckCircle2,
-        iconBg: "bg-emerald-50",
-        iconColor: "text-emerald-600",
-        borderAccent: "border-emerald-200",
-        href: `${queueWithRound}&status=QUALIFIES`,
-      },
-      count: counts.qualifies,
-    },
-    {
-      config: {
-        label: "Does Not Qualify",
-        subLabel: "Ineligible for bursary",
-        icon: XCircle,
-        iconBg: "bg-slate-100",
-        iconColor: "text-slate-500",
-        borderAccent: "border-slate-200",
-        href: `${queueWithRound}&status=DOES_NOT_QUALIFY`,
-      },
-      count: counts.doesNotQualify,
-    },
+    // CH-46 — the "Qualifies / Award recommended" and "Does Not Qualify /
+    // Ineligible for bursary" tiles are gone. Charlotte: "Could you remove
+    // these banners as we don't use that logic."
+    //
+    // She is right, and the "Qualifies" one was actively misleading: its count
+    // is AWARDED + QUALIFIES_NOT_AWARDED (see round-cockpit.ts), so a family
+    // that qualifies but is NOT awarded was being reported as "award
+    // recommended". JWF's real outcomes are AWARDED, QUALIFIES_NOT_AWARDED and
+    // DOES_NOT_QUALIFY; "Qualifies" as a standalone state was dropped in the
+    // Epic 01 status-model cutover and left vestigial.
+    //
+    // DISPLAY ONLY. `counts.qualifies` / `counts.doesNotQualify` still feed the
+    // totals below and the Round Cockpit's watchlist rules, so the underlying
+    // derivation is deliberately untouched.
   ];
 
   const totalAssessed =

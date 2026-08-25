@@ -9,7 +9,17 @@
  * The workbook (application-form-scoping.md §6) hard-codes 2025-26; in the build
  * those become the labels produced here.
  *
- * Epic 14 D2 (CG-01) — documented disagreement, deliberately unresolved: this
+ * Epic 14 D2 (CG-01) — **Charlotte decided this on 24 Aug 2026: yes, switch the
+ * winter window over.** NOT yet implemented here, deliberately: doing it means
+ * threading the resolved scenario (which needs the application type and a date,
+ * neither of which this module or the income form currently receives) through to
+ * the labels. It also has **no effect until the winter window opens on 10 Nov**,
+ * because a current-year round resolves to NA_CURRENT, whose default tax year
+ * already agrees with the round-derived labels. Bundling a structural change
+ * with zero present-day effect into a parent-facing copy fix would have been the
+ * wrong trade while real families are mid-form. Tracked as CH-47b.
+ *
+ * The original disagreement, for context: this
  * rule engine keys the tax year to the ROUND'S academic year alone, so a
  * next-year application filled in DURING the winter window (before the 12 Apr
  * cutover, LA-4) is still asked for the (Y-1)/Y tax year even though that year
@@ -60,6 +70,17 @@ export interface TaxYearLabels {
   marchPayslipLabel: string;
   /** "2025/26" — the SA302 tax year (Y-1 / Y) */
   sa302TaxYearLabel: string;
+  /**
+   * CH-47 — "2024/25", one year behind `sa302TaxYearLabel`.
+   *
+   * The self-employed evidence row already carried an arrears footnote, but it
+   * said "the previous tax year" in the abstract, leaving the parent to work out
+   * which year that was. Charlotte (24 Aug 2026): *"I need all forms right now to
+   * show the tax year 2025-26 and for the comments re self-employed and
+   * reporting one year in arrears to refer to 2024-25 then."* So the primary
+   * label stays put and the footnote names the year.
+   */
+  sa302ArrearsTaxYearLabel: string;
   /** "since April 2026" — the "left employment in the last 12 months" wording */
   leftEmploymentSinceLabel: string;
 }
@@ -84,6 +105,7 @@ export function getTaxYearLabels(
     p60DateLabel: `April ${startYear}`,
     marchPayslipLabel: `March ${startYear} payslip`,
     sa302TaxYearLabel: `${startYear - 1}/${twoDigit(startYear)}`,
+    sa302ArrearsTaxYearLabel: `${startYear - 2}/${twoDigit(startYear - 1)}`,
     leftEmploymentSinceLabel: `since April ${startYear}`,
   };
 }

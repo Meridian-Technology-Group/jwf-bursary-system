@@ -5,6 +5,7 @@ import {
   affordabilityAdjustedDI,
   recommendedPayableFees,
   awardSummary,
+  maxPayableFeesInclVat,
 } from '../award'
 import { theoreticalNotionalTotal } from '../../reference-bands'
 import type { ReferenceBundle } from '../types'
@@ -38,17 +39,27 @@ const CATEGORIES = [1, 2, 3, 4, 5, 6] as const
 // ─── actualRemainingDI (C154) ───────────────────────────────────────────────
 
 describe('actualRemainingDI', () => {
-  it('deducts sibling fees (sequentially) then this pupil\'s annual fees', () => {
-    // NDI 50,000; siblings 10,000 + 5,000; annual fees 20,000 → 50000-10000-5000-20000 = 15000
-    expect(actualRemainingDI(50_000, [10_000, 5_000], 20_000)).toBe(15_000)
+  // CH-53 — the recipient's own annual fees are NO LONGER deducted. This leg is
+  // what the family has available FOR those fees; the min-of-three then decides
+  // what they pay. Deducting the fee under computation inverted the meaning.
+  it('deducts sibling fees sequentially and nothing else', () => {
+    expect(actualRemainingDI(50_000, [10_000, 5_000])).toBe(35_000)
   })
 
-  it('matches applySiblingDeductions ordering semantics with no siblings', () => {
-    expect(actualRemainingDI(40_000, [], 15_000)).toBe(25_000)
+  it('is the NDI itself when there are no siblings', () => {
+    expect(actualRemainingDI(40_000, [])).toBe(40_000)
   })
 
-  it('can go negative when fees exceed remaining NDI', () => {
-    expect(actualRemainingDI(10_000, [8_000], 5_000)).toBe(-3_000)
+  it('can go negative when the siblings alone exhaust the NDI', () => {
+    expect(actualRemainingDI(10_000, [12_000])).toBe(-2_000)
+  })
+
+  it('CH-53 — reproduces the figure Charlotte reported', () => {
+    // Her Kaluba assessment: NDI after notionals 24,907 (81,141 − 56,234), one
+    // sibling on 31,768. She expects −6,861; the leg previously also subtracted
+    // the recipient's own 26,175 and reported −1,268 because the sibling fee
+    // was never reaching it at all.
+    expect(actualRemainingDI(24_907, [31_768])).toBe(-6_861)
   })
 })
 
@@ -184,6 +195,63 @@ describe('recommendedPayableFees — Appendix F vector 5 (award floor)', () => {
 
   it('picks the actual leg when it is the smallest', () => {
     expect(recommendedPayableFees(1_000, 5_000, 8_000)).toBe(1_000)
+  })
+})
+
+// ─── CH-52 — maxPayableFeesInclVat + the affordability cap ─────────────────
+
+describe('maxPayableFeesInclVat — the single definition of "maximum payable fees"', () => {
+  it("grosses the school's pre-VAT fee up once", () => {
+    expect(maxPayableFeesInclVat(26_175)).toBe(31_410)
+    expect(maxPayableFeesInclVat(25_200)).toBe(30_240)
+  })
+
+  it('honours an explicit VAT rate', () => {
+    expect(maxPayableFeesInclVat(10_000, 0)).toBe(10_000)
+    expect(maxPayableFeesInclVat(10_000, 5)).toBe(10_500)
+  })
+})
+
+describe('affordabilityAdjustedDI — CH-52 cap at the full VAT-inclusive fee', () => {
+  // Whitgift 2026-27: £26,175 ex VAT → £31,410 the parent could ever pay.
+  const cap = maxPayableFeesInclVat(26_175)
+
+  it('leaves a contribution below the fee untouched', () => {
+    const uncapped = affordabilityAdjustedDI(60_000, 1, affordabilityBands)
+    const capped = affordabilityAdjustedDI(60_000, 1, affordabilityBands, cap)
+    expect(uncapped).toBeLessThan(cap)
+    expect(capped).toBe(uncapped)
+  })
+
+  it('caps a very high income at the full fee rather than holding the top %', () => {
+    // £500,000 held the top band's 45% before CH-52 — £225,000, far past the fee.
+    const uncapped = affordabilityAdjustedDI(500_000, 1, affordabilityBands)
+    expect(uncapped).toBeGreaterThan(cap)
+    expect(affordabilityAdjustedDI(500_000, 1, affordabilityBands, cap)).toBe(cap)
+  })
+
+  it('binds at her crossing point: £98,001 is where 35% first exceeds the fee', () => {
+    // Her worked example's intent. At category 1 the band % is unadjusted.
+    const at98001 = affordabilityAdjustedDI(98_001, 1, affordabilityBands)
+    expect(at98001).toBeCloseTo(34_300.35, 2)
+    expect(at98001).toBeGreaterThan(cap)
+    expect(affordabilityAdjustedDI(98_001, 1, affordabilityBands, cap)).toBe(cap)
+
+    // One band lower, 32% of £98,000 is £31,360 — still under the fee, so a
+    // family there keeps qualifying. This is the boundary, not £89,257.
+    const at98000 = affordabilityAdjustedDI(98_000, 1, affordabilityBands)
+    expect(at98000).toBeCloseTo(31_360, 2)
+    expect(at98000).toBeLessThan(cap)
+  })
+
+  it('caps on a mid-range income too when the family category lifts the %', () => {
+    // The cap is not only a top-of-grid concern.
+    const capped = affordabilityAdjustedDI(104_000, 1, affordabilityBands, 5_000)
+    expect(capped).toBe(5_000)
+  })
+
+  it('is unaffected by the cap below the grid — the leg is £0 either way', () => {
+    expect(affordabilityAdjustedDI(20_000, 1, affordabilityBands, cap)).toBe(0)
   })
 })
 

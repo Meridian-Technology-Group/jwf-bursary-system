@@ -453,6 +453,13 @@ model Assessment {
   /// figure (pre-override behaviour, byte-identical); non-negative value wins.
   rentAddBackOverride           Decimal?              @map("rent_add_back_override") @db.Decimal(10, 2)
   councilTaxOverride            Decimal?              @map("council_tax_override") @db.Decimal(10, 2)
+  /// CH-43 — assessor-entered outward postcode code (e.g. "SM4"). Free text and
+  /// nullable, never validated against `PostcodeArea`: her list covers Croydon
+  /// and its surrounds, so an applicant from further afield must still save. Note
+  /// `Contact.postcode` already holds the household's address postcode; she asked
+  /// for this one explicitly — "I need to fill it manually" — so it does not
+  /// prefill, consistent with CH-11's no-prefill stance on Part 1.
+  postcode                      String?               @map("postcode")
   multiPropertyRentAddBack      Boolean?              @map("multi_property_rent_add_back")
   councilTaxSupport             Boolean?              @map("council_tax_support")
   usesCar                       Boolean?              @map("uses_car")
@@ -612,6 +619,21 @@ model AssessmentChecklist {
 }
 
 /// Structured recommendation output per assessment.
+/// CH-43 — Charlotte's postcode district → area lookup. Reference data: the
+/// assessor types an outward code (e.g. "SM4") and the assessment summary shows
+/// it joined to the area ("SM4-MORDEN"). A district she has not listed resolves
+/// to "OTHER" rather than being rejected — see `resolvePostcodeArea`.
+model PostcodeArea {
+  id        String   @id @default(uuid()) @db.Uuid
+  /// Outward-code district, uppercase, no spaces — e.g. "SM4", "CR0".
+  district  String   @unique
+  /// Area name as she supplied it, e.g. "MORDEN", "CATERHAM / WHYTELEAFE".
+  area      String
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@map("postcode_areas")
+}
+
 model Recommendation {
   id                        String                     @id @default(uuid()) @db.Uuid
   assessmentId              String                     @unique @map("assessment_id") @db.Uuid
