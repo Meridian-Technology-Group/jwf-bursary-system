@@ -39,17 +39,27 @@ const CATEGORIES = [1, 2, 3, 4, 5, 6] as const
 // ─── actualRemainingDI (C154) ───────────────────────────────────────────────
 
 describe('actualRemainingDI', () => {
-  it('deducts sibling fees (sequentially) then this pupil\'s annual fees', () => {
-    // NDI 50,000; siblings 10,000 + 5,000; annual fees 20,000 → 50000-10000-5000-20000 = 15000
-    expect(actualRemainingDI(50_000, [10_000, 5_000], 20_000)).toBe(15_000)
+  // CH-53 — the recipient's own annual fees are NO LONGER deducted. This leg is
+  // what the family has available FOR those fees; the min-of-three then decides
+  // what they pay. Deducting the fee under computation inverted the meaning.
+  it('deducts sibling fees sequentially and nothing else', () => {
+    expect(actualRemainingDI(50_000, [10_000, 5_000])).toBe(35_000)
   })
 
-  it('matches applySiblingDeductions ordering semantics with no siblings', () => {
-    expect(actualRemainingDI(40_000, [], 15_000)).toBe(25_000)
+  it('is the NDI itself when there are no siblings', () => {
+    expect(actualRemainingDI(40_000, [])).toBe(40_000)
   })
 
-  it('can go negative when fees exceed remaining NDI', () => {
-    expect(actualRemainingDI(10_000, [8_000], 5_000)).toBe(-3_000)
+  it('can go negative when the siblings alone exhaust the NDI', () => {
+    expect(actualRemainingDI(10_000, [12_000])).toBe(-2_000)
+  })
+
+  it('CH-53 — reproduces the figure Charlotte reported', () => {
+    // Her Kaluba assessment: NDI after notionals 24,907 (81,141 − 56,234), one
+    // sibling on 31,768. She expects −6,861; the leg previously also subtracted
+    // the recipient's own 26,175 and reported −1,268 because the sibling fee
+    // was never reaching it at all.
+    expect(actualRemainingDI(24_907, [31_768])).toBe(-6_861)
   })
 })
 

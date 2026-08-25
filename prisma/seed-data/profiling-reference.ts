@@ -143,7 +143,14 @@ export const incomeCategoryBands = [
   { bandFloor: 90000, bandCeiling: 100000, category: 8, feesBenchmarkPct: 27 },
   { bandFloor: 100000, bandCeiling: 110000, category: 9, feesBenchmarkPct: 30 },
   { bandFloor: 110000, bandCeiling: 120000, category: 10, feesBenchmarkPct: 30 },
-  { bandFloor: 120000, bandCeiling: null, category: 11, feesBenchmarkPct: 30 },
+  // CH-54 — she asked for a 12th band on 25 Aug 2026: "could you add an extra
+  // income category from £120K to £140K category 11, and above £140K net :
+  // category 12?" Her reasons: an even number of categories, and "sometimes an
+  // assessment needs to show that some parents are delusional in terms of their
+  // need for financial support". feesBenchmarkPct stays at 30 — she asked for
+  // bands, not new percentages.
+  { bandFloor: 120000, bandCeiling: 140000, category: 11, feesBenchmarkPct: 30 },
+  { bandFloor: 140000, bandCeiling: null, category: 12, feesBenchmarkPct: 30 },
 ].map((row) => ({ ...row, effectiveFrom: EFFECTIVE_FROM }));
 
 // ─── Appendix C.2 — property-equity category bands ────────────────────────

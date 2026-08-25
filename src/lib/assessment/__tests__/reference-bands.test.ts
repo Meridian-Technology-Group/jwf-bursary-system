@@ -121,8 +121,15 @@ describe('resolveIncomeCategoryBand (Appendix C.1)', () => {
     }
   })
 
-  it('has no upper bound — very high incomes still resolve (to category 11)', () => {
-    expect(resolveIncomeCategoryBand(incomeCategoryBands, 10_000_000)?.category).toBe(11)
+  it('has no upper bound — very high incomes still resolve (to category 12)', () => {
+    // CH-54 — the top band is now £140,000+ at category 12.
+    expect(resolveIncomeCategoryBand(incomeCategoryBands, 10_000_000)?.category).toBe(12)
+  })
+
+  it('CH-54 — the new band boundary at £140,000 splits 11 from 12', () => {
+    expect(resolveIncomeCategoryBand(incomeCategoryBands, 130_000)?.category).toBe(11)
+    expect(resolveIncomeCategoryBand(incomeCategoryBands, 139_999)?.category).toBe(11)
+    expect(resolveIncomeCategoryBand(incomeCategoryBands, 140_000)?.category).toBe(12)
   })
 })
 

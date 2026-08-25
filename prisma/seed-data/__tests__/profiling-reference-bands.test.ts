@@ -20,10 +20,12 @@ import {
  * table by hand.
  */
 
-describe("CH-39 — income category bands run 1..11 incrementally", () => {
+describe("CH-39 / CH-54 — income category bands run 1..12 incrementally", () => {
   it("assigns exactly one category per band, in ascending income order", () => {
+    // CH-54 — she asked for a twelfth band on 25 Aug: £120–140k is category 11
+    // and above £140k is category 12, so the count is even.
     const categories = incomeCategoryBands.map((b) => b.category);
-    expect(categories).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]);
+    expect(categories).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
   });
 
   it("never decreases as income rises — the invariant her correction asked for", () => {
@@ -52,10 +54,19 @@ describe("CH-39 — income category bands run 1..11 incrementally", () => {
     expect(incomeCategoryBands.at(-1)?.bandCeiling).toBeNull();
   });
 
-  it("leaves the fee-benchmark percentages alone — she corrected numbering only", () => {
+  it("leaves the fee-benchmark percentages alone — she asked for bands, not new percentages", () => {
     expect(incomeCategoryBands.map((b) => b.feesBenchmarkPct)).toEqual([
-      2, 3, 6, 10, 15, 19, 23, 27, 30, 30, 30,
+      2, 3, 6, 10, 15, 19, 23, 27, 30, 30, 30, 30,
     ]);
+  });
+
+  it("CH-54 — splits the old open-ended top band at £140,000", () => {
+    const top = incomeCategoryBands.at(-1);
+    const penultimate = incomeCategoryBands.at(-2);
+    expect(penultimate?.bandFloor).toBe(120000);
+    expect(penultimate?.bandCeiling).toBe(140000);
+    expect(top?.bandFloor).toBe(140000);
+    expect(top?.bandCeiling).toBeNull();
   });
 });
 

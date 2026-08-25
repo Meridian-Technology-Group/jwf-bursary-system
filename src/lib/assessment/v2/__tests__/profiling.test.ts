@@ -49,8 +49,11 @@ describe('incomeCategory / feesBenchmarkPct — Appendix C.1 band boundaries', (
     [110_000, 10, 30],
     [115_000, 10, 30], // was the CALC-A1 vector; now simply the tenth band
     [119_999.99, 10, 30],
+    // CH-54 — a twelfth band: £120–140k is 11, above £140k is 12.
     [120_000, 11, 30],
-    [500_000, 11, 30],
+    [139_999.99, 11, 30],
+    [140_000, 12, 30],
+    [500_000, 12, 30],
   ])('netIncome %s → category %s, feesBenchmarkPct %s', (netIncome, expectedCategory, expectedPct) => {
     expect(incomeCategory(netIncome, incomeCategoryBands)).toBe(expectedCategory)
     expect(feesBenchmarkPct(netIncome, incomeCategoryBands)).toBe(expectedPct)

@@ -263,7 +263,14 @@ describe('calculateAssessmentV2 — manual income adjustment (Epic 13 / C2)', ()
     propertyAssets: { home: { value: 400_000, mortgageBalance: 200_000 } },
     portfolioType: 'SINGLE',
     debts: {},
-    siblingPayableFees: [],
+    // CH-53 — a sibling on substantial fees, so the ACTUAL leg is the binding
+    // one and the assertions below still mean what they say. Before CH-53 the
+    // actual leg was reduced by the recipient's own annual fees too, so it
+    // bound almost always and no sibling was needed here; now that it is not,
+    // the leg has to be brought down deliberately for this test's premise to
+    // hold. The £-for-£ property being tested belongs to the actual leg, and
+    // only shows up in `recommendedPayableFees` while that leg is the minimum.
+    siblingPayableFees: [40_000],
     annualFees: 30_000,
     scholarshipPct: 0,
   })
