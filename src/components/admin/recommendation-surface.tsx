@@ -48,6 +48,7 @@ import {
 } from "@/components/admin/recommendation-form-v2";
 import type { OptionScenario } from "@/lib/assessment/recommendation-options";
 import type { ReasonCodeOption } from "@/components/admin/reason-code-selector";
+import { formatPostcodeAreaLabel } from "@/lib/assessment/postcode-area";
 
 function toNumber(
   value: Decimal | string | number | null | undefined
@@ -75,14 +76,21 @@ export async function RecommendationSurface({
   user,
   mode = "gated",
 }: RecommendationSurfaceProps) {
-    const { application, assessment } = await withUserContext(
+    const { application, assessment, postcodeAreas } = await withUserContext(
     user.id,
     user.role as RlsRole,
     async (tx) => {
       const app = await getApplicationWithDetails(tx, applicationId);
-      if (!app) return { application: null, assessment: null };
+      // CH-43 — the district → area lookup is loaded here rather than threaded
+      // in as a prop, because this surface already owns its own data fetch and
+      // the table feeds display only (no calculation, so it is not part of the
+      // engine's ReferenceBundle).
+      const areas = await tx.postcodeArea.findMany({
+        select: { district: true, area: true },
+      });
+      if (!app) return { application: null, assessment: null, postcodeAreas: areas };
       const a = await getAssessment(tx, applicationId);
-      return { application: app, assessment: a };
+      return { application: app, assessment: a, postcodeAreas: areas };
     }
   );
   if (!application) notFound();
@@ -249,6 +257,7 @@ export async function RecommendationSurface({
       scholarshipPct: toNumber(assessment.scholarshipPct),
       incomeCategory: assessment.incomeCategory,
       familyTypeCategory: assessment.familyTypeCategory,
+      postcodeAreaLabel: formatPostcodeAreaLabel(assessment.postcode, postcodeAreas),
       propertyCategoryDerived: assessment.propertyCategoryDerived,
       propertyEquityCategory: assessment.propertyEquityCategory,
       financialEquityLabel: assessment.financialEquityLabel,

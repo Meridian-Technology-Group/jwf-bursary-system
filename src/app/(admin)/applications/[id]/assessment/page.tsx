@@ -358,10 +358,16 @@ export default async function AssessmentPage({ params }: Props) {
   // ── Assessment exists — build full workspace ───────────────────────────────
 
   // Load reference configs + sibling links under RLS context
-  const { configs, siblingPayableFees, feesBySchool } = await withUserContext(
+  const { configs, siblingPayableFees, feesBySchool, postcodeAreas } = await withUserContext(
     user.id,
     user.role as RlsRole,
     async (tx) => {
+      // CH-43 — display-only lookup, loaded alongside the other reference data
+      // but kept out of the engine's ReferenceBundle since it feeds no
+      // calculation.
+      const areas = await tx.postcodeArea.findMany({
+        select: { district: true, area: true },
+      });
       const cfgs = await getConfigsForAssessment(
         tx,
         application.school,
@@ -410,7 +416,12 @@ export default async function AssessmentPage({ params }: Props) {
           }
         }
       }
-      return { configs: cfgs, siblingPayableFees: siblingFees, feesBySchool: bySchool };
+      return {
+        configs: cfgs,
+        siblingPayableFees: siblingFees,
+        feesBySchool: bySchool,
+        postcodeAreas: areas,
+      };
     }
   );
 
@@ -558,6 +569,7 @@ export default async function AssessmentPage({ params }: Props) {
         status: assessment.status,
         assessmentSchool: assessment.assessmentSchool,
         entrySchoolYear: assessment.entrySchoolYear,
+        postcode: assessment.postcode,
         familyTypeCategory: assessment.familyTypeCategory,
         annualFees: toNumber(assessment.annualFees),
         schoolingYearsRemaining: assessment.schoolingYearsRemaining,
@@ -604,6 +616,7 @@ export default async function AssessmentPage({ params }: Props) {
           assessment={serialisedV2}
           applicationId={params.id}
           referenceBundle={resolved.bundle}
+          postcodeAreas={postcodeAreas}
           prefill={prefill}
           feesBySchool={feesBySchool}
           applicationEntryYear={application.entryYear}
