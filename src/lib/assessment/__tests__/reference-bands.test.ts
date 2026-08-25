@@ -155,16 +155,35 @@ describe('resolveFinancialEquityBand (Appendix C.3)', () => {
 })
 
 describe('resolveDebtRatioBand (Appendix C.4, normalised per CALC-A3)', () => {
-  it('classifies zero and negative exposure as no credit risk', () => {
-    expect(resolveDebtRatioBand(debtRatioBands, 0)?.statusLabel).toBe('ZERO DEBT, NO CREDIT RISK')
+  // CH-40 / Q9 — zero and below stay on ZERO DEBT. Her wording put zero in
+  // level 1, but the ratio is floored at zero upstream, so following that
+  // literally would make ZERO DEBT unreachable. See resolveDebtRatioBand.
+  it('keeps zero and negative ratios on ZERO DEBT (Q9 open)', () => {
     expect(resolveDebtRatioBand(debtRatioBands, -1)?.statusLabel).toBe('ZERO DEBT, NO CREDIT RISK')
+    expect(resolveDebtRatioBand(debtRatioBands, 0)?.statusLabel).toBe('ZERO DEBT, NO CREDIT RISK')
   })
 
-  it('resolves shared boundaries toward the lower band (0.1, 0.3, 1, 10)', () => {
-    expect(resolveDebtRatioBand(debtRatioBands, 0.1)?.minRepaymentMonths).toBe(0) // "<1mo" band, not "1"
-    expect(resolveDebtRatioBand(debtRatioBands, 0.3)?.minRepaymentMonths).toBe(1)
-    expect(resolveDebtRatioBand(debtRatioBands, 1)?.minRepaymentMonths).toBe(9)
-    expect(resolveDebtRatioBand(debtRatioBands, 10)?.minRepaymentMonths).toBe(108)
+  it('CH-40 — the smallest positive ratio is level 1, not ZERO DEBT', () => {
+    expect(resolveDebtRatioBand(debtRatioBands, 0.0001)?.statusLabel).toBe(
+      'SMALL DEBT LEVEL, NEGLIGIBLE CREDIT RISK - level 1',
+    )
+  })
+
+  it('resolves shared boundaries toward the UPPER band — ceiling-exclusive', () => {
+    // Each boundary now belongs to the band it opens, not the one it closes.
+    expect(resolveDebtRatioBand(debtRatioBands, 0.1)?.minRepaymentMonths).toBe(1)
+    expect(resolveDebtRatioBand(debtRatioBands, 0.3)?.minRepaymentMonths).toBe(3)
+    expect(resolveDebtRatioBand(debtRatioBands, 1)?.minRepaymentMonths).toBe(12)
+    expect(resolveDebtRatioBand(debtRatioBands, 10)?.minRepaymentMonths).toBe(120)
+  })
+
+  it('keeps values strictly inside a band unaffected by the convention change', () => {
+    expect(resolveDebtRatioBand(debtRatioBands, 0.05)?.statusLabel).toBe(
+      'SMALL DEBT LEVEL, NEGLIGIBLE CREDIT RISK - level 1',
+    )
+    expect(resolveDebtRatioBand(debtRatioBands, 0.2)?.statusLabel).toBe(
+      'SMALL DEBT LEVEL, NEGLIGIBLE CREDIT RISK - level 2',
+    )
   })
 
   it('has no upper bound — very high ratios resolve to the worst band', () => {

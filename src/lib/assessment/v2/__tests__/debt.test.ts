@@ -109,10 +109,26 @@ describe('classifyDebt — against every seeded DebtRatioBand row', () => {
     expect(debtRatioBands).toHaveLength(16)
   })
 
-  it('ZERO DEBT path: ratio of exactly 0 resolves to the null-months zero-debt row', () => {
+  // CH-40 — ceiling-exclusive per Charlotte (24 Aug 2026), applied to every
+  // boundary ABOVE zero.
+  //
+  // Zero itself is deliberately left on ZERO DEBT, contrary to her literal
+  // wording — this is **Q9**. She described ZERO DEBT as "a negative number",
+  // but `calculateDebtOverNdiRatio` floors the exposure at zero before dividing
+  // (see its own test above, "floors a negative exposure to 0"), so the ratio
+  // can never be negative. Following her wording would make ZERO DEBT
+  // unreachable and label every debt-free household "SMALL DEBT LEVEL",
+  // including one with a large savings surplus. Part 5's reported values are
+  // among those she has already signed off, so this is asked, not guessed.
+  it('CH-40 / Q9 — a ratio of exactly 0 stays on ZERO DEBT', () => {
     const result = classifyDebt(0, debtRatioBands)
     expect(result.minRepaymentMonths).toBeNull()
     expect(result.statusLabel).toBe('ZERO DEBT, NO CREDIT RISK')
+  })
+
+  it('CH-40 — the smallest positive ratio is level 1', () => {
+    const result = classifyDebt(0.0001, debtRatioBands)
+    expect(result.statusLabel).toBe('SMALL DEBT LEVEL, NEGLIGIBLE CREDIT RISK - level 1')
   })
 
   it('ZERO DEBT path: a negative ratio also resolves to the zero-debt row', () => {
@@ -143,31 +159,30 @@ describe('classifyDebt — against every seeded DebtRatioBand row', () => {
     expect(result.minRepaymentMonths).toBe(band.minRepaymentMonths)
   })
 
-  it('boundary values resolve to the LOWER of two adjacent bands (shared-ceiling convention)', () => {
-    // Every shared boundary in Appendix C.4's normalised ladder: the band
-    // whose ceiling equals the boundary wins (ascending-ceiling, first
-    // match, both ends inclusive) — see reference-bands.ts's documented
-    // convention.
-    const boundaries: Array<{ value: number; lowerLabel: string }> = [
-      { value: 0.1, lowerLabel: 'SMALL DEBT LEVEL, NEGLIGIBLE CREDIT RISK - level 1' },
-      { value: 0.3, lowerLabel: 'SMALL DEBT LEVEL, NEGLIGIBLE CREDIT RISK - level 2' },
-      { value: 0.5, lowerLabel: 'MANAGEABLE DEBT, LOW CREDIT RISK - level 1' },
-      { value: 0.8, lowerLabel: 'MANAGEABLE DEBT, LOW CREDIT RISK - level 2' },
-      { value: 1, lowerLabel: 'MANAGEABLE DEBT, MEDIUM CREDIT RISK - level 1' },
-      { value: 2, lowerLabel: 'MANAGEABLE DEBT, MEDIUM CREDIT RISK - level 2' },
-      { value: 3, lowerLabel: 'MATERIAL DEBT IMPACT, FAIR CREDIT RISK - level 1' },
-      { value: 4, lowerLabel: 'MATERIAL DEBT IMPACT, FAIR CREDIT RISK - level 2' },
-      { value: 5, lowerLabel: 'HEAVILY IN DEBT, HIGH CREDIT RISK - level 1' },
-      { value: 6, lowerLabel: 'HEAVILY IN DEBT, HIGH CREDIT RISK - level 2' },
-      { value: 7, lowerLabel: 'HEAVILY IN DEBT, HIGH CREDIT RISK - level 3' },
-      { value: 8, lowerLabel: 'VERY HEAVILY IN DEBT, VERY HIGH CREDIT RISK - level 1' },
-      { value: 9, lowerLabel: 'VERY HEAVILY IN DEBT, VERY HIGH CREDIT RISK - level 2' },
-      { value: 10, lowerLabel: 'VERY HEAVILY IN DEBT, VERY HIGH CREDIT RISK - level 3' },
+  it('CH-40 — boundary values resolve to the UPPER band (ceiling-exclusive)', () => {
+    // Her `<` logic, confirmed 24 Aug 2026: a boundary OPENS its band rather
+    // than closing the one below, so every shared boundary in Appendix C.4's
+    // normalised ladder now belongs to the band above it.
+    const boundaries: Array<{ value: number; upperLabel: string }> = [
+      { value: 0.1, upperLabel: 'SMALL DEBT LEVEL, NEGLIGIBLE CREDIT RISK - level 2' },
+      { value: 0.3, upperLabel: 'MANAGEABLE DEBT, LOW CREDIT RISK - level 1' },
+      { value: 0.5, upperLabel: 'MANAGEABLE DEBT, LOW CREDIT RISK - level 2' },
+      { value: 0.8, upperLabel: 'MANAGEABLE DEBT, MEDIUM CREDIT RISK - level 1' },
+      { value: 1, upperLabel: 'MANAGEABLE DEBT, MEDIUM CREDIT RISK - level 2' },
+      { value: 2, upperLabel: 'MATERIAL DEBT IMPACT, FAIR CREDIT RISK - level 1' },
+      { value: 3, upperLabel: 'MATERIAL DEBT IMPACT, FAIR CREDIT RISK - level 2' },
+      { value: 4, upperLabel: 'HEAVILY IN DEBT, HIGH CREDIT RISK - level 1' },
+      { value: 5, upperLabel: 'HEAVILY IN DEBT, HIGH CREDIT RISK - level 2' },
+      { value: 6, upperLabel: 'HEAVILY IN DEBT, HIGH CREDIT RISK - level 3' },
+      { value: 7, upperLabel: 'VERY HEAVILY IN DEBT, VERY HIGH CREDIT RISK - level 1' },
+      { value: 8, upperLabel: 'VERY HEAVILY IN DEBT, VERY HIGH CREDIT RISK - level 2' },
+      { value: 9, upperLabel: 'VERY HEAVILY IN DEBT, VERY HIGH CREDIT RISK - level 3' },
+      { value: 10, upperLabel: 'VERY HEAVILY IN DEBT, VERY HIGH CREDIT RISK - level 4' },
     ]
 
-    for (const { value, lowerLabel } of boundaries) {
+    for (const { value, upperLabel } of boundaries) {
       const result = classifyDebt(value, debtRatioBands)
-      expect(result.statusLabel).toBe(lowerLabel)
+      expect(result.statusLabel).toBe(upperLabel)
     }
   })
 
