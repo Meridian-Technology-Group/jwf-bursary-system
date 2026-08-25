@@ -21,9 +21,10 @@ Board for [`epic-17-assessment-verification-sprint.md`](epic-17-assessment-verif
 | 0 | CH-36 · before-VAT award summary | ✅ **on `staging`** | #346 |
 | 1 | CH-42 · lifestyle squeeze (×100 + status only) | ✅ **on `staging`** | #346 |
 | — | Sprint doc opened | ✅ | #345 |
-| **0** | **CH-37 · savings test below debt** | 🔴 **NOW BLOCKING her real assessments** | |
-| **0** | **CH-38 · savings band table (14 rows)** | 🔴 **NOW BLOCKING** | |
-| **0** | **CH-39 · income categories 1→11** | 🔴 **NOW BLOCKING** — needs WP0 decode of `1a033733c3550e80/image001` first | |
+| A1 | CH-37 · savings test dependency order | ✅ **on `staging`** | #354 |
+| A2 | CH-38 · savings band table (15 rows) | ✅ **on `staging`** | #355 |
+| A3 | CH-39 · income categories 1→11 | ✅ **on `staging`** | #355 |
+| — | Implementation plan | ✅ | #353 |
 | 1 | CH-40 · debt-ratio `<` verification | ⬜ | |
 | 1 | CH-41 · property category → 5 | 🔶 **Q1 answered**; now gated on **Q7** (dropping with-mortgage rows kills 6 categories) | |
 | 1 | CH-52 · affordability cap at full incl-VAT fees | ⬜ **Q2 answered**, ready | |
@@ -115,6 +116,54 @@ committed.
 - **Outside the sprint**: she is proposing a Grant Tracker call on data migration
   and integration, next week or the week of 7 Sept, and awaits Brian's
   availability.
+
+## ✅ Tranche A complete on `staging` — 25 Aug
+
+**Awaiting Brian: promotion to production.** She paused the real prod assessments
+for exactly these three items, so Tranche A only counts once `staging → main`
+merges.
+
+### The headline for her
+
+**CH-37 was never a calculation fault.** `notional-spend.ts` already computed the
+savings test and already added it back when positive, with both branches
+unit-tested. The engine takes every input and computes once, so form ordering
+could not affect the figure. What was missing was any way to *see* the debt input
+at the point it is consumed — now surfaced in Part 3 directly above the test,
+with the formula spelled out on the row.
+
+Her suggestion to relocate the rows into Part 5 was **not** implemented: the
+add-back is summed into Part 3's `TOTAL DEDUCTED NOTIONAL SPEND`, so moving it
+would split that total across two parts. Flagged for her decision.
+
+### Verified on the staging alias (assessment `R-9`, throwaway)
+
+| Check | Result |
+|---|---|
+| Dependency order in Part 3 | ✅ adjusted savings → **derived yearly debt repayments** → savings test |
+| Row notes render | ✅ *"Entered in PART 5. Shown here because the savings test below deducts it."* |
+| Negative case | ✅ test −£3,000.00 → add-back £0.00 |
+| **Positive case** | ✅ cash £60,000 → adjusted £8,571.43 → test **+£5,571.43** → add-back **£5,571.43**, exactly equal |
+| **CH-38 live** | ✅ that household now labels **"decent savings"** — one of the relabelled bands (50k–75k was "fair savings") |
+| CH-39 on nonprod | ✅ SQL confirms categories 1–11 with boundaries unchanged |
+| CH-38 on nonprod | ✅ SQL confirms all 15 rows match her table |
+
+`R-9` restored to `cash_savings = 0.00` afterwards. Charlotte's
+`WS-202627-0008` was not touched.
+
+### Test position
+
+**2,204 passing / 163 files.** 20 existing tests had encoded the old values —
+including one literally named *"preserves the CALC-A1 anomaly"* — and moved with
+the spec, each annotated. New seed-data tests assert **monotonicity as an
+invariant**, which is what her correction actually asked for and what stops the
+`7,8,7,8` shape returning.
+
+### ⚠️ Note for the promotion
+
+CH-39 shifts the income category for **any household above £90,000**. Prod holds
+no assessments yet, so nothing is retro-changed — but if she has already noted a
+category against a real family, it will read one higher.
 
 ## 🔴 Priority change — 25 Aug 18:27 UTC
 
