@@ -12,6 +12,7 @@ import { Input } from "@/components/ui/input";
 import { TableCell, TableRow } from "@/components/ui/table";
 import { upsertSchoolFeesAction } from "@/app/(admin)/settings/actions";
 import type { SchoolFeesRow } from "@/lib/db/queries/reference-tables";
+import { maxPayableFeesInclVat } from "@/lib/assessment/v2/award";
 import type { School } from "@prisma/client";
 import { academicYearLabelFor } from "@/lib/schools/academic-year";
 
@@ -80,6 +81,12 @@ export function SchoolFeesRow({ fees }: SchoolFeesRowProps) {
       <TableRow>
         <TableCell className="font-medium text-slate-700">{schoolLabel}</TableCell>
         <TableCell className="tabular-nums">{formatGBP(fees.annualFees)}</TableCell>
+        {/* CH-51 — the maximum a parent could ever be asked to pay for the year.
+            Derived, never stored, and read from the SAME helper the CH-52
+            affordability cap uses so the two cannot disagree. */}
+        <TableCell className="tabular-nums text-slate-500">
+          {formatGBP(maxPayableFeesInclVat(fees.annualFees))}
+        </TableCell>
         <TableCell className="text-sm text-slate-500">{yearLabel}</TableCell>
         <TableCell>
           <Button
@@ -114,6 +121,11 @@ export function SchoolFeesRow({ fees }: SchoolFeesRowProps) {
             aria-label="Annual fees"
           />
         </div>
+      </TableCell>
+      <TableCell className="tabular-nums text-slate-500">
+        {Number.isFinite(Number.parseFloat(annualFees))
+          ? formatGBP(maxPayableFeesInclVat(Number.parseFloat(annualFees)))
+          : "—"}
       </TableCell>
       <TableCell className="text-sm text-slate-500">{yearLabel}</TableCell>
       <TableCell>
