@@ -21,9 +21,9 @@ Board for [`epic-17-assessment-verification-sprint.md`](epic-17-assessment-verif
 | 0 | CH-36 · before-VAT award summary | ✅ **on `staging`** | #346 |
 | 1 | CH-42 · lifestyle squeeze (×100 + status only) | ✅ **on `staging`** | #346 |
 | — | Sprint doc opened | ✅ | #345 |
-| 1 | CH-37 · savings test below debt | ⬜ next | |
-| 1 | CH-38 · savings band table (14 rows) | ⬜ next | |
-| 1 | CH-39 · income categories 1→11 | ⬜ blocked on WP0 decode of `1a033733c3550e80/image001` | |
+| **0** | **CH-37 · savings test below debt** | 🔴 **NOW BLOCKING her real assessments** | |
+| **0** | **CH-38 · savings band table (14 rows)** | 🔴 **NOW BLOCKING** | |
+| **0** | **CH-39 · income categories 1→11** | 🔴 **NOW BLOCKING** — needs WP0 decode of `1a033733c3550e80/image001` first | |
 | 1 | CH-40 · debt-ratio `<` verification | ⬜ | |
 | 1 | CH-41 · property category → 5 | 🔶 **Q1 answered**; now gated on **Q7** (dropping with-mortgage rows kills 6 categories) | |
 | 1 | CH-52 · affordability cap at full incl-VAT fees | ⬜ **Q2 answered**, ready | |
@@ -115,6 +115,43 @@ committed.
 - **Outside the sprint**: she is proposing a Grant Tracker call on data migration
   and integration, next week or the week of 7 Sept, and awaits Brian's
   availability.
+
+## 🔴 Priority change — 25 Aug 18:27 UTC
+
+**She has put the two real prod assessments on hold**, and CH-37/38/39 are now
+the blocking set rather than Lane 1 "next". Her words (msg `1a03a2d7097c455e`):
+
+> *"The savings test moving below the debt section, your corrected savings bands,
+> the income categories running 1 to 11 — These things are important for the
+> assessment to go well so I'd rather wait a bit (if you think that you will be
+> able to work on these this early evening) as **the savings test number does
+> change the calculation if positive**."*
+
+Her reasoning is exactly right and is the reason this cannot be deferred: a
+positive savings test adds back into available income (CH-37), so any household
+with net savings above the cushion gets a **materially wrong award** until it is
+in place. Running the real assessments first would produce numbers she would
+then have to redo.
+
+**Open question for Brian:** she is explicitly asking whether these can be done
+this early evening. That is a commitment to make or decline, not a technical
+call.
+
+Meanwhile she **is** proceeding with one more assessment on the **test**
+environment right now (msg `1a03a333d5e8892d`, 18:33), *"ignoring anything that
+is still pending"* — so expect a further feedback batch tonight against nonprod,
+not prod.
+
+### Also from the same burst
+
+- **CH-45 sharpened, still open.** She wrote *"Thanks for fixing that"* (18:29)
+  then corrected herself two minutes later (18:31): *"I spoke too fast, the
+  reordering is there on the applications page, not the assessments page. So that
+  one is still open."* Nothing was shipped for CH-45 — she had compared the wrong
+  page. The item stands, and its scope is now unambiguous: the **Assessments**
+  page.
+- She confirmed Q1/Q2 were already sent (*"I have sent you earlier the comments
+  re this: that's done"*), which is the 17:54 email already decoded in #351.
 
 ## Notes for the next session
 
