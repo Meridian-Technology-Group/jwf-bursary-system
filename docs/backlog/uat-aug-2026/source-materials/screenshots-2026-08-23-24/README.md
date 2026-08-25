@@ -130,6 +130,32 @@ Working her grid properly, a Whitgift 2026-27 family stops qualifying at
 £31,410. The *principle* is unambiguous and buildable; only the illustration is
 off.
 
+## A3 / CH-39 decode — resolved without the image
+
+`1a033733c3550e80` / `image001.png` sits directly under her sentence *"This is my
+mistake, it should show logically and incrementally from category 1 to category
+11"*. It is the **current** (slipped) table she is annotating — a before picture,
+not a corrected one. The target is nevertheless fully determined, because the
+seeded table has exactly **11 bands** and she wants categories **1–11**:
+
+| Band | Current category | Target |
+|---|---|---|
+| ≤ £27,000 | 1 | 1 |
+| £27,000–£40,000 | 2 | 2 |
+| £40,000–£50,000 | 3 | 3 |
+| £50,000–£60,000 | 4 | 4 |
+| £60,000–£70,000 | 5 | 5 |
+| £70,000–£80,000 | 6 | 6 |
+| £80,000–£90,000 | 7 | 7 |
+| £90,000–£100,000 | **7** | **8** |
+| £100,000–£110,000 | **8** | **9** |
+| £110,000–£120,000 | **7** | **10** |
+| over £120,000 | **8** | **11** |
+
+Boundaries are unchanged — she never questioned them — and `fees_benchmark_pct`
+is untouched: her complaint was purely the category numbering. The `7,8,7,8`
+tail is exactly the slip Brian asked about.
+
 ## Still to pull
 
 The remaining 14 inline images from `1a036115b3877a5f`, plus:
