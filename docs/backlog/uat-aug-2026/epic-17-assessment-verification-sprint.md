@@ -70,30 +70,30 @@ seems to be stuck on 'PAUSED' asking me to complete the assessment still. I
 was able to save the 'recommendation' at the bottom of the part 6 … maybe
 there is a loop that needs closing there."*
 
-**Investigated 25 Aug (audit trail + DB):**
+**Root cause, settled 25 Aug (audit trail + DB + her screenshot) — SHIPPED:**
 
-- The audit log shows **no `ASSESSMENT_COMPLETE` and no `ASSESSMENT_SAVE`
-  after 22:10:15 UTC** on 24 Aug — only three `RECOMMENDATION_SAVE`s
-  (22:59, 23:01, 23:04). The click never produced a server call, which
-  matches a **disabled button**, not a failing action.
-- The gate is `assessment-form-v2.tsx:992`:
-  `!assessmentSchool || typeof entrySchoolYear !== "number" || annualFees <= 0`.
-- But the persisted row **passes all three**: `assessment_school = WHITGIFT`,
-  `entry_school_year = 7`, `annual_fees = 26175.00`, and the `school_fees`
-  reference row exists (WHITGIFT, effective 2026-09-01, £26,175). So the
-  **client-side state is diverging from the saved row** — likely the fee/
-  school/year state not rehydrating on load, or being cleared by a render
-  path the recommendation saves go through.
-- A disabled button gives no click, no toast, no audit row — exactly
-  "irresponsive". There is also **no tooltip/message when the gate is the
-  reason**, which is its own defect: she was given no way to know why.
+The audit log shows **no `ASSESSMENT_COMPLETE` and no `ASSESSMENT_SAVE` after
+22:10:15 UTC** on 24 Aug, only three `RECOMMENDATION_SAVE`s. No request was
+ever made. My first hypothesis — the form's `disabled` gate at
+`assessment-form-v2.tsx:992` — was **wrong**: the persisted row passes all
+three conditions (`WHITGIFT` / `7` / £26,175, reference row present), and the
+model tab's Complete button renders enabled on staging.
 
-**Fix shape:** browser repro against her exact assessment on staging first
-(`WS-202627-0008`, assessment `7c98ec69-…`); fix the state divergence; and
-make the gate **explain itself** (disabled-with-reason, mirroring the
-existing "Missing from reference data…" hint pattern at :1206). Regression
-test: load a persisted, gate-passing assessment fresh and assert Complete is
-enabled before any user input.
+Her screenshot (`ch35-header-lifecycle-strip.png`) settled it. **The COMPLETE
+she clicked was never a button.** It is the CH-05 lifecycle strip — a status
+readout rendered as `<span>`s — but every chip carried a border *and* a
+background fill, so four status labels read as four controls. Clicking a
+`<span>` makes no request, which is exactly what the audit trail shows.
+
+Compounding it, the award tab told her *"Complete the assessment to record the
+outcome"* while carrying **no control to do it** (`ch35-award-tab-dead-end.png`)
+— the real Complete lives on the model tab. That is the "loop that needs
+closing" she intuited.
+
+**Shipped (#346):** inactive chips are plain text (no border, no fill, no
+hover/cursor); the award tab's instruction now carries a **Complete assessment**
+button, safe away from the form's save-gate because the server action keeps its
+own CALC-15 snapshot guard. Regression test pins the strip as non-interactive.
 
 ### CH-36 · Award summary must be VAT-aware — 6 replacement fields `blocker`
 
@@ -113,10 +113,18 @@ clear from her prose:
   (what the parent actually pays).
 - **Never store** a VAT-inclusive bursary award — display-layer derivation
   only. `vat_rate` (20.00) already exists on the assessment row.
-- Everything upstream of the award summary is signed off — this is a
-  summary-display change, not an engine change. Keep it that way if the
-  decode allows; if a stored field is genuinely needed, it ships as an
-  additive migration on the train.
+- **The decode did NOT allow a display-only change.** Her spec inverts the
+  VAT treatment, so this was an **engine** change: the bursary award is now
+  entered BEFORE VAT (was after, then divided back out) and the scholarship
+  spend carries no VAT (was grossed up). See
+  `source-materials/screenshots-2026-08-23-24/README.md` for the full decode.
+- Her prose *"the fees are now inclusive of VAT"* means what the **parent
+  pays**, not the reference data — the fee table stays pre-VAT, as her own
+  screenshot of its admin panel shows. Reading the sentence without the image
+  would have built the wrong model.
+- **Shipped (#346)**, with an additive migration adding
+  `scholarship_spend_before_vat` + `net_fees_before_vat`; the now-misnamed
+  `scholarship_value_incl_vat` is retained and no longer written.
 
 ---
 
