@@ -32,15 +32,29 @@ function roundMoney(value: number): number {
  * Actual net remaining disposable income (C154): NDI after notional spend,
  * less each older sibling's payable fees (in priority order — reuses
  * `applySiblingDeductions`'s sequential-absorption semantics verbatim, per
- * implementation-plan.md §CALC-06), less this pupil's annual fees.
+ * implementation-plan.md §CALC-06).
+ *
+ * **CH-53 — this pupil's own annual fees are no longer deducted.** Charlotte
+ * reported the leg on 25 Aug 2026 with the arithmetic she expects: *"The actual
+ * remaining DI should be : £81,141 – (total notionals) £56,234 – (sibling fee)
+ * £31,768 = -£6,861; instead it reports, -£1,268.00"* — siblings' fees in, the
+ * recipient's own fees out.
+ *
+ * She is right, and the previous behaviour inverted the leg's meaning. This is
+ * one of the three legs whose MINIMUM becomes `recommendedPayableFees`, so it
+ * must represent *what the family has available to put toward this child's
+ * fees*. Subtracting the fee we are trying to compute made a family who could
+ * comfortably afford full fees show a leg near £0 — and therefore a recommended
+ * payable of £0, i.e. a full bursary. Exactly backwards.
+ *
+ * Her other two legs she confirmed correct, which is consistent: neither
+ * deducts the recipient's own fees either.
  */
 export function actualRemainingDI(
   ndiAfterNotionalSpend: number,
   siblingPayableFees: readonly number[],
-  annualFees: number,
 ): number {
-  const afterSiblings = applySiblingDeductions(ndiAfterNotionalSpend, [...siblingPayableFees])
-  return afterSiblings - annualFees
+  return applySiblingDeductions(ndiAfterNotionalSpend, [...siblingPayableFees])
 }
 
 // ─── C156 — Theoretical leg ────────────────────────────────────────────────

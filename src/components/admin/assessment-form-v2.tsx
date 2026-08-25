@@ -463,6 +463,25 @@ export function AssessmentFormV2({
       return [0, 1, 2].map((i) => stored[i] ?? {});
     }
   );
+  /**
+   * CH-53 — the sibling payable fees the assessor typed into Part 1.
+   *
+   * These were never reaching the engine: the calc input took only
+   * `siblingPayableFees`, which is derived from LINKED bursary accounts and is
+   * empty until a family has an account with `latestPayableFees` recorded.
+   * Charlotte enters siblings by hand, so her figures were silently dropped.
+   *
+   * Only positive figures count — the three rows are fixed slots, so unfilled
+   * ones arrive as `{}` or with a null fee and must not become £0 deductions.
+   */
+  const assessorEnteredSiblingFees = React.useMemo(
+    () =>
+      siblingDetails
+        .map((d) => Number(d?.netPayableFees ?? 0))
+        .filter((fee) => Number.isFinite(fee) && fee > 0),
+    [siblingDetails]
+  );
+
   const setSiblingName = (i: number, name: string) => {
     setSiblingDetails((prev) =>
       prev.map((d, idx) => (idx === i ? { ...d, name } : d))
@@ -591,7 +610,19 @@ export function AssessmentFormV2({
       propertyAssets,
       portfolioType,
       debts,
-      siblingPayableFees,
+      // CH-53 — the assessor-entered siblings in Part 1 were never reaching the
+      // engine. `siblingPayableFees` comes from LINKED bursary accounts
+      // (`getSiblingLinks`), which requires the family to already have an
+      // account with `latestPayableFees` recorded. Charlotte types siblings
+      // straight into Part 1 instead, so her £31,768 sibling was silently
+      // ignored and the actual leg came out £31,768 too high.
+      //
+      // What she typed wins when she has typed anything, rather than being
+      // added to the linked figures — otherwise a sibling that is both linked
+      // and typed would be counted twice.
+      siblingPayableFees: assessorEnteredSiblingFees.length
+        ? assessorEnteredSiblingFees
+        : siblingPayableFees,
       annualFees,
       scholarshipPct: typeof scholarshipPct === "number" ? scholarshipPct : 0,
       vatRate: Number(assessment.vatRate ?? 20) || 20,
@@ -1502,23 +1533,16 @@ export function AssessmentFormV2({
             auto={fmtMoney(savingsCushion)}
             note="Reference value only — feeds no calculation."
           />
-          {/* CH-37 — the savings test deducts the yearly debt repayments, which
-              are entered in PART 5, further down the form. Charlotte read that
-              as the calculation being unable to run ("the formula is linking a
-              value which is to be entered further down the model"). The engine
-              is not a spreadsheet — it takes every input and computes once, so
-              the figure has always been correct. What was missing was any way
-              to SEE the third input at the point it is consumed. Surfacing it
-              here puts all three of the test's inputs in dependency order,
-              directly above the test, without moving a line out of the total it
-              feeds (PART 3's TOTAL DEDUCTED NOTIONAL SPEND sums the add-back
-              below, so relocating that row would split a total across two
-              parts). */}
-          <WBRow
-            label="DISPLAY ONLY - DERIVED YEARLY DEBT REPAYMENTS"
-            auto={fmtMoney(output?.derivedYearlyDebtRepayments)}
-            note="Entered in PART 5. Shown here because the savings test below deducts it."
-          />
+          {/* CH-55 — the derived-yearly-debt-repayments row that CH-37 added
+              here has been REMOVED at her request (25 Aug): "now that you have
+              explained that there is no excel spreadsheet logic, would you mind
+              (sorry!) putting the yearly debt repayments within the debt
+              section?" Her concern was that it put "some debt stuff in the
+              middle of the savings section" — a fair reading, and once the
+              spreadsheet-ordering worry was gone there was nothing left for it
+              to earn. The figure lives in PART 5 only. The savings-test row
+              below keeps its formula note, which is what actually made the
+              number checkable. */}
           <WBRow
             label="DISPLAY ONLY - SAVINGS TEST NUMBER"
             auto={fmtMoney(output?.savingsTestNumber)}
