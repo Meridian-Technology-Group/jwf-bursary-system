@@ -2,7 +2,12 @@
 
 import { describe, expect, it } from 'vitest'
 
-import { mergeYoyHistory, parsePreSystemHistory } from '../admin-tab'
+import {
+  mergeYoyHistory,
+  parsePreSystemHistory,
+  priorAcademicYear,
+  scaffoldAcademicYears,
+} from '../admin-tab'
 import type { YoyFinancialsTableRow } from '@/lib/assessment/yoy-financials'
 
 function systemRow(
@@ -106,5 +111,34 @@ describe('parsePreSystemHistory', () => {
         lifestyleSqueeze: null,
       },
     ])
+  })
+})
+
+// ─── CH-56 — the history table's year spine sits one year back ──────────────
+
+describe('priorAcademicYear', () => {
+  it("labels a 2026/27 award's history row 2025/26, as Charlotte asked", () => {
+    expect(priorAcademicYear('2026/27')).toBe('2025/26')
+  })
+
+  it('pads the two-digit suffix across a century boundary', () => {
+    expect(priorAcademicYear('2100/01')).toBe('2099/00')
+  })
+
+  it('is always exactly one year behind, whatever the input', () => {
+    for (const y of ['2024/25', '2027/28', '2030/31']) {
+      const start = parseInt(y.slice(0, 4), 10)
+      expect(priorAcademicYear(y).slice(0, 4)).toBe(String(start - 1))
+    }
+  })
+
+  it('returns an unparseable value unchanged rather than inventing one', () => {
+    expect(priorAcademicYear('not-a-year')).toBe('not-a-year')
+    expect(priorAcademicYear('')).toBe('')
+  })
+
+  it('composes with scaffoldAcademicYears to shift the whole spine back', () => {
+    const spine = scaffoldAcademicYears(priorAcademicYear('2026/27'), 3)
+    expect(spine).toEqual(['2025/26', '2026/27', '2027/28'])
   })
 })
