@@ -162,13 +162,44 @@ export interface DebtRatioBandRow {
   statusLabel: string
 }
 
-/** Appendix C.4 (normalised per assumption CALC-A3). */
+/**
+ * Appendix C.4 (normalised per assumption CALC-A3).
+ *
+ * CH-40 — ceiling-EXCLUSIVE, per Charlotte's confirmation of 24 Aug 2026:
+ * *"it should be the logic of < , so 'zero debt, no credit risk' is a negative
+ * number; number equal to zero or strictly less than 0.1 'small debt level,
+ * negligible credit risk – level 1'"*.
+ *
+ * Her `<` logic is applied to every boundary above zero, so each boundary now
+ * OPENS its band rather than closing the one below — `0.1` moves from level 1
+ * to level 2, `0.3` from level 2 to the next, and so on. The seeded boundaries
+ * were already the non-overlapping reading she confirmed (0–0.1, 0.1–0.3,
+ * 0.3–0.5, 0.5–0.8, 0.8–1.0), so only the comparison changes. The
+ * income-category resolver above already passes the same flag; the two tables
+ * now agree on convention.
+ *
+ * ⚠️ **Zero is deliberately NOT moved to level 1, contrary to her literal
+ * wording — see Q9.** She describes ZERO DEBT as "a negative number", but
+ * `debtOverNdiRatio` is floored at zero by construction
+ * (`v2/debt.ts`: `Math.max(0, yearlyDebtExposure) / householdNetIncome`), so it
+ * can never BE negative. Taking her wording literally would make ZERO DEBT
+ * permanently unreachable and label every debt-free household — including one
+ * with a large savings surplus — "SMALL DEBT LEVEL". That is plainly not the
+ * intent, and Part 5's reported values are among those she has already signed
+ * off, so the zero case is left exactly as it behaves today and asked rather
+ * than guessed. Resolving Q9 is likely to mean removing the floor in `debt.ts`
+ * so a savings surplus reads negative, at which point this guard can go.
+ */
 export function resolveDebtRatioBand(
   bands: readonly DebtRatioBandRow[],
   debtOverNdiRatio: number,
 ): DebtRatioBandRow | null {
   const view = bands.map((b) => ({ floor: b.ratioFloor, ceiling: b.ratioCeiling, source: b }))
-  return resolveBand(view, debtOverNdiRatio)?.source ?? null
+  if (debtOverNdiRatio <= 0) {
+    // The open-ended-bottom row (ceiling 0) — ZERO DEBT.
+    return bands.find((b) => b.ratioFloor === null) ?? null
+  }
+  return resolveBand(view, debtOverNdiRatio, { ceilingExclusive: true })?.source ?? null
 }
 
 export interface LifestyleSqueezeBandRow {
