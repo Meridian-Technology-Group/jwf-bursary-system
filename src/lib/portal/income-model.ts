@@ -114,6 +114,7 @@ export function newIncomeTotal(rec: Partial<ParentIncomeRecord>): number {
       n(b.childWorkingTaxCredit) +
       n(b.esa) +
       n(b.pipOrDla) +
+      n(b.pip) +
       n(b.carersAllowance) +
       n(b.childcareSupport) +
       n(b.other);
@@ -203,7 +204,12 @@ function newItems(rec: Partial<ParentIncomeRecord>): IncomeItem[] {
       { label: "Child Benefit", value: n(b.childBenefit) },
       { label: "Child / Working Tax Credit", value: n(b.childWorkingTaxCredit) },
       { label: "ESA", value: n(b.esa) },
-      { label: "Disability Allowance / PIP", value: n(b.pipOrDla) },
+      // CH-58 — DLA and PIP are distinct, recurring, and often large. Reported
+      // separately so the assessor sees the composition, and summed separately
+      // above so PIP actually counts: with no cell of its own it was not being
+      // captured at all, which under-reported income by the whole PIP amount.
+      { label: "Disability Living Allowance", value: n(b.pipOrDla) },
+      { label: "PIP", value: n(b.pip) },
       { label: "Carer's Allowance", value: n(b.carersAllowance) },
       { label: "Childcare Support", value: n(b.childcareSupport) },
       { label: "Other benefits", value: n(b.other) }
@@ -314,6 +320,7 @@ export function normaliseLegacyIncomeRecord(
       childWorkingTaxCredit: n(rec.workingTaxCredits),
       esa: 0,
       pipOrDla: 0,
+      pip: 0,
       carersAllowance: 0,
       childcareSupport: 0,
       other: 0,

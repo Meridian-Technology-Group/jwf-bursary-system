@@ -279,7 +279,7 @@ function ParentIncomeColumn({
     });
     ensure("benefits", {
       universalCredit: 0, housingBenefit: 0, childBenefit: 0,
-      childWorkingTaxCredit: 0, esa: 0, pipOrDla: 0, carersAllowance: 0,
+      childWorkingTaxCredit: 0, esa: 0, pipOrDla: 0, pip: 0, carersAllowance: 0,
       childcareSupport: 0, other: 0,
     });
     ensure("unemployed", {
@@ -382,6 +382,7 @@ function ParentIncomeColumn({
     subGt0("benefits", "childWorkingTaxCredit") ||
     subGt0("benefits", "esa") ||
     subGt0("benefits", "pipOrDla") ||
+    subGt0("benefits", "pip") ||
     subGt0("benefits", "carersAllowance") ||
     subGt0("benefits", "childcareSupport") ||
     subGt0("benefits", "other");
@@ -512,11 +513,22 @@ function ParentIncomeColumn({
           label="Employment & Support Allowance (ESA)"
           evidence={subGt0("benefits", "esa") ? uploadHint : undefined}
         />
+        {/* CH-58 — DLA and PIP were one combined row. Charlotte, 25 Aug:
+            "We need each benefit to have its own cell". They are distinct,
+            recurring and often large, and with no cell of its own PIP was not
+            being captured at all — on WS-202627-0010 that was £2,412 of income
+            with nowhere to go. Same evidence rule on both. */}
         <IncomeRow
           prefix={prefix}
           path="benefits.pipOrDla"
-          label="Disability Allowance or PIP"
+          label="Disability Living Allowance (DLA)"
           evidence={subGt0("benefits", "pipOrDla") ? uploadHint : undefined}
+        />
+        <IncomeRow
+          prefix={prefix}
+          path="benefits.pip"
+          label="Personal Independence Payment (PIP)"
+          evidence={subGt0("benefits", "pip") ? uploadHint : undefined}
         />
         <IncomeRow
           prefix={prefix}

@@ -18,8 +18,7 @@
  *  - "ADD YEARLY COMPANY NET PROFITS AFTER TAX" (sole trader): the engine's
  *    four selfEmployed fields are the whole block; sole-trader profits have
  *    historically been entered under gross earned income.
- *  - "ADD YEARLY PIP": the engine holds ONE combined `pipOrDla` figure, bound
- *    to the DLA row; the PIP row displays the combination note.
+ *  (The PIP row was an LA-8 inert row until CH-58 gave PIP its own field.)
  */
 
 import type { AssessorIncomeRecord } from '@/types/assessment-v2'
@@ -135,19 +134,25 @@ export const INCOME_TABLE_ROWS: readonly IncomeTableRow[] = [
     blockKey: 'benefits',
     fieldKey: 'esa',
   },
+  // CH-58 — DLA and PIP are now separate inputs. Charlotte crossed out the
+  // missing PIP cells: "We need each benefit to have its own cell". PIP was an
+  // inert LA-8 row, so anything she typed had nowhere to go and the income was
+  // simply not counted — £2,412 of it on WS-202627-0010. The DLA row keeps the
+  // `pipOrDla` field key so every figure already captured stays valid and reads
+  // as DLA; a single combined number cannot be split retrospectively.
   {
     statusBlock: null,
     label: 'ADD YEARLY DLA',
     kind: 'input',
     blockKey: 'benefits',
     fieldKey: 'pipOrDla',
-    note: 'Enter the combined DLA and PIP total here.',
   },
   {
     statusBlock: null,
     label: 'ADD YEARLY PIP',
-    kind: 'la8',
-    note: 'Included in the DLA row above — enter the combined total there.',
+    kind: 'input',
+    blockKey: 'benefits',
+    fieldKey: 'pip',
   },
   {
     statusBlock: null,
