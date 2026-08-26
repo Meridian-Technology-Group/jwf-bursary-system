@@ -77,6 +77,8 @@ interface SectionPageClientProps {
    * tax-year wording on the income section (D5). Null when unavailable.
    */
   academicYear?: string | null;
+  /** CH-47b — the year the tax-year wording is built from (server-resolved). */
+  taxYearBasisYear?: number | null;
   /** Map of document ID → metadata for showing previously uploaded files. */
   documentMap?: Record<string, DocumentMeta>;
   /** Child's full name from CHILD_DETAILS (for DEPENDENT_CHILDREN section). */
@@ -128,6 +130,7 @@ function SectionFormContent({
   childFullName,
   isSoleParent,
   academicYear,
+  taxYearBasisYear,
   parent1EmploymentStatus,
   parent2EmploymentStatus,
   relationshipStatus,
@@ -140,6 +143,8 @@ function SectionFormContent({
   childFullName?: string;
   isSoleParent?: boolean;
   academicYear?: string | null;
+  /** CH-47b — the year the tax-year wording is built from (server-resolved). */
+  taxYearBasisYear?: number | null;
   parent1EmploymentStatus?: string;
   parent2EmploymentStatus?: string;
   relationshipStatus?: string;
@@ -153,7 +158,7 @@ function SectionFormContent({
     case "DEPENDENT_CHILDREN": return <DependentChildrenForm childFullName={childFullName} />;
     case "DEPENDENT_ELDERLY": return <DependentElderlyForm applicationId={applicationId} documentMap={documentMap} />;
     case "OTHER_INFO": return <OtherInfoForm applicationId={applicationId} documentMap={documentMap} />;
-    case "PARENTS_INCOME": return <ParentsIncomeForm isSoleParent={isTwoParentHousehold({ isSoleParent, relationshipStatus }) ? false : isSoleParent} applicationId={applicationId} documentMap={documentMap} academicYear={academicYear} parent1EmploymentStatus={parent1EmploymentStatus} parent2EmploymentStatus={parent2EmploymentStatus} relationshipStatus={relationshipStatus} />;
+    case "PARENTS_INCOME": return <ParentsIncomeForm isSoleParent={isTwoParentHousehold({ isSoleParent, relationshipStatus }) ? false : isSoleParent} applicationId={applicationId} documentMap={documentMap} academicYear={academicYear} taxYearBasisYear={taxYearBasisYear} parent1EmploymentStatus={parent1EmploymentStatus} parent2EmploymentStatus={parent2EmploymentStatus} relationshipStatus={relationshipStatus} />;
     case "ASSETS_LIABILITIES": return <AssetsLiabilitiesForm isSoleParent={isTwoParentHousehold({ isSoleParent, relationshipStatus }) ? false : isSoleParent} applicationId={applicationId} documentMap={documentMap} />;
     case "ADDITIONAL_INFO": return <AdditionalInfoForm applicationId={applicationId} documentMap={documentMap} />;
     case "DECLARATION": return <DeclarationForm isSoleParent={isTwoParentHousehold({ isSoleParent, relationshipStatus }) ? false : isSoleParent} />;
@@ -187,6 +192,7 @@ export function SectionPageClient({
   applicationChildName,
   applicationGuardianName,
   academicYear,
+  taxYearBasisYear,
   documentMap,
   childFullName,
   parent1Address,
@@ -432,6 +438,7 @@ export function SectionPageClient({
             childFullName={childFullName}
             isSoleParent={isSoleParent}
             academicYear={academicYear}
+            taxYearBasisYear={taxYearBasisYear}
             parent1EmploymentStatus={parent1EmploymentStatus}
             parent2EmploymentStatus={parent2EmploymentStatus}
             relationshipStatus={relationshipStatus}
