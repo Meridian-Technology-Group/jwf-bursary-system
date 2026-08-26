@@ -394,12 +394,18 @@ not prod.
 
 ### Also from the same burst
 
-- **CH-45 sharpened, still open.** She wrote *"Thanks for fixing that"* (18:29)
-  then corrected herself two minutes later (18:31): *"I spoke too fast, the
-  reordering is there on the applications page, not the assessments page. So that
-  one is still open."* Nothing was shipped for CH-45 — she had compared the wrong
-  page. The item stands, and its scope is now unambiguous: the **Assessments**
-  page.
+- **CH-45 sharpened — ✅ since CLOSED.** She wrote *"Thanks for fixing that"*
+  (18:29) then corrected herself two minutes later (18:31): *"I spoke too fast,
+  the reordering is there on the applications page, not the assessments page. So
+  that one is still open."* Nothing had been shipped for CH-45 at that point —
+  she had compared the wrong page — and its scope became unambiguous: the
+  **Assessments** page.
+
+  > **Resolved the same evening.** CH-45 shipped at 21:49 in `a581c2b`
+  > (PR #361), against the Assessments page — see
+  > `src/app/(admin)/assessments/page.tsx:41`. The status table above is correct;
+  > this note is retained for the record of how the scope was sharpened, not as
+  > an open item.
 - She confirmed Q1/Q2 were already sent (*"I have sent you earlier the comments
   re this: that's done"*), which is the 17:54 email already decoded in #351.
 
@@ -412,7 +418,8 @@ not prod.
   CH-07 and CI-11 removed from the v2 workspace at
   `/applications/{id}/assessment`. Charlotte is not using this route, so it is
   not urgent, but it is a live second front door to the same application and
-  will confuse someone. Worth an item.
+  will confuse someone. Worth an item. → **now tracked as Epic 19 `WP-C9`**
+  (redirect or delete — decision **D-F**).
 - WP0 is only part-done: 3 of 17 images pulled. The remaining decodes gate
   CH-39, CH-40, CH-41, CH-43, CH-44 and CH-46 — in particular **do not delete
   any dashboard banner before decoding `1a0357ecd2e12b6c/image001`**.
