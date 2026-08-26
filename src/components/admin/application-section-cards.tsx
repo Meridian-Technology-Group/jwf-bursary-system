@@ -12,6 +12,11 @@
 import * as React from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import type { ApplicationSectionType } from "@prisma/client";
+import {
+  orderEntries,
+  resolveFieldOrderSpec,
+} from "@/lib/admin/section-field-order";
+import { groupSectionFields } from "@/lib/admin/section-field-groups";
 
 // ─── Section display config ───────────────────────────────────────────────────
 
@@ -258,7 +263,11 @@ export function DataBlock({
   // null at runtime. `Object.entries(null)` throws, which crashed the whole
   // Applicant Data tab. Guarded here as the backstop, and at the array-element
   // call site below where the null actually gets through.
-  const entries = isRenderableObject(data) ? Object.entries(data) : [];
+  const rawEntries = isRenderableObject(data) ? Object.entries(data) : [];
+  // CH-61 — JSONB preserves insertion order, which is form-field-registration
+  // order, which reads as arbitrary. Unlisted keys are never dropped; they
+  // simply follow the ordered ones.
+  const entries = orderEntries(rawEntries, resolveFieldOrderSpec(pathPrefix));
   if (entries.length === 0)
     return <span className="text-slate-400 italic">Empty</span>;
 
@@ -291,6 +300,60 @@ export function DataBlock({
   );
 }
 
+// ─── Subject grouping (CH-62) ─────────────────────────────────────────────────
+
+/**
+ * Renders a section's fields, grouped by subject where a grouping spec exists
+ * (today: Assets & Liabilities) and as one flat list where it does not.
+ *
+ * Both read-only surfaces — the Applicant Data tab and the assessment
+ * workspace's APPLICATION FORM tab — render through this, so they cannot drift
+ * on grouping any more than they can on formatting.
+ *
+ * `groupFooter` lets the APPLICATION FORM tab hang each group's uploaded
+ * document titles beneath that group. The Applicant Data tab passes nothing and
+ * gets the grouping alone.
+ */
+export function SectionFields({
+  section,
+  data,
+  provenance = {},
+  groupFooter,
+}: {
+  section: ApplicationSectionType;
+  data: Record<string, unknown>;
+  provenance?: ProvenanceDisplayMap;
+  groupFooter?: (groupKey: string) => React.ReactNode;
+}) {
+  const groups = groupSectionFields(section, data);
+
+  // Ungrouped section — one headingless result. Render exactly as before.
+  if (groups.length === 1 && groups[0].label === null) {
+    return <DataBlock data={data} provenance={provenance} />;
+  }
+
+  return (
+    <div className="space-y-6">
+      {groups.map((group) => (
+        <section key={group.key}>
+          <h3 className="mb-3 border-b border-slate-100 pb-1.5 text-xs font-semibold uppercase tracking-wide text-slate-500">
+            {group.label}
+          </h3>
+          {/* Rebuilding the object rather than threading entries through
+              DataBlock keeps one render path. Safe because section keys are
+              camelCase identifiers — an integer-like key would be reordered by
+              the JS engine, and none exists in any section schema. */}
+          <DataBlock
+            data={Object.fromEntries(group.entries)}
+            provenance={provenance}
+          />
+          {groupFooter?.(group.key)}
+        </section>
+      ))}
+    </div>
+  );
+}
+
 // ─── Section card ─────────────────────────────────────────────────────────────
 
 export interface SectionCardProps {
@@ -305,6 +368,12 @@ export interface SectionCardProps {
   headerExtra?: React.ReactNode;
   /** Optional footer content (e.g. the C3 per-section document titles). */
   footer?: React.ReactNode;
+  /**
+   * CH-62 — per-subject-group footer, called with each rendered group's key.
+   * Used by the APPLICATION FORM tab to list each group's own uploaded document
+   * titles beneath it instead of all of the section's at the bottom.
+   */
+  groupFooter?: (groupKey: string) => React.ReactNode;
 }
 
 export function SectionDataCard({
@@ -315,6 +384,7 @@ export function SectionDataCard({
   ownerLabel,
   headerExtra,
   footer,
+  groupFooter,
 }: SectionCardProps) {
   const hasData = !!data && Object.keys(data).length > 0;
   const provenance = asProvenanceMap(assessorProvenance);
@@ -356,7 +426,12 @@ export function SectionDataCard({
       </CardHeader>
       <CardContent className="px-6 py-5">
         {hasData ? (
-          <DataBlock data={data} provenance={provenance} />
+          <SectionFields
+            section={section}
+            data={data}
+            provenance={provenance}
+            groupFooter={groupFooter}
+          />
         ) : (
           <p className="text-sm text-slate-400 italic">No data recorded.</p>
         )}

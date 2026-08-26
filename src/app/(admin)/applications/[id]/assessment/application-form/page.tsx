@@ -30,6 +30,10 @@ import {
   SectionDataCard,
 } from "@/components/admin/application-section-cards";
 import { groupDocumentsBySection } from "@/lib/documents/section-grouping";
+import {
+  groupForDocumentSlot,
+  groupSectionFields,
+} from "@/lib/admin/section-field-groups";
 import { humaniseSlot } from "@/lib/documents/slots";
 
 export const metadata = {
@@ -158,18 +162,61 @@ export default async function AssessmentApplicationFormPage({ params }: Props) {
           ? bySection.get(section.section) ?? []
           : [];
 
+        const sectionData = section.data as Record<string, unknown> | null;
+
+        // CH-62 — where the section renders under subject headings, its
+        // documents list under the heading they belong to rather than all
+        // together at the bottom. Anything whose group did not render (a
+        // COUNCIL_TAX upload on a blob with no `councilTaxDocumentId`, say)
+        // falls back to the section footer: never dropped, just further down.
+        const renderedGroupKeys = sectionData
+          ? groupSectionFields(section.section, sectionData)
+              .filter((g) => g.label !== null)
+              .map((g) => g.key)
+          : [];
+        const docsByGroup: Record<string, typeof sectionDocs> = {};
+        const ungroupedDocs: typeof sectionDocs = [];
+        if (renderedGroupKeys.length > 0) {
+          for (const doc of sectionDocs) {
+            const key = groupForDocumentSlot(section.section, doc.slot);
+            if (key && renderedGroupKeys.indexOf(key) !== -1) {
+              if (!docsByGroup[key]) docsByGroup[key] = [];
+              docsByGroup[key].push(doc);
+            } else {
+              ungroupedDocs.push(doc);
+            }
+          }
+        }
+        const isGrouped = renderedGroupKeys.length > 0;
+
         return (
           <SectionDataCard
             key={section.id}
             section={section.section}
-            data={section.data as Record<string, unknown> | null}
+            data={sectionData}
             isComplete={section.isComplete}
             assessorProvenance={section.assessorProvenance}
             ownerLabel={ownerLabel}
+            groupFooter={
+              isGrouped
+                ? (groupKey) => (
+                    <SectionDocumentTitles
+                      applicationId={params.id}
+                      docs={docsByGroup[groupKey] ?? []}
+                      heading="Documents uploaded for this group"
+                    />
+                  )
+                : undefined
+            }
             footer={
               <SectionDocumentTitles
                 applicationId={params.id}
-                docs={sectionDocs}
+                docs={isGrouped ? ungroupedDocs : sectionDocs}
+                heading={
+                  isGrouped
+                    ? "Other documents for this section"
+                    : "Documents uploaded for this section"
+                }
               />
             }
           />

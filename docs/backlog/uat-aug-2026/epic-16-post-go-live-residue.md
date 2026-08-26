@@ -13,6 +13,13 @@ related:
 
 # Epic 16 — post-go-live residue sprint
 
+> ⚠️ **The queue has moved to [Epic 19](./epic-19-assessor-ux-and-lifecycle.md) (26 Aug 2026).**
+> Nothing here was dropped — Lanes A, B and C below are Epic 19's **Lane C**
+> (`WP-C1`…`WP-C9`), with the decisions D-A…D-D carried over intact. This
+> document remains the **rationale**: why each item exists, what it costs and
+> what it risks. Go to Epic 19 for ordering, sizing, gating and the build
+> handover; come back here for the reasoning behind any single item.
+
 Scoped 2026-08-22, immediately after CH-26/28/30 reached production and the
 2026/27 round went live with three real families in it.
 

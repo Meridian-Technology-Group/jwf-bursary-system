@@ -35,7 +35,7 @@ import { Button } from "@/components/ui/button";
 import {
   SECTION_LABELS,
   asProvenanceMap,
-  DataBlock,
+  SectionFields,
 } from "@/components/admin/application-section-cards";
 import { DocumentChecklist } from "@/components/admin/document-checklist";
 import { AdminUpload } from "@/components/admin/admin-upload";
@@ -327,7 +327,11 @@ export default async function ApplicantDataPage({ params }: Props) {
             </CardHeader>
             <CardContent className="px-6 py-5">
               {hasData ? (
-                <DataBlock data={sectionData} provenance={provenance} />
+                <SectionFields
+                  section={section.section}
+                  data={sectionData}
+                  provenance={provenance}
+                />
               ) : (
                 <p className="text-sm text-slate-400 italic">No data recorded.</p>
               )}
