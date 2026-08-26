@@ -31,6 +31,7 @@ import {
   isRollingOverApplication,
 } from "@/lib/db/queries/reassessment";
 import { isSubmissionDeadlinePassed } from "@/lib/rounds/submission-deadline";
+import { resolveTaxYearBasisYear } from "@/lib/portal/tax-year";
 import {
   SECTION_ORDER,
   SECTION_TO_SLUG,
@@ -136,6 +137,17 @@ export default async function SectionPage({ params }: PageProps) {
   // NEW shows FAMILY_ID; ROLLING_OVER hides it. Falls back to isReassessment for
   // any pre-backfill row.
   const isRollingOver = isRollingOverApplication(application);
+
+  // CH-47b — the year the income section's tax-year wording is built from.
+  // Resolved HERE, on the server, so the client component never receives a
+  // Date: the winter-window rule needs the application type and "today", and
+  // both are known at this point. Every scenario but NA_NEXT_WINTER returns the
+  // round's own year, so this is inert outside that window.
+  const taxYearBasisYear = resolveTaxYearBasisYear({
+    academicYear: application.round?.academicYear ?? null,
+    applicationType: isRollingOver ? "ROLLING_OVER" : "NEW",
+    onDate: new Date(),
+  });
 
   // For a rolling-over application, FAMILY_ID is completely hidden — skip to next
   // section (identity documents are already on file from the first application).
@@ -245,6 +257,7 @@ export default async function SectionPage({ params }: PageProps) {
         .filter(Boolean)
         .join(" ")}
       academicYear={application.round?.academicYear ?? null}
+      taxYearBasisYear={taxYearBasisYear}
       documentMap={documentMap}
       childFullName={childFullName}
       parent1Address={parent1Address}
