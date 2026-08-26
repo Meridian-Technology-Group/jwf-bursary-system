@@ -35,15 +35,15 @@ Board for [`epic-19-assessor-ux-and-lifecycle.md`](epic-19-assessor-ux-and-lifec
 | T1 | WP-A2 | CH-61 · parent details field order | ✅ ⏭ awaiting promotion | #379 |
 | T1 | WP-A3 | CH-62 · Assets & Liabilities grouping | ✅ ⏭ awaiting promotion | #379 |
 | T2 | WP-A4 | CH-63 · typed `0` persists as `0` | 🔴 needs **D-E** | |
-| T3 | H1 | Autosave indicator under network failure | ⬜ | |
-| T3 | H2 | Dirty-nav guard | ⬜ | |
-| T3 | H5 | Declaration footer at mobile widths | ⬜ | |
+| T3 | H1 | Autosave indicator under network failure | ✅ **PASS** | #383 |
+| T3 | H2 | Dirty-nav guard | ✅ **PASS** — all three branches | #383 |
+| T3 | H5 | Declaration footer at mobile widths | ✅ **PASS** (one minor note) | #383 |
 | T3 | H3 | One-time PDF 410 | ⬜ low | |
 | T3 | H4 | UC repeat-slot + 409 | ⬜ low | |
 | T4 | WP-B1 | Lifecycle state machine diagram + questions to her | ✅ drawn · ⏭ **email awaiting Brian's send** | #380 |
 | T5 | WP-C1 | F1 · retire name masking (closes finding 2.18) | 🔶 **D-B**, **D-C** | |
-| T5 | WP-C2 | F12 · inline upload accessible name | ⬜ | |
-| T5 | WP-C3 | F9 · staff upload content digest | ⬜ | |
+| T5 | WP-C2 | F12 · inline upload accessible name | ✅ ⏭ awaiting promotion | #381 |
+| T5 | WP-C3 | F9 · staff upload content digest | ✅ ⏭ awaiting promotion | #382 |
 | T5 | WP-C9 | retire the legacy recommendation route | 🔴 needs **D-F** | |
 | T5 | WP-C4 | F10 · family-ID slot index keying | ⬜ | |
 | T5 | WP-C5 | F8 · `INVESTMENT_PARENT_2` guard | 🔶 **D-D** | |
@@ -271,6 +271,75 @@ No `audit_logs` rows were touched, so nothing hit the append-only wall.
 
 ---
 
+## T3 — the human checks · all three PASS
+
+Run on **nonprod**, against Brian's own throwaway applicant
+(`brian+applicant12345@…`, WS-208788-0006). Not Charlotte's data, none of the
+three real families. Probe text removed afterwards — the section's
+`additionalNarrative` key is gone again.
+
+| # | Check | Result | Evidence |
+|---|---|---|---|
+| **H1** | Autosave indicator under network failure | ✅ **PASS**, and better than asked | [screenshot](source-materials/epic-19-t3-screenshots/h1-autosave-not-saved.png) |
+| **H2** | Dirty-nav guard, all three branches | ✅ **PASS** | [screenshot](source-materials/epic-19-t3-screenshots/h2-dirty-nav-guard-dialog.png) |
+| **H5** | Declaration footer at 390 px and 360 px | ✅ **PASS**, one minor note | [390](source-materials/epic-19-t3-screenshots/h5-declaration-footer-390.png) · [360](source-materials/epic-19-t3-screenshots/h5-declaration-footer-360.png) |
+
+### H1 — the indicator never lies, and the retry is real
+
+`window.fetch` was failed outright (Next server actions ride on fetch), which is
+what DevTools → Offline does to the save.
+
+| Moment | Indicator |
+|---|---|
+| on keystroke | `Unsaved changes` |
+| after the 2.5 s debounce, save rejected | `Not saved — we'll keep trying` |
+| held, still offline | `Not saved — we'll keep trying` |
+| after a prior good save existed | `Not saved since 21:09 — we'll keep trying` |
+| ~12 s after the network returned | `Saved 21:09` — **the retry landed**, confirmed in the database |
+
+Three things worth stating because they are stronger than the check required:
+
+1. **It never falsely reports success.** At no point did it read `Saved` while
+   the write was failing.
+2. **"We'll keep trying" is a true promise, not reassurance.** `DEFAULT_RETRY_MS`
+   is 15 s and the retry actually fired and persisted once the network came back.
+3. **`beforeunload` is armed as a second layer.** Closing the tab with unsaved
+   work raises the browser's own warning — verified live: the navigation
+   genuinely blocked on the dialog and had to be accepted.
+
+**What survives a close with the network still down:** the last *successful*
+save. The unsaved keystrokes are lost — which is unavoidable — but the user was
+told twice before losing them (the indicator, then the browser prompt).
+
+### H2 — all three branches behave
+
+Typing and navigating inside the 2.5 s debounce is what actually exercises the
+guard; leave it longer and the autosave lands first and there is correctly no
+prompt. (Worth knowing for anyone re-running this: a first attempt looked like a
+failure and was not — the autosave had already fired 8 s earlier.)
+
+| Branch | Expected | Result |
+|---|---|---|
+| **Stay on this page** | stays, keeps what was typed | ✅ still on the section, text intact |
+| **Discard changes** | navigates, throws the text away | ✅ navigated; `DISCARD ME…` **never reached the database** and `updated_at` did not move |
+| **Save and continue** | persists, then navigates | ✅ navigated; `SAVE AND CONTINUE PROBE…` present in the database |
+
+### H5 — the footer wraps and stays reachable
+
+At **390 px** and **360 px**: no horizontal scroll (`scrollWidth === clientWidth`
+at both), the row wraps to two lines — **Back** on its own, **Review** and
+**Submit Application** sharing the next — and all three sit fully inside the
+viewport with accessible names. The footer is sticky, so all three stay reachable
+without scrolling the declaration text.
+
+**Minor note, not a failure:** the three buttons are **36–38 px** tall. That
+clears WCAG 2.5.8 (AA, 24×24) comfortably but misses the 44×44 comfortable-touch
+target of 2.5.5 (AAA). On the one screen where a mis-tap means submitting an
+application early, ~44 px would be worth having. Not raised as a WP — it is a
+one-line class change whenever someone is next in that footer.
+
+---
+
 ## Notes and corrections
 
 ### CH-45 is done — the Epic 17 board's later note is stale
@@ -292,6 +361,28 @@ Epic 17 leaned repeatedly on "prod holds zero assessments, so nothing is retro-c
 ## Log
 
 *(newest first — append as work lands)*
+
+### 2026-08-26 · T3 human checks pass; WP-C2 and WP-C3 on `staging`
+
+**T3 — H1, H2, H5 all PASS**, detail above. H1 is the notable one: the
+indicator never falsely reads `Saved`, *"we'll keep trying"* turns out to be a
+true promise (the retry fired and persisted once the network returned), and
+`beforeunload` is armed as a second layer. One minor note on H5 — the three
+footer buttons are 36–38 px, clearing WCAG 2.5.8 AA but missing 2.5.5's 44 px.
+
+**WP-C2 (F12)** — the inline upload input had no accessible name. Fixed by
+moving the name derivation into `uploadControlAccessibleName` and routing all
+three variants through it, so a fourth cannot repeat the omission quietly. The
+a11y pass over the other two variants found them clean; one thing noted and not
+changed is that `DropZone` is a `role="button"` containing a real `<button>`,
+which is nested-interactive redundancy rather than a missing name.
+
+**WP-C3 (F9)** — staff uploads stored a NULL content digest. The half that
+actually bit was the second direction: an *applicant's* later upload could not
+be recognised as a duplicate of a document an *assessor* had already uploaded
+for them. Duplicate *checking* on the staff path was deliberately left out —
+refusing a staff upload is the harmful direction and Charlotte is on production
+using that path now.
 
 ### 2026-08-26 · T4 · WP-B1 — the state machine is drawn
 
