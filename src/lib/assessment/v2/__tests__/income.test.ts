@@ -220,3 +220,43 @@ describe('calculateHouseholdNetIncome — manual income adjustment', () => {
     )
   })
 })
+
+// ─── CH-58 — PIP counts as its own benefit ─────────────────────────────────
+
+describe('CH-58 — DLA and PIP are summed separately', () => {
+  const withBenefits = (pipOrDla: number, pip?: number): AssessorIncomeRecord => ({
+    total: 0,
+    documentsConfirmed: false,
+    benefits: {
+      universalCredit: 0,
+      housingBenefit: 0,
+      childBenefit: 0,
+      childWorkingTaxCredit: 0,
+      esa: 0,
+      pipOrDla,
+      ...(pip === undefined ? {} : { pip }),
+      carersAllowance: 0,
+      childcareSupport: 0,
+      other: 0,
+    },
+  })
+
+  it('counts PIP on top of DLA rather than ignoring it', () => {
+    // Charlotte's figures for WS-202627-0010: DLA 7,259 and PIP 2,412.
+    const both = calculateEarnerIncome(withBenefits(7_259, 2_412))
+    const dlaOnly = calculateEarnerIncome(withBenefits(7_259))
+    expect(both - dlaOnly).toBe(2_412)
+    expect(both).toBe(9_671)
+  })
+
+  it('treats a missing pip key as 0, so older applications are unchanged', () => {
+    // Every application submitted before CH-58 has no `pip` key at all.
+    expect(calculateEarnerIncome(withBenefits(7_259))).toBe(
+      calculateEarnerIncome(withBenefits(7_259, 0))
+    )
+  })
+
+  it('counts PIP alone when there is no DLA', () => {
+    expect(calculateEarnerIncome(withBenefits(0, 2_412))).toBe(2_412)
+  })
+})

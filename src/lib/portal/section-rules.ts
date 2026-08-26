@@ -224,6 +224,7 @@ function incomeRules(earner: Earner): DocumentRule[] {
         `${ben}.childWorkingTaxCredit`,
         `${ben}.esa`,
         `${ben}.pipOrDla`,
+        `${ben}.pip`,
         `${ben}.carersAllowance`,
         `${ben}.childcareSupport`,
         `${ben}.other`,

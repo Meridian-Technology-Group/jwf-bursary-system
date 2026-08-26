@@ -271,8 +271,22 @@ export interface BenefitsIncome {
   childBenefit: number;
   childWorkingTaxCredit: number;
   esa: number;
-  /** Disability Allowance or PIP. */
+  /**
+   * CH-58 — Disability Living Allowance ONLY. Charlotte, 25 Aug 2026: "We need
+   * each benefit to have its own cell". The key keeps its historical name so
+   * every stored figure stays valid and is read as DLA: a single combined
+   * number cannot be split retrospectively, so the values already captured can
+   * only be DLA, with `pip` starting empty.
+   */
   pipOrDla: number;
+  /**
+   * CH-58 — Personal Independence Payment, captured separately from DLA.
+   *
+   * OPTIONAL deliberately: every application submitted before this field
+   * existed has no `pip` key at all, so typing it as required would be a lie
+   * about the stored data. Both sums coerce a missing value to 0.
+   */
+  pip?: number;
   carersAllowance: number;
   childcareSupport: number;
   other: number;

@@ -12,6 +12,38 @@ related:
 
 Board for [`epic-17-assessment-verification-sprint.md`](epic-17-assessment-verification-sprint.md).
 
+## Epic 17 closed out; two follow-ons
+
+**Everything shipped and promoted to production 25 Aug** (merge `9603723`, 89
+migrations, zero runtime errors). Charlotte authorised the release at 22:41:
+*"If you think it is okay now to release the test version of the model into the
+live environment, let's do it."*
+
+The crash fix mattered more than expected: **three of the four real production
+applications** (Aditya Jayaprakash, Jack Curror, Leroi Anderson) carried the
+null-array pattern, so their Applicant Data pages were broken in production and
+she had not opened them yet.
+
+- **CH-58** (DLA/PIP split) is on `staging`, not yet promoted — see below.
+- **Epic 18** carries her post-assessment lifecycle:
+  [`epic-18-post-assessment-lifecycle.md`](epic-18-post-assessment-lifecycle.md).
+  She approved the four states; Q10–Q13 gate the build, and **Q10 governs
+  irreversible deletion**.
+
+### CH-58 — a correctness fix, not presentation
+
+PIP had **no field anywhere**: the parent form had one combined row and the
+assessment's PIP row was an inert LA-8 placeholder. So PIP income was never
+captured — £2,412 on WS-202627-0010, with the assessed income short by exactly
+that. Her crossing-out of the missing cells was pointing at income the model
+could not see.
+
+The DLA row keeps the `pipOrDla` key (a combined number cannot be split
+retrospectively, so stored figures can only read as DLA) and `pip` is optional so
+older applications compute unchanged. Split across all seven places the combined
+field reached, including `section-rules` — a declared PIP must demand the same
+evidence DLA does.
+
 ## Status at a glance
 
 | Lane | Item | State | PR |
