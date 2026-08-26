@@ -58,9 +58,9 @@ Board for [`epic-19-assessor-ux-and-lifecycle.md`](epic-19-assessor-ux-and-lifec
 | T6 | WP-B6 | Closed & purged | 🔶 **last**, needs **Q10b** | |
 | D | WP-D1 | **Q8 · savings-test deduction** | 🔴 **open, award-affecting** | |
 | D | WP-D2 | CH-41 · property category → 5 | 🔶 **Q7** | |
-| D | WP-D3 | CH-32 · single-invite BCC | ⬜ buildable on default | |
+| D | WP-D3 | CH-32 · single-invite BCC | ✅ ⏭ awaiting promotion | #385 |
 | D | WP-D4 | CH-33 / CH-34 · progress + forward view | 🔶 **Q5** | |
-| D | WP-D5 | CH-47b · winter-window tax year | ⬜ **due before 10 Nov** | |
+| D | WP-D5 | CH-47b · winter-window tax year | ✅ **done early** ⏭ awaiting promotion | #384 |
 | D | WP-D6 | CH-48 · fees@ reply-to on staging | ⏭ Brian — env var | |
 | E | WP-E1 | Domain / URL customisation with Alex | ⏭ Thu 27 Aug call | |
 | E | WP-E2 | Grant Tracker migration — book the vendor call | ⏭ Thu 27 Aug call | |
@@ -361,6 +361,64 @@ Epic 17 leaned repeatedly on "prod holds zero assessments, so nothing is retro-c
 ## Log
 
 *(newest first — append as work lands)*
+
+### 2026-08-26 · unblocked-work sweep — 7 WPs on `staging`, awaiting promotion
+
+Everything buildable without a decision has been built. `staging` now holds
+#379…#385 and is **7 commits ahead of `main`**. Nothing has been promoted.
+
+| PR | WP | What |
+|---|---|---|
+| #379 | T1 · A1–A3 | CH-60/61/62 — the assessor display batch |
+| #380 | T4 · B1 | the post-assessment state machine, and Q14 reframed |
+| #381 | C2 | F12 — the inline upload input had no accessible name |
+| #382 | C3 | F9 — staff uploads stored a NULL content digest |
+| #383 | T3 | H1 / H2 / H5 — all three pass |
+| #384 | D5 | CH-47b — the winter-window tax year, **before its 10 Nov deadline** |
+| #385 | D3 | CH-32 — BCC on the individual invite, both paths |
+
+**CH-47b (#384)** was the sprint's only dated obligation. Blast radius was
+checked against production *first*: prod holds exactly one round (2026/27) which
+resolves to `NA_CURRENT`, so **not one label moves on any of the 4 live
+applications**. It also fixed a latent bug nobody reported — the form asked
+"have you left employment since April 2027?" of someone filling it in January
+2027, an April that has not happened.
+
+**CH-32 (#385)** builds option (1) — the pre-filled, clearable BCC box —
+without her Q4 answer, which is safe *because* it is clearable: option (2) is
+one keystroke away, so her answer changes a default rather than a build. The
+production gate on `inviteBccAddress()` is the load-bearing part: without it
+every test invite would silently copy the client's live fees inbox.
+
+### What is left, and why it stopped here
+
+**Nothing unblocked remains except WP-C8 (CH-27, the invitation preview)**, and
+that one was deliberately not attempted in this sweep:
+
+- it needs **new nullable columns** for the sent subject/body, so a migration
+  that auto-applies to nonprod on merge;
+- it makes an invitation send **editable**, on the one flow Charlotte uses to
+  onboard real families — and #385 has just changed both of those paths;
+- its own spec says it was *"deferred rather than rushed"*, with a design
+  constraint (`email_log` must record **the text actually sent**, and the preview
+  must call the *same* resolver the send does) that deserves a browser pass, not
+  only unit tests.
+
+Everything else is waiting on a decision: **D-A…D-F** (Brian, six of them) or
+**Q7/Q8/Q11/Q14/Q15/Q16/Q10b** (Charlotte). **D-E alone unblocks T2 (CH-63)**,
+the last item she actually raised.
+
+### Two browser passes owed before promotion
+
+Both are noted rather than done, because neither can be reached without the
+staging alias or a fixture that does not exist yet:
+
+1. **CH-32** — walk one invite down each path on the staging alias, box populated
+   and then cleared. The unit tests cover the resolver, the validation and the
+   Resend payload; they cannot cover the two forms rendering.
+2. **CH-47b** — a **2027/28** round on nonprod, nearer 10 Nov, to see the shifted
+   wording in the real form. Proven inert today, but the shifted state has only
+   been exercised in unit tests.
 
 ### 2026-08-26 · T3 human checks pass; WP-C2 and WP-C3 on `staging`
 
