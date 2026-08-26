@@ -208,7 +208,8 @@ function newItems(rec: Partial<ParentIncomeRecord>): IncomeItem[] {
       // separately so the assessor sees the composition, and summed separately
       // above so PIP actually counts: with no cell of its own it was not being
       // captured at all, which under-reported income by the whole PIP amount.
-      { label: "Disability Living Allowance", value: n(b.pipOrDla) },
+      // CH-59 — her wording: applicants know PIP, but not DLA.
+      { label: "Disability Allowance", value: n(b.pipOrDla) },
       { label: "PIP", value: n(b.pip) },
       { label: "Carer's Allowance", value: n(b.carersAllowance) },
       { label: "Childcare Support", value: n(b.childcareSupport) },
