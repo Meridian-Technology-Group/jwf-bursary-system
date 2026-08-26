@@ -14,6 +14,7 @@ import { withUserContext, type RlsRole } from "@/lib/db/prisma";
 import { listInvitations } from "@/lib/db/queries/invitations";
 import { listRounds } from "@/lib/db/queries/rounds";
 import { SendInvitationForm } from "@/components/admin/send-invitation-form";
+import { inviteBccAddress } from "@/lib/email/send";
 import { InvitationRowActions } from "@/components/admin/invitation-row-actions";
 import { cn } from "@/lib/utils";
 
@@ -165,6 +166,7 @@ export default async function InvitationsPage({
       <SendInvitationForm
         rounds={roundOptions}
         defaultRoundId={defaultRoundId}
+        defaultBcc={inviteBccAddress()}
       />
 
       {/* Invitation history */}

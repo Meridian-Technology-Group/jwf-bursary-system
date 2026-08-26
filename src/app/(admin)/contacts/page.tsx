@@ -15,6 +15,7 @@ import { withUserContext, type RlsRole } from "@/lib/db/prisma";
 import { listContacts } from "@/lib/db/queries/contacts";
 import { listRounds } from "@/lib/db/queries/rounds";
 import { ContactsTable } from "@/components/admin/contacts/contacts-table";
+import { inviteBccAddress } from "@/lib/email/send";
 
 export const metadata = {
   title: "Contacts",
@@ -53,7 +54,11 @@ export default async function ContactsPage() {
         </div>
       </div>
 
-      <ContactsTable contacts={contacts} liveRounds={liveRounds} />
+      <ContactsTable
+        contacts={contacts}
+        liveRounds={liveRounds}
+        defaultBcc={inviteBccAddress()}
+      />
     </div>
   );
 }
