@@ -40,7 +40,7 @@ Board for [`epic-19-assessor-ux-and-lifecycle.md`](epic-19-assessor-ux-and-lifec
 | T3 | H5 | Declaration footer at mobile widths | ⬜ | |
 | T3 | H3 | One-time PDF 410 | ⬜ low | |
 | T3 | H4 | UC repeat-slot + 409 | ⬜ low | |
-| T4 | WP-B1 | Lifecycle state machine diagram + questions to her | ⬜ | |
+| T4 | WP-B1 | Lifecycle state machine diagram + questions to her | ✅ drawn · ⏭ **email awaiting Brian's send** | #380 |
 | T5 | WP-C1 | F1 · retire name masking (closes finding 2.18) | 🔶 **D-B**, **D-C** | |
 | T5 | WP-C2 | F12 · inline upload accessible name | ⬜ | |
 | T5 | WP-C3 | F9 · staff upload content digest | ⬜ | |
@@ -86,10 +86,11 @@ Priority order for the call. Full text in the [sprint doc's register](epic-19-as
 1. **Q8** — savings test: which deduction, raw or annualised? **Award-affecting.**
 2. **Q7** — dropping the "with mortgage" rows makes 6 property categories unreachable. Knowing yes?
 3. **Q11** — does the outcome email stop, or move to New Award? *If it stops, nobody is ever told.*
-4. **Q14** — the account-reference prompt at New Award: edit an existing reference, or mint one?
+4. **Q14** — the reference prompt at New Award. ⚠️ **Reframed by WP-B1**: both original premises were wrong. An account has **no** reference of its own (`account-promotion.ts:118`, D13-1a — the user-facing label is `Application.reference`), references are **not** uniqueness-validated any more (`edit-reference-dialog.tsx:12`, D13-1a), and the editor **already exists** (ADMIN-only, no state gate). So it reduces to: blocking or advisory · pre-filled or current · may an ASSESSOR edit, or admin-only?
 5. **Q15** — is "closed & archived" reopenable?
-6. **Q10b** — purge vs the 7-year retention guard and append-only `audit_logs`.
-7. Q9 (debt ratio of exactly zero) · Q5 (her Assessment Admin layout email) · Q4 (BCC) · Q3 (debt labels) · Q6 (the £89,257.14 reconciliation)
+6. **Q16** 🆕 — is **New Award** reversible? Every other final state has an exit; this one has none. Fell out of drawing the WP-B1 diagram.
+7. **Q10b** — purge vs the 7-year retention guard and append-only `audit_logs`. **Deliberately held out of the WP-B1 email** — it needs its own thread and a written position, and it only gates WP-B6, which is last anyway.
+8. Q9 (debt ratio of exactly zero) · Q5 (her Assessment Admin layout email) · Q4 (BCC) · Q3 (debt labels) · Q6 (the £89,257.14 reconciliation)
 
 ---
 
@@ -291,6 +292,37 @@ Epic 17 leaned repeatedly on "prod holds zero assessments, so nothing is retro-c
 ## Log
 
 *(newest first — append as work lands)*
+
+### 2026-08-26 · T4 · WP-B1 — the state machine is drawn
+
+[`docs/diagrams/epic-18-post-assessment-lifecycle.md`](../../diagrams/epic-18-post-assessment-lifecycle.md)
+— a Mermaid state diagram (renders on GitHub) plus every transition on the five
+dimensions the plan requires: what locks, whether an email fires, whether an
+account is created, whether it is reversible, what it destroys. **No behaviour
+changed.** The email to her is **drafted, not sent**:
+[`2026-08-26-lifecycle-questions-draft.md`](../../client-feedback/2026-08-26-lifecycle-questions-draft.md).
+
+Drawing it produced four things worth more than the picture:
+
+- **Q14's two premises were both wrong.** A bursary account has **no**
+  user-facing reference (`account-promotion.ts:118` — internal FK only, D13-1a;
+  the label lives on `Application.reference`), and references are **not**
+  uniqueness-validated any more (`edit-reference-dialog.tsx:12` — *"Since D13-1a
+  the reference is NOT unique"*). Both the Epic 18 spec and the implementation
+  plan say otherwise. The editor also **already exists** — ADMIN-only, no state
+  gate. So WP-B3 builds a *prompt*, not an editor, and Q14 shrinks to three small
+  choices.
+- **Q16 is new.** Every final state has an exit except **New Award**. *"Can't be
+  amended again"* may be exactly what she wants, but terminal-with-no-escape is a
+  support problem the first time an award locks in error. Better a decision than
+  an accident of the sketch.
+- **Q11 has three answers, not two**, and the third is probably right: not
+  "stops" or "moves to New Award" but **manual** — a "notify the family" action
+  triggered when the admissions position settles. That fits the winter admission
+  process, and it never sends on a state she is only parking a case in.
+- **Q10b is held out of the email on purpose.** It gates the one irreversible
+  transition and deserves its own thread, not a quick answer buried under four
+  smaller questions. WP-B6 is last regardless.
 
 ### 2026-08-26 · T1 built — CH-60/61/62 on PR #379, awaiting promotion
 
