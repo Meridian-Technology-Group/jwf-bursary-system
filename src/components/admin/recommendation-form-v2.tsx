@@ -220,22 +220,45 @@ function AwardLegsPanel({
       <CardContent>
         <HouseholdIncomeLine snapshot={snapshot} />
         <div className="space-y-1.5">
-          {legs.map((leg) => (
-            <div
-              key={leg.key}
-              className={cn(
-                "flex items-baseline justify-between gap-2 rounded-md px-3 py-2",
-                leg.isMin
-                  ? "bg-primary-50 font-semibold text-primary-900"
-                  : "text-slate-600"
-              )}
-            >
-              <span className="text-sm">{leg.label}</span>
-              <span className="font-mono text-sm tabular-nums">
-                {formatCurrency(leg.value)}
-              </span>
-            </div>
-          ))}
+          {/* CH-59 — the ACTUAL leg is emphasised regardless of whether it is the
+              minimum. Charlotte: "the one that should take precedence is
+              obviously the Actual remaining DI as this is one drawn from the
+              data entries… could you maybe display the actual remaining DI in a
+              different colour and a bolder view?"
+              Two distinct signals, deliberately kept apart: the accent colour
+              marks the leg she trusts, and the tinted row still marks whichever
+              leg is the minimum. Collapsing them would hide the case where the
+              minimum is NOT the actual leg, which is exactly when she needs to
+              notice. */}
+          {legs.map((leg) => {
+            const isActual = leg.key === "actual";
+            return (
+              <div
+                key={leg.key}
+                className={cn(
+                  "flex items-baseline justify-between gap-2 rounded-md px-3 py-2",
+                  leg.isMin && "bg-primary-50",
+                  isActual
+                    ? "text-base font-bold text-accent-700"
+                    : leg.isMin
+                      ? "font-semibold text-primary-900"
+                      : "text-slate-600"
+                )}
+              >
+                <span className={isActual ? "text-base" : "text-sm"}>
+                  {leg.label}
+                </span>
+                <span
+                  className={cn(
+                    "font-mono tabular-nums",
+                    isActual ? "text-base font-bold" : "text-sm"
+                  )}
+                >
+                  {formatCurrency(leg.value)}
+                </span>
+              </div>
+            );
+          })}
         </div>
         <div className="mt-3 flex items-baseline justify-between rounded-lg border border-primary-100 bg-primary-50 px-4 py-3">
           <span className="text-sm font-semibold text-primary-700">

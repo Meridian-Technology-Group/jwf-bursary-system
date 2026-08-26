@@ -518,10 +518,14 @@ function ParentIncomeColumn({
             recurring and often large, and with no cell of its own PIP was not
             being captured at all — on WS-202627-0010 that was £2,412 of income
             with nowhere to go. Same evidence rule on both. */}
+        {/* CH-59 — "can we call DLA: Disability Allowance so that applicants
+            don't get confused with the acronyms in any way. PIP is well known as
+            PIP, but not so much DLA." Her wording, on the parent-facing form.
+            PIP keeps its acronym because parents recognise it. */}
         <IncomeRow
           prefix={prefix}
           path="benefits.pipOrDla"
-          label="Disability Living Allowance (DLA)"
+          label="Disability Allowance"
           evidence={subGt0("benefits", "pipOrDla") ? uploadHint : undefined}
         />
         <IncomeRow
