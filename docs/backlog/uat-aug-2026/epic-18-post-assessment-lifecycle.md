@@ -12,6 +12,13 @@ depends_on:
 
 # Epic 18 — post-assessment lifecycle
 
+> **This document stays the spec.** Her words, her illustration, the five states
+> and the answered questions all live here and are not duplicated elsewhere. The
+> **build queue** for it is [Epic 19](./epic-19-assessor-ux-and-lifecycle.md)
+> **Lane B** (`WP-B1`…`WP-B7`), with the sequencing rules and gates; the
+> per-WP handover is in
+> [`epic-19-implementation-plan.md`](./epic-19-implementation-plan.md) §5 and §7.
+
 **Q10 answered 26 Aug, so no longer blocked outright.** Her illustration settles
 the states, the account timing and the waiting list; Q11 and Q14–Q15 remain and
 none is destructive. Build the purge path last.
