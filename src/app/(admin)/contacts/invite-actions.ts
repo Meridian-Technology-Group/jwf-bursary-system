@@ -42,7 +42,7 @@ import {
   invitationScenarioFields,
   ROUND_WINDOWS_SELECT,
 } from "@/lib/rounds/window-consumption";
-import { sendEmail } from "@/lib/email/send";
+import { sendEmail, normaliseBccAddress } from "@/lib/email/send";
 import { createAuditLog } from "@/lib/audit/log";
 import { AUDIT_ACTIONS, AUDIT_ENTITY_TYPES } from "@/lib/audit/actions";
 import {
@@ -66,6 +66,11 @@ export async function sendInvitationFromContactAction(
     /** CI-04: create the invitation (auth user, token, audit) WITHOUT
      *  emailing — the returned registrationLink is sent by the admin. */
     skipEmail?: boolean;
+    /**
+     * CH-32 — optional blind copy on this individual invite. Blank/absent means
+     * no copy. Ignored when `skipEmail` is set, since there is no email to copy.
+     */
+    bcc?: string;
   }
 ): Promise<InviteFromContactResult> {
   const user = await requireRole([Role.ADMIN]);
@@ -321,6 +326,13 @@ export async function sendInvitationFromContactAction(
     };
   }
 
+  // CH-32 — validate the blind-copy address with the SAME check the quick
+  // invite and the bulk wizard use, so the three cannot disagree.
+  const bccResult = normaliseBccAddress(options?.bcc);
+  if (!bccResult.ok) {
+    return { success: false, error: "That BCC address is not a valid email." };
+  }
+
   // 5. Send the branded INVITATION email inside the rollback boundary.
   // B3 (CG-26): the template follows the contact's situation × school;
   // legacy contacts (situation NULL) keep the generic INVITATION.
@@ -344,7 +356,9 @@ export async function sendInvitationFromContactAction(
         deadlineTypeForSituation(contact.situation),
         expiresAt
       ),
-    }
+    },
+    // CH-32 — blind-copy the bursary inbox so the send is on record.
+    bccResult.bcc ? { bcc: bccResult.bcc } : undefined
   );
 
   if (!emailResult.success) {
