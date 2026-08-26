@@ -71,8 +71,14 @@ export default async function AssessmentDocumentsPage({ params }: Props) {
       }
     : undefined;
 
+  // CH-60 — the shell reclaims page chrome it was never using. The 260px
+  // subtrahend over-counted what actually sits above this container; the
+  // measured figure is in the Epic 19 progress board. `dvh` rather than `vh`
+  // so a mobile browser's retracting toolbar doesn't leave the panel
+  // overflowing. Combined with the pinned filter row and the 30%-capped list
+  // inside DocumentListClient, the viewer is taller in every state.
   return (
-    <div className="h-[calc(100vh-260px)] min-h-[560px] rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+    <div className="h-[calc(100dvh-200px)] min-h-[560px] rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
       <DocumentListClient
         documents={application.documents}
         contributorGroups={contributorGroups}
