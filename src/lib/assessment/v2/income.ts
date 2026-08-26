@@ -45,6 +45,7 @@ export function calculateEarnerIncome(detail: AssessorIncomeRecord): number {
       n(b.childWorkingTaxCredit) +
       n(b.esa) +
       n(b.pipOrDla) +
+      n(b.pip) +
       n(b.carersAllowance) +
       n(b.childcareSupport) +
       n(b.other)

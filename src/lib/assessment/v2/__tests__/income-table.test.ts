@@ -43,12 +43,30 @@ describe('INCOME_TABLE_ROWS', () => {
     }
   })
 
-  it('exactly two rows are LA-8 inert (sole-trader profits; the PIP split)', () => {
+  // CH-58 — PIP is no longer inert. It had no engine field, so anything the
+  // assessor typed was discarded and the income went uncounted. Sole-trader
+  // profits remain the only LA-8 row.
+  it('exactly one row is LA-8 inert (sole-trader profits)', () => {
     const la8 = INCOME_TABLE_ROWS.filter((r) => r.kind === 'la8')
     expect(la8.map((r) => r.label)).toEqual([
       'ADD YEARLY COMPANY NET PROFITS AFTER TAX',
-      'ADD YEARLY PIP',
     ])
+  })
+
+  it('CH-58 — DLA and PIP are both real inputs, on their own fields', () => {
+    const dla = INCOME_TABLE_ROWS.find((r) => r.label === 'ADD YEARLY DLA')
+    const pip = INCOME_TABLE_ROWS.find((r) => r.label === 'ADD YEARLY PIP')
+    expect(dla).toMatchObject({ kind: 'input', blockKey: 'benefits', fieldKey: 'pipOrDla' })
+    expect(pip).toMatchObject({ kind: 'input', blockKey: 'benefits', fieldKey: 'pip' })
+    // Distinct fields, so one cannot silently overwrite the other.
+    expect(dla?.fieldKey).not.toBe(pip?.fieldKey)
+  })
+
+  it('CH-58 — neither row still tells the assessor to combine the two', () => {
+    for (const label of ['ADD YEARLY DLA', 'ADD YEARLY PIP']) {
+      const row = INCOME_TABLE_ROWS.find((r) => r.label === label)
+      expect(row?.note ?? '').not.toMatch(/combined|combination|row above/i)
+    }
   })
 })
 
