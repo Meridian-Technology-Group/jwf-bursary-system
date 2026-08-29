@@ -208,3 +208,52 @@ All three invitations remain `PENDING` with `accepted_at = null` and their origi
 The writes and reads were confirmed at the database and production is error-free, but **the production UI was not visually confirmed** — there is no prod app login for Brian (Charlotte's is her own). The same screens were driven end-to-end against nonprod and the deployed preview. Worth provisioning a prod staff account so future production changes can be eyeballed.
 
 For the same reason these SQL writes bypassed the app's audit log.
+
+
+---
+
+## Her replies — 22 Aug, 09:32 / 09:49 / 09:51
+
+Three messages back after Brian's reply.
+
+### CH-18 — answered on a WRONG premise; correction sent
+
+> *"I am glad the income figures were as a result of being entered onto the assessment model. That's fine. **As long as this was not an autofill from the form.**"*
+
+⚠️ **It was exactly an autofill from the form.** `src/lib/assessment/v2/prefill.ts` says so outright: the original CALC-07 mappers *"seeded the assessor's records from the family's SUBMITTED income/assets sections"*, and **she** rejected that in UAT round 2 as misleading (CG-15 / D14-3), which is why Epic 14 C4 removed it.
+
+So her stated condition is not satisfied by the facts, even though the reassurance she wanted **is** true — for a different reason: the behaviour no longer exists, so no new assessment can autofill income/assets/savings/debts/transport. The sanctioned autofill she asked to keep (child name, year of entry, remaining years, annual fees, reference notionals on category selection) draws on `Application` + reference data, never on applicant answers.
+
+Corrected explicitly in the follow-up rather than left to stand — she was drawing a provenance conclusion about her own live system. **Still awaiting her yes/no** on clearing the two earner rows on the test record.
+
+### feesAccountCode — CONFIRMED CORRECT TO REMOVE; her requirement is already built
+
+> *"Re. the reference, there is one. It will get edited in its journey… when the application becomes an active bursary (rolling over), then the reference changes… No date, no academic year or school year as this reference needs to be valid for a number of years. Rolling-over bursary reference: manually editable: for instance: TS-SMITH, Robert"*
+
+**"There is one"** answers the question: one reference, not two. Removing `BursaryAccount.feesAccountCode` was right.
+
+And everything else she describes already exists (Epic 13 D13-1a, item 11):
+
+| Her requirement | Where it already lives |
+|---|---|
+| One reference per application | `Application.reference` — a label, not an identity; no FK points at it |
+| Manually editable to anything | `EditReferenceDialog` + `updateApplicationReferenceAction`, surfaced beside the reference in `applications/[id]/layout.tsx`; deliberately **non-unique** (migration `20260814120000_application_reference_non_unique`) |
+| Must survive several years once edited | `resolveRolloverReference` inherits a **human-entered** reference forward and *never discards it*; only an untouched machine default is refreshed, so a stale academic year is not dragged onto a new year |
+| `TS-SMITH, Robert` shape | Already the anticipated case — the module's own doc comment gives `TS-SMITH05-Smith, Bob` as the example |
+
+**One real difference, cosmetic.** The default for a new application is `{Child name} – {School name} – {Year group} – {Academic year}` (e.g. `Robert Smith – Trinity School – Year 11 – 2026-27`); she describes school-letters-first with no school year. Same information, different arrangement, and she overwrites it at award time anyway. Put to her as a question with a recommendation to leave it.
+
+> ⚠️ **If we ever do change that default**, note the trap: `resolveRolloverReference` detects "untouched" by **recomputing the current default and comparing**. Change the format and every previously-untouched default stops matching, so it is treated as human-entered and inherited forward — dragging stale academic years onto new applications. The fix is to add the outgoing format to `LEGACY_GENERATED_REFERENCE` in the same change. Belongs in Epic 16 if it happens.
+
+### CF-18 number-entry bug — CLOSED by her
+
+> *"It seemed to have worked when I filled in the form again afterwards… Let's close that ticket for now."*
+
+Consistent with the diagnosis (fix shipped 18 July, four weeks before her test; a cached page).
+
+### Operational notes from the same messages
+
+- She has emailed all three parents separately to expect the login email.
+- Replies to the automated email land in `fees@` — Brian confirmed; production hard-falls-back to `fees@johnwhitgiftfoundation.org` when `RESEND_REPLY_TO_EMAIL` is unset.
+- **Mr Raveendran has confirmed receipt and will complete the form over the next few days** — so the first real registration is imminent. His invitation carries `Y11` (fixed before any parent registered), so the application it creates will inherit the correct entry school year. Worth checking that application once it appears.
+- She will re-test the assessment model later.
