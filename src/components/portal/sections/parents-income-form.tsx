@@ -249,6 +249,13 @@ interface ParentIncomeColumnProps {
   applicationId: string;
   documentMap?: Record<string, DocumentMeta>;
   academicYear?: string | null;
+  /**
+   * CH-47b — the year the tax-year wording is built from. Resolved on the
+   * server by `resolveTaxYearBasisYear` so this component never sees a Date.
+   * Omitted (the contribute path) means "use the round's own year", which is
+   * the pre-CH-47b behaviour.
+   */
+  taxYearBasisYear?: number | null;
 }
 
 function ParentIncomeColumn({
@@ -258,9 +265,10 @@ function ParentIncomeColumn({
   applicationId,
   documentMap,
   academicYear,
+  taxYearBasisYear,
 }: ParentIncomeColumnProps) {
   const { control, setValue, getValues } = useFormContext<ParentsIncomeFormValues>();
-  const taxYear = getTaxYearLabels(academicYear);
+  const taxYear = getTaxYearLabels(academicYear, { basisYear: taxYearBasisYear });
 
   // Seed EVERY sub-block (all sections are always shown), so (a) the
   // CurrencyInput fields bind to a real path and (b) the saved blob carries the
@@ -742,6 +750,13 @@ interface ParentsIncomeFormProps {
   documentMap?: Record<string, DocumentMeta>;
   academicYear?: string | null;
   /**
+   * CH-47b — the year the tax-year wording is built from. Resolved on the
+   * server by `resolveTaxYearBasisYear` so this component never sees a Date.
+   * Omitted (the contribute path) means "use the round's own year", which is
+   * the pre-CH-47b behaviour.
+   */
+  taxYearBasisYear?: number | null;
+  /**
    * @deprecated No longer used — every income sub-table is now displayed for
    * every applicant regardless of employment / relationship status. These props
    * remain on the interface only so existing call sites keep type-checking; the
@@ -758,6 +773,7 @@ export function ParentsIncomeForm({
   applicationId,
   documentMap,
   academicYear,
+  taxYearBasisYear,
 }: ParentsIncomeFormProps) {
   return (
     // The grid-heavy Income section runs at max-w-4xl. That width now lives on
@@ -782,6 +798,7 @@ export function ParentsIncomeForm({
         applicationId={applicationId}
         documentMap={documentMap}
         academicYear={academicYear}
+        taxYearBasisYear={taxYearBasisYear}
       />
 
       {!isSoleParent && (
@@ -794,6 +811,7 @@ export function ParentsIncomeForm({
             applicationId={applicationId}
             documentMap={documentMap}
             academicYear={academicYear}
+            taxYearBasisYear={taxYearBasisYear}
           />
         </>
       )}

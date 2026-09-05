@@ -111,9 +111,15 @@ export function DocumentListClient({
   const selectedDoc = selectedIndex >= 0 ? sortedDocs[selectedIndex] : null;
 
   // ── List panel (Epic 06): collapsible, filterable list for 30+ documents ──
-  // Open the list automatically when there are many documents (the dropdown
-  // alone becomes unwieldy past ~12 entries); collapsed otherwise.
-  const [listOpen, setListOpen] = React.useState(sortedDocs.length > 12);
+  //
+  // CH-60 — *"Please keep the search panel in view, it works very well. Simply
+  // collapse what can be collapsed so that the window to appreciate the
+  // document expands."* So the filter row is pinned outside this toggle and
+  // only the scrollable list gives up height, and the list now starts CLOSED
+  // regardless of document count (it used to auto-open past 12 documents,
+  // which is exactly the height she was missing). Typing a filter or switching
+  // on verified-only re-opens it, so the pinned row is never inert.
+  const [listOpen, setListOpen] = React.useState(false);
   const [filterText, setFilterText] = React.useState("");
   const [verifiedOnly, setVerifiedOnly] = React.useState(false);
 
@@ -342,47 +348,60 @@ export function DocumentListClient({
         </div>
       </div>
 
+      {/* CH-60 — the filter row is PINNED: it renders whether the document list
+          below it is open or closed. It used to live inside the `listOpen`
+          conditional, so collapsing the list took her search panel with it,
+          which is the one thing she asked us not to do. */}
+      <div className="flex shrink-0 items-center gap-2 border-b border-neutral-200 bg-white px-3 py-2">
+        <div className="relative min-w-0 flex-1">
+          <Search
+            className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-300"
+            aria-hidden="true"
+          />
+          <Input
+            value={filterText}
+            onChange={(e) => {
+              setFilterText(e.target.value);
+              // Filtering with the list collapsed would show her nothing, so
+              // typing reveals it. The toggle still closes it again.
+              if (e.target.value.trim().length > 0) setListOpen(true);
+            }}
+            placeholder="Filter by type or file name…"
+            aria-label="Filter documents"
+            className="h-8 pl-7 pr-7 text-xs"
+          />
+          {filterText && (
+            <button
+              type="button"
+              onClick={() => setFilterText("")}
+              aria-label="Clear filter"
+              className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded p-0.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+            >
+              <X className="h-3.5 w-3.5" aria-hidden="true" />
+            </button>
+          )}
+        </div>
+        <label className="flex shrink-0 items-center gap-1.5 text-xs text-slate-500">
+          <Switch
+            checked={verifiedOnly}
+            onCheckedChange={(v) => {
+              setVerifiedOnly(v);
+              if (v) setListOpen(true);
+            }}
+            aria-label="Show verified documents only"
+            className="scale-90"
+          />
+          Verified only
+        </label>
+      </div>
+
       {/* Collapsible list panel (Epic 06) — filterable list for 30+ documents.
           Click-to-jump; current item highlighted. Keeps the dropdown +
-          Prev/Next + [ / ] as the compact controls above. */}
+          Prev/Next + [ / ] as the compact controls above.
+          CH-60 — 45% → 30% of the shell. The list already scrolls internally,
+          so this costs visible rows, not access to any document. */}
       {listOpen && (
-        <div className="flex max-h-[45%] shrink-0 flex-col border-b border-neutral-200 bg-white">
-          {/* Filter row */}
-          <div className="flex items-center gap-2 border-b border-neutral-100 px-3 py-2">
-            <div className="relative min-w-0 flex-1">
-              <Search
-                className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-300"
-                aria-hidden="true"
-              />
-              <Input
-                value={filterText}
-                onChange={(e) => setFilterText(e.target.value)}
-                placeholder="Filter by type or file name…"
-                aria-label="Filter documents"
-                className="h-8 pl-7 pr-7 text-xs"
-              />
-              {filterText && (
-                <button
-                  type="button"
-                  onClick={() => setFilterText("")}
-                  aria-label="Clear filter"
-                  className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded p-0.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
-                >
-                  <X className="h-3.5 w-3.5" aria-hidden="true" />
-                </button>
-              )}
-            </div>
-            <label className="flex shrink-0 items-center gap-1.5 text-xs text-slate-500">
-              <Switch
-                checked={verifiedOnly}
-                onCheckedChange={setVerifiedOnly}
-                aria-label="Show verified documents only"
-                className="scale-90"
-              />
-              Verified only
-            </label>
-          </div>
-
+        <div className="flex max-h-[30%] shrink-0 flex-col border-b border-neutral-200 bg-white">
           {/* Scrollable list */}
           <div className="min-h-0 flex-1 overflow-auto">
             {filteredDocs.length === 0 ? (

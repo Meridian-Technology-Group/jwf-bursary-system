@@ -191,6 +191,30 @@ function useUploadControlIds(): { inputId: string; descId: string } {
   return { inputId: `file-upload-${uid}`, descId: `file-upload-desc-${uid}` };
 }
 
+/**
+ * F12 — the accessible name for an upload control, in ONE place.
+ *
+ * All three variants render an `sr-only` `<input type="file">`, but only two of
+ * them had a `<label htmlFor>`: the **inline** variant's input had no label and
+ * no `aria-label`, so a screen-reader user reaching the input directly got no
+ * accessible name at all. Only `InlineDropButton` carried one, and a button
+ * beside an input does not name the input.
+ *
+ * The fix is a label on every input, and this helper is why a fourth variant
+ * cannot repeat the omission quietly: the name is derived here, used by every
+ * variant, and unit-tested. The invariant is simply that it is never blank —
+ * `label` is typed `string` but arrives from callers that build it from slot
+ * metadata, so an empty one is reachable without a type error.
+ *
+ * Exported for the test; this repo has no jsdom, so the seam is the derivation
+ * rather than the render (the `isRenderableObject` / `lifecycleChipClass`
+ * convention).
+ */
+export function uploadControlAccessibleName(label: string): string {
+  const trimmed = typeof label === "string" ? label.trim() : "";
+  return trimmed ? `Upload ${trimmed}` : "Upload a file";
+}
+
 async function openDocumentUrl(docId: string): Promise<void> {
   const response = await fetch(`/api/documents/${docId}/url`);
   if (response.ok) {
@@ -352,6 +376,12 @@ function SingleFileUpload({
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
       >
+        {/* F12 — the inline variant has no visible label of its own (it lives
+            in a grid cell), so the label is sr-only. Without it this input was
+            the one upload control on the page with no accessible name. */}
+        <label htmlFor={inputId} className="sr-only">
+          {uploadControlAccessibleName(label)}
+        </label>
         <input
           ref={inputRef}
           id={inputId}
@@ -810,7 +840,7 @@ function DropZone({
       role="button"
       tabIndex={disabled ? -1 : 0}
       aria-disabled={disabled}
-      aria-label={`Upload ${label}`}
+      aria-label={uploadControlAccessibleName(label)}
       onDragOver={onDragOver}
       onDragLeave={onDragLeave}
       onDrop={onDrop}
@@ -1017,7 +1047,7 @@ function InlineDropButton({
       type="button"
       onClick={onPick}
       disabled={disabled}
-      aria-label={`Upload ${label}`}
+      aria-label={uploadControlAccessibleName(label)}
       className={cn(
         "inline-flex min-h-9 w-full items-center gap-1.5 rounded-md border border-dashed border-slate-300 bg-white px-2.5 py-1.5 text-left text-xs font-medium text-slate-600",
         "transition-colors hover:border-accent-400 hover:bg-accent-50 hover:text-accent-700",

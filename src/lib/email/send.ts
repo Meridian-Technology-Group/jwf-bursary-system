@@ -61,6 +61,48 @@ export function replyToAddress(): string | undefined {
     : undefined;
 }
 
+/**
+ * CH-32 — the address pre-filled into the BCC box on an INDIVIDUAL invitation.
+ *
+ * Charlotte looked for BCC on the single invite and found it only on bulk email.
+ * Brian offered two shapes: **(1)** auto-copy the bursary inbox on every invite,
+ * shown and clearable, or **(2)** an empty box each time. Her answer (Q4, asked
+ * 23 Aug) has not arrived; **(1)** is the decided default and is what this
+ * returns.
+ *
+ * Same production gate and the same override precedence as `replyToAddress`, and
+ * for the same reason: a test send must never blind-copy the client's live
+ * mailbox. Set `RESEND_INVITE_BCC_EMAIL` to exercise it anywhere.
+ *
+ * This is only the DEFAULT. The admin sees it and can clear it per invite, so
+ * option (2)'s behaviour is always one keystroke away — which is why building to
+ * (1) is safe ahead of her answer.
+ */
+export function inviteBccAddress(): string | undefined {
+  if (process.env.RESEND_INVITE_BCC_EMAIL) {
+    return process.env.RESEND_INVITE_BCC_EMAIL;
+  }
+  return process.env.VERCEL_ENV === "production"
+    ? "fees@johnwhitgiftfoundation.org"
+    : undefined;
+}
+
+/**
+ * CH-32 — is this a usable BCC address?
+ *
+ * Deliberately the SAME check the bulk wizard already applies
+ * (`bulk-email-actions.ts`), so the two invite paths and the batch path cannot
+ * disagree about what they accept. A blank value is valid and means "no copy".
+ */
+export function normaliseBccAddress(
+  raw: string | null | undefined
+): { ok: true; bcc: string | undefined } | { ok: false } {
+  const trimmed = (raw ?? "").trim();
+  if (!trimmed) return { ok: true, bcc: undefined };
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed)) return { ok: false };
+  return { ok: true, bcc: trimmed };
+}
+
 // ---------------------------------------------------------------------------
 // Sent-emails log (Epic 15 X1 / CI-02)
 // ---------------------------------------------------------------------------
@@ -128,7 +170,15 @@ function delay(ms: number): Promise<void> {
 export async function sendEmail(
   to: string,
   templateType: EmailTemplateType,
-  mergeData: EmailMergeData
+  mergeData: EmailMergeData,
+  options?: {
+    /**
+     * CH-32 — optional blind copy. Used by both individual-invite paths so an
+     * admin keeps a record of what went out; `sendRawEmail` already had this for
+     * the bulk wizard.
+     */
+    bcc?: string;
+  }
 ): Promise<SendEmailResult> {
   try {
     // 1. Load template from the database.
@@ -179,6 +229,7 @@ export async function sendEmail(
       from: fromAddress(),
       replyTo: replyToAddress(),
       to,
+      ...(options?.bcc ? { bcc: options.bcc } : {}),
       subject,
       html,
       text,

@@ -20,6 +20,10 @@ import { withUserContext, type RlsRole } from "@/lib/db/prisma";
 import { uploadDocument } from "@/lib/storage/documents";
 import { sniffContentType } from "@/lib/storage/sniff";
 import { createAuditLog } from "@/lib/audit/log";
+import {
+  DIGEST_SAMPLE_BYTES,
+  computeContentDigest,
+} from "@/lib/documents/content-digest";
 
 import { AUDIT_ACTIONS, AUDIT_ENTITY_TYPES } from "@/lib/audit/actions";
 import {
@@ -94,7 +98,16 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
   // ── Magic-byte sniff: reject files whose contents don't match the claimed
   //    MIME type. Defends against client-spoofed Content-Type headers. ───────
-  const headerBuf = Buffer.from(await file.slice(0, 8).arrayBuffer());
+  //
+  // F9 — this read is 64 KB rather than 8 bytes so the SAME bytes serve the
+  // sniff and the content digest below. The sniff only ever looks at the first
+  // few bytes, so the larger slice costs it nothing, and reading once means the
+  // two can never disagree about what they inspected. `DIGEST_SAMPLE_BYTES` is
+  // exactly what the presigned confirm leg reads over its Range request, which
+  // is what makes the two paths' digests comparable.
+  const headerBuf = Buffer.from(
+    await file.slice(0, DIGEST_SAMPLE_BYTES).arrayBuffer()
+  );
   const { contentType: verifiedContentType } = sniffContentType(headerBuf);
   if (!verifiedContentType) {
     // Catches e.g. a Word file renamed to .pdf with a spoofed Content-Type —
@@ -149,6 +162,21 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     );
   }
 
+  // ── Content digest (F9) ───────────────────────────────────────────────────
+  // Staff uploads used to store NULL here, because D2 computed the digest in
+  // the presigned confirm endpoint only. That left the duplicate check blind on
+  // one path in both directions: a staff upload was never compared against
+  // anything, and — the half that actually bites — an APPLICANT's later upload
+  // could not be recognised as a duplicate of a document an assessor had
+  // already uploaded for them. CF-28 is exactly that shape (one file used to
+  // satisfy three monthly UC slots), so a blind spot on either path weakens it.
+  //
+  // Same function, same sample size and the same authoritative byte length as
+  // the confirm leg, so a digest computed here is directly comparable with one
+  // computed there. `file.size` is the multipart part's length, which is what
+  // gets stored.
+  const contentDigest = computeContentDigest(headerBuf, file.size);
+
   // ── Create Prisma Document record + audit log ─────────────────────────────
   try {
     const document = await withUserContext(
@@ -164,6 +192,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
             fileSize: file.size,
             storagePath,
             uploadedBy: user.id,
+            contentDigest,
           },
           select: {
             id: true,
@@ -176,6 +205,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
             isVerified: true,
             uploadedBy: true,
             uploadedAt: true,
+            contentDigest: true,
           },
         });
 

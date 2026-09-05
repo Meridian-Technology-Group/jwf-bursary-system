@@ -26,8 +26,12 @@ const SLOT_SECTION_PREFIXES: readonly [RegExp, ApplicationSectionType][] = [
   [/^(COURT_ORDER|DEATH_CERTIFICATE|INSURANCE_POLICY|MAINTENANCE_)/, "OTHER_INFO"],
   // Assets & liabilities — before the income rules so the housing-benefit
   // LETTER (assets) doesn't get swallowed by the income HOUSING_BENEFIT slot.
+  // CH-62 — OTHER_PROPERTY_MORTGAGE_{index} (the per-property mortgage
+  // statement from the `otherProperties` repeater) is not in
+  // ALL_DOCUMENT_SLOTS, so it used to fall through to "Other documents" at the
+  // bottom of the page instead of listing with the property it belongs to.
   [
-    /^(COUNCIL_TAX|MAIN_MORTGAGE|TENANCY|HOUSING_BENEFIT_LETTER|RELATIVE_LETTER|CAR_LEASE|BANK_STATEMENT|INVESTMENT|CREDIT_CARD|LOAN_|OTHER_DEBT)/,
+    /^(COUNCIL_TAX|MAIN_MORTGAGE|OTHER_PROPERTY_MORTGAGE|TENANCY|HOUSING_BENEFIT_LETTER|RELATIVE_LETTER|CAR_LEASE|BANK_STATEMENT|INVESTMENT|CREDIT_CARD|LOAN_|OTHER_DEBT)/,
     "ASSETS_LIABILITIES",
   ],
   // Parents' income — per-earner suffixed slots.

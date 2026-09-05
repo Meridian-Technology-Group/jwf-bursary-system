@@ -47,17 +47,27 @@ export function InviteFromContactDialog({
   liveRounds,
   open,
   onOpenChange,
+  defaultBcc,
 }: {
   contact: ContactListItem | null;
   liveRounds: RoundOption[];
   open: boolean;
   onOpenChange: (next: boolean) => void;
+  /**
+   * CH-32 — the address pre-filled into the BCC box, resolved on the server by
+   * `inviteBccAddress()`. Undefined outside production unless
+   * `RESEND_INVITE_BCC_EMAIL` is set, so a test send never copies the client's
+   * live mailbox.
+   */
+  defaultBcc?: string;
 }) {
   const [roundId, setRoundId] = useState<string>(liveRounds[0]?.id ?? "");
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   // Epic 15 X2 (CI-04): create without emailing; the link is shown to copy.
   const [skipEmail, setSkipEmail] = useState(false);
+  // CH-32 — option (1): pre-filled with the bursary inbox, shown and clearable.
+  const [bcc, setBcc] = useState(defaultBcc ?? "");
   const [registrationLink, setRegistrationLink] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
   const router = useRouter();
@@ -72,6 +82,7 @@ export function InviteFromContactDialog({
     setError(null);
     setSuccess(null);
     setSkipEmail(false);
+    setBcc(defaultBcc ?? "");
     setRegistrationLink(null);
     setRoundId(liveRounds[0]?.id ?? "");
   }
@@ -82,6 +93,9 @@ export function InviteFromContactDialog({
     startTransition(async () => {
       const result = await sendInvitationFromContactAction(contact.id, roundId, {
         skipEmail,
+        // CH-32 — ignored server-side when skipEmail is set; not sent at all
+        // here so the intent is unambiguous in the request itself.
+        bcc: skipEmail ? undefined : bcc.trim() || undefined,
       });
       if (result.success) {
         router.refresh();
@@ -212,6 +226,35 @@ export function InviteFromContactDialog({
               />
               Don&apos;t email — I&apos;ll send the registration link myself
             </label>
+
+            {/* CH-32 — BCC on this individual invite. Hidden when the admin has
+                chosen not to email at all: there is no send to copy. */}
+            {!skipEmail && registrationLink == null && (
+              <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
+                <label htmlFor="contact-invite-bcc" className="font-medium">
+                  BCC (optional):
+                </label>
+                <input
+                  id="contact-invite-bcc"
+                  type="email"
+                  value={bcc}
+                  onChange={(e) => setBcc(e.target.value)}
+                  disabled={isPending}
+                  placeholder="e.g. fees@johnwhitgiftfoundation.org"
+                  className="h-7 min-w-0 flex-1 rounded border border-slate-300 bg-white px-2 font-mono text-xs text-slate-700 placeholder-slate-400"
+                />
+                {bcc.trim() && (
+                  <button
+                    type="button"
+                    onClick={() => setBcc("")}
+                    disabled={isPending}
+                    className="underline underline-offset-2 hover:text-slate-700"
+                  >
+                    Clear
+                  </button>
+                )}
+              </div>
+            )}
 
             {error && <p className="text-sm text-red-600">{error}</p>}
             {success && <p className="text-sm text-green-600">{success}</p>}

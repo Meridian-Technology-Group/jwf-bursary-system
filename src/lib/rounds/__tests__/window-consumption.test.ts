@@ -9,7 +9,7 @@ import {
   windowForScenario,
   type StoredRoundWindow,
 } from '../window-consumption'
-import { getTaxYearLabels } from '@/lib/portal/tax-year'
+import { getTaxYearLabels, resolveTaxYearBasisYear } from '@/lib/portal/tax-year'
 
 const d = (iso: string) => new Date(`${iso}T00:00:00.000Z`)
 
@@ -135,14 +135,46 @@ describe('invitationScenarioFields', () => {
   })
 })
 
-describe('D2 documented disagreement — tax year (rule engine wins)', () => {
-  it('winter window wants 2025/26 but the Epic 02 rule engine keeps 2026/27', () => {
-    // A 2027/28 round: the rule engine derives the (Y-1)/Y tax year from the
-    // round year alone — 2026/27 — even during the winter window when that
-    // year has not ended. Charlotte's table wants 2025/26 there. Per the
-    // Epic 14 plan the RULE ENGINE WINS until decided; this test pins the
-    // agreed precedence so a silent flip fails loudly.
+describe('D2 disagreement — RESOLVED by CH-47b: the scenario now wins', () => {
+  /**
+   * This suite used to pin the opposite precedence — "the RULE ENGINE WINS
+   * until decided", with a note that a silent flip should fail loudly. It has
+   * been decided: Charlotte said yes to switching the winter window on
+   * 24 Aug 2026, and Epic 19 WP-D5 implemented it. Updated rather than deleted,
+   * because the two behaviours and the boundary between them are exactly what a
+   * future reader needs.
+   */
+  it('the round year alone still gives 2026/27 — unchanged when no scenario is supplied', () => {
+    // Back-compat: callers that pass no basis year (the contribute path) keep
+    // the old wording. This is not the disagreement any more, just the default.
     expect(getTaxYearLabels('2027/28').sa302TaxYearLabel).toBe('2026/27')
+  })
+
+  it("inside the winter window the labels now agree with her scenario table", () => {
+    // A 2027/28 round worked in Jan 2027: the 2026/27 tax year has NOT ended,
+    // so the form must ask for 2025/26 — which is what RoundWindow's own
+    // NA_NEXT_WINTER default has always said.
+    const basisYear = resolveTaxYearBasisYear({
+      academicYear: '2027/28',
+      applicationType: 'NEW',
+      onDate: d('2027-01-15'),
+    })
+    expect(getTaxYearLabels('2027/28', { basisYear }).sa302TaxYearLabel).toBe(
+      '2025/26',
+    )
     expect(windows()[0].defaultTaxYear).toBe('2025/26')
+  })
+
+  it('outside the winter window nothing moves', () => {
+    // The live production shape on the day WP-D5 shipped: a 2026/27 round in
+    // Aug 2026 resolves to NA_CURRENT, so no label changes for any real family.
+    const basisYear = resolveTaxYearBasisYear({
+      academicYear: '2026/27',
+      applicationType: 'NEW',
+      onDate: d('2026-08-26'),
+    })
+    expect(getTaxYearLabels('2026/27', { basisYear })).toEqual(
+      getTaxYearLabels('2026/27'),
+    )
   })
 })

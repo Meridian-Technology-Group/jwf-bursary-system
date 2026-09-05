@@ -57,6 +57,13 @@ interface RoundOption {
 interface SendInvitationFormProps {
   rounds: RoundOption[];
   defaultRoundId?: string;
+  /**
+   * CH-32 — the address pre-filled into the BCC box. Resolved on the server by
+   * `inviteBccAddress()`; undefined outside production unless
+   * `RESEND_INVITE_BCC_EMAIL` is set, so a test send never copies the client's
+   * live mailbox.
+   */
+  defaultBcc?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -98,12 +105,16 @@ type FormValues = z.infer<typeof schema>;
 export function SendInvitationForm({
   rounds,
   defaultRoundId,
+  defaultBcc,
 }: SendInvitationFormProps) {
   const [serverError, setServerError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   // Epic 15 X2 (CI-04): create without emailing; the returned link is shown
   // for the admin to copy into their own mail client.
   const [skipEmail, setSkipEmail] = useState(false);
+  // CH-32 — option (1): pre-filled with the bursary inbox, shown and clearable.
+  // Clearing it is how an admin gets option (2)'s behaviour for one invite.
+  const [bcc, setBcc] = useState(defaultBcc ?? "");
   const [registrationLink, setRegistrationLink] = useState<string | null>(null);
   const [pendingValues, setPendingValues] = useState<FormValues | null>(null);
   const [isPending, startTransition] = useTransition();
@@ -156,6 +167,9 @@ export function SendInvitationForm({
     formData.set("entryYearGroup", values.entryYearGroup);
     formData.set("roundId", values.roundId);
     if (skipEmail) formData.set("skipEmail", "1");
+    // CH-32 — the server ignores this when skipEmail is set, but not sending it
+    // at all keeps the intent unambiguous in the request itself.
+    if (!skipEmail && bcc.trim()) formData.set("bcc", bcc.trim());
 
     startTransition(async () => {
       const result = await createInvitationAction(formData);
@@ -523,6 +537,36 @@ export function SendInvitationForm({
                 className="font-mono text-xs"
                 aria-label="Registration link"
               />
+            </div>
+          )}
+
+          {/* CH-32 — BCC on the individual invite. She looked for this and
+              found it only on bulk email. Hidden when the admin has chosen not
+              to email at all: there is no send to copy. */}
+          {!skipEmail && (
+            <div className="flex flex-wrap items-center gap-2 pt-2 text-xs text-slate-500">
+              <label htmlFor="invite-bcc" className="font-medium">
+                BCC (optional):
+              </label>
+              <input
+                id="invite-bcc"
+                type="email"
+                value={bcc}
+                onChange={(e) => setBcc(e.target.value)}
+                disabled={isPending}
+                placeholder="e.g. fees@johnwhitgiftfoundation.org"
+                className="h-7 w-72 rounded border border-slate-300 bg-white px-2 font-mono text-xs text-slate-700 placeholder-slate-400"
+              />
+              {bcc.trim() && (
+                <button
+                  type="button"
+                  onClick={() => setBcc("")}
+                  disabled={isPending}
+                  className="underline underline-offset-2 hover:text-slate-700"
+                >
+                  Clear
+                </button>
+              )}
             </div>
           )}
 

@@ -42,7 +42,7 @@ import { createSupabaseAdminClient } from "@/lib/auth/supabase-admin";
 import { provisionApplicantAuthUser } from "@/lib/auth/provision-applicant";
 import { createProfile } from "@/lib/auth/create-profile";
 import { getAppUrl } from "@/lib/app-url";
-import { sendEmail } from "@/lib/email/send";
+import { sendEmail, normaliseBccAddress } from "@/lib/email/send";
 import {
   invitationDeadlineFields,
   INVITATION_ROUND_DEADLINE_SELECT,
@@ -172,6 +172,19 @@ export async function createInvitationAction(
   };
   // Epic 15 X2 (CI-04): "Don't email — I'll send the link myself".
   const skipEmail = formData.get("skipEmail") === "1";
+  // CH-32 — optional blind copy on the individual invite. Blank means no copy;
+  // an invalid address is rejected before anything is created, because an
+  // invitation is not worth rolling back over a typo in a BCC box.
+  const bccResult = normaliseBccAddress(formData.get("bcc") as string | null);
+  if (!bccResult.ok) {
+    return {
+      success: false,
+      fieldErrors: { bcc: ["That BCC address is not a valid email."] },
+    };
+  }
+  // A no-send create has no email to copy (the second half of CH-32's default:
+  // "no copy when using Don't email — I'll send the link myself").
+  const bcc = skipEmail ? undefined : bccResult.bcc;
 
   const parsed = InvitationSchema.safeParse(raw);
   if (!parsed.success) {
@@ -397,7 +410,9 @@ export async function createInvitationAction(
         deadlineTypeForSituation(situation),
         expiresAt
       ),
-    }
+    },
+    // CH-32 — blind-copy the bursary inbox so the send is on record.
+    bcc ? { bcc } : undefined
   );
 
   if (!emailResult.success) {

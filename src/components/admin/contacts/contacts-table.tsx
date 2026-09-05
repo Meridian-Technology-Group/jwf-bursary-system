@@ -105,9 +105,12 @@ function toFormValues(c: ContactListItem & {
 export function ContactsTable({
   contacts,
   liveRounds,
+  defaultBcc,
 }: {
   contacts: ContactListItem[];
   liveRounds: RoundOption[];
+  /** CH-32 — server-resolved default for the invite dialog's BCC box. */
+  defaultBcc?: string;
 }) {
   const [query, setQuery] = useState("");
   const [createOpen, setCreateOpen] = useState(false);
@@ -312,6 +315,7 @@ export function ContactsTable({
       <InviteFromContactDialog
         contact={inviteTarget}
         liveRounds={liveRounds}
+        defaultBcc={defaultBcc}
         open={inviteTarget !== null}
         onOpenChange={(next) => {
           if (!next) setInviteTarget(null);
