@@ -10,7 +10,7 @@
  *    accounts — LA-8 №2, flagged inline).
  *  - ANNUAL SCHOOL FEES (AUTO) and ASSESSMENT COMPLETED ON (AUTO date).
  *  - The award/outcome surface itself is the SHARED RecommendationSurface
- *    (CALC-08): the three legs, min-of-three recommended payable fees, %
+ *    (CALC-08): the three legs, actual-leg recommended payable fees, %
  *    scholarship, after-VAT bursary award + scholarship value, payable fees
  *    next year, school's bursary spend before VAT, GAP + the 9-code gap
  *    picker, last assessment's payable fees + the 36-code YoY picker, and

@@ -103,15 +103,12 @@ describe('calculateAssessmentV2 — modest-income renting family with debts', ()
     expect(result.householdNetIncome).toBe(30_000)
   })
 
-  it('wires derivedYearlyDebtRepayments into the savings test (C80)', () => {
-    // (5,000 + 3,000) / 5 years = 1,600.
+  it('wires the TOTAL personal debt into the savings test (C80, respec v3)', () => {
+    // Yearly repayments still feed the debt module: (5,000 + 3,000) / 5 = 1,600.
     expect(result.derivedYearlyDebtRepayments).toBe(1_600)
-    // savingsTestNumber = adjustedSavings − derivedYearlyDebtRepayments −
-    // savingsCushion (C80, respec 5 Sep 2026). Cat 2 cushion = £39,000.
-    expect(result.savingsTestNumber).toBeCloseTo(
-      result.adjustedSavings - result.derivedYearlyDebtRepayments - 39_000,
-      6,
-    )
+    // savingsTestNumber = (total savings − total debt) − savingsCushion:
+    // (2,000 − 8,000) − 39,000 (cat 2). No years dependence.
+    expect(result.savingsTestNumber).toBeCloseTo(2_000 - 8_000 - 39_000, 6)
   })
 
   it('wires adjustedSavings (from the notional-spend module) into yearlyDebtExposure (C124, CALC-A2)', () => {
@@ -164,12 +161,15 @@ describe('calculateAssessmentV2 — higher-income single-property homeowner', ()
 
   const result = calculateAssessmentV2(input, ref)
 
-  it('produces a non-zero recommended payable fees (affordability is the binding leg)', () => {
+  it('recommends the ACTUAL leg (min-of-three retired, 5 Sep 2026)', () => {
     expect(result.recommendedPayableFees).toBeGreaterThan(0)
-    expect(result.recommendedPayableFees).toBeCloseTo(22_500, 5)
-    expect(result.recommendedPayableFees).toBe(
-      Math.min(result.actualRemainingDi, result.theoreticalBenchmarkDi, result.affordabilityAdjustedDi),
-    )
+    expect(result.recommendedPayableFees).toBe(result.actualRemainingDi)
+    // 90,000 − (19,000 + 2,480 + 8,879 + 3,600 + 1,700 + 3,000 notionals)
+    // + 3,300 savings add-back (10% of 70,000 − 37,000) = 54,641.
+    expect(result.recommendedPayableFees).toBeCloseTo(54_641, 5)
+    // The comparison legs are still computed for display.
+    expect(result.theoreticalBenchmarkDi).not.toBeUndefined()
+    expect(result.affordabilityAdjustedDi).not.toBeUndefined()
   })
 
   it('a savings surplus with no debt yields zero debt exposure/ratio', () => {
@@ -243,12 +243,10 @@ describe('calculateAssessmentV2 — award summary is null without nextYearFees/b
  * D13-3: the assessor's edit scope is ONE signed adjustment line on household
  * income. Applied at step 1 of the orchestrator (after earner aggregation,
  * before the C40 floor), it flows through notional spend → NDI → the actual
- * leg untouched — so while the ACTUAL leg is the binding one, the recommended
- * payable fees move by EXACTLY the adjustment, in both directions.
- *
- * The scenario is chosen so the actual leg binds at −£6k, £0 and +£6k (the
- * theoretical and affordability legs stay comfortably above it), which is what
- * makes "exactly its amount" a meaningful assertion rather than a coincidence.
+ * leg untouched — and since 5 Sep 2026 the ACTUAL leg IS the recommendation,
+ * so the recommended payable fees move by EXACTLY the adjustment, in both
+ * directions (as long as the leg stays above the £0 floor, which this
+ * scenario guarantees at −£6k, £0 and +£6k).
  */
 describe('calculateAssessmentV2 — manual income adjustment (Epic 13 / C2)', () => {
   const scenario = (manualAdjustment: number): AssessmentV2Input => ({
@@ -267,13 +265,10 @@ describe('calculateAssessmentV2 — manual income adjustment (Epic 13 / C2)', ()
     propertyAssets: { home: { value: 400_000, mortgageBalance: 200_000 } },
     portfolioType: 'SINGLE',
     debts: {},
-    // CH-53 — a sibling on substantial fees, so the ACTUAL leg is the binding
-    // one and the assertions below still mean what they say. Before CH-53 the
-    // actual leg was reduced by the recipient's own annual fees too, so it
-    // bound almost always and no sibling was needed here; now that it is not,
-    // the leg has to be brought down deliberately for this test's premise to
-    // hold. The £-for-£ property being tested belongs to the actual leg, and
-    // only shows up in `recommendedPayableFees` while that leg is the minimum.
+    // CH-53 — a sibling on substantial fees keeps the actual leg well clear
+    // of the £0 floor in all three variants (the only way the £-for-£
+    // property could break now that the actual leg is always the
+    // recommendation).
     siblingPayableFees: [40_000],
     annualFees: 30_000,
     scholarshipPct: 0,
@@ -283,7 +278,7 @@ describe('calculateAssessmentV2 — manual income adjustment (Epic 13 / C2)', ()
   const added = calculateAssessmentV2(scenario(6_000), ref)
   const deducted = calculateAssessmentV2(scenario(-6_000), ref)
 
-  it('the actual leg binds in all three variants (so the assertions below mean what they say)', () => {
+  it('the recommendation is the actual leg in all three variants (above the £0 floor)', () => {
     for (const result of [baseline, added, deducted]) {
       expect(result.recommendedPayableFees).toBe(result.actualRemainingDi)
       expect(result.recommendedPayableFees).toBeGreaterThan(0)
