@@ -8,9 +8,9 @@ import {
   affordabilityBands,
   incomeCategoryBands,
   propertyEquityBands,
-  financialEquityBands,
-  debtRatioBands,
-  lifestyleSqueezeBands,
+  financialEquityBandsRespec,
+  debtRatioBandsRespec,
+  lifestyleSqueezeBandsRespec,
 } from '../../../../../prisma/seed-data/profiling-reference'
 
 // Appendix A values, via the real seed-data module (CALC-01) rather than
@@ -24,9 +24,9 @@ const ref: ReferenceBundle = {
   affordabilityBands,
   incomeCategoryBands,
   propertyEquityBands,
-  financialEquityBands,
-  debtRatioBands,
-  lifestyleSqueezeBands,
+  financialEquityBands: financialEquityBandsRespec,
+  debtRatioBands: debtRatioBandsRespec,
+  lifestyleSqueezeBands: lifestyleSqueezeBandsRespec,
 }
 
 function baseInput(overrides: Partial<NotionalSpendInput> = {}): NotionalSpendInput {

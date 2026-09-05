@@ -38,8 +38,11 @@ import {
   incomeCategoryBands,
   propertyEquityBands,
   financialEquityBands,
+  financialEquityBandsRespec,
   debtRatioBands,
+  debtRatioBandsRespec,
   lifestyleSqueezeBands,
+  lifestyleSqueezeBandsRespec,
 } from "./seed-data/profiling-reference";
 import { postcodeAreas } from "./seed-data/postcode-areas";
 
@@ -273,7 +276,7 @@ async function seedPostcodeAreas(): Promise<void> {
 
 async function seedFinancialEquityBands(): Promise<void> {
   section("Financial equity bands (CALC-01)");
-  for (const band of financialEquityBands) {
+  for (const band of [...financialEquityBands, ...financialEquityBandsRespec]) {
     const existing = await prisma.financialEquityBand.findFirst({
       where: { effectiveFrom: band.effectiveFrom, bandCeiling: band.bandCeiling },
     });
@@ -286,12 +289,12 @@ async function seedFinancialEquityBands(): Promise<void> {
       await prisma.financialEquityBand.create({ data: band });
     }
   }
-  log(`Upserted ${financialEquityBands.length} financial equity bands`);
+  log(`Upserted ${financialEquityBands.length + financialEquityBandsRespec.length} financial equity bands`);
 }
 
 async function seedDebtRatioBands(): Promise<void> {
   section("Debt ratio bands (CALC-01)");
-  for (const band of debtRatioBands) {
+  for (const band of [...debtRatioBands, ...debtRatioBandsRespec]) {
     const existing = await prisma.debtRatioBand.findFirst({
       where: { effectiveFrom: band.effectiveFrom, ratioCeiling: band.ratioCeiling },
     });
@@ -308,12 +311,12 @@ async function seedDebtRatioBands(): Promise<void> {
       await prisma.debtRatioBand.create({ data: band });
     }
   }
-  log(`Upserted ${debtRatioBands.length} debt ratio bands`);
+  log(`Upserted ${debtRatioBands.length + debtRatioBandsRespec.length} debt ratio bands`);
 }
 
 async function seedLifestyleSqueezeBands(): Promise<void> {
   section("Lifestyle squeeze bands (CALC-01)");
-  for (const band of lifestyleSqueezeBands) {
+  for (const band of [...lifestyleSqueezeBands, ...lifestyleSqueezeBandsRespec]) {
     const existing = await prisma.lifestyleSqueezeBand.findFirst({
       where: { effectiveFrom: band.effectiveFrom, ratioCeiling: band.ratioCeiling },
     });
@@ -326,7 +329,7 @@ async function seedLifestyleSqueezeBands(): Promise<void> {
       await prisma.lifestyleSqueezeBand.create({ data: band });
     }
   }
-  log(`Upserted ${lifestyleSqueezeBands.length} lifestyle squeeze bands`);
+  log(`Upserted ${lifestyleSqueezeBands.length + lifestyleSqueezeBandsRespec.length} lifestyle squeeze bands`);
 }
 
 async function ensureDocumentsBucket(): Promise<void> {

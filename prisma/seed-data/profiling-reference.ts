@@ -249,3 +249,64 @@ export const lifestyleSqueezeBands = [
   { ratioFloor: 150, ratioCeiling: 170, statusLabel: "VERY HIGH LIFESTYLE SQUEEZE, WON'T MANAGE OVER TIME" },
   { ratioFloor: 170, ratioCeiling: null, statusLabel: "SEVERE LIFESTYLE SQUEEZE, SET TO FAIL QUICKLY" },
 ].map((row) => ({ ...row, effectiveFrom: EFFECTIVE_FROM }));
+
+// ─── Benchmark-bands respec (Charlotte, 5 Sep 2026 21:27) ──────────────────
+// New generations of the three commentary tables, effective 2026-09-07 —
+// deployed environments get the same rows via migration
+// 20260905220000_benchmark_bands_respec (keep the two in sync).
+
+const BANDS_RESPEC_EFFECTIVE_FROM = new Date("2026-09-07");
+
+// C.3 — only levels 3 and 4 move: the "within default cushion savings" band
+// now runs to £37,000 (aligned with the new category-1 savings cushion), and
+// "fair savings" starts there. Every other row carries forward verbatim.
+export const financialEquityBandsRespec = [
+  { bandFloor: null, bandCeiling: -0.01, label: "in debt" },
+  { bandFloor: 0, bandCeiling: 0, label: "no debt, no equity" },
+  { bandFloor: 0, bandCeiling: 3000, label: "negligible savings" },
+  { bandFloor: 3000, bandCeiling: 37000, label: "within default cushion savings" },
+  { bandFloor: 37000, bandCeiling: 50000, label: "fair savings" },
+  { bandFloor: 50000, bandCeiling: 75000, label: "decent savings" },
+  { bandFloor: 75000, bandCeiling: 100000, label: "comfortable savings" },
+  { bandFloor: 100000, bandCeiling: 150000, label: "large savings" },
+  { bandFloor: 150000, bandCeiling: 250000, label: "high savings" },
+  { bandFloor: 250000, bandCeiling: 400000, label: "very high savings" },
+  { bandFloor: 400000, bandCeiling: 600000, label: "extremely high savings" },
+  { bandFloor: 600000, bandCeiling: 900000, label: "stratospheric savings - level 1" },
+  { bandFloor: 900000, bandCeiling: 1200000, label: "stratospheric savings - level 2" },
+  { bandFloor: 1200000, bandCeiling: 1600000, label: "stratospheric savings - level 3" },
+  { bandFloor: 1600000, bandCeiling: null, label: "stratospheric savings - level 4" },
+].map((row) => ({ ...row, effectiveFrom: BANDS_RESPEC_EFFECTIVE_FROM }));
+
+// C.4 — her full re-banding: much finer thresholds at the low end, the
+// "- level N" suffixes gone. Her email gives no repayment months, so they are
+// derived by the old table's own implicit rule, floor(ratioFloor × 12) — the
+// debt is roughly ratio × a year of NDI. Flagged to her for correction.
+export const debtRatioBandsRespec = [
+  { ratioFloor: null, ratioCeiling: 0, minRepaymentMonths: null, statusLabel: "ZERO DEBT, NO CREDIT RISK" },
+  { ratioFloor: 0, ratioCeiling: 0.01, minRepaymentMonths: 0, statusLabel: "SMALL DEBT LEVEL, NEGLIGIBLE CREDIT RISK" },
+  { ratioFloor: 0.01, ratioCeiling: 0.03, minRepaymentMonths: 0, statusLabel: "MANAGEABLE DEBT, LOW CREDIT RISK" },
+  { ratioFloor: 0.03, ratioCeiling: 0.07, minRepaymentMonths: 0, statusLabel: "MANAGEABLE DEBT, MEDIUM CREDIT RISK" },
+  { ratioFloor: 0.07, ratioCeiling: 0.1, minRepaymentMonths: 0, statusLabel: "MATERIAL DEBT IMPACT, FAIR CREDIT RISK" },
+  { ratioFloor: 0.1, ratioCeiling: 0.15, minRepaymentMonths: 1, statusLabel: "MATERIAL DEBT IMPACT, HIGH CREDIT RISK" },
+  { ratioFloor: 0.15, ratioCeiling: 0.2, minRepaymentMonths: 1, statusLabel: "HEAVILY IN DEBT, FAIR CREDIT RISK" },
+  { ratioFloor: 0.2, ratioCeiling: 0.3, minRepaymentMonths: 2, statusLabel: "HEAVILY IN DEBT, HIGH CREDIT RISK" },
+  { ratioFloor: 0.3, ratioCeiling: 0.4, minRepaymentMonths: 3, statusLabel: "VERY HEAVILY IN DEBT, HIGH CREDIT RISK" },
+  { ratioFloor: 0.4, ratioCeiling: 0.5, minRepaymentMonths: 4, statusLabel: "VERY HEAVILY IN DEBT, VERY HIGH CREDIT RISK" },
+  { ratioFloor: 0.5, ratioCeiling: 1, minRepaymentMonths: 6, statusLabel: "DEBT GETTING OUT OF CONTROL, NO SAFETY NET" },
+  { ratioFloor: 1, ratioCeiling: null, minRepaymentMonths: 12, statusLabel: "AT RISK OF BANKRUPTCY" },
+].map((row) => ({ ...row, effectiveFrom: BANDS_RESPEC_EFFECTIVE_FROM }));
+
+// C.5 — her nine bands for the reworked squeeze ratio (denominator now
+// NDI − totalDebt/5, see `lifestyleSqueeze`). Negative = survival mode.
+export const lifestyleSqueezeBandsRespec = [
+  { ratioFloor: null, ratioCeiling: 0, statusLabel: "IN FINANCIAL SURVIVAL MODE, WARNING DEBT RED FLAG, NO MONEY FOR FEES" },
+  { ratioFloor: 0, ratioCeiling: 40, statusLabel: "AFFORDABLE, NEGLIGIBLE IMPACT ON LIFESTYLE" },
+  { ratioFloor: 40, ratioCeiling: 50, statusLabel: "AFFORDABLE, SOME IMPACT ON LIFESTYLE" },
+  { ratioFloor: 50, ratioCeiling: 60, statusLabel: "FAMILY LIFESTYLE IMPACTED, SOME RESTRICTIONS" },
+  { ratioFloor: 60, ratioCeiling: 80, statusLabel: "IMPORTANT LIFESTYLE SQUEEZE, MAIN SPEND RESTRICTIONS DUE TO FEES" },
+  { ratioFloor: 80, ratioCeiling: 90, statusLabel: "VERY HIGH LIFESTYLE SQUEEZE, FEES WILL FEEL LIKE A SACRIFICE" },
+  { ratioFloor: 90, ratioCeiling: 100, statusLabel: "SEVERE LIFESTYLE SQUEEZE, LIKELY STRUGGLES AHEAD" },
+  { ratioFloor: 100, ratioCeiling: 200, statusLabel: "LIFESTYLE ONLY MAINTAINED BY INCREASING DEBT, CREDIT RISK FLAG" },
+  { ratioFloor: 200, ratioCeiling: null, statusLabel: "LIFESTYLE FRUSTRATINGLY PLAGUED BY UNUSUALLY HIGH LEVEL OF DEBT, HIGH RISK" },
+].map((row) => ({ ...row, effectiveFrom: BANDS_RESPEC_EFFECTIVE_FROM }));
