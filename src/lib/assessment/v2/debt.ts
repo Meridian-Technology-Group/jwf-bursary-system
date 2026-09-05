@@ -27,6 +27,15 @@ function n(v: number | undefined): number {
 }
 
 /**
+ * Total itemised personal debt: credit cards + loans + lease balances +
+ * school fees owed/other. Shared by the yearly-repayments split below and the
+ * savings test's net-savings figure (savings-test respec v3, 5 Sep 2026).
+ */
+export function totalPersonalDebt(debts: DebtsRecord): number {
+  return n(debts.creditCards) + n(debts.loans) + n(debts.leaseBalances) + n(debts.schoolFeesOwedOrOther)
+}
+
+/**
  * Derived yearly debt repayments (C123): the sum of every itemised personal
  * debt (credit cards, loans, lease balances, school fees owed/other) spread
  * evenly across the remaining schooling years. Returns 0 when
@@ -40,10 +49,7 @@ export function calculateDerivedYearlyDebtRepayments(
 ): number {
   if (schoolingYearsRemaining <= 0) return 0
 
-  const totalDebt =
-    n(debts.creditCards) + n(debts.loans) + n(debts.leaseBalances) + n(debts.schoolFeesOwedOrOther)
-
-  return totalDebt / schoolingYearsRemaining
+  return totalPersonalDebt(debts) / schoolingYearsRemaining
 }
 
 /**

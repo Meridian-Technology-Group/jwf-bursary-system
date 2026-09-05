@@ -1538,9 +1538,9 @@ export function AssessmentFormV2({
           <WBRow
             label="DISPLAY ONLY - SAVINGS TEST NUMBER"
             auto={fmtMoney(output?.savingsTestNumber)}
-            note="Adjusted savings − derived yearly debt repayments − savings cushion. Negative means nothing is added back."
+            note="Net savings (total savings − total debt) − savings cushion. Negative means nothing is added back."
           />
-          <WBRow label="IF SAVINGS TEST NUMBER IS POSITIVE, ADD IT IN" auto={lineSigned("savingsTestAddBack")} />
+          <WBRow label="IF SAVINGS TEST NUMBER IS POSITIVE, ADD BACK 10% OF IT" auto={lineSigned("savingsTestAddBack")} />
           <WBRow label="IF THE APPLICANT HAS INSURED SCHOOL FEES PAYMENT, ADD YEARLY INSURED TOTAL BACK IN">
             <CurrencyInput
               id="v2-fee-insurance"
