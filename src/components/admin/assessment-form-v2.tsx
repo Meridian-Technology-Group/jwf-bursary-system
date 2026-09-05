@@ -60,7 +60,6 @@ import {
   remainingYearsForEntrySchoolYear,
   type EntryYearGroupCode,
 } from "@/lib/assessment/schooling-years";
-import { calculateDerivedSavings } from "@/lib/assessment/stage2-assets";
 import { applyFamilyTypeDefaults, type OverridableField } from "@/lib/assessment/auto-populate";
 import { shouldEnableSecondEarner } from "@/lib/assessment/v2/prefill";
 import {
@@ -604,8 +603,6 @@ export function AssessmentFormV2({
       feeInsuranceAnnual,
       cashSavings,
       isasPepsShares,
-      schoolAgeChildrenCount:
-        typeof schoolAgeChildrenCount === "number" ? schoolAgeChildrenCount : 0,
       schoolingYearsRemaining,
       propertyAssets,
       portfolioType,
@@ -644,7 +641,6 @@ export function AssessmentFormV2({
     feeInsuranceAnnual,
     cashSavings,
     isasPepsShares,
-    schoolAgeChildrenCount,
     schoolingYearsRemaining,
     propertyAssets,
     portfolioType,
@@ -726,13 +722,6 @@ export function AssessmentFormV2({
     }
 
     setIsSaving(true);
-
-    const derivedSavings = calculateDerivedSavings(
-      cashSavings,
-      isasPepsShares,
-      typeof schoolAgeChildrenCount === "number" ? schoolAgeChildrenCount : 0,
-      schoolingYearsRemaining
-    );
 
     // Review fix #4: recompute SYNCHRONOUSLY from the current input at save
     // time instead of reading the debounced hook output — Complete/Pause
@@ -826,7 +815,10 @@ export function AssessmentFormV2({
         isasPepsShares,
         schoolAgeChildrenCount:
           typeof schoolAgeChildrenCount === "number" ? schoolAgeChildrenCount : 0,
-        derivedSavingsAnnualTotal: derivedSavings,
+        // Savings-test respec (5 Sep 2026): the stored figure is the engine's
+        // C77 adjusted savings (total savings / remaining years), not v1's
+        // per-child `calculateDerivedSavings`.
+        derivedSavingsAnnualTotal: freshOutput?.adjustedSavings ?? 0,
       },
     };
 
@@ -1531,7 +1523,7 @@ export function AssessmentFormV2({
           <WBRow
             label="DISPLAY ONLY - SAVINGS CUSHION ALLOWANCE"
             auto={fmtMoney(savingsCushion)}
-            note="Reference value only — feeds no calculation."
+            note="Deducted in the savings test below (respec, 5 Sep 2026)."
           />
           {/* CH-55 — the derived-yearly-debt-repayments row that CH-37 added
               here has been REMOVED at her request (25 Aug): "now that you have
@@ -1546,7 +1538,7 @@ export function AssessmentFormV2({
           <WBRow
             label="DISPLAY ONLY - SAVINGS TEST NUMBER"
             auto={fmtMoney(output?.savingsTestNumber)}
-            note="Adjusted savings − derived yearly debt repayments − notional savings. Negative means nothing is added back."
+            note="Adjusted savings − derived yearly debt repayments − savings cushion. Negative means nothing is added back."
           />
           <WBRow label="IF SAVINGS TEST NUMBER IS POSITIVE, ADD IT IN" auto={lineSigned("savingsTestAddBack")} />
           <WBRow label="IF THE APPLICANT HAS INSURED SCHOOL FEES PAYMENT, ADD YEARLY INSURED TOTAL BACK IN">

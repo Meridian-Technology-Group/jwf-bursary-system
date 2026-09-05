@@ -4,6 +4,7 @@ import type { ReferenceBundle } from '../types'
 import type { AssessorIncomeRecord } from '@/types/assessment-v2'
 import {
   notionalCostConfigs,
+  savingsCushionRespecConfigs,
   familyCategoryMetas,
   affordabilityBands,
   incomeCategoryBands,
@@ -13,8 +14,10 @@ import {
   lifestyleSqueezeBands,
 } from '../../../../../prisma/seed-data/profiling-reference'
 
+// Latest cushion generation first — the app bundle is deduped latest-wins
+// (`getNotionalCostConfigs`) and `getNotionalCostAmount` is find-first.
 const ref: ReferenceBundle = {
-  notionalCosts: notionalCostConfigs,
+  notionalCosts: [...savingsCushionRespecConfigs, ...notionalCostConfigs],
   familyCategoryMetas,
   affordabilityBands,
   incomeCategoryBands,
@@ -103,9 +106,10 @@ describe('calculateAssessmentV2 — modest-income renting family with debts', ()
   it('wires derivedYearlyDebtRepayments into the savings test (C80)', () => {
     // (5,000 + 3,000) / 5 years = 1,600.
     expect(result.derivedYearlyDebtRepayments).toBe(1_600)
-    // savingsTestNumber = adjustedSavings − derivedYearlyDebtRepayments − notionalSavingsBenchmark (C80).
+    // savingsTestNumber = adjustedSavings − derivedYearlyDebtRepayments −
+    // savingsCushion (C80, respec 5 Sep 2026). Cat 2 cushion = £39,000.
     expect(result.savingsTestNumber).toBeCloseTo(
-      result.adjustedSavings - result.derivedYearlyDebtRepayments - result.notionalSavingsBenchmark,
+      result.adjustedSavings - result.derivedYearlyDebtRepayments - 39_000,
       6,
     )
   })

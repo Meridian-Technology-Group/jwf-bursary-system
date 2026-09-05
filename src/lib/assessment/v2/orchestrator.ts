@@ -94,8 +94,6 @@ export interface AssessmentV2Input {
   // ── Savings (feeds the savings test, C72–C81) ─────────────────────────
   cashSavings: number
   isasPepsShares: number
-  /** Optional override; defaults from `ReferenceBundle.familyCategoryMetas` when omitted. */
-  schoolAgeChildrenCount?: number
   schoolingYearsRemaining: number
 
   // ── Property assets + debt module (CALC-04/05) ────────────────────────
@@ -217,7 +215,6 @@ export function calculateAssessmentV2(input: AssessmentV2Input, ref: ReferenceBu
       feeInsuranceAnnual: input.feeInsuranceAnnual,
       cashSavings: input.cashSavings,
       isasPepsShares: input.isasPepsShares,
-      schoolAgeChildrenCount: input.schoolAgeChildrenCount,
       schoolingYearsRemaining: input.schoolingYearsRemaining,
       derivedYearlyDebtRepayments,
     },
