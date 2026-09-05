@@ -3,6 +3,7 @@ import { calculateNotionalSpend } from '../notional-spend'
 import type { NotionalSpendInput, ReferenceBundle } from '../types'
 import {
   notionalCostConfigs,
+  savingsCushionRespecConfigs,
   familyCategoryMetas,
   affordabilityBands,
   incomeCategoryBands,
@@ -14,9 +15,11 @@ import {
 
 // Appendix A values, via the real seed-data module (CALC-01) rather than
 // re-typed literals — this doubles as a regression guard that the engine and
-// the seed stay in sync.
+// the seed stay in sync. The app's bundle holds the LATEST generation per
+// (category, costType) (`getNotionalCostConfigs`), so the 2026-09-06 cushion
+// respec rows go FIRST — `getNotionalCostAmount` is find-first.
 const ref: ReferenceBundle = {
-  notionalCosts: notionalCostConfigs,
+  notionalCosts: [...savingsCushionRespecConfigs, ...notionalCostConfigs],
   familyCategoryMetas,
   affordabilityBands,
   incomeCategoryBands,
@@ -266,43 +269,92 @@ describe('calculateNotionalSpend — transportation only when the uses* flag is 
   })
 })
 
-describe('calculateNotionalSpend — savings test (Appendix F #7)', () => {
-  it('adjustedSavings 5000, debtRepayments 1200, notionalSavings 6000 (cat 3) → test -2200, add-back 0', () => {
-    // adjustedSavings = (cashSavings + isasPepsShares) / children / years.
-    // Category 3 → schoolAgeChildren 2 (from FamilyCategoryMeta); use 1 year so
-    // adjustedSavings = cashSavings + isasPepsShares directly = 5000.
+describe('calculateNotionalSpend — savings test (respec, 5 Sep 2026)', () => {
+  // Her worked example, the Kaluba assessment (WS-202627-0008): cat 3,
+  // savings £9,700, debt £8,000, 7 remaining years. Adjusted savings
+  // 9,700/7 = 1,385.71 (NO per-child division — the family has 2 school-age
+  // children), yearly debt repayments 8,000/7 = 1,142.86, cushion £41,000
+  // (the 2026-09-06 generation) → test negative, nothing added back.
+  it("Charlotte's Kaluba example: savings 9,700 over 7 years, cushion 41,000 → negative, add-back 0", () => {
+    const result = calculateNotionalSpend(
+      baseInput({
+        familyTypeCategory: 3,
+        cashSavings: 9_700,
+        isasPepsShares: 0,
+        schoolingYearsRemaining: 7,
+        derivedYearlyDebtRepayments: 8_000 / 7,
+      }),
+      ref,
+    )
+    expect(result.adjustedSavings).toBeCloseTo(1_385.71, 2)
+    expect(result.savingsTestNumber).toBeCloseTo(1_385.71 - 1_142.86 - 41_000, 1)
+    expect(lineByKey(result, 'savingsTestAddBack').amount).toBe(0)
+  })
+
+  it('a positive test adds back exactly the excess over debt repayments and the cushion', () => {
+    // Cat 3 cushion is £41,000: savings 45,000 over 1 year, debt 1,200 →
+    // 45,000 − 1,200 − 41,000 = +2,800.
+    const result = calculateNotionalSpend(
+      baseInput({
+        familyTypeCategory: 3,
+        cashSavings: 40_000,
+        isasPepsShares: 5_000,
+        schoolingYearsRemaining: 1,
+        derivedYearlyDebtRepayments: 1_200,
+      }),
+      ref,
+    )
+    expect(result.adjustedSavings).toBe(45_000)
+    expect(result.savingsTestNumber).toBe(2_800)
+    expect(lineByKey(result, 'savingsTestAddBack').amount).toBe(2_800)
+    expect(lineByKey(result, 'savingsTestAddBack').signedAmount).toBe(2_800)
+  })
+
+  it('adjusted savings is total savings over remaining years — no per-child division', () => {
+    // Cat 3's FamilyCategoryMeta says 2 school-age children; the respec
+    // divides by years only (her example: 9,700 / 7, not 9,700 / 2 / 7).
     const result = calculateNotionalSpend(
       baseInput({
         familyTypeCategory: 3,
         cashSavings: 10_000,
         isasPepsShares: 0,
-        schoolAgeChildrenCount: 2,
         schoolingYearsRemaining: 1,
-        derivedYearlyDebtRepayments: 1_200,
       }),
       ref,
     )
-    expect(result.adjustedSavings).toBe(5_000)
-    expect(result.savingsTestNumber).toBe(-2_200)
-    expect(lineByKey(result, 'savingsTestAddBack').amount).toBe(0)
+    expect(result.adjustedSavings).toBe(10_000)
   })
 
-  it('adjustedSavings 12000, debtRepayments 1200, notionalSavings 6000 (cat 3) → test +4800, add-back 4800', () => {
+  it('the C78 notional-savings benchmark stays its own deduction and no longer feeds the test', () => {
     const result = calculateNotionalSpend(
       baseInput({
         familyTypeCategory: 3,
-        cashSavings: 12_000,
+        cashSavings: 45_000,
         isasPepsShares: 0,
-        schoolAgeChildrenCount: 1,
         schoolingYearsRemaining: 1,
-        derivedYearlyDebtRepayments: 1_200,
+        derivedYearlyDebtRepayments: 0,
       }),
       ref,
     )
-    expect(result.adjustedSavings).toBe(12_000)
-    expect(result.savingsTestNumber).toBe(4_800)
-    expect(lineByKey(result, 'savingsTestAddBack').amount).toBe(4_800)
-    expect(lineByKey(result, 'savingsTestAddBack').signedAmount).toBe(4_800)
+    expect(lineByKey(result, 'notionalSavingsBenchmark').amount).toBe(6_000)
+    // 45,000 − 0 − 41,000 (cushion) = 4,000; were the benchmark still in the
+    // test this would be 45,000 − 6,000 = 39,000-based instead.
+    expect(result.savingsTestNumber).toBe(4_000)
+  })
+
+  it('zero remaining years yields zero adjusted savings, not a division blow-up', () => {
+    const result = calculateNotionalSpend(
+      baseInput({
+        familyTypeCategory: 3,
+        cashSavings: 45_000,
+        isasPepsShares: 0,
+        schoolingYearsRemaining: 0,
+        derivedYearlyDebtRepayments: 0,
+      }),
+      ref,
+    )
+    expect(result.adjustedSavings).toBe(0)
+    expect(result.savingsTestNumber).toBe(-41_000)
   })
 
   // ── CH-37 — the identity Charlotte asked us to prove ────────────────────────
@@ -315,32 +367,29 @@ describe('calculateNotionalSpend — savings test (Appendix F #7)', () => {
   // pin the add-back direction she cares about — "it is a positive number so it
   // gets added back into the yearly income total available".
 
-  it('CH-37 — the test is exactly adjustedSavings − debtRepayments − notionalSavings', () => {
+  it('CH-37 — the test is exactly adjustedSavings − debtRepayments − savingsCushion', () => {
     const result = calculateNotionalSpend(
       baseInput({
         familyTypeCategory: 3,
-        cashSavings: 12_000,
+        cashSavings: 45_000,
         isasPepsShares: 0,
-        schoolAgeChildrenCount: 1,
         schoolingYearsRemaining: 1,
         derivedYearlyDebtRepayments: 1_200,
       }),
       ref,
     )
-    const benchmark = lineByKey(result, 'notionalSavingsBenchmark').amount
-    expect(result.savingsTestNumber).toBe(result.adjustedSavings - 1_200 - benchmark)
+    // Cat 3 cushion, 2026-09-06 generation.
+    expect(result.savingsTestNumber).toBe(result.adjustedSavings - 1_200 - 41_000)
   })
 
   it('CH-37 — a positive test raises NDI by exactly the add-back, nothing else', () => {
     const common = {
       familyTypeCategory: 3,
-      cashSavings: 12_000,
+      cashSavings: 45_000,
       isasPepsShares: 0,
-      schoolAgeChildrenCount: 1,
       schoolingYearsRemaining: 1,
     } as const
 
-    // Same household, two debt levels. The lower debt makes the test positive.
     const positive = calculateNotionalSpend(
       baseInput({ ...common, derivedYearlyDebtRepayments: 1_200 }),
       ref,
@@ -368,7 +417,6 @@ describe('calculateNotionalSpend — savings test (Appendix F #7)', () => {
         familyTypeCategory: 3,
         cashSavings: 10_000,
         isasPepsShares: 0,
-        schoolAgeChildrenCount: 2,
         schoolingYearsRemaining: 1,
         derivedYearlyDebtRepayments: 1_200,
       }),
@@ -385,9 +433,8 @@ describe('calculateNotionalSpend — savings test (Appendix F #7)', () => {
       calculateNotionalSpend(
         baseInput({
           familyTypeCategory: 3,
-          cashSavings: 12_000,
+          cashSavings: 45_000,
           isasPepsShares: 0,
-          schoolAgeChildrenCount: 1,
           schoolingYearsRemaining: 1,
           derivedYearlyDebtRepayments: debt,
         }),
@@ -396,34 +443,6 @@ describe('calculateNotionalSpend — savings test (Appendix F #7)', () => {
     const low = mk(1_200)
     const high = mk(3_200)
     expect(low.savingsTestNumber - high.savingsTestNumber).toBe(2_000)
-  })
-
-  it('defaults schoolAgeChildrenCount from FamilyCategoryMeta when not supplied', () => {
-    // Category 4 → schoolAgeChildren 3 (Appendix A). adjustedSavings = 30000/3/1 = 10000.
-    const result = calculateNotionalSpend(
-      baseInput({
-        familyTypeCategory: 4,
-        cashSavings: 30_000,
-        isasPepsShares: 0,
-        schoolingYearsRemaining: 1,
-      }),
-      ref,
-    )
-    expect(result.adjustedSavings).toBe(10_000)
-  })
-
-  it('an explicit schoolAgeChildrenCount overrides the FamilyCategoryMeta default', () => {
-    const result = calculateNotionalSpend(
-      baseInput({
-        familyTypeCategory: 4,
-        cashSavings: 30_000,
-        isasPepsShares: 0,
-        schoolAgeChildrenCount: 1,
-        schoolingYearsRemaining: 1,
-      }),
-      ref,
-    )
-    expect(result.adjustedSavings).toBe(30_000)
   })
 })
 

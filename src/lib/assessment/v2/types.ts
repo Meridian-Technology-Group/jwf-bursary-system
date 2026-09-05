@@ -141,12 +141,6 @@ export interface NotionalSpendInput {
   cashSavings: number
   /** ISAs/PEPs/shares (C73). */
   isasPepsShares: number
-  /**
-   * School-age children count (C76). Optional — when omitted, defaults from
-   * `ReferenceBundle.familyCategoryMetas` for `familyTypeCategory` (per
-   * CALC-03 scope note), same as the assessor-overridable v1 field.
-   */
-  schoolAgeChildrenCount?: number
   /** School-years-left divisor (C76). */
   schoolingYearsRemaining: number
   /**
@@ -161,9 +155,9 @@ export interface NotionalSpendInput {
 export interface NotionalSpendResult {
   /** Every line of the notional-spend block, in workbook row order. */
   lines: readonly NotionalSpendLine[]
-  /** C77 — annualised derived savings (`calculateDerivedSavings`, reused from v1). */
+  /** C77 — annualised adjusted savings: total savings / remaining school years (savings-test respec, 5 Sep 2026). */
   adjustedSavings: number
-  /** C80 — signed savings-test number (adjustedSavings − derivedYearlyDebtRepayments − notionalSavingsBenchmark); NOT floored. */
+  /** C80 — signed savings-test number (adjustedSavings − derivedYearlyDebtRepayments − savingsCushion); NOT floored. */
   savingsTestNumber: number
   /** C85 — signed sum of every line's `signedAmount`. */
   totalNotionalSpend: number
