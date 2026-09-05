@@ -6,7 +6,7 @@ import {
   classifyDebt,
 } from '../debt'
 import type { DebtsRecord } from '@/types/assessment-v2'
-import { debtRatioBands } from '../../../../../prisma/seed-data/profiling-reference'
+import { debtRatioBandsRespec } from '../../../../../prisma/seed-data/profiling-reference'
 
 // ─── calculateDerivedYearlyDebtRepayments (C123) ───────────────────────────
 
@@ -105,8 +105,8 @@ describe('calculateDebtOverNdiRatio', () => {
 // re-typed literals here would not catch a change to the seed's band edges.
 
 describe('classifyDebt — against every seeded DebtRatioBand row', () => {
-  it('seeds exactly 16 bands (Appendix C.4)', () => {
-    expect(debtRatioBands).toHaveLength(16)
+  it('seeds exactly 12 bands (benchmark-bands respec, 5 Sep 2026)', () => {
+    expect(debtRatioBandsRespec).toHaveLength(12)
   })
 
   // CH-40 — ceiling-exclusive per Charlotte (24 Aug 2026), applied to every
@@ -121,24 +121,24 @@ describe('classifyDebt — against every seeded DebtRatioBand row', () => {
   // including one with a large savings surplus. Part 5's reported values are
   // among those she has already signed off, so this is asked, not guessed.
   it('CH-40 / Q9 — a ratio of exactly 0 stays on ZERO DEBT', () => {
-    const result = classifyDebt(0, debtRatioBands)
+    const result = classifyDebt(0, debtRatioBandsRespec)
     expect(result.minRepaymentMonths).toBeNull()
     expect(result.statusLabel).toBe('ZERO DEBT, NO CREDIT RISK')
   })
 
-  it('CH-40 — the smallest positive ratio is level 1', () => {
-    const result = classifyDebt(0.0001, debtRatioBands)
-    expect(result.statusLabel).toBe('SMALL DEBT LEVEL, NEGLIGIBLE CREDIT RISK - level 1')
+  it('CH-40 — the smallest positive ratio lands on the first positive band', () => {
+    const result = classifyDebt(0.0001, debtRatioBandsRespec)
+    expect(result.statusLabel).toBe('SMALL DEBT LEVEL, NEGLIGIBLE CREDIT RISK')
   })
 
   it('ZERO DEBT path: a negative ratio also resolves to the zero-debt row', () => {
-    const result = classifyDebt(-5, debtRatioBands)
+    const result = classifyDebt(-5, debtRatioBandsRespec)
     expect(result.minRepaymentMonths).toBeNull()
     expect(result.statusLabel).toBe('ZERO DEBT, NO CREDIT RISK')
   })
 
   it.each(
-    debtRatioBands.map((band) => [band.statusLabel, band] as const),
+    debtRatioBandsRespec.map((band) => [band.statusLabel, band] as const),
   )('classifies a representative ratio inside "%s"', (_label, band) => {
     // Pick a value strictly inside the band where possible; for the
     // open-ended top/bottom rows, pick a value comfortably past the one
@@ -154,7 +154,7 @@ describe('classifyDebt — against every seeded DebtRatioBand row', () => {
       representative = (band.ratioFloor + band.ratioCeiling) / 2
     }
 
-    const result = classifyDebt(representative, debtRatioBands)
+    const result = classifyDebt(representative, debtRatioBandsRespec)
     expect(result.statusLabel).toBe(band.statusLabel)
     expect(result.minRepaymentMonths).toBe(band.minRepaymentMonths)
   })
@@ -164,32 +164,28 @@ describe('classifyDebt — against every seeded DebtRatioBand row', () => {
     // than closing the one below, so every shared boundary in Appendix C.4's
     // normalised ladder now belongs to the band above it.
     const boundaries: Array<{ value: number; upperLabel: string }> = [
-      { value: 0.1, upperLabel: 'SMALL DEBT LEVEL, NEGLIGIBLE CREDIT RISK - level 2' },
-      { value: 0.3, upperLabel: 'MANAGEABLE DEBT, LOW CREDIT RISK - level 1' },
-      { value: 0.5, upperLabel: 'MANAGEABLE DEBT, LOW CREDIT RISK - level 2' },
-      { value: 0.8, upperLabel: 'MANAGEABLE DEBT, MEDIUM CREDIT RISK - level 1' },
-      { value: 1, upperLabel: 'MANAGEABLE DEBT, MEDIUM CREDIT RISK - level 2' },
-      { value: 2, upperLabel: 'MATERIAL DEBT IMPACT, FAIR CREDIT RISK - level 1' },
-      { value: 3, upperLabel: 'MATERIAL DEBT IMPACT, FAIR CREDIT RISK - level 2' },
-      { value: 4, upperLabel: 'HEAVILY IN DEBT, HIGH CREDIT RISK - level 1' },
-      { value: 5, upperLabel: 'HEAVILY IN DEBT, HIGH CREDIT RISK - level 2' },
-      { value: 6, upperLabel: 'HEAVILY IN DEBT, HIGH CREDIT RISK - level 3' },
-      { value: 7, upperLabel: 'VERY HEAVILY IN DEBT, VERY HIGH CREDIT RISK - level 1' },
-      { value: 8, upperLabel: 'VERY HEAVILY IN DEBT, VERY HIGH CREDIT RISK - level 2' },
-      { value: 9, upperLabel: 'VERY HEAVILY IN DEBT, VERY HIGH CREDIT RISK - level 3' },
-      { value: 10, upperLabel: 'VERY HEAVILY IN DEBT, VERY HIGH CREDIT RISK - level 4' },
+      { value: 0.01, upperLabel: 'MANAGEABLE DEBT, LOW CREDIT RISK' },
+      { value: 0.03, upperLabel: 'MANAGEABLE DEBT, MEDIUM CREDIT RISK' },
+      { value: 0.07, upperLabel: 'MATERIAL DEBT IMPACT, FAIR CREDIT RISK' },
+      { value: 0.1, upperLabel: 'MATERIAL DEBT IMPACT, HIGH CREDIT RISK' },
+      { value: 0.15, upperLabel: 'HEAVILY IN DEBT, FAIR CREDIT RISK' },
+      { value: 0.2, upperLabel: 'HEAVILY IN DEBT, HIGH CREDIT RISK' },
+      { value: 0.3, upperLabel: 'VERY HEAVILY IN DEBT, HIGH CREDIT RISK' },
+      { value: 0.4, upperLabel: 'VERY HEAVILY IN DEBT, VERY HIGH CREDIT RISK' },
+      { value: 0.5, upperLabel: 'DEBT GETTING OUT OF CONTROL, NO SAFETY NET' },
+      { value: 1, upperLabel: 'AT RISK OF BANKRUPTCY' },
     ]
 
     for (const { value, upperLabel } of boundaries) {
-      const result = classifyDebt(value, debtRatioBands)
+      const result = classifyDebt(value, debtRatioBandsRespec)
       expect(result.statusLabel).toBe(upperLabel)
     }
   })
 
-  it('a value just above the top band floor (10) resolves to the open-ended top band', () => {
-    const result = classifyDebt(15, debtRatioBands)
-    expect(result.statusLabel).toBe('VERY HEAVILY IN DEBT, VERY HIGH CREDIT RISK - level 4')
-    expect(result.minRepaymentMonths).toBe(120)
+  it('a value just above the top band floor (1) resolves to the open-ended top band', () => {
+    const result = classifyDebt(15, debtRatioBandsRespec)
+    expect(result.statusLabel).toBe('AT RISK OF BANKRUPTCY')
+    expect(result.minRepaymentMonths).toBe(12)
   })
 
   it('falls back to the zero-debt label when no band matches (defensive, e.g. an empty bands array)', () => {

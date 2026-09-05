@@ -52,6 +52,7 @@ import {
   netFinancialEquity,
   lifestyleSqueeze,
 } from "@/lib/assessment/v2/profiling";
+import { totalPersonalDebt } from "@/lib/assessment/v2/debt";
 import type { AssessmentV2Input } from "@/lib/assessment/v2/orchestrator";
 import { getNotionalCostAmount, getFamilyCategoryMeta } from "@/lib/assessment/reference-bands";
 import { resolveChildNameParts } from "@/lib/applications/child-name";
@@ -675,7 +676,7 @@ export function AssessmentFormV2({
         {
           ndiAfterNotionalSpend: output.ndiAfterNotionalSpend,
           householdNetIncome: output.householdNetIncome,
-          yearlyDebtExposure: output.yearlyDebtExposure,
+          totalDebt: totalPersonalDebt(debts),
           feesBenchmarkPct: output.feesBenchmarkPct ?? 0,
         },
         referenceBundle.lifestyleSqueezeBands
@@ -1732,7 +1733,7 @@ export function AssessmentFormV2({
         </p>
         <WorkbookTable>
           <WBRow label="CALCULATING NDI over NET INCOME %" auto={pct(squeeze?.ndiOverIncomePct)} />
-          <WBRow label="CALCULATING (NDI after YEARLY DEBT EXPOSURE) over NET INCOME) LIFESTYLE RATIO %" auto={pct(squeeze?.postDebtLifestylePct)} />
+          <WBRow label="CALCULATING (NDI after TOTAL DEBT OVER 5 YEARS) over NET INCOME) LIFESTYLE RATIO %" auto={pct(squeeze?.postDebtLifestylePct)} />
           <WBRow label="SCHOOL FEES USE BENCHMARKING" auto={fmtMoney(squeeze?.feesBenchmarkAmount)} />
           <WBRow label="LIFESTYLE SQUEEZE AFFORDABILITY RATIO" auto={pct(squeeze?.squeezeRatio)} emphasis />
           <WBRow label="LIFESTYLE SQUEEZE AFFORDABILITY STATUS" auto={squeeze?.statusLabel ?? "—"} emphasis />

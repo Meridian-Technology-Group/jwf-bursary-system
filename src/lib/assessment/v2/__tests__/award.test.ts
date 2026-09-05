@@ -15,9 +15,9 @@ import {
   affordabilityBands,
   incomeCategoryBands,
   propertyEquityBands,
-  financialEquityBands,
-  debtRatioBands,
-  lifestyleSqueezeBands,
+  financialEquityBandsRespec,
+  debtRatioBandsRespec,
+  lifestyleSqueezeBandsRespec,
 } from '../../../../../prisma/seed-data/profiling-reference'
 
 // Real seed-data module (CALC-01), like the sibling CALC-03/04/05 test files —
@@ -29,9 +29,9 @@ const ref: ReferenceBundle = {
   affordabilityBands,
   incomeCategoryBands,
   propertyEquityBands,
-  financialEquityBands,
-  debtRatioBands,
-  lifestyleSqueezeBands,
+  financialEquityBands: financialEquityBandsRespec,
+  debtRatioBands: debtRatioBandsRespec,
+  lifestyleSqueezeBands: lifestyleSqueezeBandsRespec,
 }
 
 const CATEGORIES = [1, 2, 3, 4, 5, 6] as const

@@ -9,9 +9,9 @@ import {
   affordabilityBands,
   incomeCategoryBands,
   propertyEquityBands,
-  financialEquityBands,
-  debtRatioBands,
-  lifestyleSqueezeBands,
+  financialEquityBandsRespec,
+  debtRatioBandsRespec,
+  lifestyleSqueezeBandsRespec,
 } from '../../../../../prisma/seed-data/profiling-reference'
 
 // Latest cushion generation first — the app bundle is deduped latest-wins
@@ -22,9 +22,9 @@ const ref: ReferenceBundle = {
   affordabilityBands,
   incomeCategoryBands,
   propertyEquityBands,
-  financialEquityBands,
-  debtRatioBands,
-  lifestyleSqueezeBands,
+  financialEquityBands: financialEquityBandsRespec,
+  debtRatioBands: debtRatioBandsRespec,
+  lifestyleSqueezeBands: lifestyleSqueezeBandsRespec,
 }
 
 function earner(annualSalaryPaye: number): AssessorIncomeRecord {
@@ -119,9 +119,10 @@ describe('calculateAssessmentV2 — modest-income renting family with debts', ()
   })
 
   it('debt-over-NDI ratio and status label are consistent with a small debt burden', () => {
-    // yearlyDebtExposure 1,600 − 400 = 1,200; ratio 1,200/30,000 = 0.04 → the 0–0.1 band.
+    // yearlyDebtExposure 1,600 − 400 = 1,200; ratio 1,200/30,000 = 0.04 →
+    // the respec's 0.03–0.07 band.
     expect(result.debtOverNdiRatio).toBeCloseTo(0.04, 6)
-    expect(result.debtStatusLabel).toBe('SMALL DEBT LEVEL, NEGLIGIBLE CREDIT RISK - level 1')
+    expect(result.debtStatusLabel).toBe('MANAGEABLE DEBT, MEDIUM CREDIT RISK')
   })
 
   it('renting always resolves property category 1 regardless of the (empty) property assets', () => {

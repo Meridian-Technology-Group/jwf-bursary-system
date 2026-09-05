@@ -14,8 +14,8 @@ import type { PropertyAssetsRecord, DebtsRecord } from '@/types/assessment-v2'
 import {
   incomeCategoryBands,
   propertyEquityBands,
-  financialEquityBands,
-  lifestyleSqueezeBands,
+  financialEquityBandsRespec,
+  lifestyleSqueezeBandsRespec,
 } from '../../../../../prisma/seed-data/profiling-reference'
 
 // Band rows are driven from the real seed-data module (CALC-01) rather than
@@ -259,9 +259,11 @@ describe('financialEquityLabel — Appendix C.3 boundaries', () => {
     //    savings" band is split into three, and the two above it shift label.
     [0.01, 'negligible savings'],
     [3_000, 'negligible savings'], // shared boundary → lower band
+    // Benchmark-bands respec (5 Sep 2026): the cushion band now runs to
+    // £37,000, aligned with the new category-1 savings cushion.
     [3_000.01, 'within default cushion savings'],
-    [20_000, 'within default cushion savings'],
-    [20_000.01, 'fair savings'],
+    [37_000, 'within default cushion savings'],
+    [37_000.01, 'fair savings'],
     [50_000, 'fair savings'],
     [50_000.01, 'decent savings'],
     [75_000, 'decent savings'],
@@ -283,49 +285,84 @@ describe('financialEquityLabel — Appendix C.3 boundaries', () => {
     [1_600_000, 'stratospheric savings - level 3'],
     [1_600_000.01, 'stratospheric savings - level 4'],
   ])('netFinancialEquity %s → %s', (value, expected) => {
-    expect(financialEquityLabel(value, financialEquityBands)).toBe(expected)
+    expect(financialEquityLabel(value, financialEquityBandsRespec)).toBe(expected)
   })
 })
 
-describe('lifestyleSqueeze', () => {
+describe('lifestyleSqueeze (benchmark-bands respec, 5 Sep 2026)', () => {
   // Harness: with householdNetIncome=100, ndiAfterNotionalSpend=100 and
-  // yearlyDebtExposure=0 (so postDebtLifestyleSpend = 100), squeezeRatio
-  // reduces algebraically to exactly `feesBenchmarkPct` — see the worked
-  // comment in profiling.ts. This lets each Appendix C.5 status band be
-  // hit with a clean, self-documenting ratio value.
+  // totalDebt=0 (so the debt-adjusted NDI = 100), squeezeRatio reduces
+  // algebraically to exactly `feesBenchmarkPct` — see the worked comment in
+  // profiling.ts. This lets each Appendix C.5 status band be hit with a
+  // clean, self-documenting ratio value.
   function ratioHarness(ratio: number) {
     return lifestyleSqueeze(
       {
         ndiAfterNotionalSpend: 100,
         householdNetIncome: 100,
-        yearlyDebtExposure: 0,
+        totalDebt: 0,
         feesBenchmarkPct: ratio,
       },
-      lifestyleSqueezeBands,
+      lifestyleSqueezeBandsRespec,
     )
   }
 
   it.each([
-    [50, 'AFFORDABLE, NO IMPACT'],
-    [99.99, 'AFFORDABLE, NO IMPACT'],
-    [100, 'AFFORDABLE, NO IMPACT'], // shared boundary → lower band
-    [100.01, 'SMALL LIFESTYLE SQUEEZE, LITTLE IMPACT'],
-    [110, 'SMALL LIFESTYLE SQUEEZE, LITTLE IMPACT'],
-    [120, 'SMALL LIFESTYLE SQUEEZE, LITTLE IMPACT'],
-    [120.01, 'NOTICEABLE LIFESTYLE SQUEEZE, SOME IMPACT'],
-    [130, 'NOTICEABLE LIFESTYLE SQUEEZE, SOME IMPACT'],
-    [140, 'NOTICEABLE LIFESTYLE SQUEEZE, SOME IMPACT'],
-    [140.01, 'IMPORTANT LIFESTYLE SQUEEZE, WILL STRUGGLE'],
-    [150, 'IMPORTANT LIFESTYLE SQUEEZE, WILL STRUGGLE'],
-    [150.01, "VERY HIGH LIFESTYLE SQUEEZE, WON'T MANAGE OVER TIME"],
-    [160, "VERY HIGH LIFESTYLE SQUEEZE, WON'T MANAGE OVER TIME"],
-    [170, "VERY HIGH LIFESTYLE SQUEEZE, WON'T MANAGE OVER TIME"],
-    [170.01, 'SEVERE LIFESTYLE SQUEEZE, SET TO FAIL QUICKLY'],
-    [500, 'SEVERE LIFESTYLE SQUEEZE, SET TO FAIL QUICKLY'],
+    [-10, 'IN FINANCIAL SURVIVAL MODE, WARNING DEBT RED FLAG, NO MONEY FOR FEES'],
+    [0, 'IN FINANCIAL SURVIVAL MODE, WARNING DEBT RED FLAG, NO MONEY FOR FEES'], // shared boundary → lower band
+    [0.01, 'AFFORDABLE, NEGLIGIBLE IMPACT ON LIFESTYLE'],
+    [40, 'AFFORDABLE, NEGLIGIBLE IMPACT ON LIFESTYLE'],
+    [40.01, 'AFFORDABLE, SOME IMPACT ON LIFESTYLE'],
+    [50, 'AFFORDABLE, SOME IMPACT ON LIFESTYLE'],
+    [50.01, 'FAMILY LIFESTYLE IMPACTED, SOME RESTRICTIONS'],
+    [60, 'FAMILY LIFESTYLE IMPACTED, SOME RESTRICTIONS'],
+    [60.01, 'IMPORTANT LIFESTYLE SQUEEZE, MAIN SPEND RESTRICTIONS DUE TO FEES'],
+    [80, 'IMPORTANT LIFESTYLE SQUEEZE, MAIN SPEND RESTRICTIONS DUE TO FEES'],
+    [80.01, 'VERY HIGH LIFESTYLE SQUEEZE, FEES WILL FEEL LIKE A SACRIFICE'],
+    [90, 'VERY HIGH LIFESTYLE SQUEEZE, FEES WILL FEEL LIKE A SACRIFICE'],
+    [90.01, 'SEVERE LIFESTYLE SQUEEZE, LIKELY STRUGGLES AHEAD'],
+    [100, 'SEVERE LIFESTYLE SQUEEZE, LIKELY STRUGGLES AHEAD'],
+    [100.01, 'LIFESTYLE ONLY MAINTAINED BY INCREASING DEBT, CREDIT RISK FLAG'],
+    [200, 'LIFESTYLE ONLY MAINTAINED BY INCREASING DEBT, CREDIT RISK FLAG'],
+    [200.01, 'LIFESTYLE FRUSTRATINGLY PLAGUED BY UNUSUALLY HIGH LEVEL OF DEBT, HIGH RISK'],
+    [500, 'LIFESTYLE FRUSTRATINGLY PLAGUED BY UNUSUALLY HIGH LEVEL OF DEBT, HIGH RISK'],
   ])('squeezeRatio %s%% → %s', (ratio, expectedLabel) => {
     const result = ratioHarness(ratio)
     expect(result.squeezeRatio).toBeCloseTo(ratio, 6)
     expect(result.statusLabel).toBe(expectedLabel)
+  })
+
+  // ── Her vectors, verbatim from the 5 Sep 2026 21:27 email ────────────────
+
+  it('her DW vector: fees 9,047.85 / (5,685 − 43,000/5) → −310.39%, survival mode', () => {
+    const result = lifestyleSqueeze(
+      { ndiAfterNotionalSpend: 5_685, householdNetIncome: 60_319, totalDebt: 43_000, feesBenchmarkPct: 15 },
+      lifestyleSqueezeBandsRespec,
+    )
+    expect(result.feesBenchmarkAmount).toBeCloseTo(9_047.85, 2)
+    expect(result.squeezeRatio).toBeCloseTo(-310.39, 2)
+    expect(result.statusLabel).toBe('IN FINANCIAL SURVIVAL MODE, WARNING DEBT RED FLAG, NO MONEY FOR FEES')
+  })
+
+  it('her Kaluba vector: fees 18,662.43 / (25,621.29 − 8,000/5) → 77.69%', () => {
+    const result = lifestyleSqueeze(
+      { ndiAfterNotionalSpend: 25_621.29, householdNetIncome: 81_141, totalDebt: 8_000, feesBenchmarkPct: 23 },
+      lifestyleSqueezeBandsRespec,
+    )
+    expect(result.feesBenchmarkAmount).toBeCloseTo(18_662.43, 2)
+    expect(result.squeezeRatio).toBeCloseTo(77.69, 2)
+    expect(result.statusLabel).toBe('IMPORTANT LIFESTYLE SQUEEZE, MAIN SPEND RESTRICTIONS DUE TO FEES')
+  })
+
+  it('her AJ vector: fees 21,646.67 / (25,937.50 − 72,814/5) → 190.31%, credit-risk flag', () => {
+    const result = lifestyleSqueeze(
+      // 21,646.67 = 30% of the household's 72,155.57 net income (category 9).
+      { ndiAfterNotionalSpend: 25_937.5, householdNetIncome: 72_155.566_67, totalDebt: 72_814, feesBenchmarkPct: 30 },
+      lifestyleSqueezeBandsRespec,
+    )
+    expect(result.feesBenchmarkAmount).toBeCloseTo(21_646.67, 2)
+    expect(result.squeezeRatio).toBeCloseTo(190.31, 2)
+    expect(result.statusLabel).toBe('LIFESTYLE ONLY MAINTAINED BY INCREASING DEBT, CREDIT RISK FLAG')
   })
 
   it('computes ndiOverIncomePct and postDebtLifestylePct as percentages', () => {
@@ -333,10 +370,10 @@ describe('lifestyleSqueeze', () => {
       {
         ndiAfterNotionalSpend: 20_000,
         householdNetIncome: 40_000,
-        yearlyDebtExposure: 5_000,
+        totalDebt: 25_000, // /5 = 5,000 a year in this view
         feesBenchmarkPct: 19,
       },
-      lifestyleSqueezeBands,
+      lifestyleSqueezeBandsRespec,
     )
     expect(result.ndiOverIncomePct).toBeCloseTo(50, 6) // 20,000 / 40,000
     expect(result.postDebtLifestylePct).toBeCloseTo(37.5, 6) // (20,000 − 5,000) / 40,000
@@ -348,29 +385,29 @@ describe('lifestyleSqueeze', () => {
       {
         ndiAfterNotionalSpend: 10_000,
         householdNetIncome: 0,
-        yearlyDebtExposure: 2_000,
+        totalDebt: 10_000,
         feesBenchmarkPct: 19,
       },
-      lifestyleSqueezeBands,
+      lifestyleSqueezeBandsRespec,
     )
     expect(result.ndiOverIncomePct).toBeNull()
     expect(result.postDebtLifestylePct).toBeNull()
     expect(result.feesBenchmarkAmount).toBe(0)
-    // postDebtLifestyleSpend (10,000 − 2,000 = 8,000) is non-zero, so the
+    // The debt-adjusted NDI (10,000 − 2,000 = 8,000) is non-zero, so the
     // squeeze ratio is still computable even though the household has no
     // net income on record.
     expect(result.squeezeRatio).not.toBeNull()
   })
 
-  it('÷0 guard: ndiAfterNotionalSpend === yearlyDebtExposure → squeezeRatio and statusLabel are null', () => {
+  it('÷0 guard: ndiAfterNotionalSpend === totalDebt/5 → squeezeRatio and statusLabel are null', () => {
     const result = lifestyleSqueeze(
       {
         ndiAfterNotionalSpend: 5_000,
         householdNetIncome: 40_000,
-        yearlyDebtExposure: 5_000,
+        totalDebt: 25_000,
         feesBenchmarkPct: 19,
       },
-      lifestyleSqueezeBands,
+      lifestyleSqueezeBandsRespec,
     )
     expect(result.squeezeRatio).toBeNull()
     expect(result.statusLabel).toBeNull()
@@ -381,8 +418,8 @@ describe('lifestyleSqueeze', () => {
 
   it('÷0 guard: both denominators zero → every ratio/percentage is null except feesBenchmarkAmount', () => {
     const result = lifestyleSqueeze(
-      { ndiAfterNotionalSpend: 0, householdNetIncome: 0, yearlyDebtExposure: 0, feesBenchmarkPct: 19 },
-      lifestyleSqueezeBands,
+      { ndiAfterNotionalSpend: 0, householdNetIncome: 0, totalDebt: 0, feesBenchmarkPct: 19 },
+      lifestyleSqueezeBandsRespec,
     )
     expect(result.ndiOverIncomePct).toBeNull()
     expect(result.postDebtLifestylePct).toBeNull()

@@ -240,7 +240,7 @@ export function calculateAssessmentV2(input: AssessmentV2Input, ref: ReferenceBu
     {
       ndiAfterNotionalSpend: notionalSpend.ndiAfterNotionalSpend,
       householdNetIncome,
-      yearlyDebtExposure,
+      totalDebt: totalPersonalDebt(input.debts),
       feesBenchmarkPct: feesPct ?? 0,
     },
     ref.lifestyleSqueezeBands,

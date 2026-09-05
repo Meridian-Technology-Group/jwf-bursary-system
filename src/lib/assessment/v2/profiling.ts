@@ -237,8 +237,13 @@ export interface LifestyleSqueezeInput {
   ndiAfterNotionalSpend: number
   /** Household net income (C40). */
   householdNetIncome: number
-  /** Yearly debt exposure (C124, from the CALC-04 debt module). */
-  yearlyDebtExposure: number
+  /**
+   * Total itemised personal debt (`totalPersonalDebt`, CALC-04). This view
+   * gives the household a fixed FIVE years to repay it (Charlotte's
+   * benchmark-bands respec, 5 Sep 2026) — deliberately NOT the
+   * schooling-years-based repayments or the savings-netted exposure.
+   */
+  totalDebt: number
   /**
    * Fees-benchmark % for the household's income category (Appendix C.1,
    * `feesBenchmarkPct(...)` above) — whole percentage points, e.g. `30` for
@@ -250,20 +255,23 @@ export interface LifestyleSqueezeInput {
 export interface LifestyleSqueezeResult {
   /** NDI ÷ net income, as a percentage (100 = 100%). `null` when net income is 0. */
   ndiOverIncomePct: number | null
-  /** (NDI − yearly debt exposure) ÷ net income, as a percentage. `null` when net income is 0. */
+  /** (NDI − totalDebt/5) ÷ net income, as a percentage. `null` when net income is 0. */
   postDebtLifestylePct: number | null
   /** feesBenchmarkPct% of net income, in £. */
   feesBenchmarkAmount: number
   /**
-   * feesBenchmarkAmount ÷ (NDI − yearly debt exposure), as a percentage
-   * (100 = 100%, matching `LifestyleSqueezeBand`'s own scale). `null` when
-   * the denominator is 0 — there is no meaningful squeeze ratio against zero
-   * post-debt lifestyle spend.
+   * feesBenchmarkAmount ÷ (NDI − totalDebt/5), as a percentage (100 = 100%,
+   * matching `LifestyleSqueezeBand`'s own scale). `null` when the denominator
+   * is 0 — there is no meaningful squeeze ratio against zero debt-adjusted
+   * NDI.
    */
   squeezeRatio: number | null
   /** Appendix C.5 status label for `squeezeRatio`; `null` whenever `squeezeRatio` is `null`. */
   statusLabel: string | null
 }
+
+/** The fixed repayment horizon the lifestyle-squeeze view grants a household's debt. */
+const SQUEEZE_DEBT_REPAYMENT_YEARS = 5
 
 /**
  * Lifestyle-squeeze ratio + status (workbook rows C131–C135, Appendix
@@ -271,31 +279,39 @@ export interface LifestyleSqueezeResult {
  * percentage points (100 = 100%) to match `LifestyleSqueezeBand`'s own
  * `ratioFloor`/`ratioCeiling` scale — see the seed-data doc comment.
  *
- * Division-by-zero guard: both post-debt-lifestyle-spend-driven figures
- * (`squeezeRatio`, and by extension `statusLabel`) require a non-zero
- * `ndiAfterNotionalSpend − yearlyDebtExposure`; `ndiOverIncomePct` and
- * `postDebtLifestylePct` require a non-zero `householdNetIncome`. Any of
- * these denominators being exactly 0 yields `null` for that field rather
- * than `Infinity`/`NaN` — there is no meaningful "% of nothing" figure, and a
- * `null` is a clean signal for the UI to render "n/a" instead of a
- * nonsensical number.
+ * Benchmark-bands respec (Charlotte, 5 Sep 2026): the debt figure in this
+ * view is the household's TOTAL debt spread over a fixed five years ("I am
+ * giving the household five years to repay their debt in this view") —
+ * replacing the previous savings-netted yearly debt exposure. Her vectors:
+ * DW 9,047.85 / (5,685 − 43,000/5) = −310.39%; Kaluba 18,662.43 /
+ * (25,621.29 − 8,000/5) = 77.69%.
+ *
+ * Division-by-zero guard: both debt-adjusted figures (`squeezeRatio`, and by
+ * extension `statusLabel`) require a non-zero `ndiAfterNotionalSpend −
+ * totalDebt/5`; `ndiOverIncomePct` and `postDebtLifestylePct` require a
+ * non-zero `householdNetIncome`. Any of these denominators being exactly 0
+ * yields `null` for that field rather than `Infinity`/`NaN` — there is no
+ * meaningful "% of nothing" figure, and a `null` is a clean signal for the
+ * UI to render "n/a" instead of a nonsensical number.
  */
 export function lifestyleSqueeze(
   input: LifestyleSqueezeInput,
   bands: readonly LifestyleSqueezeBandRow[],
 ): LifestyleSqueezeResult {
-  const { ndiAfterNotionalSpend, householdNetIncome, yearlyDebtExposure, feesBenchmarkPct: pct } = input
+  const { ndiAfterNotionalSpend, householdNetIncome, totalDebt, feesBenchmarkPct: pct } = input
+
+  const fiveYearDebtRepayment = totalDebt / SQUEEZE_DEBT_REPAYMENT_YEARS
 
   const ndiOverIncomePct = householdNetIncome === 0 ? null : (ndiAfterNotionalSpend / householdNetIncome) * 100
 
   const postDebtLifestylePct =
     householdNetIncome === 0
       ? null
-      : ((ndiAfterNotionalSpend - yearlyDebtExposure) / householdNetIncome) * 100
+      : ((ndiAfterNotionalSpend - fiveYearDebtRepayment) / householdNetIncome) * 100
 
   const feesBenchmarkAmount = (pct / 100) * householdNetIncome
 
-  const postDebtLifestyleSpend = ndiAfterNotionalSpend - yearlyDebtExposure
+  const postDebtLifestyleSpend = ndiAfterNotionalSpend - fiveYearDebtRepayment
   const squeezeRatio = postDebtLifestyleSpend === 0 ? null : (feesBenchmarkAmount / postDebtLifestyleSpend) * 100
 
   const statusLabel = squeezeRatio === null ? null : resolveLifestyleSqueezeBand(bands, squeezeRatio)?.statusLabel ?? null
