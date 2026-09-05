@@ -32,6 +32,7 @@ import { gapReasons } from "./seed-data/gap-reasons";
 import { closeReasons } from "./seed-data/close-reasons";
 import {
   notionalCostConfigs,
+  savingsCushionRespecConfigs,
   familyCategoryMetas,
   affordabilityBands,
   incomeCategoryBands,
@@ -166,7 +167,7 @@ async function seedCloseReasons(): Promise<void> {
 
 async function seedNotionalCostConfigs(): Promise<void> {
   section("Notional cost configs (CALC-01)");
-  for (const cfg of notionalCostConfigs) {
+  for (const cfg of [...notionalCostConfigs, ...savingsCushionRespecConfigs]) {
     await prisma.notionalCostConfig.upsert({
       where: {
         category_costType_effectiveFrom: {
@@ -179,7 +180,7 @@ async function seedNotionalCostConfigs(): Promise<void> {
       update: { amount: cfg.amount },
     });
   }
-  log(`Upserted ${notionalCostConfigs.length} notional cost configs`);
+  log(`Upserted ${notionalCostConfigs.length + savingsCushionRespecConfigs.length} notional cost configs`);
 }
 
 async function seedFamilyCategoryMetas(): Promise<void> {

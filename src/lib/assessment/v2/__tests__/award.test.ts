@@ -170,31 +170,27 @@ describe('affordabilityAdjustedDI — category adjustment can go negative', () =
   })
 })
 
-// ─── recommendedPayableFees (C160) — Appendix F vector 5 ───────────────────
+// ─── recommendedPayableFees (C160) — actual leg, floored at £0 ─────────────
 
-describe('recommendedPayableFees — Appendix F vector 5 (award floor)', () => {
-  it.each(CATEGORIES)(
-    'category %s: with the £32,600 example, min-of-three is negative → recommended payable fees is £0',
-    (category) => {
-      const theoretical = theoreticalBenchmarkDI(32_600, category, ref)
-      const affordability = affordabilityAdjustedDI(32_600, category, ref.affordabilityBands)
-      // Actual leg deliberately not the binding constraint here (Number.POSITIVE_INFINITY) —
-      // the vector's point is that theoretical/affordability alone floor the award to 0.
-      const result = recommendedPayableFees(Number.POSITIVE_INFINITY, theoretical, affordability)
-      expect(result).toBe(0)
-    },
-  )
-
-  it('is the smallest of the three when all three are positive', () => {
-    expect(recommendedPayableFees(30_000, 10_000, 20_000)).toBe(10_000)
+describe('recommendedPayableFees — actual leg (min-of-three retired, 5 Sep 2026)', () => {
+  it('is the actual leg when positive', () => {
+    expect(recommendedPayableFees(1_000)).toBe(1_000)
+    expect(recommendedPayableFees(30_000)).toBe(30_000)
   })
 
-  it('floors at £0 even when every leg is negative', () => {
-    expect(recommendedPayableFees(-5_000, -10_000, -1_000)).toBe(0)
+  it('floors at £0 when the actual leg is negative', () => {
+    expect(recommendedPayableFees(-5_000)).toBe(0)
   })
 
-  it('picks the actual leg when it is the smallest', () => {
-    expect(recommendedPayableFees(1_000, 5_000, 8_000)).toBe(1_000)
+  it('the comparison legs do not move it (Appendix F vector 5 example)', () => {
+    // With the workbook's £32,600 example every theoretical/affordability leg
+    // is negative — under the retired min-of-three rule that forced a £0
+    // award. Now only the actual leg matters.
+    for (const category of CATEGORIES) {
+      expect(theoreticalBenchmarkDI(32_600, category, ref)).toBeLessThan(0)
+      void affordabilityAdjustedDI(32_600, category, ref.affordabilityBands)
+    }
+    expect(recommendedPayableFees(12_000)).toBe(12_000)
   })
 })
 

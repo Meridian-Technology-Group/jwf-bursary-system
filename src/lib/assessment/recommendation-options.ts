@@ -177,9 +177,10 @@ export function buildOptionScenarios(
 /**
  * The v2 recommendation surface compares the THREE award legs the engine
  * produced (Actual remaining DI / Theoretical benchmark DI / Affordability-
- * adjusted DI) rather than the v1 bursary/scholarship/sibling scenarios — the
- * min of the three (floored at £0) is `recommendedPayableFees` (plan §CALC-08
- * item 2). Pure: it reads the assessment's persisted snapshot legs; it does not
+ * adjusted DI) rather than the v1 bursary/scholarship/sibling scenarios. The
+ * ACTUAL leg (floored at £0) is `recommendedPayableFees` — 5 Sep 2026, the
+ * min-of-three rule is retired; the other two legs are comparison views.
+ * Pure: it reads the assessment's persisted snapshot legs; it does not
  * recompute anything.
  */
 export interface AwardLegRow {
@@ -187,33 +188,43 @@ export interface AwardLegRow {
   label: string;
   /** The leg's disposable-income value from the assessment snapshot (may be negative). */
   value: number;
-  /** True for the smallest leg — the one the recommended payable fees derives from. */
-  isMin: boolean;
+  /**
+   * True for the ACTUAL leg — the one the recommended payable fees derives
+   * from (5 Sep 2026: min-of-three retired; the other two legs are the
+   * assessor's end-of-assessment comparison views).
+   */
+  isRecommendedSource: boolean;
 }
 
 /**
- * Builds the ordered three-leg comparison for the v2 recommendation screen,
- * flagging the minimum leg (before the £0 floor `recommendedPayableFees`
- * applies). Ties flag every leg at the minimum.
+ * Builds the ordered three-leg comparison for the v2 recommendation screen.
+ * The actual leg is flagged as the recommendation's source (floored at £0 by
+ * `recommendedPayableFees`); the theoretical and affordability legs are shown
+ * for comparison only.
  */
 export function buildV2AwardLegs(input: {
   actualRemainingDi: number;
   theoreticalBenchmarkDi: number;
   affordabilityAdjustedDi: number;
 }): AwardLegRow[] {
-  const legs: Array<Omit<AwardLegRow, "isMin">> = [
-    { key: "actual", label: "Actual remaining DI", value: input.actualRemainingDi },
+  return [
+    {
+      key: "actual",
+      label: "Actual remaining DI",
+      value: input.actualRemainingDi,
+      isRecommendedSource: true,
+    },
     {
       key: "theoretical",
       label: "Theoretical benchmark DI",
       value: input.theoreticalBenchmarkDi,
+      isRecommendedSource: false,
     },
     {
       key: "affordability",
       label: "Affordability-adjusted DI",
       value: input.affordabilityAdjustedDi,
+      isRecommendedSource: false,
     },
   ];
-  const min = Math.min(...legs.map((l) => l.value));
-  return legs.map((l) => ({ ...l, isMin: l.value === min }));
 }

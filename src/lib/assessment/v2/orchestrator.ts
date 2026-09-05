@@ -33,6 +33,7 @@ import { calculateEarnerAggregateIncome, calculateHouseholdNetIncome } from './i
 import { normaliseManualAdjustment } from './manual-adjustment'
 import { calculateNotionalSpend } from './notional-spend'
 import {
+  totalPersonalDebt,
   calculateDerivedYearlyDebtRepayments,
   calculateYearlyDebtExposure,
   calculateDebtOverNdiRatio,
@@ -94,8 +95,6 @@ export interface AssessmentV2Input {
   // ── Savings (feeds the savings test, C72–C81) ─────────────────────────
   cashSavings: number
   isasPepsShares: number
-  /** Optional override; defaults from `ReferenceBundle.familyCategoryMetas` when omitted. */
-  schoolAgeChildrenCount?: number
   schoolingYearsRemaining: number
 
   // ── Property assets + debt module (CALC-04/05) ────────────────────────
@@ -195,14 +194,14 @@ export function calculateAssessmentV2(input: AssessmentV2Input, ref: ReferenceBu
   const earnerAggregateIncome = calculateEarnerAggregateIncome(input.earners)
   const householdNetIncome = calculateHouseholdNetIncome(input.earners, manualAdjustment)
 
-  // 2. Derived yearly debt repayments (CALC-04) — precedes notional spend
-  //    because the savings test needs it.
+  // 2. Debt figures (CALC-04) — the savings test (respec v3) nets TOTAL debt
+  //    off total savings; the yearly-repayments split feeds the debt module.
   const derivedYearlyDebtRepayments = calculateDerivedYearlyDebtRepayments(
     input.debts,
     input.schoolingYearsRemaining,
   )
 
-  // 3. Notional spend, incl. the savings test (CALC-03), fed the debt repayments.
+  // 3. Notional spend, incl. the savings test (CALC-03), fed the total debt.
   const notionalSpend = calculateNotionalSpend(
     {
       familyTypeCategory: category,
@@ -217,9 +216,8 @@ export function calculateAssessmentV2(input: AssessmentV2Input, ref: ReferenceBu
       feeInsuranceAnnual: input.feeInsuranceAnnual,
       cashSavings: input.cashSavings,
       isasPepsShares: input.isasPepsShares,
-      schoolAgeChildrenCount: input.schoolAgeChildrenCount,
       schoolingYearsRemaining: input.schoolingYearsRemaining,
-      derivedYearlyDebtRepayments,
+      totalDebt: totalPersonalDebt(input.debts),
     },
     ref,
   )
@@ -266,11 +264,10 @@ export function calculateAssessmentV2(input: AssessmentV2Input, ref: ReferenceBu
     ref.affordabilityBands,
     maxPayableFeesInclVat(input.annualFees, input.vatRate),
   )
-  const recommendedPayableFeesValue = recommendedPayableFees(
-    actualRemainingDi,
-    theoreticalBenchmarkDi,
-    affordabilityAdjustedDi,
-  )
+  // 5 Sep 2026 — the recommendation is the actual leg alone (min-of-three
+  // retired, see `recommendedPayableFees`); the other two legs above are
+  // computed for the assessor's comparison views only.
+  const recommendedPayableFeesValue = recommendedPayableFees(actualRemainingDi)
 
   const summary =
     input.nextYearFees === undefined || input.bursaryAwardBeforeVat === undefined

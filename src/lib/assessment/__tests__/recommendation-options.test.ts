@@ -73,32 +73,24 @@ describe("buildV2AwardLegs (CALC-08)", () => {
     expect(legs.map((l) => l.value)).toEqual([5000, 8000, 3000]);
   });
 
-  it("flags only the minimum leg", () => {
+  it("flags the ACTUAL leg as the recommendation's source (min-of-three retired, 5 Sep 2026)", () => {
     const legs = buildV2AwardLegs({
       actualRemainingDi: 5000,
       theoreticalBenchmarkDi: 8000,
       affordabilityAdjustedDi: 3000,
     });
-    expect(legs.find((l) => l.key === "affordability")!.isMin).toBe(true);
-    expect(legs.find((l) => l.key === "actual")!.isMin).toBe(false);
-    expect(legs.find((l) => l.key === "theoretical")!.isMin).toBe(false);
+    // The affordability leg is the smallest here — irrelevant: actual wins.
+    expect(legs.find((l) => l.key === "actual")!.isRecommendedSource).toBe(true);
+    expect(legs.find((l) => l.key === "theoretical")!.isRecommendedSource).toBe(false);
+    expect(legs.find((l) => l.key === "affordability")!.isRecommendedSource).toBe(false);
   });
 
-  it("handles negative legs (min-of-three can be negative before the £0 floor)", () => {
+  it("still flags the actual leg when it is negative (the £0 floor applies later)", () => {
     const legs = buildV2AwardLegs({
       actualRemainingDi: -7859,
       theoreticalBenchmarkDi: -100,
       affordabilityAdjustedDi: 652,
     });
-    expect(legs.find((l) => l.key === "actual")!.isMin).toBe(true);
-  });
-
-  it("flags every leg at the minimum on a tie", () => {
-    const legs = buildV2AwardLegs({
-      actualRemainingDi: 1000,
-      theoreticalBenchmarkDi: 1000,
-      affordabilityAdjustedDi: 1000,
-    });
-    expect(legs.every((l) => l.isMin)).toBe(true);
+    expect(legs.find((l) => l.key === "actual")!.isRecommendedSource).toBe(true);
   });
 });

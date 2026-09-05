@@ -328,7 +328,7 @@ export default async function SettingsPage() {
           <div className="mt-6 rounded-xl border border-slate-200 bg-white p-6">
             <SectionHeader
               title="Gap Reasons"
-              description="Reasons for a gap between the recommended (min-of-three) and confirmed payable fees (Appendix E), required whenever a recommendation's gap amount is non-zero. Same deprecate-never-delete convention as reason codes."
+              description="Reasons for a gap between the recommended (actual remaining DI) and confirmed payable fees (Appendix E), required whenever a recommendation's gap amount is non-zero. Same deprecate-never-delete convention as reason codes."
             />
             <GapReasonTable gapReasons={gapReasons} />
           </div>

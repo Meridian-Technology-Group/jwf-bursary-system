@@ -17,8 +17,7 @@
  * Pure module — no DB, no React. Reference values arrive via `ReferenceBundle`.
  */
 
-import { calculateDerivedSavings } from '../stage2-assets'
-import { getNotionalCostAmount, getFamilyCategoryMeta } from '../reference-bands'
+import { getNotionalCostAmount } from '../reference-bands'
 import type { NotionalSpendInput, NotionalSpendLine, NotionalSpendResult, ReferenceBundle } from './types'
 
 /** Looks up a notional cost, throwing if the reference bundle is missing the row (a data-integrity bug, not a business case). */
@@ -72,8 +71,15 @@ function normaliseOverride(value: number | null | undefined): number | null {
  *   8. Notional public transport (C67/68) — deduction, only when `usesPublicTransport`.
  *   9. JWF Bursary Recipient Allowance (C70) — deduction, always applied.
  *   10. Notional savings benchmark (C78) — deduction, always applied.
- *   11. Savings test add-back (C80/C81) — `max(0, adjustedSavings −
- *       derivedYearlyDebtRepayments − notionalSavingsBenchmark)`.
+ *   11. Savings test add-back (C80/C81) — respec v3 (Charlotte, 5 Sep 2026
+ *       18:05, superseding the same-day v2): the test no longer depends on
+ *       the remaining school years at all. Net savings = total savings −
+ *       total personal debt; savingsTestNumber = net savings − the
+ *       SAVINGS_CUSHION allowance; when positive, 10% of it is added back.
+ *       (v2's years-spread version let a £300k-savings household escape the
+ *       test entirely — her worked examples: net 45,000 vs cushion 37,000 →
+ *       test 8,000 → add back 800.) The C78 notional-savings benchmark stays
+ *       as its own deduction and does not feed the test.
  *   12. Fee-insurance add-back (C83) — the full `feeInsuranceAnnual`.
  */
 export function calculateNotionalSpend(
@@ -89,6 +95,7 @@ export function calculateNotionalSpend(
   const publicTransportAmount = requireNotionalCost(ref, category, 'PUBLIC_TRANSPORT')
   const jwfAllowanceAmount = requireNotionalCost(ref, category, 'JWF_ALLOWANCE')
   const notionalSavingsBenchmarkAmount = requireNotionalCost(ref, category, 'NOTIONAL_SAVINGS')
+  const savingsCushionAmount = requireNotionalCost(ref, category, 'SAVINGS_CUSHION')
 
   // ── C56/C57 — rent + primary add-back ──────────────────────────────────
   const rentLine = deduction('rent', 'Notional rent (C56)', rentAmount)
@@ -149,15 +156,15 @@ export function calculateNotionalSpend(
   )
 
   // ── C72–C81 — savings adjustment ────────────────────────────────────────
-  const schoolAgeChildrenCount =
-    input.schoolAgeChildrenCount ?? getFamilyCategoryMeta(ref.familyCategoryMetas, category)?.schoolAgeChildren ?? 0
-
-  const adjustedSavings = calculateDerivedSavings(
-    input.cashSavings,
-    input.isasPepsShares,
-    schoolAgeChildrenCount,
-    input.schoolingYearsRemaining,
-  )
+  // Savings-test respec (Charlotte, 5 Sep 2026): adjusted savings is the
+  // household's total savings spread over the remaining school years. The
+  // former per-school-age-child division (v1's `calculateDerivedSavings`) is
+  // gone — her worked example divides £9,700 by 7 years only, for a family
+  // with 2 school-age children.
+  const adjustedSavings =
+    input.schoolingYearsRemaining > 0
+      ? (input.cashSavings + input.isasPepsShares) / input.schoolingYearsRemaining
+      : 0
 
   const notionalSavingsBenchmarkLine = deduction(
     'notionalSavingsBenchmark',
@@ -165,14 +172,18 @@ export function calculateNotionalSpend(
     notionalSavingsBenchmarkAmount,
   )
 
-  // C80 — signed, NOT floored (kept for the `savingsTestNumber` snapshot column).
-  const savingsTestNumber =
-    adjustedSavings - input.derivedYearlyDebtRepayments - notionalSavingsBenchmarkAmount
-  // C81 — add back only if positive.
+  // C80 — signed, NOT floored (kept for the `savingsTestNumber` snapshot
+  // column). Respec v3: net savings (total savings − total personal debt)
+  // tested against the SAVINGS_CUSHION, with no years dependence. The C78
+  // notional-savings benchmark above is a separate deduction and does not
+  // feed the test.
+  const netSavings = input.cashSavings + input.isasPepsShares - input.totalDebt
+  const savingsTestNumber = netSavings - savingsCushionAmount
+  // C81 — when the test is positive, 10% of it is added back.
   const savingsTestAddBackLine = addBack(
     'savingsTestAddBack',
     'Savings test add-back (C81)',
-    Math.max(0, savingsTestNumber),
+    0.1 * Math.max(0, savingsTestNumber),
   )
 
   // ── C83 — school-fees insurance, added back in full ─────────────────────

@@ -74,6 +74,24 @@ export const notionalCostConfigs = [
   { category: 6, costType: "SAVINGS_CUSHION" as const, amount: 28500 },
 ].map((row) => ({ ...row, effectiveFrom: EFFECTIVE_FROM }));
 
+// ─── Savings-test respec (Charlotte, 5 Sep 2026) ──────────────────────────
+// The cushion now feeds the savings test directly (it was display-only), so
+// she raised the values "to ensure that the Foundation is never seen so
+// harsh". A NEW generation, not an edit of the 2026-09-01 rows — deployed
+// environments get the same rows via migration
+// 20260905130000_savings_cushion_respec (keep the two in sync).
+
+const CUSHION_RESPEC_EFFECTIVE_FROM = new Date("2026-09-06");
+
+export const savingsCushionRespecConfigs = [
+  { category: 1, costType: "SAVINGS_CUSHION" as const, amount: 37000 },
+  { category: 2, costType: "SAVINGS_CUSHION" as const, amount: 39000 },
+  { category: 3, costType: "SAVINGS_CUSHION" as const, amount: 41000 },
+  { category: 4, costType: "SAVINGS_CUSHION" as const, amount: 43000 },
+  { category: 5, costType: "SAVINGS_CUSHION" as const, amount: 45000 },
+  { category: 6, costType: "SAVINGS_CUSHION" as const, amount: 47000 },
+].map((row) => ({ ...row, effectiveFrom: CUSHION_RESPEC_EFFECTIVE_FROM }));
+
 // ─── Appendix A row 1 — family-category metadata ──────────────────────────
 
 export const familyCategoryMetas = [

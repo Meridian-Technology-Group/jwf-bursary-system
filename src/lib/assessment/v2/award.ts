@@ -158,9 +158,24 @@ export function affordabilityAdjustedDI(
 
 // ─── C160 — Recommended payable fees ───────────────────────────────────────
 
-/** Recommended yearly payable fees (C160): the smallest of the three legs, floored at £0. */
-export function recommendedPayableFees(actual: number, theoretical: number, affordability: number): number {
-  return Math.max(0, Math.min(actual, theoretical, affordability))
+/**
+ * Recommended yearly payable fees (C160): the ACTUAL remaining DI, floored at
+ * £0.
+ *
+ * **5 Sep 2026 — Charlotte retires the min-of-three rule.** Her words: "The
+ * 'ACTUAL REMAINING DI' total should take precedence as the default
+ * 'recommended payable fee' suggestion … the Actual remaining DI should
+ * remain the recommended payable fees value as this is derived from the
+ * applied deductions." Real form data and the applied deductions always take
+ * precedence; the theoretical benchmark and affordability legs are still
+ * computed and shown to the assessor at the end as comparison views, but no
+ * longer bind the recommendation. The gap (C172) therefore also derives from
+ * this actual-based figure. Reason codes 9/10 ("Affordability Adjusted /
+ * Theoretical Benchmark Calculation Preferred") record when she deliberately
+ * awards off one of the comparison legs instead.
+ */
+export function recommendedPayableFees(actual: number): number {
+  return Math.max(0, actual)
 }
 
 // ─── C163–C172 — Award summary + VAT treatment ─────────────────────────────

@@ -233,7 +233,7 @@ export async function RecommendationSurface({
     }));
 
   // ── v2 recommendation surface (CALC-08) ────────────────────────────────────
-  // Branch at the page level: v2 assessments render the min-of-three / gap
+  // Branch at the page level: v2 assessments render the actual-leg / gap
   // surface off the persisted snapshot columns; v1 falls through unchanged.
   if (engineVersion === "v2") {
     // Merge historic gap reasons (same pattern as reason codes) so a saved gap

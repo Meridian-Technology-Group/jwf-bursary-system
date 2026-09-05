@@ -135,49 +135,9 @@ export function wrapInEmailTemplate(bodyContent: string): string {
             </td>
           </tr>
 
-          <!-- ── DIVIDER ──────────────────────────────────────────────── -->
-          <tr>
-            <td style="padding: 0 36px;">
-              <div style="
-                border-top: 1px solid #e8e8e8;
-                height: 1px;
-              "></div>
-            </td>
-          </tr>
-
-          <!-- ── FOOTER ───────────────────────────────────────────────── -->
-          <tr>
-            <td
-              style="
-                padding: 20px 36px 28px;
-                background-color: #f9f9f9;
-              "
-            >
-              <p style="
-                margin: 0;
-                font-family: Arial, Helvetica, sans-serif;
-                font-size: 11px;
-                color: #888888;
-                line-height: 1.6;
-                text-align: center;
-              ">
-                This is an automated message from the John Whitgift Foundation
-                Bursary Assessment System.<br />
-                Please do not reply directly to this email.
-                If you have questions, contact the Bursary Office directly.
-              </p>
-              <p style="
-                margin: 12px 0 0;
-                font-family: Arial, Helvetica, sans-serif;
-                font-size: 10px;
-                color: #bbbbbb;
-                text-align: center;
-                letter-spacing: 0.3px;
-              ">
-                &copy; ${new Date().getFullYear()} John Whitgift Foundation. All rights reserved.
-              </p>
-            </td>
-          </tr>
+          <!-- Footer removed at client request (Charlotte, 4 Sep 2026) — the
+               automated-message disclaimer and copyright block are gone; the
+               body content ends the email. -->
 
         </table>
         <!-- /inner container -->

@@ -141,29 +141,23 @@ export interface NotionalSpendInput {
   cashSavings: number
   /** ISAs/PEPs/shares (C73). */
   isasPepsShares: number
-  /**
-   * School-age children count (C76). Optional — when omitted, defaults from
-   * `ReferenceBundle.familyCategoryMetas` for `familyTypeCategory` (per
-   * CALC-03 scope note), same as the assessor-overridable v1 field.
-   */
-  schoolAgeChildrenCount?: number
-  /** School-years-left divisor (C76). */
+  /** School-years-left divisor (C76) — feeds the C77 adjusted-savings display only. */
   schoolingYearsRemaining: number
   /**
-   * Derived yearly debt repayments (C123) — computed by CALC-04, wired in by
-   * the CALC-06 orchestrator. Plain number input here; 0 when there is no
-   * debt module output yet (e.g. unit-testing this module in isolation).
+   * Total itemised personal debt (`totalPersonalDebt`, CALC-04) — the savings
+   * test's net-savings figure is total savings minus this (respec v3,
+   * 5 Sep 2026). Plain number input; 0 when there is no debt.
    */
-  derivedYearlyDebtRepayments: number
+  totalDebt: number
 }
 
 /** Output of `calculateNotionalSpend`. */
 export interface NotionalSpendResult {
   /** Every line of the notional-spend block, in workbook row order. */
   lines: readonly NotionalSpendLine[]
-  /** C77 — annualised derived savings (`calculateDerivedSavings`, reused from v1). */
+  /** C77 — annualised adjusted savings: total savings / remaining school years (savings-test respec, 5 Sep 2026). */
   adjustedSavings: number
-  /** C80 — signed savings-test number (adjustedSavings − derivedYearlyDebtRepayments − notionalSavingsBenchmark); NOT floored. */
+  /** C80 — signed savings-test number ((total savings − total debt) − savingsCushion, respec v3); NOT floored. The add-back is 10% of it when positive. */
   savingsTestNumber: number
   /** C85 — signed sum of every line's `signedAmount`. */
   totalNotionalSpend: number
