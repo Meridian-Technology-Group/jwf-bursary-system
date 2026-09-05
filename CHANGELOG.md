@@ -1,5 +1,58 @@
 # Changelog
 
+## [2.1.0](https://github.com/Meridian-Technology-Group/jwf-bursary-system/compare/v2.0.0...v2.1.0) (2026-09-05)
+
+
+### Features
+
+* **admin:** CH-32 — BCC on the individual invitation, both paths ([#385](https://github.com/Meridian-Technology-Group/jwf-bursary-system/issues/385)) ([de5f960](https://github.com/Meridian-Technology-Group/jwf-bursary-system/commit/de5f960325cb846f32f9a50c5a53407ec86b44d4))
+* **admin:** CH-44 family category, CH-45 sortable Submitted, CH-46 remove unused tiles ([#361](https://github.com/Meridian-Technology-Group/jwf-bursary-system/issues/361)) ([a581c2b](https://github.com/Meridian-Technology-Group/jwf-bursary-system/commit/a581c2bae6a77e7f3b990ba368628218454e22c1))
+* **assessment:** CH-43 postcode district + area lookup ([#364](https://github.com/Meridian-Technology-Group/jwf-bursary-system/issues/364)) ([cc3484f](https://github.com/Meridian-Technology-Group/jwf-bursary-system/commit/cc3484fb1329e5299ffa874d896d84b0bc67537e))
+* **assessment:** CH-52 affordability cap + CH-50/51 fees admin VAT columns ([#359](https://github.com/Meridian-Technology-Group/jwf-bursary-system/issues/359)) ([fcde249](https://github.com/Meridian-Technology-Group/jwf-bursary-system/commit/fcde249835d8e602692e119d90db39057a3170a3))
+* **calc:** actual-leg recommendation + savings test v3 ([#390](https://github.com/Meridian-Technology-Group/jwf-bursary-system/issues/390)) ([5384932](https://github.com/Meridian-Technology-Group/jwf-bursary-system/commit/5384932e94b0a2809040bdba10e13002398d2e12))
+* **calc:** savings-test respec + cushion values + email footer removal ([#389](https://github.com/Meridian-Technology-Group/jwf-bursary-system/issues/389)) ([0114cea](https://github.com/Meridian-Technology-Group/jwf-bursary-system/commit/0114cea0c91f612378a3037adea719a0e1226213))
+* CH-59 label + actual-DI emphasis; Epic 18 questions answered ([#376](https://github.com/Meridian-Technology-Group/jwf-bursary-system/issues/376)) ([6f9e730](https://github.com/Meridian-Technology-Group/jwf-bursary-system/commit/6f9e7307f80a1e9e7cf85d681c55e97e7642ef29))
+* Epic 19 T1 — CH-60/61/62, the assessor display batch ([#379](https://github.com/Meridian-Technology-Group/jwf-bursary-system/issues/379)) ([cad5efa](https://github.com/Meridian-Technology-Group/jwf-bursary-system/commit/cad5efa1550d6ea2f19846a32655e84d34f67423))
+* **portal:** CH-47b — the winter window asks for a tax year that has ended ([#384](https://github.com/Meridian-Technology-Group/jwf-bursary-system/issues/384)) ([89f1f82](https://github.com/Meridian-Technology-Group/jwf-bursary-system/commit/89f1f8208b807ce38bbd1e9ee91be7cc3ef52064))
+* **portal:** CH-58 — DLA and PIP get their own cells ([#373](https://github.com/Meridian-Technology-Group/jwf-bursary-system/issues/373)) ([2cdd529](https://github.com/Meridian-Technology-Group/jwf-bursary-system/commit/2cdd529acc3fd4009807b39078af084502ce4a72))
+
+
+### Bug Fixes
+
+* **admin:** CH-57 — a null array element crashed the Applicant Data tab ([#370](https://github.com/Meridian-Technology-Group/jwf-bursary-system/issues/370)) ([c5a79a0](https://github.com/Meridian-Technology-Group/jwf-bursary-system/commit/c5a79a07b4037ebd46e17149f4c8bd917413cbfa))
+* **api:** F9 — staff uploads stored a NULL content digest ([#382](https://github.com/Meridian-Technology-Group/jwf-bursary-system/issues/382)) ([6651c80](https://github.com/Meridian-Technology-Group/jwf-bursary-system/commit/6651c8079184290002cb3be7cc6843e76070fad3))
+* **assessment:** CH-37 — show the savings test's debt input where it is consumed ([#354](https://github.com/Meridian-Technology-Group/jwf-bursary-system/issues/354)) ([855389a](https://github.com/Meridian-Technology-Group/jwf-bursary-system/commit/855389a277d58b8b793b05b53909132416851914))
+* **assessment:** CH-40 — debt-ratio bands use her '&lt;' logic above zero ([#358](https://github.com/Meridian-Technology-Group/jwf-bursary-system/issues/358)) ([ede762e](https://github.com/Meridian-Technology-Group/jwf-bursary-system/commit/ede762e2f798f2cf71821c94b38ec87cb2118793))
+* **assessment:** CH-53 actual-DI leg + siblings, CH-54 twelfth income category, CH-55 revert Part 3 debt row ([#367](https://github.com/Meridian-Technology-Group/jwf-bursary-system/issues/367)) ([d1dfb87](https://github.com/Meridian-Technology-Group/jwf-bursary-system/commit/d1dfb872b1b39c2f205174694db92f324af12af0))
+* **assessment:** CH-53 follow-up — the sibling-fees note said the opposite of what now happens ([#368](https://github.com/Meridian-Technology-Group/jwf-bursary-system/issues/368)) ([996cc3a](https://github.com/Meridian-Technology-Group/jwf-bursary-system/commit/996cc3a217c519ed6df7a724aaf980ad58f63e77))
+* **assessment:** CH-56 — year-on-year history starts one year before the award year ([#369](https://github.com/Meridian-Technology-Group/jwf-bursary-system/issues/369)) ([1243075](https://github.com/Meridian-Technology-Group/jwf-bursary-system/commit/1243075ed243126518950a5e593c7696f1bce06a))
+* **assessment:** CH-56b — history column reads 'Financial Assessment year' ([#371](https://github.com/Meridian-Technology-Group/jwf-bursary-system/issues/371)) ([a60127b](https://github.com/Meridian-Technology-Group/jwf-bursary-system/commit/a60127b1817f8dfc6c9508ab9f8c4de24d9cda4a))
+* **assessment:** Epic 17 Lane 0 — CH-35 completable assessment, CH-36 before-VAT award summary, CH-42 lifestyle squeeze ([#346](https://github.com/Meridian-Technology-Group/jwf-bursary-system/issues/346)) ([f0d0807](https://github.com/Meridian-Technology-Group/jwf-bursary-system/commit/f0d0807eec980f7d704471e7879be8eb870cc631))
+* **auth:** reset links survive mail-security link scanners (CI-01 follow-up) ([#344](https://github.com/Meridian-Technology-Group/jwf-bursary-system/issues/344)) ([3f37b4f](https://github.com/Meridian-Technology-Group/jwf-bursary-system/commit/3f37b4f09f1644f29ca9aeb6264cdd4a20459a42))
+* **portal:** CH-47 — name the self-employed arrears tax year ([#362](https://github.com/Meridian-Technology-Group/jwf-bursary-system/issues/362)) ([15add19](https://github.com/Meridian-Technology-Group/jwf-bursary-system/commit/15add194d8cd001bffd19327d031eb6acab2ac30))
+* **portal:** F12 — the inline upload input had no accessible name ([#381](https://github.com/Meridian-Technology-Group/jwf-bursary-system/issues/381)) ([a2dc181](https://github.com/Meridian-Technology-Group/jwf-bursary-system/commit/a2dc181af4ebd815dd2d4e308c11e104e6c73dca))
+* **reference-data:** CH-38 savings bands + CH-39 income categories 1-11 ([#355](https://github.com/Meridian-Technology-Group/jwf-bursary-system/issues/355)) ([3ed1390](https://github.com/Meridian-Technology-Group/jwf-bursary-system/commit/3ed13903a4897d2ada95c06139f4b9e5fe293693))
+* **reference-data:** CH-43 follow-up — seed the postcode_areas rows ([#365](https://github.com/Meridian-Technology-Group/jwf-bursary-system/issues/365)) ([1d42164](https://github.com/Meridian-Technology-Group/jwf-bursary-system/commit/1d421645340448552a7c995e0ca88b10f1f810bc))
+
+
+### Documentation
+
+* correct Q8's figures and put the Tranche A promotion on hold ([#357](https://github.com/Meridian-Technology-Group/jwf-bursary-system/issues/357)) ([f6d18a3](https://github.com/Meridian-Technology-Group/jwf-bursary-system/commit/f6d18a3be20f8f07ae9abeade479700bc50ec273))
+* Epic 17 — CH-37/38/39 now block her real assessments; CH-45 sharpened ([#352](https://github.com/Meridian-Technology-Group/jwf-bursary-system/issues/352)) ([e6add51](https://github.com/Meridian-Technology-Group/jwf-bursary-system/commit/e6add513a8c425da7e144366d2ce170afdd68635))
+* Epic 17 — Charlotte's 25 Aug answers; CH-41 reframed, CH-50/51/52 added ([#351](https://github.com/Meridian-Technology-Group/jwf-bursary-system/issues/351)) ([23805df](https://github.com/Meridian-Technology-Group/jwf-bursary-system/commit/23805df55ea48c4bc8dfa8dc9fe4e312bf218769))
+* Epic 17 implementation plan + CH-39 band decode ([#353](https://github.com/Meridian-Technology-Group/jwf-bursary-system/issues/353)) ([a8b8edf](https://github.com/Meridian-Technology-Group/jwf-bursary-system/commit/a8b8edf06a5d4df047695db6c04634a56e72a930))
+* Epic 17 progress board; correct the CH-35 and CH-36 diagnoses ([#347](https://github.com/Meridian-Technology-Group/jwf-bursary-system/issues/347)) ([d570d94](https://github.com/Meridian-Technology-Group/jwf-bursary-system/commit/d570d9453a0416287f31c8348a7b1a904b7a9469))
+* Epic 17 Tranche A complete on staging ([#356](https://github.com/Meridian-Technology-Group/jwf-bursary-system/issues/356)) ([ab10d7c](https://github.com/Meridian-Technology-Group/jwf-bursary-system/commit/ab10d7cea17a32cd514312fa9ba958d51c720ef6))
+* open Epic 16 residue sprint; close the outstanding Epic 13/15 items ([#342](https://github.com/Meridian-Technology-Group/jwf-bursary-system/issues/342)) ([ade0071](https://github.com/Meridian-Technology-Group/jwf-bursary-system/commit/ade0071baa36d469a4d010f3aaca86219c8dc278))
+* open Epic 17 — assessment-model verification sprint (CH-32..49) ([#345](https://github.com/Meridian-Technology-Group/jwf-bursary-system/issues/345)) ([9020e53](https://github.com/Meridian-Technology-Group/jwf-bursary-system/commit/9020e53bff51a315b0e5515b549da436368c3fc1))
+* open Epic 18 for the post-assessment lifecycle; close out Epic 17 ([#374](https://github.com/Meridian-Technology-Group/jwf-bursary-system/issues/374)) ([2ea560d](https://github.com/Meridian-Technology-Group/jwf-bursary-system/commit/2ea560dd6f04874efb9c8b4c3159009f22e47e84))
+* record CH-43 on staging, with the two mistakes it surfaced ([#366](https://github.com/Meridian-Technology-Group/jwf-bursary-system/issues/366)) ([ccd4548](https://github.com/Meridian-Technology-Group/jwf-bursary-system/commit/ccd454840a04592a1dd9d333d88b27e338efb7ae))
+* record the unblocked-work sweep — 7 WPs on staging ([#386](https://github.com/Meridian-Technology-Group/jwf-bursary-system/issues/386)) ([0a34bdd](https://github.com/Meridian-Technology-Group/jwf-bursary-system/commit/0a34bddf049a23d1158e56d9ccf141060646ee4d))
+* record Tranche B1/B2 + C5 on staging; add Q9 ([#360](https://github.com/Meridian-Technology-Group/jwf-bursary-system/issues/360)) ([e801a8e](https://github.com/Meridian-Technology-Group/jwf-bursary-system/commit/e801a8ee221e2a6562e0640af523e458deea4a75))
+* record Tranche C batch; CH-49 answered; CH-47b deferred ([#363](https://github.com/Meridian-Technology-Group/jwf-bursary-system/issues/363)) ([0181c56](https://github.com/Meridian-Technology-Group/jwf-bursary-system/commit/0181c567da34ae335ada8be6cea2fe2405783450))
+* T3 — the three human checks, all passing ([#383](https://github.com/Meridian-Technology-Group/jwf-bursary-system/issues/383)) ([37d319d](https://github.com/Meridian-Technology-Group/jwf-bursary-system/commit/37d319d7ca2d0ead9f3adf69802907414b5136a6))
+* WP-B1 — draw the post-assessment state machine, and reframe Q14 ([#380](https://github.com/Meridian-Technology-Group/jwf-bursary-system/issues/380)) ([15f1791](https://github.com/Meridian-Technology-Group/jwf-bursary-system/commit/15f179198552acc9e691531b4b39d15b3397cb7f))
+
 ## [2.0.0](https://github.com/Meridian-Technology-Group/jwf-bursary-system/compare/v1.3.1...v2.0.0) (2026-08-22)
 
 
