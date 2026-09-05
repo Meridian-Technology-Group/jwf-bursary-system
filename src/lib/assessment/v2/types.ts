@@ -141,14 +141,14 @@ export interface NotionalSpendInput {
   cashSavings: number
   /** ISAs/PEPs/shares (C73). */
   isasPepsShares: number
-  /** School-years-left divisor (C76). */
+  /** School-years-left divisor (C76) — feeds the C77 adjusted-savings display only. */
   schoolingYearsRemaining: number
   /**
-   * Derived yearly debt repayments (C123) — computed by CALC-04, wired in by
-   * the CALC-06 orchestrator. Plain number input here; 0 when there is no
-   * debt module output yet (e.g. unit-testing this module in isolation).
+   * Total itemised personal debt (`totalPersonalDebt`, CALC-04) — the savings
+   * test's net-savings figure is total savings minus this (respec v3,
+   * 5 Sep 2026). Plain number input; 0 when there is no debt.
    */
-  derivedYearlyDebtRepayments: number
+  totalDebt: number
 }
 
 /** Output of `calculateNotionalSpend`. */
@@ -157,7 +157,7 @@ export interface NotionalSpendResult {
   lines: readonly NotionalSpendLine[]
   /** C77 — annualised adjusted savings: total savings / remaining school years (savings-test respec, 5 Sep 2026). */
   adjustedSavings: number
-  /** C80 — signed savings-test number (adjustedSavings − derivedYearlyDebtRepayments − savingsCushion); NOT floored. */
+  /** C80 — signed savings-test number ((total savings − total debt) − savingsCushion, respec v3); NOT floored. The add-back is 10% of it when positive. */
   savingsTestNumber: number
   /** C85 — signed sum of every line's `signedAmount`. */
   totalNotionalSpend: number

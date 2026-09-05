@@ -1,14 +1,15 @@
 "use client";
 
 /**
- * CALC-08 — v2 recommendation surface (min-of-three award + gap tracking).
+ * CALC-08 — v2 recommendation surface (actual-leg award + gap tracking).
  *
  * Rendered by the recommendation page ONLY for `calculationVersion: 2`
  * assessments (v1 keeps the untouched `recommendation-form.tsx`). It:
  *  - shows the THREE award legs (actual / theoretical / affordability-adjusted)
  *    read straight from the completed assessment's snapshot columns (never
- *    recomputed), with the minimum highlighted — that min (floored at £0) is
- *    `recommendedPayableFees`;
+ *    recomputed), with the ACTUAL leg highlighted — that leg (floored at £0)
+ *    is `recommendedPayableFees` (5 Sep 2026: min-of-three retired; the other
+ *    two legs are comparison views);
  *  - lets the assessor enter a scholarship %, a BEFORE-VAT bursary award, and a
  *    confirmed payable-fees figure, deriving the before-VAT scholarship spend,
  *    before-VAT net fees and the VAT-inclusive yearly payable fees LIVE via the
@@ -210,39 +211,33 @@ function AwardLegsPanel({
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-base">
           <Scale className="h-4 w-4 text-slate-400" aria-hidden="true" />
-          Award legs — minimum is recommended
+          Award legs — actual is recommended
         </CardTitle>
         <p className="text-sm text-slate-500">
-          The three disposable-income legs from the completed assessment. The
-          smallest (floored at £0) is the recommended payable fees.
+          The actual remaining DI (floored at £0) is the recommended payable
+          fees. The theoretical benchmark and affordability legs are shown for
+          comparison only.
         </p>
       </CardHeader>
       <CardContent>
         <HouseholdIncomeLine snapshot={snapshot} />
         <div className="space-y-1.5">
-          {/* CH-59 — the ACTUAL leg is emphasised regardless of whether it is the
-              minimum. Charlotte: "the one that should take precedence is
-              obviously the Actual remaining DI as this is one drawn from the
-              data entries… could you maybe display the actual remaining DI in a
-              different colour and a bolder view?"
-              Two distinct signals, deliberately kept apart: the accent colour
-              marks the leg she trusts, and the tinted row still marks whichever
-              leg is the minimum. Collapsing them would hide the case where the
-              minimum is NOT the actual leg, which is exactly when she needs to
-              notice. */}
+          {/* 5 Sep 2026 — min-of-three retired: the ACTUAL leg IS the
+              recommendation ("the Actual remaining DI should remain the
+              recommended payable fees value as this is derived from the
+              applied deductions"), so the CH-59 accent emphasis and the
+              recommended-row tint now coincide on it by design. The other two
+              legs stay visible as her end-of-assessment comparison views. */}
           {legs.map((leg) => {
-            const isActual = leg.key === "actual";
+            const isActual = leg.isRecommendedSource;
             return (
               <div
                 key={leg.key}
                 className={cn(
                   "flex items-baseline justify-between gap-2 rounded-md px-3 py-2",
-                  leg.isMin && "bg-primary-50",
                   isActual
-                    ? "text-base font-bold text-accent-700"
-                    : leg.isMin
-                      ? "font-semibold text-primary-900"
-                      : "text-slate-600"
+                    ? "bg-primary-50 text-base font-bold text-accent-700"
+                    : "text-slate-600"
                 )}
               >
                 <span className={isActual ? "text-base" : "text-sm"}>
@@ -469,7 +464,7 @@ export function RecommendationFormV2({
       creditRiskFlag: false,
       summary: null,
       reasonCodeIds: selectedReasonCodeIds,
-      // v2 min-of-three + gap tracking.
+      // v2 actual-leg recommendation + gap tracking.
       recommendedPayableFees,
       confirmedPayableFees,
       gapAmount,
@@ -651,7 +646,7 @@ export function RecommendationFormV2({
         <CardContent className="space-y-5">
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
             <div className="rounded-md border border-slate-200 bg-slate-50 px-4 py-3">
-              <p className="mb-1 text-xs text-slate-500">Recommended (min-of-three)</p>
+              <p className="mb-1 text-xs text-slate-500">Recommended (actual remaining DI)</p>
               <p className="text-base font-semibold text-slate-800">
                 {formatCurrency(recommendedPayableFees)}
               </p>

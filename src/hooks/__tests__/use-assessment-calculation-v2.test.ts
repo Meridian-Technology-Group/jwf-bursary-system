@@ -56,14 +56,9 @@ describe('runAssessmentV2 (hook wiring)', () => {
     expect(viaHook).toEqual(direct)
   })
 
-  it('produces the recommended payable fees leg (min of three)', () => {
+  it('produces the recommended payable fees leg (actual leg, min-of-three retired 5 Sep 2026)', () => {
     const out = runAssessmentV2(input, ref)
     expect(out).not.toBeNull()
-    expect(out!.recommendedPayableFees).toBe(
-      Math.max(
-        0,
-        Math.min(out!.actualRemainingDi, out!.theoreticalBenchmarkDi, out!.affordabilityAdjustedDi)
-      )
-    )
+    expect(out!.recommendedPayableFees).toBe(Math.max(0, out!.actualRemainingDi))
   })
 })
