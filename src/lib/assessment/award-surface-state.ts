@@ -43,7 +43,14 @@ export function resolveAwardSurfaceState(input: {
 
   if (assessmentStatus == null) return "NO_ASSESSMENT";
 
-  const completed = assessmentStatus === "COMPLETED";
+  // Epic 18 — a post-assessment final state renders the full surface too:
+  // the figures were completed before the lock, and the form's own read-only
+  // derivation (final state ⇒ read-only) governs editability.
+  const completed =
+    assessmentStatus === "COMPLETED" ||
+    assessmentStatus === "NEW_AWARD" ||
+    assessmentStatus === "WAITING_LIST" ||
+    assessmentStatus === "CLOSED_ARCHIVED";
 
   if (completed) {
     if (engineVersion === "v2" && !hasSnapshot) return "SNAPSHOT_INCOMPLETE";

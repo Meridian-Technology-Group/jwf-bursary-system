@@ -1257,7 +1257,23 @@ enum AssessmentStatus {
   NOT_STARTED
   IN_PROGRESS
   PAUSED
+  /// Epic 18 — "stored as complete", the intermediary stage every assessment
+  /// parks in while the rest of the intake is worked through. The same value
+  /// it has always been; the label changed, not the state.
   COMPLETED
+  /// Epic 18 (WP-B3) — locked as a new award: figures final, bursary account
+  /// created/promoted, admin page active. Reversible to COMPLETED (Q16,
+  /// 5 Sep 2026); the account survives a reversal.
+  NEW_AWARD
+  /// Epic 18 (WP-B4) — held while the admission team works through accepted
+  /// and declined place offers. A holding state; exits to NEW_AWARD,
+  /// CLOSED_ARCHIVED or back to COMPLETED.
+  WAITING_LIST
+  /// Epic 18 (WP-B5) — closed with the record retained. Reopenable to
+  /// COMPLETED (Q15, 5 Sep 2026). CLOSED_PURGED (WP-B6) is deliberately NOT
+  /// here yet — it ships only once Q10b (purge vs the 7-year retention guard
+  /// and append-only audit_logs) is agreed in writing.
+  CLOSED_ARCHIVED
 }
 
 enum AssessmentOutcome {

@@ -69,6 +69,16 @@ export const AUDIT_ACTIONS = {
    * accountReopened, scheduleEntryReopened }`.
    */
   ASSESSMENT_REOPENED: "ASSESSMENT_REOPENED",
+  /**
+   * Epic 18 (WP-B3..B5) — the post-assessment lifecycle transitions. One
+   * action per direction: LIFECYCLE_SET moves a stored-as-complete assessment
+   * into a final state (metadata carries `toState`), LIFECYCLE_REVERTED moves
+   * a final state back to stored (metadata carries `fromState`). No outcome
+   * email exists on this path (Q11, 5 Sep 2026 — Charlotte notifies families
+   * herself once the governors have approved).
+   */
+  ASSESSMENT_LIFECYCLE_SET: "ASSESSMENT_LIFECYCLE_SET",
+  ASSESSMENT_LIFECYCLE_REVERTED: "ASSESSMENT_LIFECYCLE_REVERTED",
   ASSESSMENT_SECOND_PARENT_OVERRIDE: "ASSESSMENT_SECOND_PARENT_OVERRIDE",
   RECOMMENDATION_SAVE: "RECOMMENDATION_SAVE",
 

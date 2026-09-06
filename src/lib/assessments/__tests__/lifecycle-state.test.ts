@@ -60,3 +60,48 @@ describe("deriveAssessmentLifecycleState (CH-05 four-state model, LA15-1)", () =
         }
   });
 });
+
+// ─── Epic 18 — final states in the strip ─────────────────────────────────────
+
+import {
+  lifecycleStripSlots,
+  deriveAssessmentLifecycleState as derive18,
+  ASSESSMENT_LIFECYCLE_LABELS as labels18,
+} from "../lifecycle-state";
+
+describe("Epic 18 — lifecycle strip final states", () => {
+  it("derives the specific final state from assessments.status", () => {
+    const base = { outcome: null, closedAt: null } as const;
+    expect(derive18({ ...base, assessmentStatus: "NEW_AWARD" })).toBe("NEW_AWARD");
+    expect(derive18({ ...base, assessmentStatus: "WAITING_LIST" })).toBe("WAITING_LIST");
+    expect(derive18({ ...base, assessmentStatus: "CLOSED_ARCHIVED" })).toBe("ARCHIVED");
+  });
+
+  it("WP-B2 — COMPLETE is relabelled 'STORED AS COMPLETE' (same state)", () => {
+    expect(labels18.COMPLETE).toBe("STORED AS COMPLETE");
+    expect(
+      derive18({ assessmentStatus: "COMPLETED", outcome: null, closedAt: null })
+    ).toBe("COMPLETE");
+  });
+
+  it("the strip stays four chips, with the specific final in the fourth slot", () => {
+    const slots = lifecycleStripSlots("NEW_AWARD");
+    expect(slots).toHaveLength(4);
+    expect(slots[3].key).toBe("NEW_AWARD");
+    expect(slots[3].label).toBe("NEW AWARD");
+    expect(slots[3].current).toBe(true);
+    expect(slots.filter((s) => s.current)).toHaveLength(1);
+  });
+
+  it("pre-final states keep the generic LOCKED in the fourth slot", () => {
+    const slots = lifecycleStripSlots("COMPLETE");
+    expect(slots[3].key).toBe("LOCKED");
+    expect(slots[2].current).toBe(true);
+  });
+
+  it("a legacy outcome lock still renders as LOCKED", () => {
+    const slots = lifecycleStripSlots("LOCKED");
+    expect(slots[3].key).toBe("LOCKED");
+    expect(slots[3].current).toBe(true);
+  });
+});

@@ -17,11 +17,25 @@ export interface WatchOutCandidate {
   applicationId: string;
   /** The round's academic year, for display context. */
   academicYear: string;
-  status: "NOT_STARTED" | "IN_PROGRESS" | "PAUSED" | "COMPLETED";
+  status:
+    | "NOT_STARTED"
+    | "IN_PROGRESS"
+    | "PAUSED"
+    | "COMPLETED"
+    // Epic 18 — the post-assessment final states. Every one passed through
+    // COMPLETED first, so its watch-out notes are final and carry forward.
+    | "NEW_AWARD"
+    | "WAITING_LIST"
+    | "CLOSED_ARCHIVED";
   /** When the assessment was completed (null until COMPLETED). */
   completedAt: Date | string | null;
   watchOutNotes: string | null;
 }
+
+/** The statuses whose notes are final enough to hand to next year's assessor. */
+const NOTE_BEARING_STATUSES: ReadonlySet<WatchOutCandidate["status"]> = new Set<
+  WatchOutCandidate["status"]
+>(["COMPLETED", "NEW_AWARD", "WAITING_LIST", "CLOSED_ARCHIVED"]);
 
 export interface WatchOutSelection {
   applicationId: string;
@@ -59,7 +73,7 @@ export function selectPreviousWatchOutNotes(
   const eligible = candidates.filter(
     (c) =>
       c.applicationId !== currentApplicationId &&
-      c.status === "COMPLETED" &&
+      NOTE_BEARING_STATUSES.has(c.status) &&
       hasText(c.watchOutNotes)
   );
 

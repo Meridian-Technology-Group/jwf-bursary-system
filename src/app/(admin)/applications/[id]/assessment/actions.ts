@@ -38,6 +38,7 @@ import {
   startAssessmentIfNotStarted,
   reopenAssessmentRow,
   deriveReviewPhase,
+  isPostAssessmentFinalState,
   AssessmentSnapshotMissingError,
 } from "@/lib/applications/status";
 import { getSecondaryContributor } from "@/lib/db/queries/contributors";
@@ -598,6 +599,16 @@ export async function reopenAssessmentAction(
           return {
             ok: false as const,
             error: REOPEN_APPLICATION_CLOSED_MESSAGE,
+          };
+        }
+        // Epic 18 — a post-assessment final state must be reversed to
+        // stored-as-complete first (its own audited move), never unlocked
+        // straight into editing.
+        if (isPostAssessmentFinalState(assessment.status)) {
+          return {
+            ok: false as const,
+            error:
+              "This assessment is in a post-assessment state. Reverse it to Stored as Complete on the award tab first, then reopen.",
           };
         }
         if (assessment.status !== "COMPLETED") {

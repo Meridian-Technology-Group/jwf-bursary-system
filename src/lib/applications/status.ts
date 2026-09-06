@@ -202,10 +202,67 @@ const ASSESSMENT_TRANSITIONS: Record<AssessmentStatus, AssessmentStatus[]> = {
   NOT_STARTED: ["IN_PROGRESS"],
   IN_PROGRESS: ["PAUSED", "COMPLETED", "NOT_STARTED"],
   PAUSED: ["IN_PROGRESS", "COMPLETED", "NOT_STARTED"],
-  // The single exit edge — see the REOPEN exception above. Deliberately does
-  // NOT include NOT_STARTED (that would be a discard) or PAUSED.
-  COMPLETED: ["IN_PROGRESS"],
+  // Reopen to IN_PROGRESS — see the REOPEN exception above. Deliberately does
+  // NOT include NOT_STARTED (that would be a discard) or PAUSED. Epic 18:
+  // COMPLETED is her "stored as complete" intermediary, so the three final
+  // states exit from here (state machine, docs/diagrams/
+  // epic-18-post-assessment-lifecycle.md §1).
+  COMPLETED: ["IN_PROGRESS", "NEW_AWARD", "WAITING_LIST", "CLOSED_ARCHIVED"],
+  // Epic 18 finals. Every reversal goes back through COMPLETED (stored as
+  // complete) — never straight to IN_PROGRESS, so unlocking and amending are
+  // two separate, separately-audited moves.
+  //   NEW_AWARD → COMPLETED: Q16 (5 Sep 2026) — "please let it have a way
+  //   back too". The bursary account created at lock SURVIVES the reversal
+  //   (promotion is idempotent; re-locking reuses it).
+  //   WAITING_LIST: a holding state — resolves to an award or a close, or
+  //   back to stored.
+  //   CLOSED_ARCHIVED → COMPLETED: Q15 (5 Sep 2026) — "usually not, but
+  //   let's make it a possibility".
+  NEW_AWARD: ["COMPLETED"],
+  WAITING_LIST: ["NEW_AWARD", "CLOSED_ARCHIVED", "COMPLETED"],
+  CLOSED_ARCHIVED: ["COMPLETED"],
 };
+
+/** Epic 18 — the post-assessment final states (CLOSED_PURGED joins with WP-B6). */
+export const POST_ASSESSMENT_FINAL_STATES = [
+  "NEW_AWARD",
+  "WAITING_LIST",
+  "CLOSED_ARCHIVED",
+] as const satisfies readonly AssessmentStatus[];
+
+export type PostAssessmentFinalState = (typeof POST_ASSESSMENT_FINAL_STATES)[number];
+
+export function isPostAssessmentFinalState(
+  status: AssessmentStatus | null | undefined
+): status is PostAssessmentFinalState {
+  return (
+    status != null &&
+    (POST_ASSESSMENT_FINAL_STATES as readonly AssessmentStatus[]).includes(status)
+  );
+}
+
+/**
+ * Epic 18 — move an assessment between the post-assessment states. Validates
+ * against ASSESSMENT_TRANSITIONS and writes ONLY the status: side effects
+ * (account promotion at NEW_AWARD, the schedule mirror, audit) stay with the
+ * caller (`post-assessment-core.ts`), same division of labour as
+ * `setApplicationOutcomeStatus`. Never touches `outcome` — the legacy 3-value
+ * column stays as history on old rows and is not written by the new lifecycle.
+ */
+export async function setPostAssessmentState(
+  tx: Tx,
+  assessmentId: string,
+  from: AssessmentStatus,
+  to: PostAssessmentFinalState | "COMPLETED"
+): Promise<void> {
+  if (!isLegalAssessmentTransition(from, to)) {
+    throw new Error(`Illegal assessment transition ${from} → ${to}`);
+  }
+  await tx.assessment.update({
+    where: { id: assessmentId },
+    data: { status: to },
+  });
+}
 
 export function isLegalFormTransition(
   from: ApplicationFormStatus,
