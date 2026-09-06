@@ -115,3 +115,87 @@ export async function withdrawBursaryAccount(
 // `src/lib/audit/actions.ts` even though nothing writes it any more: audit_logs
 // is append-only, so historic rows still carry the string and would render
 // unlabelled in the audit UI without it.
+
+// ─── Epic 18b — the admin-page manual close, with a structured reason ─────────
+
+export interface CloseBursaryAccountInput {
+  bursaryAccountId: string;
+  /** A live CloseReason id — her April–May leavers window always has one. */
+  closeReasonId: string;
+  /** The application whose admin page hosted the button (for revalidation). */
+  applicationId: string;
+}
+
+export type CloseBursaryAccountResult =
+  | { success: true }
+  | { success: false; error: string };
+
+/**
+ * Epic 18b — close an ACTIVE bursary account from the Assessment Admin page,
+ * recording a structured close reason ("I need on the admin page, a button to
+ * close the 'active bursary account' and I will need to select a closing
+ * reason"). ADMIN only, like the application close it mirrors. Closing revokes
+ * the parent's portal access via the status-keyed guard; the existing
+ * `reopenAccountForAssessmentYear` remains the sanctioned way back.
+ */
+export async function closeBursaryAccountAction(
+  input: CloseBursaryAccountInput
+): Promise<CloseBursaryAccountResult> {
+  try {
+    const user = await requireRole([Role.ADMIN]);
+
+    const result = await withUserContext(
+      user.id,
+      user.role as RlsRole,
+      async (tx) => {
+        const account = await tx.bursaryAccount.findUnique({
+          where: { id: input.bursaryAccountId },
+          select: { id: true, status: true, childName: true },
+        });
+        if (!account) {
+          return { success: false as const, error: "Bursary account not found." };
+        }
+        if (account.status === "CLOSED") {
+          return { success: false as const, error: "This account is already closed." };
+        }
+
+        const reason = await tx.closeReason.findUnique({
+          where: { id: input.closeReasonId },
+          select: { id: true, label: true, isDeprecated: true },
+        });
+        if (!reason || reason.isDeprecated) {
+          return { success: false as const, error: "Close reason not found." };
+        }
+
+        await tx.bursaryAccount.update({
+          where: { id: account.id },
+          data: {
+            status: "CLOSED",
+            closedAt: new Date(),
+            closeReasonId: reason.id,
+          },
+        });
+
+        await createAuditLog(tx, {
+          userId: user.id,
+          action: AUDIT_ACTIONS.BURSARY_ACCOUNT_CLOSED,
+          entityType: AUDIT_ENTITY_TYPES.BursaryAccount,
+          entityId: account.id,
+          context: `Bursary account for ${account.childName} closed: ${reason.label}`,
+          metadata: { accountId: account.id, closeReasonId: reason.id },
+        });
+
+        return { success: true as const };
+      }
+    );
+
+    if (result.success) {
+      revalidatePath(`/applications/${input.applicationId}/assessment/admin`);
+      revalidatePath(`/applications/${input.applicationId}`);
+    }
+    return result;
+  } catch (err) {
+    console.error("[closeBursaryAccountAction]", err);
+    return { success: false, error: "Failed to close the bursary account." };
+  }
+}

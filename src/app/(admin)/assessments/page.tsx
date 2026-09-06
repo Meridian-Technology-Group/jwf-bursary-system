@@ -14,6 +14,7 @@
  */
 
 import Link from "next/link";
+import { BulkLockRolledOverButton } from "@/components/admin/bulk-lock-rolled-over-button";
 import { ChevronUp, ChevronDown, ChevronsUpDown } from "lucide-react";
 import { requireRole, Role } from "@/lib/auth/roles";
 import { withUserContext, type RlsRole } from "@/lib/db/prisma";
@@ -102,7 +103,7 @@ export default async function AssessmentsPage({
   const assigneeFilter =
     user.role === Role.ASSESSOR ? user.id : firstValue(params.assignee);
 
-  const [rows, staff] = await withUserContext(
+  const [rows, staff, rolledOverLockable] = await withUserContext(
     user.id,
     user.role as RlsRole,
     async (tx) => {
@@ -114,7 +115,21 @@ export default async function AssessmentsPage({
         user.role === Role.ASSESSOR
           ? []
           : (await listStaffUsers(tx)).filter((s) => s.role !== "DELETED");
-      return [queueRows, staffUsers] as const;
+      // Epic 18b — the mid-September bulk lock's eligible count (ADMIN only;
+      // the action re-derives the set authoritatively).
+      const lockable =
+        user.role === Role.ADMIN
+          ? await tx.assessment.count({
+              where: {
+                status: "COMPLETED",
+                application: {
+                  applicationType: "ROLLING_OVER",
+                  formStatus: "SUBMITTED",
+                },
+              },
+            })
+          : 0;
+      return [queueRows, staffUsers, lockable] as const;
     }
   );
 
@@ -165,7 +180,8 @@ export default async function AssessmentsPage({
 
   return (
     <div className="space-y-6">
-      <div>
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div>
         <h1 className="text-2xl font-semibold text-primary-900">Assessments</h1>
         <p className="mt-1 text-sm text-slate-500">
           Assessments due to be completed — every submitted application, with
@@ -175,6 +191,12 @@ export default async function AssessmentsPage({
           </Link>{" "}
           queue.
         </p>
+        </div>
+        {/* Epic 18b — her mid-September ritual: lock every rolling-over
+            assessment stored as complete, in one go. ADMIN only. */}
+        {user.role === Role.ADMIN && (
+          <BulkLockRolledOverButton eligibleCount={rolledOverLockable} />
+        )}
       </div>
 
       {/* Status filter chips */}
