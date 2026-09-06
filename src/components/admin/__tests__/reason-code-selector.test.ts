@@ -29,7 +29,7 @@ describe("groupReasonCodes (CALC-16)", () => {
     const labels = groups.map((g) => g.groupLabel);
     expect(labels).toEqual([
       "1 – 7: Circumstances",
-      "8 – 21: Income & Employment",
+      "8 – 26: Income & Employment",
     ]);
   });
 

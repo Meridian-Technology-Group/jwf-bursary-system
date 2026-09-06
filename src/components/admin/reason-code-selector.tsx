@@ -43,6 +43,15 @@ interface ReasonCodeSelectorProps {
   grouped?: boolean;
   /** Heading shown for the single group when `grouped` is false. */
   flatGroupLabel?: string;
+  /**
+   * D4 (6 Sep 2026) — a taxonomy-specific heading function for `grouped`
+   * selectors whose codes do NOT follow the reason-codes numbering (the gap
+   * picker passes `gapGroupHeadingForCode`). Defaults to the reason-codes
+   * `groupHeadingForCode`. Provide `headingOrder` alongside it.
+   */
+  headingFor?: (code: number) => string;
+  /** The ordered heading list matching `headingFor`; unknown headings append last. */
+  headingOrder?: string[];
 }
 
 // ─── Group helpers ─────────────────────────────────────────────────────────────
@@ -60,9 +69,19 @@ interface ReasonCodeSelectorProps {
  */
 export function groupReasonCodes(
   codes: ReasonCodeOption[],
-  options: { grouped?: boolean; flatGroupLabel?: string } = {}
+  options: {
+    grouped?: boolean;
+    flatGroupLabel?: string;
+    headingFor?: (code: number) => string;
+    headingOrder?: string[];
+  } = {}
 ): Array<{ groupLabel: string; codes: ReasonCodeOption[] }> {
-  const { grouped = true, flatGroupLabel = "Reasons" } = options;
+  const {
+    grouped = true,
+    flatGroupLabel = "Reasons",
+    headingFor = groupHeadingForCode,
+    headingOrder = REASON_CODE_GROUP_HEADINGS,
+  } = options;
 
   if (!grouped) {
     return codes.length > 0 ? [{ groupLabel: flatGroupLabel, codes }] : [];
@@ -71,7 +90,7 @@ export function groupReasonCodes(
   const buckets: Record<string, ReasonCodeOption[]> = {};
 
   for (const rc of codes) {
-    const groupLabel = groupHeadingForCode(rc.code);
+    const groupLabel = headingFor(rc.code);
     if (!buckets[groupLabel]) {
       buckets[groupLabel] = [];
     }
@@ -79,8 +98,15 @@ export function groupReasonCodes(
   }
 
   const groups: Array<{ groupLabel: string; codes: ReasonCodeOption[] }> = [];
-  for (const key of REASON_CODE_GROUP_HEADINGS) {
+  for (const key of headingOrder) {
     if (buckets[key] && buckets[key].length > 0) {
+      groups.push({ groupLabel: key, codes: buckets[key] });
+    }
+  }
+  // Headings the ordered list does not know (e.g. a generation the caller's
+  // order predates) still render, appended last, rather than being dropped.
+  for (const key of Object.keys(buckets)) {
+    if (!headingOrder.includes(key) && buckets[key].length > 0) {
       groups.push({ groupLabel: key, codes: buckets[key] });
     }
   }
@@ -97,6 +123,8 @@ export function ReasonCodeSelector({
   disabled = false,
   grouped = true,
   flatGroupLabel = "Reasons",
+  headingFor,
+  headingOrder,
 }: ReasonCodeSelectorProps) {
   const [isOpen, setIsOpen] = React.useState(false);
 
@@ -106,8 +134,14 @@ export function ReasonCodeSelector({
   );
 
   const groups = React.useMemo(
-    () => groupReasonCodes(reasonCodes, { grouped, flatGroupLabel }),
-    [reasonCodes, grouped, flatGroupLabel]
+    () =>
+      groupReasonCodes(reasonCodes, {
+        grouped,
+        flatGroupLabel,
+        headingFor,
+        headingOrder,
+      }),
+    [reasonCodes, grouped, flatGroupLabel, headingFor, headingOrder]
   );
 
   function handleToggle(id: string, checked: boolean) {
