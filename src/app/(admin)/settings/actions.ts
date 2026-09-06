@@ -1096,7 +1096,8 @@ export async function createFinancialEquityBandVersionAction(
 interface DebtRatioBandRowInput {
   ratioFloor: number | null;
   ratioCeiling: number | null;
-  minRepaymentMonths: number | null;
+  /** 6 Sep 2026 respec — no longer captured (computed per assessment); tolerated for old callers, stored as null. */
+  minRepaymentMonths?: number | null;
   statusLabel: string;
 }
 
@@ -1127,7 +1128,8 @@ export async function createDebtRatioBandVersionAction(
         data: rows.map((r) => ({
           ratioFloor: r.ratioFloor,
           ratioCeiling: r.ratioCeiling,
-          minRepaymentMonths: r.minRepaymentMonths,
+          // 6 Sep 2026 respec — computed per assessment, never stored per band.
+          minRepaymentMonths: null,
           statusLabel: r.statusLabel.trim(),
           effectiveFrom,
         })),

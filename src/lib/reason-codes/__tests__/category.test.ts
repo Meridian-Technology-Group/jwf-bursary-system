@@ -24,8 +24,13 @@ describe("reason-code category util (Epic 08 / CALC-09)", () => {
   it("buckets display 32 (Other) and out-of-range new codes under Other", () => {
     expect(categoryKeyForCode(132)).toBe("other"); // display 32 "Other"
     expect(categoryKeyForCode(100)).toBe("other"); // display 0 — no such code
-    expect(categoryKeyForCode(137)).toBe("other"); // display 37 — beyond list
+    expect(categoryKeyForCode(138)).toBe("other"); // display 38 — beyond list
     expect(categoryForCode(132)).toBe("Other");
+  });
+
+  it("buckets display 37 (her 6 Sep 2026 addition) under Fees & Adjustments", () => {
+    expect(categoryKeyForCode(137)).toBe("fees");
+    expect(categoryForCode(137)).toBe("Fees & Adjustments");
   });
 
   it("buckets legacy placeholder codes (< 100) under Legacy (deprecated)", () => {
@@ -49,7 +54,7 @@ describe("reason-code category util (Epic 08 / CALC-09)", () => {
     expect(groupHeadingForCode(108)).toBe("8 – 21: Income & Employment");
     expect(groupHeadingForCode(125)).toBe("22 – 27: Property & Assets");
     expect(groupHeadingForCode(129)).toBe("28 – 31: Documentation & Compliance");
-    expect(groupHeadingForCode(135)).toBe("33 – 36: Fees & Adjustments");
+    expect(groupHeadingForCode(135)).toBe("33 – 37: Fees & Adjustments");
     expect(groupHeadingForCode(132)).toBe("Other");
     expect(groupHeadingForCode(14)).toBe("Legacy (deprecated)");
   });
@@ -60,7 +65,7 @@ describe("reason-code category util (Epic 08 / CALC-09)", () => {
       "8 – 21: Income & Employment",
       "22 – 27: Property & Assets",
       "28 – 31: Documentation & Compliance",
-      "33 – 36: Fees & Adjustments",
+      "33 – 37: Fees & Adjustments",
       "Other",
       "Legacy (deprecated)",
     ]);

@@ -7,22 +7,22 @@ import {
   notionalCostConfigs,
   familyCategoryMetas,
   affordabilityBands,
-  incomeCategoryBands,
+  incomeCategoryBandsRespec,
   propertyEquityBands,
-  financialEquityBands,
-  debtRatioBands,
-  lifestyleSqueezeBands,
+  financialEquityBandsRespec,
+  debtRatioBandsRespec,
+  lifestyleSqueezeBandsRespec,
 } from '../../../prisma/seed-data/profiling-reference'
 
 const ref: ReferenceBundle = {
   notionalCosts: notionalCostConfigs,
   familyCategoryMetas,
   affordabilityBands,
-  incomeCategoryBands,
+  incomeCategoryBands: incomeCategoryBandsRespec,
   propertyEquityBands,
-  financialEquityBands,
-  debtRatioBands,
-  lifestyleSqueezeBands,
+  financialEquityBands: financialEquityBandsRespec,
+  debtRatioBands: debtRatioBandsRespec,
+  lifestyleSqueezeBands: lifestyleSqueezeBandsRespec,
 }
 
 function earner(annualSalaryPaye: number): AssessorIncomeRecord {
