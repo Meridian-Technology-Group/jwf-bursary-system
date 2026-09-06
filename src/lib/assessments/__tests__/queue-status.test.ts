@@ -46,3 +46,18 @@ describe("deriveAssessmentQueueStatus", () => {
     ).toBe("LOCKED");
   });
 });
+
+// ─── Epic 18 — final states are LOCKED from the queue's viewpoint ────────────
+
+import { deriveAssessmentQueueStatus as deriveQ18 } from "../queue-status";
+
+describe("Epic 18 — queue status for the post-assessment finals", () => {
+  it.each(["NEW_AWARD", "WAITING_LIST", "CLOSED_ARCHIVED"] as const)(
+    "%s derives LOCKED (no assessment work remains)",
+    (status) => {
+      expect(
+        deriveQ18({ assessmentStatus: status, outcome: null, closedAt: null })
+      ).toBe("LOCKED");
+    }
+  );
+});

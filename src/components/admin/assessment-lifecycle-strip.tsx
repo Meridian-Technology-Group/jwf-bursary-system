@@ -19,7 +19,7 @@
 
 import {
   ASSESSMENT_LIFECYCLE_LABELS,
-  ASSESSMENT_LIFECYCLE_ORDER,
+  lifecycleStripSlots,
   type AssessmentLifecycleState,
 } from "@/lib/assessments/lifecycle-state";
 import { cn } from "@/lib/utils";
@@ -54,14 +54,17 @@ export function AssessmentLifecycleStrip({
       role="status"
       aria-label={`Assessment status: ${ASSESSMENT_LIFECYCLE_LABELS[state]}`}
     >
-      {ASSESSMENT_LIFECYCLE_ORDER.map((s) => (
+      {/* Epic 18 — the fourth slot shows the specific final state (NEW AWARD /
+          WAITING LIST / CLOSED & ARCHIVED) once one is reached; LOCKED remains
+          the generic label for legacy outcome locks. */}
+      {lifecycleStripSlots(state).map((slot) => (
         <span
-          key={s}
-          data-state={s}
-          data-current={s === state || undefined}
-          className={lifecycleChipClass(s === state)}
+          key={slot.key}
+          data-state={slot.key}
+          data-current={slot.current || undefined}
+          className={lifecycleChipClass(slot.current)}
         >
-          {ASSESSMENT_LIFECYCLE_LABELS[s]}
+          {slot.label}
         </span>
       ))}
     </div>

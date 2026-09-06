@@ -665,3 +665,53 @@ describe("completeAssessmentRow — v2 snapshot guard (CALC-15)", () => {
     expect(tx.assessment.update).toHaveBeenCalledTimes(1);
   });
 });
+
+// ─── Epic 18 — the post-assessment lifecycle transitions ─────────────────────
+
+import {
+  isLegalAssessmentTransition as legal18,
+  isPostAssessmentFinalState,
+} from "../status";
+
+describe("status service — Epic 18 post-assessment lifecycle", () => {
+  it("COMPLETED (stored as complete) exits to each of the three finals", () => {
+    expect(legal18("COMPLETED", "NEW_AWARD")).toBe(true);
+    expect(legal18("COMPLETED", "WAITING_LIST")).toBe(true);
+    expect(legal18("COMPLETED", "CLOSED_ARCHIVED")).toBe(true);
+  });
+
+  it("the waiting list resolves onward or back (transitions #6/#7 + hold)", () => {
+    expect(legal18("WAITING_LIST", "NEW_AWARD")).toBe(true);
+    expect(legal18("WAITING_LIST", "CLOSED_ARCHIVED")).toBe(true);
+    expect(legal18("WAITING_LIST", "COMPLETED")).toBe(true);
+  });
+
+  it("every reversal goes back through stored-as-complete, never straight to editing", () => {
+    expect(legal18("NEW_AWARD", "COMPLETED")).toBe(true); // Q16
+    expect(legal18("CLOSED_ARCHIVED", "COMPLETED")).toBe(true); // Q15
+    expect(legal18("NEW_AWARD", "IN_PROGRESS")).toBe(false);
+    expect(legal18("CLOSED_ARCHIVED", "IN_PROGRESS")).toBe(false);
+  });
+
+  it("a locked award cannot slide sideways into a close without a reversal", () => {
+    expect(legal18("NEW_AWARD", "CLOSED_ARCHIVED")).toBe(false);
+    expect(legal18("NEW_AWARD", "WAITING_LIST")).toBe(false);
+    expect(legal18("CLOSED_ARCHIVED", "NEW_AWARD")).toBe(false);
+  });
+
+  it("finals are unreachable except from stored-as-complete or the waiting list", () => {
+    for (const from of ["NOT_STARTED", "IN_PROGRESS", "PAUSED"] as const) {
+      expect(legal18(from, "NEW_AWARD")).toBe(false);
+      expect(legal18(from, "WAITING_LIST")).toBe(false);
+      expect(legal18(from, "CLOSED_ARCHIVED")).toBe(false);
+    }
+  });
+
+  it("isPostAssessmentFinalState covers exactly the three shipped finals", () => {
+    expect(isPostAssessmentFinalState("NEW_AWARD")).toBe(true);
+    expect(isPostAssessmentFinalState("WAITING_LIST")).toBe(true);
+    expect(isPostAssessmentFinalState("CLOSED_ARCHIVED")).toBe(true);
+    expect(isPostAssessmentFinalState("COMPLETED")).toBe(false);
+    expect(isPostAssessmentFinalState(null)).toBe(false);
+  });
+});

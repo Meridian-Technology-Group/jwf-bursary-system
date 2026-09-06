@@ -144,10 +144,31 @@ const ASSESSMENT_STATUS_CONFIG: Record<AssessmentStatus, BadgeConfig> = {
     Icon: PauseCircle,
   },
   COMPLETED: {
-    label: "Completed",
+    // Epic 18 (WP-B2) — her name for the intermediary stage every assessment
+    // parks in. Same state as before; the label changed, not the semantics.
+    label: "Stored as Complete",
     containerClass: "bg-green-50 border-green-300 text-green-700",
     iconClass: "text-green-500",
     Icon: CheckCircle2,
+  },
+  // Epic 18 (WP-B3..B5) — the post-assessment final states.
+  NEW_AWARD: {
+    label: "New Award",
+    containerClass: "bg-success-50 border-success-300 text-success-700",
+    iconClass: "text-success-600",
+    Icon: Award,
+  },
+  WAITING_LIST: {
+    label: "Waiting List",
+    containerClass: "bg-amber-50 border-amber-300 text-amber-700",
+    iconClass: "text-amber-600",
+    Icon: FileClock,
+  },
+  CLOSED_ARCHIVED: {
+    label: "Closed & Archived",
+    containerClass: "bg-slate-100 border-slate-300 text-slate-600",
+    iconClass: "text-slate-500",
+    Icon: Ban,
   },
 };
 
