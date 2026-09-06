@@ -4,33 +4,40 @@
  * `groupReasonCodes`) and the settings table (`settings/reason-code-table.tsx`,
  * `getCategory`) consume this util so the two UIs can never drift.
  *
- * CALC-09 (decision D4): the placeholder codes 1–35 are deprecated and the
- * client's definitive year-on-year list is seeded as DB codes 101–136, where
- * the workbook's own display number is `code − 100` (it also prefixes each
- * label). Grouping is therefore by display number:
+ * Three generations, never deleted (CALC-09's deprecate-and-replace rule):
  *
- *   1–7    Circumstances            (first assessment, no change, family
- *                                    member changes, divorce, bereavement,
- *                                    illness)
- *   8–21   Income & Employment
- *   22–27  Property & Assets
- *   28–31  Documentation & Compliance
- *   33–37  Fees & Adjustments
- *   else   Other                    (incl. display 32 "Other")
+ *   1–35     the original placeholders — deprecated, bucket "Legacy".
+ *   101–137  the 24 Aug workbook transcription (display = code − 100) —
+ *            deprecated 6 Sep 2026 when her reviewed list landed (D4 closed).
+ *   201–241  Charlotte's DEFINITIVE list ("Reason & Gap Codes", 6 Sep 2026),
+ *            display = code − 200, using her regrouping:
  *
- * Legacy codes (< 100) — the deprecated placeholders — bucket under
- * "Legacy (deprecated)", kept LAST in the ordered heading list. They never
- * appear in the selection picker (it is fed only active codes); the bucket
- * exists for settings/management views that show deprecated rows.
+ *   1–7    Circumstances
+ *   8–26   Income & Employment
+ *   27–33  Property & Assets
+ *   34–37  Documentation & Compliance
+ *   38–41  Fees & Adjustments        (incl. display 41 "Other")
+ *
+ * Deprecated codes never appear in the selection picker (it is fed only
+ * active codes); their buckets exist for settings/management views and for
+ * historic recommendations, which keep rendering under the category they
+ * were picked from.
  */
 
-/** Stable category keys (ordered) used to bucket reason codes. */
+/**
+ * Stable category keys (ordered) used to bucket reason codes. The `range`
+ * strings are the CURRENT (D4, 6 Sep 2026) taxonomy — DB codes 201–241,
+ * display number = code − 200 — which is the only generation active pickers
+ * ever see. The retired 101–137 generation keeps its own range mapping in
+ * `categoryKeyForCode` so a historic recommendation still buckets correctly,
+ * but its rows are deprecated and never reach the range-labelled headings.
+ */
 export const REASON_CODE_CATEGORIES = [
   { key: "circumstances", label: "Circumstances", range: "1 – 7" },
-  { key: "income", label: "Income & Employment", range: "8 – 21" },
-  { key: "property", label: "Property & Assets", range: "22 – 27" },
-  { key: "documentation", label: "Documentation & Compliance", range: "28 – 31" },
-  { key: "fees", label: "Fees & Adjustments", range: "33 – 37" },
+  { key: "income", label: "Income & Employment", range: "8 – 26" },
+  { key: "property", label: "Property & Assets", range: "27 – 33" },
+  { key: "documentation", label: "Documentation & Compliance", range: "34 – 37" },
+  { key: "fees", label: "Fees & Adjustments", range: "38 – 41" },
   { key: "other", label: "Other", range: "" },
   { key: "legacy", label: "Legacy (deprecated)", range: "" },
 ] as const;
@@ -41,6 +48,20 @@ export type ReasonCodeCategoryKey =
 /** The category key for a reason code's numeric (DB) value. */
 export function categoryKeyForCode(code: number): ReasonCodeCategoryKey {
   if (code < 100) return "legacy";
+
+  // D4 (6 Sep 2026) — Charlotte's definitive 41-code list, DB codes 201–241.
+  if (code >= 200) {
+    const display = code - 200;
+    if (display >= 1 && display <= 7) return "circumstances";
+    if (display >= 8 && display <= 26) return "income";
+    if (display >= 27 && display <= 33) return "property";
+    if (display >= 34 && display <= 37) return "documentation";
+    if (display >= 38 && display <= 41) return "fees";
+    return "other";
+  }
+
+  // The retired 101–137 generation (deprecated 6 Sep 2026) — kept so historic
+  // recommendations bucket under the category they were picked from.
   const display = code - 100;
   if (display >= 1 && display <= 7) return "circumstances";
   if (display >= 8 && display <= 21) return "income";

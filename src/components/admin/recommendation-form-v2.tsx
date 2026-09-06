@@ -52,6 +52,10 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ReasonCodeSelector } from "@/components/admin/reason-code-selector";
+import {
+  gapGroupHeadingForCode,
+  GAP_CODE_GROUP_HEADINGS,
+} from "@/lib/reason-codes/gap-category";
 import type { ReasonCodeOption } from "@/components/admin/reason-code-selector";
 import { AssessmentSynopsis } from "@/components/admin/assessment-synopsis";
 import {
@@ -857,11 +861,11 @@ export function RecommendationFormV2({
                 selectedIds={selectedGapReasonIds}
                 onChange={setSelectedGapReasonIds}
                 disabled={isReadOnly}
-                // CALC-16 — gap_reasons (codes 1–10) is a separate taxonomy
-                // from reason_codes; the YoY category grouping would bucket
-                // every one of these under "Legacy (deprecated)".
-                grouped={false}
-                flatGroupLabel="Reasons for gap"
+                // D4 (6 Sep 2026) — her definitive gap list ships in four
+                // named groups, rendered via the taxonomy-specific heading
+                // props (gap codes never share the reason_codes numbering).
+                headingFor={gapGroupHeadingForCode}
+                headingOrder={GAP_CODE_GROUP_HEADINGS}
               />
               {!gapValid && (
                 <p className="text-xs text-red-600" role="alert">
