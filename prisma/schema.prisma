@@ -146,6 +146,12 @@ model BursaryAccount {
   /// automatic close, and only while no outcome has been set. Nothing else may
   /// rewrite this field. `Application.closedAt` mirrors this rule.
   closedAt             DateTime?              @map("closed_at") @db.Timestamptz(6)
+  /// Epic 18b — why the account was closed manually (her April–May leavers
+  /// window: "their son will leave the school... and will not use their
+  /// remaining 3 years of bursary support"). Null for the automatic
+  /// schedule-complete close, which needs no reason.
+  closeReasonId        String?                @map("close_reason_id") @db.Uuid
+  closeReason          CloseReason?           @relation("BursaryAccountCloseReason", fields: [closeReasonId], references: [id], onDelete: Restrict)
   /// Epic 14 C8 (CG-24, LA-7) — manual pre-system YoY history rows for
   /// families that predate the system: `[{ academicYear, netIncome, savings,
   /// propertyEquity, debtExposure, livingArrangement, lifestyleSqueeze }]`.
@@ -953,17 +959,19 @@ model LifestyleSqueezeBand {
 /// label even after it is removed from the picker (Story 4.4). No relation
 /// to Application yet; the FK arrives with the close action itself (A3).
 model CloseReason {
-  id                  String        @id @default(uuid()) @db.Uuid
+  id                  String           @id @default(uuid()) @db.Uuid
   /// Unique natural key (close_reasons_label_key) — the idempotent
   /// seed upserts by label; there is no numeric code like reason_codes.
-  label               String        @unique
-  purgeOnClose        Boolean       @default(false) @map("purge_on_close")
-  isDeprecated        Boolean       @default(false) @map("is_deprecated")
-  sortOrder           Int           @map("sort_order")
-  createdAt           DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+  label               String           @unique
+  purgeOnClose        Boolean          @default(false) @map("purge_on_close")
+  isDeprecated        Boolean          @default(false) @map("is_deprecated")
+  sortOrder           Int              @map("sort_order")
+  createdAt           DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
   applications        Application[]
   /// Epic 18b — assessments archived with this reason (assessment-level close).
-  archivedAssessments Assessment[]  @relation("AssessmentArchiveCloseReason")
+  archivedAssessments Assessment[]     @relation("AssessmentArchiveCloseReason")
+  /// Epic 18b — accounts closed manually with this reason.
+  closedAccounts      BursaryAccount[] @relation("BursaryAccountCloseReason")
 
   @@map("close_reasons")
 }

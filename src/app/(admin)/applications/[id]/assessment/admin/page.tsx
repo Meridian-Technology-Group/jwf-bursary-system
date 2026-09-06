@@ -39,6 +39,8 @@ import { cn } from "@/lib/utils";
 import { AssessmentSynopsis } from "@/components/admin/assessment-synopsis";
 import { WatchOutNotesEditor } from "@/components/admin/watch-out-notes-editor";
 import { PreSystemHistoryEditor } from "@/components/admin/pre-system-history-editor";
+import { CloseBursaryAccountDialog } from "@/components/admin/close-bursary-account-dialog";
+import { getAllCloseReasons } from "@/lib/db/queries/reference-tables";
 import type { SiblingDetail } from "@/types/assessment-v2";
 
 export const metadata = {
@@ -76,6 +78,8 @@ export default async function AssessmentAdminPage({ params }: Props) {
     yoyRows,
     preSystem,
     scheduleRows,
+    accountStatus,
+    closeReasons,
   } = await withUserContext(user.id, user.role as RlsRole, async (tx) => {
     const app = await getApplicationWithDetails(tx, params.id);
     if (!app) {
@@ -87,6 +91,8 @@ export default async function AssessmentAdminPage({ params }: Props) {
         yoyRows: [],
         preSystem: [],
         scheduleRows: [],
+        accountStatus: null,
+        closeReasons: [],
       };
     }
     const a = await getAssessment(tx, params.id);
@@ -105,9 +111,16 @@ export default async function AssessmentAdminPage({ params }: Props) {
     const account = app.bursaryAccountId
       ? await tx.bursaryAccount.findUnique({
           where: { id: app.bursaryAccountId },
-          select: { preSystemHistory: true },
+          select: { preSystemHistory: true, status: true },
         })
       : null;
+    // Epic 18b — the manual account close's reason picker (ADMIN only).
+    const reasons =
+      user.role === Role.ADMIN && account?.status === "ACTIVE"
+        ? (await getAllCloseReasons(tx))
+            .filter((r) => !r.isDeprecated)
+            .map((r) => ({ id: r.id, label: r.label }))
+        : [];
     const schedule = app.bursaryAccountId
       ? await getPayableFeesScheduleRows(tx, app.bursaryAccountId)
       : [];
@@ -119,6 +132,8 @@ export default async function AssessmentAdminPage({ params }: Props) {
       yoyRows: yoy,
       preSystem: parsePreSystemHistory(account?.preSystemHistory),
       scheduleRows: schedule,
+      accountStatus: account?.status ?? null,
+      closeReasons: reasons,
     };
   });
   if (!application) notFound();
@@ -178,6 +193,24 @@ export default async function AssessmentAdminPage({ params }: Props) {
         {siblingNames.length > 0 && (
           <span className="text-slate-500">
             Siblings: <span className="text-slate-700">{siblingNames.join(", ")}</span>
+          </span>
+        )}
+        {/* Epic 18b — her April–May leavers window: close the ACTIVE account
+            with a structured reason. ADMIN only; hidden once closed. */}
+        {user.role === Role.ADMIN &&
+          accountStatus === "ACTIVE" &&
+          application.bursaryAccountId && (
+            <span className="ml-auto">
+              <CloseBursaryAccountDialog
+                bursaryAccountId={application.bursaryAccountId}
+                applicationId={params.id}
+                closeReasons={closeReasons}
+              />
+            </span>
+          )}
+        {accountStatus === "CLOSED" && (
+          <span className="ml-auto rounded bg-slate-100 px-2 py-1 text-xs font-semibold uppercase tracking-wide text-slate-500">
+            Account closed
           </span>
         )}
       </div>
