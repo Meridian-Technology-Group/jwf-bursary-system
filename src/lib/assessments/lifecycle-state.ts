@@ -29,11 +29,29 @@ export type AssessmentLifecycleState =
   | "NOT_STARTED"
   | "PAUSED"
   | "COMPLETE"
-  | "LOCKED";
+  /** Legacy lock: an old 3-value outcome recorded, or the application closed. */
+  | "LOCKED"
+  // Epic 18 (WP-B3..B5) — the post-assessment final states, each its own
+  // strip label. All render in the strip's fourth (final) slot.
+  | "NEW_AWARD"
+  | "WAITING_LIST"
+  | "ARCHIVED";
 
 export function deriveAssessmentLifecycleState(
   input: AssessmentQueueStatusInput
 ): AssessmentLifecycleState {
+  // Epic 18 — the specific final state wins over the queue's coarse LOCKED,
+  // so the strip can say WHICH final the assessment reached.
+  switch (input.assessmentStatus) {
+    case "NEW_AWARD":
+      return "NEW_AWARD";
+    case "WAITING_LIST":
+      return "WAITING_LIST";
+    case "CLOSED_ARCHIVED":
+      return "ARCHIVED";
+    default:
+      break;
+  }
   switch (deriveAssessmentQueueStatus(input)) {
     case "LOCKED":
       return "LOCKED";
@@ -47,20 +65,62 @@ export function deriveAssessmentLifecycleState(
   }
 }
 
-/** Charlotte's labels, verbatim (CH-05). */
+/** Charlotte's labels (CH-05, relabelled per Epic 18 WP-B2 and B3..B5). */
 export const ASSESSMENT_LIFECYCLE_LABELS: Record<
   AssessmentLifecycleState,
   string
 > = {
   NOT_STARTED: "NOT STARTED",
   PAUSED: "PAUSED",
-  COMPLETE: "COMPLETE",
+  // WP-B2 — her name for the intermediary stage; same state, new label.
+  COMPLETE: "STORED AS COMPLETE",
   LOCKED: "LOCKED",
+  NEW_AWARD: "NEW AWARD",
+  WAITING_LIST: "WAITING LIST",
+  ARCHIVED: "CLOSED & ARCHIVED",
 };
 
+/**
+ * The strip stays FOUR chips (CH-05's mock). The fourth slot is the final
+ * stage: it shows the generic LOCKED until a specific Epic 18 final state is
+ * reached, at which point it shows that state's own label.
+ */
 export const ASSESSMENT_LIFECYCLE_ORDER: readonly AssessmentLifecycleState[] = [
   "NOT_STARTED",
   "PAUSED",
   "COMPLETE",
   "LOCKED",
 ];
+
+/** The states that occupy the strip's fourth (final) slot. */
+const FINAL_SLOT_STATES: readonly AssessmentLifecycleState[] = [
+  "LOCKED",
+  "NEW_AWARD",
+  "WAITING_LIST",
+  "ARCHIVED",
+];
+
+export interface LifecycleStripSlot {
+  key: AssessmentLifecycleState;
+  label: string;
+  current: boolean;
+}
+
+/**
+ * The four chips the strip renders for a given state. Pure, so the
+ * final-slot substitution (LOCKED → the specific Epic 18 state) is
+ * unit-testable without React.
+ */
+export function lifecycleStripSlots(
+  state: AssessmentLifecycleState
+): LifecycleStripSlot[] {
+  const finalSlotState = FINAL_SLOT_STATES.includes(state) ? state : "LOCKED";
+  return ASSESSMENT_LIFECYCLE_ORDER.map((slot) => {
+    const key = slot === "LOCKED" ? finalSlotState : slot;
+    return {
+      key,
+      label: ASSESSMENT_LIFECYCLE_LABELS[key],
+      current: key === state,
+    };
+  });
+}

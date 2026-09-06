@@ -1,6 +1,6 @@
 ---
 title: "Post-assessment lifecycle — state machine (Epic 18 / WP-B1)"
-status: draft — awaiting Charlotte's answers to Q11, Q14, Q15
+status: built — every question answered 26 Aug–6 Sep 2026; WP-B2..B5 + B7 shipped; WP-B6 (purge) still gated on Q10b in writing
 opened: 2026-08-26
 opened_by: Brian Wagner
 related:
@@ -24,8 +24,18 @@ is the Bursary Account track's Active/Closed pair (§5). Where this document and
 [`bursary-application-flow.drawio`](./bursary-application-flow.drawio) disagree
 on the pre-decision topology, **the diagram still wins.**
 
-> ⚠️ **Nothing here is built.** This is the WP-B1 deliverable — a diagram and a
-> question list. Lane B's build (WP-B2…B7) starts after she answers.
+> ✅ **Built (WP-B2..B5 + B7), 6 Sep 2026.** Her answers landed 5–6 Sep:
+> **Q11** — no email on any transition (she notifies families after governor
+> approval; a manual notify/mail merge is "a request for later/next year");
+> **Q14** — the reference prompt is advisory, inline-editable by assessor and
+> admin at the New Award dialog; **Q15** — archived reopens to stored ("usually
+> not, but let's make it a possibility"); **Q16** — a new award is reversible
+> ("please let it have a way back too"), and the account survives the reversal.
+> Implementation: `AssessmentStatus` gained NEW_AWARD / WAITING_LIST /
+> CLOSED_ARCHIVED; core in `src/lib/applications/post-assessment-core.ts`;
+> the three decision buttons and the outcome email are gone from the v2
+> surface. **WP-B6 (closed & purged) remains gated on Q10b in writing** — the
+> enum value deliberately does not exist yet.
 
 ---
 

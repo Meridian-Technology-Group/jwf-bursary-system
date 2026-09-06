@@ -33,30 +33,46 @@ import {
   Scale,
   Info,
   CheckCircle2,
+  Award,
+  Clock3,
+  Archive,
+  Undo2,
+  Lock,
 } from "lucide-react";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ReasonCodeSelector } from "@/components/admin/reason-code-selector";
+import {
+  gapGroupHeadingForCode,
+  GAP_CODE_GROUP_HEADINGS,
+} from "@/lib/reason-codes/gap-category";
 import type { ReasonCodeOption } from "@/components/admin/reason-code-selector";
 import { AssessmentSynopsis } from "@/components/admin/assessment-synopsis";
 import {
-  AWARD_DECISIONS,
-  AwardDialog,
   ReadOnlyBanner,
   RedFlagBanner,
   SiblingContextPanel,
   formatCurrency,
   isTerminalOutcome,
-  type AwardDecision,
   type SiblingContextRow,
 } from "@/components/admin/recommendation-form";
 import {
   saveRecommendationAction,
-  setApplicationAwardAction,
+  setPostAssessmentStateAction,
+  revertPostAssessmentStateAction,
   type SaveRecommendationData,
 } from "@/app/(admin)/applications/[id]/recommendation/actions";
+import type { PostAssessmentFinalState } from "@/lib/applications/status";
 import { completeAssessmentAction } from "@/app/(admin)/applications/[id]/assessment/actions";
 import {
   computeGapAmount,
@@ -67,7 +83,7 @@ import {
 } from "@/lib/assessment/recommendation-v2";
 import { buildV2AwardLegs } from "@/lib/assessment/recommendation-options";
 import { cn } from "@/lib/utils";
-import type { AssessmentOutcome } from "@prisma/client";
+import type { AssessmentOutcome, AssessmentStatus } from "@prisma/client";
 
 // ─── Serialised shapes (Decimal→number) handed in from the server component ────
 
@@ -121,6 +137,10 @@ export interface SerialisedRecommendationV2 {
 export interface RecommendationFormV2Props {
   applicationId: string;
   assessmentId: string;
+  /** Epic 18 — the assessment's lifecycle status; drives the decision card and the read-only lock. */
+  assessmentStatus: AssessmentStatus;
+  /** Epic 18 (Q14) — the current application reference, pre-filling the advisory prompt at New Award. */
+  applicationReference: string;
   assessmentOutcome: AssessmentOutcome | null;
   synopsis: string | null;
   snapshot: V2AssessmentSnapshot;
@@ -148,6 +168,68 @@ function parseNum(value: string): number {
   const n = Number.parseFloat(value);
   return Number.isFinite(n) ? n : 0;
 }
+
+// ─── Epic 18 — the post-assessment decisions ────────────────────────────────
+//
+// Charlotte's model (docs/diagrams/epic-18-post-assessment-lifecycle.md). No
+// decision sends an email (Q11 — she writes to families herself once the
+// governors have approved), and every one has a way back to Stored as
+// Complete (Q15/Q16). CLOSED_PURGED is deliberately absent until Q10b is
+// agreed in writing (WP-B6).
+const POST_ASSESSMENT_META: Record<
+  PostAssessmentFinalState,
+  {
+    label: string;
+    icon: typeof Award;
+    buttonClass: string;
+    bannerClass: string;
+    bannerText: string;
+    dialogTitle: string;
+    dialogBody: string;
+    confirmLabel: string;
+    revertLabel: string;
+  }
+> = {
+  NEW_AWARD: {
+    label: "Lock as new award",
+    icon: Award,
+    buttonClass: "bg-success-600 text-white hover:bg-success-600/90",
+    bannerClass: "border-success-300 bg-success-50 text-success-800",
+    bannerText:
+      "Locked as a new award. The active bursary account is set up and the admin page is live; the assessment can no longer be amended.",
+    dialogTitle: "Lock as new award?",
+    dialogBody:
+      "This locks the assessment as final, sets up the active bursary account and activates the admin page. No email is sent — you notify the family once the governors have approved.",
+    confirmLabel: "Lock as new award",
+    revertLabel: "Reverse new award",
+  },
+  WAITING_LIST: {
+    label: "Waiting list",
+    icon: Clock3,
+    buttonClass: "bg-amber-500 text-white hover:bg-amber-500/90",
+    bannerClass: "border-amber-300 bg-amber-50 text-amber-800",
+    bannerText:
+      "On the bursary waiting list while the admission team works through accepted and declined place offers.",
+    dialogTitle: "Move to the waiting list?",
+    dialogBody:
+      "The assessment is held while the admission team works through the accepted and declined place offers. It can move on to a new award or a close, or come back to stored, at any time. No email is sent.",
+    confirmLabel: "Move to waiting list",
+    revertLabel: "Return to stored as complete",
+  },
+  CLOSED_ARCHIVED: {
+    label: "Close & archive",
+    icon: Archive,
+    buttonClass: "bg-slate-600 text-white hover:bg-slate-600/90",
+    bannerClass: "border-slate-300 bg-slate-100 text-slate-700",
+    bannerText:
+      "Closed and archived. The record is retained and the assessment can be reopened if needed.",
+    dialogTitle: "Close and archive?",
+    dialogBody:
+      "The assessment closes with the record retained. It can be reopened back to stored as complete later. No email is sent.",
+    confirmLabel: "Close & archive",
+    revertLabel: "Reopen (back to stored)",
+  },
+};
 
 // ─── Award-legs panel ─────────────────────────────────────────────────────────
 
@@ -334,6 +416,8 @@ function ProfilingStrip({ snapshot }: { snapshot: V2AssessmentSnapshot }) {
 export function RecommendationFormV2({
   applicationId,
   assessmentId,
+  assessmentStatus,
+  applicationReference,
   assessmentOutcome,
   synopsis,
   snapshot,
@@ -345,7 +429,16 @@ export function RecommendationFormV2({
   outcomeLocked = false,
 }: RecommendationFormV2Props) {
   const router = useRouter();
-  const isReadOnly = isTerminalOutcome(assessmentOutcome);
+  // Epic 18 — a post-assessment final state locks the form; so does a legacy
+  // 3-value outcome on old rows. (Local union check rather than importing the
+  // server-side status module into this client component.)
+  const finalState: PostAssessmentFinalState | null =
+    assessmentStatus === "NEW_AWARD" ||
+    assessmentStatus === "WAITING_LIST" ||
+    assessmentStatus === "CLOSED_ARCHIVED"
+      ? assessmentStatus
+      : null;
+  const isReadOnly = isTerminalOutcome(assessmentOutcome) || finalState != null;
 
   // CH-35 — completing the assessment from this tab, so the "complete the
   // assessment" instruction below is not a dead end. The server action carries
@@ -428,11 +521,13 @@ export function RecommendationFormV2({
     text: string;
   } | null>(null);
 
-  // ── Award decision dialog ─────────────────────────────────────────────────
-  const [pendingDecision, setPendingDecision] = React.useState<AwardDecision | null>(
-    null
-  );
-  const [isSettingOutcome, setIsSettingOutcome] = React.useState(false);
+  // ── Epic 18 — post-assessment decision dialog ────────────────────────────
+  const [pendingState, setPendingState] =
+    React.useState<PostAssessmentFinalState | null>(null);
+  const [isSettingState, setIsSettingState] = React.useState(false);
+  const [isReverting, setIsReverting] = React.useState(false);
+  // Q14 — the advisory reference prompt inside the New Award dialog.
+  const [awardReference, setAwardReference] = React.useState(applicationReference);
 
   async function handleSave() {
     if (!gapValid) {
@@ -489,15 +584,27 @@ export function RecommendationFormV2({
     }
   }
 
-  async function handleConfirmDecision() {
-    if (!pendingDecision) return;
-    setIsSettingOutcome(true);
-    const result = await setApplicationAwardAction(applicationId, pendingDecision, {
-      bursaryAward: bursaryAwardBeforeVat,
-      scholarshipAward: summary.scholarshipSpendBeforeVat,
-    });
-    setIsSettingOutcome(false);
-    setPendingDecision(null);
+  async function handleConfirmState() {
+    if (!pendingState) return;
+    setIsSettingState(true);
+    const result = await setPostAssessmentStateAction(
+      applicationId,
+      pendingState,
+      pendingState === "NEW_AWARD" ? { amendedReference: awardReference } : undefined
+    );
+    setIsSettingState(false);
+    setPendingState(null);
+    if (result.success) {
+      router.refresh();
+    } else {
+      setSaveMessage({ type: "error", text: result.error });
+    }
+  }
+
+  async function handleRevertState() {
+    setIsReverting(true);
+    const result = await revertPostAssessmentStateAction(applicationId);
+    setIsReverting(false);
     if (result.success) {
       router.refresh();
     } else {
@@ -507,7 +614,63 @@ export function RecommendationFormV2({
 
   return (
     <div className="space-y-6">
-      {isReadOnly && assessmentOutcome && (
+      {/* Epic 18 — the final-state banner carries its own way back (Q15/Q16)
+          and, from the waiting list, the two onward moves. */}
+      {finalState && (
+        <div
+          className={cn(
+            "rounded-lg border px-4 py-3",
+            POST_ASSESSMENT_META[finalState].bannerClass
+          )}
+          role="status"
+        >
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-start gap-2">
+              <Lock className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+              <p className="text-sm font-medium">
+                {POST_ASSESSMENT_META[finalState].bannerText}
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {finalState === "WAITING_LIST" && (
+                <>
+                  <Button
+                    type="button"
+                    size="sm"
+                    onClick={() => setPendingState("NEW_AWARD")}
+                    className={POST_ASSESSMENT_META.NEW_AWARD.buttonClass}
+                  >
+                    <Award className="mr-1.5 h-3.5 w-3.5" aria-hidden="true" />
+                    Lock as new award
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    onClick={() => setPendingState("CLOSED_ARCHIVED")}
+                    className={POST_ASSESSMENT_META.CLOSED_ARCHIVED.buttonClass}
+                  >
+                    <Archive className="mr-1.5 h-3.5 w-3.5" aria-hidden="true" />
+                    Close & archive
+                  </Button>
+                </>
+              )}
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={handleRevertState}
+                disabled={isReverting}
+              >
+                <Undo2 className="mr-1.5 h-3.5 w-3.5" aria-hidden="true" />
+                {isReverting
+                  ? "Reverting…"
+                  : POST_ASSESSMENT_META[finalState].revertLabel}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+      {!finalState && isReadOnly && assessmentOutcome && (
         <ReadOnlyBanner outcome={assessmentOutcome} />
       )}
 
@@ -698,11 +861,11 @@ export function RecommendationFormV2({
                 selectedIds={selectedGapReasonIds}
                 onChange={setSelectedGapReasonIds}
                 disabled={isReadOnly}
-                // CALC-16 — gap_reasons (codes 1–10) is a separate taxonomy
-                // from reason_codes; the YoY category grouping would bucket
-                // every one of these under "Legacy (deprecated)".
-                grouped={false}
-                flatGroupLabel="Reasons for gap"
+                // D4 (6 Sep 2026) — her definitive gap list ships in four
+                // named groups, rendered via the taxonomy-specific heading
+                // props (gap codes never share the reason_codes numbering).
+                headingFor={gapGroupHeadingForCode}
+                headingOrder={GAP_CODE_GROUP_HEADINGS}
               />
               {!gapValid && (
                 <p className="text-xs text-red-600" role="alert">
@@ -804,29 +967,32 @@ export function RecommendationFormV2({
           </CardContent>
         </Card>
       )}
+      {/* Epic 18 (WP-B7) — the three award-decision buttons are GONE. What
+          replaces them is her post-assessment model: New Award / Waiting list /
+          Close & archive, none of which sends an email (Q11). */}
       {!isReadOnly && !outcomeLocked && (
         <Card className="border-slate-200">
           <CardHeader>
-            <CardTitle className="text-base">Award decision</CardTitle>
+            <CardTitle className="text-base">Post-assessment decision</CardTitle>
             <p className="text-sm text-slate-500">
-              Record the panel&apos;s decision. Once set, the matching outcome
-              email is sent and this recommendation becomes read-only. Save the
-              recommendation first so the award figures are recorded with the
-              decision.
+              Move this stored assessment to its final stage. No email is sent
+              — you write to families once the governors have approved. Save
+              the recommendation first so the award figures are recorded with
+              the assessment.
             </p>
           </CardHeader>
           <CardContent>
             <div className="flex flex-wrap gap-3">
               {(
-                ["AWARDED", "QUALIFIES_NOT_AWARDED", "DOES_NOT_QUALIFY"] as const
-              ).map((decision) => {
-                const meta = AWARD_DECISIONS[decision];
+                ["NEW_AWARD", "WAITING_LIST", "CLOSED_ARCHIVED"] as const
+              ).map((state) => {
+                const meta = POST_ASSESSMENT_META[state];
                 const Icon = meta.icon;
                 return (
                   <Button
-                    key={decision}
+                    key={state}
                     type="button"
-                    onClick={() => setPendingDecision(decision)}
+                    onClick={() => setPendingState(state)}
                     className={meta.buttonClass}
                   >
                     <Icon className="mr-2 h-4 w-4" aria-hidden="true" />
@@ -839,15 +1005,63 @@ export function RecommendationFormV2({
         </Card>
       )}
 
-      <AwardDialog
-        open={pendingDecision !== null}
-        decision={pendingDecision}
-        scholarshipAward={summary.scholarshipSpendBeforeVat}
-        bursaryAward={bursaryAwardBeforeVat}
-        isPending={isSettingOutcome}
-        onConfirm={handleConfirmDecision}
-        onCancel={() => setPendingDecision(null)}
-      />
+      <Dialog
+        open={pendingState !== null}
+        onOpenChange={(open) => {
+          if (!open) setPendingState(null);
+        }}
+      >
+        <DialogContent>
+          {pendingState && (
+            <>
+              <DialogHeader>
+                <DialogTitle>
+                  {POST_ASSESSMENT_META[pendingState].dialogTitle}
+                </DialogTitle>
+                <DialogDescription>
+                  {POST_ASSESSMENT_META[pendingState].dialogBody}
+                </DialogDescription>
+              </DialogHeader>
+              {pendingState === "NEW_AWARD" && (
+                <div className="space-y-1.5">
+                  {/* Q14 — advisory, never blocking: confirm or amend, then lock.
+                      Editable here by assessors and admins alike. */}
+                  <Label htmlFor="award-reference">Bursary reference</Label>
+                  <Input
+                    id="award-reference"
+                    value={awardReference}
+                    onChange={(e) => setAwardReference(e.target.value)}
+                  />
+                  <p className="text-xs text-slate-500">
+                    Check the reference before locking — amend it here if
+                    needed, or leave it as it is.
+                  </p>
+                </div>
+              )}
+              <DialogFooter>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setPendingState(null)}
+                  disabled={isSettingState}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="button"
+                  onClick={handleConfirmState}
+                  disabled={isSettingState}
+                  className={POST_ASSESSMENT_META[pendingState].buttonClass}
+                >
+                  {isSettingState
+                    ? "Applying…"
+                    : POST_ASSESSMENT_META[pendingState].confirmLabel}
+                </Button>
+              </DialogFooter>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

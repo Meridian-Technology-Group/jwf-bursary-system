@@ -114,3 +114,28 @@ describe("selectPreviousWatchOutNotes — CALC-10 assessor's-wizard read path", 
     expect(candidates).toEqual(copy);
   });
 });
+
+// ─── Epic 18 — notes carry forward from the final states too ─────────────────
+
+import { selectPreviousWatchOutNotes as select18 } from "../watch-out-notes";
+
+describe("Epic 18 — watch-out notes from post-assessment finals", () => {
+  it.each(["NEW_AWARD", "WAITING_LIST", "CLOSED_ARCHIVED"] as const)(
+    "a prior-year %s assessment's notes are eligible",
+    (status) => {
+      const selected = select18(
+        [
+          {
+            applicationId: "prior-app",
+            academicYear: "2025/2026",
+            status,
+            completedAt: new Date("2025-11-01"),
+            watchOutNotes: "Self-employed income needs the SA302 chased early.",
+          },
+        ],
+        "current-app"
+      );
+      expect(selected?.applicationId).toBe("prior-app");
+    }
+  );
+});

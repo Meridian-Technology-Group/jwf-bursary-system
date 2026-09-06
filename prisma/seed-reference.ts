@@ -146,6 +146,7 @@ async function seedGapReasons(): Promise<void> {
       update: {
         label: gr.label,
         sortOrder: gr.sortOrder,
+        isDeprecated: gr.isDeprecated,
       },
     });
   }

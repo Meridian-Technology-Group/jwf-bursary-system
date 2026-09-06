@@ -35,6 +35,14 @@ export function deriveAssessmentQueueStatus(
 ): AssessmentQueueStatus {
   if (input.outcome != null || input.closedAt != null) return "LOCKED";
   switch (input.assessmentStatus) {
+    // Epic 18 — the post-assessment final states are all LOCKED from the
+    // queue's viewpoint: no assessment work remains. The workspace strip
+    // (lifecycle-state.ts) keeps the finer per-state labels; the queue stays
+    // coarse deliberately.
+    case "NEW_AWARD":
+    case "WAITING_LIST":
+    case "CLOSED_ARCHIVED":
+      return "LOCKED";
     case "COMPLETED":
       return "COMPLETED";
     case "PAUSED":
@@ -54,8 +62,11 @@ export const ASSESSMENT_QUEUE_STATUS_LABELS: Record<
   NOT_STARTED: "Due — not started",
   IN_PROGRESS: "In progress",
   PAUSED: "Paused",
-  COMPLETED: "Completed",
-  LOCKED: "Locked — outcome recorded",
+  // Epic 18 (WP-B2) — "stored as complete" is her name for this stage.
+  COMPLETED: "Stored as complete",
+  // Epic 18 — "outcome" is the legacy vocabulary; the lock now also covers
+  // the post-assessment final states (new award / waiting list / archived).
+  LOCKED: "Locked — decided",
 };
 
 export const ALL_ASSESSMENT_QUEUE_STATUSES: readonly AssessmentQueueStatus[] = [

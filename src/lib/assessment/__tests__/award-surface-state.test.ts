@@ -100,3 +100,34 @@ describe("resolveAwardSurfaceState (Epic 15 M6 / CI-11, LA15-4)", () => {
     ).toBe("FORM");
   });
 });
+
+// ─── Epic 18 — final states render the full (read-only) surface ──────────────
+
+import { resolveAwardSurfaceState as resolve18 } from "../award-surface-state";
+
+describe("Epic 18 — award surface for the post-assessment finals", () => {
+  it.each(["NEW_AWARD", "WAITING_LIST", "CLOSED_ARCHIVED"] as const)(
+    "%s renders FORM (read-only is the form's own derivation)",
+    (assessmentStatus) => {
+      expect(
+        resolve18({
+          mode: "gated",
+          assessmentStatus,
+          engineVersion: "v2",
+          hasSnapshot: true,
+        })
+      ).toBe("FORM");
+    }
+  );
+
+  it("a final-state v2 assessment with no snapshot still surfaces the corruption guard", () => {
+    expect(
+      resolve18({
+        mode: "gated",
+        assessmentStatus: "NEW_AWARD",
+        engineVersion: "v2",
+        hasSnapshot: false,
+      })
+    ).toBe("SNAPSHOT_INCOMPLETE");
+  });
+});

@@ -314,6 +314,8 @@ export async function RecommendationSurface({
         <RecommendationFormV2
           applicationId={applicationId}
           assessmentId={assessment.id}
+          assessmentStatus={assessment.status}
+          applicationReference={application.reference}
           assessmentOutcome={assessment.outcome}
           synopsis={assessment.synopsis}
           snapshot={snapshot}

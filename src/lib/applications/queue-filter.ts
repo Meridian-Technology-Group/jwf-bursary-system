@@ -95,9 +95,18 @@ export function matchesReviewPhase(
 
   switch (phase) {
     case "QUALIFIES":
-      return outcome === "AWARDED" || outcome === "QUALIFIES_NOT_AWARDED";
+      // Epic 18 — the new lifecycle never writes `outcome`; NEW_AWARD and
+      // WAITING_LIST are this phase's states (awarded / eligible-and-held),
+      // alongside the legacy outcome values on old rows.
+      return (
+        outcome === "AWARDED" ||
+        outcome === "QUALIFIES_NOT_AWARDED" ||
+        assessmentStatus === "NEW_AWARD" ||
+        assessmentStatus === "WAITING_LIST"
+      );
     case "DOES_NOT_QUALIFY":
-      return outcome === "DOES_NOT_QUALIFY";
+      // Epic 18 — closed & archived is the no-award close on the new path.
+      return outcome === "DOES_NOT_QUALIFY" || assessmentStatus === "CLOSED_ARCHIVED";
     case "COMPLETED":
       return outcome == null && assessmentStatus === "COMPLETED";
     case "PAUSED":

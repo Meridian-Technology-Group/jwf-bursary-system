@@ -21,6 +21,12 @@ import {
   setApplicationOutcome,
   type AwardDecision,
 } from "@/lib/applications/set-outcome-core";
+import {
+  setPostAssessmentFinalState,
+  revertPostAssessmentState,
+  type NewAwardOptions,
+} from "@/lib/applications/post-assessment-core";
+import type { PostAssessmentFinalState } from "@/lib/applications/status";
 import type { AwardFigures } from "@/lib/applications/account-promotion";
 import {
   computeGapAmount,
@@ -200,5 +206,40 @@ export async function setApplicationAwardAction(
     revalidatePath(`/applications/${applicationId}/recommendation`);
     revalidatePath(`/applications/${applicationId}`);
   }
+  return result;
+}
+
+// ─── Epic 18 — post-assessment lifecycle ──────────────────────────────────────
+
+function revalidateLifecyclePaths(applicationId: string): void {
+  revalidatePath(`/applications/${applicationId}/recommendation`);
+  revalidatePath(`/applications/${applicationId}/assessment`);
+  revalidatePath(`/applications/${applicationId}`);
+}
+
+/**
+ * Epic 18 (WP-B3..B5) — move a stored-as-complete assessment into one of
+ * Charlotte's final states (NEW_AWARD / WAITING_LIST / CLOSED_ARCHIVED). Thin
+ * wrapper around `post-assessment-core`; sends no email by design (Q11).
+ */
+export async function setPostAssessmentStateAction(
+  applicationId: string,
+  target: PostAssessmentFinalState,
+  opts?: NewAwardOptions
+): Promise<{ success: true } | { success: false; error: string }> {
+  const result = await setPostAssessmentFinalState(applicationId, target, opts);
+  if (result.success) revalidateLifecyclePaths(applicationId);
+  return result;
+}
+
+/**
+ * Epic 18 — reverse a final state back to stored-as-complete (Q15/Q16). A
+ * reversed NEW_AWARD keeps its bursary account; re-locking reuses it.
+ */
+export async function revertPostAssessmentStateAction(
+  applicationId: string
+): Promise<{ success: true } | { success: false; error: string }> {
+  const result = await revertPostAssessmentState(applicationId);
+  if (result.success) revalidateLifecyclePaths(applicationId);
   return result;
 }
