@@ -1713,7 +1713,9 @@ export function AssessmentFormV2({
           <WBRow label="DISPLAY ONLY - DERIVED YEARLY DEBT REPAYMENTS" auto={fmtMoney(output?.derivedYearlyDebtRepayments)} />
           <WBRow label="YEARLY DEBT EXPOSURE (NETTED OFF YEARLY SAVINGS)" auto={fmtMoney(output?.yearlyDebtExposure)} />
           <WBRow label="DEBT OVER NET DISPOSABLE INCOME RATIO" auto={output ? output.debtOverNdiRatio.toFixed(3) : "—"} />
-          <WBRow label="Minimum Debt Repayment Duration in months without school fees payments" auto={output?.minRepaymentMonths != null ? String(output.minRepaymentMonths) : "—"} />
+          {/* 6 Sep 2026 respec — computed as ((total debt − total savings) / NDI) × 12,
+              rounded; a negative value reads "not applicable" (savings cover the debt). */}
+          <WBRow label="Minimum Debt Repayment Duration in months without school fees payments" auto={output?.minRepaymentMonths != null ? String(output.minRepaymentMonths) : "not applicable"} />
           <WBRow label="DEBT STATUS" auto={output?.debtStatusLabel ?? "—"} emphasis />
           <WBRow label="DEBT SITUATION WITH THE FOUNDATION — DISPLAY ONLY - IS THE FAMILY BEHIND WITH THEIR SCHOOL FEES PAYMENTS?">
             <YesNo
