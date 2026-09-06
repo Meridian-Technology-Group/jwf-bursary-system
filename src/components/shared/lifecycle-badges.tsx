@@ -158,6 +158,13 @@ const ASSESSMENT_STATUS_CONFIG: Record<AssessmentStatus, BadgeConfig> = {
     iconClass: "text-success-600",
     Icon: Award,
   },
+  // Epic 18b — the rolling-over track's lock.
+  ROLLED_OVER: {
+    label: "Rolled Over",
+    containerClass: "bg-success-50 border-success-300 text-success-700",
+    iconClass: "text-success-600",
+    Icon: Award,
+  },
   WAITING_LIST: {
     label: "Waiting List",
     containerClass: "bg-amber-50 border-amber-300 text-amber-700",

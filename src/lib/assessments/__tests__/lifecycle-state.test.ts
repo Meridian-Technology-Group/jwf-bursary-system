@@ -105,3 +105,15 @@ describe("Epic 18 — lifecycle strip final states", () => {
     expect(slots[3].current).toBe(true);
   });
 });
+
+describe("Epic 18b — rolled-over in the strip", () => {
+  it("derives and labels the rolled-over lock", () => {
+    expect(
+      derive18({ assessmentStatus: "ROLLED_OVER", outcome: null, closedAt: null })
+    ).toBe("ROLLED_OVER");
+    const slots = lifecycleStripSlots("ROLLED_OVER");
+    expect(slots[3].key).toBe("ROLLED_OVER");
+    expect(slots[3].label).toBe("ROLLED OVER");
+    expect(slots[3].current).toBe(true);
+  });
+});

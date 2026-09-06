@@ -715,3 +715,14 @@ describe("status service — Epic 18 post-assessment lifecycle", () => {
     expect(isPostAssessmentFinalState(null)).toBe(false);
   });
 });
+
+describe("status service — Epic 18b rolled-over lock", () => {
+  it("COMPLETED exits to ROLLED_OVER, which reverses to COMPLETED only", () => {
+    expect(legal18("COMPLETED", "ROLLED_OVER")).toBe(true);
+    expect(legal18("ROLLED_OVER", "COMPLETED")).toBe(true);
+    expect(legal18("ROLLED_OVER", "IN_PROGRESS")).toBe(false);
+    expect(legal18("ROLLED_OVER", "CLOSED_ARCHIVED")).toBe(false);
+    expect(legal18("WAITING_LIST", "ROLLED_OVER")).toBe(false);
+    expect(isPostAssessmentFinalState("ROLLED_OVER")).toBe(true);
+  });
+});

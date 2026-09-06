@@ -51,6 +51,13 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { ReasonCodeSelector } from "@/components/admin/reason-code-selector";
 import {
   gapGroupHeadingForCode,
@@ -83,7 +90,17 @@ import {
 } from "@/lib/assessment/recommendation-v2";
 import { buildV2AwardLegs } from "@/lib/assessment/recommendation-options";
 import { cn } from "@/lib/utils";
-import type { AssessmentOutcome, AssessmentStatus } from "@prisma/client";
+import type {
+  ApplicationType,
+  AssessmentOutcome,
+  AssessmentStatus,
+  AwardFundType,
+  School,
+} from "@prisma/client";
+import {
+  AWARD_FUND_LABELS,
+  awardFundOptionsForSchool,
+} from "@/lib/assessment/award-fund";
 
 // ─── Serialised shapes (Decimal→number) handed in from the server component ────
 
@@ -139,6 +156,14 @@ export interface RecommendationFormV2Props {
   assessmentId: string;
   /** Epic 18 — the assessment's lifecycle status; drives the decision card and the read-only lock. */
   assessmentStatus: AssessmentStatus;
+  /** Epic 18b — NEW locks as New Award (+ waiting list); ROLLING_OVER locks as Rolled-over. */
+  applicationType: ApplicationType;
+  /** Epic 18b — the assessed school; constrains the award-fund options. */
+  school: School;
+  /** Epic 18b — the fund recorded at a previous lock, pre-filling the picker. */
+  awardFundType: AwardFundType | null;
+  /** Epic 18b — active close reasons for the archive prompt. */
+  closeReasons: Array<{ id: string; label: string }>;
   /** Epic 18 (Q14) — the current application reference, pre-filling the advisory prompt at New Award. */
   applicationReference: string;
   assessmentOutcome: AssessmentOutcome | null;
@@ -202,6 +227,19 @@ const POST_ASSESSMENT_META: Record<
       "This locks the assessment as final, sets up the active bursary account and activates the admin page. No email is sent — you notify the family once the governors have approved.",
     confirmLabel: "Lock as new award",
     revertLabel: "Reverse new award",
+  },
+  ROLLED_OVER: {
+    label: "Lock rolled-over award",
+    icon: Award,
+    buttonClass: "bg-success-600 text-white hover:bg-success-600/90",
+    bannerClass: "border-success-300 bg-success-50 text-success-800",
+    bannerText:
+      "Locked as a rolled-over award. The active bursary account continues; the assessment can no longer be amended.",
+    dialogTitle: "Lock rolled-over award?",
+    dialogBody:
+      "This locks the assessment as final and continues the active bursary account. The account, reference and admin page already exist, so nothing new is created. No email is sent.",
+    confirmLabel: "Lock rolled-over award",
+    revertLabel: "Reverse rolled-over award",
   },
   WAITING_LIST: {
     label: "Waiting list",
@@ -417,6 +455,10 @@ export function RecommendationFormV2({
   applicationId,
   assessmentId,
   assessmentStatus,
+  applicationType,
+  school,
+  awardFundType: savedAwardFundType,
+  closeReasons,
   applicationReference,
   assessmentOutcome,
   synopsis,
@@ -434,6 +476,7 @@ export function RecommendationFormV2({
   // server-side status module into this client component.)
   const finalState: PostAssessmentFinalState | null =
     assessmentStatus === "NEW_AWARD" ||
+    assessmentStatus === "ROLLED_OVER" ||
     assessmentStatus === "WAITING_LIST" ||
     assessmentStatus === "CLOSED_ARCHIVED"
       ? assessmentStatus
@@ -528,6 +571,14 @@ export function RecommendationFormV2({
   const [isReverting, setIsReverting] = React.useState(false);
   // Q14 — the advisory reference prompt inside the New Award dialog.
   const [awardReference, setAwardReference] = React.useState(applicationReference);
+  // Epic 18b — the fund picker (both locks) and the archive close reason.
+  const fundOptions = awardFundOptionsForSchool(school);
+  const [selectedFund, setSelectedFund] = React.useState<AwardFundType>(
+    savedAwardFundType && fundOptions.includes(savedAwardFundType)
+      ? savedAwardFundType
+      : fundOptions[0]
+  );
+  const [selectedCloseReasonId, setSelectedCloseReasonId] = React.useState<string>("");
 
   async function handleSave() {
     if (!gapValid) {
@@ -587,11 +638,13 @@ export function RecommendationFormV2({
   async function handleConfirmState() {
     if (!pendingState) return;
     setIsSettingState(true);
-    const result = await setPostAssessmentStateAction(
-      applicationId,
-      pendingState,
-      pendingState === "NEW_AWARD" ? { amendedReference: awardReference } : undefined
-    );
+    const isAwardLock = pendingState === "NEW_AWARD" || pendingState === "ROLLED_OVER";
+    const result = await setPostAssessmentStateAction(applicationId, pendingState, {
+      amendedReference: pendingState === "NEW_AWARD" ? awardReference : undefined,
+      awardFundType: isAwardLock ? selectedFund : undefined,
+      closeReasonId:
+        pendingState === "CLOSED_ARCHIVED" ? selectedCloseReasonId || undefined : undefined,
+    });
     setIsSettingState(false);
     setPendingState(null);
     if (result.success) {
@@ -983,8 +1036,12 @@ export function RecommendationFormV2({
           </CardHeader>
           <CardContent>
             <div className="flex flex-wrap gap-3">
-              {(
-                ["NEW_AWARD", "WAITING_LIST", "CLOSED_ARCHIVED"] as const
+              {/* Epic 18b — each track offers its own decisions (her
+                  illustration): NEW gets the waiting list; ROLLING_OVER locks
+                  as rolled-over; purge stays unbuilt on both. */}
+              {(applicationType === "ROLLING_OVER"
+                ? (["ROLLED_OVER", "CLOSED_ARCHIVED"] as const)
+                : (["NEW_AWARD", "WAITING_LIST", "CLOSED_ARCHIVED"] as const)
               ).map((state) => {
                 const meta = POST_ASSESSMENT_META[state];
                 const Icon = meta.icon;
@@ -1022,6 +1079,28 @@ export function RecommendationFormV2({
                   {POST_ASSESSMENT_META[pendingState].dialogBody}
                 </DialogDescription>
               </DialogHeader>
+              {(pendingState === "NEW_AWARD" || pendingState === "ROLLED_OVER") && (
+                <div className="space-y-1.5">
+                  {/* Epic 18b — which fund pays this year's award; options
+                      constrained by the assessed school. */}
+                  <Label htmlFor="award-fund">Funded by</Label>
+                  <Select
+                    value={selectedFund}
+                    onValueChange={(v) => setSelectedFund(v as AwardFundType)}
+                  >
+                    <SelectTrigger id="award-fund">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {fundOptions.map((fund) => (
+                        <SelectItem key={fund} value={fund}>
+                          {AWARD_FUND_LABELS[fund]}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
               {pendingState === "NEW_AWARD" && (
                 <div className="space-y-1.5">
                   {/* Q14 — advisory, never blocking: confirm or amend, then lock.
@@ -1038,6 +1117,28 @@ export function RecommendationFormV2({
                   </p>
                 </div>
               )}
+              {pendingState === "CLOSED_ARCHIVED" && (
+                <div className="space-y-1.5">
+                  {/* Epic 18b — her illustration's "prompt asking for close
+                      reasons". Required. */}
+                  <Label htmlFor="archive-close-reason">Close reason</Label>
+                  <Select
+                    value={selectedCloseReasonId}
+                    onValueChange={setSelectedCloseReasonId}
+                  >
+                    <SelectTrigger id="archive-close-reason">
+                      <SelectValue placeholder="Select a reason…" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {closeReasons.map((r) => (
+                        <SelectItem key={r.id} value={r.id}>
+                          {r.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
               <DialogFooter>
                 <Button
                   type="button"
@@ -1050,7 +1151,10 @@ export function RecommendationFormV2({
                 <Button
                   type="button"
                   onClick={handleConfirmState}
-                  disabled={isSettingState}
+                  disabled={
+                    isSettingState ||
+                    (pendingState === "CLOSED_ARCHIVED" && !selectedCloseReasonId)
+                  }
                   className={POST_ASSESSMENT_META[pendingState].buttonClass}
                 >
                   {isSettingState
