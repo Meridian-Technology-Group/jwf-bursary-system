@@ -53,8 +53,10 @@ const FINANCIAL_EQUITY_EXTRA: BandExtraFieldConfig[] = [
   { key: "label", label: "Label", type: "text" },
 ];
 
+// 6 Sep 2026 respec — the repayment-months column is GONE from this table:
+// the figure is computed per assessment (((total debt − total savings) / NDI)
+// × 12, `minRepaymentMonthsWithoutFees`), never stored per band.
 const DEBT_RATIO_EXTRA: BandExtraFieldConfig[] = [
-  { key: "minRepaymentMonths", label: "Min Repayment (months)", type: "nullableNumber", width: "w-32" },
   { key: "statusLabel", label: "Status Label", type: "text" },
 ];
 

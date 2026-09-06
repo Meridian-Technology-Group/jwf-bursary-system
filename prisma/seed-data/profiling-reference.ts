@@ -171,6 +171,27 @@ export const incomeCategoryBands = [
   { bandFloor: 140000, bandCeiling: null, category: 12, feesBenchmarkPct: 30 },
 ].map((row) => ({ ...row, effectiveFrom: EFFECTIVE_FROM }));
 
+// 6 Sep 2026 respec — the category-1 ceiling moves from £27,000 to £31,000
+// ("please amend 27,000 to 31,000"); every other boundary, category and
+// percentage carries forward. New generation, mirrored in migration
+// 20260906100000_debt_months_reason37_income_bands.
+const INCOME_RESPEC_EFFECTIVE_FROM = new Date("2026-09-08");
+
+export const incomeCategoryBandsRespec = [
+  { bandFloor: null, bandCeiling: 31000, category: 1, feesBenchmarkPct: 2 },
+  { bandFloor: 31000, bandCeiling: 40000, category: 2, feesBenchmarkPct: 3 },
+  { bandFloor: 40000, bandCeiling: 50000, category: 3, feesBenchmarkPct: 6 },
+  { bandFloor: 50000, bandCeiling: 60000, category: 4, feesBenchmarkPct: 10 },
+  { bandFloor: 60000, bandCeiling: 70000, category: 5, feesBenchmarkPct: 15 },
+  { bandFloor: 70000, bandCeiling: 80000, category: 6, feesBenchmarkPct: 19 },
+  { bandFloor: 80000, bandCeiling: 90000, category: 7, feesBenchmarkPct: 23 },
+  { bandFloor: 90000, bandCeiling: 100000, category: 8, feesBenchmarkPct: 27 },
+  { bandFloor: 100000, bandCeiling: 110000, category: 9, feesBenchmarkPct: 30 },
+  { bandFloor: 110000, bandCeiling: 120000, category: 10, feesBenchmarkPct: 30 },
+  { bandFloor: 120000, bandCeiling: 140000, category: 11, feesBenchmarkPct: 30 },
+  { bandFloor: 140000, bandCeiling: null, category: 12, feesBenchmarkPct: 30 },
+].map((row) => ({ ...row, effectiveFrom: INCOME_RESPEC_EFFECTIVE_FROM }));
+
 // ─── Appendix C.2 — property-equity category bands ────────────────────────
 
 export const propertyEquityBands = [
@@ -279,22 +300,24 @@ export const financialEquityBandsRespec = [
 ].map((row) => ({ ...row, effectiveFrom: BANDS_RESPEC_EFFECTIVE_FROM }));
 
 // C.4 — her full re-banding: much finer thresholds at the low end, the
-// "- level N" suffixes gone. Her email gives no repayment months, so they are
-// derived by the old table's own implicit rule, floor(ratioFloor × 12) — the
-// debt is roughly ratio × a year of NDI. Flagged to her for correction.
+// "- level N" suffixes gone. minRepaymentMonths is null on every row (6 Sep
+// 2026 respec): the figure is computed per assessment
+// (`minRepaymentMonthsWithoutFees`), never stored per band. Migration
+// 20260906100000_debt_months_reason37_income_bands nulls the previously
+// derived values on deployed environments.
 export const debtRatioBandsRespec = [
   { ratioFloor: null, ratioCeiling: 0, minRepaymentMonths: null, statusLabel: "ZERO DEBT, NO CREDIT RISK" },
-  { ratioFloor: 0, ratioCeiling: 0.01, minRepaymentMonths: 0, statusLabel: "SMALL DEBT LEVEL, NEGLIGIBLE CREDIT RISK" },
-  { ratioFloor: 0.01, ratioCeiling: 0.03, minRepaymentMonths: 0, statusLabel: "MANAGEABLE DEBT, LOW CREDIT RISK" },
-  { ratioFloor: 0.03, ratioCeiling: 0.07, minRepaymentMonths: 0, statusLabel: "MANAGEABLE DEBT, MEDIUM CREDIT RISK" },
-  { ratioFloor: 0.07, ratioCeiling: 0.1, minRepaymentMonths: 0, statusLabel: "MATERIAL DEBT IMPACT, FAIR CREDIT RISK" },
-  { ratioFloor: 0.1, ratioCeiling: 0.15, minRepaymentMonths: 1, statusLabel: "MATERIAL DEBT IMPACT, HIGH CREDIT RISK" },
-  { ratioFloor: 0.15, ratioCeiling: 0.2, minRepaymentMonths: 1, statusLabel: "HEAVILY IN DEBT, FAIR CREDIT RISK" },
-  { ratioFloor: 0.2, ratioCeiling: 0.3, minRepaymentMonths: 2, statusLabel: "HEAVILY IN DEBT, HIGH CREDIT RISK" },
-  { ratioFloor: 0.3, ratioCeiling: 0.4, minRepaymentMonths: 3, statusLabel: "VERY HEAVILY IN DEBT, HIGH CREDIT RISK" },
-  { ratioFloor: 0.4, ratioCeiling: 0.5, minRepaymentMonths: 4, statusLabel: "VERY HEAVILY IN DEBT, VERY HIGH CREDIT RISK" },
-  { ratioFloor: 0.5, ratioCeiling: 1, minRepaymentMonths: 6, statusLabel: "DEBT GETTING OUT OF CONTROL, NO SAFETY NET" },
-  { ratioFloor: 1, ratioCeiling: null, minRepaymentMonths: 12, statusLabel: "AT RISK OF BANKRUPTCY" },
+  { ratioFloor: 0, ratioCeiling: 0.01, minRepaymentMonths: null, statusLabel: "SMALL DEBT LEVEL, NEGLIGIBLE CREDIT RISK" },
+  { ratioFloor: 0.01, ratioCeiling: 0.03, minRepaymentMonths: null, statusLabel: "MANAGEABLE DEBT, LOW CREDIT RISK" },
+  { ratioFloor: 0.03, ratioCeiling: 0.07, minRepaymentMonths: null, statusLabel: "MANAGEABLE DEBT, MEDIUM CREDIT RISK" },
+  { ratioFloor: 0.07, ratioCeiling: 0.1, minRepaymentMonths: null, statusLabel: "MATERIAL DEBT IMPACT, FAIR CREDIT RISK" },
+  { ratioFloor: 0.1, ratioCeiling: 0.15, minRepaymentMonths: null, statusLabel: "MATERIAL DEBT IMPACT, HIGH CREDIT RISK" },
+  { ratioFloor: 0.15, ratioCeiling: 0.2, minRepaymentMonths: null, statusLabel: "HEAVILY IN DEBT, FAIR CREDIT RISK" },
+  { ratioFloor: 0.2, ratioCeiling: 0.3, minRepaymentMonths: null, statusLabel: "HEAVILY IN DEBT, HIGH CREDIT RISK" },
+  { ratioFloor: 0.3, ratioCeiling: 0.4, minRepaymentMonths: null, statusLabel: "VERY HEAVILY IN DEBT, HIGH CREDIT RISK" },
+  { ratioFloor: 0.4, ratioCeiling: 0.5, minRepaymentMonths: null, statusLabel: "VERY HEAVILY IN DEBT, VERY HIGH CREDIT RISK" },
+  { ratioFloor: 0.5, ratioCeiling: 1, minRepaymentMonths: null, statusLabel: "DEBT GETTING OUT OF CONTROL, NO SAFETY NET" },
+  { ratioFloor: 1, ratioCeiling: null, minRepaymentMonths: null, statusLabel: "AT RISK OF BANKRUPTCY" },
 ].map((row) => ({ ...row, effectiveFrom: BANDS_RESPEC_EFFECTIVE_FROM }));
 
 // C.5 — her nine bands for the reworked squeeze ratio (denominator now

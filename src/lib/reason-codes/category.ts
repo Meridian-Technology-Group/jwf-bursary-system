@@ -15,7 +15,7 @@
  *   8–21   Income & Employment
  *   22–27  Property & Assets
  *   28–31  Documentation & Compliance
- *   33–36  Fees & Adjustments
+ *   33–37  Fees & Adjustments
  *   else   Other                    (incl. display 32 "Other")
  *
  * Legacy codes (< 100) — the deprecated placeholders — bucket under
@@ -30,7 +30,7 @@ export const REASON_CODE_CATEGORIES = [
   { key: "income", label: "Income & Employment", range: "8 – 21" },
   { key: "property", label: "Property & Assets", range: "22 – 27" },
   { key: "documentation", label: "Documentation & Compliance", range: "28 – 31" },
-  { key: "fees", label: "Fees & Adjustments", range: "33 – 36" },
+  { key: "fees", label: "Fees & Adjustments", range: "33 – 37" },
   { key: "other", label: "Other", range: "" },
   { key: "legacy", label: "Legacy (deprecated)", range: "" },
 ] as const;
@@ -46,7 +46,7 @@ export function categoryKeyForCode(code: number): ReasonCodeCategoryKey {
   if (display >= 8 && display <= 21) return "income";
   if (display >= 22 && display <= 27) return "property";
   if (display >= 28 && display <= 31) return "documentation";
-  if (display >= 33 && display <= 36) return "fees";
+  if (display >= 33 && display <= 37) return "fees";
   return "other";
 }
 

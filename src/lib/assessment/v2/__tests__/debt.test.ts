@@ -4,6 +4,7 @@ import {
   calculateYearlyDebtExposure,
   calculateDebtOverNdiRatio,
   classifyDebt,
+  minRepaymentMonthsWithoutFees,
 } from '../debt'
 import type { DebtsRecord } from '@/types/assessment-v2'
 import { debtRatioBandsRespec } from '../../../../../prisma/seed-data/profiling-reference'
@@ -122,7 +123,6 @@ describe('classifyDebt — against every seeded DebtRatioBand row', () => {
   // among those she has already signed off, so this is asked, not guessed.
   it('CH-40 / Q9 — a ratio of exactly 0 stays on ZERO DEBT', () => {
     const result = classifyDebt(0, debtRatioBandsRespec)
-    expect(result.minRepaymentMonths).toBeNull()
     expect(result.statusLabel).toBe('ZERO DEBT, NO CREDIT RISK')
   })
 
@@ -133,7 +133,6 @@ describe('classifyDebt — against every seeded DebtRatioBand row', () => {
 
   it('ZERO DEBT path: a negative ratio also resolves to the zero-debt row', () => {
     const result = classifyDebt(-5, debtRatioBandsRespec)
-    expect(result.minRepaymentMonths).toBeNull()
     expect(result.statusLabel).toBe('ZERO DEBT, NO CREDIT RISK')
   })
 
@@ -148,7 +147,7 @@ describe('classifyDebt — against every seeded DebtRatioBand row', () => {
       // Only the ZERO DEBT row (ceiling 0) is open-ended at the bottom.
       representative = band.ratioCeiling as number
     } else if (band.ratioCeiling === null) {
-      // Only the top row (floor 10) is open-ended at the top.
+      // Only the top row (floor 1) is open-ended at the top.
       representative = band.ratioFloor + 1_000
     } else {
       representative = (band.ratioFloor + band.ratioCeiling) / 2
@@ -156,7 +155,6 @@ describe('classifyDebt — against every seeded DebtRatioBand row', () => {
 
     const result = classifyDebt(representative, debtRatioBandsRespec)
     expect(result.statusLabel).toBe(band.statusLabel)
-    expect(result.minRepaymentMonths).toBe(band.minRepaymentMonths)
   })
 
   it('CH-40 — boundary values resolve to the UPPER band (ceiling-exclusive)', () => {
@@ -185,12 +183,40 @@ describe('classifyDebt — against every seeded DebtRatioBand row', () => {
   it('a value just above the top band floor (1) resolves to the open-ended top band', () => {
     const result = classifyDebt(15, debtRatioBandsRespec)
     expect(result.statusLabel).toBe('AT RISK OF BANKRUPTCY')
-    expect(result.minRepaymentMonths).toBe(12)
   })
 
   it('falls back to the zero-debt label when no band matches (defensive, e.g. an empty bands array)', () => {
     const result = classifyDebt(2, [])
-    expect(result.minRepaymentMonths).toBeNull()
     expect(result.statusLabel).toBe('ZERO DEBT, NO CREDIT RISK')
+  })
+})
+
+// ─── minRepaymentMonthsWithoutFees (respec, 6 Sep 2026) ────────────────────
+//
+// Computed per assessment — ((total debt − total savings) / NDI) × 12,
+// rounded; negative → null ("not applicable"). No longer a band column.
+
+describe('minRepaymentMonthsWithoutFees', () => {
+  it("her Kaluba example: (8,000 − 9,700) / 24,907 × 12 → negative → null ('not applicable')", () => {
+    expect(minRepaymentMonthsWithoutFees(8_000, 9_700, 24_907)).toBeNull()
+  })
+
+  it('her AJ example: (72,814 − 7,874) / 25,937.50 × 12 = 30.04 → 30', () => {
+    expect(minRepaymentMonthsWithoutFees(72_814, 7_874, 25_937.5)).toBe(30)
+  })
+
+  it('rounds to the nearest month, not down', () => {
+    // (10,000 − 0) / 20,000 × 12 = 6 exactly; nudge the debt to force .5+.
+    expect(minRepaymentMonthsWithoutFees(10_000, 0, 20_000)).toBe(6)
+    expect(minRepaymentMonthsWithoutFees(10_917, 0, 20_000)).toBe(7) // 6.55
+  })
+
+  it('zero months when debt exactly equals savings', () => {
+    expect(minRepaymentMonthsWithoutFees(5_000, 5_000, 20_000)).toBe(0)
+  })
+
+  it('null when NDI is zero or negative (no meaningful "months of NDI")', () => {
+    expect(minRepaymentMonthsWithoutFees(10_000, 0, 0)).toBeNull()
+    expect(minRepaymentMonthsWithoutFees(10_000, 0, -2_915)).toBeNull()
   })
 })

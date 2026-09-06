@@ -91,4 +91,7 @@ export const reasonCodes = [
   { code: 134, label: "34 - Reduced Payable fees due to scholarship offer",      sortOrder: 34, isDeprecated: false },
   { code: 135, label: "35 - Internal Bursary request originally",                sortOrder: 35, isDeprecated: false },
   { code: 136, label: "36 - Reduced savings",                                    sortOrder: 36, isDeprecated: false },
+  // 6 Sep 2026 — her addition to the Fees & Adjustments group (the grouping
+  // range in src/lib/reason-codes/category.ts extends to display 37 with it).
+  { code: 137, label: "37 - Sibling on full/partial fees taking up most or all of NDI", sortOrder: 37, isDeprecated: false },
 ] as const;

@@ -89,10 +89,32 @@ export function calculateDebtOverNdiRatio(
   return Math.max(0, yearlyDebtExposure) / householdNetIncome
 }
 
-/** Result of `classifyDebt` — the two Appendix C.4 output columns. */
+/** Result of `classifyDebt` — the Appendix C.4 status label. */
 export interface DebtClassification {
-  minRepaymentMonths: number | null
   statusLabel: string
+}
+
+/**
+ * Minimum debt repayment duration in months without school-fees payments —
+ * COMPUTED, not a band column, per Charlotte's respec of 6 Sep 2026 ("the
+ * number in months should not be used in the Debt-Over-NDI Ratio table"):
+ *
+ *     ((total debt − total savings) / NDI after notional spend) × 12
+ *
+ * Negative → `null` ("not applicable" — savings cover the debt outright);
+ * positive → rounded to the nearest month. Her examples: Kaluba
+ * (8,000 − 9,700) / 24,907 × 12 = −0.8 → n/a; AJ (72,814 − 7,874) /
+ * 25,937.50 × 12 = 30.04 → 30. A zero/negative NDI has no meaningful
+ * "months of NDI" reading, so that also returns `null`.
+ */
+export function minRepaymentMonthsWithoutFees(
+  totalDebt: number,
+  totalSavings: number,
+  ndiAfterNotionalSpend: number,
+): number | null {
+  if (ndiAfterNotionalSpend <= 0) return null
+  const months = ((totalDebt - totalSavings) / ndiAfterNotionalSpend) * 12
+  return months < 0 ? null : Math.round(months)
 }
 
 /**
@@ -113,7 +135,7 @@ export interface DebtClassification {
 export function classifyDebt(ratio: number, bands: readonly DebtRatioBandRow[]): DebtClassification {
   const band = resolveDebtRatioBand(bands, ratio)
   if (!band) {
-    return { minRepaymentMonths: null, statusLabel: 'ZERO DEBT, NO CREDIT RISK' }
+    return { statusLabel: 'ZERO DEBT, NO CREDIT RISK' }
   }
-  return { minRepaymentMonths: band.minRepaymentMonths, statusLabel: band.statusLabel }
+  return { statusLabel: band.statusLabel }
 }

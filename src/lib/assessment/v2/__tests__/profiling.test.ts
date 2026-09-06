@@ -12,7 +12,7 @@ import {
 } from '../profiling'
 import type { PropertyAssetsRecord, DebtsRecord } from '@/types/assessment-v2'
 import {
-  incomeCategoryBands,
+  incomeCategoryBandsRespec,
   propertyEquityBands,
   financialEquityBandsRespec,
   lifestyleSqueezeBandsRespec,
@@ -26,8 +26,9 @@ describe('incomeCategory / feesBenchmarkPct — Appendix C.1 band boundaries', (
   it.each([
     // [netIncome, expectedCategory, expectedPct]
     [0, 1, 2],
-    [26_999.99, 1, 2],
-    [27_000, 2, 3], // floor-inclusive
+    // 6 Sep 2026 respec — the category-1 ceiling moved from 27,000 to 31,000.
+    [30_999.99, 1, 2],
+    [31_000, 2, 3], // floor-inclusive
     [39_999.99, 2, 3], // ceiling-exclusive: 40,000 itself is the NEXT band
     [40_000, 3, 6],
     [49_999.99, 3, 6],
@@ -55,8 +56,8 @@ describe('incomeCategory / feesBenchmarkPct — Appendix C.1 band boundaries', (
     [140_000, 12, 30],
     [500_000, 12, 30],
   ])('netIncome %s → category %s, feesBenchmarkPct %s', (netIncome, expectedCategory, expectedPct) => {
-    expect(incomeCategory(netIncome, incomeCategoryBands)).toBe(expectedCategory)
-    expect(feesBenchmarkPct(netIncome, incomeCategoryBands)).toBe(expectedPct)
+    expect(incomeCategory(netIncome, incomeCategoryBandsRespec)).toBe(expectedCategory)
+    expect(feesBenchmarkPct(netIncome, incomeCategoryBandsRespec)).toBe(expectedPct)
   })
 })
 

@@ -36,6 +36,7 @@ import {
   familyCategoryMetas,
   affordabilityBands,
   incomeCategoryBands,
+  incomeCategoryBandsRespec,
   propertyEquityBands,
   financialEquityBands,
   financialEquityBandsRespec,
@@ -226,7 +227,7 @@ async function seedAffordabilityBands(): Promise<void> {
 
 async function seedIncomeCategoryBands(): Promise<void> {
   section("Income category bands (CALC-01)");
-  for (const band of incomeCategoryBands) {
+  for (const band of [...incomeCategoryBands, ...incomeCategoryBandsRespec]) {
     const existing = await prisma.incomeCategoryBand.findFirst({
       where: { effectiveFrom: band.effectiveFrom, bandCeiling: band.bandCeiling },
     });
@@ -239,7 +240,7 @@ async function seedIncomeCategoryBands(): Promise<void> {
       await prisma.incomeCategoryBand.create({ data: band });
     }
   }
-  log(`Upserted ${incomeCategoryBands.length} income category bands`);
+  log(`Upserted ${incomeCategoryBands.length + incomeCategoryBandsRespec.length} income category bands`);
 }
 
 async function seedPropertyEquityBands(): Promise<void> {

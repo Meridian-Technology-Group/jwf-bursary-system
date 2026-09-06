@@ -38,6 +38,7 @@ import {
   calculateYearlyDebtExposure,
   calculateDebtOverNdiRatio,
   classifyDebt,
+  minRepaymentMonthsWithoutFees,
 } from './debt'
 import {
   incomeCategory,
@@ -301,7 +302,12 @@ export function calculateAssessmentV2(input: AssessmentV2Input, ref: ReferenceBu
     yearlyDebtExposure,
     debtOverNdiRatio,
     debtStatusLabel: debtClassification.statusLabel,
-    minRepaymentMonths: debtClassification.minRepaymentMonths,
+    // 6 Sep 2026 respec — computed from debt/savings/NDI, no longer a band column.
+    minRepaymentMonths: minRepaymentMonthsWithoutFees(
+      totalPersonalDebt(input.debts),
+      input.cashSavings + input.isasPepsShares,
+      notionalSpend.ndiAfterNotionalSpend,
+    ),
 
     incomeCategory: incomeCat,
     propertyCategoryDerived: propCategory,
