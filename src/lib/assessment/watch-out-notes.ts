@@ -25,6 +25,7 @@ export interface WatchOutCandidate {
     // Epic 18 — the post-assessment final states. Every one passed through
     // COMPLETED first, so its watch-out notes are final and carry forward.
     | "NEW_AWARD"
+    | "ROLLED_OVER"
     | "WAITING_LIST"
     | "CLOSED_ARCHIVED";
   /** When the assessment was completed (null until COMPLETED). */
@@ -35,7 +36,7 @@ export interface WatchOutCandidate {
 /** The statuses whose notes are final enough to hand to next year's assessor. */
 const NOTE_BEARING_STATUSES: ReadonlySet<WatchOutCandidate["status"]> = new Set<
   WatchOutCandidate["status"]
->(["COMPLETED", "NEW_AWARD", "WAITING_LIST", "CLOSED_ARCHIVED"]);
+>(["COMPLETED", "NEW_AWARD", "ROLLED_OVER", "WAITING_LIST", "CLOSED_ARCHIVED"]);
 
 export interface WatchOutSelection {
   applicationId: string;

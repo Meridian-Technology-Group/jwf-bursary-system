@@ -34,6 +34,7 @@ export type AssessmentLifecycleState =
   // Epic 18 (WP-B3..B5) — the post-assessment final states, each its own
   // strip label. All render in the strip's fourth (final) slot.
   | "NEW_AWARD"
+  | "ROLLED_OVER"
   | "WAITING_LIST"
   | "ARCHIVED";
 
@@ -45,6 +46,8 @@ export function deriveAssessmentLifecycleState(
   switch (input.assessmentStatus) {
     case "NEW_AWARD":
       return "NEW_AWARD";
+    case "ROLLED_OVER":
+      return "ROLLED_OVER";
     case "WAITING_LIST":
       return "WAITING_LIST";
     case "CLOSED_ARCHIVED":
@@ -76,6 +79,8 @@ export const ASSESSMENT_LIFECYCLE_LABELS: Record<
   COMPLETE: "STORED AS COMPLETE",
   LOCKED: "LOCKED",
   NEW_AWARD: "NEW AWARD",
+  // Epic 18b — her rolling-over lock; she asked for a short label.
+  ROLLED_OVER: "ROLLED OVER",
   WAITING_LIST: "WAITING LIST",
   ARCHIVED: "CLOSED & ARCHIVED",
 };
@@ -96,6 +101,7 @@ export const ASSESSMENT_LIFECYCLE_ORDER: readonly AssessmentLifecycleState[] = [
 const FINAL_SLOT_STATES: readonly AssessmentLifecycleState[] = [
   "LOCKED",
   "NEW_AWARD",
+  "ROLLED_OVER",
   "WAITING_LIST",
   "ARCHIVED",
 ];

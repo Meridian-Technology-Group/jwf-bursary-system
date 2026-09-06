@@ -460,6 +460,15 @@ model Assessment {
   /// for this one explicitly — "I need to fill it manually" — so it does not
   /// prefill, consistent with CH-11's no-prefill stance on Part 1.
   postcode                      String?               @map("postcode")
+  /// Epic 18b — the fund paying this year's award, captured at the lock
+  /// (NEW_AWARD / ROLLED_OVER). Per-assessment on purpose: the fund can
+  /// change year to year on the same account.
+  awardFundType                 AwardFundType?        @map("award_fund_type")
+  /// Epic 18b — why a CLOSED_ARCHIVED assessment was closed (her
+  /// illustration's "prompt asking for close reasons"). Cleared on reopen? No
+  /// — kept as history; a re-archive overwrites it.
+  archiveCloseReasonId          String?               @map("archive_close_reason_id") @db.Uuid
+  archiveCloseReason            CloseReason?          @relation("AssessmentArchiveCloseReason", fields: [archiveCloseReasonId], references: [id], onDelete: Restrict)
   multiPropertyRentAddBack      Boolean?              @map("multi_property_rent_add_back")
   councilTaxSupport             Boolean?              @map("council_tax_support")
   usesCar                       Boolean?              @map("uses_car")
@@ -944,15 +953,17 @@ model LifestyleSqueezeBand {
 /// label even after it is removed from the picker (Story 4.4). No relation
 /// to Application yet; the FK arrives with the close action itself (A3).
 model CloseReason {
-  id           String        @id @default(uuid()) @db.Uuid
+  id                  String        @id @default(uuid()) @db.Uuid
   /// Unique natural key (close_reasons_label_key) — the idempotent
   /// seed upserts by label; there is no numeric code like reason_codes.
-  label        String        @unique
-  purgeOnClose Boolean       @default(false) @map("purge_on_close")
-  isDeprecated Boolean       @default(false) @map("is_deprecated")
-  sortOrder    Int           @map("sort_order")
-  createdAt    DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
-  applications Application[]
+  label               String        @unique
+  purgeOnClose        Boolean       @default(false) @map("purge_on_close")
+  isDeprecated        Boolean       @default(false) @map("is_deprecated")
+  sortOrder           Int           @map("sort_order")
+  createdAt           DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+  applications        Application[]
+  /// Epic 18b — assessments archived with this reason (assessment-level close).
+  archivedAssessments Assessment[]  @relation("AssessmentArchiveCloseReason")
 
   @@map("close_reasons")
 }
@@ -1274,6 +1285,22 @@ enum AssessmentStatus {
   /// here yet — it ships only once Q10b (purge vs the 7-year retention guard
   /// and append-only audit_logs) is agreed in writing.
   CLOSED_ARCHIVED
+  /// Epic 18b (6 Sep 2026 illustration) — the rolling-over track's lock:
+  /// "Locked as ROLLED-OVER award". No account creation, no reference prompt
+  /// (both already exist on the active account). Reversible to COMPLETED.
+  ROLLED_OVER
+}
+
+/// Epic 18b — which fund pays an award, chosen at the lock (New Award or
+/// Rolled-over). Whitgift offers JWF / WSP_JWF / WFA; Trinity JWF / TBF
+/// (`awardFundOptionsForSchool`). Recorded per assessment year because "an
+/// award can start as being funded by JWF and then can move to being funded
+/// by the school's own fund, or vice versa" (Charlotte, 6 Sep 2026).
+enum AwardFundType {
+  JWF
+  WSP_JWF
+  WFA
+  TBF
 }
 
 enum AssessmentOutcome {

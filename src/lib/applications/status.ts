@@ -207,7 +207,7 @@ const ASSESSMENT_TRANSITIONS: Record<AssessmentStatus, AssessmentStatus[]> = {
   // COMPLETED is her "stored as complete" intermediary, so the three final
   // states exit from here (state machine, docs/diagrams/
   // epic-18-post-assessment-lifecycle.md §1).
-  COMPLETED: ["IN_PROGRESS", "NEW_AWARD", "WAITING_LIST", "CLOSED_ARCHIVED"],
+  COMPLETED: ["IN_PROGRESS", "NEW_AWARD", "WAITING_LIST", "CLOSED_ARCHIVED", "ROLLED_OVER"],
   // Epic 18 finals. Every reversal goes back through COMPLETED (stored as
   // complete) — never straight to IN_PROGRESS, so unlocking and amending are
   // two separate, separately-audited moves.
@@ -221,6 +221,10 @@ const ASSESSMENT_TRANSITIONS: Record<AssessmentStatus, AssessmentStatus[]> = {
   NEW_AWARD: ["COMPLETED"],
   WAITING_LIST: ["NEW_AWARD", "CLOSED_ARCHIVED", "COMPLETED"],
   CLOSED_ARCHIVED: ["COMPLETED"],
+  // Epic 18b — the rolling-over track's lock. Same reversal rule as NEW_AWARD.
+  // Which application types may take which lock is the core's guard, not this
+  // table's (the table is type-blind by design).
+  ROLLED_OVER: ["COMPLETED"],
 };
 
 /** Epic 18 — the post-assessment final states (CLOSED_PURGED joins with WP-B6). */
@@ -228,6 +232,7 @@ export const POST_ASSESSMENT_FINAL_STATES = [
   "NEW_AWARD",
   "WAITING_LIST",
   "CLOSED_ARCHIVED",
+  "ROLLED_OVER",
 ] as const satisfies readonly AssessmentStatus[];
 
 export type PostAssessmentFinalState = (typeof POST_ASSESSMENT_FINAL_STATES)[number];
