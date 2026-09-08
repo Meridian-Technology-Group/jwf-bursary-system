@@ -333,3 +333,93 @@ export const lifestyleSqueezeBandsRespec = [
   { ratioFloor: 100, ratioCeiling: 200, statusLabel: "LIFESTYLE ONLY MAINTAINED BY INCREASING DEBT, CREDIT RISK FLAG" },
   { ratioFloor: 200, ratioCeiling: null, statusLabel: "LIFESTYLE FRUSTRATINGLY PLAGUED BY UNUSUALLY HIGH LEVEL OF DEBT, HIGH RISK" },
 ].map((row) => ({ ...row, effectiveFrom: BANDS_RESPEC_EFFECTIVE_FROM }));
+
+// ─── Part 5 respec (Charlotte, 8 Sep 2026 21:38) ───────────────────────────
+// Her debt-status and lifestyle-squeeze commentary tables each split into two
+// variants, chosen per assessment by whether total savings exceed total debt.
+// Four tables in total. Deployed environments get the same rows via migration
+// 20260908230000_part5_savings_variant_bands (keep the two in sync).
+//
+// Pairs with the calc change in v2/debt.ts: the ratio is now
+// `totalDebt / 5 / NDI` and no longer nets savings off — savings instead
+// SELECT the table.
+
+const PART5_RESPEC_EFFECTIVE_FROM = new Date("2026-09-09");
+
+// C.4 — re-thresholded to uniform 0.1 steps to 1.0, then open-ended (her
+// "changed ranking levels"). minRepaymentMonths stays null on every row: the
+// figure is computed per assessment, never stored per band (6 Sep respec).
+export const debtRatioBandsSavingsBelowDebt = [
+  { ratioFloor: null, ratioCeiling: 0, statusLabel: "ZERO DEBT, NO CREDIT RISK" },
+  { ratioFloor: 0, ratioCeiling: 0.1, statusLabel: "SMALL DEBT LEVEL, NEGLIGIBLE CREDIT RISK" },
+  { ratioFloor: 0.1, ratioCeiling: 0.2, statusLabel: "MANAGEABLE DEBT, LOW CREDIT RISK" },
+  { ratioFloor: 0.2, ratioCeiling: 0.3, statusLabel: "MANAGEABLE DEBT, MEDIUM CREDIT RISK" },
+  { ratioFloor: 0.3, ratioCeiling: 0.4, statusLabel: "MATERIAL DEBT IMPACT, FAIR CREDIT RISK" },
+  { ratioFloor: 0.4, ratioCeiling: 0.5, statusLabel: "MATERIAL DEBT IMPACT, HIGH CREDIT RISK" },
+  { ratioFloor: 0.5, ratioCeiling: 0.6, statusLabel: "HEAVILY IN DEBT, FAIR CREDIT RISK" },
+  { ratioFloor: 0.6, ratioCeiling: 0.7, statusLabel: "HEAVILY IN DEBT, HIGH CREDIT RISK" },
+  { ratioFloor: 0.7, ratioCeiling: 0.8, statusLabel: "VERY HEAVILY IN DEBT, HIGH CREDIT RISK" },
+  { ratioFloor: 0.8, ratioCeiling: 0.9, statusLabel: "VERY HEAVILY IN DEBT, VERY HIGH CREDIT RISK" },
+  { ratioFloor: 0.9, ratioCeiling: 1, statusLabel: "DEBT GETTING OUT OF CONTROL, NO SAFETY NET" },
+  { ratioFloor: 1, ratioCeiling: null, statusLabel: "IN A DEBT SPIRAL, AT RISK OF BANKRUPTCY" },
+].map((row) => ({
+  ...row,
+  minRepaymentMonths: null,
+  savingsVariant: "SAVINGS_BELOW_DEBT" as const,
+  effectiveFrom: PART5_RESPEC_EFFECTIVE_FROM,
+}));
+
+export const debtRatioBandsSavingsAboveDebt = [
+  { ratioFloor: null, ratioCeiling: 0, statusLabel: "DEBT CUSHIONED BY SAVINGS, NO CREDIT RISK" },
+  { ratioFloor: 0, ratioCeiling: 0.1, statusLabel: "SMALL DEBT CUSHIONED BY SAVINGS, NEGLIGIBLE SAVINGS USE" },
+  { ratioFloor: 0.1, ratioCeiling: 0.2, statusLabel: "MANAGEABLE DEBT CUSHIONED BY SAVINGS, LOW SAVINGS USE" },
+  { ratioFloor: 0.2, ratioCeiling: 0.3, statusLabel: "MANAGEABLE DEBT CUSHIONED BY SAVINGS, MEDIUM SAVINGS USE" },
+  { ratioFloor: 0.3, ratioCeiling: 0.4, statusLabel: "MANAGEABLE DEBT CUSHIONED BY SAVINGS, FAIR SAVINGS USE" },
+  { ratioFloor: 0.4, ratioCeiling: 0.5, statusLabel: "MATERIAL DEBT CUSHIONED BY SAVINGS, HIGH SAVINGS USE" },
+  { ratioFloor: 0.5, ratioCeiling: 0.6, statusLabel: "HEAVILY IN DEBT, USING UP SAVINGS" },
+  { ratioFloor: 0.6, ratioCeiling: 0.7, statusLabel: "HEAVILY IN DEBT, USING UP SAVINGS" },
+  { ratioFloor: 0.7, ratioCeiling: 0.8, statusLabel: "VERY HEAVILY IN DEBT, SAVINGS DEPLETING" },
+  { ratioFloor: 0.8, ratioCeiling: 0.9, statusLabel: "VERY HEAVILY IN DEBT, SAVINGS DEPLETING" },
+  { ratioFloor: 0.9, ratioCeiling: 1, statusLabel: "DEBT GETTING OUT OF CONTROL, SAVINGS DEPLETING FAST" },
+  { ratioFloor: 1, ratioCeiling: null, statusLabel: "IN A DEBT SPIRAL, SAVINGS DEPLETING FAST" },
+].map((row) => ({
+  ...row,
+  minRepaymentMonths: null,
+  savingsVariant: "SAVINGS_ABOVE_DEBT" as const,
+  effectiveFrom: PART5_RESPEC_EFFECTIVE_FROM,
+}));
+
+// C.5 — thresholds are UNCHANGED from the 7 Sep generation ("there was no
+// change in rankings applied to the Lifestyle table, and the calculation of
+// the Lifestyle ratio remains the same"). Only the wording differs by variant.
+export const lifestyleSqueezeBandsSavingsBelowDebt = [
+  { ratioFloor: null, ratioCeiling: 0, statusLabel: "IN FINANCIAL SURVIVAL MODE, WARNING DEBT RED FLAG, NO MONEY FOR FEES" },
+  { ratioFloor: 0, ratioCeiling: 40, statusLabel: "AFFORDABLE, NEGLIGIBLE IMPACT ON LIFESTYLE" },
+  { ratioFloor: 40, ratioCeiling: 50, statusLabel: "AFFORDABLE, SOME IMPACT ON LIFESTYLE" },
+  { ratioFloor: 50, ratioCeiling: 60, statusLabel: "FAMILY LIFESTYLE IMPACTED, SOME RESTRICTIONS" },
+  { ratioFloor: 60, ratioCeiling: 80, statusLabel: "IMPORTANT LIFESTYLE SQUEEZE, MAIN SPEND RESTRICTIONS DUE TO FEES" },
+  { ratioFloor: 80, ratioCeiling: 90, statusLabel: "VERY HIGH LIFESTYLE SQUEEZE, FEES WILL FEEL LIKE A SACRIFICE" },
+  { ratioFloor: 90, ratioCeiling: 100, statusLabel: "SEVERE LIFESTYLE SQUEEZE, LIKELY STRUGGLES AHEAD" },
+  { ratioFloor: 100, ratioCeiling: 200, statusLabel: "LIFESTYLE ONLY MAINTAINED BY INCREASING DEBT, CREDIT RISK FLAG" },
+  { ratioFloor: 200, ratioCeiling: null, statusLabel: "LIFESTYLE FRUSTRATINGLY PLAGUED BY UNUSUALLY HIGH LEVEL OF DEBT, HIGH RISK" },
+].map((row) => ({
+  ...row,
+  savingsVariant: "SAVINGS_BELOW_DEBT" as const,
+  effectiveFrom: PART5_RESPEC_EFFECTIVE_FROM,
+}));
+
+export const lifestyleSqueezeBandsSavingsAboveDebt = [
+  { ratioFloor: null, ratioCeiling: 0, statusLabel: "LIFESTYLE FUELLED WITH SAVINGS ONLY OR EXTENDED BORROWING" },
+  { ratioFloor: 0, ratioCeiling: 40, statusLabel: "AFFORDABLE, NEGLIGIBLE IMPACT ON LIFESTYLE" },
+  { ratioFloor: 40, ratioCeiling: 50, statusLabel: "AFFORDABLE, SOME IMPACT ON LIFESTYLE" },
+  { ratioFloor: 50, ratioCeiling: 60, statusLabel: "FAMILY LIFESTYLE IMPACTED, SOME RESTRICTIONS" },
+  { ratioFloor: 60, ratioCeiling: 80, statusLabel: "IMPORTANT LIFESTYLE SQUEEZE, MAIN SPEND RESTRICTIONS DUE TO FEES" },
+  { ratioFloor: 80, ratioCeiling: 90, statusLabel: "VERY HIGH LIFESTYLE SQUEEZE, FEES WILL FEEL LIKE A SACRIFICE, USING SAVINGS" },
+  { ratioFloor: 90, ratioCeiling: 100, statusLabel: "SEVERE LIFESTYLE SQUEEZE, LIKELY STRUGGLES AHEAD, INCREASED SAVINGS USE" },
+  { ratioFloor: 100, ratioCeiling: 200, statusLabel: "LIFESTYLE ONLY MAINTAINED BY INCREASED BORROWING OR HIGH SAVINGS USE" },
+  { ratioFloor: 200, ratioCeiling: null, statusLabel: "LIFESTYLE FRUSTRATINGLY PLAGUED BY UNUSUALLY HIGH LEVEL OF DEBT, SAVINGS LIKELY TO DRY UP QUICKLY" },
+].map((row) => ({
+  ...row,
+  savingsVariant: "SAVINGS_ABOVE_DEBT" as const,
+  effectiveFrom: PART5_RESPEC_EFFECTIVE_FROM,
+}));
