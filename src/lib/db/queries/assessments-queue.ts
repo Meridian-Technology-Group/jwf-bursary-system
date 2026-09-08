@@ -10,7 +10,7 @@
  * guard in `applications/[id]/layout.tsx`); ADMIN/VIEWER see all.
  */
 
-import type { School } from "@prisma/client";
+import type { School, BursaryAccountStatus, AssessmentStatus } from "@prisma/client";
 import type { Tx } from "@/lib/db/prisma";
 import {
   deriveAssessmentQueueStatus,
@@ -29,6 +29,38 @@ export interface AssessmentQueueRow {
   submittedAt: Date | null;
   /** When assessment work last moved (assessment update), for sorting. */
   updatedAt: Date | null;
+  /**
+   * Charlotte, 8 Sep 2026: *"we need a status for the bursary account: ACTIVE
+   * or CLOSED. So the bursary is active and within an active bursary, you will
+   * have assessment statuses which evolve."* The account's own status, distinct
+   * from the derived assessment status above.
+   *
+   * Derived, not read straight off the account row, because her two worked
+   * examples need different sources:
+   *
+   *   - Kaluba: locked as a new award, so a BursaryAccount exists → ACTIVE.
+   *   - Levi Amoah: closed and archived, which never creates an account, yet
+   *     she says he *"would show as a closed account"*. So a CLOSED_ARCHIVED
+   *     assessment reads CLOSED even with no account row.
+   *
+   * `null` (rendered "No account") is therefore only the genuinely
+   * undetermined case: no account, and the assessment is still in flight.
+   */
+  bursaryStatus: BursaryAccountStatus | null;
+}
+
+/**
+ * The account's own status where there is an account; otherwise CLOSED for an
+ * archived assessment (her Levi Amoah example), else null. See
+ * `AssessmentQueueRow.bursaryStatus`.
+ */
+export function deriveBursaryStatus(
+  accountStatus: BursaryAccountStatus | null,
+  assessmentStatus: AssessmentStatus | null
+): BursaryAccountStatus | null {
+  if (accountStatus) return accountStatus;
+  if (assessmentStatus === "CLOSED_ARCHIVED") return "CLOSED";
+  return null;
 }
 
 export async function listAssessmentQueueRows(
@@ -53,6 +85,7 @@ export async function listAssessmentQueueRows(
       assignedToId: true,
       assignedTo: { select: { firstName: true, lastName: true, email: true } },
       round: { select: { academicYear: true } },
+      bursaryAccount: { select: { status: true } },
       assessment: {
         select: { status: true, outcome: true, updatedAt: true },
       },
@@ -79,5 +112,9 @@ export async function listAssessmentQueueRows(
       : null,
     submittedAt: app.submittedAt,
     updatedAt: app.assessment?.updatedAt ?? null,
+    bursaryStatus: deriveBursaryStatus(
+      app.bursaryAccount?.status ?? null,
+      app.assessment?.status ?? null
+    ),
   }));
 }
