@@ -16,6 +16,8 @@ import {
   propertyEquityBands,
   financialEquityBandsRespec,
   lifestyleSqueezeBandsRespec,
+  lifestyleSqueezeBandsSavingsBelowDebt,
+  lifestyleSqueezeBandsSavingsAboveDebt,
 } from '../../../../../prisma/seed-data/profiling-reference'
 
 // Band rows are driven from the real seed-data module (CALC-01) rather than
@@ -439,5 +441,102 @@ describe('PropertyPortfolioType', () => {
     for (const t of types) {
       expect(() => propertyCategory(t, {})).not.toThrow()
     }
+  })
+})
+
+// ─── Part 5 respec (Charlotte, 8 Sep 2026) — lifestyle-squeeze variants ─────
+//
+// Her statement: "there was no change in rankings applied to the Lifestyle
+// table, and the calculation of the Lifestyle ratio remains the same". So the
+// ratio and thresholds are unchanged here; only which table the LABEL is read
+// from varies, by the household's savings position.
+
+describe('lifestyleSqueeze — her two savings variants', () => {
+  const below = lifestyleSqueezeBandsSavingsBelowDebt
+  const above = lifestyleSqueezeBandsSavingsAboveDebt
+  const all = [...below, ...above]
+
+  it('seeds 9 rows per variant, on identical thresholds', () => {
+    expect(below).toHaveLength(9)
+    expect(above).toHaveLength(9)
+    expect(above.map((b) => [b.ratioFloor, b.ratioCeiling])).toEqual(
+      below.map((b) => [b.ratioFloor, b.ratioCeiling]),
+    )
+  })
+
+  // NDI 24,000 − 20,000/5 = 20,000 denominator; fees 17% of 100,000 = 17,000
+  // → 85% squeeze, inside her 80–90 band. This is Kaluba's SHAPE (savings
+  // cushion the debt), not her literal 8 Sep figures, which have moved since
+  // the 5 Sep vectors this suite already pins.
+  const squeezeIn80s = {
+    ndiAfterNotionalSpend: 24_000,
+    householdNetIncome: 100_000,
+    totalDebt: 20_000,
+    feesBenchmarkPct: 17,
+  }
+
+  it('savings > debt → the "USING SAVINGS" wording (her Kaluba shape)', () => {
+    const result = lifestyleSqueeze(squeezeIn80s, all, 'SAVINGS_ABOVE_DEBT')
+    expect(result.squeezeRatio).toBeCloseTo(85, 6)
+    expect(result.statusLabel).toBe(
+      'VERY HIGH LIFESTYLE SQUEEZE, FEES WILL FEEL LIKE A SACRIFICE, USING SAVINGS',
+    )
+  })
+
+  it('the same squeeze reads without the savings clause when uncushioned', () => {
+    const result = lifestyleSqueeze(squeezeIn80s, all, 'SAVINGS_BELOW_DEBT')
+    expect(result.squeezeRatio).toBeCloseTo(85, 6)
+    expect(result.statusLabel).toBe(
+      'VERY HIGH LIFESTYLE SQUEEZE, FEES WILL FEEL LIKE A SACRIFICE',
+    )
+  })
+
+  // ⚠️ Q14 — OPEN. Charlotte has given two different labels for the SAME DW
+  // vector: "survival mode" on 5 Sep 2026 (built and shipped, asserted by the
+  // 5 Sep vector test above) and "PLAGUED BY UNUSUALLY HIGH LEVEL OF DEBT,
+  // HIGH RISK" on 8 Sep 2026. This test pins the SHIPPED behaviour so the
+  // conflict is visible and cannot be flipped by accident; it is expected to
+  // change once she confirms which reading she wants.
+  it('Q14 — a negative squeeze still reads survival mode (her 5 Sep answer, pending)', () => {
+    const result = lifestyleSqueeze(
+      {
+        ndiAfterNotionalSpend: 5_685,
+        householdNetIncome: 60_319,
+        totalDebt: 43_000,
+        feesBenchmarkPct: 15,
+      },
+      all,
+      'SAVINGS_BELOW_DEBT',
+    )
+    expect(result.squeezeRatio).toBeCloseTo(-310.39, 1)
+    expect(result.statusLabel).toBe(
+      'IN FINANCIAL SURVIVAL MODE, WARNING DEBT RED FLAG, NO MONEY FOR FEES',
+    )
+  })
+
+  it('Q14 — the cushioned variant has its own negative-ratio wording', () => {
+    const result = lifestyleSqueeze(
+      {
+        ndiAfterNotionalSpend: 5_685,
+        householdNetIncome: 60_319,
+        totalDebt: 43_000,
+        feesBenchmarkPct: 15,
+      },
+      all,
+      'SAVINGS_ABOVE_DEBT',
+    )
+    expect(result.statusLabel).toBe('LIFESTYLE FUELLED WITH SAVINGS ONLY OR EXTENDED BORROWING')
+  })
+
+  it('a zero squeeze (no fees expected at all) reads the bottom row', () => {
+    const result = lifestyleSqueeze(
+      { ndiAfterNotionalSpend: 20_000, householdNetIncome: 30_000, totalDebt: 0, feesBenchmarkPct: 0 },
+      all,
+      'SAVINGS_BELOW_DEBT',
+    )
+    expect(result.squeezeRatio).toBe(0)
+    expect(result.statusLabel).toBe(
+      'IN FINANCIAL SURVIVAL MODE, WARNING DEBT RED FLAG, NO MONEY FOR FEES',
+    )
   })
 })

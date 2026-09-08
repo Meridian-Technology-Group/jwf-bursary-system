@@ -119,10 +119,21 @@ describe('calculateAssessmentV2 — modest-income renting family with debts', ()
   })
 
   it('debt-over-NDI ratio and status label are consistent with a small debt burden', () => {
-    // yearlyDebtExposure 1,600 − 400 = 1,200; ratio 1,200/30,000 = 0.04 →
-    // the respec's 0.03–0.07 band.
-    expect(result.debtOverNdiRatio).toBeCloseTo(0.04, 6)
+    // Part 5 respec (8 Sep 2026): total debt / 5 / NDI, savings NOT netted off.
+    // 8,000 / 5 / 30,000 = 0.05333 — no longer a function of adjustedSavings.
+    expect(result.debtOverNdiRatio).toBeCloseTo(8_000 / 5 / 30_000, 6)
     expect(result.debtStatusLabel).toBe('MANAGEABLE DEBT, MEDIUM CREDIT RISK')
+  })
+
+  it('the ratio no longer moves with the household\'s savings (Part 5 respec)', () => {
+    // The respec\'s central point: savings select the commentary table, they
+    // do not reduce the ratio. Same debt + income, far more savings, same
+    // ratio.
+    const richer = calculateAssessmentV2(
+      { ...input, cashSavings: input.cashSavings + 50_000 },
+      ref,
+    )
+    expect(richer.debtOverNdiRatio).toBeCloseTo(result.debtOverNdiRatio, 6)
   })
 
   it('renting always resolves property category 1 regardless of the (empty) property assets', () => {
