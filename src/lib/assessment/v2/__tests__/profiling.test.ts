@@ -491,13 +491,10 @@ describe('lifestyleSqueeze — her two savings variants', () => {
     )
   })
 
-  // ⚠️ Q14 — OPEN. Charlotte has given two different labels for the SAME DW
-  // vector: "survival mode" on 5 Sep 2026 (built and shipped, asserted by the
-  // 5 Sep vector test above) and "PLAGUED BY UNUSUALLY HIGH LEVEL OF DEBT,
-  // HIGH RISK" on 8 Sep 2026. This test pins the SHIPPED behaviour so the
-  // conflict is visible and cannot be flipped by accident; it is expected to
-  // change once she confirms which reading she wants.
-  it('Q14 — a negative squeeze still reads survival mode (her 5 Sep answer, pending)', () => {
+  // Q14 CLOSED (Charlotte, 9 Sep 2026): a negative squeeze reads survival
+  // mode. She confirmed the shipped 5 Sep behaviour and withdrew the
+  // conflicting 8 Sep example as "an incorrect answer".
+  it('Q14 — a negative squeeze reads survival mode (confirmed 9 Sep)', () => {
     const result = lifestyleSqueeze(
       {
         ndiAfterNotionalSpend: 5_685,

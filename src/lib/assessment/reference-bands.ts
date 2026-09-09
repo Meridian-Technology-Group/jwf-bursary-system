@@ -244,22 +244,21 @@ function forVariant<T extends { savingsVariant?: SavingsVariant }>(
  * (100 = 100%), read from the table variant matching the household's savings
  * position (8 Sep 2026 respec).
  *
- * ⚠️ **OPEN — negative squeeze ratios (Q14).** A negative ratio arises when the
- * denominator (NDI − totalDebt/5) is negative: the household's five-year debt
- * burden exceeds its entire disposable income. Charlotte has now given two
- * DIFFERENT answers for the same household:
+ * **Q14 CLOSED (Charlotte, 9 Sep 2026).** A negative ratio falls to the
+ * open-ended-bottom row, "IN FINANCIAL SURVIVAL MODE, WARNING DEBT RED FLAG,
+ * NO MONEY FOR FEES" — the behaviour shipped on 6 Sep, kept here unchanged.
  *
- *   - 5 Sep 2026: the DW vector (£0 savings, £43,000 debt, NDI £5,685 →
- *     −310.39%) reads *"IN FINANCIAL SURVIVAL MODE, WARNING DEBT RED FLAG, NO
- *     MONEY FOR FEES"* — the open-ended-bottom row. Built, tested and shipped.
- *   - 8 Sep 2026: the same DW vector, same −310.4%, reads *"LIFESTYLE
- *     FRUSTRATINGLY PLAGUED BY UNUSUALLY HIGH LEVEL OF DEBT, HIGH RISK"* — the
- *     200%+ row.
+ * A negative ratio arises when the denominator (NDI − totalDebt/5) is
+ * negative: the household's five-year debt burden exceeds its entire
+ * disposable income. Her 8 Sep email had given the opposite answer for the
+ * same DW vector (−310.4% reading as the 200%+ row); asked to reconcile the
+ * two, she confirmed the survival-mode reading and said the 8 Sep example was
+ * *"an incorrect answer"* she entered while writing up the examples.
  *
- * Both cannot hold. The shipped 5 Sep behaviour is kept here — a negative ratio
- * falls to the bottom row via the normal resolver — because it is the answer
- * she signed off, and flipping it would silently change the label on every
- * debt-swamped household. Resolve Q14 before changing this.
+ * ⚠️ Her 9 Sep reply also supersedes the TWO-variant split below: she is
+ * moving to TEN tables, keyed on whether debt and savings are each zero or
+ * non-zero (with the savings-vs-debt comparison surviving only in the
+ * both-non-zero cell). The spreadsheet had not arrived when this was written.
  */
 export function resolveLifestyleSqueezeBand(
   bands: readonly LifestyleSqueezeBandRow[],
