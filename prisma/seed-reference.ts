@@ -23,7 +23,7 @@ import { config } from "dotenv";
 // a nonprod .env.local from silently misrouting an explicit prod seed run.
 config({ path: ".env.local", override: false });
 
-import { PrismaClient, SavingsVariant } from "@prisma/client";
+import { PrismaClient, DebtSavingsContext } from "@prisma/client";
 import { createClient } from "@supabase/supabase-js";
 
 import { councilTaxDefaults, familyTypeConfigs, schoolFees } from "./seed-data/reference";
@@ -42,12 +42,10 @@ import {
   financialEquityBandsRespec,
   debtRatioBands,
   debtRatioBandsRespec,
-  debtRatioBandsSavingsBelowDebt,
-  debtRatioBandsSavingsAboveDebt,
+  debtRatioBandsPart5,
   lifestyleSqueezeBands,
   lifestyleSqueezeBandsRespec,
-  lifestyleSqueezeBandsSavingsBelowDebt,
-  lifestyleSqueezeBandsSavingsAboveDebt,
+  lifestyleSqueezeBandsPart5,
 } from "./seed-data/profiling-reference";
 import { postcodeAreas } from "./seed-data/postcode-areas";
 
@@ -300,22 +298,23 @@ async function seedFinancialEquityBands(): Promise<void> {
 
 async function seedDebtRatioBands(): Promise<void> {
   section("Debt ratio bands (CALC-01)");
-  // `savingsVariant` is part of the identity lookup from the 8 Sep 2026 Part 5
+  // `debtSavingsContext` is part of the identity lookup from the 8 Sep 2026 Part 5
   // respec onward — without it the two variants of a generation share a
-  // (effectiveFrom, ratioCeiling) key and the second silently overwrites the
-  // first. Generations seeded before the split carry no variant and default to
-  // SAVINGS_BELOW_DEBT.
+  // (effectiveFrom, ratioCeiling) key and later ones silently overwrite earlier
+  // ones. Generations seeded before the split carry no context and default to
+  // DEBT_SAVINGS_BELOW_DEBT.
   const bands = [
     ...debtRatioBands,
     ...debtRatioBandsRespec,
-    ...debtRatioBandsSavingsBelowDebt,
-    ...debtRatioBandsSavingsAboveDebt,
+    ...debtRatioBandsPart5,
   ];
   for (const band of bands) {
-    const savingsVariant =
-      "savingsVariant" in band ? band.savingsVariant : SavingsVariant.SAVINGS_BELOW_DEBT;
+    const debtSavingsContext =
+      "debtSavingsContext" in band
+        ? band.debtSavingsContext
+        : DebtSavingsContext.DEBT_SAVINGS_BELOW_DEBT;
     const existing = await prisma.debtRatioBand.findFirst({
-      where: { effectiveFrom: band.effectiveFrom, ratioCeiling: band.ratioCeiling, savingsVariant },
+      where: { effectiveFrom: band.effectiveFrom, ratioCeiling: band.ratioCeiling, debtSavingsContext },
     });
     if (existing) {
       await prisma.debtRatioBand.update({
@@ -327,7 +326,7 @@ async function seedDebtRatioBands(): Promise<void> {
         },
       });
     } else {
-      await prisma.debtRatioBand.create({ data: { ...band, savingsVariant } });
+      await prisma.debtRatioBand.create({ data: { ...band, debtSavingsContext } });
     }
   }
   log(`Upserted ${bands.length} debt ratio bands`);
@@ -335,18 +334,19 @@ async function seedDebtRatioBands(): Promise<void> {
 
 async function seedLifestyleSqueezeBands(): Promise<void> {
   section("Lifestyle squeeze bands (CALC-01)");
-  // See seedDebtRatioBands — `savingsVariant` is part of the identity lookup.
+  // See seedDebtRatioBands — `debtSavingsContext` is part of the identity lookup.
   const bands = [
     ...lifestyleSqueezeBands,
     ...lifestyleSqueezeBandsRespec,
-    ...lifestyleSqueezeBandsSavingsBelowDebt,
-    ...lifestyleSqueezeBandsSavingsAboveDebt,
+    ...lifestyleSqueezeBandsPart5,
   ];
   for (const band of bands) {
-    const savingsVariant =
-      "savingsVariant" in band ? band.savingsVariant : SavingsVariant.SAVINGS_BELOW_DEBT;
+    const debtSavingsContext =
+      "debtSavingsContext" in band
+        ? band.debtSavingsContext
+        : DebtSavingsContext.DEBT_SAVINGS_BELOW_DEBT;
     const existing = await prisma.lifestyleSqueezeBand.findFirst({
-      where: { effectiveFrom: band.effectiveFrom, ratioCeiling: band.ratioCeiling, savingsVariant },
+      where: { effectiveFrom: band.effectiveFrom, ratioCeiling: band.ratioCeiling, debtSavingsContext },
     });
     if (existing) {
       await prisma.lifestyleSqueezeBand.update({
@@ -354,7 +354,7 @@ async function seedLifestyleSqueezeBands(): Promise<void> {
         data: { ratioFloor: band.ratioFloor, statusLabel: band.statusLabel },
       });
     } else {
-      await prisma.lifestyleSqueezeBand.create({ data: { ...band, savingsVariant } });
+      await prisma.lifestyleSqueezeBand.create({ data: { ...band, debtSavingsContext } });
     }
   }
   log(`Upserted ${bands.length} lifestyle squeeze bands`);

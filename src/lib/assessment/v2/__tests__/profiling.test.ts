@@ -16,8 +16,7 @@ import {
   propertyEquityBands,
   financialEquityBandsRespec,
   lifestyleSqueezeBandsRespec,
-  lifestyleSqueezeBandsSavingsBelowDebt,
-  lifestyleSqueezeBandsSavingsAboveDebt,
+  lifestyleSqueezeBandsPart5,
 } from '../../../../../prisma/seed-data/profiling-reference'
 
 // Band rows are driven from the real seed-data module (CALC-01) rather than
@@ -444,30 +443,25 @@ describe('PropertyPortfolioType', () => {
   })
 })
 
-// ─── Part 5 respec (Charlotte, 8 Sep 2026) — lifestyle-squeeze variants ─────
+// ─── Part 5 respec (Charlotte, 10 Sep 2026) — lifestyle across her contexts ─
 //
-// Her statement: "there was no change in rankings applied to the Lifestyle
-// table, and the calculation of the Lifestyle ratio remains the same". So the
-// ratio and thresholds are unchanged here; only which table the LABEL is read
-// from varies, by the household's savings position.
+// Her statement stands: "there was no change in rankings applied to the
+// Lifestyle table, and the calculation of the Lifestyle ratio remains the
+// same". The ratio and thresholds are identical in all five contexts; only the
+// wording differs.
 
-describe('lifestyleSqueeze — her two savings variants', () => {
-  const below = lifestyleSqueezeBandsSavingsBelowDebt
-  const above = lifestyleSqueezeBandsSavingsAboveDebt
-  const all = [...below, ...above]
+describe('lifestyleSqueeze — her five contexts', () => {
+  const all = lifestyleSqueezeBandsPart5
 
-  it('seeds 9 rows per variant, on identical thresholds', () => {
-    expect(below).toHaveLength(9)
-    expect(above).toHaveLength(9)
-    expect(above.map((b) => [b.ratioFloor, b.ratioCeiling])).toEqual(
-      below.map((b) => [b.ratioFloor, b.ratioCeiling]),
-    )
+  it('seeds 9 rows per context on one shared ladder', () => {
+    expect(all).toHaveLength(45)
+    const ladder = (c: string) =>
+      all.filter((b) => b.debtSavingsContext === c).map((b) => [b.ratioFloor, b.ratioCeiling])
+    expect(ladder('NO_DEBT_NO_SAVINGS')).toEqual(ladder('DEBT_SAVINGS_ABOVE_DEBT'))
+    expect(ladder('DEBT_NO_SAVINGS')).toHaveLength(9)
   })
 
-  // NDI 24,000 − 20,000/5 = 20,000 denominator; fees 17% of 100,000 = 17,000
-  // → 85% squeeze, inside her 80–90 band. This is Kaluba's SHAPE (savings
-  // cushion the debt), not her literal 8 Sep figures, which have moved since
-  // the 5 Sep vectors this suite already pins.
+  // NDI 24,000 − 20,000/5 = 20,000; fees 17% of 100,000 = 17,000 → 85%.
   const squeezeIn80s = {
     ndiAfterNotionalSpend: 24_000,
     householdNetIncome: 100_000,
@@ -475,27 +469,25 @@ describe('lifestyleSqueeze — her two savings variants', () => {
     feesBenchmarkPct: 17,
   }
 
-  it('savings > debt → the "USING SAVINGS" wording (her Kaluba shape)', () => {
-    const result = lifestyleSqueeze(squeezeIn80s, all, 'SAVINGS_ABOVE_DEBT')
-    expect(result.squeezeRatio).toBeCloseTo(85, 6)
-    expect(result.statusLabel).toBe(
+  it('savings over debt gets the "USING SAVINGS" wording', () => {
+    const r = lifestyleSqueeze(squeezeIn80s, all, 'DEBT_SAVINGS_ABOVE_DEBT')
+    expect(r.squeezeRatio).toBeCloseTo(85, 6)
+    expect(r.statusLabel).toBe(
       'VERY HIGH LIFESTYLE SQUEEZE, FEES WILL FEEL LIKE A SACRIFICE, USING SAVINGS',
     )
   })
 
-  it('the same squeeze reads without the savings clause when uncushioned', () => {
-    const result = lifestyleSqueeze(squeezeIn80s, all, 'SAVINGS_BELOW_DEBT')
-    expect(result.squeezeRatio).toBeCloseTo(85, 6)
-    expect(result.statusLabel).toBe(
+  it('debt with no savings gets the plain wording at the same ratio', () => {
+    const r = lifestyleSqueeze(squeezeIn80s, all, 'DEBT_NO_SAVINGS')
+    expect(r.squeezeRatio).toBeCloseTo(85, 6)
+    expect(r.statusLabel).toBe(
       'VERY HIGH LIFESTYLE SQUEEZE, FEES WILL FEEL LIKE A SACRIFICE',
     )
   })
 
-  // Q14 CLOSED (Charlotte, 9 Sep 2026): a negative squeeze reads survival
-  // mode. She confirmed the shipped 5 Sep behaviour and withdrew the
-  // conflicting 8 Sep example as "an incorrect answer".
-  it('Q14 — a negative squeeze reads survival mode (confirmed 9 Sep)', () => {
-    const result = lifestyleSqueeze(
+  // Q14, confirmed by her on 9 Sep: a negative squeeze reads survival mode.
+  it('her DW vector: −310.4% reads survival mode in the debt-no-savings table', () => {
+    const r = lifestyleSqueeze(
       {
         ndiAfterNotionalSpend: 5_685,
         householdNetIncome: 60_319,
@@ -503,37 +495,35 @@ describe('lifestyleSqueeze — her two savings variants', () => {
         feesBenchmarkPct: 15,
       },
       all,
-      'SAVINGS_BELOW_DEBT',
+      'DEBT_NO_SAVINGS',
     )
-    expect(result.squeezeRatio).toBeCloseTo(-310.39, 1)
-    expect(result.statusLabel).toBe(
-      'IN FINANCIAL SURVIVAL MODE, WARNING DEBT RED FLAG, NO MONEY FOR FEES',
+    expect(r.squeezeRatio).toBeCloseTo(-310.39, 1)
+    expect(r.statusLabel).toBe(
+      'IN FINANCIAL SURVIVAL MODE, DEBT WARNING RED FLAG, NO MONEY FOR FEES',
     )
   })
 
-  it('Q14 — the cushioned variant has its own negative-ratio wording', () => {
-    const result = lifestyleSqueeze(
-      {
-        ndiAfterNotionalSpend: 5_685,
-        householdNetIncome: 60_319,
-        totalDebt: 43_000,
-        feesBenchmarkPct: 15,
-      },
+  it('a debt-free household never reads debt wording', () => {
+    const r = lifestyleSqueeze(
+      { ndiAfterNotionalSpend: 20_000, householdNetIncome: 100_000, totalDebt: 0, feesBenchmarkPct: 10 },
       all,
-      'SAVINGS_ABOVE_DEBT',
+      'NO_DEBT_WITH_SAVINGS',
     )
-    expect(result.statusLabel).toBe('LIFESTYLE FUELLED WITH SAVINGS ONLY OR EXTENDED BORROWING')
+    // 50% sits on the 40–50 boundary, which is ceiling-INCLUSIVE for the
+    // lifestyle ladder (unlike the debt ladder's CH-40 exclusive boundaries).
+    expect(r.squeezeRatio).toBeCloseTo(50, 6)
+    expect(r.statusLabel).toBe('AFFORDABLE, SOME IMPACT ON LIFESTYLE')
   })
 
-  it('a zero squeeze (no fees expected at all) reads the bottom row', () => {
-    const result = lifestyleSqueeze(
-      { ndiAfterNotionalSpend: 20_000, householdNetIncome: 30_000, totalDebt: 0, feesBenchmarkPct: 0 },
+  // Same open point as the debt table: a zero-or-negative squeeze in a
+  // no-debt context lands on her "n/a" row. Raised with her 11 Sep 2026.
+  it('OPEN: a no-debt household with no disposable income lands on "n/a"', () => {
+    const r = lifestyleSqueeze(
+      { ndiAfterNotionalSpend: -500, householdNetIncome: 100_000, totalDebt: 0, feesBenchmarkPct: 10 },
       all,
-      'SAVINGS_BELOW_DEBT',
+      'NO_DEBT_NO_SAVINGS',
     )
-    expect(result.squeezeRatio).toBe(0)
-    expect(result.statusLabel).toBe(
-      'IN FINANCIAL SURVIVAL MODE, WARNING DEBT RED FLAG, NO MONEY FOR FEES',
-    )
+    expect(r.squeezeRatio).toBeLessThan(0)
+    expect(r.statusLabel).toBe('n/a')
   })
 })

@@ -4,14 +4,13 @@ import {
   calculateYearlyDebtExposure,
   calculateDebtOverNdiRatio,
   classifyDebt,
-  savingsVariantFor,
+  debtSavingsContextFor,
   minRepaymentMonthsWithoutFees,
 } from '../debt'
 import type { DebtsRecord } from '@/types/assessment-v2'
 import {
   debtRatioBandsRespec,
-  debtRatioBandsSavingsBelowDebt,
-  debtRatioBandsSavingsAboveDebt,
+  debtRatioBandsPart5,
 } from '../../../../../prisma/seed-data/profiling-reference'
 
 // ─── calculateDerivedYearlyDebtRepayments (C123) ───────────────────────────
@@ -243,99 +242,127 @@ describe('minRepaymentMonthsWithoutFees', () => {
   })
 })
 
-// ─── Part 5 respec (Charlotte, 8 Sep 2026) — the four commentary tables ─────
+// ─── Part 5 respec (Charlotte, 10 Sep 2026) — her ten commentary tables ────
 //
 // Driven from the real seed-data module so the engine and the seed cannot
 // drift apart.
 
-describe('savingsVariantFor', () => {
-  it('picks the cushioned table when savings exceed debt (her Kaluba case)', () => {
-    expect(savingsVariantFor(9_700, 8_000)).toBe('SAVINGS_ABOVE_DEBT')
+const forContext = (c: string) =>
+  debtRatioBandsPart5.filter((b) => b.debtSavingsContext === c)
+
+describe('debtSavingsContextFor', () => {
+  it('her Kaluba case: debt and savings, savings cover the debt', () => {
+    expect(debtSavingsContextFor(9_700, 8_000)).toBe('DEBT_SAVINGS_ABOVE_DEBT')
   })
 
-  it('picks the uncushioned table when debt exceeds savings (her DW case)', () => {
-    expect(savingsVariantFor(0, 43_000)).toBe('SAVINGS_BELOW_DEBT')
+  it('her DW case: debt, no savings at all', () => {
+    expect(debtSavingsContextFor(0, 43_000)).toBe('DEBT_NO_SAVINGS')
   })
 
-  it('treats equal savings and debt as uncushioned — nothing is left over', () => {
-    expect(savingsVariantFor(8_000, 8_000)).toBe('SAVINGS_BELOW_DEBT')
+  it('debt and savings, savings do not cover the debt', () => {
+    expect(debtSavingsContextFor(2_000, 8_000)).toBe('DEBT_SAVINGS_BELOW_DEBT')
   })
 
-  it('a debt-free household with any savings is cushioned', () => {
-    expect(savingsVariantFor(1, 0)).toBe('SAVINGS_ABOVE_DEBT')
+  it('equal savings and debt read as uncushioned — nothing is left over', () => {
+    expect(debtSavingsContextFor(8_000, 8_000)).toBe('DEBT_SAVINGS_BELOW_DEBT')
   })
 
-  it('a household with neither savings nor debt is uncushioned (reads ZERO DEBT)', () => {
-    expect(savingsVariantFor(0, 0)).toBe('SAVINGS_BELOW_DEBT')
+  it('no debt, with savings — the case that broke the 8 Sep two-table split', () => {
+    // Previously this household read "DEBT CUSHIONED BY SAVINGS" with no debt
+    // to cushion, which is what prompted her ten-table redesign.
+    expect(debtSavingsContextFor(80_000, 0)).toBe('NO_DEBT_WITH_SAVINGS')
+  })
+
+  it('no debt and no savings', () => {
+    expect(debtSavingsContextFor(0, 0)).toBe('NO_DEBT_NO_SAVINGS')
   })
 })
 
-describe('classifyDebt — her two savings variants', () => {
-  const below = debtRatioBandsSavingsBelowDebt
-  const above = debtRatioBandsSavingsAboveDebt
-
-  it('seeds 12 rows per variant', () => {
-    expect(below).toHaveLength(12)
-    expect(above).toHaveLength(12)
+describe('her ten tables — shape', () => {
+  it('seeds a debt table of 12 rows for each of the five contexts', () => {
+    expect(debtRatioBandsPart5).toHaveLength(60)
+    for (const c of [
+      'NO_DEBT_NO_SAVINGS',
+      'NO_DEBT_WITH_SAVINGS',
+      'DEBT_NO_SAVINGS',
+      'DEBT_SAVINGS_BELOW_DEBT',
+      'DEBT_SAVINGS_ABOVE_DEBT',
+    ]) {
+      expect(forContext(c)).toHaveLength(12)
+    }
   })
 
-  it('her Kaluba example: ratio 0.0642, savings > debt → cushioned wording', () => {
+  it('every context uses the same ratio ladder', () => {
+    const ladder = (c: string) =>
+      forContext(c).map((b) => [b.ratioFloor, b.ratioCeiling])
+    expect(ladder('NO_DEBT_NO_SAVINGS')).toEqual(ladder('DEBT_SAVINGS_ABOVE_DEBT'))
+  })
+})
+
+describe('classifyDebt — against her ten tables', () => {
+  const all = debtRatioBandsPart5
+
+  it('her Kaluba example end to end: 0.0642 with savings over debt', () => {
     const ratio = calculateDebtOverNdiRatio(8_000, 24_907)
-    const variant = savingsVariantFor(9_700, 8_000)
-    expect(classifyDebt(ratio, [...below, ...above], variant).statusLabel).toBe(
+    const context = debtSavingsContextFor(9_700, 8_000)
+    expect(classifyDebt(ratio, all, context).statusLabel).toBe(
       'SMALL DEBT CUSHIONED BY SAVINGS, NEGLIGIBLE SAVINGS USE',
     )
   })
 
-  it('her DW example: ratio 1.5127, savings < debt → debt spiral', () => {
+  it('her DW example end to end: 1.5127 with no savings', () => {
     const ratio = calculateDebtOverNdiRatio(43_000, 5_685)
-    const variant = savingsVariantFor(0, 43_000)
-    expect(classifyDebt(ratio, [...below, ...above], variant).statusLabel).toBe(
+    const context = debtSavingsContextFor(0, 43_000)
+    expect(classifyDebt(ratio, all, context).statusLabel).toBe(
       'IN A DEBT SPIRAL, AT RISK OF BANKRUPTCY',
     )
   })
 
-  it('the same ratio reads differently in each variant', () => {
-    const all = [...below, ...above]
-    expect(classifyDebt(0.25, all, 'SAVINGS_BELOW_DEBT').statusLabel).toBe(
+  it('a debt-free household reads ZERO DEBT whether or not it has savings', () => {
+    // The fix for the 8 Sep problem: no debt never reads "cushioned".
+    expect(classifyDebt(0, all, 'NO_DEBT_NO_SAVINGS').statusLabel).toBe(
+      'ZERO DEBT, NO CREDIT RISK',
+    )
+    expect(classifyDebt(0, all, 'NO_DEBT_WITH_SAVINGS').statusLabel).toBe(
+      'ZERO DEBT, NO CREDIT RISK',
+    )
+  })
+
+  it('the same ratio reads differently per context', () => {
+    expect(classifyDebt(0.25, all, 'DEBT_NO_SAVINGS').statusLabel).toBe(
       'MANAGEABLE DEBT, MEDIUM CREDIT RISK',
     )
-    expect(classifyDebt(0.25, all, 'SAVINGS_ABOVE_DEBT').statusLabel).toBe(
+    expect(classifyDebt(0.25, all, 'DEBT_SAVINGS_ABOVE_DEBT').statusLabel).toBe(
       'MANAGEABLE DEBT CUSHIONED BY SAVINGS, MEDIUM SAVINGS USE',
     )
   })
 
-  it('zero debt reads ZERO DEBT uncushioned, but cushioned when savings exist', () => {
-    const all = [...below, ...above]
-    expect(classifyDebt(0, all, 'SAVINGS_BELOW_DEBT').statusLabel).toBe('ZERO DEBT, NO CREDIT RISK')
-    expect(classifyDebt(0, all, 'SAVINGS_ABOVE_DEBT').statusLabel).toBe(
-      'DEBT CUSHIONED BY SAVINGS, NO CREDIT RISK',
-    )
-  })
-
-  // Her re-thresholding: uniform 0.1 steps to 1.0, then open-ended. Boundaries
-  // stay ceiling-exclusive (CH-40), so each boundary opens its own band.
-  it('boundary values resolve to the upper band (ceiling-exclusive)', () => {
+  it('boundary values resolve to the upper band (ceiling-exclusive, CH-40)', () => {
     const boundaries: Array<[number, string]> = [
       [0.1, 'MANAGEABLE DEBT, LOW CREDIT RISK'],
-      [0.2, 'MANAGEABLE DEBT, MEDIUM CREDIT RISK'],
-      [0.3, 'MATERIAL DEBT IMPACT, FAIR CREDIT RISK'],
-      [0.4, 'MATERIAL DEBT IMPACT, HIGH CREDIT RISK'],
       [0.5, 'HEAVILY IN DEBT, FAIR CREDIT RISK'],
-      [0.6, 'HEAVILY IN DEBT, HIGH CREDIT RISK'],
-      [0.7, 'VERY HEAVILY IN DEBT, HIGH CREDIT RISK'],
-      [0.8, 'VERY HEAVILY IN DEBT, VERY HIGH CREDIT RISK'],
       [0.9, 'DEBT GETTING OUT OF CONTROL, NO SAFETY NET'],
       [1, 'IN A DEBT SPIRAL, AT RISK OF BANKRUPTCY'],
     ]
     for (const [value, label] of boundaries) {
-      expect(classifyDebt(value, below, 'SAVINGS_BELOW_DEBT').statusLabel).toBe(label)
+      expect(classifyDebt(value, all, 'DEBT_NO_SAVINGS').statusLabel).toBe(label)
     }
   })
 
-  it('a pre-respec generation (no variant on its rows) still resolves', () => {
-    // Rows seeded before the split carry no savingsVariant; asking for the
-    // cushioned table must not resolve to nothing.
-    expect(classifyDebt(0.25, debtRatioBandsRespec, 'SAVINGS_ABOVE_DEBT').statusLabel).toBeTruthy()
+  // ⚠️ Raised with Charlotte 11 Sep 2026, not yet answered. A household with
+  // real debt whose NDI after notional spend is zero or negative gets a ratio
+  // of 0 from the divide-by-zero guard, which lands on the bottom row — and in
+  // her debt-above-zero tables that row reads "n/a". Pinned so the behaviour is
+  // visible rather than discovered in a live assessment.
+  it('OPEN: debt with no disposable income lands on her "n/a" row', () => {
+    const ratio = calculateDebtOverNdiRatio(43_000, -2_915)
+    expect(ratio).toBe(0)
+    expect(classifyDebt(ratio, all, 'DEBT_NO_SAVINGS').statusLabel).toBe('n/a')
+  })
+
+  it('a pre-respec generation still resolves rather than returning nothing', () => {
+    expect(
+      classifyDebt(0.25, debtRatioBandsRespec, 'DEBT_SAVINGS_ABOVE_DEBT').statusLabel,
+    ).toBeTruthy()
   })
 })

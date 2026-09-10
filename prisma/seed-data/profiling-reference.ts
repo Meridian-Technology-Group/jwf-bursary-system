@@ -334,92 +334,180 @@ export const lifestyleSqueezeBandsRespec = [
   { ratioFloor: 200, ratioCeiling: null, statusLabel: "LIFESTYLE FRUSTRATINGLY PLAGUED BY UNUSUALLY HIGH LEVEL OF DEBT, HIGH RISK" },
 ].map((row) => ({ ...row, effectiveFrom: BANDS_RESPEC_EFFECTIVE_FROM }));
 
-// ─── Part 5 respec (Charlotte, 8 Sep 2026 21:38) ───────────────────────────
-// Her debt-status and lifestyle-squeeze commentary tables each split into two
-// variants, chosen per assessment by whether total savings exceed total debt.
-// Four tables in total. Deployed environments get the same rows via migration
-// 20260908230000_part5_savings_variant_bands (keep the two in sync).
+
+// ─── Part 5 respec v2 (Charlotte, 10 Sep 2026) — her TEN tables ────────────
 //
-// Pairs with the calc change in v2/debt.ts: the ratio is now
-// `totalDebt / 5 / NDI` and no longer nets savings off — savings instead
-// SELECT the table.
+// Her 8 Sep split into two variants did not survive contact with the zero
+// cases: a household with no debt still read "cushioned by savings", and one
+// with no savings read wording about using them up. Her answer is a 2x2 of
+// contexts, with the both-positive cell splitting again on savings vs debt:
+//
+//                       SAVINGS = £0            SAVINGS > £0
+//   DEBT = £0           tables 1 & 2            tables 3 & 4
+//   DEBT > £0           tables 5 & 6            tables 7-10 (by savings vs debt)
+//
+// Ten tables, five contexts, each with a debt-status and a lifestyle table.
+// She confirmed on 9 Sep that these "cover all possible situations, they can't
+// be any other".
+//
+// "n/a" rows are hers: they mark a band that cannot arise in that context (no
+// debt means the ratio is always 0, so only the bottom row is reachable).
+// See `debtSavingsContextFor` for the one case where an "n/a" row IS
+// reachable, which is raised with her.
+//
+// Deployed environments get these rows via migration
+// 20260908230000_part5_savings_variant_bands (generated FROM this file — keep
+// the two in sync by regenerating rather than hand-editing the SQL).
 
-const PART5_RESPEC_EFFECTIVE_FROM = new Date("2026-09-09");
+const PART5_EFFECTIVE_FROM = new Date("2026-09-11");
 
-// C.4 — re-thresholded to uniform 0.1 steps to 1.0, then open-ended (her
-// "changed ranking levels"). minRepaymentMonths stays null on every row: the
-// figure is computed per assessment, never stored per band (6 Sep respec).
-export const debtRatioBandsSavingsBelowDebt = [
-  { ratioFloor: null, ratioCeiling: 0, statusLabel: "ZERO DEBT, NO CREDIT RISK" },
-  { ratioFloor: 0, ratioCeiling: 0.1, statusLabel: "SMALL DEBT LEVEL, NEGLIGIBLE CREDIT RISK" },
-  { ratioFloor: 0.1, ratioCeiling: 0.2, statusLabel: "MANAGEABLE DEBT, LOW CREDIT RISK" },
-  { ratioFloor: 0.2, ratioCeiling: 0.3, statusLabel: "MANAGEABLE DEBT, MEDIUM CREDIT RISK" },
-  { ratioFloor: 0.3, ratioCeiling: 0.4, statusLabel: "MATERIAL DEBT IMPACT, FAIR CREDIT RISK" },
-  { ratioFloor: 0.4, ratioCeiling: 0.5, statusLabel: "MATERIAL DEBT IMPACT, HIGH CREDIT RISK" },
-  { ratioFloor: 0.5, ratioCeiling: 0.6, statusLabel: "HEAVILY IN DEBT, FAIR CREDIT RISK" },
-  { ratioFloor: 0.6, ratioCeiling: 0.7, statusLabel: "HEAVILY IN DEBT, HIGH CREDIT RISK" },
-  { ratioFloor: 0.7, ratioCeiling: 0.8, statusLabel: "VERY HEAVILY IN DEBT, HIGH CREDIT RISK" },
-  { ratioFloor: 0.8, ratioCeiling: 0.9, statusLabel: "VERY HEAVILY IN DEBT, VERY HIGH CREDIT RISK" },
-  { ratioFloor: 0.9, ratioCeiling: 1, statusLabel: "DEBT GETTING OUT OF CONTROL, NO SAFETY NET" },
-  { ratioFloor: 1, ratioCeiling: null, statusLabel: "IN A DEBT SPIRAL, AT RISK OF BANKRUPTCY" },
-].map((row) => ({
-  ...row,
-  minRepaymentMonths: null,
-  savingsVariant: "SAVINGS_BELOW_DEBT" as const,
-  effectiveFrom: PART5_RESPEC_EFFECTIVE_FROM,
-}));
+/** The five household contexts that select a pair of tables. */
+export const DEBT_SAVINGS_CONTEXTS = [
+  "NO_DEBT_NO_SAVINGS",
+  "NO_DEBT_WITH_SAVINGS",
+  "DEBT_NO_SAVINGS",
+  "DEBT_SAVINGS_BELOW_DEBT",
+  "DEBT_SAVINGS_ABOVE_DEBT",
+] as const;
 
-export const debtRatioBandsSavingsAboveDebt = [
-  { ratioFloor: null, ratioCeiling: 0, statusLabel: "DEBT CUSHIONED BY SAVINGS, NO CREDIT RISK" },
-  { ratioFloor: 0, ratioCeiling: 0.1, statusLabel: "SMALL DEBT CUSHIONED BY SAVINGS, NEGLIGIBLE SAVINGS USE" },
-  { ratioFloor: 0.1, ratioCeiling: 0.2, statusLabel: "MANAGEABLE DEBT CUSHIONED BY SAVINGS, LOW SAVINGS USE" },
-  { ratioFloor: 0.2, ratioCeiling: 0.3, statusLabel: "MANAGEABLE DEBT CUSHIONED BY SAVINGS, MEDIUM SAVINGS USE" },
-  { ratioFloor: 0.3, ratioCeiling: 0.4, statusLabel: "MANAGEABLE DEBT CUSHIONED BY SAVINGS, FAIR SAVINGS USE" },
-  { ratioFloor: 0.4, ratioCeiling: 0.5, statusLabel: "MATERIAL DEBT CUSHIONED BY SAVINGS, HIGH SAVINGS USE" },
-  { ratioFloor: 0.5, ratioCeiling: 0.6, statusLabel: "HEAVILY IN DEBT, USING UP SAVINGS" },
-  { ratioFloor: 0.6, ratioCeiling: 0.7, statusLabel: "HEAVILY IN DEBT, USING UP SAVINGS" },
-  { ratioFloor: 0.7, ratioCeiling: 0.8, statusLabel: "VERY HEAVILY IN DEBT, SAVINGS DEPLETING" },
-  { ratioFloor: 0.8, ratioCeiling: 0.9, statusLabel: "VERY HEAVILY IN DEBT, SAVINGS DEPLETING" },
-  { ratioFloor: 0.9, ratioCeiling: 1, statusLabel: "DEBT GETTING OUT OF CONTROL, SAVINGS DEPLETING FAST" },
-  { ratioFloor: 1, ratioCeiling: null, statusLabel: "IN A DEBT SPIRAL, SAVINGS DEPLETING FAST" },
-].map((row) => ({
-  ...row,
-  minRepaymentMonths: null,
-  savingsVariant: "SAVINGS_ABOVE_DEBT" as const,
-  effectiveFrom: PART5_RESPEC_EFFECTIVE_FROM,
-}));
+export type DebtSavingsContextName = (typeof DEBT_SAVINGS_CONTEXTS)[number];
 
-// C.5 — thresholds are UNCHANGED from the 7 Sep generation ("there was no
-// change in rankings applied to the Lifestyle table, and the calculation of
-// the Lifestyle ratio remains the same"). Only the wording differs by variant.
-export const lifestyleSqueezeBandsSavingsBelowDebt = [
-  { ratioFloor: null, ratioCeiling: 0, statusLabel: "IN FINANCIAL SURVIVAL MODE, WARNING DEBT RED FLAG, NO MONEY FOR FEES" },
-  { ratioFloor: 0, ratioCeiling: 40, statusLabel: "AFFORDABLE, NEGLIGIBLE IMPACT ON LIFESTYLE" },
-  { ratioFloor: 40, ratioCeiling: 50, statusLabel: "AFFORDABLE, SOME IMPACT ON LIFESTYLE" },
-  { ratioFloor: 50, ratioCeiling: 60, statusLabel: "FAMILY LIFESTYLE IMPACTED, SOME RESTRICTIONS" },
-  { ratioFloor: 60, ratioCeiling: 80, statusLabel: "IMPORTANT LIFESTYLE SQUEEZE, MAIN SPEND RESTRICTIONS DUE TO FEES" },
-  { ratioFloor: 80, ratioCeiling: 90, statusLabel: "VERY HIGH LIFESTYLE SQUEEZE, FEES WILL FEEL LIKE A SACRIFICE" },
-  { ratioFloor: 90, ratioCeiling: 100, statusLabel: "SEVERE LIFESTYLE SQUEEZE, LIKELY STRUGGLES AHEAD" },
-  { ratioFloor: 100, ratioCeiling: 200, statusLabel: "LIFESTYLE ONLY MAINTAINED BY INCREASING DEBT, CREDIT RISK FLAG" },
-  { ratioFloor: 200, ratioCeiling: null, statusLabel: "LIFESTYLE FRUSTRATINGLY PLAGUED BY UNUSUALLY HIGH LEVEL OF DEBT, HIGH RISK" },
-].map((row) => ({
-  ...row,
-  savingsVariant: "SAVINGS_BELOW_DEBT" as const,
-  effectiveFrom: PART5_RESPEC_EFFECTIVE_FROM,
-}));
+const NA = "n/a";
 
-export const lifestyleSqueezeBandsSavingsAboveDebt = [
-  { ratioFloor: null, ratioCeiling: 0, statusLabel: "LIFESTYLE FUELLED WITH SAVINGS ONLY OR EXTENDED BORROWING" },
-  { ratioFloor: 0, ratioCeiling: 40, statusLabel: "AFFORDABLE, NEGLIGIBLE IMPACT ON LIFESTYLE" },
-  { ratioFloor: 40, ratioCeiling: 50, statusLabel: "AFFORDABLE, SOME IMPACT ON LIFESTYLE" },
-  { ratioFloor: 50, ratioCeiling: 60, statusLabel: "FAMILY LIFESTYLE IMPACTED, SOME RESTRICTIONS" },
-  { ratioFloor: 60, ratioCeiling: 80, statusLabel: "IMPORTANT LIFESTYLE SQUEEZE, MAIN SPEND RESTRICTIONS DUE TO FEES" },
-  { ratioFloor: 80, ratioCeiling: 90, statusLabel: "VERY HIGH LIFESTYLE SQUEEZE, FEES WILL FEEL LIKE A SACRIFICE, USING SAVINGS" },
-  { ratioFloor: 90, ratioCeiling: 100, statusLabel: "SEVERE LIFESTYLE SQUEEZE, LIKELY STRUGGLES AHEAD, INCREASED SAVINGS USE" },
-  { ratioFloor: 100, ratioCeiling: 200, statusLabel: "LIFESTYLE ONLY MAINTAINED BY INCREASED BORROWING OR HIGH SAVINGS USE" },
-  { ratioFloor: 200, ratioCeiling: null, statusLabel: "LIFESTYLE FRUSTRATINGLY PLAGUED BY UNUSUALLY HIGH LEVEL OF DEBT, SAVINGS LIKELY TO DRY UP QUICKLY" },
-].map((row) => ({
-  ...row,
-  savingsVariant: "SAVINGS_ABOVE_DEBT" as const,
-  effectiveFrom: PART5_RESPEC_EFFECTIVE_FROM,
-}));
+// Ratio ladders are identical across every context; only the wording differs.
+const DEBT_FLOORS: Array<[number | null, number | null]> = [
+  [null, 0], [0, 0.1], [0.1, 0.2], [0.2, 0.3], [0.3, 0.4], [0.4, 0.5],
+  [0.5, 0.6], [0.6, 0.7], [0.7, 0.8], [0.8, 0.9], [0.9, 1], [1, null],
+];
+
+const LIFESTYLE_FLOORS: Array<[number | null, number | null]> = [
+  [null, 0], [0, 40], [40, 50], [50, 60], [60, 80], [80, 90], [90, 100],
+  [100, 200], [200, null],
+];
+
+/** Table 1 / 3 / 5 / 7 / 9 labels, in ladder order. */
+const DEBT_LABELS: Record<DebtSavingsContextName, string[]> = {
+  // Table 1 — no debt, no savings. Only the zero row is reachable.
+  NO_DEBT_NO_SAVINGS: ["ZERO DEBT, NO CREDIT RISK", ...Array(11).fill(NA)],
+  // Table 3 — no debt, some savings.
+  NO_DEBT_WITH_SAVINGS: ["ZERO DEBT, NO CREDIT RISK", ...Array(11).fill(NA)],
+  // Table 5 — debt, no savings.
+  DEBT_NO_SAVINGS: [
+    NA,
+    "SMALL DEBT LEVEL, NEGLIGIBLE CREDIT RISK",
+    "MANAGEABLE DEBT, LOW CREDIT RISK",
+    "MANAGEABLE DEBT, MEDIUM CREDIT RISK",
+    "MATERIAL DEBT IMPACT, FAIR CREDIT RISK",
+    "MATERIAL DEBT IMPACT, HIGH CREDIT RISK",
+    "HEAVILY IN DEBT, FAIR CREDIT RISK",
+    "HEAVILY IN DEBT, HIGH CREDIT RISK",
+    "VERY HEAVILY IN DEBT, HIGH CREDIT RISK",
+    "VERY HEAVILY IN DEBT, VERY HIGH CREDIT RISK",
+    "DEBT GETTING OUT OF CONTROL, NO SAFETY NET",
+    "IN A DEBT SPIRAL, AT RISK OF BANKRUPTCY",
+  ],
+  // Table 7 — debt exceeds savings. Credit-risk framing.
+  DEBT_SAVINGS_BELOW_DEBT: [
+    "ZERO DEBT, NO CREDIT RISK",
+    "SMALL DEBT LEVEL, NEGLIGIBLE CREDIT RISK",
+    "MANAGEABLE DEBT, LOW CREDIT RISK",
+    "MANAGEABLE DEBT, MEDIUM CREDIT RISK",
+    "MATERIAL DEBT IMPACT, FAIR CREDIT RISK",
+    "MATERIAL DEBT IMPACT, HIGH CREDIT RISK",
+    "HEAVILY IN DEBT, FAIR CREDIT RISK",
+    "HEAVILY IN DEBT, HIGH CREDIT RISK",
+    "VERY HEAVILY IN DEBT, HIGH CREDIT RISK",
+    "VERY HEAVILY IN DEBT, VERY HIGH CREDIT RISK",
+    "DEBT GETTING OUT OF CONTROL, NO SAFETY NET",
+    "IN A DEBT SPIRAL, AT RISK OF BANKRUPTCY",
+  ],
+  // Table 9 — savings exceed debt. Savings-use framing.
+  DEBT_SAVINGS_ABOVE_DEBT: [
+    "DEBT CUSHIONED BY SAVINGS, NO CREDIT RISK",
+    "SMALL DEBT CUSHIONED BY SAVINGS, NEGLIGIBLE SAVINGS USE",
+    "MANAGEABLE DEBT CUSHIONED BY SAVINGS, LOW SAVINGS USE",
+    "MANAGEABLE DEBT CUSHIONED BY SAVINGS, MEDIUM SAVINGS USE",
+    "MANAGEABLE DEBT CUSHIONED BY SAVINGS, FAIR SAVINGS USE",
+    "MATERIAL DEBT CUSHIONED BY SAVINGS, HIGH SAVINGS USE",
+    "HEAVILY IN DEBT, USING UP SAVINGS",
+    "HEAVILY IN DEBT, USING UP SAVINGS",
+    "VERY HEAVILY IN DEBT, SAVINGS DEPLETING",
+    "VERY HEAVILY IN DEBT, SAVINGS DEPLETING",
+    "DEBT GETTING OUT OF CONTROL, SAVINGS DEPLETING FAST",
+    "IN A DEBT SPIRAL, SAVINGS DEPLETING FAST",
+  ],
+};
+
+const SURVIVAL = "IN FINANCIAL SURVIVAL MODE, DEBT WARNING RED FLAG, NO MONEY FOR FEES";
+const AFFORDABLE_NEGLIGIBLE = "AFFORDABLE, NEGLIGIBLE IMPACT ON LIFESTYLE";
+const AFFORDABLE_SOME = "AFFORDABLE, SOME IMPACT ON LIFESTYLE";
+const IMPACTED = "FAMILY LIFESTYLE IMPACTED, SOME RESTRICTIONS";
+const IMPORTANT = "IMPORTANT LIFESTYLE SQUEEZE, MAIN SPEND RESTRICTIONS DUE TO FEES";
+
+/** Table 2 / 4 / 6 / 8 / 10 labels, in ladder order. */
+const LIFESTYLE_LABELS: Record<DebtSavingsContextName, string[]> = {
+  // Table 2 — no debt, no savings.
+  NO_DEBT_NO_SAVINGS: [
+    NA, AFFORDABLE_NEGLIGIBLE, AFFORDABLE_SOME, IMPACTED, IMPORTANT,
+    "VERY HIGH LIFESTYLE SQUEEZE, FEES WILL FEEL LIKE A SACRIFICE",
+    "SEVERE LIFESTYLE SQUEEZE, LIKELY STRUGGLES AHEAD",
+    "LIFESTYLE ONLY MAINTAINED BY STARTING TO BORROW",
+    "LIFESTYLE FORCING HOUSEHOLD TO GET INTO DEBT",
+  ],
+  // Table 4 — no debt, some savings.
+  NO_DEBT_WITH_SAVINGS: [
+    NA, AFFORDABLE_NEGLIGIBLE, AFFORDABLE_SOME, IMPACTED, IMPORTANT,
+    "VERY HIGH LIFESTYLE SQUEEZE, FEES WILL FEEL LIKE A SACRIFICE",
+    "SEVERE LIFESTYLE SQUEEZE, DIPPING INTO SAVINGS",
+    "LIFESTYLE ONLY MAINTAINED BY USING UP SAVINGS OR STARTING TO BORROW",
+    "LIFESTYLE FORCING HOUSEHOLD TO GET INTO DEBT ONCE SAVINGS HAVE DEPLETED",
+  ],
+  // Table 6 — debt, no savings.
+  DEBT_NO_SAVINGS: [
+    SURVIVAL, AFFORDABLE_NEGLIGIBLE, AFFORDABLE_SOME, IMPACTED, IMPORTANT,
+    "VERY HIGH LIFESTYLE SQUEEZE, FEES WILL FEEL LIKE A SACRIFICE",
+    "SEVERE LIFESTYLE SQUEEZE, LIKELY STRUGGLES AHEAD",
+    "LIFESTYLE ONLY MAINTAINED BY INCREASING DEBT, CREDIT RISK FLAG",
+    SURVIVAL,
+  ],
+  // Table 8 — debt exceeds savings.
+  DEBT_SAVINGS_BELOW_DEBT: [
+    SURVIVAL, AFFORDABLE_NEGLIGIBLE, AFFORDABLE_SOME, IMPACTED, IMPORTANT,
+    "VERY HIGH LIFESTYLE SQUEEZE, FEES WILL FEEL LIKE A SACRIFICE, USING SAVINGS",
+    "SEVERE LIFESTYLE SQUEEZE, LIKELY STRUGGLES AHEAD, INCREASED SAVINGS USE",
+    "LIFESTYLE ONLY MAINTAINED BY INCREASING DEBT AND USING UP SAVINGS, CREDIT RISK FLAG",
+    SURVIVAL,
+  ],
+  // Table 10 — savings exceed debt.
+  DEBT_SAVINGS_ABOVE_DEBT: [
+    "LIFESTYLE FUELLED WITH SAVINGS ONLY OR EXTENDED BORROWING",
+    AFFORDABLE_NEGLIGIBLE, AFFORDABLE_SOME, IMPACTED, IMPORTANT,
+    "VERY HIGH LIFESTYLE SQUEEZE, FEES WILL FEEL LIKE A SACRIFICE, USING SAVINGS",
+    "SEVERE LIFESTYLE SQUEEZE, LIKELY STRUGGLES AHEAD, INCREASED SAVINGS USE",
+    "LIFESTYLE ONLY MAINTAINED BY INCREASED BORROWING OR HIGH SAVINGS USE",
+    "LIFESTYLE FRUSTRATINGLY PLAGUED BY UNUSUALLY HIGH LEVEL OF DEBT, SAVINGS LIKELY TO DRY UP QUICKLY",
+  ],
+};
+
+/** All five debt-status tables, flattened for seeding. */
+export const debtRatioBandsPart5 = DEBT_SAVINGS_CONTEXTS.flatMap((context) =>
+  DEBT_FLOORS.map(([ratioFloor, ratioCeiling], i) => ({
+    ratioFloor,
+    ratioCeiling,
+    minRepaymentMonths: null,
+    statusLabel: DEBT_LABELS[context][i],
+    debtSavingsContext: context,
+    effectiveFrom: PART5_EFFECTIVE_FROM,
+  }))
+);
+
+/** All five lifestyle-squeeze tables, flattened for seeding. */
+export const lifestyleSqueezeBandsPart5 = DEBT_SAVINGS_CONTEXTS.flatMap((context) =>
+  LIFESTYLE_FLOORS.map(([ratioFloor, ratioCeiling], i) => ({
+    ratioFloor,
+    ratioCeiling,
+    statusLabel: LIFESTYLE_LABELS[context][i],
+    debtSavingsContext: context,
+    effectiveFrom: PART5_EFFECTIVE_FROM,
+  }))
+);

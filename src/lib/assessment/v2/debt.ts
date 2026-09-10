@@ -11,7 +11,7 @@
  *     schooling years;
  *   - the ratio is `total debt / 5 / NDI` and no longer nets savings off;
  *   - savings instead SELECT which of her two commentary tables to read
- *     (`savingsVariantFor`) — cushioned vs uncushioned wording.
+ *     (`debtSavingsContextFor`) — one of five context-specific wordings.
  *
  * `yearlyDebtExposure` (C124) survives the respec as a DISPLAYED figure only
  * (the workbook's "netted off yearly savings" row, and a year-on-year
@@ -22,7 +22,7 @@
  */
 
 import { resolveDebtRatioBand, type DebtRatioBandRow } from '../reference-bands'
-import type { SavingsVariant } from '@prisma/client'
+import type { DebtSavingsContext } from '@prisma/client'
 import type { DebtsRecord } from '@/types/assessment-v2'
 
 function n(v: number | undefined): number {
@@ -60,17 +60,32 @@ export function calculateDerivedYearlyDebtRepayments(debts: DebtsRecord): number
 }
 
 /**
- * Which of Charlotte's two commentary-table variants applies to a household
- * (8 Sep 2026): *"the logic of whether the total savings are higher or lower
- * than the total debt of the household"*.
+ * Which of Charlotte's five household contexts applies, selecting the pair of
+ * commentary tables (10 Sep 2026). Her 2x2, with the both-positive cell
+ * splitting again on savings versus debt:
+ *
+ *                     SAVINGS = 0             SAVINGS > 0
+ *   DEBT = 0          NO_DEBT_NO_SAVINGS      NO_DEBT_WITH_SAVINGS
+ *   DEBT > 0          DEBT_NO_SAVINGS         DEBT_SAVINGS_{BELOW,ABOVE}_DEBT
  *
  * `totalSavings` is cash savings + ISAs/PEPs/shares — the same figure her
- * 6 Sep `minRepaymentMonthsWithoutFees` formula nets against debt. Equal
- * savings and debt is NOT a cushion (nothing is left over once the debt is
- * cleared), so the boundary falls to the uncushioned variant.
+ * 6 Sep repayment-months formula nets against debt.
+ *
+ * Equal savings and debt (both positive) resolve to BELOW_DEBT: nothing is
+ * left over once the debt is cleared, so the cushioned wording would overstate
+ * the position. She has not ruled on the exact tie, so this is stated rather
+ * than assumed silently.
  */
-export function savingsVariantFor(totalSavings: number, totalDebt: number): SavingsVariant {
-  return totalSavings > totalDebt ? 'SAVINGS_ABOVE_DEBT' : 'SAVINGS_BELOW_DEBT'
+export function debtSavingsContextFor(
+  totalSavings: number,
+  totalDebt: number,
+): DebtSavingsContext {
+  const hasDebt = totalDebt > 0
+  const hasSavings = totalSavings > 0
+
+  if (!hasDebt) return hasSavings ? 'NO_DEBT_WITH_SAVINGS' : 'NO_DEBT_NO_SAVINGS'
+  if (!hasSavings) return 'DEBT_NO_SAVINGS'
+  return totalSavings > totalDebt ? 'DEBT_SAVINGS_ABOVE_DEBT' : 'DEBT_SAVINGS_BELOW_DEBT'
 }
 
 /**
@@ -97,7 +112,7 @@ export function calculateYearlyDebtExposure(
  * Savings are NO LONGER netted off here. Under the previous formula
  * (`((total debt − total savings) / NDI) × 12`) a household's savings both
  * reduced the ratio AND coloured the wording; now they do only the latter,
- * by selecting which band table to read (`savingsVariantFor`).
+ * by selecting which band table to read (`debtSavingsContextFor`).
  *
  * Her worked examples: Kaluba £8,000 / 5 / £24,907 = 0.0642; the live DW
  * assessment £43,000 / 5 / £5,685 = 1.5127. Both denominators are NDI AFTER
@@ -158,15 +173,15 @@ export function minRepaymentMonthsWithoutFees(
 /**
  * Classifies a debt-over-NDI ratio against the CALC-01 `DebtRatioBand`
  * reference rows (Appendix C.4, normalised to non-overlapping bands per
- * `ASSUMPTION(CALC-A3)`), reading the table variant that matches the
- * household's savings position (`savingsVariantFor`). Delegates to the shared
+ * `ASSUMPTION(CALC-A3)`), reading the table pair that matches the
+ * household's debt-and-savings context (`debtSavingsContextFor`). Delegates to the shared
  * `resolveDebtRatioBand` resolver (`../reference-bands`), which filters to the
  * requested variant before resolving; its ascending-ceiling, first-match
  * convention already matches this table's semantics, including the seeded
  * ZERO DEBT row (`ratioFloor: null, ratioCeiling: 0`) which wins at ratio 0.
  *
- * The variant defaults to SAVINGS_BELOW_DEBT so that pre-respec callers and
- * fixtures keep their existing behaviour.
+ * The context defaults to DEBT_SAVINGS_BELOW_DEBT so that pre-respec callers
+ * and fixtures keep their existing behaviour.
  *
  * Falls back to the ZERO DEBT label defensively if the bands array doesn't
  * contain a matching row (e.g. an incomplete `ReferenceBundle` in a test) —
@@ -175,9 +190,9 @@ export function minRepaymentMonthsWithoutFees(
 export function classifyDebt(
   ratio: number,
   bands: readonly DebtRatioBandRow[],
-  savingsVariant: SavingsVariant = 'SAVINGS_BELOW_DEBT',
+  context: DebtSavingsContext = 'DEBT_SAVINGS_BELOW_DEBT',
 ): DebtClassification {
-  const band = resolveDebtRatioBand(bands, ratio, savingsVariant)
+  const band = resolveDebtRatioBand(bands, ratio, context)
   if (!band) {
     return { statusLabel: 'ZERO DEBT, NO CREDIT RISK' }
   }

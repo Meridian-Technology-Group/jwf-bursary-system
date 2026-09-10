@@ -24,7 +24,7 @@ import {
   type LifestyleSqueezeBandRow,
 } from '../reference-bands'
 import { DEBT_REPAYMENT_YEARS } from './debt'
-import type { SavingsVariant } from '@prisma/client'
+import type { DebtSavingsContext } from '@prisma/client'
 import type { PropertyAssetsRecord, DebtsRecord } from '@/types/assessment-v2'
 
 function n(v: number | undefined): number {
@@ -296,7 +296,7 @@ const SQUEEZE_DEBT_REPAYMENT_YEARS = DEBT_REPAYMENT_YEARS
  * Part 5 respec (Charlotte, 8 Sep 2026): the ratio and its thresholds are
  * UNCHANGED ("there was no change in rankings applied to the Lifestyle table,
  * and the calculation of the Lifestyle ratio remains the same") — only which
- * table the label is read from, per `savingsVariant`. See
+ * table the label is read from, per the household's `DebtSavingsContext`. See
  * `resolveLifestyleSqueezeBand` for how a negative ratio is banded.
  *
  * Division-by-zero guard: both debt-adjusted figures (`squeezeRatio`, and by
@@ -310,7 +310,7 @@ const SQUEEZE_DEBT_REPAYMENT_YEARS = DEBT_REPAYMENT_YEARS
 export function lifestyleSqueeze(
   input: LifestyleSqueezeInput,
   bands: readonly LifestyleSqueezeBandRow[],
-  savingsVariant: SavingsVariant = 'SAVINGS_BELOW_DEBT',
+  context: DebtSavingsContext = 'DEBT_SAVINGS_BELOW_DEBT',
 ): LifestyleSqueezeResult {
   const { ndiAfterNotionalSpend, householdNetIncome, totalDebt, feesBenchmarkPct: pct } = input
 
@@ -331,7 +331,7 @@ export function lifestyleSqueeze(
   const statusLabel =
     squeezeRatio === null
       ? null
-      : resolveLifestyleSqueezeBand(bands, squeezeRatio, savingsVariant)?.statusLabel ?? null
+      : resolveLifestyleSqueezeBand(bands, squeezeRatio, context)?.statusLabel ?? null
 
   return {
     ndiOverIncomePct,

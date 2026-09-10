@@ -44,7 +44,7 @@
  * the CALC-06 award engine, not here).
  */
 
-import type { SavingsVariant } from '@prisma/client'
+import type { DebtSavingsContext } from '@prisma/client'
 
 /** The minimal shape a resolvable band row needs. */
 export interface BandRow {
@@ -163,7 +163,7 @@ export interface DebtRatioBandRow {
    * 2026 Part 5 respec). Optional so that pre-respec fixtures — which predate
    * the split and are all uncushioned — resolve unchanged.
    */
-  savingsVariant?: SavingsVariant
+  debtSavingsContext?: DebtSavingsContext
   ratioFloor: number | null
   ratioCeiling: number | null
   minRepaymentMonths: number | null
@@ -201,9 +201,9 @@ export interface DebtRatioBandRow {
 export function resolveDebtRatioBand(
   bands: readonly DebtRatioBandRow[],
   debtOverNdiRatio: number,
-  savingsVariant: SavingsVariant = 'SAVINGS_BELOW_DEBT',
+  context: DebtSavingsContext = 'DEBT_SAVINGS_BELOW_DEBT',
 ): DebtRatioBandRow | null {
-  const variantBands = forVariant(bands, savingsVariant)
+  const variantBands = forContext(bands, context)
   const view = variantBands.map((b) => ({ floor: b.ratioFloor, ceiling: b.ratioCeiling, source: b }))
   if (debtOverNdiRatio <= 0) {
     // The open-ended-bottom row (ceiling 0) — ZERO DEBT / DEBT CUSHIONED BY
@@ -218,23 +218,23 @@ export interface LifestyleSqueezeBandRow {
   ratioFloor: number | null
   ratioCeiling: number | null
   statusLabel: string
-  /** See `DebtRatioBandRow.savingsVariant`. */
-  savingsVariant?: SavingsVariant
+  /** See `DebtRatioBandRow.debtSavingsContext`. */
+  debtSavingsContext?: DebtSavingsContext
 }
 
 /**
- * Narrows a band list to one of Charlotte's two table variants (8 Sep 2026).
- * Rows with no `savingsVariant` predate the split and count as
- * SAVINGS_BELOW_DEBT, so pre-respec generations keep resolving as before.
+ * Narrows a band list to one of Charlotte's five household contexts
+ * (10 Sep 2026). Rows with no `debtSavingsContext` predate the split and count
+ * as DEBT_SAVINGS_BELOW_DEBT, so pre-respec generations resolve as before.
  */
-function forVariant<T extends { savingsVariant?: SavingsVariant }>(
+function forContext<T extends { debtSavingsContext?: DebtSavingsContext }>(
   bands: readonly T[],
-  savingsVariant: SavingsVariant,
+  context: DebtSavingsContext,
 ): readonly T[] {
   const matching = bands.filter(
-    (b) => (b.savingsVariant ?? 'SAVINGS_BELOW_DEBT') === savingsVariant,
+    (b) => (b.debtSavingsContext ?? 'DEBT_SAVINGS_BELOW_DEBT') === context,
   )
-  // A generation seeded before the split has no ABOVE_DEBT rows at all; fall
+  // A generation seeded before the split has rows for one context only; fall
   // back to the whole list rather than resolving nothing.
   return matching.length > 0 ? matching : bands
 }
@@ -263,9 +263,9 @@ function forVariant<T extends { savingsVariant?: SavingsVariant }>(
 export function resolveLifestyleSqueezeBand(
   bands: readonly LifestyleSqueezeBandRow[],
   squeezeRatioPct: number,
-  savingsVariant: SavingsVariant = 'SAVINGS_BELOW_DEBT',
+  context: DebtSavingsContext = 'DEBT_SAVINGS_BELOW_DEBT',
 ): LifestyleSqueezeBandRow | null {
-  const variantBands = forVariant(bands, savingsVariant)
+  const variantBands = forContext(bands, context)
   const view = variantBands.map((b) => ({ floor: b.ratioFloor, ceiling: b.ratioCeiling, source: b }))
   return resolveBand(view, squeezeRatioPct)?.source ?? null
 }

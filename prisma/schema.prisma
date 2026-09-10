@@ -922,19 +922,19 @@ model FinancialEquityBand {
 /// row is stored as 0. Floor-inclusive, ceiling-inclusive; see
 /// `reference-bands.ts`.
 model DebtRatioBand {
-  id                 String         @id @default(uuid()) @db.Uuid
-  ratioFloor         Decimal?       @map("ratio_floor") @db.Decimal(7, 4)
-  ratioCeiling       Decimal?       @map("ratio_ceiling") @db.Decimal(7, 4)
-  minRepaymentMonths Int?           @map("min_repayment_months")
-  statusLabel        String         @map("status_label")
+  id                 String             @id @default(uuid()) @db.Uuid
+  ratioFloor         Decimal?           @map("ratio_floor") @db.Decimal(7, 4)
+  ratioCeiling       Decimal?           @map("ratio_ceiling") @db.Decimal(7, 4)
+  minRepaymentMonths Int?               @map("min_repayment_months")
+  statusLabel        String             @map("status_label")
   /// Which of her two commentary tables this row belongs to — see
   /// `SavingsVariant`. Part of the natural key: the same ceiling exists once
   /// per variant per generation.
-  savingsVariant     SavingsVariant @default(SAVINGS_BELOW_DEBT) @map("savings_variant")
-  effectiveFrom      DateTime       @map("effective_from") @db.Date
-  createdAt          DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
+  debtSavingsContext DebtSavingsContext @default(DEBT_SAVINGS_BELOW_DEBT) @map("debt_savings_context")
+  effectiveFrom      DateTime           @map("effective_from") @db.Date
+  createdAt          DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
 
-  @@unique([ratioCeiling, effectiveFrom, savingsVariant])
+  @@unique([ratioCeiling, effectiveFrom, debtSavingsContext], map: "debt_ratio_bands_ceiling_effective_from_context_key")
   @@map("debt_ratio_bands")
 }
 
@@ -943,31 +943,46 @@ model DebtRatioBand {
 /// `ratioCeiling` null on the top (>170%). Floor-inclusive, ceiling-inclusive;
 /// see `reference-bands.ts`.
 model LifestyleSqueezeBand {
-  id             String         @id @default(uuid()) @db.Uuid
-  ratioFloor     Decimal?       @map("ratio_floor") @db.Decimal(6, 2)
-  ratioCeiling   Decimal?       @map("ratio_ceiling") @db.Decimal(6, 2)
-  statusLabel    String         @map("status_label")
+  id                 String             @id @default(uuid()) @db.Uuid
+  ratioFloor         Decimal?           @map("ratio_floor") @db.Decimal(6, 2)
+  ratioCeiling       Decimal?           @map("ratio_ceiling") @db.Decimal(6, 2)
+  statusLabel        String             @map("status_label")
   /// Which of her two commentary tables this row belongs to — see
   /// `SavingsVariant`. The ratio itself is identical across variants; only
   /// the wording of the status label differs.
-  savingsVariant SavingsVariant @default(SAVINGS_BELOW_DEBT) @map("savings_variant")
-  effectiveFrom  DateTime       @map("effective_from") @db.Date
-  createdAt      DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
+  debtSavingsContext DebtSavingsContext @default(DEBT_SAVINGS_BELOW_DEBT) @map("debt_savings_context")
+  effectiveFrom      DateTime           @map("effective_from") @db.Date
+  createdAt          DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
 
-  @@unique([ratioCeiling, effectiveFrom, savingsVariant])
+  @@unique([ratioCeiling, effectiveFrom, debtSavingsContext], map: "lifestyle_squeeze_bands_ceiling_effective_from_context_key")
   @@map("lifestyle_squeeze_bands")
 }
 
-/// Charlotte's 8 Sep 2026 Part 5 respec: the debt-status and lifestyle-squeeze
-/// commentary tables each exist in two variants, chosen per assessment by
-/// whether the household's total savings exceed its total debt. Same ratio,
-/// different wording — a cushioned household is described in terms of savings
-/// use, an uncushioned one in terms of credit risk.
-enum SavingsVariant {
-  /// Total savings <= total debt. The uncushioned wording.
-  SAVINGS_BELOW_DEBT
-  /// Total savings > total debt. The "cushioned by savings" wording.
-  SAVINGS_ABOVE_DEBT
+/// Charlotte's Part 5 respec of 10 Sep 2026: the debt-status and
+/// lifestyle-squeeze commentary tables exist once per HOUSEHOLD CONTEXT, ten
+/// tables in all. Her 8 Sep two-variant split did not survive the zero cases
+/// (a debt-free household still read "cushioned by savings"), so the selector
+/// is a 2x2 of "is there debt" x "are there savings", with the both-positive
+/// cell splitting again on savings versus debt.
+///
+///                     SAVINGS = 0             SAVINGS > 0
+///   DEBT = 0          NO_DEBT_NO_SAVINGS      NO_DEBT_WITH_SAVINGS
+///   DEBT > 0          DEBT_NO_SAVINGS         DEBT_SAVINGS_{BELOW,ABOVE}_DEBT
+///
+/// She confirmed on 9 Sep these "cover all possible situations, they can't be
+/// any other".
+enum DebtSavingsContext {
+  /// No debt and no savings.
+  NO_DEBT_NO_SAVINGS
+  /// No debt, some savings.
+  NO_DEBT_WITH_SAVINGS
+  /// Debt, no savings at all.
+  DEBT_NO_SAVINGS
+  /// Debt and savings, savings do NOT cover the debt. Credit-risk wording.
+  /// Equal savings and debt land here: nothing is left once the debt is cleared.
+  DEBT_SAVINGS_BELOW_DEBT
+  /// Debt and savings, savings exceed the debt. Savings-use wording.
+  DEBT_SAVINGS_ABOVE_DEBT
 }
 
 /// Reference: Reasons an application/bursary account can be closed for

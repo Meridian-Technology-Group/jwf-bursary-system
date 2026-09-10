@@ -38,7 +38,7 @@ import {
   calculateYearlyDebtExposure,
   calculateDebtOverNdiRatio,
   classifyDebt,
-  savingsVariantFor,
+  debtSavingsContextFor,
   minRepaymentMonthsWithoutFees,
 } from './debt'
 import {
@@ -202,12 +202,12 @@ export function calculateAssessmentV2(input: AssessmentV2Input, ref: ReferenceBu
   //    so it no longer depends on `schoolingYearsRemaining`.
   const derivedYearlyDebtRepayments = calculateDerivedYearlyDebtRepayments(input.debts)
 
-  // Which of Charlotte's two commentary-table variants this household reads —
-  // cushioned wording when savings exceed debt, uncushioned otherwise. Drives
-  // BOTH the debt-status and lifestyle-squeeze labels.
+  // Which of Charlotte's five household contexts this family reads (10 Sep
+  // 2026): debt or none, savings or none, and where both exist whether the
+  // savings cover the debt. Drives BOTH commentary labels.
   const totalDebt = totalPersonalDebt(input.debts)
   const totalSavings = input.cashSavings + input.isasPepsShares
-  const savingsVariant = savingsVariantFor(totalSavings, totalDebt)
+  const debtSavingsContext = debtSavingsContextFor(totalSavings, totalDebt)
 
   // 3. Notional spend, incl. the savings test (CALC-03), fed the total debt.
   const notionalSpend = calculateNotionalSpend(
@@ -245,7 +245,7 @@ export function calculateAssessmentV2(input: AssessmentV2Input, ref: ReferenceBu
     totalDebt,
     notionalSpend.ndiAfterNotionalSpend,
   )
-  const debtClassification = classifyDebt(debtOverNdiRatio, ref.debtRatioBands, savingsVariant)
+  const debtClassification = classifyDebt(debtOverNdiRatio, ref.debtRatioBands, debtSavingsContext)
 
   // 5. Profiling (CALC-05).
   const incomeCat = incomeCategory(householdNetIncome, ref.incomeCategoryBands)
@@ -263,7 +263,7 @@ export function calculateAssessmentV2(input: AssessmentV2Input, ref: ReferenceBu
       feesBenchmarkPct: feesPct ?? 0,
     },
     ref.lifestyleSqueezeBands,
-    savingsVariant,
+    debtSavingsContext,
   )
 
   // 6. Award legs (CALC-06).
