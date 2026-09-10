@@ -27,6 +27,12 @@ import {
   ASSESSMENT_QUEUE_STATUS_LABELS,
   type AssessmentQueueStatus,
 } from "@/lib/assessments/queue-status";
+import {
+  filterAssessmentQueueRows,
+  academicYearOptions,
+  parseDateBoundary,
+} from "@/lib/assessments/queue-filters";
+import type { School, BursaryAccountStatus } from "@prisma/client";
 import { listStaffUsers } from "@/lib/db/queries/profiles";
 import { formatLondonDate } from "@/lib/datetime";
 import { cn } from "@/lib/utils";
@@ -69,6 +75,47 @@ function parseStatus(
   return raw && STATUSES.has(raw) ? (raw as AssessmentQueueStatus) : undefined;
 }
 
+function parseBursaryStatus(
+  value: string | string[] | undefined
+): BursaryAccountStatus | undefined {
+  const raw = firstValue(value);
+  return raw === "ACTIVE" || raw === "CLOSED" ? raw : undefined;
+}
+
+function parseSchool(value: string | string[] | undefined): School | undefined {
+  const raw = firstValue(value);
+  return raw === "TRINITY" || raw === "WHITGIFT" ? raw : undefined;
+}
+
+function parseDateParam(value: string | string[] | undefined): string | undefined {
+  const raw = firstValue(value);
+  return raw && /^\d{4}-\d{2}-\d{2}$/.test(raw) ? raw : undefined;
+}
+
+/**
+ * Charlotte, 8 Sep 2026 — the bursary ACCOUNT's own status, alongside the
+ * assessment status: *"Levi Amoah would show as a closed account and with the
+ * locked-decided outcome, and Langazye Kaluba would show as an active account
+ * with a locked-decided outcome for the round 2026-27."*
+ */
+function BursaryStatusBadge({ status }: { status: BursaryAccountStatus | null }) {
+  if (!status) {
+    return <span className="text-slate-400">No account</span>;
+  }
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium",
+        status === "ACTIVE"
+          ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+          : "bg-slate-100 text-slate-600 border-slate-200"
+      )}
+    >
+      {status === "ACTIVE" ? "Active" : "Closed"}
+    </span>
+  );
+}
+
 const STATUS_BADGE_CLASSES: Record<AssessmentQueueStatus, string> = {
   NOT_STARTED: "bg-slate-100 text-slate-700 border-slate-200",
   IN_PROGRESS: "bg-blue-50 text-blue-700 border-blue-200",
@@ -100,6 +147,11 @@ export default async function AssessmentsPage({
 
   const statusFilter = parseStatus(params.status);
   const sort = parseSort(params.sort);
+  const bursaryFilter = parseBursaryStatus(params.bursary);
+  const yearFilter = firstValue(params.year);
+  const schoolFilter = parseSchool(params.school);
+  const fromParam = parseDateParam(params.from);
+  const toParam = parseDateParam(params.to);
   const assigneeFilter =
     user.role === Role.ASSESSOR ? user.id : firstValue(params.assignee);
 
@@ -133,9 +185,19 @@ export default async function AssessmentsPage({
     }
   );
 
+  // Her five filters compose (AND). Assessment status stays the chip row above
+  // — the chips carry per-status counts, which a dropdown would lose.
+  const narrowed = filterAssessmentQueueRows(rows, {
+    bursaryStatus: bursaryFilter,
+    academicYear: yearFilter,
+    school: schoolFilter,
+    submittedFrom: parseDateBoundary(fromParam, "start"),
+    submittedTo: parseDateBoundary(toParam, "end"),
+  });
+
   const filtered = statusFilter
-    ? rows.filter((r) => r.status === statusFilter)
-    : rows;
+    ? narrowed.filter((r) => r.status === statusFilter)
+    : narrowed;
 
   // CH-45 — the query already returns submittedAt ascending, so no sort param
   // leaves the existing order untouched. Nulls sort last either way: an
@@ -152,31 +214,53 @@ export default async function AssessmentsPage({
       })
     : filtered;
 
+  // Counts are taken from the OTHER filters' result, not the raw rows: with a
+  // round or school selected, a chip claiming a count the list cannot show
+  // would misdirect exactly when she is aiming the bulk lock.
   const counts = new Map<AssessmentQueueStatus, number>();
-  for (const r of rows) counts.set(r.status, (counts.get(r.status) ?? 0) + 1);
+  for (const r of narrowed) counts.set(r.status, (counts.get(r.status) ?? 0) + 1);
 
-  const filterHref = (status?: AssessmentQueueStatus) => {
+  const yearOptions = academicYearOptions(rows);
+
+  /**
+   * Every link on this page rebuilds the full query string. With six filters
+   * now composing, dropping one on a chip click or a sort would silently widen
+   * the list she is about to bulk-lock from, so the params are built in one
+   * place and only the named override changes.
+   */
+  const hrefWith = (
+    overrides: {
+      status?: AssessmentQueueStatus | null;
+      sort?: SubmittedSort | null;
+    } = {}
+  ) => {
     const qp = new URLSearchParams();
+    const status = "status" in overrides ? overrides.status : statusFilter;
+    const nextSort = "sort" in overrides ? overrides.sort : sort;
+
     if (status) qp.set("status", status);
-    if (user.role !== Role.ASSESSOR && assigneeFilter) {
-      qp.set("assignee", assigneeFilter);
-    }
-    if (sort) qp.set("sort", sort);
+    if (user.role !== Role.ASSESSOR && assigneeFilter) qp.set("assignee", assigneeFilter);
+    if (bursaryFilter) qp.set("bursary", bursaryFilter);
+    if (yearFilter) qp.set("year", yearFilter);
+    if (schoolFilter) qp.set("school", schoolFilter);
+    if (fromParam) qp.set("from", fromParam);
+    if (toParam) qp.set("to", toParam);
+    if (nextSort) qp.set("sort", nextSort);
+
     const qs = qp.toString();
     return qs ? `/assessments?${qs}` : "/assessments";
   };
 
+  const filterHref = (status?: AssessmentQueueStatus) =>
+    hrefWith({ status: status ?? null });
+
   // CH-45 — the header link keeps whatever filters are active and only flips
   // the direction, so sorting never silently widens the list she is looking at.
-  const sortHref = (next: SubmittedSort) => {
-    const qp = new URLSearchParams();
-    if (statusFilter) qp.set("status", statusFilter);
-    if (user.role !== Role.ASSESSOR && assigneeFilter) {
-      qp.set("assignee", assigneeFilter);
-    }
-    qp.set("sort", next);
-    return `/assessments?${qp.toString()}`;
-  };
+  const sortHref = (next: SubmittedSort) => hrefWith({ sort: next });
+
+  const anyFilterActive = Boolean(
+    statusFilter || bursaryFilter || yearFilter || schoolFilter || fromParam || toParam
+  );
 
   return (
     <div className="space-y-6">
@@ -210,7 +294,7 @@ export default async function AssessmentsPage({
               : "border-slate-300 bg-white text-slate-600 hover:bg-slate-50"
           )}
         >
-          All ({rows.length})
+          All ({narrowed.length})
         </Link>
         {ALL_ASSESSMENT_QUEUE_STATUSES.map((status) => (
           <Link
@@ -228,49 +312,148 @@ export default async function AssessmentsPage({
         ))}
       </div>
 
-      {/* Assignee filter (staff-wide views only) */}
-      {user.role !== Role.ASSESSOR && staff.length > 0 && (
-        <form method="GET" action="/assessments" className="flex items-center gap-2">
-          {statusFilter && (
-            <input type="hidden" name="status" value={statusFilter} />
-          )}
-          <label htmlFor="assignee" className="text-xs font-medium text-slate-500">
-            Assignee
+      {/* Epic 18b — her filter bar for aiming the September bulk lock:
+          bursary status, round, school, submission date, plus the existing
+          assignee. Assessment status is the chip row above. One GET form so
+          they apply together; the chips and the sort header carry them back. */}
+      <form
+        method="GET"
+        action="/assessments"
+        className="flex flex-wrap items-end gap-3 rounded-xl border border-slate-200 bg-white p-3 shadow-sm"
+      >
+        {statusFilter && <input type="hidden" name="status" value={statusFilter} />}
+        {sort && <input type="hidden" name="sort" value={sort} />}
+
+        <div className="flex flex-col gap-1">
+          <label htmlFor="bursary" className="text-xs font-medium text-slate-500">
+            Bursary account
           </label>
           <select
-            id="assignee"
-            name="assignee"
-            defaultValue={assigneeFilter ?? ""}
+            id="bursary"
+            name="bursary"
+            defaultValue={bursaryFilter ?? ""}
             className="h-8 rounded-md border border-slate-300 bg-white px-2 text-xs text-slate-700"
           >
-            <option value="">Anyone</option>
-            {staff.map((s) => (
-              <option key={s.id} value={s.id}>
-                {[s.firstName, s.lastName].filter(Boolean).join(" ") || s.email}
+            <option value="">Any</option>
+            <option value="ACTIVE">Active</option>
+            <option value="CLOSED">Closed</option>
+          </select>
+        </div>
+
+        <div className="flex flex-col gap-1">
+          <label htmlFor="year" className="text-xs font-medium text-slate-500">
+            Round
+          </label>
+          <select
+            id="year"
+            name="year"
+            defaultValue={yearFilter ?? ""}
+            className="h-8 rounded-md border border-slate-300 bg-white px-2 text-xs text-slate-700"
+          >
+            <option value="">Any</option>
+            {yearOptions.map((year) => (
+              <option key={year} value={year}>
+                {year}
               </option>
             ))}
           </select>
-          <button
-            type="submit"
-            className="h-8 rounded-md border border-slate-300 bg-white px-3 text-xs font-medium text-slate-700 hover:bg-slate-50"
+        </div>
+
+        <div className="flex flex-col gap-1">
+          <label htmlFor="school" className="text-xs font-medium text-slate-500">
+            School
+          </label>
+          <select
+            id="school"
+            name="school"
+            defaultValue={schoolFilter ?? ""}
+            className="h-8 rounded-md border border-slate-300 bg-white px-2 text-xs text-slate-700"
           >
-            Apply
-          </button>
-        </form>
-      )}
+            <option value="">Any</option>
+            <option value="WHITGIFT">Whitgift</option>
+            <option value="TRINITY">Trinity</option>
+          </select>
+        </div>
+
+        <div className="flex flex-col gap-1">
+          <label htmlFor="from" className="text-xs font-medium text-slate-500">
+            Submitted from
+          </label>
+          <input
+            type="date"
+            id="from"
+            name="from"
+            defaultValue={fromParam ?? ""}
+            className="h-8 rounded-md border border-slate-300 bg-white px-2 text-xs text-slate-700"
+          />
+        </div>
+
+        <div className="flex flex-col gap-1">
+          <label htmlFor="to" className="text-xs font-medium text-slate-500">
+            Submitted to
+          </label>
+          <input
+            type="date"
+            id="to"
+            name="to"
+            defaultValue={toParam ?? ""}
+            className="h-8 rounded-md border border-slate-300 bg-white px-2 text-xs text-slate-700"
+          />
+        </div>
+
+        {user.role !== Role.ASSESSOR && staff.length > 0 && (
+          <div className="flex flex-col gap-1">
+            <label htmlFor="assignee" className="text-xs font-medium text-slate-500">
+              Assignee
+            </label>
+            <select
+              id="assignee"
+              name="assignee"
+              defaultValue={assigneeFilter ?? ""}
+              className="h-8 rounded-md border border-slate-300 bg-white px-2 text-xs text-slate-700"
+            >
+              <option value="">Anyone</option>
+              {staff.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {[s.firstName, s.lastName].filter(Boolean).join(" ") || s.email}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
+
+        <button
+          type="submit"
+          className="h-8 rounded-md border border-slate-300 bg-white px-3 text-xs font-medium text-slate-700 hover:bg-slate-50"
+        >
+          Apply
+        </button>
+        {anyFilterActive && (
+          <Link
+            href="/assessments"
+            className="h-8 rounded-md px-2 text-xs font-medium leading-8 text-slate-500 hover:text-slate-700"
+          >
+            Clear all
+          </Link>
+        )}
+      </form>
+
+      <p className="text-xs text-slate-500">
+        Showing {visible.length} of {rows.length} assessments
+      </p>
 
       {visible.length === 0 ? (
         <EmptyState
           title="No assessments here"
           description={
-            statusFilter
-              ? "Nothing matches this status filter."
+            anyFilterActive
+              ? "Nothing matches these filters."
               : "There are no submitted applications awaiting assessment."
           }
         />
       ) : (
         <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
-          <table className="w-full min-w-[720px] text-left text-sm">
+          <table className="w-full min-w-[860px] text-left text-sm">
             <thead>
               <tr className="border-b border-slate-200 text-xs uppercase tracking-wider text-slate-400">
                 <th className="px-4 py-3 font-medium">Reference</th>
@@ -278,6 +461,7 @@ export default async function AssessmentsPage({
                 <th className="px-4 py-3 font-medium">School</th>
                 <th className="px-4 py-3 font-medium">Round</th>
                 <th className="px-4 py-3 font-medium">Assessment status</th>
+                <th className="px-4 py-3 font-medium">Bursary account</th>
                 <th className="px-4 py-3 font-medium">Assignee</th>
                 <th className="px-4 py-3 font-medium">
                   <Link
@@ -333,6 +517,9 @@ export default async function AssessmentsPage({
                   </td>
                   <td className="px-4 py-3">
                     <StatusBadge status={row.status} />
+                  </td>
+                  <td className="px-4 py-3">
+                    <BursaryStatusBadge status={row.bursaryStatus} />
                   </td>
                   <td className="px-4 py-3 text-slate-600">
                     {row.assigneeName ?? (
