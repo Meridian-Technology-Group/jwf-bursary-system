@@ -4,10 +4,7 @@ import {
   academicYearOptions,
   parseDateBoundary,
 } from "../queue-filters";
-import {
-  deriveBursaryStatus,
-  type AssessmentQueueRow,
-} from "@/lib/db/queries/assessments-queue";
+import type { AssessmentQueueRow } from "@/lib/db/queries/assessments-queue";
 
 // Charlotte's two worked examples (8 Sep 2026): Levi Amoah is a CLOSED account
 // with a locked outcome; Langazye Kaluba is an ACTIVE account with a locked
@@ -165,31 +162,27 @@ describe("academicYearOptions", () => {
   });
 });
 
-// ─── deriveBursaryStatus — her two worked examples ─────────────────────────
+// ─── the bursary column reads the account row only ─────────────────────────
+//
+// Charlotte, 10 Sep 2026, correcting her own Levi Amoah example: a case closed
+// before it ever became a bursary account has NO account status, and the
+// closed-and-archived meaning belongs to the assessment status column.
 
-describe("deriveBursaryStatus", () => {
-  it("her Kaluba case: an award lock creates the account, so it reads ACTIVE", () => {
-    expect(deriveBursaryStatus("ACTIVE", "NEW_AWARD")).toBe("ACTIVE");
+describe("bursaryStatus on a queue row", () => {
+  it("an archived assessment with no account is not a closed account", () => {
+    const archivedNoAccount = row({
+      childName: "Levi Amoah",
+      status: "LOCKED",
+      bursaryStatus: null,
+    });
+    expect(archivedNoAccount.bursaryStatus).toBeNull();
+    // and it must not be picked up by either bursary-status filter
+    expect(filterAssessmentQueueRows([archivedNoAccount], { bursaryStatus: "CLOSED" })).toHaveLength(0);
+    expect(filterAssessmentQueueRows([archivedNoAccount], { bursaryStatus: "ACTIVE" })).toHaveLength(0);
   });
 
-  it("her Levi Amoah case: archived with no account still reads CLOSED", () => {
-    // Close-and-archive never creates a bursary account, but she describes
-    // Levi as "a closed account". The family's file is what she means.
-    expect(deriveBursaryStatus(null, "CLOSED_ARCHIVED")).toBe("CLOSED");
-  });
-
-  it("a real closed account reads CLOSED", () => {
-    expect(deriveBursaryStatus("CLOSED", "NEW_AWARD")).toBe("CLOSED");
-  });
-
-  it("an assessment still in flight with no account is undetermined", () => {
-    expect(deriveBursaryStatus(null, "IN_PROGRESS")).toBeNull();
-    expect(deriveBursaryStatus(null, "COMPLETED")).toBeNull();
-    expect(deriveBursaryStatus(null, null)).toBeNull();
-  });
-
-  it("the account row wins over the assessment status when both exist", () => {
-    // A reopened account is ACTIVE again even if an old assessment archived.
-    expect(deriveBursaryStatus("ACTIVE", "CLOSED_ARCHIVED")).toBe("ACTIVE");
+  it("a real closed account still filters as CLOSED", () => {
+    const closed = row({ bursaryStatus: "CLOSED" });
+    expect(filterAssessmentQueueRows([closed], { bursaryStatus: "CLOSED" })).toHaveLength(1);
   });
 });

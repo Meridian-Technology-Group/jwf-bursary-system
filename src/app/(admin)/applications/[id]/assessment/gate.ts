@@ -18,6 +18,62 @@ export const ASSESSMENT_COMPLETED_LOCK_MESSAGE =
   "This assessment is marked complete and cannot be edited. Reopen it first " +
   "if it needs to change.";
 
+/**
+ * Refusal when a save is attempted against an assessment that has moved PAST
+ * complete into one of the Epic 18 post-assessment states.
+ *
+ * Found by Charlotte on 10 Sep 2026: the Kaluba assessment was locked as a new
+ * award, its banner said *"the assessment can no longer be amended"*, and she
+ * amended and saved it anyway. The stored row confirmed it — updated while
+ * still NEW_AWARD.
+ *
+ * Cause: the save gate tested `status === "COMPLETED"` only, written when
+ * COMPLETED was the terminal state. Epic 18 later added NEW_AWARD,
+ * WAITING_LIST, CLOSED_ARCHIVED and ROLLED_OVER *beyond* it, and every one of
+ * them fell straight through.
+ */
+export const ASSESSMENT_LOCKED_STATE_MESSAGE =
+  "This assessment has been decided and cannot be edited. Reverse the decision " +
+  "first if it needs to change.";
+
+/**
+ * The ONLY statuses in which an assessment's fields may be saved: it is still
+ * being worked on.
+ *
+ * Deliberately an allowlist, not a blocklist. The bug above happened because a
+ * blocklist named the one state that existed at the time, so every state added
+ * later was silently editable. With an allowlist a new `AssessmentStatus`
+ * member defaults to LOCKED, which is the safe direction to fail in.
+ */
+export const EDITABLE_ASSESSMENT_STATUSES = [
+  "NOT_STARTED",
+  "IN_PROGRESS",
+  "PAUSED",
+] as const;
+
+export type EditableAssessmentStatus = (typeof EDITABLE_ASSESSMENT_STATUSES)[number];
+
+/**
+ * Whether an assessment in this status may have its fields saved. Anything not
+ * on the allowlist is locked; COMPLETED keeps its own long-standing message
+ * (it has a reopen route), everything past it gets the decided-state message
+ * (it has a reversal route).
+ */
+export function assessmentSaveLock(
+  status: string
+): { locked: false } | { locked: true; message: string } {
+  if ((EDITABLE_ASSESSMENT_STATUSES as readonly string[]).includes(status)) {
+    return { locked: false };
+  }
+  return {
+    locked: true,
+    message:
+      status === "COMPLETED"
+        ? ASSESSMENT_COMPLETED_LOCK_MESSAGE
+        : ASSESSMENT_LOCKED_STATE_MESSAGE,
+  };
+}
+
 /** Refusal when reopen is attempted on an assessment that is not COMPLETED. */
 export const REOPEN_NOT_COMPLETED_MESSAGE =
   "Only a completed assessment can be reopened — this one is still open.";
