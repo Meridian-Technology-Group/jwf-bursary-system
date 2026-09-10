@@ -140,7 +140,7 @@ export function InviteFromContactDialog({
           <div className="space-y-4">
             {/* Summary */}
             <dl className="grid grid-cols-3 gap-y-1 rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm">
-              <dt className="col-span-1 text-slate-500">Parent</dt>
+              <dt className="col-span-1 text-slate-500">Lead applicant</dt>
               <dd className="col-span-2 font-medium text-slate-800">
                 {recipient}
               </dd>

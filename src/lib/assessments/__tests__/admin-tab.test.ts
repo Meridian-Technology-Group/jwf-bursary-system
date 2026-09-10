@@ -27,9 +27,13 @@ function systemRow(
     totalPropertyEquity: equity,
     yearlyDebtExposure: debt,
     lifestyleSqueezeLabel: 'OK',
+    totalDebt: debt,
+    totalBenefits: null,
     deltaTotalHouseholdNetIncome: null,
     deltaTotalCashSavings: null,
     deltaTotalPropertyEquity: null,
+    deltaTotalDebt: null,
+    deltaTotalBenefits: null,
     deltaYearlyDebtExposure: null,
   }
 }

@@ -24,6 +24,36 @@ function n(v: number | undefined): number {
  * Sums every present sub-block of a single earner's status-driven income
  * record (workbook rows 2–39, one earner column).
  */
+/**
+ * Every benefit line for one earner, summed.
+ *
+ * Extracted from `calculateEarnerIncome` (which still calls it, so there is
+ * exactly one definition of "benefits") because Charlotte's year-on-year view
+ * of 10 Sep 2026 wants benefits as their own column: *"replace the last two
+ * columns by the focused view on Benefits only"*.
+ *
+ * Note this reads the v2 `incomeDetail` JSON, not the legacy
+ * `AssessmentEarner.benefitsIncluded`/`benefitsExcluded` columns — those are
+ * 0 on every v2 assessment (verified against nonprod), so summing them would
+ * silently report zero benefits for every current family.
+ */
+export function calculateEarnerBenefits(detail: AssessorIncomeRecord): number {
+  if (!detail.benefits) return 0
+  const b = detail.benefits
+  return (
+    n(b.universalCredit) +
+    n(b.housingBenefit) +
+    n(b.childBenefit) +
+    n(b.childWorkingTaxCredit) +
+    n(b.esa) +
+    n(b.pipOrDla) +
+    n(b.pip) +
+    n(b.carersAllowance) +
+    n(b.childcareSupport) +
+    n(b.other)
+  )
+}
+
 export function calculateEarnerIncome(detail: AssessorIncomeRecord): number {
   let total = 0
 
@@ -36,20 +66,7 @@ export function calculateEarnerIncome(detail: AssessorIncomeRecord): number {
     total += n(s.grossSalaried) + n(s.propertyIncome) + n(s.dividends) + n(s.otherInvestmentIncome)
   }
 
-  if (detail.benefits) {
-    const b = detail.benefits
-    total +=
-      n(b.universalCredit) +
-      n(b.housingBenefit) +
-      n(b.childBenefit) +
-      n(b.childWorkingTaxCredit) +
-      n(b.esa) +
-      n(b.pipOrDla) +
-      n(b.pip) +
-      n(b.carersAllowance) +
-      n(b.childcareSupport) +
-      n(b.other)
-  }
+  total += calculateEarnerBenefits(detail)
 
   if (detail.unemployed) {
     const u = detail.unemployed
