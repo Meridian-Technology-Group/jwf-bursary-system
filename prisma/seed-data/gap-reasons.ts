@@ -16,12 +16,16 @@ export const gapReasons = [
   { code: 9, label: "Affordability Adjusted Calculation Preferred", sortOrder: 9, isDeprecated: true },
   { code: 10, label: "Theoretical Benchmark Calculation Preferred", sortOrder: 10, isDeprecated: true },
 
-  // --- D4 CLOSED (6 Sep 2026) — Charlotte's definitive 11-code gap list ---
+  // --- D4 CLOSED (6 Sep 2026), extended 8 Sep 2026 — her definitive gap list ---
   // From her reviewed "Reason & Gap Codes" listing, in her four groups:
-  // 1-3 External · 4-6 Pastoral Leniency · 7-9 Internal Bursary Bias ·
-  // 10-11 Contextual (grouping: src/lib/reason-codes/gap-category.ts).
-  // DB codes 101-111 (display = code - 100); codes 1-10 above are
-  // deprecated, never deleted.
+  // 1-3 External · 4-6 Pastoral Leniency · 7-10 Internal Bursary Bias ·
+  // 11-13 Contextual (grouping: src/lib/reason-codes/gap-category.ts).
+  // Codes 1-10 above are deprecated, never deleted.
+  //
+  // Her 8 Sep additions (112, 113) are appended rather than inserted in
+  // sequence, so no existing code is renumbered. Display order therefore
+  // comes from `sortOrder`, NOT from `code - 100` — 112 sits at display 10,
+  // pushing 110/111 to 11/12, and 113 is display 13.
   { code: 101, label: "Out of sync due to scholarship applied on place offer", sortOrder: 1, isDeprecated: false },
   { code: 102, label: "Out of sync due to new scholarship offered mid cursus", sortOrder: 2, isDeprecated: false },
   { code: 103, label: "Original Old Assessment Benchmark (year 2020)", sortOrder: 3, isDeprecated: false },
@@ -31,6 +35,8 @@ export const gapReasons = [
   { code: 107, label: "Internal Bursary Bias - Bereavement", sortOrder: 7, isDeprecated: false },
   { code: 108, label: "Internal Bursary Bias - Severe Illness", sortOrder: 8, isDeprecated: false },
   { code: 109, label: "Internal Bursary Bias - Family crippled with debt, top pupil", sortOrder: 9, isDeprecated: false },
-  { code: 110, label: "Affordability Adjusted Calculation Preferred", sortOrder: 10, isDeprecated: false },
-  { code: 111, label: "Theoretical Benchmark Calculation Preferred", sortOrder: 11, isDeprecated: false },
+  { code: 112, label: "Internal Bursary Bias - Acrimonious Separation", sortOrder: 10, isDeprecated: false },
+  { code: 110, label: "Affordability Adjusted Calculation Preferred", sortOrder: 11, isDeprecated: false },
+  { code: 111, label: "Theoretical Benchmark Calculation Preferred", sortOrder: 12, isDeprecated: false },
+  { code: 113, label: "Immaterial gap, less than £100", sortOrder: 13, isDeprecated: false },
 ] as const;
