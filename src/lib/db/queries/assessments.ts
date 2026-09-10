@@ -31,6 +31,22 @@ import {
   type YoyFinancialsInputRow,
   type YoyFinancialsTableRow,
 } from "@/lib/assessment/yoy-financials";
+import { totalPersonalDebt } from "@/lib/assessment/v2/debt";
+import { calculateEarnerBenefits } from "@/lib/assessment/v2/income";
+
+/**
+ * Assessment statuses whose figures belong in the year-on-year view: anything
+ * that has reached "stored as complete", including the Epic 18 states beyond
+ * it. Kept as one list so a future lifecycle state has to be considered here
+ * rather than silently dropping rows out of a family's history.
+ */
+const YOY_INCLUDED_ASSESSMENT_STATUSES = [
+  "COMPLETED",
+  "NEW_AWARD",
+  "ROLLED_OVER",
+  "WAITING_LIST",
+  "CLOSED_ARCHIVED",
+] as const;
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -581,10 +597,17 @@ export async function getYoyFinancialsRows(
   tx: Tx,
   bursaryAccountId: string
 ): Promise<YoyFinancialsTableRow[]> {
+  // The year-on-year view covers every assessment that has REACHED complete,
+  // not only those still sitting at COMPLETED. Epic 18 moves a decided
+  // assessment on to NEW_AWARD / ROLLED_OVER / WAITING_LIST / CLOSED_ARCHIVED,
+  // and the original `status: "COMPLETED"` filter silently dropped every one
+  // of them — so an account whose only assessment was locked as an award
+  // showed an empty history. Found via Charlotte's Kaluba record, whose sole
+  // assessment is NEW_AWARD.
   const applications = await tx.application.findMany({
     where: {
       bursaryAccountId,
-      assessment: { status: "COMPLETED" },
+      assessment: { status: { in: [...YOY_INCLUDED_ASSESSMENT_STATUSES] } },
     },
     select: {
       id: true,
@@ -597,11 +620,13 @@ export async function getYoyFinancialsRows(
           manualAdjustment: true,
           yearlyDebtExposure: true,
           lifestyleSqueezeLabel: true,
+          earners: { select: { incomeDetail: true } },
           property: {
             select: {
               cashSavings: true,
               isasPepsShares: true,
               propertyAssets: true,
+              debts: true,
             },
           },
         },
@@ -627,6 +652,19 @@ export async function getYoyFinancialsRows(
         (app.assessment.property?.propertyAssets ?? null) as PropertyAssetsRecord | null,
       yearlyDebtExposure: decimalToNumber(app.assessment.yearlyDebtExposure),
       lifestyleSqueezeLabel: app.assessment.lifestyleSqueezeLabel,
+      totalDebt: app.assessment.property?.debts
+        ? totalPersonalDebt(app.assessment.property.debts as DebtsRecord)
+        : null,
+      totalBenefits: app.assessment.earners.length
+        ? app.assessment.earners.reduce(
+            (sum, e) =>
+              sum +
+              (e.incomeDetail
+                ? calculateEarnerBenefits(e.incomeDetail as unknown as AssessorIncomeRecord)
+                : 0),
+            0
+          )
+        : null,
     }));
 
   return buildYoyFinancialsTable(rows);

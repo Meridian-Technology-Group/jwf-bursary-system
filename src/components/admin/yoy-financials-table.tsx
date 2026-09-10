@@ -68,10 +68,10 @@ export function YoyFinancialsTable({ rows, className }: YoyFinancialsTableProps)
               Property equity
             </th>
             <th className="px-3 py-2 text-right text-xs font-medium uppercase tracking-wide text-slate-400">
-              Yearly debt exposure
+              Total debt
             </th>
-            <th className="px-3 py-2 text-left text-xs font-medium uppercase tracking-wide text-slate-400">
-              Lifestyle squeeze
+            <th className="px-3 py-2 text-right text-xs font-medium uppercase tracking-wide text-slate-400">
+              Total benefits
             </th>
           </tr>
         </thead>
@@ -80,7 +80,8 @@ export function YoyFinancialsTable({ rows, className }: YoyFinancialsTableProps)
             const incomeDelta = formatDelta(row.deltaTotalHouseholdNetIncome);
             const cashDelta = formatDelta(row.deltaTotalCashSavings);
             const equityDelta = formatDelta(row.deltaTotalPropertyEquity);
-            const debtDelta = formatDelta(row.deltaYearlyDebtExposure);
+            const debtDelta = formatDelta(row.deltaTotalDebt);
+            const benefitsDelta = formatDelta(row.deltaTotalBenefits);
             return (
               <tr key={row.applicationId}>
                 <td className="px-3 py-2.5 font-medium text-slate-700">
@@ -116,15 +117,16 @@ export function YoyFinancialsTable({ rows, className }: YoyFinancialsTableProps)
                   </span>
                 </td>
                 <td className="px-3 py-2.5 text-right font-mono tabular-nums text-slate-700">
-                  {formatGBP(row.yearlyDebtExposure)}
+                  {formatGBP(row.totalDebt)}
                   <span className={cn("ml-2 text-xs", debtDelta.className)}>
                     {debtDelta.text}
                   </span>
                 </td>
-                <td className="px-3 py-2.5 text-slate-600">
-                  {row.lifestyleSqueezeLabel ?? (
-                    <span className="text-slate-300">n/a</span>
-                  )}
+                <td className="px-3 py-2.5 text-right font-mono tabular-nums text-slate-700">
+                  {formatGBP(row.totalBenefits)}
+                  <span className={cn("ml-2 text-xs", benefitsDelta.className)}>
+                    {benefitsDelta.text}
+                  </span>
                 </td>
               </tr>
             );

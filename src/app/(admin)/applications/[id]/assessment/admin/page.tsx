@@ -264,8 +264,9 @@ export default async function AssessmentAdminPage({ params }: Props) {
 
       {/* 3. Year-on-year history. */}
       <section className="space-y-3 rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+        {/* Charlotte's title, 10 Sep 2026. */}
         <p className="text-xs font-semibold uppercase tracking-wide text-slate-600">
-          Year-on-year history
+          Δ Year on Year Assessment View
         </p>
 
         {application.bursaryAccountId && (
@@ -296,13 +297,13 @@ export default async function AssessmentAdminPage({ params }: Props) {
                   <th className="px-3 py-2 text-right">Overall net income</th>
                   <th className="px-3 py-2 text-right">Total savings</th>
                   <th className="px-3 py-2 text-right">Property equity</th>
-                  <th className="px-3 py-2 text-right">Debt exposure</th>
+                  <th className="px-3 py-2 text-right">Total debt</th>
                   <th className="px-3 py-2 text-right">Δ Income</th>
                   <th className="px-3 py-2 text-right">Δ Savings</th>
                   <th className="px-3 py-2 text-right">Δ Equity</th>
                   <th className="px-3 py-2 text-right">Δ Debt</th>
-                  <th className="px-3 py-2">Living</th>
-                  <th className="px-3 py-2">Lifestyle squeeze</th>
+                  <th className="px-3 py-2 text-right">Total benefits</th>
+                  <th className="px-3 py-2 text-right">Δ Benefits</th>
                 </tr>
               </thead>
               <tbody>
@@ -338,13 +339,13 @@ export default async function AssessmentAdminPage({ params }: Props) {
                   <th className="px-3 py-2 text-right">Overall net income</th>
                   <th className="px-3 py-2 text-right">Total savings</th>
                   <th className="px-3 py-2 text-right">Property equity</th>
-                  <th className="px-3 py-2 text-right">Debt exposure</th>
+                  <th className="px-3 py-2 text-right">Total debt</th>
                   <th className="px-3 py-2 text-right">Δ Income</th>
                   <th className="px-3 py-2 text-right">Δ Savings</th>
                   <th className="px-3 py-2 text-right">Δ Equity</th>
                   <th className="px-3 py-2 text-right">Δ Debt</th>
-                  <th className="px-3 py-2">Living</th>
-                  <th className="px-3 py-2">Lifestyle squeeze</th>
+                  <th className="px-3 py-2 text-right">Total benefits</th>
+                  <th className="px-3 py-2 text-right">Δ Benefits</th>
                 </tr>
               </thead>
               <tbody>
@@ -381,8 +382,18 @@ export default async function AssessmentAdminPage({ params }: Props) {
                         </td>
                       )
                     )}
-                    <td className="px-3 py-2 text-xs text-slate-600">{row.livingArrangement ?? "—"}</td>
-                    <td className="px-3 py-2 text-xs text-slate-600">{row.lifestyleSqueeze ?? "—"}</td>
+                    <td className="px-3 py-2 text-right font-mono text-xs">
+                      {money(row.totalBenefits)}
+                    </td>
+                    <td
+                      className={cn(
+                        "px-3 py-2 text-right font-mono text-xs",
+                        row.deltaTotalBenefits != null && row.deltaTotalBenefits < 0 && "text-red-700",
+                        row.deltaTotalBenefits != null && row.deltaTotalBenefits > 0 && "text-green-700"
+                      )}
+                    >
+                      {signedMoney(row.deltaTotalBenefits)}
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -408,6 +419,9 @@ export default async function AssessmentAdminPage({ params }: Props) {
                   <th className="px-3 py-2 text-right">Payable fees</th>
                   <th className="px-3 py-2 text-right">Δ</th>
                   <th className="px-3 py-2">School Year</th>
+                  {/* Charlotte, 10 Sep 2026 — her two extra columns. */}
+                  <th className="px-3 py-2 text-right">Bursary award (before VAT)</th>
+                  <th className="px-3 py-2">Bursary Award Type</th>
                   <th className="px-3 py-2">App to be submitted by</th>
                   <th className="px-3 py-2">Application Status</th>
                   <th className="px-3 py-2">Assessment Status</th>
@@ -420,7 +434,7 @@ export default async function AssessmentAdminPage({ params }: Props) {
                     <td className="px-3 py-2 font-mono text-xs font-semibold text-slate-400">
                       {year}
                     </td>
-                    {Array.from({ length: 8 }).map((_, i) => (
+                    {Array.from({ length: 10 }).map((_, i) => (
                       <td key={i} className="px-3 py-2 text-xs text-slate-300">
                         —
                       </td>
@@ -440,6 +454,9 @@ export default async function AssessmentAdminPage({ params }: Props) {
                   <th className="px-3 py-2 text-right">Payable fees</th>
                   <th className="px-3 py-2 text-right">Δ</th>
                   <th className="px-3 py-2">School Year</th>
+                  {/* Charlotte, 10 Sep 2026 — her two extra columns. */}
+                  <th className="px-3 py-2 text-right">Bursary award (before VAT)</th>
+                  <th className="px-3 py-2">Bursary Award Type</th>
                   <th className="px-3 py-2">App to be submitted by</th>
                   <th className="px-3 py-2">Application Status</th>
                   <th className="px-3 py-2">Assessment Status</th>
@@ -469,6 +486,12 @@ export default async function AssessmentAdminPage({ params }: Props) {
                       {signedMoney(row.deltaPayableFees)}
                     </td>
                     <td className="px-3 py-2 text-xs text-slate-600">{row.schoolYearLabel ?? "—"}</td>
+                    <td className="px-3 py-2 text-right font-mono text-xs">
+                      {money(row.bursaryAward)}
+                    </td>
+                    <td className="px-3 py-2 text-xs text-slate-600">
+                      {row.awardFundLabel ?? "—"}
+                    </td>
                     <td className="px-3 py-2 text-xs text-slate-600">
                       {row.submitBy ? formatLondonDate(row.submitBy) : "—"}
                     </td>

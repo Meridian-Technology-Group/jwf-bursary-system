@@ -51,6 +51,17 @@ export interface YoyFinancialsInputRow {
   yearlyDebtExposure: number | null;
   /** `Assessment.lifestyleSqueezeLabel` (CALC-05) — v2 only, null for v1 rows. */
   lifestyleSqueezeLabel: string | null;
+  /**
+   * Total itemised personal debt (CALC-04). Charlotte, 10 Sep 2026, asked the
+   * year-on-year view to show *"Total Debt"* rather than the savings-netted
+   * yearly exposure, which is a different and much smaller number.
+   */
+  totalDebt: number | null;
+  /**
+   * Every benefit line summed across the household's earners
+   * (`calculateEarnerBenefits`), her *"focused view on Benefits only"*.
+   */
+  totalBenefits: number | null;
 }
 
 // ─── Output table row (with YoY deltas) ───────────────────────────────────────
@@ -68,11 +79,17 @@ export interface YoyFinancialsTableRow {
   totalPropertyEquity: number | null;
   yearlyDebtExposure: number | null;
   lifestyleSqueezeLabel: string | null;
+  /** Total itemised personal debt — the column she asked for by that name. */
+  totalDebt: number | null;
+  /** Household benefits, summed across earners. */
+  totalBenefits: number | null;
   /** YoY deltas — `current − previous`; `null` for the first row or whenever either side is `null`. */
   deltaTotalHouseholdNetIncome: number | null;
   deltaTotalCashSavings: number | null;
   deltaTotalPropertyEquity: number | null;
   deltaYearlyDebtExposure: number | null;
+  deltaTotalDebt: number | null;
+  deltaTotalBenefits: number | null;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -122,6 +139,8 @@ export function buildYoyFinancialsTable(
   let prevCashSavings: number | null = null;
   let prevEquity: number | null = null;
   let prevDebtExposure: number | null = null;
+  let prevTotalDebt: number | null = null;
+  let prevBenefits: number | null = null;
 
   return sorted.map((row) => {
     const totalCashSavings = sumNullSafe(row.cashSavings, row.isasPepsShares);
@@ -137,16 +156,22 @@ export function buildYoyFinancialsTable(
       totalPropertyEquity: propertyEquity,
       yearlyDebtExposure: row.yearlyDebtExposure,
       lifestyleSqueezeLabel: row.lifestyleSqueezeLabel,
+      totalDebt: row.totalDebt,
+      totalBenefits: row.totalBenefits,
       deltaTotalHouseholdNetIncome: delta(row.totalHouseholdNetIncome, prevIncome),
       deltaTotalCashSavings: delta(totalCashSavings, prevCashSavings),
       deltaTotalPropertyEquity: delta(propertyEquity, prevEquity),
       deltaYearlyDebtExposure: delta(row.yearlyDebtExposure, prevDebtExposure),
+      deltaTotalDebt: delta(row.totalDebt, prevTotalDebt),
+      deltaTotalBenefits: delta(row.totalBenefits, prevBenefits),
     };
 
     prevIncome = row.totalHouseholdNetIncome;
     prevCashSavings = totalCashSavings;
     prevEquity = propertyEquity;
     prevDebtExposure = row.yearlyDebtExposure;
+    prevTotalDebt = row.totalDebt;
+    prevBenefits = row.totalBenefits;
 
     return tableRow;
   });

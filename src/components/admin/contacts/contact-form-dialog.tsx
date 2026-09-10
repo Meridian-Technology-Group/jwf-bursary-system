@@ -82,7 +82,7 @@ export interface ContactFormValues {
 const schema = z.object({
   title: z.string().optional(),
   firstName: z.string().optional(),
-  lastName: z.string().min(1, "Parent surname is required"),
+  lastName: z.string().min(1, "Lead applicant surname is required"),
   email: z.string().email("A valid email address is required"),
   phone: z.string().optional(),
   childTitle: z.string().optional(),
@@ -254,7 +254,7 @@ export function ContactFormDialog({
             {/* Parent */}
             <fieldset className="space-y-3">
               <legend className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                Lead applicant (parent)
+                Lead applicant
               </legend>
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <FormField
