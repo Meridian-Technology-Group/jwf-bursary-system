@@ -236,7 +236,15 @@ export function calculateAssessmentV2(input: AssessmentV2Input, ref: ReferenceBu
   //    figure only — the ratio is now `total debt / 5 / NDI` and nets no
   //    savings off, so it no longer depends on notional spend at all.
   const yearlyDebtExposure = calculateYearlyDebtExposure(derivedYearlyDebtRepayments, notionalSpend.adjustedSavings)
-  const debtOverNdiRatio = calculateDebtOverNdiRatio(totalDebt, householdNetIncome)
+  // The denominator is NDI AFTER NOTIONAL SPEND, not household net income.
+  // Her worked example fixes it: Kaluba is 8,000 / 5 / 24,907 = 0.0642, and
+  // 24,907 is the after-notional-spend figure (household net income is
+  // 81,141, which would give 0.0197). Same "NDI" her 6 Sep repayment-months
+  // formula uses, so the two agree on the word.
+  const debtOverNdiRatio = calculateDebtOverNdiRatio(
+    totalDebt,
+    notionalSpend.ndiAfterNotionalSpend,
+  )
   const debtClassification = classifyDebt(debtOverNdiRatio, ref.debtRatioBands, savingsVariant)
 
   // 5. Profiling (CALC-05).

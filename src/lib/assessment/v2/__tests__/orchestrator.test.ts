@@ -118,11 +118,19 @@ describe('calculateAssessmentV2 — modest-income renting family with debts', ()
     )
   })
 
-  it('debt-over-NDI ratio and status label are consistent with a small debt burden', () => {
-    // Part 5 respec (8 Sep 2026): total debt / 5 / NDI, savings NOT netted off.
-    // 8,000 / 5 / 30,000 = 0.05333 — no longer a function of adjustedSavings.
-    expect(result.debtOverNdiRatio).toBeCloseTo(8_000 / 5 / 30_000, 6)
-    expect(result.debtStatusLabel).toBe('MANAGEABLE DEBT, MEDIUM CREDIT RISK')
+  it('the ratio divides by NDI AFTER NOTIONAL SPEND, not household net income', () => {
+    // Part 5 respec (8 Sep 2026): total debt / 5 / NDI, savings NOT netted off,
+    // and "NDI" is the after-notional-spend figure. Her Kaluba example fixes
+    // which one: 8,000 / 5 / 24,907 = 0.0642, where household net income is
+    // 81,141 and would have given 0.0197.
+    //
+    // This family's NDI after notional spend is deeply negative (a £30k income
+    // renting family, see above), so the guard returns 0 rather than a
+    // negative ratio. Household net income is a positive 30,000, so if the
+    // wrong denominator were wired here this would read 0.0533 instead.
+    expect(result.ndiAfterNotionalSpend).toBeLessThan(0)
+    expect(result.debtOverNdiRatio).toBe(0)
+    expect(result.debtOverNdiRatio).not.toBeCloseTo(8_000 / 5 / 30_000, 6)
   })
 
   it('the ratio no longer moves with the household\'s savings (Part 5 respec)', () => {

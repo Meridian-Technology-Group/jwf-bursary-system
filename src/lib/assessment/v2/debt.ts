@@ -100,7 +100,9 @@ export function calculateYearlyDebtExposure(
  * by selecting which band table to read (`savingsVariantFor`).
  *
  * Her worked examples: Kaluba £8,000 / 5 / £24,907 = 0.0642; the live DW
- * assessment £43,000 / 5 / £5,685 = 1.5127.
+ * assessment £43,000 / 5 / £5,685 = 1.5127. Both denominators are NDI AFTER
+ * NOTIONAL SPEND, not household net income — Kaluba's household net income is
+ * £81,141, which would give 0.0197. The orchestrator passes the right one.
  *
  * Because total debt is never negative, the ratio is now always >= 0 — the
  * "open-ended → 0" ZERO DEBT row is reachable only at literally zero debt.
@@ -110,13 +112,19 @@ export function calculateYearlyDebtExposure(
  * closes Q9 (see `reference-bands.ts`) — there is no longer a floor hiding a
  * negative exposure.
  *
- * Guard: when `householdNetIncome` is 0 or negative there is no meaningful
- * ratio (division by zero, or a sign flip that would misrepresent debt
- * burden), so this returns 0 rather than `Infinity`/`NaN`/a negative ratio.
+ * ⚠️ Guard: when `ndiAfterNotionalSpend` is 0 or negative there is no
+ * meaningful ratio (division by zero, or a sign flip that would misrepresent
+ * debt burden), so this returns 0. NOTE this means a household with real debt
+ * AND no disposable income reads a ratio of 0, i.e. the bottom band. Flagged
+ * to Charlotte 11 Sep 2026 — under her ten-table model the debt-above-zero
+ * tables decide what that bottom row should say.
  */
-export function calculateDebtOverNdiRatio(totalDebt: number, householdNetIncome: number): number {
-  if (householdNetIncome <= 0) return 0
-  return Math.max(0, totalDebt) / DEBT_REPAYMENT_YEARS / householdNetIncome
+export function calculateDebtOverNdiRatio(
+  totalDebt: number,
+  ndiAfterNotionalSpend: number,
+): number {
+  if (ndiAfterNotionalSpend <= 0) return 0
+  return Math.max(0, totalDebt) / DEBT_REPAYMENT_YEARS / ndiAfterNotionalSpend
 }
 
 /** Result of `classifyDebt` — the Appendix C.4 status label. */
