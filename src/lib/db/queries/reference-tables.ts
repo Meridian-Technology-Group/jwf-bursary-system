@@ -5,7 +5,7 @@
  */
 
 import type { Tx } from "@/lib/db/prisma";
-import type { School, EmailTemplateType } from "@prisma/client";
+import type { School, EmailTemplateType, DebtSavingsContext } from "@prisma/client";
 import {
   resolveFeeYearPair,
   parseAcademicYearStart,
@@ -585,10 +585,12 @@ export interface DebtRatioBandRow {
   ratioCeiling: number | null;
   minRepaymentMonths: number | null;
   statusLabel: string;
+  /** Which of Charlotte's five household contexts this row belongs to (10 Sep 2026). */
+  debtSavingsContext: DebtSavingsContext;
   effectiveFrom: Date;
 }
 
-/** Returns every row of the newest DebtRatioBand generation. */
+/** Returns every row of the newest DebtRatioBand generation (ALL contexts). */
 export async function getDebtRatioBands(tx: Tx): Promise<DebtRatioBandRow[]> {
   const rows = await tx.debtRatioBand.findMany();
   return latestGeneration(
@@ -598,6 +600,7 @@ export async function getDebtRatioBands(tx: Tx): Promise<DebtRatioBandRow[]> {
       ratioCeiling: r.ratioCeiling === null ? null : Number(r.ratioCeiling),
       minRepaymentMonths: r.minRepaymentMonths,
       statusLabel: r.statusLabel,
+      debtSavingsContext: r.debtSavingsContext,
       effectiveFrom: r.effectiveFrom,
     })),
   );
@@ -608,10 +611,12 @@ export interface LifestyleSqueezeBandRow {
   ratioFloor: number | null;
   ratioCeiling: number | null;
   statusLabel: string;
+  /** Which of Charlotte's five household contexts this row belongs to (10 Sep 2026). */
+  debtSavingsContext: DebtSavingsContext;
   effectiveFrom: Date;
 }
 
-/** Returns every row of the newest LifestyleSqueezeBand generation. */
+/** Returns every row of the newest LifestyleSqueezeBand generation (ALL contexts). */
 export async function getLifestyleSqueezeBands(tx: Tx): Promise<LifestyleSqueezeBandRow[]> {
   const rows = await tx.lifestyleSqueezeBand.findMany();
   return latestGeneration(
@@ -620,6 +625,7 @@ export async function getLifestyleSqueezeBands(tx: Tx): Promise<LifestyleSqueeze
       ratioFloor: r.ratioFloor === null ? null : Number(r.ratioFloor),
       ratioCeiling: r.ratioCeiling === null ? null : Number(r.ratioCeiling),
       statusLabel: r.statusLabel,
+      debtSavingsContext: r.debtSavingsContext,
       effectiveFrom: r.effectiveFrom,
     })),
   );

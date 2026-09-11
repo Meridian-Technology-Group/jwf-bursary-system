@@ -44,6 +44,8 @@
  * the CALC-06 award engine, not here).
  */
 
+import type { DebtSavingsContext } from '@prisma/client'
+
 /** The minimal shape a resolvable band row needs. */
 export interface BandRow {
   /** Inclusive lower bound, or `null` for "no lower bound" (open-ended bottom). */
@@ -156,6 +158,12 @@ export function resolveFinancialEquityBand(
 }
 
 export interface DebtRatioBandRow {
+  /**
+   * Which of Charlotte's two commentary tables this row belongs to (8 Sep
+   * 2026 Part 5 respec). Optional so that pre-respec fixtures — which predate
+   * the split and are all uncushioned — resolve unchanged.
+   */
+  debtSavingsContext?: DebtSavingsContext
   ratioFloor: number | null
   ratioCeiling: number | null
   minRepaymentMonths: number | null
@@ -193,11 +201,15 @@ export interface DebtRatioBandRow {
 export function resolveDebtRatioBand(
   bands: readonly DebtRatioBandRow[],
   debtOverNdiRatio: number,
+  context: DebtSavingsContext = 'DEBT_SAVINGS_BELOW_DEBT',
 ): DebtRatioBandRow | null {
-  const view = bands.map((b) => ({ floor: b.ratioFloor, ceiling: b.ratioCeiling, source: b }))
+  const variantBands = forContext(bands, context)
+  const view = variantBands.map((b) => ({ floor: b.ratioFloor, ceiling: b.ratioCeiling, source: b }))
   if (debtOverNdiRatio <= 0) {
-    // The open-ended-bottom row (ceiling 0) — ZERO DEBT.
-    return bands.find((b) => b.ratioFloor === null) ?? null
+    // The open-ended-bottom row (ceiling 0) — ZERO DEBT / DEBT CUSHIONED BY
+    // SAVINGS. Since the 8 Sep respec the ratio can no longer go negative, so
+    // this now fires only at literally zero debt.
+    return variantBands.find((b) => b.ratioFloor === null) ?? null
   }
   return resolveBand(view, debtOverNdiRatio, { ceilingExclusive: true })?.source ?? null
 }
@@ -206,14 +218,55 @@ export interface LifestyleSqueezeBandRow {
   ratioFloor: number | null
   ratioCeiling: number | null
   statusLabel: string
+  /** See `DebtRatioBandRow.debtSavingsContext`. */
+  debtSavingsContext?: DebtSavingsContext
 }
 
-/** Appendix C.5. `squeezeRatioPct` is expressed in percentage points (100 = 100%). */
+/**
+ * Narrows a band list to one of Charlotte's five household contexts
+ * (10 Sep 2026). Rows with no `debtSavingsContext` predate the split and count
+ * as DEBT_SAVINGS_BELOW_DEBT, so pre-respec generations resolve as before.
+ */
+function forContext<T extends { debtSavingsContext?: DebtSavingsContext }>(
+  bands: readonly T[],
+  context: DebtSavingsContext,
+): readonly T[] {
+  const matching = bands.filter(
+    (b) => (b.debtSavingsContext ?? 'DEBT_SAVINGS_BELOW_DEBT') === context,
+  )
+  // A generation seeded before the split has rows for one context only; fall
+  // back to the whole list rather than resolving nothing.
+  return matching.length > 0 ? matching : bands
+}
+
+/**
+ * Appendix C.5. `squeezeRatioPct` is expressed in percentage points
+ * (100 = 100%), read from the table variant matching the household's savings
+ * position (8 Sep 2026 respec).
+ *
+ * **Q14 CLOSED (Charlotte, 9 Sep 2026).** A negative ratio falls to the
+ * open-ended-bottom row, "IN FINANCIAL SURVIVAL MODE, WARNING DEBT RED FLAG,
+ * NO MONEY FOR FEES" — the behaviour shipped on 6 Sep, kept here unchanged.
+ *
+ * A negative ratio arises when the denominator (NDI − totalDebt/5) is
+ * negative: the household's five-year debt burden exceeds its entire
+ * disposable income. Her 8 Sep email had given the opposite answer for the
+ * same DW vector (−310.4% reading as the 200%+ row); asked to reconcile the
+ * two, she confirmed the survival-mode reading and said the 8 Sep example was
+ * *"an incorrect answer"* she entered while writing up the examples.
+ *
+ * ⚠️ Her 9 Sep reply also supersedes the TWO-variant split below: she is
+ * moving to TEN tables, keyed on whether debt and savings are each zero or
+ * non-zero (with the savings-vs-debt comparison surviving only in the
+ * both-non-zero cell). The spreadsheet had not arrived when this was written.
+ */
 export function resolveLifestyleSqueezeBand(
   bands: readonly LifestyleSqueezeBandRow[],
   squeezeRatioPct: number,
+  context: DebtSavingsContext = 'DEBT_SAVINGS_BELOW_DEBT',
 ): LifestyleSqueezeBandRow | null {
-  const view = bands.map((b) => ({ floor: b.ratioFloor, ceiling: b.ratioCeiling, source: b }))
+  const variantBands = forContext(bands, context)
+  const view = variantBands.map((b) => ({ floor: b.ratioFloor, ceiling: b.ratioCeiling, source: b }))
   return resolveBand(view, squeezeRatioPct)?.source ?? null
 }
 
