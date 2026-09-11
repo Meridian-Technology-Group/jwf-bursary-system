@@ -37,6 +37,12 @@ jobs:
           DIRECT_URL: postgresql://x:x@localhost:5432/x
         run: npx prisma format --check
 
+      # Added 11 Sep 2026 after a generated INSERT lost its terminating
+      # semicolon: CI was green, the failure appeared only at migrate deploy
+      # AFTER merge, and left the migration blocking every later deploy.
+      - name: Migration SQL statement terminators
+        run: node scripts/check-migration-sql.mjs
+
       - name: Lint
         continue-on-error: true
         run: npm run lint
