@@ -9,6 +9,7 @@ import {
   financialEquityBands,
   debtRatioBands,
   lifestyleSqueezeBands,
+  debtShortfallBands,
 } from '../../../../../prisma/seed-data/profiling-reference'
 
 const fullRows: ReferenceBundleRowsLike = {
@@ -20,6 +21,7 @@ const fullRows: ReferenceBundleRowsLike = {
   financialEquityBands,
   debtRatioBands,
   lifestyleSqueezeBands,
+  debtShortfallBands,
 }
 
 const emptyRows: ReferenceBundleRowsLike = {
@@ -31,6 +33,7 @@ const emptyRows: ReferenceBundleRowsLike = {
   financialEquityBands: [],
   debtRatioBands: [],
   lifestyleSqueezeBands: [],
+  debtShortfallBands: [],
 }
 
 describe('resolveReferenceBundle', () => {
@@ -45,10 +48,11 @@ describe('resolveReferenceBundle', () => {
   it('reports every empty table by human-readable name (fail-soft on an unseeded env)', () => {
     const res = resolveReferenceBundle(emptyRows)
     expect(res.isComplete).toBe(false)
-    expect(res.missingTables).toHaveLength(8)
+    expect(res.missingTables).toHaveLength(9)
     expect(res.missingTables).toContain('Notional cost config')
     expect(res.missingTables).toContain('Affordability grid')
     expect(res.missingTables).toContain('Lifestyle squeeze bands')
+    expect(res.missingTables).toContain('Debt shortfall bands')
   })
 
   it('reports only the tables that are actually empty', () => {

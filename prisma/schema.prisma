@@ -914,6 +914,35 @@ model FinancialEquityBand {
   @@map("financial_equity_bands")
 }
 
+/// Charlotte, 11 Sep 2026 — the debt-status table used INSTEAD of the
+/// debt-over-NDI ratio when a household cannot cover its yearly debt
+/// repayment out of disposable income.
+///
+/// Her rule: when NDI after notional spend is below total debt / 5, the ratio
+/// "will be displayed but will become irrelevant", and the status comes from
+/// the cash shortfall (yearly repayment − NDI) instead. Her worked example is
+/// DW: 8,600 − 5,685 = 2,915, which lands on VERY HEAVILY IN DEBT, VERY HIGH
+/// CREDIT RISK.
+///
+/// NOTE the boundary convention is the OPPOSITE of the ratio tables, because
+/// that is how she wrote it: floor-INCLUSIVE, ceiling-EXCLUSIVE
+/// ("£200 ≤ Value < £500"), where the ratio ladders are floor-exclusive and
+/// ceiling-inclusive. Both conventions are hers and both are deliberate.
+model DebtShortfallBand {
+  id            String   @id @default(uuid()) @db.Uuid
+  /// Inclusive lower bound in £; null on the bottom row (any shortfall under
+  /// the first ceiling).
+  floorGbp      Decimal? @map("floor_gbp") @db.Decimal(10, 2)
+  /// Exclusive upper bound in £; null on the open-ended top row.
+  ceilingGbp    Decimal? @map("ceiling_gbp") @db.Decimal(10, 2)
+  statusLabel   String   @map("status_label")
+  effectiveFrom DateTime @map("effective_from") @db.Date
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@unique([ceilingGbp, effectiveFrom], map: "debt_shortfall_bands_ceiling_effective_from_key")
+  @@map("debt_shortfall_bands")
+}
+
 /// CALC-01 — Reference: debt-over-NDI ratio bands (Appendix C.4), normalised
 /// to non-overlapping ranges per assumption CALC-A3 (the workbook's own
 /// 0.1–1/0.3–1/0.5–1/0.8–1 all shared a common upper bound of 1). `ratioFloor`

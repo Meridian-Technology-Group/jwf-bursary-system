@@ -37,7 +37,7 @@ import {
   calculateDerivedYearlyDebtRepayments,
   calculateYearlyDebtExposure,
   calculateDebtOverNdiRatio,
-  classifyDebt,
+  classifyDebtStatus,
   debtSavingsContextFor,
   minRepaymentMonthsWithoutFees,
 } from './debt'
@@ -245,7 +245,19 @@ export function calculateAssessmentV2(input: AssessmentV2Input, ref: ReferenceBu
     totalDebt,
     notionalSpend.ndiAfterNotionalSpend,
   )
-  const debtClassification = classifyDebt(debtOverNdiRatio, ref.debtRatioBands, debtSavingsContext)
+  // Charlotte, 11 Sep 2026 — two routes to the debt status. When NDI after
+  // notional spend covers the yearly repayment the ratio decides as before;
+  // when it does not, the ratio is still SHOWN but the comment comes from the
+  // cash shortfall instead ("the actual ratio number will be displayed but
+  // will become irrelevant").
+  const debtClassification = classifyDebtStatus({
+    ratio: debtOverNdiRatio,
+    totalDebt,
+    ndiAfterNotionalSpend: notionalSpend.ndiAfterNotionalSpend,
+    ratioBands: ref.debtRatioBands,
+    shortfallBands: ref.debtShortfallBands,
+    context: debtSavingsContext,
+  })
 
   // 5. Profiling (CALC-05).
   const incomeCat = incomeCategory(householdNetIncome, ref.incomeCategoryBands)

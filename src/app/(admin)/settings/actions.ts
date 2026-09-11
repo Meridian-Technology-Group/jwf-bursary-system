@@ -1198,6 +1198,69 @@ interface LifestyleSqueezeBandRowInput {
   statusLabel: string;
 }
 
+interface DebtShortfallBandRowInput {
+  floorGbp: number | null;
+  ceilingGbp: number | null;
+  statusLabel: string;
+}
+
+/**
+ * Charlotte, 11 Sep 2026 — a new version of the shortfall table. Unlike the
+ * ratio ladders this one has no household context: there is a single table,
+ * consulted whenever NDI cannot cover the yearly repayment.
+ */
+export async function createDebtShortfallBandVersionAction(
+  formData: FormData
+): Promise<SettingsActionResult> {
+  try {
+    const user = await requireRole([Role.ADMIN]);
+
+    const rows = parseRowsJson<DebtShortfallBandRowInput>(formData.get("rows"));
+    const effectiveFrom = parseEffectiveFrom(formData.get("effectiveFrom"));
+    if (!rows || rows.length === 0) return { success: false, error: "At least one band row is required." };
+    if (!effectiveFrom) return { success: false, error: "A valid effective date is required." };
+
+    const bandError = checkBandSet(rows.map((r) => ({ floor: r.floorGbp, ceiling: r.ceilingGbp })));
+    if (bandError) return bandError;
+    if (rows.some((r) => !r.statusLabel?.trim())) {
+      return { success: false, error: "Every row needs a status label." };
+    }
+
+    const result = await withUserContext(user.id, user.role as RlsRole, async (tx) => {
+      const existing = await tx.debtShortfallBand.findMany({ select: { effectiveFrom: true } });
+      if (isDuplicateEffectiveFrom(effectiveFrom, existing.map((e) => e.effectiveFrom))) {
+        return { success: false, error: "A debt shortfall band version already exists for that effective date." } as const;
+      }
+
+      await tx.debtShortfallBand.createMany({
+        data: rows.map((r) => ({
+          floorGbp: r.floorGbp,
+          ceilingGbp: r.ceilingGbp,
+          statusLabel: r.statusLabel.trim(),
+          effectiveFrom,
+        })),
+      });
+
+      await createAuditLog(tx, {
+        userId: user.id,
+        action: AUDIT_ACTIONS.SETTINGS_DEBT_RATIO_BAND_VERSION_CREATE,
+        entityType: AUDIT_ENTITY_TYPES.DebtRatioBand,
+        entityId: user.id,
+        context: `Created a new debt shortfall band version (${rows.length} rows) effective ${effectiveFrom.toISOString().slice(0, 10)}`,
+        metadata: { effectiveFrom: effectiveFrom.toISOString(), rowCount: rows.length },
+      });
+
+      return { success: true } as const;
+    });
+
+    revalidatePath("/settings");
+    return result;
+  } catch (err) {
+    console.error("[createDebtShortfallBandVersionAction]", err);
+    return { success: false, error: "Failed to create the debt shortfall band version." };
+  }
+}
+
 export async function createLifestyleSqueezeBandVersionAction(
   formData: FormData
 ): Promise<SettingsActionResult> {

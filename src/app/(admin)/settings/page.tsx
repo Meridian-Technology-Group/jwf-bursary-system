@@ -29,6 +29,7 @@ import {
   getPropertyEquityBands,
   getFinancialEquityBands,
   getDebtRatioBands,
+  getDebtShortfallBands,
   getLifestyleSqueezeBands,
 } from "@/lib/db/queries/reference-tables";
 import {
@@ -97,6 +98,7 @@ export default async function SettingsPage() {
     propertyEquityBands,
     financialEquityBands,
     debtRatioBands,
+    debtShortfallBands,
     lifestyleSqueezeBands,
   ] = await withUserContext(user.id, user.role as RlsRole, (tx) =>
     Promise.all([
@@ -114,6 +116,7 @@ export default async function SettingsPage() {
       getPropertyEquityBands(tx),
       getFinancialEquityBands(tx),
       getDebtRatioBands(tx),
+      getDebtShortfallBands(tx),
       getLifestyleSqueezeBands(tx),
     ])
   );
@@ -311,6 +314,7 @@ export default async function SettingsPage() {
               propertyEquityBands={propertyEquityBands}
               financialEquityBands={financialEquityBands}
               debtRatioBands={debtRatioBands}
+          debtShortfallBands={debtShortfallBands}
               lifestyleSqueezeBands={lifestyleSqueezeBands}
             />
           </div>

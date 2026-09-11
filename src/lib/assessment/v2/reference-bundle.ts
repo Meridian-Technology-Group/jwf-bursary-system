@@ -23,6 +23,7 @@ export interface ReferenceBundleRowsLike {
   propertyEquityBands: ReferenceBundle['propertyEquityBands']
   financialEquityBands: ReferenceBundle['financialEquityBands']
   debtRatioBands: ReferenceBundle['debtRatioBands']
+  debtShortfallBands: ReferenceBundle['debtShortfallBands']
   lifestyleSqueezeBands: ReferenceBundle['lifestyleSqueezeBands']
 }
 
@@ -35,6 +36,7 @@ export const REFERENCE_TABLE_LABELS: Record<keyof ReferenceBundleRowsLike, strin
   propertyEquityBands: 'Property equity bands',
   financialEquityBands: 'Financial equity bands',
   debtRatioBands: 'Debt ratio bands',
+  debtShortfallBands: 'Debt shortfall bands',
   lifestyleSqueezeBands: 'Lifestyle squeeze bands',
 }
 
@@ -61,6 +63,7 @@ export function resolveReferenceBundle(rows: ReferenceBundleRowsLike): ResolvedR
     propertyEquityBands: rows.propertyEquityBands,
     financialEquityBands: rows.financialEquityBands,
     debtRatioBands: rows.debtRatioBands,
+    debtShortfallBands: rows.debtShortfallBands,
     lifestyleSqueezeBands: rows.lifestyleSqueezeBands,
   }
 

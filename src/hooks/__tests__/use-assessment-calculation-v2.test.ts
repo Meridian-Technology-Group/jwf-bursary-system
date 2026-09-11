@@ -12,6 +12,7 @@ import {
   financialEquityBandsRespec,
   debtRatioBandsRespec,
   lifestyleSqueezeBandsRespec,
+  debtShortfallBands,
 } from '../../../prisma/seed-data/profiling-reference'
 
 const ref: ReferenceBundle = {
@@ -23,6 +24,7 @@ const ref: ReferenceBundle = {
   financialEquityBands: financialEquityBandsRespec,
   debtRatioBands: debtRatioBandsRespec,
   lifestyleSqueezeBands: lifestyleSqueezeBandsRespec,
+  debtShortfallBands,
 }
 
 function earner(annualSalaryPaye: number): AssessorIncomeRecord {
