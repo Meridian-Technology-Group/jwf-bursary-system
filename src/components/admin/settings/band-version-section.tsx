@@ -66,6 +66,13 @@ export interface BandVersionSectionProps {
    * through without a mapping step at each call site.
    */
   rows: ReadonlyArray<object>;
+  /**
+   * Which household context these rows belong to, for the band tables that
+   * exist once per context (Charlotte's ten Part 5 tables, 10 Sep 2026).
+   * Submitted with the new version so the rows are written back under the same
+   * context rather than collapsing into the default one.
+   */
+  debtSavingsContext?: string;
   createVersionAction: (formData: FormData) => Promise<SettingsActionResult>;
 }
 
@@ -108,6 +115,7 @@ export function BandVersionSection({
   ceilingLabel,
   extraFields,
   rows,
+  debtSavingsContext,
   createVersionAction,
 }: BandVersionSectionProps) {
   return (
@@ -125,6 +133,7 @@ export function BandVersionSection({
           ceilingLabel={ceilingLabel}
           extraFields={extraFields}
           rows={rows}
+          debtSavingsContext={debtSavingsContext}
           createVersionAction={createVersionAction}
         />
       </div>
@@ -188,6 +197,13 @@ interface BandVersionDialogProps {
   ceilingLabel: string;
   extraFields: BandExtraFieldConfig[];
   rows: ReadonlyArray<object>;
+  /**
+   * Which household context these rows belong to, for the band tables that
+   * exist once per context (Charlotte's ten Part 5 tables, 10 Sep 2026).
+   * Submitted with the new version so the rows are written back under the same
+   * context rather than collapsing into the default one.
+   */
+  debtSavingsContext?: string;
   createVersionAction: (formData: FormData) => Promise<SettingsActionResult>;
 }
 
@@ -199,6 +215,7 @@ function BandVersionDialog({
   ceilingLabel,
   extraFields,
   rows,
+  debtSavingsContext,
   createVersionAction,
 }: BandVersionDialogProps) {
   const [open, setOpen] = React.useState(false);
@@ -284,6 +301,7 @@ function BandVersionDialog({
     const fd = new FormData();
     fd.set("rows", JSON.stringify(payload));
     fd.set("effectiveFrom", effectiveFrom);
+    if (debtSavingsContext) fd.set("debtSavingsContext", debtSavingsContext);
 
     startTransition(async () => {
       const result = await createVersionAction(fd);
