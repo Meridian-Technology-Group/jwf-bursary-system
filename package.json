@@ -14,7 +14,8 @@
     "backfill:income-drafts": "tsx scripts/backfill-income-drafts.ts",
     "seed:reference": "tsx prisma/seed-reference.ts",
     "seed:demo": "ALLOW_DESTRUCTIVE_SEED=1 tsx prisma/seed-demo.ts",
-    "check:migrations": "node scripts/check-migration-sql.mjs"
+    "check:migrations": "node scripts/check-migration-sql.mjs",
+    "check:rls": "node scripts/check-rls-policies.mjs"
   },
   "prisma": {
     "seed": "tsx prisma/seed-demo.ts"
