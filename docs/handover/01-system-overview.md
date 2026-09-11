@@ -1,15 +1,14 @@
 # 01. System Overview
 
-**Audience:** the person taking operational ownership of the John Whitgift
-Foundation Bursary Assessment System.
+**Audience:** anyone operating or supporting the John Whitgift Foundation
+Bursary Assessment System.
 
 **Assumed knowledge:** none of the services named below. General IT competence
 is assumed; prior experience of Vercel, Supabase, Resend or Sentry is not.
 
-**What this document covers:** what the system is, the external services
-(vendors) it depends on, what each one does, who currently holds each account,
-and where to sign in. It does not cover day to day tasks; those are in the
-runbooks listed in section 9.
+**What this document covers:** what the system is, the external services it
+runs on, what each one does, and where to find it. Read this first. The
+task specific procedures are in the runbooks listed in section 8.
 
 ---
 
@@ -66,28 +65,26 @@ something breaks.
 
 ---
 
-## 3. Vendors at a glance
+## 3. The services at a glance
 
-| Vendor | What it is | What it does here | Account currently held by | Paid |
-|---|---|---|---|---|
-| [Vercel](https://vercel.com) | Application hosting platform | Runs the live website, builds and deploys new versions, edge firewall, scheduled jobs | Meridian Technology Group (team `meridian-tech-group`) | Yes |
-| [Supabase](https://supabase.com) | Managed database and backend platform | PostgreSQL database, staff and parent logins, uploaded document storage | Meridian Technology Group (confirm in dashboard) | Yes, Pro tier |
-| [Resend](https://resend.com) | Transactional email service | Sends invitations, confirmations, reminders and outcome notices | Meridian Technology Group | Yes |
-| [Sentry](https://sentry.io) | Error monitoring service | Captures and alerts on application errors, browser and server | Meridian Technology Group (project `bursary-system`) | Yes |
-| [GitHub](https://github.com) | Source code hosting and automation | Stores the code, runs automated tests, applies database migrations | Meridian Technology Group (org `Meridian-Technology-Group`) | Yes |
+| Service | What it is | What it does here |
+|---|---|---|
+| [Vercel](https://vercel.com) | Application hosting platform | Runs the live website, builds and deploys new versions, edge firewall, scheduled jobs |
+| [Supabase](https://supabase.com) | Managed database and backend platform | PostgreSQL database, staff and parent logins, uploaded document storage |
+| [Resend](https://resend.com) | Transactional email service | Sends invitations, confirmations, reminders and outcome notices |
+| [Sentry](https://sentry.io) | Error monitoring service | Captures and alerts on application errors, browser and server |
+| [GitHub](https://github.com) | Source code hosting and automation | Stores the code, runs automated tests, applies database migrations |
 
-Two further points on that table:
+All five are paid accounts administered by Meridian Technology Group, who issue
+access to them.
 
-1. **Every account currently sits with Meridian Technology Group, not the
-   Foundation.** Transferring or duplicating ownership is a distinct piece of
-   work; see section 8.
-2. **Amazon Web Services does not appear** because the Foundation has no AWS
-   account. Supabase runs on AWS underneath, which matters only for data
-   residency; see section 4.2.
+Amazon Web Services does not appear in that list because there is no AWS
+account to administer. Supabase runs on AWS underneath, which matters only for
+data residency; see section 4.2.
 
 ---
 
-## 4. The vendors in detail
+## 4. The services in detail
 
 ### 4.1 Vercel (hosting)
 
@@ -98,7 +95,8 @@ traditionally be a web server you had to patch and maintain yourself.
 
 **What it does here.**
 
-- Serves the live application to parents and staff.
+- Serves the live application to parents and staff, at
+  `jwf-bursary-system.vercel.app`.
 - Rebuilds and redeploys automatically whenever code is merged. Merging to the
   `main` branch updates production; merging to `staging` updates the test site.
 - Holds all configuration secrets (database passwords, API keys) as environment
@@ -110,7 +108,7 @@ traditionally be a web server you had to patch and maintain yourself.
 
 **Where it runs.** Functions execute in Vercel's London region (`lhr1`).
 
-**Signing in.** <https://vercel.com/meridian-tech-group/jwf-bursary-system>
+**Where to find it.** <https://vercel.com/meridian-tech-group/jwf-bursary-system>
 
 **Vendor documentation.**
 [Overview](https://vercel.com/docs) ·
@@ -150,11 +148,14 @@ Think of it as the system's single source of truth.
 **Data residency.** Both projects run in AWS `eu-west-2`, which is London. All
 applicant data therefore stays in the United Kingdom.
 
-**Backups.** Delivered by the Supabase Pro tier: daily automated backups plus
-point in time recovery, contractually required to be a window of at least 30
-days. Verify the setting in the dashboard under Database, then Backups.
+**Backups.** The contract requires daily automated backups plus point in time
+recovery with a window of at least 30 days, which the Supabase Pro tier
+provides. Point in time recovery means the database can be restored to any
+moment within that window, not just to the previous night. The current setting
+is visible in the dashboard under **Database**, then **Backups**. The restore
+procedure is in `docs/operations/backup-restore.md`.
 
-**Signing in.** <https://supabase.com/dashboard>
+**Where to find it.** <https://supabase.com/dashboard>
 
 **Vendor documentation.**
 [Overview](https://supabase.com/docs) ·
@@ -174,30 +175,25 @@ in spam folders.
 
 **What it does here.** Sends every automated message the system produces:
 applicant invitations, submission confirmations, document request reminders,
-password resets and outcome notices. Templates are stored in the database and
-editable by administrators in the admin settings.
+password resets and outcome notices. The message templates are stored in the
+database and are editable by administrators in the admin settings.
 
-**Current sending address.** Messages are sent from
-`bursary@updates.meridiantech.group`, a Meridian owned domain verified in
-Resend. Replies are directed to `fees@johnwhitgiftfoundation.org` by a reply to
-header, so parent replies reach the Foundation despite the sending domain.
-Moving the sending domain to a Foundation owned domain is an outstanding item;
-see section 8.
+**Addresses.** Messages are sent from `bursary@updates.meridiantech.group`, a
+domain verified in Resend for this purpose. Every message carries a reply to
+header pointing at `fees@johnwhitgiftfoundation.org`, so when a parent replies
+it reaches the Foundation's bursary inbox rather than the sending domain.
 
 **One account, both environments.** Unusually, the live and test environments
 share a single Resend account and API key. Only production has a webhook
 registered, so delivery events are recorded for live mail only. This is
 deliberate.
 
-**Signing in.** <https://resend.com/overview>
+**Where to find it.** <https://resend.com/overview>
 
 **Vendor documentation.**
 [Overview](https://resend.com/docs/introduction) ·
 [Domain verification and DNS](https://resend.com/docs/dashboard/domains/introduction) ·
 [Webhooks](https://resend.com/docs/dashboard/webhooks/introduction)
-
-**Related internal runbook:** `docs/operations/resend-domain-setup.md` gives a
-non technical, step by step domain verification procedure.
 
 ---
 
@@ -212,13 +208,13 @@ from the live application, with the stack trace mapped back to the original
 source code. It is the first place to look when a user reports that something
 did not work.
 
-**Note:** when the Sentry configuration is absent the monitoring silently does
+Note that when the Sentry configuration is absent the monitoring silently does
 nothing rather than failing. Local development and automated tests therefore
 send no data.
 
 **Project.** `bursary-system`.
 
-**Signing in.** <https://sentry.io>
+**Where to find it.** <https://sentry.io>
 
 **Vendor documentation.**
 [Next.js integration](https://docs.sentry.io/platforms/javascript/guides/nextjs/) ·
@@ -246,7 +242,7 @@ where the automation that tests and releases those changes runs.
 - **Release notes.** The `CHANGELOG.md` file and version numbers are maintained
   automatically from commit messages.
 
-**Signing in.** <https://github.com/Meridian-Technology-Group/jwf-bursary-system>
+**Where to find it.** <https://github.com/Meridian-Technology-Group/jwf-bursary-system>
 
 **Vendor documentation.**
 [GitHub Actions](https://docs.github.com/en/actions) ·
@@ -270,13 +266,20 @@ their licences, is in `docs/engineering/open-source-manifest.md`.
 
 ---
 
-## 6. Adjacent systems, not owned by this project
+## 6. Two systems that sit alongside it
 
-| System | Relationship |
-|---|---|
-| **DNS for `jwf.org.uk` and `johnwhitgiftfoundation.org`** | The Foundation controls these. Required to put the application on a Foundation branded web address and to send email from a Foundation domain. |
-| **Microsoft 365 / Exchange Online** | The Foundation's own mail system. Its Safe Links feature opens every link in an arriving email to scan it, which consumes single use links such as password resets. The application works around this by only validating such links when the form is submitted, not when the page loads. Worth knowing before diagnosing a "link already used" report. |
-| **Symplectic Grant Tracker (Digital Science)** | The legacy system being replaced. Retires 31 December 2026. Migrating historical bursary data out of it is a separate, as yet unstarted, piece of work. |
+Neither is part of the application, but both come up when supporting it.
+
+**Microsoft 365 / Exchange Online.** The Foundation's own mail system. Its Safe
+Links feature opens every link in an arriving email in order to scan it, which
+consumes single use links such as password resets and invitations. The
+application is built to tolerate this: those links are only validated when the
+form is submitted, never when the page loads. Worth knowing before diagnosing a
+report that a link was already used.
+
+**Symplectic Grant Tracker.** The legacy Digital Science platform the Foundation
+used before this system, retiring on 31 December 2026. Historical bursary
+records still live there.
 
 ---
 
@@ -288,7 +291,7 @@ important operational habit.
 | | Production (live) | Staging (test) |
 |---|---|---|
 | Branch | `main` | `staging` |
-| Web address | `jwf-bursary-system.vercel.app` (custom domain pending) | Fixed Vercel preview address |
+| Web address | `jwf-bursary-system.vercel.app` | Fixed Vercel preview address |
 | Database | `supabase-prod` | `supabase-nonprod` |
 | Data | Real applicants, real financial information | Test data only |
 | Staff two factor authentication | Enforced | Off, to keep testing simple |
@@ -299,28 +302,9 @@ send from staging is a real email to a real inbox. There is no sandbox.
 
 ---
 
-## 8. Outstanding ownership and configuration items
+## 8. Where to go next
 
-These are known, open, and relevant to anyone taking over.
-
-1. **Account ownership.** All five paid accounts sit with Meridian Technology
-   Group. Decide for each whether the Foundation takes ownership or is added as
-   a member, then action it.
-2. **Custom domain.** The live application is still served from
-   `jwf-bursary-system.vercel.app`. Pointing a Foundation subdomain at it needs
-   a DNS record from the Foundation and a domain added in the Vercel project.
-3. **Email sending domain.** Mail is sent from a Meridian domain. Moving it to a
-   Foundation domain needs a domain verified in Resend, three DNS records
-   published, and one environment variable updated.
-4. **Backup tier verification.** Confirm in the Supabase dashboard that
-   `supabase-prod` is on the Pro tier with point in time recovery retention set
-   to at least 30 days, as the contract requires.
-
----
-
-## 9. Where to go next
-
-Existing runbooks, all under `docs/operations/`:
+Operational runbooks, all under `docs/operations/`:
 
 | Document | Covers |
 |---|---|
@@ -330,7 +314,7 @@ Existing runbooks, all under `docs/operations/`:
 | `incident-response.md` | What to do when the system is broken |
 | `hypercare.md` | The post launch support arrangement |
 | `waf-auth-rate-limiting.md` | The sign in rate limiting rules |
-| `resend-domain-setup.md` | Verifying an email sending domain, written for a non developer |
+| `resend-domain-setup.md` | Verifying an email sending domain |
 
 User facing guides are under `docs/guides/`, and the documentation map is
 `docs/README.md`.

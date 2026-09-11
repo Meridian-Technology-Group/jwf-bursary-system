@@ -4,15 +4,15 @@ Continuity documentation for the John Whitgift Foundation Bursary Assessment
 System, written for a reader with no prior experience of the services the
 system runs on.
 
-These guides sit above the existing material rather than replacing it. Where an
+These guides describe how the system works and how to operate it. Where an
 operational runbook already exists under `docs/operations/`, these guides point
-to it instead of repeating it.
+to it rather than repeating it.
 
 ## Contents
 
 | # | Guide | Covers |
 |---|---|---|
-| 01 | [System Overview](01-system-overview.md) | What the system is, every external service it depends on, what each one does, who holds each account, and where to sign in |
+| 01 | [System Overview](01-system-overview.md) | What the system is, the external services it runs on, what each one does, and where to find it |
 
 Further guides will be added to this index as they are written.
 
