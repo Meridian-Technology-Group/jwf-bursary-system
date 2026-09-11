@@ -16,6 +16,7 @@ import {
   createPropertyEquityBandVersionAction,
   createFinancialEquityBandVersionAction,
   createDebtRatioBandVersionAction,
+  createDebtShortfallBandVersionAction,
   createLifestyleSqueezeBandVersionAction,
 } from "@/app/(admin)/settings/actions";
 import type {
@@ -24,6 +25,7 @@ import type {
   PropertyEquityBandRow,
   FinancialEquityBandRow,
   DebtRatioBandRow,
+  DebtShortfallBandRow,
   LifestyleSqueezeBandRow,
 } from "@/lib/db/queries/reference-tables";
 
@@ -45,6 +47,7 @@ interface BenchmarkBandsTabProps {
   propertyEquityBands: PropertyEquityBandRow[];
   financialEquityBands: FinancialEquityBandRow[];
   debtRatioBands: DebtRatioBandRow[];
+  debtShortfallBands: DebtShortfallBandRow[];
   lifestyleSqueezeBands: LifestyleSqueezeBandRow[];
 }
 
@@ -82,6 +85,7 @@ export function BenchmarkBandsTab({
   propertyEquityBands,
   financialEquityBands,
   debtRatioBands,
+  debtShortfallBands,
   lifestyleSqueezeBands,
 }: BenchmarkBandsTabProps) {
   return (
@@ -171,6 +175,21 @@ export function BenchmarkBandsTab({
         />
       ))}
 
+      {/* Charlotte, 11 Sep 2026 — the table used INSTEAD of the ratio when a
+          household cannot cover its yearly repayment out of disposable income.
+          Its bounds are in £, and unlike the ratio ladders they are
+          floor-inclusive and ceiling-exclusive, which is how she wrote them. */}
+      <BandVersionSection
+        title="Debt status — shortfall against yearly repayment"
+        description="Used instead of the debt-over-NDI ratio when NDI after notional spend is below the yearly repayment (total debt / 5). Keyed on the shortfall in £."
+        floorKey="floorGbp"
+        ceilingKey="ceilingGbp"
+        floorLabel="Shortfall from (£)"
+        ceilingLabel="Shortfall to (£)"
+        extraFields={DEBT_RATIO_EXTRA}
+        rows={debtShortfallBands}
+        createVersionAction={createDebtShortfallBandVersionAction}
+      />
     </div>
   );
 }

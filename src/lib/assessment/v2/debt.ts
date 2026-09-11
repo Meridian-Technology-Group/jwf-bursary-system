@@ -21,7 +21,12 @@
  * via `DebtRatioBandRow[]` (the `ReferenceBundle.debtRatioBands` slice).
  */
 
-import { resolveDebtRatioBand, type DebtRatioBandRow } from '../reference-bands'
+import {
+  resolveDebtRatioBand,
+  resolveDebtShortfallBand,
+  type DebtRatioBandRow,
+  type DebtShortfallBandRow,
+} from '../reference-bands'
 import type { DebtSavingsContext } from '@prisma/client'
 import type { DebtsRecord } from '@/types/assessment-v2'
 
@@ -197,4 +202,65 @@ export function classifyDebt(
     return { statusLabel: 'ZERO DEBT, NO CREDIT RISK' }
   }
   return { statusLabel: band.statusLabel }
+}
+
+
+// ─── Debt shortfall branch (Charlotte, 11 Sep 2026) ───────────────────────
+
+/**
+ * The cash shortfall between what a household owes each year and what it has
+ * available: `total debt / 5 − NDI after notional spend`.
+ *
+ * Positive means the household cannot cover its yearly repayment out of
+ * disposable income. Zero or negative means it can, and the ordinary
+ * debt-over-NDI ratio applies instead.
+ */
+export function debtRepaymentShortfall(
+  totalDebt: number,
+  ndiAfterNotionalSpend: number,
+): number {
+  return totalDebt / DEBT_REPAYMENT_YEARS - ndiAfterNotionalSpend
+}
+
+/** Whether the shortfall table decides this household's debt status. */
+export function usesShortfallStatus(
+  totalDebt: number,
+  ndiAfterNotionalSpend: number,
+): boolean {
+  return debtRepaymentShortfall(totalDebt, ndiAfterNotionalSpend) > 0
+}
+
+/**
+ * The debt status for a household, choosing between her two routes
+ * (11 Sep 2026).
+ *
+ * When NDI after notional spend covers the yearly repayment, the ratio decides
+ * as before. When it does not, *"the actual ratio number will be displayed but
+ * will become irrelevant"* and the status comes from the cash shortfall
+ * instead.
+ *
+ * This is also what makes her "n/a" rows unreachable. A household with debt
+ * and no disposable income used to divide by zero, floor to a ratio of 0, and
+ * land on a bottom row reading "n/a"; it now routes to the shortfall table
+ * before the ratio is consulted at all.
+ */
+export function classifyDebtStatus(input: {
+  ratio: number
+  totalDebt: number
+  ndiAfterNotionalSpend: number
+  ratioBands: readonly DebtRatioBandRow[]
+  shortfallBands: readonly DebtShortfallBandRow[]
+  context?: DebtSavingsContext
+}): DebtClassification {
+  const { ratio, totalDebt, ndiAfterNotionalSpend, ratioBands, shortfallBands, context } = input
+
+  if (usesShortfallStatus(totalDebt, ndiAfterNotionalSpend)) {
+    const shortfall = debtRepaymentShortfall(totalDebt, ndiAfterNotionalSpend)
+    const band = resolveDebtShortfallBand(shortfallBands, shortfall)
+    if (band) return { statusLabel: band.statusLabel }
+    // No matching shortfall row means incomplete reference data, not a real
+    // case: fall through to the ratio rather than reporting nothing.
+  }
+
+  return classifyDebt(ratio, ratioBands, context)
 }

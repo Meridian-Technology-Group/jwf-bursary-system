@@ -184,12 +184,14 @@ describe('resolveDebtRatioBand (Appendix C.4, normalised per CALC-A3)', () => {
     )
   })
 
-  it('resolves shared boundaries toward the UPPER band — ceiling-exclusive', () => {
-    // Each boundary now belongs to the band it opens, not the one it closes.
-    expect(resolveDebtRatioBand(debtRatioBands, 0.1)?.minRepaymentMonths).toBe(1)
-    expect(resolveDebtRatioBand(debtRatioBands, 0.3)?.minRepaymentMonths).toBe(3)
-    expect(resolveDebtRatioBand(debtRatioBands, 1)?.minRepaymentMonths).toBe(12)
-    expect(resolveDebtRatioBand(debtRatioBands, 10)?.minRepaymentMonths).toBe(120)
+  it('resolves shared boundaries toward the LOWER band — ceiling-inclusive', () => {
+    // Charlotte, 11 Sep 2026, reversing her CH-40 instruction of 24 Aug: the
+    // ladder reads "0 < value ≤ 0.1", so a boundary CLOSES its own band rather
+    // than opening the next one.
+    expect(resolveDebtRatioBand(debtRatioBands, 0.1)?.minRepaymentMonths).toBe(0)
+    expect(resolveDebtRatioBand(debtRatioBands, 0.3)?.minRepaymentMonths).toBe(1)
+    expect(resolveDebtRatioBand(debtRatioBands, 1)?.minRepaymentMonths).toBe(9)
+    expect(resolveDebtRatioBand(debtRatioBands, 10)?.minRepaymentMonths).toBe(108)
   })
 
   it('keeps values strictly inside a band unaffected by the convention change', () => {

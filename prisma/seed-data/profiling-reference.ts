@@ -511,3 +511,26 @@ export const lifestyleSqueezeBandsPart5 = DEBT_SAVINGS_CONTEXTS.flatMap((context
     effectiveFrom: PART5_EFFECTIVE_FROM,
   }))
 );
+
+// ─── Debt shortfall bands (Charlotte, 11 Sep 2026) ─────────────────────────
+//
+// Used INSTEAD of the debt-over-NDI ratio when NDI after notional spend is
+// below the yearly debt repayment (total debt / 5). Her words: the ratio
+// "will be displayed but will become irrelevant", and the comment comes from
+// the cash gap between what the household owes each year and what it has.
+//
+// ⚠️ Boundary convention is the OPPOSITE of the ratio ladders, because that is
+// how she wrote it: floor-INCLUSIVE, ceiling-EXCLUSIVE ("£200 ≤ Value < £500").
+// The ratio ladders are floor-exclusive, ceiling-inclusive. Both are hers.
+
+const DEBT_SHORTFALL_EFFECTIVE_FROM = new Date("2026-09-12");
+
+export const debtShortfallBands = [
+  { floorGbp: null, ceilingGbp: 200, statusLabel: "SOME DEBT IMPACT, LIMITED CREDIT RISK" },
+  { floorGbp: 200, ceilingGbp: 500, statusLabel: "MATERIAL DEBT IMPACT, FAIR CREDIT RISK" },
+  { floorGbp: 500, ceilingGbp: 1000, statusLabel: "HEAVILY IN DEBT, FAIR CREDIT RISK" },
+  { floorGbp: 1000, ceilingGbp: 2000, statusLabel: "VERY HEAVILY IN DEBT, HIGH CREDIT RISK" },
+  { floorGbp: 2000, ceilingGbp: 5000, statusLabel: "VERY HEAVILY IN DEBT, VERY HIGH CREDIT RISK" },
+  { floorGbp: 5000, ceilingGbp: 8000, statusLabel: "DEBT GETTING OUT OF CONTROL, NO SAFETY NET" },
+  { floorGbp: 8000, ceilingGbp: null, statusLabel: "IN A DEBT SPIRAL, AT RISK OF BANKRUPTCY" },
+].map((row) => ({ ...row, effectiveFrom: DEBT_SHORTFALL_EFFECTIVE_FROM }));

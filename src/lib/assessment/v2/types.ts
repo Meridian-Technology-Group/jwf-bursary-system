@@ -26,6 +26,7 @@ import type {
   PropertyEquityBandRow,
   FinancialEquityBandRow,
   DebtRatioBandRow,
+  DebtShortfallBandRow,
   LifestyleSqueezeBandRow,
 } from '../reference-bands'
 
@@ -55,6 +56,8 @@ export interface ReferenceBundle {
   financialEquityBands: readonly FinancialEquityBandRow[]
   /** Appendix C.4 — debt-over-NDI ratio → status/min-repayment (CALC-04). */
   debtRatioBands: readonly DebtRatioBandRow[]
+  /** Charlotte, 11 Sep 2026 — used when NDI cannot cover the yearly repayment. */
+  debtShortfallBands: readonly DebtShortfallBandRow[]
   /** Appendix C.5 — lifestyle-squeeze ratio → status (CALC-05). */
   lifestyleSqueezeBands: readonly LifestyleSqueezeBandRow[]
 }

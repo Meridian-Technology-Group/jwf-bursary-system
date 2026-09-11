@@ -6,11 +6,15 @@ import {
   classifyDebt,
   debtSavingsContextFor,
   minRepaymentMonthsWithoutFees,
+  debtRepaymentShortfall,
+  usesShortfallStatus,
+  classifyDebtStatus,
 } from '../debt'
 import type { DebtsRecord } from '@/types/assessment-v2'
 import {
   debtRatioBandsRespec,
   debtRatioBandsPart5,
+  debtShortfallBands,
 } from '../../../../../prisma/seed-data/profiling-reference'
 
 // ─── calculateDerivedYearlyDebtRepayments (C123) ───────────────────────────
@@ -178,26 +182,24 @@ describe('classifyDebt — against every seeded DebtRatioBand row', () => {
     expect(result.statusLabel).toBe(band.statusLabel)
   })
 
-  it('CH-40 — boundary values resolve to the UPPER band (ceiling-exclusive)', () => {
-    // Her `<` logic, confirmed 24 Aug 2026: a boundary OPENS its band rather
-    // than closing the one below, so every shared boundary in Appendix C.4's
-    // normalised ladder now belongs to the band above it.
-    const boundaries: Array<{ value: number; upperLabel: string }> = [
-      { value: 0.01, upperLabel: 'MANAGEABLE DEBT, LOW CREDIT RISK' },
-      { value: 0.03, upperLabel: 'MANAGEABLE DEBT, MEDIUM CREDIT RISK' },
-      { value: 0.07, upperLabel: 'MATERIAL DEBT IMPACT, FAIR CREDIT RISK' },
-      { value: 0.1, upperLabel: 'MATERIAL DEBT IMPACT, HIGH CREDIT RISK' },
-      { value: 0.15, upperLabel: 'HEAVILY IN DEBT, FAIR CREDIT RISK' },
-      { value: 0.2, upperLabel: 'HEAVILY IN DEBT, HIGH CREDIT RISK' },
-      { value: 0.3, upperLabel: 'VERY HEAVILY IN DEBT, HIGH CREDIT RISK' },
-      { value: 0.4, upperLabel: 'VERY HEAVILY IN DEBT, VERY HIGH CREDIT RISK' },
-      { value: 0.5, upperLabel: 'DEBT GETTING OUT OF CONTROL, NO SAFETY NET' },
-      { value: 1, upperLabel: 'AT RISK OF BANKRUPTCY' },
+  it('boundary values resolve to the LOWER band (ceiling-inclusive)', () => {
+    // Charlotte, 11 Sep 2026, reversing CH-40: the ladder reads
+    // "0 < value ≤ 0.1", so a boundary closes its own band.
+    const boundaries: Array<{ value: number; label: string }> = [
+      { value: 0.01, label: 'SMALL DEBT LEVEL, NEGLIGIBLE CREDIT RISK' },
+      { value: 0.03, label: 'MANAGEABLE DEBT, LOW CREDIT RISK' },
+      { value: 0.07, label: 'MANAGEABLE DEBT, MEDIUM CREDIT RISK' },
+      { value: 0.1, label: 'MATERIAL DEBT IMPACT, FAIR CREDIT RISK' },
+      { value: 0.15, label: 'MATERIAL DEBT IMPACT, HIGH CREDIT RISK' },
+      { value: 0.2, label: 'HEAVILY IN DEBT, FAIR CREDIT RISK' },
+      { value: 0.3, label: 'HEAVILY IN DEBT, HIGH CREDIT RISK' },
+      { value: 0.4, label: 'VERY HEAVILY IN DEBT, HIGH CREDIT RISK' },
+      { value: 0.5, label: 'VERY HEAVILY IN DEBT, VERY HIGH CREDIT RISK' },
+      { value: 1, label: 'DEBT GETTING OUT OF CONTROL, NO SAFETY NET' },
     ]
 
-    for (const { value, upperLabel } of boundaries) {
-      const result = classifyDebt(value, debtRatioBandsRespec)
-      expect(result.statusLabel).toBe(upperLabel)
+    for (const { value, label } of boundaries) {
+      expect(classifyDebt(value, debtRatioBandsRespec).statusLabel).toBe(label)
     }
   })
 
@@ -337,12 +339,13 @@ describe('classifyDebt — against her ten tables', () => {
     )
   })
 
-  it('boundary values resolve to the upper band (ceiling-exclusive, CH-40)', () => {
+  it('boundary values resolve to the lower band (ceiling-inclusive, 11 Sep)', () => {
+    // Her table: 0 < value <= 0.1 is the SECOND row, so 0.1 closes it.
     const boundaries: Array<[number, string]> = [
-      [0.1, 'MANAGEABLE DEBT, LOW CREDIT RISK'],
-      [0.5, 'HEAVILY IN DEBT, FAIR CREDIT RISK'],
-      [0.9, 'DEBT GETTING OUT OF CONTROL, NO SAFETY NET'],
-      [1, 'IN A DEBT SPIRAL, AT RISK OF BANKRUPTCY'],
+      [0.1, 'SMALL DEBT LEVEL, NEGLIGIBLE CREDIT RISK'],
+      [0.5, 'MATERIAL DEBT IMPACT, HIGH CREDIT RISK'],
+      [0.9, 'VERY HEAVILY IN DEBT, VERY HIGH CREDIT RISK'],
+      [1, 'DEBT GETTING OUT OF CONTROL, NO SAFETY NET'],
     ]
     for (const [value, label] of boundaries) {
       expect(classifyDebt(value, all, 'DEBT_NO_SAVINGS').statusLabel).toBe(label)
@@ -364,5 +367,105 @@ describe('classifyDebt — against her ten tables', () => {
     expect(
       classifyDebt(0.25, debtRatioBandsRespec, 'DEBT_SAVINGS_ABOVE_DEBT').statusLabel,
     ).toBeTruthy()
+  })
+})
+
+// ─── The shortfall branch (Charlotte, 11 Sep 2026) ─────────────────────────
+//
+// When NDI after notional spend cannot cover the yearly repayment, the ratio
+// "will be displayed but will become irrelevant" and the status comes from the
+// cash gap instead.
+
+describe('debtRepaymentShortfall / usesShortfallStatus', () => {
+  it('her DW figures: 43,000 over five years against an NDI of 5,685', () => {
+    expect(debtRepaymentShortfall(43_000, 5_685)).toBeCloseTo(2_915, 6)
+    expect(usesShortfallStatus(43_000, 5_685)).toBe(true)
+  })
+
+  it('a household that can cover its repayment uses the ratio', () => {
+    // 8,000 / 5 = 1,600 against 24,907 of NDI.
+    expect(usesShortfallStatus(8_000, 24_907)).toBe(false)
+  })
+
+  it('covering the repayment exactly still uses the ratio', () => {
+    expect(debtRepaymentShortfall(10_000, 2_000)).toBe(0)
+    expect(usesShortfallStatus(10_000, 2_000)).toBe(false)
+  })
+
+  it('a negative NDI always shortfalls when there is debt', () => {
+    expect(usesShortfallStatus(43_000, -2_915)).toBe(true)
+  })
+})
+
+describe('classifyDebtStatus — choosing between her two routes', () => {
+  const common = {
+    ratioBands: debtRatioBandsPart5,
+    shortfallBands: debtShortfallBands,
+  }
+
+  it('her DW worked example: 2,915 short reads VERY HEAVILY IN DEBT, VERY HIGH CREDIT RISK', () => {
+    const ratio = calculateDebtOverNdiRatio(43_000, 5_685)
+    const result = classifyDebtStatus({
+      ...common,
+      ratio,
+      totalDebt: 43_000,
+      ndiAfterNotionalSpend: 5_685,
+      context: debtSavingsContextFor(0, 43_000),
+    })
+    expect(result.statusLabel).toBe('VERY HEAVILY IN DEBT, VERY HIGH CREDIT RISK')
+  })
+
+  it('her Kaluba example still uses the ratio, since NDI covers the repayment', () => {
+    const ratio = calculateDebtOverNdiRatio(8_000, 24_907)
+    const result = classifyDebtStatus({
+      ...common,
+      ratio,
+      totalDebt: 8_000,
+      ndiAfterNotionalSpend: 24_907,
+      context: debtSavingsContextFor(9_700, 8_000),
+    })
+    expect(result.statusLabel).toBe('SMALL DEBT CUSHIONED BY SAVINGS, NEGLIGIBLE SAVINGS USE')
+  })
+
+  // This is what makes her "n/a" rows unreachable: the case that used to land
+  // on them now routes to the shortfall table before the ratio is consulted.
+  it('debt with no disposable income no longer reports n/a', () => {
+    const ratio = calculateDebtOverNdiRatio(43_000, -2_915)
+    expect(ratio).toBe(0)
+    const result = classifyDebtStatus({
+      ...common,
+      ratio,
+      totalDebt: 43_000,
+      ndiAfterNotionalSpend: -2_915,
+      context: 'DEBT_NO_SAVINGS',
+    })
+    expect(result.statusLabel).not.toBe('n/a')
+    expect(result.statusLabel).toBe('IN A DEBT SPIRAL, AT RISK OF BANKRUPTCY')
+  })
+
+  it.each([
+    [199, 'SOME DEBT IMPACT, LIMITED CREDIT RISK'],
+    [200, 'MATERIAL DEBT IMPACT, FAIR CREDIT RISK'],
+    [499, 'MATERIAL DEBT IMPACT, FAIR CREDIT RISK'],
+    [500, 'HEAVILY IN DEBT, FAIR CREDIT RISK'],
+    [1_000, 'VERY HEAVILY IN DEBT, HIGH CREDIT RISK'],
+    [2_000, 'VERY HEAVILY IN DEBT, VERY HIGH CREDIT RISK'],
+    [5_000, 'DEBT GETTING OUT OF CONTROL, NO SAFETY NET'],
+    [8_000, 'IN A DEBT SPIRAL, AT RISK OF BANKRUPTCY'],
+    [50_000, 'IN A DEBT SPIRAL, AT RISK OF BANKRUPTCY'],
+  ])('a shortfall of £%s reads %s', (shortfall, label) => {
+    // Her shortfall ladder is floor-INCLUSIVE, ceiling-EXCLUSIVE
+    // ("£200 ≤ Value < £500"), the opposite of the ratio ladders, so each
+    // boundary OPENS its band here. Both conventions are hers.
+    const ndi = 1_000
+    const totalDebt = (shortfall + ndi) * 5
+    const result = classifyDebtStatus({
+      ...common,
+      ratio: 0,
+      totalDebt,
+      ndiAfterNotionalSpend: ndi,
+      context: 'DEBT_NO_SAVINGS',
+    })
+    expect(result.statusLabel).toBe(label)
   })
 })

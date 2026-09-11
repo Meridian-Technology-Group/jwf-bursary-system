@@ -12,6 +12,7 @@ import {
   financialEquityBandsRespec,
   debtRatioBandsRespec,
   lifestyleSqueezeBandsRespec,
+  debtShortfallBands,
 } from '../../../../../prisma/seed-data/profiling-reference'
 
 // Latest cushion generation first — the app bundle is deduped latest-wins
@@ -25,6 +26,7 @@ const ref: ReferenceBundle = {
   financialEquityBands: financialEquityBandsRespec,
   debtRatioBands: debtRatioBandsRespec,
   lifestyleSqueezeBands: lifestyleSqueezeBandsRespec,
+  debtShortfallBands,
 }
 
 function earner(annualSalaryPaye: number): AssessorIncomeRecord {

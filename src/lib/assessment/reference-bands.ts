@@ -173,30 +173,21 @@ export interface DebtRatioBandRow {
 /**
  * Appendix C.4 (normalised per assumption CALC-A3).
  *
- * CH-40 — ceiling-EXCLUSIVE, per Charlotte's confirmation of 24 Aug 2026:
- * *"it should be the logic of < , so 'zero debt, no credit risk' is a negative
- * number; number equal to zero or strictly less than 0.1 'small debt level,
- * negligible credit risk – level 1'"*.
+ * **Ceiling-INCLUSIVE**, per Charlotte's table of 11 Sep 2026, which reverses
+ * her CH-40 instruction of 24 Aug. She set it out explicitly and apologised
+ * for the earlier contradiction:
  *
- * Her `<` logic is applied to every boundary above zero, so each boundary now
- * OPENS its band rather than closing the one below — `0.1` moves from level 1
- * to level 2, `0.3` from level 2 to the next, and so on. The seeded boundaries
- * were already the non-overlapping reading she confirmed (0–0.1, 0.1–0.3,
- * 0.3–0.5, 0.5–0.8, 0.8–1.0), so only the comparison changes. The
- * income-category resolver above already passes the same flag; the two tables
- * now agree on convention.
+ *     open-ended → 0     value ≤ 0
+ *     0 → 0.1            0 < value ≤ 0.1
+ *     0.1 → 0.2          0.1 < value ≤ 0.2
  *
- * ⚠️ **Zero is deliberately NOT moved to level 1, contrary to her literal
- * wording — see Q9.** She describes ZERO DEBT as "a negative number", but
- * `debtOverNdiRatio` is floored at zero by construction
- * (`v2/debt.ts`: `Math.max(0, yearlyDebtExposure) / householdNetIncome`), so it
- * can never BE negative. Taking her wording literally would make ZERO DEBT
- * permanently unreachable and label every debt-free household — including one
- * with a large savings surplus — "SMALL DEBT LEVEL". That is plainly not the
- * intent, and Part 5's reported values are among those she has already signed
- * off, so the zero case is left exactly as it behaves today and asked rather
- * than guessed. Resolving Q9 is likely to mean removing the floor in `debt.ts`
- * so a savings surplus reads negative, at which point this guard can go.
+ * So a boundary CLOSES its own band rather than opening the next one: 0.1 is
+ * "SMALL DEBT LEVEL", not "MANAGEABLE DEBT". The lifestyle ladder already
+ * worked this way, so both now share one convention.
+ *
+ * ⚠️ The debt SHORTFALL table (`resolveDebtShortfallBand`) is the exception and
+ * runs the other way round, floor-inclusive and ceiling-exclusive. That is
+ * also hers, written as "£200 ≤ Value < £500" in the same email.
  */
 export function resolveDebtRatioBand(
   bands: readonly DebtRatioBandRow[],
@@ -211,7 +202,7 @@ export function resolveDebtRatioBand(
     // this now fires only at literally zero debt.
     return variantBands.find((b) => b.ratioFloor === null) ?? null
   }
-  return resolveBand(view, debtOverNdiRatio, { ceilingExclusive: true })?.source ?? null
+  return resolveBand(view, debtOverNdiRatio)?.source ?? null
 }
 
 export interface LifestyleSqueezeBandRow {
@@ -339,4 +330,45 @@ export function getFamilyCategoryMeta(
   category: number,
 ): FamilyCategoryMetaRow | null {
   return metas.find((m) => m.category === category) ?? null
+}
+
+
+// ─── Debt shortfall (Charlotte, 11 Sep 2026) ──────────────────────────────
+
+export interface DebtShortfallBandRow {
+  floorGbp: number | null
+  ceilingGbp: number | null
+  statusLabel: string
+}
+
+/**
+ * The debt-status band for a household whose disposable income cannot cover
+ * its yearly debt repayment, keyed on the cash shortfall in £.
+ *
+ * Floor-INCLUSIVE, ceiling-EXCLUSIVE, exactly as she wrote it
+ * ("£200 ≤ Value < £500"). This is the opposite of the ratio ladders in this
+ * same module, which are floor-exclusive and ceiling-inclusive. Both
+ * conventions are hers and both are deliberate, so neither is "corrected" to
+ * match the other.
+ *
+ * Her worked example: DW owes 43,000, so 8,600 a year, against an NDI of
+ * 5,685. The shortfall is 2,915, which lands in the 2,000–5,000 band and reads
+ * VERY HEAVILY IN DEBT, VERY HIGH CREDIT RISK.
+ */
+export function resolveDebtShortfallBand(
+  bands: readonly DebtShortfallBandRow[],
+  shortfallGbp: number,
+): DebtShortfallBandRow | null {
+  const ascending = [...bands].sort((a, b) => {
+    if (a.ceilingGbp === null) return 1
+    if (b.ceilingGbp === null) return -1
+    return a.ceilingGbp - b.ceilingGbp
+  })
+
+  for (const band of ascending) {
+    const aboveFloor = band.floorGbp === null || shortfallGbp >= band.floorGbp
+    const belowCeiling = band.ceilingGbp === null || shortfallGbp < band.ceilingGbp
+    if (aboveFloor && belowCeiling) return band
+  }
+  return null
 }

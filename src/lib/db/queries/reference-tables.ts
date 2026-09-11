@@ -631,6 +631,31 @@ export async function getLifestyleSqueezeBands(tx: Tx): Promise<LifestyleSqueeze
   );
 }
 
+export interface DebtShortfallBandRow {
+  id: string;
+  floorGbp: number | null;
+  ceilingGbp: number | null;
+  statusLabel: string;
+  effectiveFrom: Date;
+}
+
+/**
+ * Charlotte, 11 Sep 2026 — the debt-status table used when a household cannot
+ * cover its yearly repayment out of disposable income. Newest generation only.
+ */
+export async function getDebtShortfallBands(tx: Tx): Promise<DebtShortfallBandRow[]> {
+  const rows = await tx.debtShortfallBand.findMany();
+  return latestGeneration(
+    rows.map((r) => ({
+      id: r.id,
+      floorGbp: r.floorGbp === null ? null : Number(r.floorGbp),
+      ceilingGbp: r.ceilingGbp === null ? null : Number(r.ceilingGbp),
+      statusLabel: r.statusLabel,
+      effectiveFrom: r.effectiveFrom,
+    })),
+  );
+}
+
 // ─── CALC-11 — Gap Reasons (Appendix E) ────────────────────────────────────
 
 export interface GapReasonRow {
@@ -687,6 +712,7 @@ export interface ReferenceBundleRows {
   propertyEquityBands: PropertyEquityBandRow[];
   financialEquityBands: FinancialEquityBandRow[];
   debtRatioBands: DebtRatioBandRow[];
+  debtShortfallBands: DebtShortfallBandRow[];
   lifestyleSqueezeBands: LifestyleSqueezeBandRow[];
 }
 
@@ -705,6 +731,7 @@ export async function getReferenceBundleRows(tx: Tx): Promise<ReferenceBundleRow
     financialEquityBands,
     debtRatioBands,
     lifestyleSqueezeBands,
+    debtShortfallBands,
   ] = await Promise.all([
     getNotionalCostConfigs(tx),
     getFamilyCategoryMetas(tx),
@@ -714,6 +741,7 @@ export async function getReferenceBundleRows(tx: Tx): Promise<ReferenceBundleRow
     getFinancialEquityBands(tx),
     getDebtRatioBands(tx),
     getLifestyleSqueezeBands(tx),
+    getDebtShortfallBands(tx),
   ]);
 
   return {
@@ -725,5 +753,6 @@ export async function getReferenceBundleRows(tx: Tx): Promise<ReferenceBundleRow
     financialEquityBands,
     debtRatioBands,
     lifestyleSqueezeBands,
+    debtShortfallBands,
   };
 }

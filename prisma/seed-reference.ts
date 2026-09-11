@@ -46,6 +46,7 @@ import {
   lifestyleSqueezeBands,
   lifestyleSqueezeBandsRespec,
   lifestyleSqueezeBandsPart5,
+  debtShortfallBands,
 } from "./seed-data/profiling-reference";
 import { postcodeAreas } from "./seed-data/postcode-areas";
 
@@ -351,6 +352,24 @@ async function seedDebtRatioBands(): Promise<void> {
   log(`Upserted ${bands.length} debt ratio bands`);
 }
 
+async function seedDebtShortfallBands(): Promise<void> {
+  section("Debt shortfall bands (Charlotte, 11 Sep 2026)");
+  for (const band of debtShortfallBands) {
+    const existing = await prisma.debtShortfallBand.findFirst({
+      where: { effectiveFrom: band.effectiveFrom, ceilingGbp: decimalKey(band.ceilingGbp) },
+    });
+    if (existing) {
+      await prisma.debtShortfallBand.update({
+        where: { id: existing.id },
+        data: { floorGbp: band.floorGbp, statusLabel: band.statusLabel },
+      });
+    } else {
+      await prisma.debtShortfallBand.create({ data: band });
+    }
+  }
+  log(`Upserted ${debtShortfallBands.length} debt shortfall bands`);
+}
+
 async function seedLifestyleSqueezeBands(): Promise<void> {
   section("Lifestyle squeeze bands (CALC-01)");
   // See seedDebtRatioBands — `debtSavingsContext` is part of the identity lookup.
@@ -418,6 +437,7 @@ async function printSummary(): Promise<void> {
     ["Financial equity bands", await prisma.financialEquityBand.count()],
     ["Postcode areas", await prisma.postcodeArea.count()],
     ["Debt ratio bands", await prisma.debtRatioBand.count()],
+    ["Debt shortfall bands", await prisma.debtShortfallBand.count()],
     ["Lifestyle squeeze bands", await prisma.lifestyleSqueezeBand.count()],
   ];
   console.log("");
@@ -445,6 +465,7 @@ async function main(): Promise<void> {
   await seedPostcodeAreas();
   await seedDebtRatioBands();
   await seedLifestyleSqueezeBands();
+  await seedDebtShortfallBands();
   await ensureDocumentsBucket();
   await printSummary();
 
