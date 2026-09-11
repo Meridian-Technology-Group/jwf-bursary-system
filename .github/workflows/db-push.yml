@@ -59,6 +59,16 @@ jobs:
           DIRECT_URL: ${{ secrets.STAGING_DIRECT_URL }}
         run: npx prisma migrate deploy
 
+      # A table with RLS enabled and no policies reads as EMPTY rather than
+      # erroring. That took the whole v2 assessment surface down on
+      # 12 Sep 2026. Checked here because only the database can see it.
+      - name: RLS policy check
+        if: steps.gate.outputs.ready == 'true'
+        env:
+          DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
+          DIRECT_URL: ${{ secrets.STAGING_DIRECT_URL }}
+        run: node scripts/check-rls-policies.mjs
+
   db-push-prod:
     name: Push migrations to production
     runs-on: ubuntu-latest
