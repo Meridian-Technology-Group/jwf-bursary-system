@@ -41,6 +41,9 @@ export interface YoyHistoryDisplayRow {
   deltaDebtExposure: number | null
   livingArrangement: string | null
   lifestyleSqueeze: string | null
+  /** Household benefits for the year (Charlotte's "focused view on Benefits only", 10 Sep 2026). */
+  totalBenefits: number | null
+  deltaTotalBenefits: number | null
 }
 
 function n(v: unknown): number | null {
@@ -107,6 +110,9 @@ export function mergeYoyHistory(
       deltaDebtExposure: null,
       livingArrangement: r.livingArrangement ?? null,
       lifestyleSqueeze: r.lifestyleSqueeze ?? null,
+      // Pre-system (paper-era) rows carry no benefits breakdown.
+      totalBenefits: null,
+      deltaTotalBenefits: null,
     }))
 
   const system: YoyHistoryDisplayRow[] = systemRows.map((r) => ({
@@ -115,13 +121,17 @@ export function mergeYoyHistory(
     netIncome: r.totalHouseholdNetIncome,
     savings: r.totalCashSavings,
     propertyEquity: r.totalPropertyEquity,
-    debtExposure: r.yearlyDebtExposure,
+    // Charlotte, 10 Sep 2026: the column is TOTAL debt, not the
+    // savings-netted yearly exposure that used to fill it.
+    debtExposure: r.totalDebt,
     deltaNetIncome: null,
     deltaSavings: null,
     deltaPropertyEquity: null,
     deltaDebtExposure: null,
     livingArrangement: null,
     lifestyleSqueeze: r.lifestyleSqueezeLabel,
+    totalBenefits: r.totalBenefits,
+    deltaTotalBenefits: null,
   }))
 
   const merged = [...manual, ...system].sort((a, b) =>
@@ -132,6 +142,7 @@ export function mergeYoyHistory(
     const prev = i > 0 ? merged[i - 1] : null
     merged[i] = {
       ...merged[i],
+      deltaTotalBenefits: delta(merged[i].totalBenefits, prev?.totalBenefits ?? null),
       deltaNetIncome: delta(merged[i].netIncome, prev?.netIncome ?? null),
       deltaSavings: delta(merged[i].savings, prev?.savings ?? null),
       deltaPropertyEquity: delta(

@@ -18,7 +18,7 @@
  * time) — safe to import from both server and client components.
  */
 
-import type { ReviewPhase } from "@/lib/applications/queue-filter";
+import { ALL_REVIEW_PHASES, type ReviewPhase } from "@/lib/applications/queue-filter";
 
 export const REVIEW_PHASE_LABEL: Record<ReviewPhase, string> = {
   PRE_SUBMISSION: "Pre-submission",
@@ -32,3 +32,33 @@ export const REVIEW_PHASE_LABEL: Record<ReviewPhase, string> = {
   // DOES_NOT_QUALIFY wording above, per the flow-map vocabulary.
   CLOSED: "Closed",
 };
+
+/**
+ * The status filter's options, deduplicated by LABEL.
+ *
+ * Charlotte, 10 Sep 2026: *"Do you know why closed shows twice on the status
+ * dropdown list?"* Because `DOES_NOT_QUALIFY` and `CLOSED` are two distinct
+ * review phases that deliberately converge on the same word (see the module
+ * note above), and the dropdown rendered one entry per phase.
+ *
+ * They cannot simply be merged in the type: `DOES_NOT_QUALIFY` is still
+ * carried by historic assessments (6 of them on nonprod at the time of
+ * writing), so dropping it would make those rows unfilterable. Instead one
+ * option is offered per distinct label, carrying every phase that shares it —
+ * picking "Closed" matches both.
+ *
+ * Order follows `ALL_REVIEW_PHASES`, by first appearance of each label.
+ */
+export const REVIEW_PHASE_FILTER_OPTIONS: ReadonlyArray<{
+  label: string;
+  phases: ReviewPhase[];
+}> = (() => {
+  const byLabel = new Map<string, ReviewPhase[]>();
+  for (const phase of ALL_REVIEW_PHASES) {
+    const label = REVIEW_PHASE_LABEL[phase];
+    const existing = byLabel.get(label);
+    if (existing) existing.push(phase);
+    else byLabel.set(label, [phase]);
+  }
+  return Array.from(byLabel, ([label, phases]) => ({ label, phases }));
+})();

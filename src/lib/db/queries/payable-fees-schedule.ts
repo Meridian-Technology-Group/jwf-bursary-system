@@ -12,6 +12,7 @@
 
 import type { Tx } from "@/lib/db/prisma";
 import { schoolYearForEntryYearGroup } from "@/lib/assessment/schooling-years";
+import { AWARD_FUND_LABELS } from "@/lib/assessment/award-fund";
 
 export interface PayableFeesScheduleTableRow {
   scheduleYear: number;
@@ -26,6 +27,12 @@ export interface PayableFeesScheduleTableRow {
   applicationStatus: string;
   assessmentStatus: string;
   bursaryStatus: string;
+  /**
+   * Charlotte, 10 Sep 2026 — the two columns she asked to add to this table.
+   * The award value before VAT, and which fund pays it.
+   */
+  bursaryAward: number | null;
+  awardFundLabel: string | null;
 }
 
 function toNum(value: unknown): number | null {
@@ -81,10 +88,13 @@ export async function getPayableFeesScheduleRows(
         select: {
           status: true,
           outcome: true,
+          // Epic 18b — which fund pays this year's award, recorded at the lock.
+          awardFundType: true,
           recommendation: {
             select: {
               confirmedPayableFees: true,
               yearlyPayableFees: true,
+              bursaryAward: true,
               reasonCodes: {
                 select: { reasonCode: { select: { label: true, sortOrder: true } } },
               },
@@ -148,6 +158,13 @@ export async function getPayableFeesScheduleRows(
         applicationStatus,
         assessmentStatus,
         bursaryStatus,
+        bursaryAward:
+          app?.assessment?.recommendation?.bursaryAward != null
+            ? Number(app.assessment.recommendation.bursaryAward)
+            : null,
+        awardFundLabel: app?.assessment?.awardFundType
+          ? AWARD_FUND_LABELS[app.assessment.awardFundType]
+          : null,
       };
     }
   );

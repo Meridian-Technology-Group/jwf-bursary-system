@@ -193,7 +193,7 @@ export function ContactsTable({
               <thead className="bg-slate-50">
                 <tr>
                   {[
-                    "Parent",
+                    "Lead applicant",
                     "Child first",
                     "Child last",
                     "DOB",

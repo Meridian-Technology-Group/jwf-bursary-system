@@ -10,7 +10,7 @@
  * guard in `applications/[id]/layout.tsx`); ADMIN/VIEWER see all.
  */
 
-import type { School } from "@prisma/client";
+import type { School, BursaryAccountStatus } from "@prisma/client";
 import type { Tx } from "@/lib/db/prisma";
 import {
   deriveAssessmentQueueStatus,
@@ -29,6 +29,28 @@ export interface AssessmentQueueRow {
   submittedAt: Date | null;
   /** When assessment work last moved (assessment update), for sorting. */
   updatedAt: Date | null;
+  /**
+   * Charlotte, 8 Sep 2026: *"we need a status for the bursary account: ACTIVE
+   * or CLOSED. So the bursary is active and within an active bursary, you will
+   * have assessment statuses which evolve."* The account's own status, distinct
+   * from the derived assessment status above.
+   *
+   * The bursary ACCOUNT's own status, or `null` when the application has no
+   * account.
+   *
+   * Charlotte, 10 Sep 2026, correcting her own earlier Levi Amoah example:
+   * *"if closed before becoming a bursary account, it will never have a closed
+   * bursary account status, but a closed and archived status with no
+   * corresponding account, I agree."* So an archived assessment with no account
+   * reads "No account" here, and the closed-and-archived meaning is carried by
+   * the assessment status column beside it.
+   *
+   * An earlier version of this derived CLOSED from a CLOSED_ARCHIVED
+   * assessment, to match her first description of Levi. She has since
+   * confirmed that was her thinking of the real family, who does have an
+   * account, rather than the test record, which never had one.
+   */
+  bursaryStatus: BursaryAccountStatus | null;
 }
 
 export async function listAssessmentQueueRows(
@@ -53,6 +75,7 @@ export async function listAssessmentQueueRows(
       assignedToId: true,
       assignedTo: { select: { firstName: true, lastName: true, email: true } },
       round: { select: { academicYear: true } },
+      bursaryAccount: { select: { status: true } },
       assessment: {
         select: { status: true, outcome: true, updatedAt: true },
       },
@@ -79,5 +102,6 @@ export async function listAssessmentQueueRows(
       : null,
     submittedAt: app.submittedAt,
     updatedAt: app.assessment?.updatedAt ?? null,
+    bursaryStatus: app.bursaryAccount?.status ?? null,
   }));
 }

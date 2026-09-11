@@ -39,6 +39,8 @@ import { cn } from "@/lib/utils";
 import { AssessmentSynopsis } from "@/components/admin/assessment-synopsis";
 import { WatchOutNotesEditor } from "@/components/admin/watch-out-notes-editor";
 import { PreSystemHistoryEditor } from "@/components/admin/pre-system-history-editor";
+import { CloseBursaryAccountDialog } from "@/components/admin/close-bursary-account-dialog";
+import { getAllCloseReasons } from "@/lib/db/queries/reference-tables";
 import type { SiblingDetail } from "@/types/assessment-v2";
 
 export const metadata = {
@@ -76,6 +78,8 @@ export default async function AssessmentAdminPage({ params }: Props) {
     yoyRows,
     preSystem,
     scheduleRows,
+    accountStatus,
+    closeReasons,
   } = await withUserContext(user.id, user.role as RlsRole, async (tx) => {
     const app = await getApplicationWithDetails(tx, params.id);
     if (!app) {
@@ -87,6 +91,8 @@ export default async function AssessmentAdminPage({ params }: Props) {
         yoyRows: [],
         preSystem: [],
         scheduleRows: [],
+        accountStatus: null,
+        closeReasons: [],
       };
     }
     const a = await getAssessment(tx, params.id);
@@ -105,9 +111,16 @@ export default async function AssessmentAdminPage({ params }: Props) {
     const account = app.bursaryAccountId
       ? await tx.bursaryAccount.findUnique({
           where: { id: app.bursaryAccountId },
-          select: { preSystemHistory: true },
+          select: { preSystemHistory: true, status: true },
         })
       : null;
+    // Epic 18b — the manual account close's reason picker (ADMIN only).
+    const reasons =
+      user.role === Role.ADMIN && account?.status === "ACTIVE"
+        ? (await getAllCloseReasons(tx))
+            .filter((r) => !r.isDeprecated)
+            .map((r) => ({ id: r.id, label: r.label }))
+        : [];
     const schedule = app.bursaryAccountId
       ? await getPayableFeesScheduleRows(tx, app.bursaryAccountId)
       : [];
@@ -119,6 +132,8 @@ export default async function AssessmentAdminPage({ params }: Props) {
       yoyRows: yoy,
       preSystem: parsePreSystemHistory(account?.preSystemHistory),
       scheduleRows: schedule,
+      accountStatus: account?.status ?? null,
+      closeReasons: reasons,
     };
   });
   if (!application) notFound();
@@ -180,6 +195,24 @@ export default async function AssessmentAdminPage({ params }: Props) {
             Siblings: <span className="text-slate-700">{siblingNames.join(", ")}</span>
           </span>
         )}
+        {/* Epic 18b — her April–May leavers window: close the ACTIVE account
+            with a structured reason. ADMIN only; hidden once closed. */}
+        {user.role === Role.ADMIN &&
+          accountStatus === "ACTIVE" &&
+          application.bursaryAccountId && (
+            <span className="ml-auto">
+              <CloseBursaryAccountDialog
+                bursaryAccountId={application.bursaryAccountId}
+                applicationId={params.id}
+                closeReasons={closeReasons}
+              />
+            </span>
+          )}
+        {accountStatus === "CLOSED" && (
+          <span className="ml-auto rounded bg-slate-100 px-2 py-1 text-xs font-semibold uppercase tracking-wide text-slate-500">
+            Account closed
+          </span>
+        )}
       </div>
 
       {/* Previous assessor's wizard notes (CALC-10) — read-only context. */}
@@ -231,8 +264,9 @@ export default async function AssessmentAdminPage({ params }: Props) {
 
       {/* 3. Year-on-year history. */}
       <section className="space-y-3 rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+        {/* Charlotte's title, 10 Sep 2026. */}
         <p className="text-xs font-semibold uppercase tracking-wide text-slate-600">
-          Year-on-year history
+          Δ Year on Year Assessment View
         </p>
 
         {application.bursaryAccountId && (
@@ -263,13 +297,13 @@ export default async function AssessmentAdminPage({ params }: Props) {
                   <th className="px-3 py-2 text-right">Overall net income</th>
                   <th className="px-3 py-2 text-right">Total savings</th>
                   <th className="px-3 py-2 text-right">Property equity</th>
-                  <th className="px-3 py-2 text-right">Debt exposure</th>
+                  <th className="px-3 py-2 text-right">Total debt</th>
                   <th className="px-3 py-2 text-right">Δ Income</th>
                   <th className="px-3 py-2 text-right">Δ Savings</th>
                   <th className="px-3 py-2 text-right">Δ Equity</th>
                   <th className="px-3 py-2 text-right">Δ Debt</th>
-                  <th className="px-3 py-2">Living</th>
-                  <th className="px-3 py-2">Lifestyle squeeze</th>
+                  <th className="px-3 py-2 text-right">Total benefits</th>
+                  <th className="px-3 py-2 text-right">Δ Benefits</th>
                 </tr>
               </thead>
               <tbody>
@@ -305,13 +339,13 @@ export default async function AssessmentAdminPage({ params }: Props) {
                   <th className="px-3 py-2 text-right">Overall net income</th>
                   <th className="px-3 py-2 text-right">Total savings</th>
                   <th className="px-3 py-2 text-right">Property equity</th>
-                  <th className="px-3 py-2 text-right">Debt exposure</th>
+                  <th className="px-3 py-2 text-right">Total debt</th>
                   <th className="px-3 py-2 text-right">Δ Income</th>
                   <th className="px-3 py-2 text-right">Δ Savings</th>
                   <th className="px-3 py-2 text-right">Δ Equity</th>
                   <th className="px-3 py-2 text-right">Δ Debt</th>
-                  <th className="px-3 py-2">Living</th>
-                  <th className="px-3 py-2">Lifestyle squeeze</th>
+                  <th className="px-3 py-2 text-right">Total benefits</th>
+                  <th className="px-3 py-2 text-right">Δ Benefits</th>
                 </tr>
               </thead>
               <tbody>
@@ -348,8 +382,18 @@ export default async function AssessmentAdminPage({ params }: Props) {
                         </td>
                       )
                     )}
-                    <td className="px-3 py-2 text-xs text-slate-600">{row.livingArrangement ?? "—"}</td>
-                    <td className="px-3 py-2 text-xs text-slate-600">{row.lifestyleSqueeze ?? "—"}</td>
+                    <td className="px-3 py-2 text-right font-mono text-xs">
+                      {money(row.totalBenefits)}
+                    </td>
+                    <td
+                      className={cn(
+                        "px-3 py-2 text-right font-mono text-xs",
+                        row.deltaTotalBenefits != null && row.deltaTotalBenefits < 0 && "text-red-700",
+                        row.deltaTotalBenefits != null && row.deltaTotalBenefits > 0 && "text-green-700"
+                      )}
+                    >
+                      {signedMoney(row.deltaTotalBenefits)}
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -375,6 +419,9 @@ export default async function AssessmentAdminPage({ params }: Props) {
                   <th className="px-3 py-2 text-right">Payable fees</th>
                   <th className="px-3 py-2 text-right">Δ</th>
                   <th className="px-3 py-2">School Year</th>
+                  {/* Charlotte, 10 Sep 2026 — her two extra columns. */}
+                  <th className="px-3 py-2 text-right">Bursary award (before VAT)</th>
+                  <th className="px-3 py-2">Bursary Award Type</th>
                   <th className="px-3 py-2">App to be submitted by</th>
                   <th className="px-3 py-2">Application Status</th>
                   <th className="px-3 py-2">Assessment Status</th>
@@ -387,7 +434,7 @@ export default async function AssessmentAdminPage({ params }: Props) {
                     <td className="px-3 py-2 font-mono text-xs font-semibold text-slate-400">
                       {year}
                     </td>
-                    {Array.from({ length: 8 }).map((_, i) => (
+                    {Array.from({ length: 10 }).map((_, i) => (
                       <td key={i} className="px-3 py-2 text-xs text-slate-300">
                         —
                       </td>
@@ -407,6 +454,9 @@ export default async function AssessmentAdminPage({ params }: Props) {
                   <th className="px-3 py-2 text-right">Payable fees</th>
                   <th className="px-3 py-2 text-right">Δ</th>
                   <th className="px-3 py-2">School Year</th>
+                  {/* Charlotte, 10 Sep 2026 — her two extra columns. */}
+                  <th className="px-3 py-2 text-right">Bursary award (before VAT)</th>
+                  <th className="px-3 py-2">Bursary Award Type</th>
                   <th className="px-3 py-2">App to be submitted by</th>
                   <th className="px-3 py-2">Application Status</th>
                   <th className="px-3 py-2">Assessment Status</th>
@@ -436,6 +486,12 @@ export default async function AssessmentAdminPage({ params }: Props) {
                       {signedMoney(row.deltaPayableFees)}
                     </td>
                     <td className="px-3 py-2 text-xs text-slate-600">{row.schoolYearLabel ?? "—"}</td>
+                    <td className="px-3 py-2 text-right font-mono text-xs">
+                      {money(row.bursaryAward)}
+                    </td>
+                    <td className="px-3 py-2 text-xs text-slate-600">
+                      {row.awardFundLabel ?? "—"}
+                    </td>
                     <td className="px-3 py-2 text-xs text-slate-600">
                       {row.submitBy ? formatLondonDate(row.submitBy) : "—"}
                     </td>

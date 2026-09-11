@@ -20,7 +20,7 @@ import { isLockedEmailTemplateType } from "@/lib/email/locked-types";
 import { DEFAULT_CUSTOM_TEMPLATE_MERGE_FIELDS } from "@/lib/email/template-defaults";
 import { validateBandSet, type ValidatableBand } from "@/lib/settings/band-set-validation";
 import { isDuplicateEffectiveFrom } from "@/lib/settings/reference-versioning";
-import type { School, EmailTemplateType, NotionalCostType } from "@prisma/client";
+import type { School, EmailTemplateType, NotionalCostType, DebtSavingsContext } from "@prisma/client";
 import { NotionalCostType as NotionalCostTypeEnum } from "@prisma/client";
 
 // ─── Result type ──────────────────────────────────────────────────────────────
@@ -1101,6 +1101,27 @@ interface DebtRatioBandRowInput {
   statusLabel: string;
 }
 
+/**
+ * The band tables that exist once per household context (Charlotte's ten Part 5
+ * tables, 10 Sep 2026) submit which context they are editing. Without it a new
+ * version would be written under the column default and silently collapse all
+ * five contexts into one.
+ */
+const DEBT_SAVINGS_CONTEXTS = [
+  "NO_DEBT_NO_SAVINGS",
+  "NO_DEBT_WITH_SAVINGS",
+  "DEBT_NO_SAVINGS",
+  "DEBT_SAVINGS_BELOW_DEBT",
+  "DEBT_SAVINGS_ABOVE_DEBT",
+] as const;
+
+function parseDebtSavingsContext(value: FormDataEntryValue | null): DebtSavingsContext | null {
+  const raw = typeof value === "string" ? value : "";
+  return (DEBT_SAVINGS_CONTEXTS as readonly string[]).includes(raw)
+    ? (raw as DebtSavingsContext)
+    : null;
+}
+
 export async function createDebtRatioBandVersionAction(
   formData: FormData
 ): Promise<SettingsActionResult> {
@@ -1112,6 +1133,11 @@ export async function createDebtRatioBandVersionAction(
     if (!rows || rows.length === 0) return { success: false, error: "At least one band row is required." };
     if (!effectiveFrom) return { success: false, error: "A valid effective date is required." };
 
+    const debtSavingsContext = parseDebtSavingsContext(formData.get("debtSavingsContext"));
+    if (!debtSavingsContext) {
+      return { success: false, error: "Unknown debt and savings context for this table." };
+    }
+
     const bandError = checkBandSet(rows.map((r) => ({ floor: r.ratioFloor, ceiling: r.ratioCeiling })));
     if (bandError) return bandError;
     if (rows.some((r) => !r.statusLabel?.trim())) {
@@ -1119,7 +1145,12 @@ export async function createDebtRatioBandVersionAction(
     }
 
     const result = await withUserContext(user.id, user.role as RlsRole, async (tx) => {
-      const existing = await tx.debtRatioBand.findMany({ select: { effectiveFrom: true } });
+      // Scoped to THIS context: each of her ten tables is versioned on its own,
+      // so a new version of one is not blocked by another sharing the date.
+      const existing = await tx.debtRatioBand.findMany({
+        where: { debtSavingsContext },
+        select: { effectiveFrom: true },
+      });
       if (isDuplicateEffectiveFrom(effectiveFrom, existing.map((e) => e.effectiveFrom))) {
         return { success: false, error: "A debt ratio band version already exists for that effective date." } as const;
       }
@@ -1131,6 +1162,7 @@ export async function createDebtRatioBandVersionAction(
           // 6 Sep 2026 respec — computed per assessment, never stored per band.
           minRepaymentMonths: null,
           statusLabel: r.statusLabel.trim(),
+          debtSavingsContext,
           effectiveFrom,
         })),
       });
@@ -1166,6 +1198,69 @@ interface LifestyleSqueezeBandRowInput {
   statusLabel: string;
 }
 
+interface DebtShortfallBandRowInput {
+  floorGbp: number | null;
+  ceilingGbp: number | null;
+  statusLabel: string;
+}
+
+/**
+ * Charlotte, 11 Sep 2026 — a new version of the shortfall table. Unlike the
+ * ratio ladders this one has no household context: there is a single table,
+ * consulted whenever NDI cannot cover the yearly repayment.
+ */
+export async function createDebtShortfallBandVersionAction(
+  formData: FormData
+): Promise<SettingsActionResult> {
+  try {
+    const user = await requireRole([Role.ADMIN]);
+
+    const rows = parseRowsJson<DebtShortfallBandRowInput>(formData.get("rows"));
+    const effectiveFrom = parseEffectiveFrom(formData.get("effectiveFrom"));
+    if (!rows || rows.length === 0) return { success: false, error: "At least one band row is required." };
+    if (!effectiveFrom) return { success: false, error: "A valid effective date is required." };
+
+    const bandError = checkBandSet(rows.map((r) => ({ floor: r.floorGbp, ceiling: r.ceilingGbp })));
+    if (bandError) return bandError;
+    if (rows.some((r) => !r.statusLabel?.trim())) {
+      return { success: false, error: "Every row needs a status label." };
+    }
+
+    const result = await withUserContext(user.id, user.role as RlsRole, async (tx) => {
+      const existing = await tx.debtShortfallBand.findMany({ select: { effectiveFrom: true } });
+      if (isDuplicateEffectiveFrom(effectiveFrom, existing.map((e) => e.effectiveFrom))) {
+        return { success: false, error: "A debt shortfall band version already exists for that effective date." } as const;
+      }
+
+      await tx.debtShortfallBand.createMany({
+        data: rows.map((r) => ({
+          floorGbp: r.floorGbp,
+          ceilingGbp: r.ceilingGbp,
+          statusLabel: r.statusLabel.trim(),
+          effectiveFrom,
+        })),
+      });
+
+      await createAuditLog(tx, {
+        userId: user.id,
+        action: AUDIT_ACTIONS.SETTINGS_DEBT_RATIO_BAND_VERSION_CREATE,
+        entityType: AUDIT_ENTITY_TYPES.DebtRatioBand,
+        entityId: user.id,
+        context: `Created a new debt shortfall band version (${rows.length} rows) effective ${effectiveFrom.toISOString().slice(0, 10)}`,
+        metadata: { effectiveFrom: effectiveFrom.toISOString(), rowCount: rows.length },
+      });
+
+      return { success: true } as const;
+    });
+
+    revalidatePath("/settings");
+    return result;
+  } catch (err) {
+    console.error("[createDebtShortfallBandVersionAction]", err);
+    return { success: false, error: "Failed to create the debt shortfall band version." };
+  }
+}
+
 export async function createLifestyleSqueezeBandVersionAction(
   formData: FormData
 ): Promise<SettingsActionResult> {
@@ -1177,6 +1272,11 @@ export async function createLifestyleSqueezeBandVersionAction(
     if (!rows || rows.length === 0) return { success: false, error: "At least one band row is required." };
     if (!effectiveFrom) return { success: false, error: "A valid effective date is required." };
 
+    const debtSavingsContext = parseDebtSavingsContext(formData.get("debtSavingsContext"));
+    if (!debtSavingsContext) {
+      return { success: false, error: "Unknown debt and savings context for this table." };
+    }
+
     const bandError = checkBandSet(rows.map((r) => ({ floor: r.ratioFloor, ceiling: r.ratioCeiling })));
     if (bandError) return bandError;
     if (rows.some((r) => !r.statusLabel?.trim())) {
@@ -1184,7 +1284,11 @@ export async function createLifestyleSqueezeBandVersionAction(
     }
 
     const result = await withUserContext(user.id, user.role as RlsRole, async (tx) => {
-      const existing = await tx.lifestyleSqueezeBand.findMany({ select: { effectiveFrom: true } });
+      // Scoped to THIS context — see the debt action above.
+      const existing = await tx.lifestyleSqueezeBand.findMany({
+        where: { debtSavingsContext },
+        select: { effectiveFrom: true },
+      });
       if (isDuplicateEffectiveFrom(effectiveFrom, existing.map((e) => e.effectiveFrom))) {
         return { success: false, error: "A lifestyle squeeze band version already exists for that effective date." } as const;
       }
@@ -1194,6 +1298,7 @@ export async function createLifestyleSqueezeBandVersionAction(
           ratioFloor: r.ratioFloor,
           ratioCeiling: r.ratioCeiling,
           statusLabel: r.statusLabel.trim(),
+          debtSavingsContext,
           effectiveFrom,
         })),
       });

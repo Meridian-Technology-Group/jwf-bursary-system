@@ -17,6 +17,8 @@ function row(overrides: Partial<YoyFinancialsInputRow>): YoyFinancialsInputRow {
     propertyAssets: null,
     yearlyDebtExposure: null,
     lifestyleSqueezeLabel: null,
+    totalDebt: null,
+    totalBenefits: null,
     ...overrides,
   };
 }

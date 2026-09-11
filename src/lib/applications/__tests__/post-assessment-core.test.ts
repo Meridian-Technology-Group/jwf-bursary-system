@@ -87,6 +87,9 @@ function makeFakeTx(application: Record<string, unknown>) {
     assessment: {
       update: vi.fn(async () => ({})),
     },
+    closeReason: {
+      findUnique: vi.fn(async () => ({ id: "close-reason-1", isDeprecated: false })),
+    },
     auditLog: {
       create: vi.fn(
         async (_args: {
@@ -122,6 +125,7 @@ function baseApplication(overrides: Record<string, unknown> = {}) {
       status: "COMPLETED",
       outcome: null,
       calculationVersion: 2,
+      assessmentSchool: null,
       yearlyPayableFees: null,
       recommendedPayableFees: 12_000,
       recommendation: { confirmedPayableFees: 11_500 },
@@ -145,7 +149,7 @@ beforeEach(() => {
 describe("setPostAssessmentFinalState — NEW_AWARD", () => {
   it("creates the account, writes the status, audits — and has no email to send", async () => {
     fakeTx = makeFakeTx(baseApplication());
-    const result = await setPostAssessmentFinalState("app-1", "NEW_AWARD");
+    const result = await setPostAssessmentFinalState("app-1", "NEW_AWARD", { awardFundType: "JWF" });
 
     expect(result).toEqual({ success: true });
     expect(fakeTx.bursaryAccount.create).toHaveBeenCalledTimes(1);
@@ -163,6 +167,7 @@ describe("setPostAssessmentFinalState — NEW_AWARD", () => {
     fakeTx = makeFakeTx(baseApplication());
     const result = await setPostAssessmentFinalState("app-1", "NEW_AWARD", {
       amendedReference: "WS-202627-0042",
+      awardFundType: "WSP_JWF",
     });
 
     expect(result).toEqual({ success: true });
@@ -177,6 +182,7 @@ describe("setPostAssessmentFinalState — NEW_AWARD", () => {
     fakeTx = makeFakeTx(baseApplication());
     await setPostAssessmentFinalState("app-1", "NEW_AWARD", {
       amendedReference: "Child – Whitgift School – Year 7 – 2026-27",
+      awardFundType: "JWF",
     });
     expect(fakeTx.application.update).not.toHaveBeenCalledWith(
       expect.objectContaining({
@@ -189,6 +195,7 @@ describe("setPostAssessmentFinalState — NEW_AWARD", () => {
     fakeTx = makeFakeTx(baseApplication());
     const result = await setPostAssessmentFinalState("app-1", "NEW_AWARD", {
       amendedReference: "   ",
+      awardFundType: "JWF",
     });
     // Blank-after-trim means "keep the current reference" — the lock proceeds.
     expect(result).toEqual({ success: true });
@@ -198,7 +205,7 @@ describe("setPostAssessmentFinalState — NEW_AWARD", () => {
     fakeTx = makeFakeTx(
       withAssessment({ recommendation: { confirmedPayableFees: null } })
     );
-    const result = await setPostAssessmentFinalState("app-1", "NEW_AWARD");
+    const result = await setPostAssessmentFinalState("app-1", "NEW_AWARD", { awardFundType: "JWF" });
     expect(result).toEqual({
       success: false,
       error: RECOMMENDATION_NOT_RECONFIRMED_MESSAGE,
@@ -209,7 +216,7 @@ describe("setPostAssessmentFinalState — NEW_AWARD", () => {
 
   it("is reachable from the waiting list (transition #6)", async () => {
     fakeTx = makeFakeTx(withAssessment({ status: "WAITING_LIST" }));
-    const result = await setPostAssessmentFinalState("app-1", "NEW_AWARD");
+    const result = await setPostAssessmentFinalState("app-1", "NEW_AWARD", { awardFundType: "JWF" });
     expect(result).toEqual({ success: true });
     expect(fakeTx.bursaryAccount.create).toHaveBeenCalledTimes(1);
   });
@@ -220,7 +227,9 @@ describe("setPostAssessmentFinalState — WAITING_LIST / CLOSED_ARCHIVED", () =>
     "%s: status write and audit, no account, no mirror",
     async (target) => {
       fakeTx = makeFakeTx(baseApplication());
-      const result = await setPostAssessmentFinalState("app-1", target);
+      const result = await setPostAssessmentFinalState("app-1", target, {
+        closeReasonId: target === "CLOSED_ARCHIVED" ? "close-reason-1" : undefined,
+      });
 
       expect(result).toEqual({ success: true });
       expect(fakeTx.bursaryAccount.create).not.toHaveBeenCalled();
@@ -246,7 +255,7 @@ describe("setPostAssessmentFinalState — gates", () => {
     "refuses from %s with no side effects",
     async (from) => {
       fakeTx = makeFakeTx(withAssessment({ status: from }));
-      const result = await setPostAssessmentFinalState("app-1", "NEW_AWARD");
+      const result = await setPostAssessmentFinalState("app-1", "NEW_AWARD", { awardFundType: "JWF" });
       expect(result.success).toBe(false);
       expect(fakeTx.bursaryAccount.create).not.toHaveBeenCalled();
       expect(fakeTx.assessment.update).not.toHaveBeenCalled();
@@ -295,5 +304,155 @@ describe("revertPostAssessmentState", () => {
     const result = await revertPostAssessmentState("app-1");
     expect(result.success).toBe(false);
     expect(fakeTx.assessment.update).not.toHaveBeenCalled();
+  });
+});
+
+// ─── Epic 18b — the rolling-over track, the fund, the close reason ───────────
+
+function rollingApplication(assessmentOverrides: Record<string, unknown> = {}) {
+  const app = baseApplication({
+    applicationType: "ROLLING_OVER",
+    bursaryAccountId: "existing-account",
+  });
+  return {
+    ...app,
+    assessment: { ...(app.assessment as Record<string, unknown>), ...assessmentOverrides },
+  };
+}
+
+describe("Epic 18b — ROLLED_OVER lock", () => {
+  it("locks a rolling-over assessment: continues the account, records the fund, no reference prompt", async () => {
+    fakeTx = makeFakeTx(rollingApplication());
+    const result = await setPostAssessmentFinalState("app-1", "ROLLED_OVER", {
+      awardFundType: "JWF",
+    });
+
+    expect(result).toEqual({ success: true });
+    // The account exists — the idempotent promotion CONTINUES it, never creates.
+    expect(fakeTx.bursaryAccount.create).not.toHaveBeenCalled();
+    expect(fakeTx.assessment.update).toHaveBeenCalledWith({
+      where: { id: "assess-1" },
+      data: { awardFundType: "JWF" },
+    });
+    expect(fakeTx.assessment.update).toHaveBeenCalledWith({
+      where: { id: "assess-1" },
+      data: { status: "ROLLED_OVER" },
+    });
+    // No reference amendment path on this track.
+    expect(fakeTx.application.update).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ reference: expect.anything() }),
+      })
+    );
+  });
+
+  it("refuses ROLLED_OVER on a NEW application, and NEW_AWARD on a rolling one", async () => {
+    fakeTx = makeFakeTx(baseApplication());
+    const wrongTrack = await setPostAssessmentFinalState("app-1", "ROLLED_OVER", {
+      awardFundType: "JWF",
+    });
+    expect(wrongTrack.success).toBe(false);
+
+    fakeTx = makeFakeTx(rollingApplication());
+    const wrongLock = await setPostAssessmentFinalState("app-1", "NEW_AWARD", {
+      awardFundType: "JWF",
+    });
+    expect(wrongLock.success).toBe(false);
+    expect(fakeTx.assessment.update).not.toHaveBeenCalled();
+  });
+
+  it("the waiting list belongs to the new track only", async () => {
+    fakeTx = makeFakeTx(rollingApplication());
+    const result = await setPostAssessmentFinalState("app-1", "WAITING_LIST");
+    expect(result.success).toBe(false);
+  });
+
+  it("reverts to COMPLETED like every other final state", async () => {
+    fakeTx = makeFakeTx(rollingApplication({ status: "ROLLED_OVER" }));
+    const result = await revertPostAssessmentState("app-1");
+    expect(result).toEqual({ success: true });
+    expect(fakeTx.assessment.update).toHaveBeenCalledWith({
+      where: { id: "assess-1" },
+      data: { status: "COMPLETED" },
+    });
+  });
+});
+
+describe("Epic 18b — the award fund", () => {
+  it("both locks refuse without a fund", async () => {
+    fakeTx = makeFakeTx(baseApplication());
+    const noFundNew = await setPostAssessmentFinalState("app-1", "NEW_AWARD", {});
+    expect(noFundNew).toEqual({
+      success: false,
+      error: "Select which fund pays this award before locking.",
+    });
+
+    fakeTx = makeFakeTx(rollingApplication());
+    const noFundRolled = await setPostAssessmentFinalState("app-1", "ROLLED_OVER", {});
+    expect(noFundRolled.success).toBe(false);
+  });
+
+  it("validates the fund against the assessed school (TBF is Trinity-only)", async () => {
+    fakeTx = makeFakeTx(baseApplication()); // school WHITGIFT
+    const result = await setPostAssessmentFinalState("app-1", "NEW_AWARD", {
+      awardFundType: "TBF",
+    });
+    expect(result).toEqual({
+      success: false,
+      error: "TBF bursary is not offered at this school.",
+    });
+    expect(fakeTx.bursaryAccount.create).not.toHaveBeenCalled();
+  });
+
+  it("the assessor-picked assessment school wins over the application's", async () => {
+    // Application says WHITGIFT, assessor assessed against TRINITY → TBF is legal.
+    fakeTx = makeFakeTx(withAssessment({ assessmentSchool: "TRINITY" }));
+    const result = await setPostAssessmentFinalState("app-1", "NEW_AWARD", {
+      awardFundType: "TBF",
+    });
+    expect(result).toEqual({ success: true });
+  });
+
+  it("the audit row carries the fund", async () => {
+    fakeTx = makeFakeTx(baseApplication());
+    await setPostAssessmentFinalState("app-1", "NEW_AWARD", { awardFundType: "WFA" });
+    const lifecycleRow = fakeTx.auditLog.create.mock.calls
+      .map((c) => c[0].data)
+      .find((d) => d.action === "ASSESSMENT_LIFECYCLE_SET");
+    expect(lifecycleRow?.metadata.awardFundType).toBe("WFA");
+  });
+});
+
+describe("Epic 18b — the archive close reason", () => {
+  it("archiving without a reason is refused", async () => {
+    fakeTx = makeFakeTx(baseApplication());
+    const result = await setPostAssessmentFinalState("app-1", "CLOSED_ARCHIVED", {});
+    expect(result).toEqual({
+      success: false,
+      error: "Select a close reason before archiving.",
+    });
+  });
+
+  it("a deprecated or unknown reason is refused", async () => {
+    fakeTx = makeFakeTx(baseApplication());
+    fakeTx.closeReason.findUnique.mockResolvedValueOnce({
+      id: "close-reason-1",
+      isDeprecated: true,
+    });
+    const result = await setPostAssessmentFinalState("app-1", "CLOSED_ARCHIVED", {
+      closeReasonId: "close-reason-1",
+    });
+    expect(result).toEqual({ success: false, error: "Close reason not found." });
+  });
+
+  it("the reason is stored on the assessment with the archive", async () => {
+    fakeTx = makeFakeTx(baseApplication());
+    await setPostAssessmentFinalState("app-1", "CLOSED_ARCHIVED", {
+      closeReasonId: "close-reason-1",
+    });
+    expect(fakeTx.assessment.update).toHaveBeenCalledWith({
+      where: { id: "assess-1" },
+      data: { archiveCloseReasonId: "close-reason-1" },
+    });
   });
 });

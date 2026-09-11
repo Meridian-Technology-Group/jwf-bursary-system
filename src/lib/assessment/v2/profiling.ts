@@ -23,6 +23,8 @@ import {
   type FinancialEquityBandRow,
   type LifestyleSqueezeBandRow,
 } from '../reference-bands'
+import { DEBT_REPAYMENT_YEARS } from './debt'
+import type { DebtSavingsContext } from '@prisma/client'
 import type { PropertyAssetsRecord, DebtsRecord } from '@/types/assessment-v2'
 
 function n(v: number | undefined): number {
@@ -270,8 +272,13 @@ export interface LifestyleSqueezeResult {
   statusLabel: string | null
 }
 
-/** The fixed repayment horizon the lifestyle-squeeze view grants a household's debt. */
-const SQUEEZE_DEBT_REPAYMENT_YEARS = 5
+/**
+ * The fixed repayment horizon the lifestyle-squeeze view grants a household's
+ * debt. Shared with `debt.ts` since the 8 Sep 2026 Part 5 respec brought the
+ * debt module onto the same five years ("in line with the 5 year-ahead logic
+ * when it comes to debt") — one constant so the two views cannot drift apart.
+ */
+const SQUEEZE_DEBT_REPAYMENT_YEARS = DEBT_REPAYMENT_YEARS
 
 /**
  * Lifestyle-squeeze ratio + status (workbook rows C131–C135, Appendix
@@ -286,6 +293,12 @@ const SQUEEZE_DEBT_REPAYMENT_YEARS = 5
  * DW 9,047.85 / (5,685 − 43,000/5) = −310.39%; Kaluba 18,662.43 /
  * (25,621.29 − 8,000/5) = 77.69%.
  *
+ * Part 5 respec (Charlotte, 8 Sep 2026): the ratio and its thresholds are
+ * UNCHANGED ("there was no change in rankings applied to the Lifestyle table,
+ * and the calculation of the Lifestyle ratio remains the same") — only which
+ * table the label is read from, per the household's `DebtSavingsContext`. See
+ * `resolveLifestyleSqueezeBand` for how a negative ratio is banded.
+ *
  * Division-by-zero guard: both debt-adjusted figures (`squeezeRatio`, and by
  * extension `statusLabel`) require a non-zero `ndiAfterNotionalSpend −
  * totalDebt/5`; `ndiOverIncomePct` and `postDebtLifestylePct` require a
@@ -297,6 +310,13 @@ const SQUEEZE_DEBT_REPAYMENT_YEARS = 5
 export function lifestyleSqueeze(
   input: LifestyleSqueezeInput,
   bands: readonly LifestyleSqueezeBandRow[],
+  // REQUIRED, deliberately no default. A default silently gave the wrong
+  // table to any caller that forgot it: the assessor form recomputed this for
+  // display without the context, so a household with debt and no savings was
+  // shown table 8's wording ("...AND USING UP SAVINGS") while the engine saved
+  // table 6's. Charlotte caught it on 11 Sep 2026. With no default the
+  // compiler catches the next one.
+  context: DebtSavingsContext,
 ): LifestyleSqueezeResult {
   const { ndiAfterNotionalSpend, householdNetIncome, totalDebt, feesBenchmarkPct: pct } = input
 
@@ -314,7 +334,10 @@ export function lifestyleSqueeze(
   const postDebtLifestyleSpend = ndiAfterNotionalSpend - fiveYearDebtRepayment
   const squeezeRatio = postDebtLifestyleSpend === 0 ? null : (feesBenchmarkAmount / postDebtLifestyleSpend) * 100
 
-  const statusLabel = squeezeRatio === null ? null : resolveLifestyleSqueezeBand(bands, squeezeRatio)?.statusLabel ?? null
+  const statusLabel =
+    squeezeRatio === null
+      ? null
+      : resolveLifestyleSqueezeBand(bands, squeezeRatio, context)?.statusLabel ?? null
 
   return {
     ndiOverIncomePct,

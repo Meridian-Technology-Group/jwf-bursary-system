@@ -23,7 +23,7 @@ import { config } from "dotenv";
 // a nonprod .env.local from silently misrouting an explicit prod seed run.
 config({ path: ".env.local", override: false });
 
-import { PrismaClient } from "@prisma/client";
+import { PrismaClient, DebtSavingsContext, Prisma } from "@prisma/client";
 import { createClient } from "@supabase/supabase-js";
 
 import { councilTaxDefaults, familyTypeConfigs, schoolFees } from "./seed-data/reference";
@@ -42,8 +42,11 @@ import {
   financialEquityBandsRespec,
   debtRatioBands,
   debtRatioBandsRespec,
+  debtRatioBandsPart5,
   lifestyleSqueezeBands,
   lifestyleSqueezeBandsRespec,
+  lifestyleSqueezeBandsPart5,
+  debtShortfallBands,
 } from "./seed-data/profiling-reference";
 import { postcodeAreas } from "./seed-data/postcode-areas";
 
@@ -58,6 +61,25 @@ const prisma = new PrismaClient({
   log: ["warn", "error"],
   datasources: seedDatabaseUrl ? { db: { url: seedDatabaseUrl } } : undefined,
 });
+
+/**
+ * A Decimal column lookup value.
+ *
+ * `findFirst({ where: { ratioCeiling: 0.07 } })` MISSES the stored `0.0700`:
+ * 0.07 has no exact binary representation, so the float Prisma sends does not
+ * compare equal to the Decimal in the column. The seeder then falls through to
+ * `create` and dies on the unique constraint, which is why
+ * `npm run seed:reference` threw on any environment where the 7 Sep 2026 debt
+ * band generation already existed — despite this script being documented as
+ * idempotent and safe to run anywhere, production included.
+ *
+ * Routing the value through `Prisma.Decimal` compares exactly. Applied to every
+ * Decimal key these findFirst lookups use, not just the row that happened to
+ * expose it: 0.1, 0.3 and the rest round-trip today by luck, not by rule.
+ */
+function decimalKey(value: number | null): Prisma.Decimal | null {
+  return value === null ? null : new Prisma.Decimal(value);
+}
 
 function log(message: string): void {
   console.log(`  ${message}`);
@@ -230,7 +252,7 @@ async function seedIncomeCategoryBands(): Promise<void> {
   section("Income category bands (CALC-01)");
   for (const band of [...incomeCategoryBands, ...incomeCategoryBandsRespec]) {
     const existing = await prisma.incomeCategoryBand.findFirst({
-      where: { effectiveFrom: band.effectiveFrom, bandCeiling: band.bandCeiling },
+      where: { effectiveFrom: band.effectiveFrom, bandCeiling: decimalKey(band.bandCeiling) },
     });
     if (existing) {
       await prisma.incomeCategoryBand.update({
@@ -248,7 +270,7 @@ async function seedPropertyEquityBands(): Promise<void> {
   section("Property equity bands (CALC-01)");
   for (const band of propertyEquityBands) {
     const existing = await prisma.propertyEquityBand.findFirst({
-      where: { effectiveFrom: band.effectiveFrom, bandCeiling: band.bandCeiling },
+      where: { effectiveFrom: band.effectiveFrom, bandCeiling: decimalKey(band.bandCeiling) },
     });
     if (existing) {
       await prisma.propertyEquityBand.update({
@@ -280,7 +302,7 @@ async function seedFinancialEquityBands(): Promise<void> {
   section("Financial equity bands (CALC-01)");
   for (const band of [...financialEquityBands, ...financialEquityBandsRespec]) {
     const existing = await prisma.financialEquityBand.findFirst({
-      where: { effectiveFrom: band.effectiveFrom, bandCeiling: band.bandCeiling },
+      where: { effectiveFrom: band.effectiveFrom, bandCeiling: decimalKey(band.bandCeiling) },
     });
     if (existing) {
       await prisma.financialEquityBand.update({
@@ -296,9 +318,23 @@ async function seedFinancialEquityBands(): Promise<void> {
 
 async function seedDebtRatioBands(): Promise<void> {
   section("Debt ratio bands (CALC-01)");
-  for (const band of [...debtRatioBands, ...debtRatioBandsRespec]) {
+  // `debtSavingsContext` is part of the identity lookup from the 8 Sep 2026 Part 5
+  // respec onward — without it the two variants of a generation share a
+  // (effectiveFrom, ratioCeiling) key and later ones silently overwrite earlier
+  // ones. Generations seeded before the split carry no context and default to
+  // DEBT_SAVINGS_BELOW_DEBT.
+  const bands = [
+    ...debtRatioBands,
+    ...debtRatioBandsRespec,
+    ...debtRatioBandsPart5,
+  ];
+  for (const band of bands) {
+    const debtSavingsContext =
+      "debtSavingsContext" in band
+        ? band.debtSavingsContext
+        : DebtSavingsContext.DEBT_SAVINGS_BELOW_DEBT;
     const existing = await prisma.debtRatioBand.findFirst({
-      where: { effectiveFrom: band.effectiveFrom, ratioCeiling: band.ratioCeiling },
+      where: { effectiveFrom: band.effectiveFrom, ratioCeiling: decimalKey(band.ratioCeiling), debtSavingsContext },
     });
     if (existing) {
       await prisma.debtRatioBand.update({
@@ -310,17 +346,45 @@ async function seedDebtRatioBands(): Promise<void> {
         },
       });
     } else {
-      await prisma.debtRatioBand.create({ data: band });
+      await prisma.debtRatioBand.create({ data: { ...band, debtSavingsContext } });
     }
   }
-  log(`Upserted ${debtRatioBands.length + debtRatioBandsRespec.length} debt ratio bands`);
+  log(`Upserted ${bands.length} debt ratio bands`);
+}
+
+async function seedDebtShortfallBands(): Promise<void> {
+  section("Debt shortfall bands (Charlotte, 11 Sep 2026)");
+  for (const band of debtShortfallBands) {
+    const existing = await prisma.debtShortfallBand.findFirst({
+      where: { effectiveFrom: band.effectiveFrom, ceilingGbp: decimalKey(band.ceilingGbp) },
+    });
+    if (existing) {
+      await prisma.debtShortfallBand.update({
+        where: { id: existing.id },
+        data: { floorGbp: band.floorGbp, statusLabel: band.statusLabel },
+      });
+    } else {
+      await prisma.debtShortfallBand.create({ data: band });
+    }
+  }
+  log(`Upserted ${debtShortfallBands.length} debt shortfall bands`);
 }
 
 async function seedLifestyleSqueezeBands(): Promise<void> {
   section("Lifestyle squeeze bands (CALC-01)");
-  for (const band of [...lifestyleSqueezeBands, ...lifestyleSqueezeBandsRespec]) {
+  // See seedDebtRatioBands — `debtSavingsContext` is part of the identity lookup.
+  const bands = [
+    ...lifestyleSqueezeBands,
+    ...lifestyleSqueezeBandsRespec,
+    ...lifestyleSqueezeBandsPart5,
+  ];
+  for (const band of bands) {
+    const debtSavingsContext =
+      "debtSavingsContext" in band
+        ? band.debtSavingsContext
+        : DebtSavingsContext.DEBT_SAVINGS_BELOW_DEBT;
     const existing = await prisma.lifestyleSqueezeBand.findFirst({
-      where: { effectiveFrom: band.effectiveFrom, ratioCeiling: band.ratioCeiling },
+      where: { effectiveFrom: band.effectiveFrom, ratioCeiling: decimalKey(band.ratioCeiling), debtSavingsContext },
     });
     if (existing) {
       await prisma.lifestyleSqueezeBand.update({
@@ -328,10 +392,10 @@ async function seedLifestyleSqueezeBands(): Promise<void> {
         data: { ratioFloor: band.ratioFloor, statusLabel: band.statusLabel },
       });
     } else {
-      await prisma.lifestyleSqueezeBand.create({ data: band });
+      await prisma.lifestyleSqueezeBand.create({ data: { ...band, debtSavingsContext } });
     }
   }
-  log(`Upserted ${lifestyleSqueezeBands.length + lifestyleSqueezeBandsRespec.length} lifestyle squeeze bands`);
+  log(`Upserted ${bands.length} lifestyle squeeze bands`);
 }
 
 async function ensureDocumentsBucket(): Promise<void> {
@@ -373,6 +437,7 @@ async function printSummary(): Promise<void> {
     ["Financial equity bands", await prisma.financialEquityBand.count()],
     ["Postcode areas", await prisma.postcodeArea.count()],
     ["Debt ratio bands", await prisma.debtRatioBand.count()],
+    ["Debt shortfall bands", await prisma.debtShortfallBand.count()],
     ["Lifestyle squeeze bands", await prisma.lifestyleSqueezeBand.count()],
   ];
   console.log("");
@@ -400,6 +465,7 @@ async function main(): Promise<void> {
   await seedPostcodeAreas();
   await seedDebtRatioBands();
   await seedLifestyleSqueezeBands();
+  await seedDebtShortfallBands();
   await ensureDocumentsBucket();
   await printSummary();
 

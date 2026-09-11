@@ -101,7 +101,7 @@ import {
   matchesQueueFilters,
   type ReviewPhase,
 } from "@/lib/applications/queue-filter";
-import { REVIEW_PHASE_LABEL } from "@/lib/applications/review-phase-labels";
+import { REVIEW_PHASE_LABEL, REVIEW_PHASE_FILTER_OPTIONS } from "@/lib/applications/review-phase-labels";
 import type { School, Role } from "@prisma/client";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -1133,14 +1133,20 @@ export function ApplicationTable({
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="start" className="w-56">
-            {ALL_REVIEW_PHASES.map((phase) => (
+            {/* One entry per distinct LABEL, not per phase: DOES_NOT_QUALIFY
+                and CLOSED both read "Closed", which showed twice. Picking it
+                toggles every phase sharing the label, so historic
+                DOES_NOT_QUALIFY rows stay filterable. */}
+            {REVIEW_PHASE_FILTER_OPTIONS.map(({ label, phases }) => (
               <DropdownMenuCheckboxItem
-                key={phase}
-                checked={selectedStatuses.includes(phase)}
+                key={label}
+                checked={phases.some((p) => selectedStatuses.includes(p))}
                 onSelect={(e) => e.preventDefault()}
-                onCheckedChange={(checked) => toggleStatus(phase, checked)}
+                onCheckedChange={(checked) =>
+                  phases.forEach((p) => toggleStatus(p, checked))
+                }
               >
-                {REVIEW_PHASE_LABEL[phase]}
+                {label}
               </DropdownMenuCheckboxItem>
             ))}
             {selectedStatuses.length > 0 && (

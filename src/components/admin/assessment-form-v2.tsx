@@ -39,6 +39,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
+import { AssessmentStatusBadge } from "@/components/shared/lifecycle-badges";
+import { assessmentSaveLock } from "@/app/(admin)/applications/[id]/assessment/gate";
 import {
   formatPostcodeAreaLabel,
   type PostcodeAreaRow,
@@ -52,7 +54,7 @@ import {
   netFinancialEquity,
   lifestyleSqueeze,
 } from "@/lib/assessment/v2/profiling";
-import { totalPersonalDebt } from "@/lib/assessment/v2/debt";
+import { totalPersonalDebt, debtSavingsContextFor } from "@/lib/assessment/v2/debt";
 import type { AssessmentV2Input } from "@/lib/assessment/v2/orchestrator";
 import { getNotionalCostAmount, getFamilyCategoryMeta } from "@/lib/assessment/reference-bands";
 import { resolveChildNameParts } from "@/lib/applications/child-name";
@@ -397,7 +399,13 @@ export function AssessmentFormV2({
   readOnly: readOnlyProp = false,
 }: AssessmentFormV2Props) {
   const router = useRouter();
-  const isReadOnly = readOnlyProp || assessment.status === "COMPLETED";
+  // Allowlist, not a COMPLETED check. Charlotte found on 10 Sep 2026 that an
+  // assessment locked as a new award still rendered every field and a Save
+  // button: this test knew only the state that existed when it was written,
+  // and Epic 18 added four more BEYOND complete. The server already refuses
+  // (`assessmentSaveLock`), so nothing could be corrupted, but she could fill
+  // in a form that was going to reject her. Same source of truth both sides.
+  const isReadOnly = readOnlyProp || assessmentSaveLock(assessment.status).locked;
 
   // Two-earner mode (review fix #1 — data-driven, never contributor-only):
   //  - LOCKED ON while a submitted secondary contributor exists with no
@@ -679,7 +687,13 @@ export function AssessmentFormV2({
           totalDebt: totalPersonalDebt(debts),
           feesBenchmarkPct: output.feesBenchmarkPct ?? 0,
         },
-        referenceBundle.lifestyleSqueezeBands
+        referenceBundle.lifestyleSqueezeBands,
+        // Charlotte, 11 Sep 2026: without this the display fell back to the
+        // savings-below-debt table, so a household with debt and NO savings
+        // read "...AND USING UP SAVINGS" on screen while the engine saved the
+        // correct wording. The engine's own context comes from the same two
+        // figures, so both paths now agree.
+        debtSavingsContextFor(cashSavings + isasPepsShares, totalPersonalDebt(debts))
       )
     : null;
 
@@ -978,24 +992,10 @@ export function AssessmentFormV2({
       {/* Status bar + actions */}
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-200 bg-white px-4 py-2.5 shadow-sm">
         <div className="flex items-center gap-3 text-xs text-slate-500">
-          <span
-            className={cn(
-              "rounded-full px-2.5 py-0.5 text-xs font-semibold",
-              assessment.status === "COMPLETED"
-                ? "bg-success-50 text-success-600"
-                : assessment.status === "PAUSED"
-                  ? "bg-amber-50 text-amber-700"
-                  : "bg-slate-100 text-slate-600"
-            )}
-          >
-            {assessment.status === "COMPLETED"
-              ? "Completed"
-              : assessment.status === "PAUSED"
-                ? "Paused"
-                : assessment.status === "IN_PROGRESS"
-                  ? "In progress"
-                  : "Not started"}
-          </span>
+          {/* The shared badge is exhaustive over AssessmentStatus. The hand-rolled
+              conditional it replaces fell through to "Not started" for every
+              Epic 18 state, so a locked award read as untouched work. */}
+          <AssessmentStatusBadge status={assessment.status} />
           <span className="rounded-full bg-primary-50 px-2 py-0.5 font-semibold text-primary-700">
             Engine v2
           </span>

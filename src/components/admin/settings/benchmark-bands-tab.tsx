@@ -16,6 +16,7 @@ import {
   createPropertyEquityBandVersionAction,
   createFinancialEquityBandVersionAction,
   createDebtRatioBandVersionAction,
+  createDebtShortfallBandVersionAction,
   createLifestyleSqueezeBandVersionAction,
 } from "@/app/(admin)/settings/actions";
 import type {
@@ -24,8 +25,21 @@ import type {
   PropertyEquityBandRow,
   FinancialEquityBandRow,
   DebtRatioBandRow,
+  DebtShortfallBandRow,
   LifestyleSqueezeBandRow,
 } from "@/lib/db/queries/reference-tables";
+
+/**
+ * Her five contexts, labelled the way her spreadsheet describes each table so
+ * the settings page and her own workbook read the same.
+ */
+const DEBT_SAVINGS_CONTEXT_LABELS = [
+  { context: "NO_DEBT_NO_SAVINGS", label: "no debt, no savings" },
+  { context: "NO_DEBT_WITH_SAVINGS", label: "no debt, with savings" },
+  { context: "DEBT_NO_SAVINGS", label: "debt, no savings" },
+  { context: "DEBT_SAVINGS_BELOW_DEBT", label: "debt above savings" },
+  { context: "DEBT_SAVINGS_ABOVE_DEBT", label: "savings above debt" },
+] as const;
 
 interface BenchmarkBandsTabProps {
   affordabilityBands: AffordabilityBandRow[];
@@ -33,6 +47,7 @@ interface BenchmarkBandsTabProps {
   propertyEquityBands: PropertyEquityBandRow[];
   financialEquityBands: FinancialEquityBandRow[];
   debtRatioBands: DebtRatioBandRow[];
+  debtShortfallBands: DebtShortfallBandRow[];
   lifestyleSqueezeBands: LifestyleSqueezeBandRow[];
 }
 
@@ -70,6 +85,7 @@ export function BenchmarkBandsTab({
   propertyEquityBands,
   financialEquityBands,
   debtRatioBands,
+  debtShortfallBands,
   lifestyleSqueezeBands,
 }: BenchmarkBandsTabProps) {
   return (
@@ -122,28 +138,57 @@ export function BenchmarkBandsTab({
         createVersionAction={createFinancialEquityBandVersionAction}
       />
 
-      <BandVersionSection
-        title="Debt-Over-NDI Ratio"
-        description="Debt status + minimum repayment period by debt-over-NDI ratio (Appendix C.4, normalised per CALC-A3)."
-        floorKey="ratioFloor"
-        ceilingKey="ratioCeiling"
-        floorLabel="Ratio Floor"
-        ceilingLabel="Ratio Ceiling"
-        extraFields={DEBT_RATIO_EXTRA}
-        rows={debtRatioBands}
-        createVersionAction={createDebtRatioBandVersionAction}
-      />
+      {/* Charlotte's ten Part 5 tables (10 Sep 2026): the debt-status and
+          lifestyle-squeeze ladders exist once per household context. Rendered
+          as one section each, because they are versioned independently and a
+          single mixed list would both read as five duplicate ladders and fail
+          the band-overlap check on save. */}
+      {DEBT_SAVINGS_CONTEXT_LABELS.map(({ context, label }) => (
+        <BandVersionSection
+          key={`debt-${context}`}
+          title={`Debt-Over-NDI Ratio — ${label}`}
+          description="Debt status by debt-over-NDI ratio (Appendix C.4). Applies to households in this debt and savings position."
+          floorKey="ratioFloor"
+          ceilingKey="ratioCeiling"
+          floorLabel="Ratio Floor"
+          ceilingLabel="Ratio Ceiling"
+          extraFields={DEBT_RATIO_EXTRA}
+          rows={debtRatioBands.filter((b) => b.debtSavingsContext === context)}
+          debtSavingsContext={context}
+          createVersionAction={createDebtRatioBandVersionAction}
+        />
+      ))}
 
+      {DEBT_SAVINGS_CONTEXT_LABELS.map(({ context, label }) => (
+        <BandVersionSection
+          key={`lifestyle-${context}`}
+          title={`Lifestyle Squeeze — ${label}`}
+          description="Lifestyle-squeeze status label by squeeze ratio, in percentage points (Appendix C.5). Applies to households in this debt and savings position."
+          floorKey="ratioFloor"
+          ceilingKey="ratioCeiling"
+          floorLabel="Ratio Floor (%)"
+          ceilingLabel="Ratio Ceiling (%)"
+          extraFields={LIFESTYLE_SQUEEZE_EXTRA}
+          rows={lifestyleSqueezeBands.filter((b) => b.debtSavingsContext === context)}
+          debtSavingsContext={context}
+          createVersionAction={createLifestyleSqueezeBandVersionAction}
+        />
+      ))}
+
+      {/* Charlotte, 11 Sep 2026 — the table used INSTEAD of the ratio when a
+          household cannot cover its yearly repayment out of disposable income.
+          Its bounds are in £, and unlike the ratio ladders they are
+          floor-inclusive and ceiling-exclusive, which is how she wrote them. */}
       <BandVersionSection
-        title="Lifestyle Squeeze"
-        description="Lifestyle-squeeze status label by squeeze ratio, expressed in percentage points (Appendix C.5)."
-        floorKey="ratioFloor"
-        ceilingKey="ratioCeiling"
-        floorLabel="Ratio Floor (%)"
-        ceilingLabel="Ratio Ceiling (%)"
-        extraFields={LIFESTYLE_SQUEEZE_EXTRA}
-        rows={lifestyleSqueezeBands}
-        createVersionAction={createLifestyleSqueezeBandVersionAction}
+        title="Debt status — shortfall against yearly repayment"
+        description="Used instead of the debt-over-NDI ratio when NDI after notional spend is below the yearly repayment (total debt / 5). Keyed on the shortfall in £."
+        floorKey="floorGbp"
+        ceilingKey="ceilingGbp"
+        floorLabel="Shortfall from (£)"
+        ceilingLabel="Shortfall to (£)"
+        extraFields={DEBT_RATIO_EXTRA}
+        rows={debtShortfallBands}
+        createVersionAction={createDebtShortfallBandVersionAction}
       />
     </div>
   );

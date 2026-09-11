@@ -146,6 +146,12 @@ model BursaryAccount {
   /// automatic close, and only while no outcome has been set. Nothing else may
   /// rewrite this field. `Application.closedAt` mirrors this rule.
   closedAt             DateTime?              @map("closed_at") @db.Timestamptz(6)
+  /// Epic 18b — why the account was closed manually (her April–May leavers
+  /// window: "their son will leave the school... and will not use their
+  /// remaining 3 years of bursary support"). Null for the automatic
+  /// schedule-complete close, which needs no reason.
+  closeReasonId        String?                @map("close_reason_id") @db.Uuid
+  closeReason          CloseReason?           @relation("BursaryAccountCloseReason", fields: [closeReasonId], references: [id], onDelete: Restrict)
   /// Epic 14 C8 (CG-24, LA-7) — manual pre-system YoY history rows for
   /// families that predate the system: `[{ academicYear, netIncome, savings,
   /// propertyEquity, debtExposure, livingArrangement, lifestyleSqueeze }]`.
@@ -460,6 +466,15 @@ model Assessment {
   /// for this one explicitly — "I need to fill it manually" — so it does not
   /// prefill, consistent with CH-11's no-prefill stance on Part 1.
   postcode                      String?               @map("postcode")
+  /// Epic 18b — the fund paying this year's award, captured at the lock
+  /// (NEW_AWARD / ROLLED_OVER). Per-assessment on purpose: the fund can
+  /// change year to year on the same account.
+  awardFundType                 AwardFundType?        @map("award_fund_type")
+  /// Epic 18b — why a CLOSED_ARCHIVED assessment was closed (her
+  /// illustration's "prompt asking for close reasons"). Cleared on reopen? No
+  /// — kept as history; a re-archive overwrites it.
+  archiveCloseReasonId          String?               @map("archive_close_reason_id") @db.Uuid
+  archiveCloseReason            CloseReason?          @relation("AssessmentArchiveCloseReason", fields: [archiveCloseReasonId], references: [id], onDelete: Restrict)
   multiPropertyRentAddBack      Boolean?              @map("multi_property_rent_add_back")
   councilTaxSupport             Boolean?              @map("council_tax_support")
   usesCar                       Boolean?              @map("uses_car")
@@ -899,6 +914,35 @@ model FinancialEquityBand {
   @@map("financial_equity_bands")
 }
 
+/// Charlotte, 11 Sep 2026 — the debt-status table used INSTEAD of the
+/// debt-over-NDI ratio when a household cannot cover its yearly debt
+/// repayment out of disposable income.
+///
+/// Her rule: when NDI after notional spend is below total debt / 5, the ratio
+/// "will be displayed but will become irrelevant", and the status comes from
+/// the cash shortfall (yearly repayment − NDI) instead. Her worked example is
+/// DW: 8,600 − 5,685 = 2,915, which lands on VERY HEAVILY IN DEBT, VERY HIGH
+/// CREDIT RISK.
+///
+/// NOTE the boundary convention is the OPPOSITE of the ratio tables, because
+/// that is how she wrote it: floor-INCLUSIVE, ceiling-EXCLUSIVE
+/// ("£200 ≤ Value < £500"), where the ratio ladders are floor-exclusive and
+/// ceiling-inclusive. Both conventions are hers and both are deliberate.
+model DebtShortfallBand {
+  id            String   @id @default(uuid()) @db.Uuid
+  /// Inclusive lower bound in £; null on the bottom row (any shortfall under
+  /// the first ceiling).
+  floorGbp      Decimal? @map("floor_gbp") @db.Decimal(10, 2)
+  /// Exclusive upper bound in £; null on the open-ended top row.
+  ceilingGbp    Decimal? @map("ceiling_gbp") @db.Decimal(10, 2)
+  statusLabel   String   @map("status_label")
+  effectiveFrom DateTime @map("effective_from") @db.Date
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@unique([ceilingGbp, effectiveFrom], map: "debt_shortfall_bands_ceiling_effective_from_key")
+  @@map("debt_shortfall_bands")
+}
+
 /// CALC-01 — Reference: debt-over-NDI ratio bands (Appendix C.4), normalised
 /// to non-overlapping ranges per assumption CALC-A3 (the workbook's own
 /// 0.1–1/0.3–1/0.5–1/0.8–1 all shared a common upper bound of 1). `ratioFloor`
@@ -907,15 +951,19 @@ model FinancialEquityBand {
 /// row is stored as 0. Floor-inclusive, ceiling-inclusive; see
 /// `reference-bands.ts`.
 model DebtRatioBand {
-  id                 String   @id @default(uuid()) @db.Uuid
-  ratioFloor         Decimal? @map("ratio_floor") @db.Decimal(7, 4)
-  ratioCeiling       Decimal? @map("ratio_ceiling") @db.Decimal(7, 4)
-  minRepaymentMonths Int?     @map("min_repayment_months")
-  statusLabel        String   @map("status_label")
-  effectiveFrom      DateTime @map("effective_from") @db.Date
-  createdAt          DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  id                 String             @id @default(uuid()) @db.Uuid
+  ratioFloor         Decimal?           @map("ratio_floor") @db.Decimal(7, 4)
+  ratioCeiling       Decimal?           @map("ratio_ceiling") @db.Decimal(7, 4)
+  minRepaymentMonths Int?               @map("min_repayment_months")
+  statusLabel        String             @map("status_label")
+  /// Which of her two commentary tables this row belongs to — see
+  /// `SavingsVariant`. Part of the natural key: the same ceiling exists once
+  /// per variant per generation.
+  debtSavingsContext DebtSavingsContext @default(DEBT_SAVINGS_BELOW_DEBT) @map("debt_savings_context")
+  effectiveFrom      DateTime           @map("effective_from") @db.Date
+  createdAt          DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
 
-  @@unique([ratioCeiling, effectiveFrom])
+  @@unique([ratioCeiling, effectiveFrom, debtSavingsContext], map: "debt_ratio_bands_ceiling_effective_from_context_key")
   @@map("debt_ratio_bands")
 }
 
@@ -924,15 +972,46 @@ model DebtRatioBand {
 /// `ratioCeiling` null on the top (>170%). Floor-inclusive, ceiling-inclusive;
 /// see `reference-bands.ts`.
 model LifestyleSqueezeBand {
-  id            String   @id @default(uuid()) @db.Uuid
-  ratioFloor    Decimal? @map("ratio_floor") @db.Decimal(6, 2)
-  ratioCeiling  Decimal? @map("ratio_ceiling") @db.Decimal(6, 2)
-  statusLabel   String   @map("status_label")
-  effectiveFrom DateTime @map("effective_from") @db.Date
-  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  id                 String             @id @default(uuid()) @db.Uuid
+  ratioFloor         Decimal?           @map("ratio_floor") @db.Decimal(6, 2)
+  ratioCeiling       Decimal?           @map("ratio_ceiling") @db.Decimal(6, 2)
+  statusLabel        String             @map("status_label")
+  /// Which of her two commentary tables this row belongs to — see
+  /// `SavingsVariant`. The ratio itself is identical across variants; only
+  /// the wording of the status label differs.
+  debtSavingsContext DebtSavingsContext @default(DEBT_SAVINGS_BELOW_DEBT) @map("debt_savings_context")
+  effectiveFrom      DateTime           @map("effective_from") @db.Date
+  createdAt          DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
 
-  @@unique([ratioCeiling, effectiveFrom])
+  @@unique([ratioCeiling, effectiveFrom, debtSavingsContext], map: "lifestyle_squeeze_bands_ceiling_effective_from_context_key")
   @@map("lifestyle_squeeze_bands")
+}
+
+/// Charlotte's Part 5 respec of 10 Sep 2026: the debt-status and
+/// lifestyle-squeeze commentary tables exist once per HOUSEHOLD CONTEXT, ten
+/// tables in all. Her 8 Sep two-variant split did not survive the zero cases
+/// (a debt-free household still read "cushioned by savings"), so the selector
+/// is a 2x2 of "is there debt" x "are there savings", with the both-positive
+/// cell splitting again on savings versus debt.
+///
+///                     SAVINGS = 0             SAVINGS > 0
+///   DEBT = 0          NO_DEBT_NO_SAVINGS      NO_DEBT_WITH_SAVINGS
+///   DEBT > 0          DEBT_NO_SAVINGS         DEBT_SAVINGS_{BELOW,ABOVE}_DEBT
+///
+/// She confirmed on 9 Sep these "cover all possible situations, they can't be
+/// any other".
+enum DebtSavingsContext {
+  /// No debt and no savings.
+  NO_DEBT_NO_SAVINGS
+  /// No debt, some savings.
+  NO_DEBT_WITH_SAVINGS
+  /// Debt, no savings at all.
+  DEBT_NO_SAVINGS
+  /// Debt and savings, savings do NOT cover the debt. Credit-risk wording.
+  /// Equal savings and debt land here: nothing is left once the debt is cleared.
+  DEBT_SAVINGS_BELOW_DEBT
+  /// Debt and savings, savings exceed the debt. Savings-use wording.
+  DEBT_SAVINGS_ABOVE_DEBT
 }
 
 /// Reference: Reasons an application/bursary account can be closed for
@@ -944,15 +1023,19 @@ model LifestyleSqueezeBand {
 /// label even after it is removed from the picker (Story 4.4). No relation
 /// to Application yet; the FK arrives with the close action itself (A3).
 model CloseReason {
-  id           String        @id @default(uuid()) @db.Uuid
+  id                  String           @id @default(uuid()) @db.Uuid
   /// Unique natural key (close_reasons_label_key) — the idempotent
   /// seed upserts by label; there is no numeric code like reason_codes.
-  label        String        @unique
-  purgeOnClose Boolean       @default(false) @map("purge_on_close")
-  isDeprecated Boolean       @default(false) @map("is_deprecated")
-  sortOrder    Int           @map("sort_order")
-  createdAt    DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
-  applications Application[]
+  label               String           @unique
+  purgeOnClose        Boolean          @default(false) @map("purge_on_close")
+  isDeprecated        Boolean          @default(false) @map("is_deprecated")
+  sortOrder           Int              @map("sort_order")
+  createdAt           DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+  applications        Application[]
+  /// Epic 18b — assessments archived with this reason (assessment-level close).
+  archivedAssessments Assessment[]     @relation("AssessmentArchiveCloseReason")
+  /// Epic 18b — accounts closed manually with this reason.
+  closedAccounts      BursaryAccount[] @relation("BursaryAccountCloseReason")
 
   @@map("close_reasons")
 }
@@ -1274,6 +1357,22 @@ enum AssessmentStatus {
   /// here yet — it ships only once Q10b (purge vs the 7-year retention guard
   /// and append-only audit_logs) is agreed in writing.
   CLOSED_ARCHIVED
+  /// Epic 18b (6 Sep 2026 illustration) — the rolling-over track's lock:
+  /// "Locked as ROLLED-OVER award". No account creation, no reference prompt
+  /// (both already exist on the active account). Reversible to COMPLETED.
+  ROLLED_OVER
+}
+
+/// Epic 18b — which fund pays an award, chosen at the lock (New Award or
+/// Rolled-over). Whitgift offers JWF / WSP_JWF / WFA; Trinity JWF / TBF
+/// (`awardFundOptionsForSchool`). Recorded per assessment year because "an
+/// award can start as being funded by JWF and then can move to being funded
+/// by the school's own fund, or vice versa" (Charlotte, 6 Sep 2026).
+enum AwardFundType {
+  JWF
+  WSP_JWF
+  WFA
+  TBF
 }
 
 enum AssessmentOutcome {

@@ -37,7 +37,8 @@ import {
   calculateDerivedYearlyDebtRepayments,
   calculateYearlyDebtExposure,
   calculateDebtOverNdiRatio,
-  classifyDebt,
+  classifyDebtStatus,
+  debtSavingsContextFor,
   minRepaymentMonthsWithoutFees,
 } from './debt'
 import {
@@ -197,10 +198,16 @@ export function calculateAssessmentV2(input: AssessmentV2Input, ref: ReferenceBu
 
   // 2. Debt figures (CALC-04) — the savings test (respec v3) nets TOTAL debt
   //    off total savings; the yearly-repayments split feeds the debt module.
-  const derivedYearlyDebtRepayments = calculateDerivedYearlyDebtRepayments(
-    input.debts,
-    input.schoolingYearsRemaining,
-  )
+  //    Since the 8 Sep 2026 Part 5 respec the split is over a fixed 5 years,
+  //    so it no longer depends on `schoolingYearsRemaining`.
+  const derivedYearlyDebtRepayments = calculateDerivedYearlyDebtRepayments(input.debts)
+
+  // Which of Charlotte's five household contexts this family reads (10 Sep
+  // 2026): debt or none, savings or none, and where both exist whether the
+  // savings cover the debt. Drives BOTH commentary labels.
+  const totalDebt = totalPersonalDebt(input.debts)
+  const totalSavings = input.cashSavings + input.isasPepsShares
+  const debtSavingsContext = debtSavingsContextFor(totalSavings, totalDebt)
 
   // 3. Notional spend, incl. the savings test (CALC-03), fed the total debt.
   const notionalSpend = calculateNotionalSpend(
@@ -218,16 +225,39 @@ export function calculateAssessmentV2(input: AssessmentV2Input, ref: ReferenceBu
       cashSavings: input.cashSavings,
       isasPepsShares: input.isasPepsShares,
       schoolingYearsRemaining: input.schoolingYearsRemaining,
-      totalDebt: totalPersonalDebt(input.debts),
+      totalDebt,
     },
     ref,
   )
 
-  // 4. Yearly debt exposure / ratio / classification (CALC-04) — needs
-  //    `adjustedSavings`, which only exists once notional spend has run.
+  // 4. Yearly debt exposure / ratio / classification (CALC-04).
+  //    `yearlyDebtExposure` still needs `adjustedSavings` (so it stays after
+  //    notional spend), but since the 8 Sep 2026 respec it is a DISPLAYED
+  //    figure only — the ratio is now `total debt / 5 / NDI` and nets no
+  //    savings off, so it no longer depends on notional spend at all.
   const yearlyDebtExposure = calculateYearlyDebtExposure(derivedYearlyDebtRepayments, notionalSpend.adjustedSavings)
-  const debtOverNdiRatio = calculateDebtOverNdiRatio(yearlyDebtExposure, householdNetIncome)
-  const debtClassification = classifyDebt(debtOverNdiRatio, ref.debtRatioBands)
+  // The denominator is NDI AFTER NOTIONAL SPEND, not household net income.
+  // Her worked example fixes it: Kaluba is 8,000 / 5 / 24,907 = 0.0642, and
+  // 24,907 is the after-notional-spend figure (household net income is
+  // 81,141, which would give 0.0197). Same "NDI" her 6 Sep repayment-months
+  // formula uses, so the two agree on the word.
+  const debtOverNdiRatio = calculateDebtOverNdiRatio(
+    totalDebt,
+    notionalSpend.ndiAfterNotionalSpend,
+  )
+  // Charlotte, 11 Sep 2026 — two routes to the debt status. When NDI after
+  // notional spend covers the yearly repayment the ratio decides as before;
+  // when it does not, the ratio is still SHOWN but the comment comes from the
+  // cash shortfall instead ("the actual ratio number will be displayed but
+  // will become irrelevant").
+  const debtClassification = classifyDebtStatus({
+    ratio: debtOverNdiRatio,
+    totalDebt,
+    ndiAfterNotionalSpend: notionalSpend.ndiAfterNotionalSpend,
+    ratioBands: ref.debtRatioBands,
+    shortfallBands: ref.debtShortfallBands,
+    context: debtSavingsContext,
+  })
 
   // 5. Profiling (CALC-05).
   const incomeCat = incomeCategory(householdNetIncome, ref.incomeCategoryBands)
@@ -241,10 +271,11 @@ export function calculateAssessmentV2(input: AssessmentV2Input, ref: ReferenceBu
     {
       ndiAfterNotionalSpend: notionalSpend.ndiAfterNotionalSpend,
       householdNetIncome,
-      totalDebt: totalPersonalDebt(input.debts),
+      totalDebt,
       feesBenchmarkPct: feesPct ?? 0,
     },
     ref.lifestyleSqueezeBands,
+    debtSavingsContext,
   )
 
   // 6. Award legs (CALC-06).
@@ -304,8 +335,8 @@ export function calculateAssessmentV2(input: AssessmentV2Input, ref: ReferenceBu
     debtStatusLabel: debtClassification.statusLabel,
     // 6 Sep 2026 respec — computed from debt/savings/NDI, no longer a band column.
     minRepaymentMonths: minRepaymentMonthsWithoutFees(
-      totalPersonalDebt(input.debts),
-      input.cashSavings + input.isasPepsShares,
+      totalDebt,
+      totalSavings,
       notionalSpend.ndiAfterNotionalSpend,
     ),
 

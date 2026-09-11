@@ -40,6 +40,7 @@ export function deriveAssessmentQueueStatus(
     // (lifecycle-state.ts) keeps the finer per-state labels; the queue stays
     // coarse deliberately.
     case "NEW_AWARD":
+    case "ROLLED_OVER":
     case "WAITING_LIST":
     case "CLOSED_ARCHIVED":
       return "LOCKED";

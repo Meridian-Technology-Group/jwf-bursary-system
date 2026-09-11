@@ -122,21 +122,57 @@ describe("createDebtRatioBandVersionAction", () => {
     fakeTx = makeFakeTx("debtRatioBand");
   });
 
+  const DEBT_ROWS = JSON.stringify([
+    { ratioFloor: null, ratioCeiling: 0, minRepaymentMonths: null, statusLabel: "ZERO DEBT" },
+    { ratioFloor: 0, ratioCeiling: 1, minRepaymentMonths: 12, statusLabel: "SOME DEBT" },
+    { ratioFloor: 1, ratioCeiling: null, minRepaymentMonths: 24, statusLabel: "HEAVY DEBT" },
+  ]);
+
   it("accepts open-ended top/bottom bands with a status label on every row", async () => {
     const fd = new FormData();
-    fd.set(
-      "rows",
-      JSON.stringify([
-        { ratioFloor: null, ratioCeiling: 0, minRepaymentMonths: null, statusLabel: "ZERO DEBT" },
-        { ratioFloor: 0, ratioCeiling: 1, minRepaymentMonths: 12, statusLabel: "SOME DEBT" },
-        { ratioFloor: 1, ratioCeiling: null, minRepaymentMonths: 24, statusLabel: "HEAVY DEBT" },
-      ])
-    );
+    fd.set("rows", DEBT_ROWS);
     fd.set("effectiveFrom", "2027-09-01");
+    fd.set("debtSavingsContext", "DEBT_NO_SAVINGS");
 
     const res = await createDebtRatioBandVersionAction(fd);
     expect(res).toEqual({ success: true });
     expect(fakeTx.debtRatioBand.createMany).toHaveBeenCalledTimes(1);
+  });
+
+  // Charlotte's ten Part 5 tables (10 Sep 2026) are versioned per household
+  // context. A version saved without one would be written under the column
+  // default and silently collapse all five contexts into a single table.
+  it("writes the rows under the submitted context", async () => {
+    const fd = new FormData();
+    fd.set("rows", DEBT_ROWS);
+    fd.set("effectiveFrom", "2027-09-01");
+    fd.set("debtSavingsContext", "DEBT_SAVINGS_ABOVE_DEBT");
+
+    await createDebtRatioBandVersionAction(fd);
+    const arg = fakeTx.debtRatioBand.createMany.mock.calls[0][0];
+    expect(arg.data.every((r: { debtSavingsContext: string }) =>
+      r.debtSavingsContext === "DEBT_SAVINGS_ABOVE_DEBT")).toBe(true);
+  });
+
+  it("refuses a version with no context rather than defaulting one", async () => {
+    const fd = new FormData();
+    fd.set("rows", DEBT_ROWS);
+    fd.set("effectiveFrom", "2027-09-01");
+
+    const res = await createDebtRatioBandVersionAction(fd);
+    expect(res.success).toBe(false);
+    expect(fakeTx.debtRatioBand.createMany).not.toHaveBeenCalled();
+  });
+
+  it("refuses an unrecognised context", async () => {
+    const fd = new FormData();
+    fd.set("rows", DEBT_ROWS);
+    fd.set("effectiveFrom", "2027-09-01");
+    fd.set("debtSavingsContext", "NOT_A_CONTEXT");
+
+    const res = await createDebtRatioBandVersionAction(fd);
+    expect(res.success).toBe(false);
+    expect(fakeTx.debtRatioBand.createMany).not.toHaveBeenCalled();
   });
 
   it("rejects a row missing its status label", async () => {
@@ -148,6 +184,7 @@ describe("createDebtRatioBandVersionAction", () => {
       ])
     );
     fd.set("effectiveFrom", "2027-09-01");
+    fd.set("debtSavingsContext", "DEBT_NO_SAVINGS");
 
     const res = await createDebtRatioBandVersionAction(fd);
     expect(res).toEqual({ success: false, error: "Every row needs a status label." });

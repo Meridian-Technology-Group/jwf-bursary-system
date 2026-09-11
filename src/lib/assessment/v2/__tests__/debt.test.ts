@@ -4,25 +4,31 @@ import {
   calculateYearlyDebtExposure,
   calculateDebtOverNdiRatio,
   classifyDebt,
+  debtSavingsContextFor,
   minRepaymentMonthsWithoutFees,
+  debtRepaymentShortfall,
+  usesShortfallStatus,
+  classifyDebtStatus,
 } from '../debt'
 import type { DebtsRecord } from '@/types/assessment-v2'
-import { debtRatioBandsRespec } from '../../../../../prisma/seed-data/profiling-reference'
+import {
+  debtRatioBandsRespec,
+  debtRatioBandsPart5,
+  debtShortfallBands,
+} from '../../../../../prisma/seed-data/profiling-reference'
 
 // ─── calculateDerivedYearlyDebtRepayments (C123) ───────────────────────────
+//
+// Part 5 respec (Charlotte, 8 Sep 2026): a FIXED five-year horizon, replacing
+// the remaining-schooling-years divisor. The figure no longer depends on how
+// far through school the pupil is.
 
 describe('calculateDerivedYearlyDebtRepayments', () => {
-  it('returns 0 when schoolingYearsRemaining is 0', () => {
-    const debts: DebtsRecord = { creditCards: 5_000 }
-    expect(calculateDerivedYearlyDebtRepayments(debts, 0)).toBe(0)
+  it('her worked example: Kaluba £8,000 / 5 = £1,600', () => {
+    expect(calculateDerivedYearlyDebtRepayments({ creditCards: 8_000 })).toBe(1_600)
   })
 
-  it('returns 0 when schoolingYearsRemaining is negative', () => {
-    const debts: DebtsRecord = { creditCards: 5_000, loans: 1_000 }
-    expect(calculateDerivedYearlyDebtRepayments(debts, -3)).toBe(0)
-  })
-
-  it('sums every itemised debt line before dividing by years', () => {
+  it('sums every itemised debt line before dividing by five', () => {
     const debts: DebtsRecord = {
       creditCards: 4_000,
       loans: 6_000,
@@ -30,16 +36,15 @@ describe('calculateDerivedYearlyDebtRepayments', () => {
       schoolFeesOwedOrOther: 8_000,
     }
     // total 20,000 / 5 years = 4,000
-    expect(calculateDerivedYearlyDebtRepayments(debts, 5)).toBe(4_000)
+    expect(calculateDerivedYearlyDebtRepayments(debts)).toBe(4_000)
   })
 
   it('treats missing itemised fields as 0', () => {
-    const debts: DebtsRecord = { loans: 3_000 }
-    expect(calculateDerivedYearlyDebtRepayments(debts, 3)).toBe(1_000)
+    expect(calculateDerivedYearlyDebtRepayments({ loans: 3_000 })).toBe(600)
   })
 
   it('treats a fully empty debts record as 0', () => {
-    expect(calculateDerivedYearlyDebtRepayments({}, 5)).toBe(0)
+    expect(calculateDerivedYearlyDebtRepayments({})).toBe(0)
   })
 
   it.each([
@@ -49,7 +54,14 @@ describe('calculateDerivedYearlyDebtRepayments', () => {
     ['schoolFeesOwedOrOther', 10_000],
   ] as const)('includes %s in the sum', (key, amount) => {
     const debts: DebtsRecord = { [key]: amount }
-    expect(calculateDerivedYearlyDebtRepayments(debts, 2)).toBe(5_000)
+    expect(calculateDerivedYearlyDebtRepayments(debts)).toBe(2_000)
+  })
+
+  it('no longer varies with the remaining schooling years', () => {
+    // The old signature took schoolingYearsRemaining and returned 0 at 0 years.
+    // Regression guard: the figure is now horizon-independent.
+    const debts: DebtsRecord = { loans: 10_000 }
+    expect(calculateDerivedYearlyDebtRepayments(debts)).toBe(2_000)
   })
 })
 
@@ -73,9 +85,21 @@ describe('calculateYearlyDebtExposure', () => {
   })
 })
 
-// ─── calculateDebtOverNdiRatio (C125, ASSUMPTION CALC-A2) ──────────────────
+// ─── calculateDebtOverNdiRatio (C125) ──────────────────────────────────────
+//
+// Part 5 respec (Charlotte, 8 Sep 2026): `total debt / 5 / NDI`. Savings are
+// no longer netted off — they select the band table instead.
 
 describe('calculateDebtOverNdiRatio', () => {
+  it('her worked example: Kaluba 8,000 / 5 / 24,907 = 0.0642', () => {
+    expect(calculateDebtOverNdiRatio(8_000, 24_907)).toBeCloseTo(0.0642, 4)
+  })
+
+  it('her worked example: the live DW assessment 43,000 / 5 / 5,685 = 1.5127', () => {
+    // She quotes 1.5127; the exact value is 1.51275…, which she truncated.
+    expect(calculateDebtOverNdiRatio(43_000, 5_685)).toBeCloseTo(1.5127, 3)
+  })
+
   it('returns 0 when householdNetIncome is 0', () => {
     expect(calculateDebtOverNdiRatio(5_000, 0)).toBe(0)
   })
@@ -84,18 +108,19 @@ describe('calculateDebtOverNdiRatio', () => {
     expect(calculateDebtOverNdiRatio(5_000, -1_000)).toBe(0)
   })
 
-  it('floors a negative exposure to 0 before dividing', () => {
-    expect(calculateDebtOverNdiRatio(-4_000, 40_000)).toBe(0)
+  it('is 0 for a debt-free household regardless of savings', () => {
+    // The respec's point: savings no longer move this number at all.
+    expect(calculateDebtOverNdiRatio(0, 40_000)).toBe(0)
   })
 
-  it('computes the ratio of positive exposure over net income', () => {
-    // 8,000 / 40,000 = 0.2
-    expect(calculateDebtOverNdiRatio(8_000, 40_000)).toBeCloseTo(0.2)
+  it('computes debt over five years as a share of net income', () => {
+    // 8,000 / 5 / 40,000 = 0.04
+    expect(calculateDebtOverNdiRatio(8_000, 40_000)).toBeCloseTo(0.04)
   })
 
-  it('can exceed 1 for severe debt exposure', () => {
-    // 120,000 / 40,000 = 3
-    expect(calculateDebtOverNdiRatio(120_000, 40_000)).toBe(3)
+  it('can exceed 1 for severe debt', () => {
+    // 600,000 / 5 / 40,000 = 3
+    expect(calculateDebtOverNdiRatio(600_000, 40_000)).toBe(3)
   })
 })
 
@@ -157,26 +182,24 @@ describe('classifyDebt — against every seeded DebtRatioBand row', () => {
     expect(result.statusLabel).toBe(band.statusLabel)
   })
 
-  it('CH-40 — boundary values resolve to the UPPER band (ceiling-exclusive)', () => {
-    // Her `<` logic, confirmed 24 Aug 2026: a boundary OPENS its band rather
-    // than closing the one below, so every shared boundary in Appendix C.4's
-    // normalised ladder now belongs to the band above it.
-    const boundaries: Array<{ value: number; upperLabel: string }> = [
-      { value: 0.01, upperLabel: 'MANAGEABLE DEBT, LOW CREDIT RISK' },
-      { value: 0.03, upperLabel: 'MANAGEABLE DEBT, MEDIUM CREDIT RISK' },
-      { value: 0.07, upperLabel: 'MATERIAL DEBT IMPACT, FAIR CREDIT RISK' },
-      { value: 0.1, upperLabel: 'MATERIAL DEBT IMPACT, HIGH CREDIT RISK' },
-      { value: 0.15, upperLabel: 'HEAVILY IN DEBT, FAIR CREDIT RISK' },
-      { value: 0.2, upperLabel: 'HEAVILY IN DEBT, HIGH CREDIT RISK' },
-      { value: 0.3, upperLabel: 'VERY HEAVILY IN DEBT, HIGH CREDIT RISK' },
-      { value: 0.4, upperLabel: 'VERY HEAVILY IN DEBT, VERY HIGH CREDIT RISK' },
-      { value: 0.5, upperLabel: 'DEBT GETTING OUT OF CONTROL, NO SAFETY NET' },
-      { value: 1, upperLabel: 'AT RISK OF BANKRUPTCY' },
+  it('boundary values resolve to the LOWER band (ceiling-inclusive)', () => {
+    // Charlotte, 11 Sep 2026, reversing CH-40: the ladder reads
+    // "0 < value ≤ 0.1", so a boundary closes its own band.
+    const boundaries: Array<{ value: number; label: string }> = [
+      { value: 0.01, label: 'SMALL DEBT LEVEL, NEGLIGIBLE CREDIT RISK' },
+      { value: 0.03, label: 'MANAGEABLE DEBT, LOW CREDIT RISK' },
+      { value: 0.07, label: 'MANAGEABLE DEBT, MEDIUM CREDIT RISK' },
+      { value: 0.1, label: 'MATERIAL DEBT IMPACT, FAIR CREDIT RISK' },
+      { value: 0.15, label: 'MATERIAL DEBT IMPACT, HIGH CREDIT RISK' },
+      { value: 0.2, label: 'HEAVILY IN DEBT, FAIR CREDIT RISK' },
+      { value: 0.3, label: 'HEAVILY IN DEBT, HIGH CREDIT RISK' },
+      { value: 0.4, label: 'VERY HEAVILY IN DEBT, HIGH CREDIT RISK' },
+      { value: 0.5, label: 'VERY HEAVILY IN DEBT, VERY HIGH CREDIT RISK' },
+      { value: 1, label: 'DEBT GETTING OUT OF CONTROL, NO SAFETY NET' },
     ]
 
-    for (const { value, upperLabel } of boundaries) {
-      const result = classifyDebt(value, debtRatioBandsRespec)
-      expect(result.statusLabel).toBe(upperLabel)
+    for (const { value, label } of boundaries) {
+      expect(classifyDebt(value, debtRatioBandsRespec).statusLabel).toBe(label)
     }
   })
 
@@ -218,5 +241,231 @@ describe('minRepaymentMonthsWithoutFees', () => {
   it('null when NDI is zero or negative (no meaningful "months of NDI")', () => {
     expect(minRepaymentMonthsWithoutFees(10_000, 0, 0)).toBeNull()
     expect(minRepaymentMonthsWithoutFees(10_000, 0, -2_915)).toBeNull()
+  })
+})
+
+// ─── Part 5 respec (Charlotte, 10 Sep 2026) — her ten commentary tables ────
+//
+// Driven from the real seed-data module so the engine and the seed cannot
+// drift apart.
+
+const forContext = (c: string) =>
+  debtRatioBandsPart5.filter((b) => b.debtSavingsContext === c)
+
+describe('debtSavingsContextFor', () => {
+  it('her Kaluba case: debt and savings, savings cover the debt', () => {
+    expect(debtSavingsContextFor(9_700, 8_000)).toBe('DEBT_SAVINGS_ABOVE_DEBT')
+  })
+
+  it('her DW case: debt, no savings at all', () => {
+    expect(debtSavingsContextFor(0, 43_000)).toBe('DEBT_NO_SAVINGS')
+  })
+
+  it('debt and savings, savings do not cover the debt', () => {
+    expect(debtSavingsContextFor(2_000, 8_000)).toBe('DEBT_SAVINGS_BELOW_DEBT')
+  })
+
+  it('equal savings and debt read as uncushioned — nothing is left over', () => {
+    expect(debtSavingsContextFor(8_000, 8_000)).toBe('DEBT_SAVINGS_BELOW_DEBT')
+  })
+
+  it('no debt, with savings — the case that broke the 8 Sep two-table split', () => {
+    // Previously this household read "DEBT CUSHIONED BY SAVINGS" with no debt
+    // to cushion, which is what prompted her ten-table redesign.
+    expect(debtSavingsContextFor(80_000, 0)).toBe('NO_DEBT_WITH_SAVINGS')
+  })
+
+  it('no debt and no savings', () => {
+    expect(debtSavingsContextFor(0, 0)).toBe('NO_DEBT_NO_SAVINGS')
+  })
+})
+
+describe('her ten tables — shape', () => {
+  it('seeds a debt table of 12 rows for each of the five contexts', () => {
+    expect(debtRatioBandsPart5).toHaveLength(60)
+    for (const c of [
+      'NO_DEBT_NO_SAVINGS',
+      'NO_DEBT_WITH_SAVINGS',
+      'DEBT_NO_SAVINGS',
+      'DEBT_SAVINGS_BELOW_DEBT',
+      'DEBT_SAVINGS_ABOVE_DEBT',
+    ]) {
+      expect(forContext(c)).toHaveLength(12)
+    }
+  })
+
+  it('every context uses the same ratio ladder', () => {
+    const ladder = (c: string) =>
+      forContext(c).map((b) => [b.ratioFloor, b.ratioCeiling])
+    expect(ladder('NO_DEBT_NO_SAVINGS')).toEqual(ladder('DEBT_SAVINGS_ABOVE_DEBT'))
+  })
+})
+
+describe('classifyDebt — against her ten tables', () => {
+  const all = debtRatioBandsPart5
+
+  it('her Kaluba example end to end: 0.0642 with savings over debt', () => {
+    const ratio = calculateDebtOverNdiRatio(8_000, 24_907)
+    const context = debtSavingsContextFor(9_700, 8_000)
+    expect(classifyDebt(ratio, all, context).statusLabel).toBe(
+      'SMALL DEBT CUSHIONED BY SAVINGS, NEGLIGIBLE SAVINGS USE',
+    )
+  })
+
+  it('her DW example end to end: 1.5127 with no savings', () => {
+    const ratio = calculateDebtOverNdiRatio(43_000, 5_685)
+    const context = debtSavingsContextFor(0, 43_000)
+    expect(classifyDebt(ratio, all, context).statusLabel).toBe(
+      'IN A DEBT SPIRAL, AT RISK OF BANKRUPTCY',
+    )
+  })
+
+  it('a debt-free household reads ZERO DEBT whether or not it has savings', () => {
+    // The fix for the 8 Sep problem: no debt never reads "cushioned".
+    expect(classifyDebt(0, all, 'NO_DEBT_NO_SAVINGS').statusLabel).toBe(
+      'ZERO DEBT, NO CREDIT RISK',
+    )
+    expect(classifyDebt(0, all, 'NO_DEBT_WITH_SAVINGS').statusLabel).toBe(
+      'ZERO DEBT, NO CREDIT RISK',
+    )
+  })
+
+  it('the same ratio reads differently per context', () => {
+    expect(classifyDebt(0.25, all, 'DEBT_NO_SAVINGS').statusLabel).toBe(
+      'MANAGEABLE DEBT, MEDIUM CREDIT RISK',
+    )
+    expect(classifyDebt(0.25, all, 'DEBT_SAVINGS_ABOVE_DEBT').statusLabel).toBe(
+      'MANAGEABLE DEBT CUSHIONED BY SAVINGS, MEDIUM SAVINGS USE',
+    )
+  })
+
+  it('boundary values resolve to the lower band (ceiling-inclusive, 11 Sep)', () => {
+    // Her table: 0 < value <= 0.1 is the SECOND row, so 0.1 closes it.
+    const boundaries: Array<[number, string]> = [
+      [0.1, 'SMALL DEBT LEVEL, NEGLIGIBLE CREDIT RISK'],
+      [0.5, 'MATERIAL DEBT IMPACT, HIGH CREDIT RISK'],
+      [0.9, 'VERY HEAVILY IN DEBT, VERY HIGH CREDIT RISK'],
+      [1, 'DEBT GETTING OUT OF CONTROL, NO SAFETY NET'],
+    ]
+    for (const [value, label] of boundaries) {
+      expect(classifyDebt(value, all, 'DEBT_NO_SAVINGS').statusLabel).toBe(label)
+    }
+  })
+
+  // ⚠️ Raised with Charlotte 11 Sep 2026, not yet answered. A household with
+  // real debt whose NDI after notional spend is zero or negative gets a ratio
+  // of 0 from the divide-by-zero guard, which lands on the bottom row — and in
+  // her debt-above-zero tables that row reads "n/a". Pinned so the behaviour is
+  // visible rather than discovered in a live assessment.
+  it('OPEN: debt with no disposable income lands on her "n/a" row', () => {
+    const ratio = calculateDebtOverNdiRatio(43_000, -2_915)
+    expect(ratio).toBe(0)
+    expect(classifyDebt(ratio, all, 'DEBT_NO_SAVINGS').statusLabel).toBe('n/a')
+  })
+
+  it('a pre-respec generation still resolves rather than returning nothing', () => {
+    expect(
+      classifyDebt(0.25, debtRatioBandsRespec, 'DEBT_SAVINGS_ABOVE_DEBT').statusLabel,
+    ).toBeTruthy()
+  })
+})
+
+// ─── The shortfall branch (Charlotte, 11 Sep 2026) ─────────────────────────
+//
+// When NDI after notional spend cannot cover the yearly repayment, the ratio
+// "will be displayed but will become irrelevant" and the status comes from the
+// cash gap instead.
+
+describe('debtRepaymentShortfall / usesShortfallStatus', () => {
+  it('her DW figures: 43,000 over five years against an NDI of 5,685', () => {
+    expect(debtRepaymentShortfall(43_000, 5_685)).toBeCloseTo(2_915, 6)
+    expect(usesShortfallStatus(43_000, 5_685)).toBe(true)
+  })
+
+  it('a household that can cover its repayment uses the ratio', () => {
+    // 8,000 / 5 = 1,600 against 24,907 of NDI.
+    expect(usesShortfallStatus(8_000, 24_907)).toBe(false)
+  })
+
+  it('covering the repayment exactly still uses the ratio', () => {
+    expect(debtRepaymentShortfall(10_000, 2_000)).toBe(0)
+    expect(usesShortfallStatus(10_000, 2_000)).toBe(false)
+  })
+
+  it('a negative NDI always shortfalls when there is debt', () => {
+    expect(usesShortfallStatus(43_000, -2_915)).toBe(true)
+  })
+})
+
+describe('classifyDebtStatus — choosing between her two routes', () => {
+  const common = {
+    ratioBands: debtRatioBandsPart5,
+    shortfallBands: debtShortfallBands,
+  }
+
+  it('her DW worked example: 2,915 short reads VERY HEAVILY IN DEBT, VERY HIGH CREDIT RISK', () => {
+    const ratio = calculateDebtOverNdiRatio(43_000, 5_685)
+    const result = classifyDebtStatus({
+      ...common,
+      ratio,
+      totalDebt: 43_000,
+      ndiAfterNotionalSpend: 5_685,
+      context: debtSavingsContextFor(0, 43_000),
+    })
+    expect(result.statusLabel).toBe('VERY HEAVILY IN DEBT, VERY HIGH CREDIT RISK')
+  })
+
+  it('her Kaluba example still uses the ratio, since NDI covers the repayment', () => {
+    const ratio = calculateDebtOverNdiRatio(8_000, 24_907)
+    const result = classifyDebtStatus({
+      ...common,
+      ratio,
+      totalDebt: 8_000,
+      ndiAfterNotionalSpend: 24_907,
+      context: debtSavingsContextFor(9_700, 8_000),
+    })
+    expect(result.statusLabel).toBe('SMALL DEBT CUSHIONED BY SAVINGS, NEGLIGIBLE SAVINGS USE')
+  })
+
+  // This is what makes her "n/a" rows unreachable: the case that used to land
+  // on them now routes to the shortfall table before the ratio is consulted.
+  it('debt with no disposable income no longer reports n/a', () => {
+    const ratio = calculateDebtOverNdiRatio(43_000, -2_915)
+    expect(ratio).toBe(0)
+    const result = classifyDebtStatus({
+      ...common,
+      ratio,
+      totalDebt: 43_000,
+      ndiAfterNotionalSpend: -2_915,
+      context: 'DEBT_NO_SAVINGS',
+    })
+    expect(result.statusLabel).not.toBe('n/a')
+    expect(result.statusLabel).toBe('IN A DEBT SPIRAL, AT RISK OF BANKRUPTCY')
+  })
+
+  it.each([
+    [199, 'SOME DEBT IMPACT, LIMITED CREDIT RISK'],
+    [200, 'MATERIAL DEBT IMPACT, FAIR CREDIT RISK'],
+    [499, 'MATERIAL DEBT IMPACT, FAIR CREDIT RISK'],
+    [500, 'HEAVILY IN DEBT, FAIR CREDIT RISK'],
+    [1_000, 'VERY HEAVILY IN DEBT, HIGH CREDIT RISK'],
+    [2_000, 'VERY HEAVILY IN DEBT, VERY HIGH CREDIT RISK'],
+    [5_000, 'DEBT GETTING OUT OF CONTROL, NO SAFETY NET'],
+    [8_000, 'IN A DEBT SPIRAL, AT RISK OF BANKRUPTCY'],
+    [50_000, 'IN A DEBT SPIRAL, AT RISK OF BANKRUPTCY'],
+  ])('a shortfall of £%s reads %s', (shortfall, label) => {
+    // Her shortfall ladder is floor-INCLUSIVE, ceiling-EXCLUSIVE
+    // ("£200 ≤ Value < £500"), the opposite of the ratio ladders, so each
+    // boundary OPENS its band here. Both conventions are hers.
+    const ndi = 1_000
+    const totalDebt = (shortfall + ndi) * 5
+    const result = classifyDebtStatus({
+      ...common,
+      ratio: 0,
+      totalDebt,
+      ndiAfterNotionalSpend: ndi,
+      context: 'DEBT_NO_SAVINGS',
+    })
+    expect(result.statusLabel).toBe(label)
   })
 })

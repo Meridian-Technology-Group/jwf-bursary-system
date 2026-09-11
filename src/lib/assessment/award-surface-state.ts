@@ -49,6 +49,7 @@ export function resolveAwardSurfaceState(input: {
   const completed =
     assessmentStatus === "COMPLETED" ||
     assessmentStatus === "NEW_AWARD" ||
+    assessmentStatus === "ROLLED_OVER" ||
     assessmentStatus === "WAITING_LIST" ||
     assessmentStatus === "CLOSED_ARCHIVED";
 

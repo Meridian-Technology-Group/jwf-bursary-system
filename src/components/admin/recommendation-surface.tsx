@@ -20,6 +20,7 @@ import type { Decimal } from "@prisma/client/runtime/library";
 import type { CurrentUser } from "@/lib/auth/roles";
 import { withUserContext, type RlsRole } from "@/lib/db/prisma";
 import { getApplicationWithDetails } from "@/lib/db/queries/applications";
+import { getAllCloseReasons } from "@/lib/db/queries/reference-tables";
 import { getAssessment } from "@/lib/db/queries/assessments";
 import {
   getRecommendation,
@@ -76,7 +77,7 @@ export async function RecommendationSurface({
   user,
   mode = "gated",
 }: RecommendationSurfaceProps) {
-    const { application, assessment, postcodeAreas } = await withUserContext(
+    const { application, assessment, postcodeAreas, closeReasons } = await withUserContext(
     user.id,
     user.role as RlsRole,
     async (tx) => {
@@ -88,9 +89,14 @@ export async function RecommendationSurface({
       const areas = await tx.postcodeArea.findMany({
         select: { district: true, area: true },
       });
-      if (!app) return { application: null, assessment: null, postcodeAreas: areas };
+      // Epic 18b — the archive prompt's close reasons (active only).
+      const reasons = (await getAllCloseReasons(tx))
+        .filter((r) => !r.isDeprecated)
+        .map((r) => ({ id: r.id, label: r.label }));
+      if (!app)
+        return { application: null, assessment: null, postcodeAreas: areas, closeReasons: reasons };
       const a = await getAssessment(tx, applicationId);
-      return { application: app, assessment: a, postcodeAreas: areas };
+      return { application: app, assessment: a, postcodeAreas: areas, closeReasons: reasons };
     }
   );
   if (!application) notFound();
@@ -315,6 +321,10 @@ export async function RecommendationSurface({
           applicationId={applicationId}
           assessmentId={assessment.id}
           assessmentStatus={assessment.status}
+          applicationType={application.applicationType}
+          school={assessment.assessmentSchool ?? application.school}
+          awardFundType={assessment.awardFundType}
+          closeReasons={closeReasons}
           applicationReference={application.reference}
           assessmentOutcome={assessment.outcome}
           synopsis={assessment.synopsis}

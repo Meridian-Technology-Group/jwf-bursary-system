@@ -46,6 +46,8 @@ import {
 import { promoteToActiveAccount } from "@/lib/applications/account-promotion";
 import { mirrorApplicationToSchedule } from "@/lib/bursary-accounts/lifecycle";
 import { validateReferenceInput } from "@/lib/applications/reference";
+import { isAwardFundValidForSchool, AWARD_FUND_LABELS } from "@/lib/assessment/award-fund";
+import type { AwardFundType } from "@prisma/client";
 
 export type PostAssessmentResult =
   | { success: true }
@@ -55,9 +57,22 @@ export interface NewAwardOptions {
   /**
    * Q14 — the reference prompt's amendment, applied to `Application.reference`
    * in the same transaction as the lock. Omitted/blank-after-trim = keep the
-   * current reference (the prompt is advisory, never blocking).
+   * current reference (the prompt is advisory, never blocking). NEW_AWARD only.
    */
   amendedReference?: string;
+  /**
+   * Epic 18b — which fund pays the award, REQUIRED on both locks (NEW_AWARD
+   * and ROLLED_OVER): "when it is locked as new award, I will know which fund
+   * funds that specific award". Validated against the school's offerable
+   * funds (`awardFundOptionsForSchool`). Recorded on the assessment because
+   * the fund can change year to year on the same account.
+   */
+  awardFundType?: AwardFundType;
+  /**
+   * Epic 18b — why a CLOSED_ARCHIVED assessment closes (her illustration's
+   * "prompt asking for close reasons"). REQUIRED for CLOSED_ARCHIVED.
+   */
+  closeReasonId?: string;
 }
 
 async function fetchApplicationForLifecycle(
@@ -88,6 +103,9 @@ async function fetchApplicationForLifecycle(
           status: true,
           outcome: true,
           calculationVersion: true,
+          // Epic 18b — the fund options are the ASSESSED school's (CH-11: the
+          // assessor picks it and it can differ from the application's).
+          assessmentSchool: true,
           yearlyPayableFees: true,
           recommendedPayableFees: true,
           recommendation: { select: { confirmedPayableFees: true } },
@@ -130,23 +148,91 @@ export async function setPostAssessmentFinalState(
         };
       }
 
+      // Epic 18b — each track takes its own lock (her illustration): a NEW
+      // application locks as NEW_AWARD, a ROLLING_OVER one as ROLLED_OVER.
+      // The waiting list belongs to the new track only.
+      if (target === "NEW_AWARD" && application.applicationType !== "NEW") {
+        return {
+          success: false as const,
+          error: "A rolling-over assessment locks as a rolled-over award, not a new award.",
+        };
+      }
+      if (target === "ROLLED_OVER" && application.applicationType !== "ROLLING_OVER") {
+        return {
+          success: false as const,
+          error: "Only a rolling-over assessment can lock as a rolled-over award.",
+        };
+      }
+      if (target === "WAITING_LIST" && application.applicationType !== "NEW") {
+        return {
+          success: false as const,
+          error: "The waiting list applies to new applications only.",
+        };
+      }
+
+      const isAwardLock = target === "NEW_AWARD" || target === "ROLLED_OVER";
+
       // Epic 13 / C1 — a v2 recommendation whose payable fees were never
-      // (re-)confirmed cannot decide an award. Applies to the award lock only:
+      // (re-)confirmed cannot decide an award. Applies to the award locks only:
       // parking a case on the waiting list or archiving it decides nothing.
-      if (target === "NEW_AWARD" && needsRecommendationReconfirmation(assessment)) {
+      if (isAwardLock && needsRecommendationReconfirmation(assessment)) {
         return { success: false as const, error: RECOMMENDATION_NOT_RECONFIRMED_MESSAGE };
       }
 
-      if (target === "NEW_AWARD") {
+      // Epic 18b — both locks record which fund pays this year's award.
+      const school = assessment.assessmentSchool ?? application.school;
+      if (isAwardLock) {
+        if (!opts.awardFundType) {
+          return {
+            success: false as const,
+            error: "Select which fund pays this award before locking.",
+          };
+        }
+        if (!isAwardFundValidForSchool(opts.awardFundType, school)) {
+          return {
+            success: false as const,
+            error: `${AWARD_FUND_LABELS[opts.awardFundType]} is not offered at this school.`,
+          };
+        }
+      }
+
+      // Epic 18b — archiving asks why (her "prompt asking for close reasons").
+      if (target === "CLOSED_ARCHIVED") {
+        if (!opts.closeReasonId) {
+          return {
+            success: false as const,
+            error: "Select a close reason before archiving.",
+          };
+        }
+        const reason = await tx.closeReason.findUnique({
+          where: { id: opts.closeReasonId },
+          select: { id: true, isDeprecated: true },
+        });
+        if (!reason || reason.isDeprecated) {
+          return { success: false as const, error: "Close reason not found." };
+        }
+      }
+
+      if (isAwardLock) {
         // Q12 — the account is created/promoted AT the lock, and that is what
         // activates the admin page. Idempotent: a rolling account is
-        // continued, and one left behind by a reversal is reused.
+        // continued (ROLLED_OVER never creates — the account exists), and one
+        // left behind by a reversal is reused.
         await promoteToActiveAccount(tx, application, {
           bursaryAward: null,
           scholarshipAward: null,
         });
 
-        // Q14 — the advisory reference amendment, same transaction as the lock.
+        await tx.assessment.update({
+          where: { id: assessment.id },
+          data: { awardFundType: opts.awardFundType },
+        });
+      }
+
+      if (target === "NEW_AWARD") {
+        // Q14 — the advisory reference amendment, same transaction as the
+        // lock. NEW_AWARD only: a rolled-over account's reference already
+        // exists and is managed on the application header.
         if (amended && amended !== application.reference) {
           await tx.application.update({
             where: { id: applicationId },
@@ -163,6 +249,13 @@ export async function setPostAssessmentFinalState(
         }
       }
 
+      if (target === "CLOSED_ARCHIVED") {
+        await tx.assessment.update({
+          where: { id: assessment.id },
+          data: { archiveCloseReasonId: opts.closeReasonId },
+        });
+      }
+
       await setPostAssessmentState(tx, assessment.id, assessment.status, target);
 
       await createAuditLog(tx, {
@@ -176,6 +269,8 @@ export async function setPostAssessmentFinalState(
           fromState: assessment.status,
           toState: target,
           reference: amended || application.reference,
+          awardFundType: isAwardLock ? opts.awardFundType : null,
+          closeReasonId: target === "CLOSED_ARCHIVED" ? opts.closeReasonId : null,
           // Q11 — recorded so the trail says explicitly that silence is by design.
           emailSent: false,
         },

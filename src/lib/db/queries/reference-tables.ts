@@ -5,7 +5,7 @@
  */
 
 import type { Tx } from "@/lib/db/prisma";
-import type { School, EmailTemplateType } from "@prisma/client";
+import type { School, EmailTemplateType, DebtSavingsContext } from "@prisma/client";
 import {
   resolveFeeYearPair,
   parseAcademicYearStart,
@@ -585,10 +585,12 @@ export interface DebtRatioBandRow {
   ratioCeiling: number | null;
   minRepaymentMonths: number | null;
   statusLabel: string;
+  /** Which of Charlotte's five household contexts this row belongs to (10 Sep 2026). */
+  debtSavingsContext: DebtSavingsContext;
   effectiveFrom: Date;
 }
 
-/** Returns every row of the newest DebtRatioBand generation. */
+/** Returns every row of the newest DebtRatioBand generation (ALL contexts). */
 export async function getDebtRatioBands(tx: Tx): Promise<DebtRatioBandRow[]> {
   const rows = await tx.debtRatioBand.findMany();
   return latestGeneration(
@@ -598,6 +600,7 @@ export async function getDebtRatioBands(tx: Tx): Promise<DebtRatioBandRow[]> {
       ratioCeiling: r.ratioCeiling === null ? null : Number(r.ratioCeiling),
       minRepaymentMonths: r.minRepaymentMonths,
       statusLabel: r.statusLabel,
+      debtSavingsContext: r.debtSavingsContext,
       effectiveFrom: r.effectiveFrom,
     })),
   );
@@ -608,10 +611,12 @@ export interface LifestyleSqueezeBandRow {
   ratioFloor: number | null;
   ratioCeiling: number | null;
   statusLabel: string;
+  /** Which of Charlotte's five household contexts this row belongs to (10 Sep 2026). */
+  debtSavingsContext: DebtSavingsContext;
   effectiveFrom: Date;
 }
 
-/** Returns every row of the newest LifestyleSqueezeBand generation. */
+/** Returns every row of the newest LifestyleSqueezeBand generation (ALL contexts). */
 export async function getLifestyleSqueezeBands(tx: Tx): Promise<LifestyleSqueezeBandRow[]> {
   const rows = await tx.lifestyleSqueezeBand.findMany();
   return latestGeneration(
@@ -619,6 +624,32 @@ export async function getLifestyleSqueezeBands(tx: Tx): Promise<LifestyleSqueeze
       id: r.id,
       ratioFloor: r.ratioFloor === null ? null : Number(r.ratioFloor),
       ratioCeiling: r.ratioCeiling === null ? null : Number(r.ratioCeiling),
+      statusLabel: r.statusLabel,
+      debtSavingsContext: r.debtSavingsContext,
+      effectiveFrom: r.effectiveFrom,
+    })),
+  );
+}
+
+export interface DebtShortfallBandRow {
+  id: string;
+  floorGbp: number | null;
+  ceilingGbp: number | null;
+  statusLabel: string;
+  effectiveFrom: Date;
+}
+
+/**
+ * Charlotte, 11 Sep 2026 — the debt-status table used when a household cannot
+ * cover its yearly repayment out of disposable income. Newest generation only.
+ */
+export async function getDebtShortfallBands(tx: Tx): Promise<DebtShortfallBandRow[]> {
+  const rows = await tx.debtShortfallBand.findMany();
+  return latestGeneration(
+    rows.map((r) => ({
+      id: r.id,
+      floorGbp: r.floorGbp === null ? null : Number(r.floorGbp),
+      ceilingGbp: r.ceilingGbp === null ? null : Number(r.ceilingGbp),
       statusLabel: r.statusLabel,
       effectiveFrom: r.effectiveFrom,
     })),
@@ -681,6 +712,7 @@ export interface ReferenceBundleRows {
   propertyEquityBands: PropertyEquityBandRow[];
   financialEquityBands: FinancialEquityBandRow[];
   debtRatioBands: DebtRatioBandRow[];
+  debtShortfallBands: DebtShortfallBandRow[];
   lifestyleSqueezeBands: LifestyleSqueezeBandRow[];
 }
 
@@ -699,6 +731,7 @@ export async function getReferenceBundleRows(tx: Tx): Promise<ReferenceBundleRow
     financialEquityBands,
     debtRatioBands,
     lifestyleSqueezeBands,
+    debtShortfallBands,
   ] = await Promise.all([
     getNotionalCostConfigs(tx),
     getFamilyCategoryMetas(tx),
@@ -708,6 +741,7 @@ export async function getReferenceBundleRows(tx: Tx): Promise<ReferenceBundleRow
     getFinancialEquityBands(tx),
     getDebtRatioBands(tx),
     getLifestyleSqueezeBands(tx),
+    getDebtShortfallBands(tx),
   ]);
 
   return {
@@ -719,5 +753,6 @@ export async function getReferenceBundleRows(tx: Tx): Promise<ReferenceBundleRow
     financialEquityBands,
     debtRatioBands,
     lifestyleSqueezeBands,
+    debtShortfallBands,
   };
 }

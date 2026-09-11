@@ -102,6 +102,7 @@ export function matchesReviewPhase(
         outcome === "AWARDED" ||
         outcome === "QUALIFIES_NOT_AWARDED" ||
         assessmentStatus === "NEW_AWARD" ||
+        assessmentStatus === "ROLLED_OVER" ||
         assessmentStatus === "WAITING_LIST"
       );
     case "DOES_NOT_QUALIFY":

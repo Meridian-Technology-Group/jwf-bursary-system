@@ -49,6 +49,7 @@ import { AUDIT_ACTIONS, AUDIT_ENTITY_TYPES } from "@/lib/audit/actions";
 import {
   NOT_SUBMITTED_GATE_MESSAGE,
   ASSESSMENT_COMPLETED_LOCK_MESSAGE,
+  assessmentSaveLock,
   REOPEN_NOT_COMPLETED_MESSAGE,
   REOPEN_OUTCOME_SET_MESSAGE,
   REOPEN_APPLICATION_CLOSED_MESSAGE,
@@ -370,13 +371,14 @@ export async function saveAssessmentAction(
         if (!current) {
           return { ok: false as const, error: "Assessment not found." };
         }
-        // The lock. Note this is status-only: an assessment carrying an outcome
-        // is necessarily COMPLETED, so that case is covered too.
-        if (current.status === "COMPLETED") {
-          return {
-            ok: false as const,
-            error: ASSESSMENT_COMPLETED_LOCK_MESSAGE,
-          };
+        // The lock. Allowlist-based (see `assessmentSaveLock`): an assessment
+        // is editable only while it is still being worked on. Charlotte found
+        // on 10 Sep 2026 that the previous `status === "COMPLETED"` test let
+        // her amend an assessment locked as a new award, contradicting its own
+        // "can no longer be amended" banner.
+        const saveLock = assessmentSaveLock(current.status);
+        if (saveLock.locked) {
+          return { ok: false as const, error: saveLock.message };
         }
 
         // Epic 13 / C2 — the manual income-adjustment line's mandatory reason,

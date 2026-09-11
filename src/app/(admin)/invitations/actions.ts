@@ -646,6 +646,18 @@ async function runReassessmentInvites(
   try {
     const loaded = await withAdminContext(async (tx) => {
       const h = await getActiveBursaryHolders(tx, roundId);
+      // Epic 18b — her sequencing rule: "I cannot send the next rolling-over
+      // applications 8 months later, if the assessments from the previous
+      // round are still showing as 'COMPLETE' only, they will need to show as
+      // 'LOCKED'." Any earlier-round assessment still parked at stored-as-
+      // complete blocks the whole batch; the bulk lock on the Assessments
+      // page is the intended way to clear it.
+      const unlockedComplete = await tx.assessment.count({
+        where: {
+          status: "COMPLETED",
+          application: { roundId: { not: roundId }, formStatus: "SUBMITTED" },
+        },
+      });
       const round = await tx.round.findUnique({
         where: { id: roundId },
         select: {
@@ -656,6 +668,7 @@ async function runReassessmentInvites(
       });
       return {
         holders: h,
+        unlockedComplete,
         academicYear: round?.academicYear ?? "",
         roundWindows: round?.windows ?? [],
         deadlineRound: round
@@ -668,6 +681,14 @@ async function runReassessmentInvites(
           : null,
       };
     });
+    if (loaded.unlockedComplete > 0) {
+      result.errors.push(
+        `Cannot send rolling-over invitations yet: ${loaded.unlockedComplete} assessment${
+          loaded.unlockedComplete === 1 ? " is" : "s are"
+        } still "stored as complete" from earlier rounds. Lock or close them first (the Assessments page has a bulk lock for rolled-over awards).`
+      );
+      return result;
+    }
     eligible = loaded.holders;
     academicYear = loaded.academicYear;
     // D2 (CG-01): a stored RA window's submit-by fills the rolling default
