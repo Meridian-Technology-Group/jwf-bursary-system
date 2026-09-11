@@ -54,7 +54,7 @@ import {
   netFinancialEquity,
   lifestyleSqueeze,
 } from "@/lib/assessment/v2/profiling";
-import { totalPersonalDebt } from "@/lib/assessment/v2/debt";
+import { totalPersonalDebt, debtSavingsContextFor } from "@/lib/assessment/v2/debt";
 import type { AssessmentV2Input } from "@/lib/assessment/v2/orchestrator";
 import { getNotionalCostAmount, getFamilyCategoryMeta } from "@/lib/assessment/reference-bands";
 import { resolveChildNameParts } from "@/lib/applications/child-name";
@@ -687,7 +687,13 @@ export function AssessmentFormV2({
           totalDebt: totalPersonalDebt(debts),
           feesBenchmarkPct: output.feesBenchmarkPct ?? 0,
         },
-        referenceBundle.lifestyleSqueezeBands
+        referenceBundle.lifestyleSqueezeBands,
+        // Charlotte, 11 Sep 2026: without this the display fell back to the
+        // savings-below-debt table, so a household with debt and NO savings
+        // read "...AND USING UP SAVINGS" on screen while the engine saved the
+        // correct wording. The engine's own context comes from the same two
+        // figures, so both paths now agree.
+        debtSavingsContextFor(cashSavings + isasPepsShares, totalPersonalDebt(debts))
       )
     : null;
 

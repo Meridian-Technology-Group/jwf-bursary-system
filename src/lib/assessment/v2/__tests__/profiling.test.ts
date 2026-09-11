@@ -1,3 +1,4 @@
+import { debtSavingsContextFor } from '../debt'
 import { describe, it, expect } from 'vitest'
 import {
   incomeCategory,
@@ -306,6 +307,7 @@ describe('lifestyleSqueeze (benchmark-bands respec, 5 Sep 2026)', () => {
         feesBenchmarkPct: ratio,
       },
       lifestyleSqueezeBandsRespec,
+      'DEBT_SAVINGS_BELOW_DEBT',
     )
   }
 
@@ -340,6 +342,7 @@ describe('lifestyleSqueeze (benchmark-bands respec, 5 Sep 2026)', () => {
     const result = lifestyleSqueeze(
       { ndiAfterNotionalSpend: 5_685, householdNetIncome: 60_319, totalDebt: 43_000, feesBenchmarkPct: 15 },
       lifestyleSqueezeBandsRespec,
+      'DEBT_SAVINGS_BELOW_DEBT',
     )
     expect(result.feesBenchmarkAmount).toBeCloseTo(9_047.85, 2)
     expect(result.squeezeRatio).toBeCloseTo(-310.39, 2)
@@ -350,6 +353,7 @@ describe('lifestyleSqueeze (benchmark-bands respec, 5 Sep 2026)', () => {
     const result = lifestyleSqueeze(
       { ndiAfterNotionalSpend: 25_621.29, householdNetIncome: 81_141, totalDebt: 8_000, feesBenchmarkPct: 23 },
       lifestyleSqueezeBandsRespec,
+      'DEBT_SAVINGS_BELOW_DEBT',
     )
     expect(result.feesBenchmarkAmount).toBeCloseTo(18_662.43, 2)
     expect(result.squeezeRatio).toBeCloseTo(77.69, 2)
@@ -361,6 +365,7 @@ describe('lifestyleSqueeze (benchmark-bands respec, 5 Sep 2026)', () => {
       // 21,646.67 = 30% of the household's 72,155.57 net income (category 9).
       { ndiAfterNotionalSpend: 25_937.5, householdNetIncome: 72_155.566_67, totalDebt: 72_814, feesBenchmarkPct: 30 },
       lifestyleSqueezeBandsRespec,
+      'DEBT_SAVINGS_BELOW_DEBT',
     )
     expect(result.feesBenchmarkAmount).toBeCloseTo(21_646.67, 2)
     expect(result.squeezeRatio).toBeCloseTo(190.31, 2)
@@ -376,6 +381,7 @@ describe('lifestyleSqueeze (benchmark-bands respec, 5 Sep 2026)', () => {
         feesBenchmarkPct: 19,
       },
       lifestyleSqueezeBandsRespec,
+      'DEBT_SAVINGS_BELOW_DEBT',
     )
     expect(result.ndiOverIncomePct).toBeCloseTo(50, 6) // 20,000 / 40,000
     expect(result.postDebtLifestylePct).toBeCloseTo(37.5, 6) // (20,000 − 5,000) / 40,000
@@ -391,6 +397,7 @@ describe('lifestyleSqueeze (benchmark-bands respec, 5 Sep 2026)', () => {
         feesBenchmarkPct: 19,
       },
       lifestyleSqueezeBandsRespec,
+      'DEBT_SAVINGS_BELOW_DEBT',
     )
     expect(result.ndiOverIncomePct).toBeNull()
     expect(result.postDebtLifestylePct).toBeNull()
@@ -410,6 +417,7 @@ describe('lifestyleSqueeze (benchmark-bands respec, 5 Sep 2026)', () => {
         feesBenchmarkPct: 19,
       },
       lifestyleSqueezeBandsRespec,
+      'DEBT_SAVINGS_BELOW_DEBT',
     )
     expect(result.squeezeRatio).toBeNull()
     expect(result.statusLabel).toBeNull()
@@ -422,6 +430,7 @@ describe('lifestyleSqueeze (benchmark-bands respec, 5 Sep 2026)', () => {
     const result = lifestyleSqueeze(
       { ndiAfterNotionalSpend: 0, householdNetIncome: 0, totalDebt: 0, feesBenchmarkPct: 19 },
       lifestyleSqueezeBandsRespec,
+      'DEBT_SAVINGS_BELOW_DEBT',
     )
     expect(result.ndiOverIncomePct).toBeNull()
     expect(result.postDebtLifestylePct).toBeNull()
@@ -527,3 +536,56 @@ describe('lifestyleSqueeze — her five contexts', () => {
     expect(r.statusLabel).toBe('n/a')
   })
 })
+
+// ─── Charlotte's 11 Sep 2026 test: debt, no savings ────────────────────────
+//
+// She set Kaluba to £0 savings and £45,000 of debt. Both ratios computed
+// correctly and the debt status was right, but the LIFESTYLE status on screen
+// read table 8's wording ("...AND USING UP SAVINGS") instead of table 6's.
+//
+// Cause: the assessor form recomputed the squeeze for display and did not pass
+// the household context, so it fell back to the savings-below-debt table. The
+// engine passed it correctly, so the SAVED value was right and only the screen
+// was wrong. `lifestyleSqueeze` now requires the context, so the compiler
+// catches any caller that forgets.
+
+describe("her debt-with-no-savings scenario", () => {
+  // Kaluba's figures with savings cleared and debt at 45,000:
+  // NDI after notional spend 24,907, household net income 81,141,
+  // fees benchmark 23% = 18,662.43, debt-adjusted NDI 24,907 - 9,000 = 15,907,
+  // so the squeeze is 18,662.43 / 15,907 = 117.3%.
+  const kalubaNoSavings = {
+    ndiAfterNotionalSpend: 24_907,
+    householdNetIncome: 81_141,
+    totalDebt: 45_000,
+    feesBenchmarkPct: 23,
+  };
+
+  it("reads table 6, not table 8, for a household with debt and no savings", () => {
+    const result = lifestyleSqueeze(
+      kalubaNoSavings,
+      lifestyleSqueezeBandsPart5,
+      debtSavingsContextFor(0, 45_000),
+    );
+
+    expect(result.squeezeRatio).toBeCloseTo(117.3, 1);
+    expect(result.statusLabel).toBe(
+      "LIFESTYLE ONLY MAINTAINED BY INCREASING DEBT, CREDIT RISK FLAG",
+    );
+    // The wording she actually saw, from the savings-below-debt table.
+    expect(result.statusLabel).not.toContain("USING UP SAVINGS");
+  });
+
+  it("the savings-below-debt table is what she saw, and it differs", () => {
+    // Proves the two tables genuinely diverge at this ratio, so the context
+    // choice is load-bearing rather than cosmetic.
+    const wrong = lifestyleSqueeze(
+      kalubaNoSavings,
+      lifestyleSqueezeBandsPart5,
+      "DEBT_SAVINGS_BELOW_DEBT",
+    );
+    expect(wrong.statusLabel).toBe(
+      "LIFESTYLE ONLY MAINTAINED BY INCREASING DEBT AND USING UP SAVINGS, CREDIT RISK FLAG",
+    );
+  });
+});
