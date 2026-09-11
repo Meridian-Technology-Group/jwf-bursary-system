@@ -310,7 +310,13 @@ const SQUEEZE_DEBT_REPAYMENT_YEARS = DEBT_REPAYMENT_YEARS
 export function lifestyleSqueeze(
   input: LifestyleSqueezeInput,
   bands: readonly LifestyleSqueezeBandRow[],
-  context: DebtSavingsContext = 'DEBT_SAVINGS_BELOW_DEBT',
+  // REQUIRED, deliberately no default. A default silently gave the wrong
+  // table to any caller that forgot it: the assessor form recomputed this for
+  // display without the context, so a household with debt and no savings was
+  // shown table 8's wording ("...AND USING UP SAVINGS") while the engine saved
+  // table 6's. Charlotte caught it on 11 Sep 2026. With no default the
+  // compiler catches the next one.
+  context: DebtSavingsContext,
 ): LifestyleSqueezeResult {
   const { ndiAfterNotionalSpend, householdNetIncome, totalDebt, feesBenchmarkPct: pct } = input
 
