@@ -77,7 +77,7 @@ Google Authenticator and 1Password all work.
 ### 3.3 Signing in to Staging
 
 Staging does not require two factor authentication. Sign in at
-<https://jwf-bursary-system-git-staging-meridian-tech-group.vercel.app/login>
+<https://jwf-bursary-system-git-staging-john-whitgift-foundation.vercel.app/login>
 with email address and password only.
 
 Staging and Production have separate user accounts. An account on one does not

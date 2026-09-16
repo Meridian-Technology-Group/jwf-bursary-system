@@ -103,7 +103,7 @@ Merging starts two things:
 | Staging database migrations | GitHub repository, **Actions**, **DB push**, most recent run | Green tick |
 
 Confirm the new build is live: open
-<https://jwf-bursary-system-git-staging-meridian-tech-group.vercel.app/api/version>
+<https://jwf-bursary-system-git-staging-john-whitgift-foundation.vercel.app/api/version>
 and check `commitShaShort` matches the first seven characters of the merge
 commit shown on the pull request.
 
