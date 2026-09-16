@@ -241,7 +241,7 @@ and runs automated tasks when the code changes.
 | | Production | Staging |
 |---|---|---|
 | Purpose | Live service | Testing changes before release |
-| Web address | <https://jwf-bursary-system.vercel.app> | <https://jwf-bursary-system-git-staging-meridian-tech-group.vercel.app> |
+| Web address | <https://jwf-bursary-system.vercel.app> | <https://jwf-bursary-system-git-staging-john-whitgift-foundation.vercel.app> |
 | Git branch | `main` | `staging` |
 | Supabase project | `supabase-prod` | `supabase-nonprod` |
 | Data | Real applicants | Test data |

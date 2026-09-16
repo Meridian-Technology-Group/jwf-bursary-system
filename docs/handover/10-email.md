@@ -71,7 +71,7 @@ the project:
 | Project | Redirect URL |
 |---|---|
 | `supabase-prod` | `https://jwf-bursary-system.vercel.app/reset-password/update` |
-| `supabase-nonprod` | `https://jwf-bursary-system-git-staging-meridian-tech-group.vercel.app/reset-password/update` and `http://localhost:3000/reset-password/update` |
+| `supabase-nonprod` | `https://jwf-bursary-system-git-staging-john-whitgift-foundation.vercel.app/reset-password/update` and `http://localhost:3000/reset-password/update` |
 
 Vendor documentation: [Email templates](https://supabase.com/docs/guides/auth/auth-email-templates) ·
 [Redirect URLs](https://supabase.com/docs/guides/auth/redirect-urls) ·
