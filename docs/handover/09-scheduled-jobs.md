@@ -56,7 +56,7 @@ This uses the Vercel command line tool, installed in
    project. This is needed once per computer.
    ```
    vercel login
-   vercel link --scope meridian-tech-group --project jwf-bursary-system
+   vercel link --scope john-whitgift-foundation --project jwf-bursary-system
    ```
 2. Run the job:
    ```
@@ -68,10 +68,10 @@ This uses the Vercel command line tool, installed in
    ```
 3. Confirm the run in **View Logs** as in section 3.
 
-Vendor documentation: [vercel crons](https://vercel.com/docs/cli/crons)
-
 Running a job outside its schedule is safe. Each job only acts on records that
 are due.
+
+Vendor documentation: [vercel crons](https://vercel.com/docs/cli/crons)
 
 ---
 

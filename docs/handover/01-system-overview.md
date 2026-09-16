@@ -91,7 +91,7 @@ serves it. There are no servers to patch or maintain.
 
 **Region.** London (`lhr1`).
 
-**Location.** <https://vercel.com/meridian-tech-group/jwf-bursary-system>
+**Location.** <https://vercel.com/john-whitgift-foundation/jwf-bursary-system>
 
 **Vendor documentation.**
 [Overview](https://vercel.com/docs) ·

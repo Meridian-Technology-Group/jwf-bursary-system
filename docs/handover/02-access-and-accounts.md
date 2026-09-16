@@ -14,7 +14,7 @@ immediately.
 
 | Service | Role to request | Invitation comes from | Invite a member | Turn on two factor authentication |
 |---|---|---|---|---|
-| Vercel | **Member** on the `meridian-tech-group` team | Team owner | [Managing team members](https://vercel.com/docs/rbac/managing-team-members) | [Two factor authentication](https://vercel.com/docs/two-factor-authentication) |
+| Vercel | **Member** on the `john-whitgift-foundation` team (shown as **JWF**) | Team owner | [Managing team members](https://vercel.com/docs/rbac/managing-team-members) | [Two factor authentication](https://vercel.com/docs/two-factor-authentication) |
 | Supabase | **Administrator** on the organisation holding both projects | Organisation owner | [Access control](https://supabase.com/docs/guides/platform/access-control) | [Enable MFA](https://supabase.com/docs/guides/platform/multi-factor-authentication) |
 | Resend | **Admin** on the team | Team admin | [Team settings](https://resend.com/docs/dashboard/settings/team) | [Two factor authentication](https://resend.com/docs/knowledge-base/how-can-i-add-mfa) |
 | Sentry | **Member** on the organisation, with access to the `bursary-system` project | Organisation owner or manager | [Organisation membership](https://docs.sentry.io/organization/membership/) | [Two factor authentication](https://docs.sentry.io/organization/authentication/two-factor-authentication/) |
@@ -39,7 +39,7 @@ an error.
 
 | Check | Location |
 |---|---|
-| Vercel project | <https://vercel.com/meridian-tech-group/jwf-bursary-system> |
+| Vercel project | <https://vercel.com/john-whitgift-foundation/jwf-bursary-system> |
 | Supabase projects `supabase-prod` and `supabase-nonprod` both listed | <https://supabase.com/dashboard/projects> |
 | Resend emails list | <https://resend.com/emails> |
 | Sentry project `bursary-system` | <https://sentry.io/issues/> |
