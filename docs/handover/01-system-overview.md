@@ -30,8 +30,8 @@ It has two faces:
 It is a single application, not a suite. There is one codebase, one database
 per environment, and one deployment pipeline.
 
-**Scale, for context:** roughly 44 pages and 17 API endpoints, 38 database
-tables, 97 database migrations applied to date. Current version 1.3.1.
+**Scale, for context:** roughly 44 pages and 17 API endpoints, 39 database
+tables, 100 database migrations applied to date. Current version 1.3.1.
 
 ---
 
@@ -74,8 +74,9 @@ something breaks.
 | [Resend](https://resend.com) | Transactional email service | Sends invitations, confirmations, reminders and outcome notices |
 | [Sentry](https://sentry.io) | Error monitoring service | Captures and alerts on application errors, browser and server |
 | [GitHub](https://github.com) | Source code hosting and automation | Stores the code, runs automated tests, applies database migrations |
+| [Zoho Desk](https://www.zoho.com/desk/) | Support ticketing service | Records every support request and incident, with response time tracking |
 
-All five are paid accounts administered by Meridian Technology Group, who issue
+All six are paid accounts administered by Meridian Technology Group, who issue
 access to them.
 
 Amazon Web Services does not appear in that list because there is no AWS
@@ -104,7 +105,9 @@ traditionally be a web server you had to patch and maintain yourself.
 - Runs the **firewall** that rate limits sign in and password reset attempts,
   currently 5 attempts per 15 minutes per IP address.
 - Runs two **scheduled jobs**: expiring old invitations daily at 02:00, and the
-  data retention purge weekly on Sundays at 03:00.
+  data retention purge weekly on Sundays at 03:00. The purge is in report only
+  mode: it logs what it would delete and deletes nothing, because
+  `RETENTION_PURGE_ENABLED` is not set.
 
 **Where it runs.** Functions execute in Vercel's London region (`lhr1`).
 
@@ -129,9 +132,10 @@ Think of it as the system's single source of truth.
 **What it does here.**
 
 - **Database.** Every application, assessment, contact, invitation, audit log
-  entry and configuration value. 38 tables.
+  entry and configuration value. 39 tables.
 - **Authentication.** All logins, for both parents and staff. It issues the
-  session, handles password resets, and provides the two factor authentication
+  session, sends password reset emails (using templates held in the Supabase
+  dashboard, not in the application), and provides the two factor authentication
   (authenticator app codes) that staff accounts require in production.
 - **Storage.** Every document a parent uploads, in a bucket named `documents`.
 - **Row Level Security.** Database level rules that decide which rows each user
@@ -174,8 +178,8 @@ because sending email directly from a web server results in most of it landing
 in spam folders.
 
 **What it does here.** Sends every automated message the system produces:
-applicant invitations, submission confirmations, document request reminders,
-password resets and outcome notices. The message templates are stored in the
+applicant invitations, submission confirmations, document request reminders
+and outcome notices. The message templates are stored in the
 database and are editable by administrators in the admin settings.
 
 **Addresses.** Messages are sent from `bursary@updates.meridiantech.group`, a
@@ -212,7 +216,8 @@ Note that when the Sentry configuration is absent the monitoring silently does
 nothing rather than failing. Local development and automated tests therefore
 send no data.
 
-**Project.** `bursary-system`.
+**Project.** `bursary-system`. Alerts are routed to email and to Zoho Desk
+(section 4.6).
 
 **Where to find it.** <https://sentry.io>
 
@@ -247,6 +252,22 @@ where the automation that tests and releases those changes runs.
 **Vendor documentation.**
 [GitHub Actions](https://docs.github.com/en/actions) ·
 [Repository secrets](https://docs.github.com/en/actions/security-guides/using-secrets-in-github-actions)
+
+### 4.6 Zoho Desk (support tickets)
+
+**What it is.** A helpdesk service. Each support request becomes a ticket with
+a severity, an owner, a history and a response time clock.
+
+**What it does here.** It is the channel of record for support. Every reported
+problem, and every incident, is raised as a ticket, and all updates and the
+resolution are recorded on it. Sentry alerts also arrive here. Response time
+targets are those set out in the Master Services Agreement.
+
+It is not connected to the application itself. Nothing in the system reads
+from or writes to it.
+
+**Vendor documentation.**
+[Zoho Desk help](https://help.zoho.com/portal/en/kb/desk)
 
 ---
 
