@@ -142,6 +142,10 @@ The enum widening is the riskiest change: only 3 exhaustive maps and 1 switch fa
 `sendReassessmentInviteForHolder` (`invitations/actions.ts:516`) always calls `createUser`, so it fails with "already registered" for any holder who already has a login, which is every migrated parent (and every in-system holder). Switch it to `provisionApplicantAuthUser`. Without this, the March 2027 batch fails for all 247 families. Proved by the M9 drill.
 
 ### PR-R — Reporting correctness (decision B4; existing defects, amplified 273×)
+Charlotte found three of these herself on 21 Sep (S25) and they are the priority in this group:
+- **Money precision on the admin tab**: `assessment/admin/page.tsx:54` formats with `maximumFractionDigits: 0`. Show 2dp for the award and payable figures — a third of the award goes on each termly invoice, so the pennies matter.
+- **Future-year submit-by dates**: `planSchedule` (`schedule.ts:89`) shifts the award round's open/close by whole years, so a migrated 2026/27 account shows 30 Nov 2026 for next year. Use the round's `RoundWindow` RA row (opens 2027-04-15, submit by 2027-05-22 in prod today) for every schedule year after the first, falling back to the shifted dates when no RA window exists.
+- **Locked assessments read "Not started"**: `payable-fees-schedule.ts:132-140`.
 - Dashboard `getDashboardCounts` (`reports.ts:195-225`) buckets only on the legacy `outcome`; a `NEW_AWARD`/`ROLLED_OVER` assessment with `formStatus = SUBMITTED` is counted as **awaiting assessment**. Treat the locked states as decided.
 - Watchlist `isDecided()` (`round-watchlist-eval.ts:222`) is `outcome != null` only; rules 5, 6 and 8 would fire on every migrated account. Same fix.
 - `payable-fees-schedule.ts:132-140` labels any locked year "Not started".
