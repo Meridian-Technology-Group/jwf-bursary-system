@@ -127,7 +127,7 @@ Until M3 delivers the CLI, M0 and M2 steps are run with ad-hoc scripts kept in
 ## M5 — Reconciliation pack to Charlotte
 
 **Goal.** She sees, for every account, GT next to the recalculation, and rules on gaps and oddities while GT is still open.
-**Entry gate.** `M4.exit`.
+**Entry gate.** A canonical build and `mig calc`. **Not** `M4.exit`: the report is built from the canonical data and the engine, so it does not wait for the system changes or a rehearsal — those gate the *load*, not her review. Brian, 22 Sep: the report goes out Thu/Fri of the approval week, with our proposed handling already applied to every flagged account and marked as such, so she reviews the pack and the report in one pass.
 
 **Steps**
 1. `mig pack reconciliation` → xlsx, tabs:
