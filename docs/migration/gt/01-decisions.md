@@ -59,10 +59,12 @@ this table (human). Never delete a row; supersede it.
 | C7 | **Other properties ≠ 0:** split between second property and "multiple portfolio" per flagged account. | Import the aggregate as `other`, portfolio type `MULTIPLE` if >1 implied else `DOUBLE`, flag | Flagged accounts | M2 pack |
 | C8 | **Reason-code crosswalk** (GT's old numbering → new list): confirm the proposed mapping, and rule on the codes with no clean equivalent. | Proposed mapping in `03-field-mapping.md` §6; unmapped → "Other" + flag | Reason codes only (never blocks a load) | M2 pack |
 | C9 | Where is the "audit trail" of GT's check flags (credit check / land registry / social media requested) kept? She asked; we propose the synopsis footer. | Append a one-line footer to the synopsis | Nothing | M2 pack |
-
+| ~~C13~~ | **Settled → S27.** The 2025/26 row on the ASSESSMENT ADMIN tab: read as earlier-year option 1 on 21 Sep, corrected 22 Sep. It is the financial assessment year of the 2026-27 award, i.e. the migrated assessment itself, in scope and unpriced. Not asked in the M2 pack. | – | Nothing | – |
 | C10 | OP award fund: confirm `JWF` for all 21 (no suffix on the sheet). Her 20 Sep taxonomy (S21) covers Trinity and Whitgift only. | `JWF` | Nothing | M2 pack |
 | C11 | Has anything changed in GT since the **10 Sep** copy (new awards, edits to the 273)? If yes, request a fresh export from Symplectic before 2 Oct. | Assume her 273 sheet (built from the billing system) is newer than GT for award figures; GT inputs as at 10 Sep | Nothing, but time-boxed by 2 Oct | M2 pack |
 | C12 | **Loan and lease debt:** GT records *yearly repayments*; the current model expects *outstanding balances* (credit cards are balances in both). How should a GT yearly figure become a balance? | Load credit-card and Foundation debt as-is; load loans/leases as yearly repayment × schooling years remaining (so the model's per-year spread returns GT's yearly figure); list every such account in the pack (about half of all accounts carry some debt repayment) | Nothing: one global rule; a change re-runs the build | M2 pack |
+| C14 | **Pupil name tidy-up.** GT holds surnames in capitals; the new system stores names as written. The pack proposes a tidied spelling for each of the 271 parsed names and marks the ~50 that are not plain capitalisation (hyphens, apostrophes, particles, two-word surnames). | Use the proposed spelling | Cosmetic only; never blocks a load | M2 pack |
+| C15 | **Public transport.** The current form asks whether the family uses public transport; GT has no equivalent, so there is nothing to migrate into it. | Leave unticked on every migrated assessment | Nothing | M2 pack |
 
 ## C. Open — waiting on Brian
 
