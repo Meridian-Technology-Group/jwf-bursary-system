@@ -20,7 +20,7 @@ each. Start with section 1 for any problem that affects everyone.
 - **Errors.** In Sentry, **Issues**, environment `production`, last 24 hours,
   no new issue matches the problem.
 
-A vendor incident is resolved by the vendor. Follow its status page.
+A supplier incident is resolved by the supplier. Follow its status page.
 
 A problem that started immediately after a release is fixed fastest by rolling
 back. See [12. Rollback and Recovery](12-rollback-and-recovery.md), section 2.
@@ -165,7 +165,7 @@ or unexplained deletions in the audit log.
 2. Rotate every secret that may be exposed. See
    [03. Environment Variables](03-environment-variables.md), section 5.3.
 3. Admin console, **Users**. Deactivate any account that should not exist.
-4. Admin console, **Audit**. Record what was accessed or changed, by which
+4. Admin console, **Audit Log**. Record what was accessed or changed, by which
    account, and when.
 5. Inform the Foundation's data protection lead with the record from step 4.
    A breach of personal data must be reported to the Information

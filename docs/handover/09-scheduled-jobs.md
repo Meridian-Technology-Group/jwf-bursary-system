@@ -122,7 +122,7 @@ except by restoring the whole database.
    `true`, and redeploy. See [03. Environment Variables](03-environment-variables.md),
    section 5.1.
 4. After the next Sunday run, open **View Logs** and confirm status `200`.
-5. In the admin console, **Audit**, confirm an entry with action
+5. In the admin console, **Audit Log**, confirm an entry with action
    `RETENTION_PURGE_CRON` recording the number of applications deleted. No
    entry is written when nothing was due.
 
