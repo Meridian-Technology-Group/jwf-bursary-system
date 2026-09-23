@@ -11,13 +11,18 @@ Staging. Emails sent locally are delivered to real recipients.
 
 ## 1. Install the tools
 
-| Tool | Purpose | Install |
-|---|---|---|
-| Git | Downloads the code and records changes | [git-scm.com/downloads](https://git-scm.com/downloads) |
-| nvm | Installs and switches between versions of Node.js | macOS and Linux: [nvm](https://github.com/nvm-sh/nvm#installing-and-updating). Windows: [nvm-windows](https://github.com/coreybutler/nvm-windows#installation--upgrades) |
-| GitHub CLI (`gh`) | Signs Git in to GitHub and opens pull requests from the terminal | [cli.github.com](https://cli.github.com) |
-| Vercel CLI (`vercel`) | Runs scheduled jobs on demand. Install after Node.js (section 4) with `npm install --global vercel` | [Vercel CLI](https://vercel.com/docs/cli) |
-| Visual Studio Code | Code editor | [code.visualstudio.com](https://code.visualstudio.com) |
+- **Git** downloads the code and records changes:
+  [git-scm.com/downloads](https://git-scm.com/downloads)
+- **nvm** installs and switches between versions of Node.js. On macOS and
+  Linux use [nvm](https://github.com/nvm-sh/nvm#installing-and-updating); on
+  Windows use [nvm-windows](https://github.com/coreybutler/nvm-windows#installation--upgrades)
+- **GitHub CLI** (`gh`) signs Git in to GitHub and opens pull requests from the
+  terminal: [cli.github.com](https://cli.github.com)
+- **Visual Studio Code** is the code editor:
+  [code.visualstudio.com](https://code.visualstudio.com)
+- **Vercel CLI** (`vercel`) runs scheduled jobs on demand. Install it after
+  Node.js (section 4) by running `npm install --global vercel`. See
+  [Vercel CLI](https://vercel.com/docs/cli)
 
 All commands in these guides are typed into a terminal: **Terminal** on macOS,
 **PowerShell** on Windows.
@@ -123,12 +128,12 @@ new files.
 
 ## 9. Scripts that must not be run
 
-| Command | Why |
-|---|---|
-| `npm run seed:demo` | Deletes all applicants, applications, assessments and documents in the database it connects to, which is Staging. |
-| `npx prisma migrate reset` | Deletes the entire database it connects to. |
-| `npx prisma migrate dev` | Can offer to reset the database it connects to. |
-| `npx prisma db push` | Changes the database structure without creating a migration. |
+- `npm run seed:demo` deletes all applicants, applications, assessments and
+  documents in the database it connects to, which is Staging.
+- `npx prisma migrate reset` deletes the entire database it connects to.
+- `npx prisma migrate dev` can offer to reset the database it connects to.
+- `npx prisma db push` changes the database structure without creating a
+  migration.
 
 Database changes are made with migrations only. See
 [06. Database Changes and Reference Data](06-database-changes-and-reference-data.md).

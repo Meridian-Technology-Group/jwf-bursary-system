@@ -7,12 +7,14 @@ the database.
 
 ## 1. Choose the procedure
 
-| Situation | Procedure |
-|---|---|
-| A release broke the site, and data is intact | Section 2: roll back the website |
-| The site must stop serving users immediately, for example during a suspected data breach | Section 3: take the site offline |
-| Data has been wrongly changed or deleted on a large scale | Section 4: restore the database |
-| A few records were wrongly changed or deleted | Section 5: recover specific records |
+- **A release broke the site and the data is intact:** section 2, roll back the
+  website.
+- **The site must stop serving users immediately**, for example during a
+  suspected data breach: section 3, take the site offline.
+- **Data has been wrongly changed or deleted on a large scale:** section 4,
+  restore the database.
+- **A few records were wrongly changed or deleted:** section 5, recover
+  specific records.
 
 Always roll back the website before considering a database restore. Most
 problems after a release are in the code, not the data.

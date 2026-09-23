@@ -3,11 +3,11 @@
 This guide is a checklist for confirming that Production is healthy. Each check
 states where to look, what healthy looks like, and what to do otherwise.
 
-| Frequency | Checks |
-|---|---|
-| Weekly | Sections 1 to 5 |
-| Monthly | Sections 6 to 8 |
-| After every release | Sections 1 and 2, and [05. Making and Releasing Changes](05-making-and-releasing-changes.md), section 6 |
+- **Weekly:** sections 1 to 5.
+- **Monthly:** sections 6 to 8.
+- **After every release:** sections 1 and 2, and
+  [05. Making and Releasing Changes](05-making-and-releasing-changes.md),
+  section 6.
 
 ---
 
@@ -23,11 +23,12 @@ states where to look, what healthy looks like, and what to do otherwise.
 page or server function where it occurred, the number of users affected, and a
 stack trace pointing to the line of code.
 
-| The issue is | Action |
-|---|---|
-| A known, harmless error, such as a browser extension interfering with the page | **Ignore** or **Archive** it |
-| Already fixed by a released change | **Resolve** it |
-| A real fault | Fix it through [05. Making and Releasing Changes](05-making-and-releasing-changes.md), then **Resolve** it after release |
+- A known, harmless error, such as a browser extension interfering with the
+  page: **Ignore** or **Archive** it.
+- An error already fixed by a released change: **Resolve** it.
+- A real fault: fix it through
+  [05. Making and Releasing Changes](05-making-and-releasing-changes.md), then
+  **Resolve** it once the fix is released.
 
 Vendor documentation: [Issues](https://docs.sentry.io/product/issues/) ·
 [Issue details](https://docs.sentry.io/product/issues/issue-details/)

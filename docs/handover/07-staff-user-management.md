@@ -13,12 +13,16 @@ administrator can do the work in the admin console.
 
 ## 1. Roles
 
-| Role | Can |
-|---|---|
-| **Admin** | Everything an Assessor can, plus manage rounds, settings, email templates, staff users, data deletion and the audit log |
-| **Assessor** | Work on applications: review documents, complete assessments, produce recommendations, send applicant invitations, run exports and reports |
-| **Viewer** | Read applications, exports and reports. Cannot change anything |
-| **Deleted** | Cannot sign in. The role given to a deactivated account |
+**Admin** can do everything an Assessor can, and also manage rounds, settings,
+email templates, staff users, data deletion and the audit log.
+
+**Assessor** can work on applications: review documents, complete assessments,
+produce recommendations, send applicant invitations, and run exports and
+reports.
+
+**Viewer** can read applications, exports and reports, and change nothing.
+
+**Deleted** cannot sign in. It is the role given to a deactivated account.
 
 Keep at least two administrators in Production at all times, so that one can
 reset the other's two factor authentication.
