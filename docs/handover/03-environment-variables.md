@@ -16,13 +16,17 @@ its value must be.
 The same variable names are stored in five places. Each place serves one
 environment.
 
-| Store | Read by | Points at |
-|---|---|---|
-| Vercel, **Production** scope | The Production website | `supabase-prod` |
-| Vercel, **Preview** scope | The Staging website | `supabase-nonprod` |
-| `.env.local` file on your computer | The application running on your computer, and the scripts in this repository | `supabase-nonprod` |
-| `.env` file on your computer | The Prisma command line tool, which runs database migrations | `supabase-nonprod` |
-| GitHub repository secrets | The workflow that applies database migrations | Both, under separate names |
+- **Vercel, Production scope.** Read by the Production website. Points at
+  `supabase-prod`.
+- **Vercel, Preview scope.** Read by the Staging website. Points at
+  `supabase-nonprod`.
+- **The `.env.local` file on your computer.** Read by the application when you
+  run it locally, and by the scripts in this repository. Points at
+  `supabase-nonprod`.
+- **The `.env` file on your computer.** Read by the Prisma command line tool,
+  which runs database migrations. Points at `supabase-nonprod`.
+- **GitHub repository secrets.** Read by the workflow that applies database
+  migrations. Points at both projects, under separate names.
 
 Three rules hold everywhere:
 
@@ -90,11 +94,15 @@ the value to enter. Replace the whole placeholder, including the brackets.
 
 Connects the application to Supabase for logins and document storage.
 
-| Variable | Value to set | Where to find the value |
-|---|---|---|
-| `NEXT_PUBLIC_SUPABASE_URL` | `https://<project reference>.supabase.co` | Supabase project, **Connect** button at the top of the page, **App Frameworks** tab |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | `<anon key>` | Supabase project, **Project Settings**, **API Keys**, the key named `anon` |
-| `SUPABASE_SERVICE_ROLE_KEY` | `<service_role key>` | Supabase project, **Project Settings**, **API Keys**, the key named `service_role` |
+**`NEXT_PUBLIC_SUPABASE_URL`** is `https://<project reference>.supabase.co`.
+Find it in the Supabase project, **Connect** button at the top of the page,
+**App Frameworks** tab.
+
+**`NEXT_PUBLIC_SUPABASE_ANON_KEY`** is the key named `anon`, in the Supabase
+project, **Project Settings**, **API Keys**.
+
+**`SUPABASE_SERVICE_ROLE_KEY`** is the key named `service_role`, on the same
+page.
 
 `SUPABASE_SERVICE_ROLE_KEY` bypasses every data protection rule in the
 database. It is used only by server code. Treat it as the most sensitive value
@@ -106,10 +114,17 @@ The application connects to the database through Supabase's connection pooler,
 which shares a small number of database connections between many requests.
 There are two connection strings, and they use **different database users**.
 
-| Variable | Value to set | Used for |
-|---|---|---|
-| `DATABASE_URL` | `postgres://app_user.<project reference>:<app_user password>@aws-1-eu-west-2.pooler.supabase.com:6543/postgres?pgbouncer=true` | Every query the running application makes |
-| `DIRECT_URL` | `postgresql://postgres.<project reference>:<database password>@aws-1-eu-west-2.pooler.supabase.com:5432/postgres` | Database migrations and scripts |
+**`DATABASE_URL`** is used for every query the running application makes:
+
+```
+postgres://app_user.<project reference>:<app_user password>@aws-1-eu-west-2.pooler.supabase.com:6543/postgres?pgbouncer=true
+```
+
+**`DIRECT_URL`** is used for database migrations and scripts:
+
+```
+postgresql://postgres.<project reference>:<database password>@aws-1-eu-west-2.pooler.supabase.com:5432/postgres
+```
 
 How to build each value:
 
@@ -129,80 +144,123 @@ If either password is unknown, set a new one. See section 5.3.
 
 ### 3.3 Email
 
-| Variable | Value to set | Notes |
-|---|---|---|
-| `RESEND_API_KEY` | `<Resend API key>`, beginning `re_` | Resend, **API Keys**, **Create API Key**, permission **Sending access**. Every page that sends email fails without it. |
-| `RESEND_FROM_EMAIL` | `bursary@updates.meridiantech.group` | The sender address. Its domain must show as **Verified** in Resend, **Domains**. |
-| `RESEND_REPLY_TO_EMAIL` | `fees@johnwhitgiftfoundation.org` | Where replies from recipients go. When not set, Production uses `fees@johnwhitgiftfoundation.org` and every other environment sends with no reply address. |
-| `RESEND_INVITE_BCC_EMAIL` | `<email address>` | The address pre-filled in the BCC box when an administrator sends an individual invitation. When not set, Production pre-fills `fees@johnwhitgiftfoundation.org` and every other environment leaves the box empty. |
-| `RESEND_WEBHOOK_SECRET` | `<signing secret>`, beginning `whsec_` | Resend, **Webhooks**, the endpoint for `https://jwf-bursary-system.vercel.app/api/webhooks/resend`, **Signing Secret**. Verifies delivery notifications sent by Resend. |
+**`RESEND_API_KEY`** is the key that lets the application send at all, and
+begins `re_`. Create it in Resend, **API Keys**, **Create API Key**, with the
+permission **Sending access**. Every page that sends email fails without it.
+
+**`RESEND_FROM_EMAIL`** is the sender address,
+`bursary@updates.meridiantech.group`. Its domain must show as **Verified** in
+Resend, **Domains**.
+
+**`RESEND_REPLY_TO_EMAIL`** is where replies from recipients go,
+`fees@johnwhitgiftfoundation.org`. When it is not set, Production uses that
+same address and every other environment sends with no reply address.
+
+**`RESEND_INVITE_BCC_EMAIL`** is the address pre-filled in the BCC box when an
+administrator sends an individual invitation. When it is not set, Production
+pre-fills `fees@johnwhitgiftfoundation.org` and every other environment leaves
+the box empty.
+
+**`RESEND_WEBHOOK_SECRET`** verifies the delivery notifications Resend sends
+back, and begins `whsec_`. Find it in Resend, **Webhooks**, on the endpoint for
+`https://jwf-bursary-system.vercel.app/api/webhooks/resend`, as **Signing
+Secret**.
 
 ### 3.4 Application address
 
-| Variable | Value to set | Notes |
-|---|---|---|
-| `NEXT_PUBLIC_APP_URL` | `https://jwf-bursary-system.vercel.app` | The Production web address, with no trailing slash. Used to build the links in emails. Staging and local development work out their own address when it is not set. |
+**`NEXT_PUBLIC_APP_URL`** is the Production web address,
+`https://jwf-bursary-system.vercel.app`, with no trailing slash. The
+application uses it to build the links in emails. Staging and local development
+work out their own address, so they do not need it.
 
 ### 3.5 Scheduled jobs
 
-| Variable | Value to set | Notes |
-|---|---|---|
-| `CRON_SECRET` | `<random string of 64 characters>` | Proves that a request to a scheduled job came from Vercel. Generate a value by running `openssl rand -hex 32` in a terminal. When not set, both scheduled jobs refuse every request. See [09. Scheduled Jobs](09-scheduled-jobs.md). |
+**`CRON_SECRET`** proves that a request to a scheduled job came from Vercel.
+Set it to a random string of 64 characters, generated by running
+`openssl rand -hex 32` in a terminal. When it is not set, both scheduled jobs
+refuse every request. See [09. Scheduled Jobs](09-scheduled-jobs.md).
 
 ### 3.6 Data retention
 
 Controls the weekly job that permanently deletes applications once their
 retention period has passed. See [09. Scheduled Jobs](09-scheduled-jobs.md).
 
-| Variable | Value to set | Default when not set |
-|---|---|---|
-| `RETENTION_PURGE_ENABLED` | `true` to delete data. Any other value, or not set, means the job reports what it would delete and deletes nothing. | Report only |
-| `RETENTION_DECLINED_GRACE_DAYS` | Whole number of days an application assessed as not qualifying is kept after it is archived | `30` |
-| `RETENTION_CLOSED_GRACE_DAYS` | Whole number of days an application closed without an outcome is kept after it is closed | `30` |
-| `RETENTION_QUALIFIES_NOT_AWARDED_YEARS` | Whole number of years an application that qualified but was not awarded is kept after submission | `6` |
-| `RETENTION_AWARDED_YEARS` | Whole number of years an awarded bursary is kept after its account is closed | `7` |
+**`RETENTION_PURGE_ENABLED`** set to `true` lets the job delete data. Any other
+value, or leaving it unset, means the job reports what it would delete and
+deletes nothing.
+
+The four periods below are each a whole number. Leaving one unset keeps the
+default shown.
+
+- **`RETENTION_DECLINED_GRACE_DAYS`**, default `30`: days an application
+  assessed as not qualifying is kept after it is archived.
+- **`RETENTION_CLOSED_GRACE_DAYS`**, default `30`: days an application closed
+  without an outcome is kept after it is closed.
+- **`RETENTION_QUALIFIES_NOT_AWARDED_YEARS`**, default `6`: years an
+  application that qualified but was not awarded is kept after submission.
+- **`RETENTION_AWARDED_YEARS`**, default `7`: years an awarded bursary is kept
+  after its account is closed.
 
 ### 3.7 Security and sessions
 
-| Variable | Value to set | Default when not set |
-|---|---|---|
-| `STAFF_MFA_ENFORCED` | Leave unset. `true` forces two factor authentication on for staff. `false` forces it off. Set `false` in Production only as an emergency measure when staff cannot sign in (see [13. Troubleshooting](13-troubleshooting.md)), and remove it once resolved. | Required in Production, not required elsewhere |
-| `NEXT_PUBLIC_SESSION_IDLE_ENABLED` | `false` to turn off automatic sign out after inactivity | On |
-| `NEXT_PUBLIC_SESSION_IDLE_MINUTES` | Whole number of minutes of inactivity before a user is signed out, between `1` and `720` | `30` |
-| `NEXT_PUBLIC_SESSION_IDLE_WARN_SECONDS` | Whole number of seconds the sign out warning is shown before sign out | `60` |
+**`STAFF_MFA_ENFORCED`** should be left unset. Unset means two factor
+authentication is required in Production and not required anywhere else, which
+is the intended behaviour. `true` forces it on and `false` forces it off. Set
+it to `false` in Production only as an emergency measure when staff cannot sign
+in, as described in [13. Troubleshooting](13-troubleshooting.md), and remove it
+once the cause is fixed.
+
+The three settings below control the automatic sign out after a period of
+inactivity. Leaving one unset keeps the default shown.
+
+- **`NEXT_PUBLIC_SESSION_IDLE_ENABLED`**, default on: set it to `false` to turn
+  automatic sign out off altogether.
+- **`NEXT_PUBLIC_SESSION_IDLE_MINUTES`**, default `30`: minutes of inactivity
+  before a user is signed out, between `1` and `720`.
+- **`NEXT_PUBLIC_SESSION_IDLE_WARN_SECONDS`**, default `60`: seconds the
+  warning is shown before the sign out happens.
 
 ### 3.8 Error monitoring
 
 Sentry is configured in Production only.
 
-| Variable | Value to set | Where to find the value |
-|---|---|---|
-| `NEXT_PUBLIC_SENTRY_DSN` | `<DSN>`, a URL beginning `https://` | Sentry, **Settings**, **Projects**, `bursary-system`, **Client Keys (DSN)** |
-| `SENTRY_DSN` | The same value as `NEXT_PUBLIC_SENTRY_DSN` | As above |
-| `SENTRY_ORG` | `<organisation slug>` | Sentry, **Settings**, **General Settings**, **Organization Slug** |
-| `SENTRY_PROJECT` | `bursary-system` | |
-| `SENTRY_AUTH_TOKEN` | `<auth token>` | Sentry, **Settings**, **Auth Tokens**, **Create New Token**. Used during the build to upload source maps, which let Sentry show original source code in stack traces. |
+**`NEXT_PUBLIC_SENTRY_DSN`** is the address Sentry receives errors at, a URL
+beginning `https://`. Find it in Sentry, **Settings**, **Projects**,
+`bursary-system`, **Client Keys (DSN)**.
+
+**`SENTRY_DSN`** takes the same value as `NEXT_PUBLIC_SENTRY_DSN`.
+
+**`SENTRY_ORG`** is the organisation slug, in Sentry, **Settings**, **General
+Settings**, **Organization Slug**.
+
+**`SENTRY_PROJECT`** is `bursary-system`.
+
+**`SENTRY_AUTH_TOKEN`** is used during the build to upload source maps, which
+let Sentry show the original source code in a stack trace. Create it in Sentry,
+**Settings**, **Auth Tokens**, **Create New Token**.
 
 When the DSN variables are not set, the application sends nothing to Sentry.
 
 ### 3.9 Behaviour switches
 
-| Variable | Value to set | Default when not set |
-|---|---|---|
-| `ROUNDS_SINGLE_OPEN_ONLY` | `true` to allow only one assessment round to be open at a time | Several rounds can be open at once |
-| `SUPABASE_STORAGE_BUCKET` | Leave unset. The name of the Supabase Storage bucket holding documents. | `documents` |
+**`ROUNDS_SINGLE_OPEN_ONLY`** set to `true` allows only one assessment round to
+be open at a time. Unset, several rounds can be open at once.
+
+**`SUPABASE_STORAGE_BUCKET`** names the Supabase Storage bucket holding
+documents. Leave it unset, which means `documents`.
 
 ### 3.10 Set automatically
 
 Vercel and Node.js set these. Never add them manually.
 
-| Variable | Contains |
-|---|---|
-| `VERCEL_ENV` and `NEXT_PUBLIC_VERCEL_ENV` | `production` on Production, `preview` on Staging |
-| `VERCEL_URL`, `VERCEL_BRANCH_URL`, `VERCEL_PROJECT_PRODUCTION_URL` | Web addresses of the current deployment |
-| `VERCEL_GIT_COMMIT_SHA`, `NEXT_PUBLIC_VERCEL_GIT_COMMIT_SHA`, `VERCEL_GIT_COMMIT_REF` | The Git commit and branch that was built |
-| `NODE_ENV` | `production` on both Production and Staging |
-| `NEXT_RUNTIME`, `CI` | Internal build and runtime details |
+- `VERCEL_ENV` and `NEXT_PUBLIC_VERCEL_ENV` hold `production` on Production and
+  `preview` on Staging.
+- `VERCEL_URL`, `VERCEL_BRANCH_URL` and `VERCEL_PROJECT_PRODUCTION_URL` hold
+  web addresses of the current deployment.
+- `VERCEL_GIT_COMMIT_SHA`, `NEXT_PUBLIC_VERCEL_GIT_COMMIT_SHA` and
+  `VERCEL_GIT_COMMIT_REF` hold the Git commit and branch that was built.
+- `NODE_ENV` holds `production` on both Production and Staging.
+- `NEXT_RUNTIME` and `CI` hold internal build and runtime details.
 
 `ALLOW_DESTRUCTIVE_SEED` is set by the `npm run seed:demo` command itself.
 Never set it anywhere. See [06. Database Changes and Reference Data](06-database-changes-and-reference-data.md).
@@ -293,15 +351,39 @@ chat, committed to Git, or shown on screen to someone who should not have it.
 In every case: generate the new value at the source, update every store that
 holds it (section 2), redeploy, and confirm the site works.
 
-| Secret | Generate the new value | Update |
-|---|---|---|
-| Database password (`postgres` user) | Supabase project, **Project Settings**, **Database**, **Reset database password** | `DIRECT_URL` in the matching Vercel scope, `.env.local` and `.env` (Staging only), and the matching `*_DIRECT_URL` GitHub secret |
-| `app_user` password | Supabase project, **SQL Editor**, run `ALTER ROLE app_user WITH PASSWORD '<new password>';` | `DATABASE_URL` in the matching Vercel scope, `.env.local` and `.env` (Staging only), and the matching `*_DATABASE_URL` GitHub secret |
-| `SUPABASE_SERVICE_ROLE_KEY` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase project, **Project Settings**, **JWT Keys**. Changing the legacy JWT secret replaces both keys and signs every user out. See [JWT signing keys](https://supabase.com/docs/guides/auth/signing-keys). | Both variables in the matching Vercel scope, and `.env.local` (Staging only) |
-| `RESEND_API_KEY` | Resend, **API Keys**, create a new key, then delete the old key after redeploying | Vercel Production and Preview scopes, and `.env.local` |
-| `RESEND_WEBHOOK_SECRET` | Resend, **Webhooks**: add a new endpoint for `https://jwf-bursary-system.vercel.app/api/webhooks/resend` with all email events, copy its signing secret, then delete the old endpoint after redeploying | Vercel Production scope |
-| `CRON_SECRET` | Run `openssl rand -hex 32` | Vercel Production scope, and Preview scope if set |
-| `SENTRY_AUTH_TOKEN` | Sentry, **Settings**, **Auth Tokens**, create a new token, then revoke the old one | Vercel Production scope |
+**The database password**, which belongs to the `postgres` user. Reset it in
+the Supabase project, **Project Settings**, **Database**, **Reset database
+password**. Then update `DIRECT_URL` in the matching Vercel scope, in
+`.env.local` and `.env` for Staging, and in the matching `*_DIRECT_URL` GitHub
+secret.
+
+**The `app_user` password.** Set a new one in the Supabase project, **SQL
+Editor**, by running `ALTER ROLE app_user WITH PASSWORD '<new password>';`.
+Then update `DATABASE_URL` in the matching Vercel scope, in `.env.local` and
+`.env` for Staging, and in the matching `*_DATABASE_URL` GitHub secret.
+
+**`SUPABASE_SERVICE_ROLE_KEY` and `NEXT_PUBLIC_SUPABASE_ANON_KEY`.** Both come
+from the same source, so both change together: the Supabase project, **Project
+Settings**, **JWT Keys**. Changing the legacy JWT secret replaces both keys and
+signs every user out. Then update both variables in the matching Vercel scope,
+and in `.env.local` for Staging. See
+[JWT signing keys](https://supabase.com/docs/guides/auth/signing-keys).
+
+**`RESEND_API_KEY`.** Create a new key in Resend, **API Keys**, update the
+Vercel Production and Preview scopes and `.env.local`, redeploy, then delete
+the old key.
+
+**`RESEND_WEBHOOK_SECRET`.** In Resend, **Webhooks**, add a new endpoint for
+`https://jwf-bursary-system.vercel.app/api/webhooks/resend` with all email
+events, copy its signing secret into the Vercel Production scope, redeploy,
+then delete the old endpoint.
+
+**`CRON_SECRET`.** Generate a new value with `openssl rand -hex 32` and update
+the Vercel Production scope, and the Preview scope if it is set there.
+
+**`SENTRY_AUTH_TOKEN`.** Create a new token in Sentry, **Settings**, **Auth
+Tokens**, update the Vercel Production scope, redeploy, then revoke the old
+token.
 
 Passwords generated for database users must contain only letters and numbers.
 Symbols in a password break the connection string format.

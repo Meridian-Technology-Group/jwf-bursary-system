@@ -97,10 +97,10 @@ git push -u origin fix/reminder-email-date
 
 Merging starts two things:
 
-| What | Where to watch | Finished when |
-|---|---|---|
-| Staging deployment | Vercel project, **Deployments**, top row for branch `staging` | Status **Ready** |
-| Staging database migrations | GitHub repository, **Actions**, **DB push**, most recent run | Green tick |
+- **The Staging deployment.** Vercel project, **Deployments**, top row for
+  branch `staging`. Finished when its status is **Ready**.
+- **The Staging database migrations.** GitHub repository, **Actions**, **DB
+  push**, most recent run. Finished when it shows a green tick.
 
 Confirm the new build is live: open
 <https://jwf-bursary-system-git-staging-john-whitgift-foundation.vercel.app/api/version>
@@ -144,10 +144,11 @@ A release promotes everything currently on `staging` to `main`.
 Merging starts the Production deployment and the Production database
 migrations. Watch both:
 
-| What | Where to watch | Finished when |
-|---|---|---|
-| Production deployment | Vercel project, **Deployments**, top row marked **Production** | Status **Ready** |
-| Production database migrations | GitHub repository, **Actions**, **DB push**, job **Push migrations to production** | Green tick |
+- **The Production deployment.** Vercel project, **Deployments**, top row
+  marked **Production**. Finished when its status is **Ready**.
+- **The Production database migrations.** GitHub repository, **Actions**, **DB
+  push**, job **Push migrations to production**. Finished when it shows a green
+  tick.
 
 6. Open <https://jwf-bursary-system.vercel.app/api/version> and confirm
    `commitShaShort` matches the merge commit.

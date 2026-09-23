@@ -7,12 +7,18 @@ each. Start with section 1 for any problem that affects everyone.
 
 ## 1. First checks for any widespread problem
 
-| Check | Where | Healthy |
-|---|---|---|
-| Vendor status | [Vercel](https://www.vercel-status.com) · [Supabase](https://status.supabase.com) · [Resend](https://resend-status.com) · [GitHub](https://www.githubstatus.com) · [Sentry](https://status.sentry.io) | No current incident |
-| Production deployment | Vercel project, **Deployments** | Most recent Production row is **Ready** |
-| Recent release | GitHub repository, **Pull requests**, **Closed** | No promotion merged just before the problem started |
-| Errors | Sentry, **Issues**, environment `production`, last 24 hours | No new issue matching the problem |
+- **Supplier status.** No current incident on
+  [Vercel](https://www.vercel-status.com),
+  [Supabase](https://status.supabase.com),
+  [Resend](https://resend-status.com),
+  [GitHub](https://www.githubstatus.com) or
+  [Sentry](https://status.sentry.io).
+- **The Production deployment.** In the Vercel project, **Deployments**, the
+  most recent Production row is **Ready**.
+- **Recent releases.** In the GitHub repository, **Pull requests**,
+  **Closed**, no promotion was merged just before the problem started.
+- **Errors.** In Sentry, **Issues**, environment `production`, last 24 hours,
+  no new issue matches the problem.
 
 A vendor incident is resolved by the vendor. Follow its status page.
 
@@ -25,13 +31,18 @@ back. See [12. Rollback and Recovery](12-rollback-and-recovery.md), section 2.
 
 ### 2.1 A staff member cannot sign in
 
-| Cause | Fix |
-|---|---|
-| Forgotten password | They use **Forgot password?** on the sign in page |
-| Lost or replaced authenticator device | An administrator resets their two factor authentication. See [07. Staff User Management](07-staff-user-management.md), section 5. |
-| Account deactivated | See [07. Staff User Management](07-staff-user-management.md), section 7 |
-| No account in this environment | Staging and Production accounts are separate. Invite them in the environment they are using. |
-| Too many attempts | The page shows a rate limit message. Wait a few minutes and try again. The limits are set in the Supabase project, **Authentication**, **Rate Limits**. |
+- **They have forgotten their password.** They use **Forgot password?** on the
+  sign in page.
+- **They have lost or replaced their authenticator device.** An administrator
+  resets their two factor authentication. See
+  [07. Staff User Management](07-staff-user-management.md), section 5.
+- **Their account was deactivated.** See
+  [07. Staff User Management](07-staff-user-management.md), section 7.
+- **They have no account in this environment.** Staging and Production accounts
+  are separate. Invite them in the environment they are using.
+- **They have tried too many times.** The page shows a rate limit message.
+  They wait a few minutes and try again. The limits are set in the Supabase
+  project, **Authentication**, **Rate Limits**.
 
 ### 2.2 No staff member can sign in, or signing in returns to the sign in page
 
@@ -88,11 +99,13 @@ A table is missing its Row Level Security policies.
 
 ### 3.4 A parent cannot upload a document
 
-| Message | Cause | Fix |
-|---|---|---|
-| File too large | The file is over 20 MB | Reduce the file size, for example by scanning at a lower resolution or splitting a long PDF |
-| Unsupported file type | The file is not PDF, JPG or PNG | Save or export it as PDF |
-| Any other failure | Supabase Storage is unavailable | Check [Supabase status](https://status.supabase.com), then Supabase project, **Logs**, **Storage** |
+- **"File too large"** means the file is over 20 MB. Ask them to reduce it, for
+  example by scanning at a lower resolution or splitting a long PDF.
+- **"Unsupported file type"** means the file is not a PDF, JPG or PNG. Ask them
+  to save or export it as a PDF.
+- **Any other failure** points at Supabase Storage. Check
+  [Supabase status](https://status.supabase.com), then the Supabase project,
+  **Logs**, **Storage**.
 
 ---
 
@@ -119,12 +132,14 @@ The previous deployment continues to serve the site.
 1. On the pull request, click **Details** beside the failed check.
 2. Expand the failed step.
 
-| Failed step | Fix |
-|---|---|
-| **Typecheck** | Run the type check locally ([04. Local Development](04-local-development.md), section 8), fix each error reported, commit and push |
-| **Test** | Run `npm test` locally, fix the failing test or the code it tests, commit and push |
-| **Prisma schema formatting** | Run `npx prisma format`, commit and push |
-| **Migration SQL statement terminators** | A statement in a migration is missing its closing `;`. Add it, commit and push |
+- **Typecheck.** Run the type check locally
+  ([04. Local Development](04-local-development.md), section 8), fix each error
+  reported, then commit and push.
+- **Test.** Run `npm test` locally, fix the failing test or the code it tests,
+  then commit and push.
+- **Prisma schema formatting.** Run `npx prisma format`, then commit and push.
+- **Migration SQL statement terminators.** A statement in a migration is
+  missing its closing `;`. Add it, then commit and push.
 
 ### 5.3 The DB push workflow fails
 

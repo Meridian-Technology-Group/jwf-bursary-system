@@ -7,13 +7,21 @@ database, recovering from a failed migration, and reference data.
 
 ## 1. Key terms
 
-| Term | Meaning |
-|---|---|
-| **SQL** | The language used to read and change data in the database. |
-| **Table** | A set of rows with the same columns, such as `applications` or `profiles`. |
-| **Schema** | The structure of the database: its tables, columns and relationships. Described for this system in `prisma/schema.prisma`. |
-| **Migration** | A file of SQL that changes the schema, such as adding a table or a column. Stored in `prisma/migrations/`, one folder per migration, applied in name order. |
-| **Row Level Security (RLS)** | Rules attached to each table that decide which rows the application may read or change for the signed in user. Written as **policies**. |
+**SQL** is the language used to read and change data in the database.
+
+**A table** is a set of rows with the same columns, such as `applications` or
+`profiles`.
+
+**The schema** is the structure of the database: its tables, columns and
+relationships. For this system it is described in `prisma/schema.prisma`.
+
+**A migration** is a file of SQL that changes the schema, such as adding a
+table or a column. Migrations are stored in `prisma/migrations/`, one folder
+each, and are applied in name order.
+
+**Row Level Security**, or RLS, is a set of rules attached to each table that
+decide which rows the application may read or change for the signed in user.
+The rules are written as **policies**.
 
 ---
 
@@ -206,11 +214,12 @@ Reference data is the configuration the assessment calculations depend on:
 school fees, family type allowances, council tax defaults, reason codes, close
 reasons and the calculation band tables.
 
-| Task | How |
-|---|---|
-| Change a fee, allowance or reason code | Admin console, **Settings**. See the Admin and Assessor User Guide. |
-| Add reference data needed by new code | Include `INSERT` statements for the rows in the same migration that creates or changes the table. |
-| Populate a new, empty database | `npm run seed:reference`, described below. |
+- **To change a fee, allowance or reason code**, use the admin console,
+  **Settings**. The Admin and Assessor User Guide covers this.
+- **To add reference data needed by new code**, include `INSERT` statements for
+  the rows in the same migration that creates or changes the table.
+- **To populate a new, empty database**, run `npm run seed:reference`, as
+  described below.
 
 ### 6.1 `npm run seed:reference`
 

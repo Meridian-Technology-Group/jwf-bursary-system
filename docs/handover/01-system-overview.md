@@ -56,13 +56,21 @@ logins and documents. **Resend** sends email. **Sentry** records errors.
 
 ## 3. The services at a glance
 
-| Service | What it is | What it does for this system |
-|---|---|---|
-| [Vercel](https://vercel.com) | Application hosting platform | Serves the website, builds and deploys new versions, holds configuration, runs the firewall and scheduled jobs |
-| [Supabase](https://supabase.com) | Managed database platform | PostgreSQL database, user logins and two factor authentication, uploaded document storage |
-| [Resend](https://resend.com) | Email sending service | Sends invitations, confirmations, reminders and outcome notices |
-| [Sentry](https://sentry.io) | Error monitoring service | Records and alerts on errors in the browser and on the server |
-| [GitHub](https://github.com) | Source code hosting and automation | Stores the code, runs automated checks, applies database migrations |
+**[Vercel](https://vercel.com)**, an application hosting platform, serves the
+website, builds and deploys each new version, holds the configuration, and runs
+the firewall and the scheduled jobs.
+
+**[Supabase](https://supabase.com)**, a managed database platform, holds the
+database, every user login, and every uploaded document.
+
+**[Resend](https://resend.com)**, an email sending service, sends the
+invitations, confirmations, reminders and outcome notices.
+
+**[Sentry](https://sentry.io)**, an error monitoring service, records and
+alerts on errors, both in the browser and on the server.
+
+**[GitHub](https://github.com)**, a source code hosting and automation service,
+stores the code, runs the automated checks, and applies database migrations.
 
 Supabase runs on Amazon Web Services (AWS) in London. There is no separate AWS
 account; AWS is relevant only because it determines where data is stored.
@@ -162,12 +170,8 @@ database and edited by administrators under **Settings** in the admin console.
 Password reset emails are the one exception. Supabase sends those. See
 [10. Email](10-email.md).
 
-**Addresses.**
-
-| | Address |
-|---|---|
-| Sender | `bursary@updates.meridiantech.group` |
-| Replies go to | `fees@johnwhitgiftfoundation.org` |
+**Addresses.** Email is sent from `bursary@updates.meridiantech.group`, and
+replies go to `fees@johnwhitgiftfoundation.org`.
 
 **Account.** Production and Staging use the same Resend account. An email sent
 from Staging is delivered to the real recipient.
@@ -229,25 +233,42 @@ and runs automated tasks when the code changes.
 
 ## 5. External dependencies without an account
 
-| Service | Purpose | Behaviour if unavailable |
-|---|---|---|
-| [Have I Been Pwned](https://haveibeenpwned.com/API/v3#PwnedPasswords) | Rejects passwords that appear in known data breaches, at registration and password reset. Only the first five characters of a one way hash of the password are sent. | The password is accepted. Registration and password reset continue to work. |
-| [npm registry](https://www.npmjs.com) | Supplies the open source packages installed during a build. | New deployments fail. The running site is unaffected. |
+**[Have I Been Pwned](https://haveibeenpwned.com/API/v3#PwnedPasswords)**
+rejects passwords that appear in known data breaches, at registration and at
+password reset. Only the first five characters of a one way hash of the
+password are sent, so the password itself never leaves the system. If the
+service is unavailable the password is accepted, and registration and password
+reset continue to work.
+
+**The [npm registry](https://www.npmjs.com)** supplies the open source packages
+installed during a build. If it is unavailable, new deployments fail and the
+running site is unaffected.
 
 ---
 
 ## 6. The two environments
 
-| | Production | Staging |
-|---|---|---|
-| Purpose | Live service | Testing changes before release |
-| Web address | <https://jwf-bursary-system.vercel.app> | <https://jwf-bursary-system-git-staging-john-whitgift-foundation.vercel.app> |
-| Git branch | `main` | `staging` |
-| Supabase project | `supabase-prod` | `supabase-nonprod` |
-| Data | Real applicants | Test data |
-| Staff two factor authentication | Required | Not required |
-| Email | Delivered to real recipients | Delivered to real recipients |
-| Scheduled jobs | Run | Do not run |
+**Production** is the live service.
+
+- Web address: <https://jwf-bursary-system.vercel.app>
+- Git branch: `main`
+- Supabase project: `supabase-prod`
+- Holds the real applicants and their financial information
+- Staff must use two factor authentication
+- Scheduled jobs run
+
+**Staging** is where changes are tested before release.
+
+- Web address:
+  <https://jwf-bursary-system-git-staging-john-whitgift-foundation.vercel.app>
+- Git branch: `staging`
+- Supabase project: `supabase-nonprod`
+- Holds test data only
+- Staff sign in without two factor authentication
+- Scheduled jobs do not run
+
+Email is the exception to the separation. Both environments send through the
+same Resend account, so an email sent from Staging reaches the real recipient.
 
 The application reports which build is running at `/api/version`. For example,
 <https://jwf-bursary-system.vercel.app/api/version> returns the version number,

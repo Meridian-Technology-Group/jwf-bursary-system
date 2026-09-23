@@ -10,10 +10,16 @@ Scheduled jobs run in Production only. Vercel does not run them for Staging.
 
 ## 1. The jobs
 
-| Job | Address | Schedule (UTC) | What it does |
-|---|---|---|---|
-| Expire invitations | `/api/cron/expire-invitations` | Every day at 02:00 | Marks applicant and staff invitations whose link has passed its expiry date as **Expired**, so they no longer show as pending in the admin console. Writes one audit log entry when at least one invitation was expired. |
-| Purge expired data | `/api/cron/purge-expired` | Every Sunday at 03:00 | Finds applications whose retention period has passed and, when deletion is enabled, permanently deletes them and their documents. Processes at most 100 applications per run. |
+**Expire invitations**, at `/api/cron/expire-invitations`, runs every day at
+02:00. It marks applicant and staff invitations whose link has passed its
+expiry date as **Expired**, so they no longer show as pending in the admin
+console. It writes one audit log entry on any run that expired at least one
+invitation.
+
+**Purge expired data**, at `/api/cron/purge-expired`, runs every Sunday at
+03:00. It finds applications whose retention period has passed and, when
+deletion is enabled, permanently deletes them and their documents. It processes
+at most 100 applications per run.
 
 Times are in UTC. During British Summer Time they run one hour later in UK
 time.
@@ -37,11 +43,11 @@ See [03. Environment Variables](03-environment-variables.md), section 3.5.
 2. Both jobs are listed with their schedules. Click **View Logs** on a job.
 3. The log shows each run with its status code.
 
-| Status | Meaning | Action |
-|---|---|---|
-| `200` | The job ran successfully | None |
-| `401` | `CRON_SECRET` is missing or wrong | Set `CRON_SECRET` in the Production scope and redeploy |
-| `500` | The job failed | Open the log entry to read the error, and look for the same error in Sentry |
+- **`200`** means the job ran successfully. No action needed.
+- **`401`** means `CRON_SECRET` is missing or wrong. Set it in the Production
+  scope and redeploy.
+- **`500`** means the job failed. Open the log entry to read the error, and
+  look for the same error in Sentry.
 
 Vendor documentation: [Managing cron jobs](https://vercel.com/docs/cron-jobs/manage-cron-jobs)
 
@@ -81,13 +87,15 @@ Vendor documentation: [vercel crons](https://vercel.com/docs/cli/crons)
 
 An application becomes due for deletion when its retention period has passed.
 
-| Application outcome | Kept for | Measured from | Environment variable |
-|---|---|---|---|
-| Assessed as not qualifying | 30 days | The date it was archived | `RETENTION_DECLINED_GRACE_DAYS` |
-| Closed without an outcome | 30 days | The date it was closed | `RETENTION_CLOSED_GRACE_DAYS` |
-| Qualified but not awarded | 6 years | The date it was submitted | `RETENTION_QUALIFIES_NOT_AWARDED_YEARS` |
-| Awarded | 7 years | The date the bursary account was closed | `RETENTION_AWARDED_YEARS` |
-| Still in progress | Indefinitely | | |
+- **Assessed as not qualifying:** kept 30 days from the date it was archived.
+  Set by `RETENTION_DECLINED_GRACE_DAYS`.
+- **Closed without an outcome:** kept 30 days from the date it was closed. Set
+  by `RETENTION_CLOSED_GRACE_DAYS`.
+- **Qualified but not awarded:** kept 6 years from the date it was submitted.
+  Set by `RETENTION_QUALIFIES_NOT_AWARDED_YEARS`.
+- **Awarded:** kept 7 years from the date the bursary account was closed. Set
+  by `RETENTION_AWARDED_YEARS`.
+- **Still in progress:** kept indefinitely.
 
 Setting a variable replaces the period shown.
 

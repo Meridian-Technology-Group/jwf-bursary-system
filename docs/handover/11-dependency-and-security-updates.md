@@ -22,11 +22,9 @@ The command lists each known vulnerability in a package used by the running
 application, with its severity: **low**, **moderate**, **high** or
 **critical**.
 
-| Result | Action |
-|---|---|
-| `found 0 vulnerabilities` | None |
-| Any **high** or **critical** | Update the same week, following section 3 |
-| Only **low** or **moderate** | Update at the next monthly check |
+- `found 0 vulnerabilities`: no action.
+- Any **high** or **critical**: update the same week, following section 3.
+- Only **low** or **moderate**: update at the next monthly check.
 
 Also review the security advisories for the framework, which are published
 before they reach `npm audit`:
@@ -45,12 +43,12 @@ These packages are held on a fixed major version. Moving to a new major
 version changes how the application is written, and is a development project,
 not routine maintenance.
 
-| Package | Held on | Update within |
-|---|---|---|
-| `next` and `eslint-config-next` | 14.2 | Newer 14.2 releases |
-| `react` and `react-dom` | 18 | Newer 18 releases |
-| `prisma` and `@prisma/client` | 6 | Newer 6 releases. Both packages must always have the same version. |
-| Node.js | 22 | Newer 22 releases |
+- `next` and `eslint-config-next` stay on **14.2**, updating only to newer 14.2
+  releases.
+- `react` and `react-dom` stay on **18**, updating only to newer 18 releases.
+- `prisma` and `@prisma/client` stay on **6**, updating only to newer 6
+  releases. The two packages must always have the same version as each other.
+- Node.js stays on **22**, updating only to newer 22 releases.
 
 ---
 
@@ -91,15 +89,13 @@ not routine maintenance.
 
 After the update is live on Staging, confirm each of the following works:
 
-| Area | Test |
-|---|---|
-| Staff sign in | Sign in to the admin console |
-| Applicant sign in | Sign in to the applicant portal with a test applicant account |
-| Documents | Upload a PDF on an application, then open it from the admin console |
-| Assessment | Open an application's assessment and save a change |
-| PDF | Download a recommendation PDF |
-| Export | Download an export from **Exports** |
-| Email | Send an invitation to a test address you control and confirm it arrives |
+- Sign in to the admin console as staff.
+- Sign in to the applicant portal with a test applicant account.
+- Upload a PDF on an application, then open it from the admin console.
+- Open an application's assessment and save a change.
+- Download a recommendation PDF.
+- Download an export from **Exports**.
+- Send an invitation to a test address you control, and confirm it arrives.
 
 Then release to Production following
 [05. Making and Releasing Changes](05-making-and-releasing-changes.md),
@@ -111,12 +107,11 @@ section 6.
 
 The Node.js version is set in four places, which must always match.
 
-| Place | Setting |
-|---|---|
-| `.nvmrc` | The full version, for example `22.12.0` |
-| `.github/workflows/ci.yml` | `node-version` |
-| `.github/workflows/db-push.yml` | `node-version`, in both jobs |
-| Vercel project, **Settings**, **Build and Deployment**, **Node.js Version** | The major version, for example `22.x` |
+- `.nvmrc`: the full version, for example `22.12.0`.
+- `.github/workflows/ci.yml`: the `node-version` setting.
+- `.github/workflows/db-push.yml`: the `node-version` setting, in both jobs.
+- The Vercel project, **Settings**, **Build and Deployment**, **Node.js
+  Version**: the major version, for example `22.x`.
 
 Change all four in one branch, run the checks, and release through Staging.
 
