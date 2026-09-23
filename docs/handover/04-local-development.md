@@ -110,15 +110,36 @@ terminal to stop the application.
 GitHub runs these checks on every pull request. Run them locally before
 pushing.
 
-| Check | Command | Passes when |
-|---|---|---|
-| Type check | `rm -f tsconfig.tsbuildinfo && npx tsc --noEmit` | No output |
-| Tests | `npm test` | Final summary shows no failed tests |
-| Migration SQL | `npm run check:migrations` | No errors reported |
-| Schema format | `npx prisma format --check` | No errors reported |
+**Type check.** Passes when it prints nothing.
 
-On Windows, run `Remove-Item tsconfig.tsbuildinfo -ErrorAction SilentlyContinue`
-followed by `npx tsc --noEmit` for the type check.
+```
+rm -f tsconfig.tsbuildinfo && npx tsc --noEmit
+```
+
+On Windows, run these two commands instead:
+
+```
+Remove-Item tsconfig.tsbuildinfo -ErrorAction SilentlyContinue
+npx tsc --noEmit
+```
+
+**Tests.** Passes when the final summary shows no failed tests.
+
+```
+npm test
+```
+
+**Migration SQL.** Passes when no errors are reported.
+
+```
+npm run check:migrations
+```
+
+**Schema format.** Passes when no errors are reported.
+
+```
+npx prisma format --check
+```
 
 Deleting `tsconfig.tsbuildinfo` first matters. The type checker caches its
 previous results in that file and can otherwise report success while skipping

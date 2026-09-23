@@ -45,41 +45,41 @@ Vercel also has a **Development** scope. This system does not use it.
 ## 2. Quick reference
 
 **Required** means the application or a feature fails without it. **Optional**
-means a default applies when it is not set. **Do not set** means the variable
+means a default applies when it is not set. **Never** means the variable
 must be left absent from that store.
 
 | Variable | Vercel Production | Vercel Preview | `.env.local` | `.env` |
 |---|---|---|---|---|
-| `NEXT_PUBLIC_SUPABASE_URL` | Required | Required | Required | Do not set |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Required | Required | Required | Do not set |
-| `SUPABASE_SERVICE_ROLE_KEY` | Required | Required | Required | Do not set |
+| `NEXT_PUBLIC_SUPABASE_URL` | Required | Required | Required | Never |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Required | Required | Required | Never |
+| `SUPABASE_SERVICE_ROLE_KEY` | Required | Required | Required | Never |
 | `DATABASE_URL` | Required | Required | Required | Required |
 | `DIRECT_URL` | Required | Required | Required | Required |
-| `RESEND_API_KEY` | Required | Required | Required | Do not set |
-| `RESEND_FROM_EMAIL` | Required | Required | Required | Do not set |
-| `RESEND_REPLY_TO_EMAIL` | Required | Required | Optional | Do not set |
-| `RESEND_INVITE_BCC_EMAIL` | Optional | Optional | Optional | Do not set |
-| `RESEND_WEBHOOK_SECRET` | Required | Do not set | Do not set | Do not set |
-| `NEXT_PUBLIC_APP_URL` | Required | Do not set | Do not set | Do not set |
-| `CRON_SECRET` | Required | Optional | Do not set | Do not set |
-| `RETENTION_PURGE_ENABLED` | Optional | Do not set | Do not set | Do not set |
-| `RETENTION_DECLINED_GRACE_DAYS` | Optional | Optional | Do not set | Do not set |
-| `RETENTION_CLOSED_GRACE_DAYS` | Optional | Optional | Do not set | Do not set |
-| `RETENTION_QUALIFIES_NOT_AWARDED_YEARS` | Optional | Optional | Do not set | Do not set |
-| `RETENTION_AWARDED_YEARS` | Optional | Optional | Do not set | Do not set |
-| `STAFF_MFA_ENFORCED` | Do not set | Do not set | Do not set | Do not set |
-| `NEXT_PUBLIC_SESSION_IDLE_ENABLED` | Optional | Optional | Optional | Do not set |
-| `NEXT_PUBLIC_SESSION_IDLE_MINUTES` | Optional | Optional | Optional | Do not set |
-| `NEXT_PUBLIC_SESSION_IDLE_WARN_SECONDS` | Optional | Optional | Optional | Do not set |
-| `NEXT_PUBLIC_SENTRY_DSN` | Required | Do not set | Do not set | Do not set |
-| `SENTRY_DSN` | Required | Do not set | Do not set | Do not set |
-| `SENTRY_ORG` | Required | Do not set | Do not set | Do not set |
-| `SENTRY_PROJECT` | Required | Do not set | Do not set | Do not set |
-| `SENTRY_AUTH_TOKEN` | Required | Do not set | Do not set | Do not set |
-| `ROUNDS_SINGLE_OPEN_ONLY` | Optional | Optional | Optional | Do not set |
-| `SUPABASE_STORAGE_BUCKET` | Do not set | Do not set | Do not set | Do not set |
+| `RESEND_API_KEY` | Required | Required | Required | Never |
+| `RESEND_FROM_EMAIL` | Required | Required | Required | Never |
+| `RESEND_REPLY_TO_EMAIL` | Required | Required | Optional | Never |
+| `RESEND_INVITE_BCC_EMAIL` | Optional | Optional | Optional | Never |
+| `RESEND_WEBHOOK_SECRET` | Required | Never | Never | Never |
+| `NEXT_PUBLIC_APP_URL` | Required | Never | Never | Never |
+| `CRON_SECRET` | Required | Optional | Never | Never |
+| `RETENTION_PURGE_ENABLED` | Optional | Never | Never | Never |
+| `RETENTION_DECLINED_GRACE_DAYS` | Optional | Optional | Never | Never |
+| `RETENTION_CLOSED_GRACE_DAYS` | Optional | Optional | Never | Never |
+| `RETENTION_QUALIFIES_NOT_AWARDED_YEARS` | Optional | Optional | Never | Never |
+| `RETENTION_AWARDED_YEARS` | Optional | Optional | Never | Never |
+| `STAFF_MFA_ENFORCED` | Never | Never | Never | Never |
+| `NEXT_PUBLIC_SESSION_IDLE_ENABLED` | Optional | Optional | Optional | Never |
+| `NEXT_PUBLIC_SESSION_IDLE_MINUTES` | Optional | Optional | Optional | Never |
+| `NEXT_PUBLIC_SESSION_IDLE_WARN_SECONDS` | Optional | Optional | Optional | Never |
+| `NEXT_PUBLIC_SENTRY_DSN` | Required | Never | Never | Never |
+| `SENTRY_DSN` | Required | Never | Never | Never |
+| `SENTRY_ORG` | Required | Never | Never | Never |
+| `SENTRY_PROJECT` | Required | Never | Never | Never |
+| `SENTRY_AUTH_TOKEN` | Required | Never | Never | Never |
+| `ROUNDS_SINGLE_OPEN_ONLY` | Optional | Optional | Optional | Never |
+| `SUPABASE_STORAGE_BUCKET` | Never | Never | Never | Never |
 
-`STAFF_MFA_ENFORCED` and `SUPABASE_STORAGE_BUCKET` are listed as **Do not set**
+`STAFF_MFA_ENFORCED` and `SUPABASE_STORAGE_BUCKET` are listed as **Never**
 because the correct behaviour is the default. Section 3 describes when each is
 used.
 

@@ -19,10 +19,8 @@ Every email from the application is recorded in the admin console on the
 **Sent Emails** page, and in Resend under **Emails**. Password reset emails
 appear in neither; they are recorded in the Supabase authentication logs.
 
-| Link in the email | Valid for |
-|---|---|
-| Applicant invitation | 30 days |
-| Staff invitation | 72 hours |
+The link in an applicant invitation is valid for 30 days. The link in a staff
+invitation is valid for 72 hours.
 
 ---
 
