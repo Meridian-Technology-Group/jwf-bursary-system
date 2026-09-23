@@ -157,8 +157,9 @@ When every entry on the **Sent Emails** page shows `FAILED`:
 A recipient who sees this message on an invitation or password reset page has
 a link that has expired or has already been used.
 
-- **An applicant invitation:** admin console, **Invitations**, resend the
-  invitation.
+- **An applicant invitation:** admin console, **Send Invitations**, find the
+  row in **Invitation History**, and click **Resend**. This issues a new link
+  valid for 30 days.
 - **A staff invitation:** admin console, **Users**, **Pending Staff
   Invitations**, **Resend invitation**.
 - **A password reset:** the recipient requests a new one from **Forgot

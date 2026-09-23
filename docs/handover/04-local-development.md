@@ -110,7 +110,9 @@ terminal to stop the application.
 GitHub runs these checks on every pull request. Run them locally before
 pushing.
 
-**Type check.** Passes when it prints nothing.
+**Type check.** Passes when it prints nothing. Deleting `tsconfig.tsbuildinfo`
+first matters: the type checker caches its previous results in that file and
+can otherwise report success while skipping new files.
 
 ```
 rm -f tsconfig.tsbuildinfo && npx tsc --noEmit
@@ -140,10 +142,6 @@ npm run check:migrations
 ```
 npx prisma format --check
 ```
-
-Deleting `tsconfig.tsbuildinfo` first matters. The type checker caches its
-previous results in that file and can otherwise report success while skipping
-new files.
 
 ---
 

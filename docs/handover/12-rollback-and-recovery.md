@@ -85,7 +85,7 @@ chosen moment has its database record restored but its file remains deleted.
 1. Take the site offline (section 3), so no new data is written during the
    restore.
 2. Find the moment to restore to: the last moment before the damage. Use the
-   admin console **Audit** page or the Vercel logs to find when the damaging
+   admin console **Audit Log** page or the Vercel logs to find when the damaging
    action happened, and choose a moment one minute before it.
 3. Record the chosen moment in UTC. Times during British Summer Time are one
    hour ahead of UTC.
