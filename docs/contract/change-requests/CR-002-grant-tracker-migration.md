@@ -2,15 +2,6 @@
 
 **Statement of work under clauses 2.2 and 9.5 of the Master Services Agreement dated 1 May 2026**
 
-| | |
-|---|---|
-| **Supplier** | Result Driven Development LLC, trading as Meridian Technology Group |
-| **Customer** | The John Whitgift Foundation |
-| **Date** | 20 September 2026 |
-| **Status** | Agreed by email, 20 September 2026 |
-
----
-
 ## 1. What this covers
 
 Moving the 273 live 2026-27 bursary accounts out of Symplectic Grant Tracker into the bursary system, with each assessment rebuilt by the current model from the Grant Tracker fields you have identified as trustworthy.
@@ -71,36 +62,36 @@ Your schedule of awards, scholarships, school fees and payable fees is the autho
 
 Fixed prices, net of VAT. Invoiced as each part is accepted, payable within 30 days.
 
-| | |
-|---|---|
-| Migration | £1,500 |
-| Documents | £350 |
-| Terms of use and retention rules | £250 |
-| Priority delivery to the 2 October deadline | £350 |
-| **Total** | **£2,450** |
+| Item                                        | Cost       |
+| ------------------------------------------- | ---------- |
+| Migration                                   | £1,500     |
+| Documents                                   | £350       |
+| Terms of use and retention rules            | £250       |
+| Priority delivery to the 2 October deadline | £350       |
+| **Total**                                   | **£2,450** |
 
 **Earlier years — to decide later, one only**
 
-| | |
-|---|---|
-| 2025-26 headline figures on each account's admin tab | £200 |
-| The same, for the previous three years | £375 |
+| Item                                                         | Cost   |
+| ------------------------------------------------------------ | ------ |
+| 2025-26 headline figures on each account's admin tab         | £200   |
+| The same, for the previous three years                       | £375   |
 | 2025-26 assessments rebuilt, including accounts closed since | £1,200 |
-| No earlier years | £0 |
+| No earlier years                                             | £0     |
 
 ---
 
 ## 6. Timeline
 
-| | |
-|---|---|
-| Exceptions pack to you | within 2 working days of approval |
-| Your rulings on anything needing Grant Tracker | by 1 October |
-| System changes and first rehearsal | the week following |
-| Account-by-account report to you | within 10 working days of approval |
-| Second rehearsal and your sign-off | on your review |
-| Live load | at a time that suits you, after sign-off |
-| Documents | following the live load |
+| What                                           | When                                     |
+| ---------------------------------------------- | ---------------------------------------- |
+| Exceptions pack to you                         | within 2 working days of approval        |
+| Your rulings on anything needing Grant Tracker | by 1 October                             |
+| System changes and first rehearsal             | the week following                       |
+| Account-by-account report to you               | within 10 working days of approval       |
+| Second rehearsal and your sign-off             | on your review                           |
+| Live load                                      | at a time that suits you, after sign-off |
+| Documents                                      | following the live load                  |
 
 ---
 
@@ -124,13 +115,3 @@ Fixed prices, net of VAT. Invoiced as each part is accepted, payable within 30 d
 - Documents are in place and reconcile against the archive.
 - A migrated account has been taken through a normal re-assessment on the test system.
 
----
-
-## 9. Signatures
-
-| | Supplier | Customer |
-|---|---|---|
-| **Name** | | |
-| **Title** | | |
-| **Signature** | | |
-| **Date** | | |

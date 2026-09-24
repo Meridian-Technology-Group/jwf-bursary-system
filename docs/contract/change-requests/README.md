@@ -12,5 +12,5 @@ by the MSA. No work begins until the quote is approved in writing.
 
 | CR | Title | Charge | Status |
 |---|---|---|---|
-| [CR-001](CR-001-assessor-edit-on-behalf.md) | Assessor edit-on-behalf ("impersonation") | £600 (fixed, net of VAT) | Awaiting Customer approval |
+| [CR-001](CR-001-assessor-edit-on-behalf.md) | Assessor edit-on-behalf ("impersonation") | £600 (fixed, net of VAT) | Closed, paid |
 | [CR-002](CR-002-grant-tracker-migration.md) | Grant Tracker migration (2026-27 live bursaries) | £2,450 (fixed, net of VAT) + earlier-year options | Agreed by email 20 Sep; signature outstanding |
