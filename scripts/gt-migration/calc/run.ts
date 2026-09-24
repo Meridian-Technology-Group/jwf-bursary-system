@@ -77,13 +77,18 @@ export async function runCalc(config: MigConfig, rules: MappingRules = DEFAULT_R
   const accounts: CanonicalAccount[] = JSON.parse(readFileSync(resolve(dir, 'accounts.json'), 'utf8')).accounts
   console.log(`target: ${config.env} (${config.projectRef}) | canonical: ${hash} | accounts: ${accounts.length}`)
   console.log(`rules: ${JSON.stringify({ ...rules, siblingPayableFees: rules.siblingPayableFees.length })}`)
+  console.log(`accounts with per-account rulings: ${accounts.filter((a) => a.overrides).length}`)
 
   const ref = await loadReferenceBundle(config)
-  const eids = new Set(accounts.map((a) => a.latest?.eid).filter((e): e is string => Boolean(e)))
+  // The assessment form normally sits on the latest assessed entity; a ruling
+  // can point elsewhere (GATB01: the form is on the rejected 24 May review).
+  const formEid = (a: CanonicalAccount) => a.latest?.formEid ?? a.latest?.eid
+  const eids = new Set(accounts.map(formEid).filter((e): e is string => Boolean(e)))
   const forms = await readGtForms(resolve(EXTRACT_DIR, 'gt_forms.tsv'), eids)
 
   const rows: CalcRow[] = accounts.map((account) => {
-    const controls = account.latest?.eid ? forms.get(account.latest.eid) : undefined
+    const eid = formEid(account)
+    const controls = eid ? forms.get(eid) : undefined
     const mapped = mapAssessment(account, controls, rules)
     if (mapped.status === 'NOT_ASSESSED') return { key: account.key, status: 'NOT_ASSESSED', reason: mapped.reason }
     try {

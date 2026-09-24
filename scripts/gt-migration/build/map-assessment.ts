@@ -34,9 +34,33 @@ export interface CanonicalAccount {
   award: number
   payable: number
   flags: readonly string[]
-  latest?: { eid?: string } | null
+  latest?: { eid?: string; formEid?: string } | null
   /** Her schedule's family type, as typed ("2"). The fallback when GT holds none. */
   sheetFamilyType?: string | number | null
+  /** Her per-account rulings, applied by the build from decisions.json. */
+  overrides?: AccountOverrides | null
+  /** Set by a "do not migrate" ruling. */
+  excluded?: string | null
+}
+
+/**
+ * Per-account rulings from her returned M2 pack. Each one wins over the
+ * matching global rule for that account only.
+ */
+export interface AccountOverrides {
+  /** C2: the family type she gave (GT's otherwise). */
+  familyType?: number
+  /** C6: the income-support figure is child benefit. */
+  incomeSupportAs?: 'CHILD_BENEFIT'
+  /** C6: …and this is the right amount for it. */
+  childBenefitAmount?: number
+  /** C7 */
+  otherProperty?: OtherPropertyTreatment
+  /** C7: her per-property split, summed. Replaces GT's other-property figures. */
+  otherValue?: number
+  otherMortgage?: number
+  /** S24: sibling payable fees she supplied, one per sibling row. */
+  siblings?: readonly { name?: string | null; payableFees: number }[]
 }
 
 /** GT control name → every value recorded against it on the assessment. */
@@ -88,7 +112,7 @@ export const OP_FINAL_YEAR = 11
 
 export type MapResult =
   | { status: 'MAPPED'; input: AssessmentV2Input; notes: string[] }
-  | { status: 'NOT_ASSESSED'; reason: 'PASTORAL_BOARDER' | 'NO_FORM_DATA' | 'NO_FAMILY_TYPE' }
+  | { status: 'NOT_ASSESSED'; reason: 'PASTORAL_BOARDER' | 'NO_FORM_DATA' | 'NO_FAMILY_TYPE' | 'EXCLUDED' }
 
 const isFamilyType = (n: number) => Number.isInteger(n) && n >= 1 && n <= 6
 
@@ -151,7 +175,13 @@ export function schoolingYearsRemaining(account: CanonicalAccount): number {
   return Math.max(0, Math.min(total, OP_FINAL_YEAR - account.sheetYear + 1))
 }
 
-function earnerRecord(controls: Controls, who: 'First' | 'Second', rules: MappingRules, notes: string[]) {
+function earnerRecord(
+  controls: Controls,
+  who: 'First' | 'Second',
+  rules: MappingRules,
+  notes: string[],
+  ov: AccountOverrides,
+) {
   const up = (k: keyof typeof EARNER_UPPER) => num(controls, earnerControl(who, EARNER_UPPER[k], false))
   const lo = (k: keyof typeof EARNER_LOWER) => num(controls, earnerControl(who, EARNER_LOWER[k], true))
 
@@ -161,6 +191,15 @@ function earnerRecord(controls: Controls, who: 'First' | 'Second', rules: Mappin
     rentFreeMarker = incomeSupport
     incomeSupport = 0
     notes.push(`C5: ${who.toLowerCase()} earner income support is the rent-free marker; removed from income, rent added back instead`)
+  }
+
+  let childBenefit = lo('childBenefit')
+  if (ov.incomeSupportAs === 'CHILD_BENEFIT' && incomeSupport) {
+    childBenefit += ov.childBenefitAmount ?? incomeSupport
+    notes.push(
+      `C6: ${who.toLowerCase()} earner income support is child benefit${ov.childBenefitAmount != null ? ', at the amount she gave' : ''}`,
+    )
+    incomeSupport = 0
   }
 
   const values = {
@@ -174,7 +213,7 @@ function earnerRecord(controls: Controls, who: 'First' | 'Second', rules: Mappin
     universalCredit: up('hbOrUc'),
     jsa: up('jsa'),
     pipOrDla: up('disability'),
-    childBenefit: lo('childBenefit'),
+    childBenefit,
     housingBenefit: lo('housingBenefit'),
     other: incomeSupport + up('otherBenefits'),
   }
@@ -219,14 +258,16 @@ export function mapAssessment(
   controls: Controls | undefined,
   rules: MappingRules = DEFAULT_RULES,
 ): MapResult {
+  if (account.excluded) return { status: 'NOT_ASSESSED', reason: 'EXCLUDED' }
   if (account.flags.includes('PB_NO_GT')) return { status: 'NOT_ASSESSED', reason: 'PASTORAL_BOARDER' }
   if (!controls || controls.size === 0) return { status: 'NOT_ASSESSED', reason: 'NO_FORM_DATA' }
 
   const notes: string[] = []
+  const ov: AccountOverrides = account.overrides ?? {}
 
   // ── income (§3) ──────────────────────────────────────────────────────────
-  const first = earnerRecord(controls, 'First', rules, notes)
-  const second = earnerRecord(controls, 'Second', rules, notes)
+  const first = earnerRecord(controls, 'First', rules, notes, ov)
+  const second = earnerRecord(controls, 'Second', rules, notes, ov)
   const earner1 = toIncomeRecord(first.values)
 
   const maintenance = num(controls, C.maintenance)
@@ -254,6 +295,12 @@ export function mapAssessment(
   // ── property (§4, C7, C16) ──────────────────────────────────────────────
   const home = { value: num(controls, C.homeValue), mortgageBalance: num(controls, C.homeMortgage) }
   const other = { value: num(controls, C.otherValue), mortgageBalance: num(controls, C.otherMortgage) }
+  if (ov.otherValue != null || ov.otherMortgage != null) {
+    other.value = ov.otherValue ?? other.value
+    other.mortgageBalance = ov.otherMortgage ?? other.mortgageBalance
+    notes.push('C7: other-property figures are her per-property split, not GT\'s total')
+  }
+  const otherProperty = ov.otherProperty ?? rules.otherProperty
   const propertyAssets: PropertyAssetsRecord = {}
   if (home.value || home.mortgageBalance) propertyAssets.home = home
 
@@ -261,14 +308,14 @@ export function mapAssessment(
   if (other.value || other.mortgageBalance) {
     // The engine classifies DOUBLE from `second` and MULTIPLE from `other`;
     // equity sums all three, so only the category depends on this choice.
-    if (rules.otherProperty === 'PORTFOLIO') {
+    if (otherProperty === 'PORTFOLIO') {
       propertyAssets.other = other
       portfolioType = 'MULTIPLE'
     } else {
       propertyAssets.second = other
       portfolioType = 'DOUBLE'
     }
-    notes.push(`C7: other properties treated as ${rules.otherProperty === 'PORTFOLIO' ? 'a portfolio' : 'one second property'}`)
+    notes.push(`C7: other properties treated as ${otherProperty === 'PORTFOLIO' ? 'a portfolio' : 'one second property'}`)
   }
   propertyAssets.portfolioType = portfolioType
 
@@ -295,7 +342,10 @@ export function mapAssessment(
   }
 
   let familyTypeCategory = num(controls, C.familyType)
-  if (!isFamilyType(familyTypeCategory)) {
+  if (ov.familyType != null && isFamilyType(ov.familyType)) {
+    if (ov.familyType !== familyTypeCategory) notes.push('C2: family type is the one she gave, not GT\'s')
+    familyTypeCategory = ov.familyType
+  } else if (!isFamilyType(familyTypeCategory)) {
     const fromSheet = Number(account.sheetFamilyType)
     if (!isFamilyType(fromSheet)) {
       return { status: 'NOT_ASSESSED', reason: 'NO_FAMILY_TYPE' }
@@ -321,7 +371,7 @@ export function mapAssessment(
     propertyAssets,
     portfolioType,
     debts,
-    siblingPayableFees: rules.siblingPayableFees,
+    siblingPayableFees: ov.siblings ? ov.siblings.map((s) => s.payableFees) : rules.siblingPayableFees,
     annualFees: account.fees,
     scholarshipPct: account.scholPct,
     bursaryAwardBeforeVat: account.award,

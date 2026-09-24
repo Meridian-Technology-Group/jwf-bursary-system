@@ -175,3 +175,46 @@ describe('mapAssessment — school, fees and years', () => {
     expect(schoolingYearsRemaining(account({ school: 'OP_PARTNER', sheetYear: 7 }))).toBe(5)
   })
 })
+
+describe('mapAssessment — per-account rulings', () => {
+  it('skips an account she ruled out', () => {
+    expect(mapAssessment(account({ excluded: 'pastoral boarder' }), controls(base))).toMatchObject({ reason: 'EXCLUDED' })
+  })
+
+  it('moves income support to child benefit, at her amount when she gave one', () => {
+    const ctl = controls({ ...base, 'Second Earner yearly income support': 5000 })
+    const moved = mapped(account({ overrides: { incomeSupportAs: 'CHILD_BENEFIT' } }), ctl)
+    expect(moved.input.earners[1].benefits).toMatchObject({ childBenefit: 5000, other: 0 })
+    const amended = mapped(account({ overrides: { incomeSupportAs: 'CHILD_BENEFIT', childBenefitAmount: 4500 } }), ctl)
+    expect(calculateEarnerAggregateIncome(amended.input.earners)).toBe(4500)
+  })
+
+  it('leaves a rent-free marker alone even when the account is ruled child benefit', () => {
+    const ctl = controls({ ...base, 'First Earner yearly income support': 12000 })
+    const r = mapped(account({ overrides: { incomeSupportAs: 'CHILD_BENEFIT' } }), ctl)
+    expect(calculateEarnerAggregateIncome(r.input.earners)).toBe(0)
+    expect(r.input.rentAddBackType).toBe('FULL_RENT_FREE')
+  })
+
+  it('takes her portfolio ruling and property split over the global rule and GT figures', () => {
+    const ctl = controls({ ...base, [C.homeValue]: 400000, [C.otherValue]: 500000, [C.otherMortgage]: 50000 })
+    const r = mapped(
+      account({ overrides: { otherProperty: 'PORTFOLIO', otherValue: 220000, otherMortgage: 202000 } }),
+      ctl,
+    )
+    expect(r.input.portfolioType).toBe('MULTIPLE')
+    expect(r.input.propertyAssets.other).toEqual({ value: 220000, mortgageBalance: 202000 })
+  })
+
+  it('uses her family type over GT', () => {
+    expect(mapped(account({ overrides: { familyType: 2 } }), controls(base)).input.familyTypeCategory).toBe(2)
+  })
+
+  it('passes her sibling figures through, zeros included', () => {
+    const r = mapped(
+      account({ overrides: { siblings: [{ name: 'A', payableFees: 3000 }, { name: 'B', payableFees: 0 }] } }),
+      controls(base),
+    )
+    expect(r.input.siblingPayableFees).toEqual([3000, 0])
+  })
+})
