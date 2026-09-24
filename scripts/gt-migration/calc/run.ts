@@ -57,11 +57,16 @@ export function latestCanonical(): { hash: string; dir: string } {
   return { hash: dirs[0].d, dir: resolve(root, dirs[0].d) }
 }
 
+/**
+ * S19: which leg her payable fees sit closest to. Each leg is floored at £0,
+ * as the recommendation is, so a family she charges £0 whose actual leg is
+ * negative counts as matching the actual leg, not whichever leg is nearest zero.
+ */
 function closestLeg(payable: number, out: AssessmentV2Output) {
   const legs: [string, number][] = [
-    ['actual', out.actualRemainingDi],
-    ['theoretical', out.theoreticalBenchmarkDi],
-    ['affordability', out.affordabilityAdjustedDi],
+    ['actual', Math.max(0, out.actualRemainingDi)],
+    ['theoretical', Math.max(0, out.theoreticalBenchmarkDi)],
+    ['affordability', Math.max(0, out.affordabilityAdjustedDi)],
   ]
   legs.sort((a, b) => Math.abs(a[1] - payable) - Math.abs(b[1] - payable))
   return { closestLeg: legs[0][0], closestLegDistance: Math.abs(legs[0][1] - payable) }
