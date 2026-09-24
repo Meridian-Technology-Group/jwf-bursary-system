@@ -62,11 +62,13 @@ A second earner record is created only if any Second-Earner field is non-zero.
 | First/Second Earner yearly disability allowance | `benefits.pipOrDla` | |
 | First/Second Earner yearly income support | `benefits.other` | **C6:** on new-application assessments child benefit may be in here. Flag `CHB_IN_IS` when type = New award and value > 0. |
 | First/Second Earner other benefits | `benefits.other` (added) | |
+| First/Second earner child benefits | `benefits.childBenefit` | **Added 24 Sep — missing from the first draft.** Lower-case "earner" in GT. 197 non-zero. Without it income matched GT on 71/270; with it, 270/270. |
+| First/Second earner housing benefits | `benefits.housingBenefit` | **Added 24 Sep.** Part of GT's income total. |
 | YEARLY CHILD MAINTENANCE SUPPORT (court settlements section) | `divorcedSeparated.maintenanceReceived` on earner 1 | |
 | FRIENDS & FAMILY ARRANGEMENTS (+ total) | `thirdParty.incomeSupportReceived`, divisor 1 | Her note: help from friends and family "may show there". |
-| ADD BACK IN THE ADDITIONAL YEARLY PROPERTY INCOME | `selfEmployed.propertyIncome` on earner 1 | |
-| **Rent-free add-back** (+12,000 / +15,000) | **not income** → `rentAddBackType = FULL_RENT_FREE` | **C5.** The control she means is pinned in M2 (candidates: "ADD AVERAGE YEARLY RENTAL INCOME ON ZOOPLA", the friends-and-family block). Detection rule: a value of exactly 12000 or 15000 in the pinned control. Always flagged `RENT_FREE`. |
-| TOTAL HOUSEHOLD NET INCOME (pre Court Settlement) / TOTAL HOUSEHOLD NET INCOME | **C** | Reconciliation anchor (§7, check R1). "May include adjustments for when the household is living rent-free." |
+| ADD BACK IN THE ADDITIONAL YEARLY PROPERTY INCOME | `selfEmployed.propertyIncome` on earner 1 | Not part of GT's own income total (verified 24 Sep), so the one account carrying it shows as an income difference in the report. |
+| **Rent-free add-back** (+12,000 / +15,000) | **not income** → `rentAddBackType = FULL_RENT_FREE` | **C5.** The control she means is pinned in M2 (candidates: "ADD AVERAGE YEARLY RENTAL INCOME ON ZOOPLA", the friends-and-family block). Detection rule: a value of exactly 12000 or 15000 in the pinned control. Always flagged `RENT_FREE`. **Pinned 24 Sep:** the marker sits in First/Second Earner yearly income support and *is* inside GT's income total, so treating it as rent-free takes it out of income. The Zoopla control is not part of GT's income total. |
+| TOTAL HOUSEHOLD NET INCOME (pre Court Settlement) / TOTAL HOUSEHOLD NET INCOME | **C** | Reconciliation anchor (§7, check R1). "May include adjustments for when the household is living rent-free." **Verified 24 Sep:** pre-court = every earner control incl. child and housing benefit (270/270); post-court = that + YEARLY CHILD MAINTENANCE SUPPORT (270/270). R1 compares with post-court. |
 | CEO's discretionary adjustment (current / next) | `manualAdjustment` = 0 | GT's final-award tab is ignored (S14). Non-zero → flag `CEO_ADJ` for her information. |
 
 `employmentStatus` on each `AssessmentEarner` row: derived by the app's own
@@ -82,8 +84,8 @@ A second earner record is created only if any Second-Earner field is non-zero.
 | NUMBER OF SCHOOLING YEARS LEFT | **I** "derived by default from current school year" | `schoolingYearsRemaining` | central helper from the 2026-27 school year; OP capped at Year 11 (a Year 10 OP pupil has 1 year left after this one). |
 | CAR SECTION / ENTER NUMBER OF CARS | **T** for yes/no only | `usesCar = cars > 0` | the deduction amount is **I**. |
 | — | – | `usesPublicTransport` | not in GT. Default `false`; flag nothing (model-neutral default); listed in the pack header as an assumption. |
-| APPROX VALUE OF OWNED HOME / OUTSTANDING MORTGAGE BALANCE | **T** "first part is always the family home" | `propertyAssets.home.{value, mortgageBalance}` | both zero → `portfolioType = RENTING`. |
-| TOTAL VALUE OF ANY OTHER PROPERTIES / OTHER OUTSTANDING MORTGAGE BALANCES | **T but amalgamated** | `propertyAssets.other.{value, mortgageBalance}`; `portfolioType = DOUBLE` | **C7:** any non-zero → flag `OTHER_PROPERTY`; she decides second-vs-multiple per account before it loads. |
+| APPROX VALUE OF OWNED HOME / OUTSTANDING MORTGAGE BALANCE | **T** "first part is always the family home" | `propertyAssets.home.{value, mortgageBalance}` | both zero → `portfolioType = RENTING`. Value with no mortgage → `rentAddBackType = FULL_MORTGAGE_FREE` (**C16**, added 24 Sep). |
+| TOTAL VALUE OF ANY OTHER PROPERTIES / OTHER OUTSTANDING MORTGAGE BALANCES | **T but amalgamated** | one second property → `propertyAssets.second`, `portfolioType = DOUBLE`; a portfolio → `propertyAssets.other`, `MULTIPLE` | **C7:** any non-zero → flag `OTHER_PROPERTY`; she decides second-vs-multiple per account before it loads. **Corrected 24 Sep:** the engine reads `DOUBLE` from `second`, not `other`. |
 | Total Equity | **C** "totally reliable" | comparison | check R2. |
 | DEDUCT ANNUAL COUNCIL TAX, sub-totals, deductions | **I** | – | new model derives. `councilTaxSupport = false`, no overrides. |
 | NUMBER OF PEOPLE IN THE HOUSEHOLD / HouseholdOccupants | **C** | – | "we don't have adults vs kids, only the total"; the new model keys on family type. Comparison only. |
