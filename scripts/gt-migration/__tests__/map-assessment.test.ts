@@ -133,19 +133,19 @@ describe('mapAssessment — property (C7, C16)', () => {
 describe('mapAssessment — C12 debt', () => {
   const ctl = controls({ ...base, [C.creditCards]: 3000, [C.loans]: 2400, [C.leases]: 600, [C.foundationDebt]: 500 })
 
-  it('multiplies loan and lease figures by the repayment horizon by default', () => {
+  it('takes loan and lease figures as GT entered them by default, as GT itself did', () => {
     expect(mapped(account(), ctl).input.debts).toEqual({
       creditCards: 3000,
-      loans: 12000,
-      leaseBalances: 3000,
+      loans: 2400,
+      leaseBalances: 600,
       schoolFeesOwedOrOther: 500,
     })
   })
 
-  it('takes them as entered when ruled so, as GT itself did', () => {
-    const r = mapped(account(), ctl, { ...DEFAULT_RULES, debt: 'AS_ENTERED' })
-    expect(r.input.debts.loans).toBe(2400)
-    expect(r.input.debts.leaseBalances).toBe(600)
+  it('multiplies them by the repayment horizon when asked', () => {
+    const r = mapped(account(), ctl, { ...DEFAULT_RULES, debt: 'TIMES_REPAYMENT_YEARS' })
+    expect(r.input.debts.loans).toBe(12000)
+    expect(r.input.debts.leaseBalances).toBe(3000)
   })
 })
 

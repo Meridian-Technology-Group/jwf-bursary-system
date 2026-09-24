@@ -67,9 +67,13 @@ export interface MappingRules {
   siblingPayableFees: readonly number[]
 }
 
-/** The "Proposed" column of the 22 Sep pack, plus the C16 default. */
+/**
+ * The "Proposed" column of the 22 Sep pack, except C12 (Brian, 24 Sep: take
+ * loan/lease figures as GT entered them, since GT treated them as balances),
+ * plus C16 (Brian, 24 Sep: yes, subject to her confirmation).
+ */
 export const DEFAULT_RULES: MappingRules = {
-  debt: 'TIMES_REPAYMENT_YEARS',
+  debt: 'AS_ENTERED',
   otherProperty: 'ONE_SECOND_PROPERTY',
   rentFree: 'RENT_FREE_ADD_BACK',
   mortgageFreeAddBack: true,

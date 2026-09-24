@@ -3,6 +3,8 @@
  *
  *   npm run mig -- calc --env nonprod [--debt as-entered|x5] [--variant <name>]
  *
+ * --debt defaults to as-entered (C12, Brian 24 Sep).
+ *
  * Only `calc` exists so far; the rest of 04-toolkit.md §2 is built in M3.
  */
 import { loadConfig, type MigEnv } from './config'
