@@ -70,11 +70,11 @@ this table (human). Never delete a row; supersede it.
 
 | ID | Question | Default | Blocks |
 |---|---|---|---|
-| B1 | Real family data on **nonprod** for the rehearsals (Charlotte must review real figures on staging). Nonprod is reachable only by Brian and Charlotte; data is removed after prod sign-off (M9). | Yes | M4 |
+| ~~B1~~ | **Settled 24 Sep (Brian): yes.** Real family data goes to **nonprod** for the rehearsals; reachable only by Brian and Charlotte; removed after prod sign-off (M9). Her written acceptance is to be obtained before the load — the CR-002 §7 wording covering it was dropped from the client-facing rewrite and has been restored. | – | was M4 |
 | B2 | `DocumentStore.zip` AES password (from Symplectic's one-time link). | – | M8 only |
-| B3 | Which staff profile owns migrated assessments (`assessorId`)? | Charlotte's ADMIN profile; a login-less "Data migration" system profile is `createdBy` / `uploadedBy` | M3 config |
+| ~~B3~~ | **Settled 24 Sep (Brian): as proposed.** Charlotte's ADMIN profile is `assessorId` — the assessments are genuinely hers, made in Grant Tracker. A login-less "Data migration" system profile is `createdBy` / `uploadedBy`, because the records were machine-created. | – | was M3 config |
 | B4 | The "reporting correctness" fixes in M1 group R are existing defects, not migration features. Ship them before the prod load? | Yes: at 273 accounts they make the dashboard visibly wrong | M7 quality, not M4 |
-| B5 | Supabase plan storage headroom for ~6.4 GB of documents on prod (and the same again on nonprod if M8 is rehearsed with the full set). | Rehearse M8 on nonprod with a 5% sample | M8 |
+| ~~B5~~ | **Settled 24 Sep (Brian): upgrade prod to Supabase Pro, cost absorbed by Meridian for now.** Measured, not estimated: the in-scope documents are **6,181 files / 6.57 GB** (all 6,181 located in `DocumentStore.zip`, zero unmatched). Prod was on the **free plan** — 1 GB storage cap and **no automated backups of any kind**, so M0's "prod backup timestamp" was unobtainable rather than merely outstanding. Pro gives 100 GB storage and daily backups at 7-day retention. Must be in place **before M4**, not just M7, or the rehearsal proves nothing about storage and the load still runs with no restore point. Rehearse M8 on nonprod with a 5% sample to avoid a second 6.57 GB. | – | was M8; was blocking M7 |
 | B6 | Commercial scope (SOW). | Deferred | Nothing technical |
 
 ## D. Open — waiting on Alex Skrzynski (JWF IT)
