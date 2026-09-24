@@ -12,6 +12,7 @@
     "test:watch": "vitest",
     "backfill:assessments": "tsx scripts/backfill-assessment-calculations.ts",
     "backfill:income-drafts": "tsx scripts/backfill-income-drafts.ts",
+    "mig": "tsx scripts/gt-migration/cli.ts",
     "seed:reference": "tsx prisma/seed-reference.ts",
     "seed:demo": "ALLOW_DESTRUCTIVE_SEED=1 tsx prisma/seed-demo.ts",
     "check:migrations": "node scripts/check-migration-sql.mjs",
