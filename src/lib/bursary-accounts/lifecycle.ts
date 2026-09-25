@@ -19,6 +19,23 @@
 
 import type { Tx } from "@/lib/db/prisma";
 import type { ScheduleEntryStatus } from "@prisma/client";
+import {
+  formatAcademicYearLabel,
+  parseAcademicYearStart,
+} from "@/lib/assessment/fee-year";
+
+/**
+ * The labels a schedule row for this academic year may carry. Rounds are
+ * labelled "2026/27" while generated schedule rows are "2026-27"
+ * (formatAcademicYearLabel), so an exact match on the round's label never
+ * finds its row. Match on the starting year instead, in either spelling.
+ */
+export function scheduleYearLabels(academicYear: string): string[] {
+  const start = parseAcademicYearStart(academicYear);
+  if (start == null) return [academicYear];
+  const dashed = formatAcademicYearLabel(start);
+  return Array.from(new Set([academicYear, dashed, dashed.replace("-", "/")]));
+}
 
 /**
  * Pure: an account is complete iff it has at least one schedule entry and EVERY
@@ -120,7 +137,7 @@ export async function reopenAccountForAssessmentYear(
   const entry = await tx.bursaryScheduleEntry.findFirst({
     where: {
       bursaryAccountId: params.bursaryAccountId,
-      academicYear: params.academicYear,
+      academicYear: { in: scheduleYearLabels(params.academicYear) },
     },
     select: { id: true, status: true },
   });
@@ -156,7 +173,8 @@ export async function reopenAccountForAssessmentYear(
 /**
  * Mirror a submitted/assessed application onto its schedule entry. Called when a
  * year's application is submitted (→ RECEIVED) and when its assessment completes
- * (→ COMPLETE). Matching is by `academicYear` within the account's schedule;
+ * (→ COMPLETE). Matching is by academic year (either spelling, see
+ * `scheduleYearLabels`) within the account's schedule;
  * never rewrites an already-COMPLETE row backwards.
  *
  * Returns the updated entry id (or null when no matching schedule row exists —
@@ -176,7 +194,7 @@ export async function mirrorApplicationToSchedule(
   const entry = await tx.bursaryScheduleEntry.findFirst({
     where: {
       bursaryAccountId: params.bursaryAccountId,
-      academicYear: params.academicYear,
+      academicYear: { in: scheduleYearLabels(params.academicYear) },
     },
     select: { id: true, status: true },
   });
