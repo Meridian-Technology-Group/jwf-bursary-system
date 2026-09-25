@@ -30,7 +30,8 @@ import {
   parseAcademicYearStart,
   formatAcademicYearLabel,
 } from "@/lib/assessment/fee-year";
-import { FINAL_ELIGIBLE_SCHOOL_YEAR } from "@/lib/bursary-accounts/schedule";
+import type { School } from "@prisma/client";
+import { finalEligibleSchoolYear } from "@/lib/schools";
 // Single source of truth for group → school-year (CH-26 added Y8/Y10/Y11/Y13);
 // OTHER / null / unrecognised → null and the caller falls back.
 import { schoolYearForEntryYearGroup as schoolYearForGroup } from "@/lib/assessment/schooling-years";
@@ -75,6 +76,8 @@ export interface BuildPortalScheduleParams {
   visibleEntries: PortalScheduleEntryInput[];
   /** The current academic year's start (for marking the current/next row). */
   currentAcademicYearStart: number;
+  /** S9: the account's school — decides the last row (OP: Year 11). */
+  school?: School | null;
 }
 
 const STATE_LABELS: Record<PortalScheduleRowState, string> = {
@@ -113,6 +116,7 @@ export function buildPortalScheduleRows(
     firstAssessmentYear,
     visibleEntries,
     currentAcademicYearStart,
+    school = null,
   } = params;
 
   const entryStart = parseAcademicYearStart(firstAssessmentYear);
@@ -160,9 +164,11 @@ export function buildPortalScheduleRows(
     });
   }
 
-  // Known entry group: draw the full school-year span entry → Year 13.
+  // Known entry group: draw the full school-year span entry → the school's
+  // final year (Year 13; Year 11 at the OP partnering school, S9).
+  const finalYear = finalEligibleSchoolYear(school);
   const rows: PortalScheduleRow[] = [];
-  for (let s = entrySchoolYear; s <= FINAL_ELIGIBLE_SCHOOL_YEAR; s++) {
+  for (let s = entrySchoolYear; s <= finalYear; s++) {
     const academicStart = entryStart + (s - entrySchoolYear);
     const state = stateForStart(academicStart);
     rows.push({

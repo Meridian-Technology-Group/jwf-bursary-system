@@ -85,6 +85,7 @@ export async function getScheduleForAccount(
  */
 export interface PortalScheduleData {
   bursaryAccountId: string;
+  school: import("@prisma/client").School;
   entryYearGroup: import("@prisma/client").EntryYearGroup | null;
   firstAssessmentYear: string;
   /** ONLY the entries flagged `showOnPortal` — already filtered server-side. */
@@ -120,6 +121,7 @@ export async function getPortalScheduleForUser(
     orderBy: [{ createdAt: "desc" }, { id: "desc" }],
     select: {
       id: true,
+      school: true,
       entryYearGroup: true,
       firstAssessmentYear: true,
       scheduleEntries: {
@@ -134,6 +136,7 @@ export async function getPortalScheduleForUser(
 
   return {
     bursaryAccountId: account.id,
+    school: account.school,
     entryYearGroup: account.entryYearGroup,
     firstAssessmentYear: account.firstAssessmentYear,
     visibleEntries: account.scheduleEntries.map((e) => ({

@@ -96,6 +96,7 @@ export async function promoteToActiveAccount(
       where: { id: application.bursaryAccountId },
       select: {
         id: true,
+        school: true,
         entryYearGroup: true,
         firstAssessmentYear: true,
         status: true,
@@ -152,7 +153,7 @@ export async function promoteToActiveAccount(
       leadApplicantId: application.leadApplicantId,
       status: "ACTIVE",
     },
-    select: { id: true, entryYearGroup: true, firstAssessmentYear: true },
+    select: { id: true, school: true, entryYearGroup: true, firstAssessmentYear: true },
   });
 
   await tx.application.update({

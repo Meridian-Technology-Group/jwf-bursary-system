@@ -5,6 +5,7 @@
  * results are safe to pass from Server Components to Client Components.
  */
 
+import { finalEligibleSchoolYear } from "@/lib/schools";
 import type { Tx } from "@/lib/db/prisma";
 import {
   AssessmentStatus,
@@ -106,11 +107,6 @@ export interface SiblingSummaryRow {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-/**
- * The number of school year groups from entry to leaving (Y13 is the last).
- * "Final year" cohort = current year group of Y12 or Y13 (yearsRemaining 0/1).
- */
-const FINAL_SCHOOL_YEAR = 13;
 
 /**
  * Returns the DEFAULT active round — the most-recent OPEN, falling back to the
@@ -668,9 +664,11 @@ export async function getFinalYearBursaries(
       account.entryYear
     );
     if (currentYearGroup === null) continue;
-    const yearsRemaining = FINAL_SCHOOL_YEAR - currentYearGroup;
+    // The last school year the bursary covers: 13, or 11 at the OP
+    // partnering school (S9) — so its final-year cohort is Y10 / Y11.
+    const yearsRemaining = finalEligibleSchoolYear(account.school) - currentYearGroup;
 
-    // Final-year cohort: Y12 / Y13 (0 or 1 years remaining).
+    // Final-year cohort: the last two years (0 or 1 years remaining).
     if (yearsRemaining > 1 || yearsRemaining < 0) continue;
 
     // Distinct sibling accounts in the same family group(s), excluding self.

@@ -8,6 +8,7 @@
  * before returning so the data is safe to cross server/client boundaries.
  */
 
+import type { School } from "@prisma/client";
 import type { Tx } from "@/lib/db/prisma";
 import type { AssessmentOutcome } from "@prisma/client";
 
@@ -68,7 +69,7 @@ export async function getExportRows(
   const rows = await tx.application.findMany({
     where: {
       roundId,
-      ...(school ? { school: school as "TRINITY" | "WHITGIFT" } : {}),
+      ...(school ? { school: school as School } : {}),
       assessment: {
         recommendation: {
           isNot: null,

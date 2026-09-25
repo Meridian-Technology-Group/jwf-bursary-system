@@ -1267,9 +1267,15 @@ enum Role {
   ADMIN
 }
 
+/// OP_PARTNER (GT migration S9, 19 Sep 2026): the Old Palace partnering
+/// school — one school, no per-pupil partner field. Fees are per account
+/// (`BursaryAccount.annualFeesOverride`), carry no VAT, and the bursary ends at
+/// Year 11. Never offered on parent-facing or new-invitation forms.
+/// Per-school behaviour lives in src/lib/schools; never branch on it inline.
 enum School {
   TRINITY
   WHITGIFT
+  OP_PARTNER
 }
 
 /// Epic 14 B3 (CG-26, LA-3) — the 3-way situation an invitation is sent for.

@@ -7,7 +7,9 @@
 
 // ─── Section 1: Child Details ─────────────────────────────────────────────────
 
-export type School = "TRINITY" | "WHITGIFT";
+// The Prisma enum is the single definition (GT migration PR-C added OP_PARTNER).
+import type { School } from "@prisma/client";
+export type { School };
 
 export interface ChildAddress {
   addressLine1: string;

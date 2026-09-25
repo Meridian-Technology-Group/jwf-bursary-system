@@ -17,6 +17,7 @@
  * change the calculation. The inline note says so.
  */
 
+import type { School } from "@prisma/client";
 import * as React from "react";
 import { Input } from "@/components/ui/input";
 import {
@@ -30,12 +31,12 @@ import type { SiblingDetail } from "@/types/assessment-v2";
 import { CurrencyInput } from "@/components/admin/earner-form-v2";
 import { saveAssessmentAction } from "@/app/(admin)/applications/[id]/assessment/actions";
 import { toast } from "@/hooks/use-toast";
-import { schoolName } from "@/lib/schools";
+import { ALL_SCHOOLS, schoolName } from "@/lib/schools";
 
 export interface SiblingAccountOption {
   bursaryAccountId: string;
   childName: string;
-  school: "TRINITY" | "WHITGIFT";
+  school: School;
   netPayableFees: number | null;
 }
 
@@ -150,7 +151,7 @@ export function SiblingFeesBlock({
                   <Select
                     value={rows[i]?.school ?? ""}
                     onValueChange={(v) =>
-                      update(i, { school: v as "TRINITY" | "WHITGIFT" })
+                      update(i, { school: v as School })
                     }
                     disabled={readOnly}
                   >
@@ -161,12 +162,11 @@ export function SiblingFeesBlock({
                       <SelectValue placeholder="—" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="WHITGIFT" className="text-sm">
-                        Whitgift
-                      </SelectItem>
-                      <SelectItem value="TRINITY" className="text-sm">
-                        Trinity
-                      </SelectItem>
+                      {ALL_SCHOOLS.map((s) => (
+                        <SelectItem key={s} value={s} className="text-sm">
+                          {schoolName(s, "short")}
+                        </SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
                 </td>

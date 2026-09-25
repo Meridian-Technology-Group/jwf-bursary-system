@@ -13,6 +13,7 @@
  * and drops them into the shorter form.
  */
 
+import type { School } from "@prisma/client";
 import * as React from "react";
 import { beginReassessmentAction } from "@/app/(portal)/actions";
 import { Input } from "@/components/ui/input";
@@ -25,7 +26,7 @@ interface ReassessmentCardProps {
   /** Child's full name, pre-filled from last year's record. */
   defaultChildName?: string | null;
   /** School the child currently attends (TRINITY | WHITGIFT). */
-  school?: "TRINITY" | "WHITGIFT" | null;
+  school?: School | null;
   /** Academic year of the new round, e.g. "2026/2027". */
   academicYear?: string | null;
 }

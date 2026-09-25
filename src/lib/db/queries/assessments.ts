@@ -3,6 +3,8 @@
  * Handles CRUD for Assessment, AssessmentEarner, and AssessmentProperty.
  */
 
+import { schoolVatRate } from "@/lib/schools";
+import type { School } from "@prisma/client";
 import type { Tx } from "@/lib/db/prisma";
 import {
   ASSESSMENT_INITIAL_STATUS,
@@ -202,7 +204,7 @@ export interface AssessmentSaveInput {
 
   // ── Epic 15 M1 (CH-10..14) — Part 1 assessor-owned fields ────────────────
   /** The school this assessment runs against (switchable — CH-14). */
-  assessmentSchool?: "TRINITY" | "WHITGIFT" | null;
+  assessmentSchool?: School | null;
   /** Entry SCHOOL year 6–13 (CH-10/12); null until picked. */
   entrySchoolYear?: number | null;
 
@@ -257,6 +259,10 @@ export async function createAssessment(
   assessorId: string,
   calculationVersion: number = CURRENT_CALCULATION_VERSION
 ): Promise<AssessmentWithRelations> {
+  const { school } = await tx.application.findUniqueOrThrow({
+    where: { id: applicationId },
+    select: { school: true },
+  });
   const assessment = await tx.assessment.create({
     data: {
       applicationId,
@@ -264,7 +270,7 @@ export async function createAssessment(
       calculationVersion,
       status: ASSESSMENT_INITIAL_STATUS,
       scholarshipPct: 0,
-      vatRate: 20,
+      vatRate: schoolVatRate(school),
       manualAdjustment: 0,
     },
     include: {
@@ -393,6 +399,11 @@ export async function saveAssessment(
   for (const key of v2ScalarKeys) {
     const value = (assessmentFields as Record<string, unknown>)[key];
     if (value !== undefined) updateData[key] = value;
+  }
+  // S9: VAT follows the assessment's school (the OP partnering school carries
+  // none). An explicit rate, which only the v1 form sends, still wins.
+  if (assessmentFields.assessmentSchool && assessmentFields.vatRate === undefined) {
+    updateData.vatRate = schoolVatRate(assessmentFields.assessmentSchool);
   }
 
   // All mutations execute within the caller's RLS-aware transaction.

@@ -103,7 +103,7 @@ import {
 } from "@/lib/applications/queue-filter";
 import { REVIEW_PHASE_LABEL, REVIEW_PHASE_FILTER_OPTIONS } from "@/lib/applications/review-phase-labels";
 import type { School, Role } from "@prisma/client";
-import { SCHOOL_BADGE_COLOUR, schoolName } from "@/lib/schools";
+import { ALL_SCHOOLS, SCHOOL_BADGE_COLOUR, schoolName } from "@/lib/schools";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -1099,8 +1099,11 @@ export function ApplicationTable({
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All schools</SelectItem>
-            <SelectItem value="WHITGIFT">Whitgift</SelectItem>
-            <SelectItem value="TRINITY">Trinity</SelectItem>
+            {ALL_SCHOOLS.map((s) => (
+              <SelectItem key={s} value={s}>
+                {schoolName(s, "short")}
+              </SelectItem>
+            ))}
           </SelectContent>
         </Select>
 

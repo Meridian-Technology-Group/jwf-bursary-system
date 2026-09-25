@@ -6,6 +6,7 @@
  * School selection, child info, birth certificate upload, address, current school.
  */
 
+import type { School } from "@prisma/client";
 import * as React from "react";
 import { useFormContext, useWatch } from "react-hook-form";
 import {
@@ -50,7 +51,7 @@ interface ChildDetailsFormProps {
   applicationId: string;
   documentMap?: Record<string, DocumentMeta>;
   /** The school LOCKED at the admin invite (D1) — shown read-only as Q1. */
-  lockedSchool?: "TRINITY" | "WHITGIFT" | null;
+  lockedSchool?: School | null;
   /** Stored Parent 1 address from the contact/parent details — shown read-only
    *  when the child lives at the same address (workbook §3 Q7). */
   parent1Address?: StoredParentAddress | null;

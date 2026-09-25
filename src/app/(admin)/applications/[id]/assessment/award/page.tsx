@@ -21,6 +21,7 @@
  *    C1) is enforced inside the shared surface's actions.
  */
 
+import type { School } from "@prisma/client";
 import { notFound } from "next/navigation";
 import { requireRole, Role } from "@/lib/auth/roles";
 import { withUserContext, type RlsRole } from "@/lib/db/prisma";
@@ -79,7 +80,7 @@ export default async function AssessmentAwardPage({ params }: Props) {
         .map((l) => ({
           bursaryAccountId: l.bursaryAccountId,
           childName: l.bursaryAccount.childName,
-          school: l.bursaryAccount.school as "TRINITY" | "WHITGIFT",
+          school: l.bursaryAccount.school as School,
           netPayableFees: l.bursaryAccount.latestPayableFees,
         }));
       return {

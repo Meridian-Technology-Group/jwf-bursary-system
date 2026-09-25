@@ -48,6 +48,7 @@
  * must fire iff the reset actually happened, which only the primitive knows.)
  */
 
+import { schoolVatRate } from "@/lib/schools";
 import type {
   ApplicationFormStatus,
   ApplicationType,
@@ -495,6 +496,10 @@ async function ensureAssessmentRow(
   });
   if (existing) return existing;
 
+  const { school } = await tx.application.findUniqueOrThrow({
+    where: { id: applicationId },
+    select: { school: true },
+  });
   const created = await tx.assessment.create({
     data: {
       applicationId,
@@ -502,7 +507,7 @@ async function ensureAssessmentRow(
       calculationVersion: CURRENT_CALCULATION_VERSION,
       status: ASSESSMENT_INITIAL_STATUS,
       scholarshipPct: 0,
-      vatRate: 20,
+      vatRate: schoolVatRate(school),
       manualAdjustment: 0,
     },
     select: { id: true, status: true },

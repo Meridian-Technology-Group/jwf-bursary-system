@@ -149,7 +149,7 @@ export interface WatchlistInputRound {
 }
 
 export interface WatchlistInputExport {
-  /** "TRINITY" | "WHITGIFT" | "ALL" — from RECOMMENDATION_EXPORT metadata.school. */
+  /** School | "ALL" — from RECOMMENDATION_EXPORT metadata.school. */
   school: string;
   createdAt: Date;
 }

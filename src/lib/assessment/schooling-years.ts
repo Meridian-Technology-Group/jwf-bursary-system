@@ -18,8 +18,13 @@
  * school year, so every year 6–13 is a valid entry school year.
  */
 
+import type { School } from "@prisma/client";
+import { finalEligibleSchoolYear } from "@/lib/schools";
+
 /**
- * Mapping of entry year to total number of schooling years.
+ * Mapping of entry year to total number of schooling years at a school whose
+ * bursary runs to Year 13 (the entry years it accepts; `getTotalSchoolingYears`
+ * caps it for the OP partnering school, S9).
  * Each total = 13 − entryYear + 1 (inclusive of both the entry year and the
  * final Year 13 / Upper Sixth).
  */
@@ -67,15 +72,10 @@ function parseAcademicYearStart(academicYear: string): number {
 export function calculateSchoolingYearsRemaining(
   entryYear: number,
   currentAcademicYear: string,
-  firstAssessmentYear: string
+  firstAssessmentYear: string,
+  school?: School | string | null
 ): number {
-  const totalYears = TOTAL_YEARS_BY_ENTRY[entryYear];
-
-  if (totalYears === undefined) {
-    throw new Error(
-      `Unknown entry year: ${entryYear}. Supported values: ${Object.keys(TOTAL_YEARS_BY_ENTRY).join(", ")}.`
-    );
-  }
+  const totalYears = getTotalSchoolingYears(entryYear, school);
 
   const currentStart = parseAcademicYearStart(currentAcademicYear);
   const firstStart = parseAcademicYearStart(firstAssessmentYear);
@@ -93,14 +93,19 @@ export function calculateSchoolingYearsRemaining(
  * Returns the total schooling years for a given entry year.
  * Throws if the entry year is not one of the supported values.
  */
-export function getTotalSchoolingYears(entryYear: number): number {
+export function getTotalSchoolingYears(
+  entryYear: number,
+  school?: School | string | null
+): number {
   const total = TOTAL_YEARS_BY_ENTRY[entryYear];
   if (total === undefined) {
     throw new Error(
       `Unknown entry year: ${entryYear}. Supported values: ${Object.keys(TOTAL_YEARS_BY_ENTRY).join(", ")}.`
     );
   }
-  return total;
+  // S9: the table above runs to Year 13; a school whose bursary ends sooner
+  // (the OP partnering school, Year 11) stops there. 0 once past it.
+  return Math.max(0, finalEligibleSchoolYear(school) - entryYear + 1);
 }
 
 /** Supported entry years for validation. */
@@ -204,11 +209,12 @@ export function academicYearStartForDate(now: Date = new Date()): number {
  * `OTHER` / unrecognised (assessor enters the value manually).
  */
 export function getTotalSchoolingYearsForGroup(
-  group: EntryYearGroupCode | null | undefined
+  group: EntryYearGroupCode | null | undefined,
+  school?: School | string | null
 ): number | null {
   if (!group) return null;
   const n = ENTRY_YEAR_GROUP_NUMBER[group];
-  return n === null || n === undefined ? null : getTotalSchoolingYears(n);
+  return n === null || n === undefined ? null : getTotalSchoolingYears(n, school);
 }
 
 /**
@@ -224,9 +230,10 @@ export function getTotalSchoolingYearsForGroup(
 export function calculateSchoolingYearsRemainingFromEntry(
   group: EntryYearGroupCode | null | undefined,
   entryCalendarYear: number | null | undefined,
-  now: Date = new Date()
+  now: Date = new Date(),
+  school?: School | string | null
 ): number | null {
-  const total = getTotalSchoolingYearsForGroup(group);
+  const total = getTotalSchoolingYearsForGroup(group, school);
   if (total === null || entryCalendarYear == null) return null;
   const elapsed = Math.max(0, academicYearStartForDate(now) - entryCalendarYear);
   return Math.max(0, total - elapsed);
@@ -261,10 +268,12 @@ export function deriveCurrentYearGroupNumber(
  * input remains `schoolingYearsRemaining` (still editable).
  */
 export function remainingYearsForEntrySchoolYear(
-  entrySchoolYear: number | null | undefined
+  entrySchoolYear: number | null | undefined,
+  school?: School | string | null
 ): number | null {
   if (entrySchoolYear == null) return null;
   if (!Number.isInteger(entrySchoolYear)) return null;
-  if (entrySchoolYear < 6 || entrySchoolYear > 13) return null;
-  return 14 - entrySchoolYear;
+  const finalYear = finalEligibleSchoolYear(school);
+  if (entrySchoolYear < 6 || entrySchoolYear > finalYear) return null;
+  return finalYear + 1 - entrySchoolYear;
 }

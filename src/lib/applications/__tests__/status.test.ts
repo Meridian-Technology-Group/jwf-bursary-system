@@ -442,8 +442,9 @@ describe("status service — ensureAssessmentRow via beginReview/resumeReview (C
    * above but adds `create` since these paths (unlike `discardAssessment`) can
    * create the row.
    */
-  function makeTx(existing: { id: string; status: string } | null) {
+  function makeTx(existing: { id: string; status: string } | null, school = "WHITGIFT") {
     return {
+      application: { findUniqueOrThrow: vi.fn(async () => ({ school })) },
       assessment: {
         findUnique: vi.fn(async () => existing),
         create: vi.fn(async (args: { data: Record<string, unknown> }) => ({
@@ -481,6 +482,13 @@ describe("status service — ensureAssessmentRow via beginReview/resumeReview (C
       data: Record<string, unknown>;
     };
     expect(arg.data.calculationVersion).toBe(CURRENT_CALCULATION_VERSION);
+  });
+
+  it("stamps the school's VAT rate: 0% for the OP partnering school (S9)", async () => {
+    const tx = makeTx(null, "OP_PARTNER");
+    await beginReview(tx as never, "app-1", "assessor-1");
+    const arg = tx.assessment.create.mock.calls[0]![0] as { data: Record<string, unknown> };
+    expect(arg.data.vatRate).toBe(0);
   });
 
   it("does NOT re-create (or re-stamp) an existing assessment row", async () => {

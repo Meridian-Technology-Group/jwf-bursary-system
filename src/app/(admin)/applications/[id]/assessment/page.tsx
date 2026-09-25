@@ -394,6 +394,8 @@ export default async function AssessmentPage({ params }: Props) {
           annual: whitgiftFees?.currentYearAnnualFees ?? null,
           nextYear: whitgiftFees?.nextYearAnnualFees ?? null,
         },
+        // S9: no fee table; the account carries its own fee.
+        OP_PARTNER: { annual: null, nextYear: null },
       };
 
       // Load sibling payable fees for sequential income absorption.

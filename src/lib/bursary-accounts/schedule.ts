@@ -21,8 +21,9 @@
  * shown; far-future years are hidden until they approach.
  */
 
+import { finalEligibleSchoolYear } from "@/lib/schools";
 import type { Tx } from "@/lib/db/prisma";
-import type { EntryYearGroup } from "@prisma/client";
+import type { EntryYearGroup, School } from "@prisma/client";
 import {
   parseAcademicYearStart,
   formatAcademicYearLabel,
@@ -31,7 +32,10 @@ import {
 // OTHER / null / unrecognised → null and the caller falls back to the default.
 import { schoolYearForEntryYearGroup as schoolYearForGroup } from "@/lib/assessment/schooling-years";
 
-/** The final school year a bursary can run to (Year 13 / Upper Sixth). */
+/**
+ * The final school year a bursary can run to at Trinity and Whitgift (Year 13 /
+ * Upper Sixth). Per-school: `finalEligibleSchoolYear` (S9: OP ends at Year 11).
+ */
 export const FINAL_ELIGIBLE_SCHOOL_YEAR = 13;
 
 /** Hard ceiling on generated years, so a bad entry-year never explodes the grid. */
@@ -49,14 +53,15 @@ const DEFAULT_PORTAL_VISIBLE_YEARS = 2;
  */
 export function resolveScheduleHorizon(
   entryYearGroup: EntryYearGroup | null,
-  fallback: number = MAX_SCHEDULE_YEARS
+  fallback: number = MAX_SCHEDULE_YEARS,
+  school: School | null = null
 ): number {
   const startYear = schoolYearForGroup(entryYearGroup);
   if (startYear == null) {
     return Math.min(Math.max(fallback, 1), MAX_SCHEDULE_YEARS);
   }
   // Inclusive of both the entry year and the final year.
-  const years = FINAL_ELIGIBLE_SCHOOL_YEAR - startYear + 1;
+  const years = finalEligibleSchoolYear(school) - startYear + 1;
   return Math.min(Math.max(years, 1), MAX_SCHEDULE_YEARS);
 }
 
@@ -119,6 +124,8 @@ export function planSchedule(params: {
 /** The account fields generation needs. */
 export interface ScheduleAccount {
   id: string;
+  /** S9: decides the final eligible school year (OP: Year 11). */
+  school: School;
   entryYearGroup: EntryYearGroup | null;
   firstAssessmentYear: string;
 }
@@ -151,7 +158,7 @@ export async function generateSchedule(
   account: ScheduleAccount,
   round: ScheduleRoundDates
 ): Promise<GenerateScheduleResult> {
-  const horizon = resolveScheduleHorizon(account.entryYearGroup);
+  const horizon = resolveScheduleHorizon(account.entryYearGroup, undefined, account.school);
   const planned = planSchedule({
     awardAcademicYear: round.academicYear,
     awardOpenDate: round.openDate,

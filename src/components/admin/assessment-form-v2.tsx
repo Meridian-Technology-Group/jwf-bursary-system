@@ -15,6 +15,8 @@
  * sections when a stored record is absent; thereafter the stored record wins.
  */
 
+import { ALL_SCHOOLS, entrySchoolYearOptions, schoolName, schoolVatRate } from "@/lib/schools";
+import type { School } from "@prisma/client";
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import {
@@ -100,7 +102,7 @@ export interface SerialisedAssessmentV2 {
   calculationVersion: number;
   status: AssessmentStatus;
   /** Epic 15 M1 — assessor-picked school + entry school year (CH-10..14). */
-  assessmentSchool: "TRINITY" | "WHITGIFT" | null;
+  assessmentSchool: School | null;
   entrySchoolYear: number | null;
   familyTypeCategory: number | null;
   annualFees: number | null;
@@ -172,7 +174,7 @@ interface AssessmentFormV2Props {
    * no fee (and Complete stays gated).
    */
   feesBySchool: Record<
-    "TRINITY" | "WHITGIFT",
+    School,
     { annual: number | null; nextYear: number | null }
   >;
   applicationEntryYear: number | null;
@@ -433,7 +435,7 @@ export function AssessmentFormV2({
   // assessor picks (no prefill; pre-M1 rows arrive backfilled), switchable at
   // any time to recalculate for the other school.
   const [assessmentSchool, setAssessmentSchool] = React.useState<
-    "TRINITY" | "WHITGIFT" | ""
+    School | ""
   >(assessment.assessmentSchool ?? "");
   // The fees are DERIVED from the picked school (CG-22 row 11: autofilled +
   // HIDDEN — they feed the engine and the Complete gate, not the screen).
@@ -498,7 +500,12 @@ export function AssessmentFormV2({
   };
   const [schoolingYearsRemaining, setSchoolingYearsRemaining] = React.useState<number>(
     assessment.schoolingYearsRemaining ??
-      calculateSchoolingYearsRemainingFromEntry(applicationEntryYearGroup, applicationEntryYear) ??
+      calculateSchoolingYearsRemainingFromEntry(
+        applicationEntryYearGroup,
+        applicationEntryYear,
+        undefined,
+        assessment.assessmentSchool
+      ) ??
       7
   );
 
@@ -631,7 +638,14 @@ export function AssessmentFormV2({
         : siblingPayableFees,
       annualFees,
       scholarshipPct: typeof scholarshipPct === "number" ? scholarshipPct : 0,
-      vatRate: Number(assessment.vatRate ?? 20) || 20,
+      // S9: VAT follows the picked school, so a switch to the OP partnering
+      // school (0%) recalculates at once. Before a pick, the stored rate —
+      // null-checked, since `Number(0) || 20` once turned a stored 0 into 20.
+      vatRate: assessmentSchool
+        ? schoolVatRate(assessmentSchool)
+        : assessment.vatRate != null
+          ? Number(assessment.vatRate)
+          : 20,
     };
   }, [
     twoEarner,
@@ -657,6 +671,7 @@ export function AssessmentFormV2({
     siblingPayableFees,
     annualFees,
     scholarshipPct,
+    assessmentSchool,
     assessment.vatRate,
   ]);
 
@@ -1088,7 +1103,13 @@ export function AssessmentFormV2({
                 <Select
                   value={assessmentSchool}
                   onValueChange={(v) => {
-                    setAssessmentSchool(v as "TRINITY" | "WHITGIFT");
+                    setAssessmentSchool(v as School);
+                    // S9: the years left depend on the school (OP ends at
+                    // Year 11), so a switch re-derives them from the entry year.
+                    if (entrySchoolYear !== "") {
+                      const derived = remainingYearsForEntrySchoolYear(entrySchoolYear, v);
+                      if (derived != null) setSchoolingYearsRemaining(derived);
+                    }
                     scheduleAutoSave();
                   }}
                   disabled={isReadOnly}
@@ -1097,12 +1118,11 @@ export function AssessmentFormV2({
                     <SelectValue placeholder="Select school" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="TRINITY" className="text-sm">
-                      Trinity School
-                    </SelectItem>
-                    <SelectItem value="WHITGIFT" className="text-sm">
-                      Whitgift School
-                    </SelectItem>
+                    {ALL_SCHOOLS.map((s) => (
+                      <SelectItem key={s} value={s} className="text-sm">
+                        {schoolName(s)}
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>
@@ -1118,7 +1138,7 @@ export function AssessmentFormV2({
                   onValueChange={(v) => {
                     const year = Number(v);
                     setEntrySchoolYear(year);
-                    const derived = remainingYearsForEntrySchoolYear(year);
+                    const derived = remainingYearsForEntrySchoolYear(year, assessmentSchool || null);
                     if (derived != null) setSchoolingYearsRemaining(derived);
                     scheduleAutoSave();
                   }}
@@ -1128,7 +1148,7 @@ export function AssessmentFormV2({
                     <SelectValue placeholder="Select year of entry" />
                   </SelectTrigger>
                   <SelectContent>
-                    {[6, 7, 8, 9, 10, 11, 12, 13].map((y) => (
+                    {entrySchoolYearOptions(assessmentSchool || null).map((y) => (
                       <SelectItem key={y} value={String(y)} className="text-sm">
                         Year {y}
                       </SelectItem>
