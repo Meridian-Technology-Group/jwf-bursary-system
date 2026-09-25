@@ -5,6 +5,7 @@ import {
   groupHeadingForCode,
   REASON_CODE_GROUP_HEADINGS,
 } from "../category";
+import { reasonCodes } from "../../../../prisma/seed-data/reason-codes";
 
 describe("reason-code category util (Epic 08 / CALC-09)", () => {
   it("maps the new-list display-number ranges to their categories", () => {
@@ -51,11 +52,11 @@ describe("reason-code category util (Epic 08 / CALC-09)", () => {
 
   it("exposes range-prefixed headings for the selector; Other and Legacy unprefixed", () => {
     expect(groupHeadingForCode(103)).toBe("1 – 7: Circumstances");
-    // D4 (6 Sep 2026) — headings carry the ACTIVE (2xx) taxonomy's ranges.
-    expect(groupHeadingForCode(208)).toBe("8 – 26: Income & Employment");
-    expect(groupHeadingForCode(227)).toBe("27 – 33: Property & Assets");
-    expect(groupHeadingForCode(234)).toBe("34 – 37: Documentation & Compliance");
-    expect(groupHeadingForCode(238)).toBe("38 – 41: Fees & Adjustments");
+    // S18 (19 Sep 2026) — headings carry the ACTIVE (2xx) taxonomy's ranges.
+    expect(groupHeadingForCode(208)).toBe("8 – 27: Income & Employment");
+    expect(groupHeadingForCode(227)).toBe("28 – 35: Property & Assets");
+    expect(groupHeadingForCode(234)).toBe("36 – 39: Documentation & Compliance");
+    expect(groupHeadingForCode(238)).toBe("40 – 43: Fees & Adjustments");
     expect(groupHeadingForCode(132)).toBe("Other");
     expect(groupHeadingForCode(14)).toBe("Legacy (deprecated)");
   });
@@ -63,10 +64,10 @@ describe("reason-code category util (Epic 08 / CALC-09)", () => {
   it("the selector heading order matches the category order, Legacy last", () => {
     expect(REASON_CODE_GROUP_HEADINGS).toEqual([
       "1 – 7: Circumstances",
-      "8 – 26: Income & Employment",
-      "27 – 33: Property & Assets",
-      "34 – 37: Documentation & Compliance",
-      "38 – 41: Fees & Adjustments",
+      "8 – 27: Income & Employment",
+      "28 – 35: Property & Assets",
+      "36 – 39: Documentation & Compliance",
+      "40 – 43: Fees & Adjustments",
       "Other",
       "Legacy (deprecated)",
     ]);
@@ -89,13 +90,42 @@ describe("D4 — the 2xx reason-code generation buckets by her regrouping", () =
     expect(categoryKeyForCode(234)).toBe("documentation");
     expect(categoryKeyForCode(237)).toBe("documentation");
     expect(categoryKeyForCode(238)).toBe("fees");
-    expect(categoryKeyForCode(241)).toBe("fees"); // display 41 "Other" lives in Fees & Adjustments
-    expect(categoryKeyForCode(242)).toBe("other"); // beyond her list
+    expect(categoryKeyForCode(241)).toBe("fees"); // display 43 "Other" lives in Fees & Adjustments
+    expect(categoryKeyForCode(244)).toBe("other"); // beyond her list
   });
 
   it("the retired 1xx generation keeps its own historic buckets", () => {
     expect(categoryKeyForCode(122)).toBe("property"); // old 22 – 27 range
     expect(categoryKeyForCode(226)).toBe("income"); // same display number, new range
     expect(categoryKeyForCode(132)).toBe("other"); // old display 32 "Other"
+  });
+});
+
+// ─── S18 (19 Sep 2026) — 27 and 35 inserted, 27–41 renumbered to 28–43 ──────
+
+describe("S18 — her two additions join the groups she put them in", () => {
+  it("242 (27 - Major change in income) is Income & Employment", () => {
+    expect(categoryKeyForCode(242)).toBe("income");
+    expect(groupHeadingForCode(242)).toBe("8 – 27: Income & Employment");
+  });
+
+  it("243 (35 - Major change in assets) is Property & Assets", () => {
+    expect(categoryKeyForCode(243)).toBe("property");
+    expect(groupHeadingForCode(243)).toBe("28 – 35: Property & Assets");
+  });
+
+  it("every active seed row's display number falls inside its group's range", () => {
+    const active = reasonCodes.filter((r) => !r.isDeprecated);
+    expect(active).toHaveLength(43);
+    for (const r of active) {
+      const display = Number(r.label.split(" - ")[0]);
+      expect(display).toBe(r.sortOrder);
+      const [lo, hi] = groupHeadingForCode(r.code).split(":")[0].split(" – ").map(Number);
+      expect(display, r.label).toBeGreaterThanOrEqual(lo);
+      expect(display, r.label).toBeLessThanOrEqual(hi);
+    }
+    expect(active.map((r) => r.sortOrder).sort((a, b) => a - b)).toEqual(
+      Array.from({ length: 43 }, (_, i) => i + 1),
+    );
   });
 });

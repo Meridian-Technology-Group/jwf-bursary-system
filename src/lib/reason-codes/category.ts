@@ -9,14 +9,17 @@
  *   1–35     the original placeholders — deprecated, bucket "Legacy".
  *   101–137  the 24 Aug workbook transcription (display = code − 100) —
  *            deprecated 6 Sep 2026 when her reviewed list landed (D4 closed).
- *   201–241  Charlotte's DEFINITIVE list ("Reason & Gap Codes", 6 Sep 2026),
- *            display = code − 200, using her regrouping:
+ *   201–243  Charlotte's DEFINITIVE list ("Reason & Gap Codes", 6 Sep 2026,
+ *            41 codes at 201–241), plus her two S18 additions (19 Sep 2026):
+ *            242 "27 - Major change in income" and 243 "35 - Major change in
+ *            assets". The old 27–41 renumbered to 28–43 in label and
+ *            sortOrder only; no DB code moved, so no row changed group:
  *
  *   1–7    Circumstances
- *   8–26   Income & Employment
- *   27–33  Property & Assets
- *   34–37  Documentation & Compliance
- *   38–41  Fees & Adjustments        (incl. display 41 "Other")
+ *   8–27   Income & Employment        (27 = code 242)
+ *   28–35  Property & Assets          (35 = code 243)
+ *   36–39  Documentation & Compliance
+ *   40–43  Fees & Adjustments         (incl. display 43 "Other")
  *
  * Deprecated codes never appear in the selection picker (it is fed only
  * active codes); their buckets exist for settings/management views and for
@@ -26,18 +29,17 @@
 
 /**
  * Stable category keys (ordered) used to bucket reason codes. The `range`
- * strings are the CURRENT (D4, 6 Sep 2026) taxonomy — DB codes 201–241,
- * display number = code − 200 — which is the only generation active pickers
- * ever see. The retired 101–137 generation keeps its own range mapping in
+ * strings are the CURRENT (S18, 19 Sep 2026) display numbering of the 2xx
+ * generation — the only generation active pickers ever see. The retired 101–137 generation keeps its own range mapping in
  * `categoryKeyForCode` so a historic recommendation still buckets correctly,
  * but its rows are deprecated and never reach the range-labelled headings.
  */
 export const REASON_CODE_CATEGORIES = [
   { key: "circumstances", label: "Circumstances", range: "1 – 7" },
-  { key: "income", label: "Income & Employment", range: "8 – 26" },
-  { key: "property", label: "Property & Assets", range: "27 – 33" },
-  { key: "documentation", label: "Documentation & Compliance", range: "34 – 37" },
-  { key: "fees", label: "Fees & Adjustments", range: "38 – 41" },
+  { key: "income", label: "Income & Employment", range: "8 – 27" },
+  { key: "property", label: "Property & Assets", range: "28 – 35" },
+  { key: "documentation", label: "Documentation & Compliance", range: "36 – 39" },
+  { key: "fees", label: "Fees & Adjustments", range: "40 – 43" },
   { key: "other", label: "Other", range: "" },
   { key: "legacy", label: "Legacy (deprecated)", range: "" },
 ] as const;
@@ -49,7 +51,13 @@ export type ReasonCodeCategoryKey =
 export function categoryKeyForCode(code: number): ReasonCodeCategoryKey {
   if (code < 100) return "legacy";
 
+  // S18 (19 Sep 2026) — her two additions, placed by her, not by number.
+  if (code === 242) return "income";
+  if (code === 243) return "property";
+
   // D4 (6 Sep 2026) — Charlotte's definitive 41-code list, DB codes 201–241.
+  // Grouped by the 6 Sep display number (code − 200): S18 renumbered labels,
+  // not codes, and every row kept its group.
   if (code >= 200) {
     const display = code - 200;
     if (display >= 1 && display <= 7) return "circumstances";
@@ -82,7 +90,7 @@ export function categoryForCode(code: number): string {
 /**
  * The selector's group heading for a reason code — "1 – 7: Circumstances"
  * etc. (the range-prefixed form the recommendation selector renders; ranges
- * are the workbook DISPLAY numbers, i.e. DB code − 100). The "Other" and
+ * are her current DISPLAY numbers, as carried in each label). The "Other" and
  * "Legacy (deprecated)" buckets have no range prefix.
  */
 export function groupHeadingForCode(code: number): string {
