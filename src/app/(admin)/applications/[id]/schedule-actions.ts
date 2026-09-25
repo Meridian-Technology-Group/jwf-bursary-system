@@ -55,6 +55,7 @@ export async function regenerateScheduleAction(
           where: { id: application.bursaryAccountId },
           select: {
             id: true,
+            school: true,
             entryYearGroup: true,
             firstAssessmentYear: true,
             childName: true,

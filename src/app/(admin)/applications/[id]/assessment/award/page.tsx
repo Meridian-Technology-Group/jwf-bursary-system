@@ -21,6 +21,7 @@
  *    C1) is enforced inside the shared surface's actions.
  */
 
+import type { School } from "@prisma/client";
 import { notFound } from "next/navigation";
 import { requireRole, Role } from "@/lib/auth/roles";
 import { withUserContext, type RlsRole } from "@/lib/db/prisma";
@@ -34,6 +35,7 @@ import {
   type SiblingAccountOption,
 } from "@/components/admin/sibling-fees-block";
 import type { SiblingDetail } from "@/types/assessment-v2";
+import { schoolName } from "@/lib/schools";
 
 export const metadata = {
   title: "Assessment — Bursary Award Calculation",
@@ -78,7 +80,7 @@ export default async function AssessmentAwardPage({ params }: Props) {
         .map((l) => ({
           bursaryAccountId: l.bursaryAccountId,
           childName: l.bursaryAccount.childName,
-          school: l.bursaryAccount.school as "TRINITY" | "WHITGIFT",
+          school: l.bursaryAccount.school as School,
           netPayableFees: l.bursaryAccount.latestPayableFees,
         }));
       return {
@@ -114,9 +116,7 @@ export default async function AssessmentAwardPage({ params }: Props) {
         <span className="text-sm text-slate-600">
           {/* Epic 15 M1: the ASSESSMENT's school (assessor-picked, switchable)
               wins over the application's when present. */}
-          {(assessment?.assessmentSchool ?? application.school) === "TRINITY"
-            ? "Trinity"
-            : "Whitgift"}
+          {schoolName(assessment?.assessmentSchool ?? application.school, "short")}
         </span>
         <span className="ml-auto flex items-baseline gap-4 text-sm text-slate-500">
           {assessment?.annualFees != null && (

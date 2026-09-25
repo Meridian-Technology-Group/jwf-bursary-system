@@ -37,6 +37,7 @@ import { listStaffUsers } from "@/lib/db/queries/profiles";
 import { formatLondonDate } from "@/lib/datetime";
 import { cn } from "@/lib/utils";
 import { EmptyState } from "@/components/shared/empty-state";
+import { ALL_SCHOOLS, isSchool, schoolName } from "@/lib/schools";
 
 export const metadata = {
   title: "Assessments",
@@ -84,7 +85,7 @@ function parseBursaryStatus(
 
 function parseSchool(value: string | string[] | undefined): School | undefined {
   const raw = firstValue(value);
-  return raw === "TRINITY" || raw === "WHITGIFT" ? raw : undefined;
+  return isSchool(raw) ? raw : undefined;
 }
 
 function parseDateParam(value: string | string[] | undefined): string | undefined {
@@ -370,8 +371,11 @@ export default async function AssessmentsPage({
             className="h-8 rounded-md border border-slate-300 bg-white px-2 text-xs text-slate-700"
           >
             <option value="">Any</option>
-            <option value="WHITGIFT">Whitgift</option>
-            <option value="TRINITY">Trinity</option>
+            {ALL_SCHOOLS.map((s) => (
+              <option key={s} value={s}>
+                {schoolName(s, "short")}
+              </option>
+            ))}
           </select>
         </div>
 
@@ -510,7 +514,7 @@ export default async function AssessmentsPage({
                     </Link>
                   </td>
                   <td className="px-4 py-3 text-slate-600">
-                    {row.school === "TRINITY" ? "Trinity" : "Whitgift"}
+                    {schoolName(row.school, "short")}
                   </td>
                   <td className="px-4 py-3 text-slate-600">
                     {row.academicYear ?? "—"}

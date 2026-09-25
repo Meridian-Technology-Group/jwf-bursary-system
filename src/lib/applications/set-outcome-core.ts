@@ -45,6 +45,7 @@ import {
 import { EmailTemplateType } from "@prisma/client";
 
 import { AUDIT_ACTIONS, AUDIT_ENTITY_TYPES } from "@/lib/audit/actions";
+import { schoolName } from "@/lib/schools";
 
 export type SetOutcomeResult =
   | { success: true }
@@ -224,7 +225,7 @@ export async function setApplicationOutcome(
     // Phase 2: send the outcome email to the lead applicant.
     const templateType = templateForOutcome(outcome);
     const schoolLabel =
-      application.school === "TRINITY" ? "Trinity School" : "Whitgift School";
+      schoolName(application.school);
     const emailResult = await sendEmail(
       application.leadApplicant.email,
       templateType,

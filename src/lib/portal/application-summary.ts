@@ -33,6 +33,7 @@ import type {
   AssetsLiabilitiesData,
   AdditionalInfoData,
 } from "@/types/application";
+import { schoolName } from "@/lib/schools";
 
 export interface SummaryRow {
   label: string;
@@ -79,9 +80,7 @@ export function fmtCurrency(value: number | undefined | null): string {
 
 export function fmtSchool(school: string | undefined | null): string {
   if (!school) return "—";
-  if (school === "TRINITY") return "Trinity School";
-  if (school === "WHITGIFT") return "Whitgift School";
-  return school;
+  return schoolName(school) || school;
 }
 
 function parseSafe<T>(raw: unknown): T | null {

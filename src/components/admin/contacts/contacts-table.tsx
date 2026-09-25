@@ -30,6 +30,7 @@ import { archiveContactAction } from "@/app/(admin)/contacts/actions";
 import type { ContactListItem } from "@/lib/db/queries/contacts";
 import { ADULT_TITLES, titleLabel } from "@/lib/contacts/titles";
 import { entryAcademicYearLabelOrNull } from "@/lib/schools/academic-year";
+import { schoolName } from "@/lib/schools";
 
 interface RoundOption {
   id: string;
@@ -37,7 +38,7 @@ interface RoundOption {
 }
 
 function schoolShort(school: string): string {
-  return school === "TRINITY" ? "Trinity" : "Whitgift";
+  return schoolName(school, "short");
 }
 
 /**

@@ -104,6 +104,7 @@ function makeTx(existingYears: number[] = []) {
 
 const account = {
   id: "acc-1",
+  school: "WHITGIFT" as const,
   entryYearGroup: "Y12" as const, // 2-year horizon → easy to assert
   firstAssessmentYear: "2026/2027",
 };

@@ -40,6 +40,7 @@
  * field cannot reintroduce the class.
  */
 
+import type { School } from "@prisma/client";
 import type { ApplicationSectionType } from "@prisma/client";
 
 import {
@@ -51,7 +52,7 @@ import { splitChildFullName } from "@/lib/schemas/child-details";
 import { isTwoParentHousehold } from "@/lib/schemas/parent-details";
 
 export interface DefaultValuesSeed {
-  applicationSchool?: "TRINITY" | "WHITGIFT";
+  applicationSchool?: School;
   applicationChildName?: string;
   applicationGuardianName?: string;
   isSoleParent?: boolean;

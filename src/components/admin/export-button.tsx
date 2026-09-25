@@ -6,7 +6,7 @@
  *
  * Props:
  *   roundId  — UUID of the selected round (required)
- *   school   — optional school filter ("TRINITY" | "WHITGIFT" | "")
+ *   school   — optional school filter ("TRINITY" | "WHITGIFT" | "OP_PARTNER" | "")
  *   format   — "xlsx" | "csv"
  */
 

@@ -6,13 +6,15 @@
  *
  * Query params:
  *   roundId  (required) — UUID of the assessment round
- *   school   (optional) — "TRINITY" | "WHITGIFT"
+ *   school   (optional) — "TRINITY" | "WHITGIFT" | "OP_PARTNER"
  *   format   (optional) — "xlsx" (default) | "csv"
  *
  * Auth: ADMIN, ASSESSOR, or VIEWER role required (matches the /exports page
  * and the round cockpit's export-readiness buttons).
  */
 
+import { ALL_SCHOOLS, isSchool } from "@/lib/schools";
+import type { School } from "@prisma/client";
 import { NextRequest, NextResponse } from "next/server";
 import { getCurrentUser, Role } from "@/lib/auth/roles";
 import { withUserContext, type RlsRole } from "@/lib/db/prisma";
@@ -59,9 +61,9 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     );
   }
 
-  if (school && school !== "TRINITY" && school !== "WHITGIFT") {
+  if (school && !isSchool(school)) {
     return NextResponse.json(
-      { error: "school must be 'TRINITY' or 'WHITGIFT'" },
+      { error: `school must be one of ${ALL_SCHOOLS.join(", ")}` },
       { status: 400 }
     );
   }

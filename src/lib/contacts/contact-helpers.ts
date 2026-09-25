@@ -4,6 +4,7 @@
  */
 
 import type { EntryYearGroup, School } from "@prisma/client";
+import { schoolName } from "@/lib/schools";
 
 /** The minimal shape needed to assess invite-readiness + display. */
 export interface ContactCore {
@@ -71,5 +72,5 @@ export function contactDisplayName(contact: {
 
 export function schoolLabel(school: School | null | undefined): string {
   if (!school) return "—";
-  return school === "TRINITY" ? "Trinity School" : "Whitgift School";
+  return schoolName(school);
 }
