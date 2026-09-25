@@ -14,6 +14,7 @@ import type { NextRequest } from "next/server";
 import { getCurrentUser } from "@/lib/auth/roles";
 import { withUserContext, type RlsRole } from "@/lib/db/prisma";
 import { ACTIVE_APPLICATION_COOKIE } from "@/lib/portal/active-application";
+import { PORTAL_APPLICATION } from "@/lib/applications/migration-source";
 
 export async function GET(
   request: NextRequest,
@@ -27,7 +28,7 @@ export async function GET(
 
   const app = await withUserContext(user.id, user.role as RlsRole, (tx) =>
     tx.application.findFirst({
-      where: { id: applicationId, leadApplicantId: user.id },
+      where: { id: applicationId, leadApplicantId: user.id, ...PORTAL_APPLICATION },
       select: { id: true, formStatus: true },
     })
   );

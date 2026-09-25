@@ -25,6 +25,7 @@ import {
 } from "@/lib/contributors/dual-view";
 import { getAssessment } from "@/lib/db/queries/assessments";
 import { deriveReviewPhase } from "@/lib/applications/status";
+import { isMigrated, MIGRATED_NOTICE } from "@/lib/applications/migration-source";
 import {
   SECTION_DISPLAY_ORDER,
   SectionDataCard,
@@ -142,7 +143,9 @@ export default async function AssessmentApplicationFormPage({ params }: Props) {
     return (
       <div className="rounded-xl border border-dashed border-slate-300 bg-white p-10 text-center">
         <p className="text-sm text-slate-400">
-          No application sections have been submitted yet.
+          {isMigrated(application)
+            ? MIGRATED_NOTICE
+            : "No application sections have been submitted yet."}
         </p>
       </div>
     );

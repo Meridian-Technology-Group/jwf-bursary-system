@@ -33,6 +33,7 @@ import { getActiveApplicationId } from "@/lib/portal/active-application";
 import { SubmissionCountdown } from "@/components/portal/submission-countdown";
 import { PortalPage } from "@/components/portal/portal-page";
 import { formatLondonDate } from "@/lib/datetime";
+import { PORTAL_APPLICATION } from "@/lib/applications/migration-source";
 
 export const metadata = {
   title: "Application Status",
@@ -80,12 +81,12 @@ export default async function StatusPage() {
     async (tx) =>
       (activeApplicationId
         ? await tx.application.findFirst({
-            where: { id: activeApplicationId, leadApplicantId: user.id },
+            where: { id: activeApplicationId, leadApplicantId: user.id, ...PORTAL_APPLICATION },
             select: statusSelect,
           })
         : null) ??
       tx.application.findFirst({
-        where: { leadApplicantId: user.id },
+        where: { leadApplicantId: user.id, ...PORTAL_APPLICATION },
         orderBy: { updatedAt: "desc" },
         select: statusSelect,
       })
