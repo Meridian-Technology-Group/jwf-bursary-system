@@ -43,8 +43,8 @@ import {
   parentIncomeTotal,
   readIncomeItems,
 } from "@/lib/portal/income-model";
-import { PORTAL_APPLICATION } from "@/lib/applications/migration-source";
 import { schoolName } from "@/lib/schools";
+import { PORTAL_APPLICATION } from "@/lib/applications/migration-source";
 
 export const metadata = {
   title: "Review Your Application",

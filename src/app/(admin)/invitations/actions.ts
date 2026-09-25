@@ -513,22 +513,21 @@ async function sendReassessmentInviteForHolder(
     composeApplicantName(firstName ?? undefined, lastName ?? undefined) ||
     email;
 
-  // Per-row auth-user provisioning.
+  // Per-row auth-user provisioning. GT migration PR-E: a holder normally
+  // ALREADY has a login (every migrated parent, and every in-system holder),
+  // so the existing applicant login is reused; `createUser` alone failed with
+  // "already registered" for all of them. Only a login created by THIS call is
+  // ever rolled back — deleting a reused one would destroy the parent's
+  // real account.
   let authUserId: string | null = null;
+  let createdAuthUser = false;
   try {
-    const tempPassword = randomBytes(24).toString("base64url");
-    const { data: created, error: supabaseError } =
-      await supabase.auth.admin.createUser({
-        email,
-        password: tempPassword,
-        email_confirm: true,
-        app_metadata: { role: "APPLICANT" },
-      });
-
-    if (supabaseError || !created?.user) {
-      throw new Error(supabaseError?.message ?? "Failed to create auth user");
+    const provisioned = await provisionApplicantAuthUser(supabase, email);
+    if (!provisioned.ok) {
+      throw new Error(provisioned.error);
     }
-    authUserId = created.user.id;
+    authUserId = provisioned.authUserId;
+    createdAuthUser = provisioned.created;
 
     const expiresAt = new Date();
     expiresAt.setDate(expiresAt.getDate() + 30);
@@ -608,8 +607,8 @@ async function sendReassessmentInviteForHolder(
       result.errors.push(`${email}: ${emailResult.error}`);
     }
   } catch (err) {
-    // Roll back the auth user if we got that far.
-    if (authUserId) {
+    // Roll back the auth user only if this call created it.
+    if (authUserId && createdAuthUser) {
       await supabase.auth.admin.deleteUser(authUserId).catch((rollbackErr) => {
         console.error(
           `[reassessment-invite] auth rollback failed for ${email}:`,
