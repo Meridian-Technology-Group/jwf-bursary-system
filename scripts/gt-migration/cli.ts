@@ -1,30 +1,64 @@
 /**
- * GT migration toolkit — command router.
+ * GT migration toolkit — command router (04-toolkit.md §2).
  *
- *   npm run mig -- calc --env nonprod [--debt as-entered|x5] [--mortgage-free on|off] [--variant <name>]
+ *   npm run mig -- calc     --env <e> [--debt as-entered|x5] [--mortgage-free on|off] [--variant <name>]
+ *   npm run mig -- load     --env <e> --phase identities|accounts|assessments --run <id>
+ *                           [--only k1,k2] [--limit n] [--dry-run]
+ *   npm run mig -- plan     --env <e> [--only k1,k2]          (read-only preview)
+ *   npm run mig -- verify   --env <e> --run <id>
+ *   npm run mig -- rollback --env <e> --run <id> [--phase <p>] [--only k1,k2] [--dry-run]
+ *
+ * <e> is nonprod | rehearsal | prod. The target's database URLs are pinned
+ * into the process environment BEFORE any app module is imported (they are
+ * imported dynamically below): the app's shared Prisma client reads
+ * DATABASE_URL at start-up, and Prisma would otherwise fall back to the stale
+ * `.env`. Prod writes refuse without an approval in STATE.json for this exact
+ * (env, canonical hash, phase).
  *
  * --debt defaults to as-entered (C12, Brian 24 Sep).
- * --mortgage-free defaults to off (C16 declined per account, 25 Sep); on shows what it would move.
- *
- * Only `calc` exists so far; the rest of 04-toolkit.md §2 is built in M3.
+ * --mortgage-free defaults to off (C16 declined per account, 25 Sep).
  */
-import { loadConfig, type MigEnv } from './config'
-import { runCalc } from './calc/run'
-import { DEFAULT_RULES, type MappingRules } from './build/map-assessment'
+import { existsSync, readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
+import { DATA_DIR, loadConfig, MIG_ENVS, requireWritable, type MigConfig, type MigEnv } from './config'
 
 function flag(args: string[], name: string): string | undefined {
   const i = args.indexOf(`--${name}`)
   return i >= 0 ? args[i + 1] : undefined
 }
+const has = (args: string[], name: string) => args.includes(`--${name}`)
+const list = (v: string | undefined) => (v ? v.split(',').map((s) => s.trim()).filter(Boolean) : undefined)
+
+function pinEnvironment(config: MigConfig) {
+  process.env.DATABASE_URL = config.databaseUrl
+  if (config.directUrl) process.env.DIRECT_URL = config.directUrl
+  if (config.supabaseUrl) process.env.NEXT_PUBLIC_SUPABASE_URL = config.supabaseUrl
+  if (config.serviceRoleKey) process.env.SUPABASE_SERVICE_ROLE_KEY = config.serviceRoleKey
+}
+
+/** Prod: an approval for this (env, hash, phase) must already be in STATE.json. */
+function assertApproved(env: MigEnv, hash: string, phase: string) {
+  if (env !== 'prod') return
+  const file = resolve(DATA_DIR, 'STATE.json')
+  const state = existsSync(file) ? JSON.parse(readFileSync(file, 'utf8')) : {}
+  const approvals: { env: string; hash: string; phase: string }[] = state.approvals ?? []
+  if (!approvals.some((a) => a.env === 'prod' && a.hash === hash && a.phase === phase)) {
+    throw new Error(`Refusing: no approval in STATE.json for prod / ${hash} / ${phase}.`)
+  }
+}
 
 async function main() {
   const [command, ...args] = process.argv.slice(2)
   const env = flag(args, 'env') as MigEnv | undefined
-  if (env !== 'nonprod' && env !== 'prod') throw new Error('--env nonprod|prod is required')
+  if (!env || !MIG_ENVS.includes(env)) throw new Error(`--env ${MIG_ENVS.join('|')} is required`)
+  const config = loadConfig(env)
+  pinEnvironment(config)
 
   switch (command) {
     case 'calc': {
-      const rules: MappingRules = { ...DEFAULT_RULES }
+      const { runCalc } = await import('./calc/run')
+      const { DEFAULT_RULES } = await import('./build/map-assessment')
+      const rules = { ...DEFAULT_RULES }
       const debt = flag(args, 'debt')
       if (debt === 'as-entered') rules.debt = 'AS_ENTERED'
       else if (debt === 'x5') rules.debt = 'TIMES_REPAYMENT_YEARS'
@@ -32,11 +66,84 @@ async function main() {
       const mortgageFree = flag(args, 'mortgage-free')
       if (mortgageFree === 'on') rules.mortgageFreeAddBack = true
       else if (mortgageFree && mortgageFree !== 'off') throw new Error('--mortgage-free on|off')
-      await runCalc(loadConfig(env), rules, flag(args, 'variant'))
+      await runCalc(config, rules, flag(args, 'variant'))
+      return
+    }
+    case 'load': {
+      const phase = flag(args, 'phase')
+      if (phase !== 'identities' && phase !== 'accounts' && phase !== 'assessments') {
+        throw new Error('--phase identities|accounts|assessments')
+      }
+      const runId = flag(args, 'run')
+      if (!runId) throw new Error('--run <id> is required (e.g. rh-r1-20260929)')
+      const { latestCanonical } = await import('./calc/run')
+      const dryRun = has(args, 'dry-run')
+      if (!dryRun) assertApproved(env, latestCanonical().hash, phase)
+      const { openContext } = await import('./load/context')
+      const { runPhase } = await import('./load/phases')
+      const ctx = await openContext(requireWritable(config))
+      try {
+        const limit = flag(args, 'limit')
+        await runPhase(ctx, { phase, runId, only: list(flag(args, 'only')), limit: limit ? Number(limit) : undefined, dryRun })
+      } finally {
+        await ctx.prisma.$disconnect()
+      }
+      return
+    }
+    case 'plan': {
+      // Read-only: plan every account against the target's reference data and
+      // report what would load and what is held back, and why.
+      const { openContext } = await import('./load/context')
+      const { planAll } = await import('./load/phases')
+      const ctx = await openContext(requireWritable(config), { requireSchema: false })
+      try {
+        const { hash, plans, held } = await planAll(ctx, { only: list(flag(args, 'only')) })
+        const reasons = held.reduce<Record<string, number>>((m, h) => ((m[h.reason ?? '?'] = (m[h.reason ?? '?'] ?? 0) + 1), m), {})
+        const unmapped = Array.from(plans.values()).filter((p) => p.unmappedReasons.length).length
+        const gaps = Array.from(plans.values()).reduce<Record<string, number>>((m, p) => ((m[p.gapLabel ?? '(no gap)'] = (m[p.gapLabel ?? '(no gap)'] ?? 0) + 1), m), {})
+        console.log(`target: ${env} (${config.projectRef}) | canonical: ${hash}`)
+        console.log(`plannable: ${plans.size} | held back: ${held.length} ${JSON.stringify(reasons)}`)
+        console.log(`logins: ${new Set(Array.from(plans.values()).map((p) => p.leadEmail)).size} | with an unmapped GT reason code: ${unmapped}`)
+        console.log(`gap codes: ${JSON.stringify(gaps)}`)
+      } finally {
+        await ctx.prisma.$disconnect()
+      }
+      return
+    }
+    case 'verify': {
+      const runId = flag(args, 'run')
+      if (!runId) throw new Error('--run <id> is required')
+      const { openContext } = await import('./load/context')
+      const { verify } = await import('./load/verify')
+      const ctx = await openContext(requireWritable(config))
+      try {
+        const ok = await verify(ctx, runId)
+        if (!ok) process.exitCode = 2
+      } finally {
+        await ctx.prisma.$disconnect()
+      }
+      return
+    }
+    case 'rollback': {
+      const runId = flag(args, 'run')
+      if (!runId) throw new Error('--run <id> is required')
+      const phase = flag(args, 'phase') as 'identities' | 'accounts' | 'assessments' | undefined
+      const dryRun = has(args, 'dry-run')
+      if (!dryRun && env === 'prod') {
+        throw new Error('Refusing: a prod rollback needs Brian\'s approval for this run id (06 §4), recorded first.')
+      }
+      const { openContext } = await import('./load/context')
+      const { rollback } = await import('./load/rollback')
+      const ctx = await openContext(requireWritable(config))
+      try {
+        await rollback(ctx, { runId, phase, only: list(flag(args, 'only')), dryRun })
+      } finally {
+        await ctx.prisma.$disconnect()
+      }
       return
     }
     default:
-      throw new Error(`Unknown command: ${command ?? '(none)'}. Available: calc`)
+      throw new Error(`Unknown command: ${command ?? '(none)'}. Available: calc, plan, load, verify, rollback`)
   }
 }
 

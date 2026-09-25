@@ -87,6 +87,7 @@ import {
 import type { AssessmentSaveInput } from "@/lib/db/queries/assessments";
 import { reduceSaveError, canProceedAfterSave, type SaveOutcome } from "@/lib/assessment/v2/save-gate";
 import { toast } from "@/hooks/use-toast";
+import { dominantEmploymentStatus } from "@/lib/assessment/v2/employment-status";
 
 // ─── Serialised (Decimal→number) shapes handed in from the server component ────
 
@@ -316,15 +317,6 @@ function YesNo({
       <span className="text-xs font-medium text-slate-600">{checked ? "YES" : "NO"}</span>
     </label>
   );
-}
-
-/** Best-effort dominant employment status for the (non-null) `employmentStatus` column — back-compat display only. */
-function dominantEmploymentStatus(rec: AssessorIncomeRecord): EmploymentStatus {
-  if (rec.selfEmployed) return rec.selfEmployed.dividends > 0 ? "SELF_EMPLOYED_DIRECTOR" : "SELF_EMPLOYED_SOLE";
-  if (rec.retired) return "OLD_AGE_PENSION";
-  if (rec.unemployed) return "UNEMPLOYED";
-  if (rec.benefits && !rec.employed) return "BENEFITS";
-  return "PAYE";
 }
 
 // ─── Collapsible section (local, mirrors v1 FormSection) ──────────────────────

@@ -8,7 +8,8 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 
-export type MigEnv = 'nonprod' | 'prod'
+export type MigEnv = 'nonprod' | 'rehearsal' | 'prod'
+export const MIG_ENVS: readonly MigEnv[] = ['nonprod', 'rehearsal', 'prod']
 
 /** The abandoned project that prod was once mis-pointed at. Never a target. */
 const DEAD_PROJECT_REF = 'bzxoepyhmfvydoxfklft'
@@ -20,7 +21,22 @@ export const EXTRACT_DIR = resolve(DATA_DIR, 'extract/20260910')
 export interface MigConfig {
   env: MigEnv
   projectRef: string
+  /** Runtime role (app_user): read-only calc and reference loads. */
   databaseUrl: string
+  /** Owner role over the session pooler: loads, verify and rollback (E8). */
+  directUrl?: string
+  supabaseUrl?: string
+  serviceRoleKey?: string
+}
+
+/** A config that can write: owner URL plus the Supabase admin API. */
+export type WritableMigConfig = MigConfig & Required<Pick<MigConfig, 'directUrl' | 'supabaseUrl' | 'serviceRoleKey'>>
+
+export function requireWritable(config: MigConfig): WritableMigConfig {
+  for (const k of ['directUrl', 'supabaseUrl', 'serviceRoleKey'] as const) {
+    if (!config[k]) throw new Error(`.env.migration.${config.env} lacks ${k}; a load needs DIRECT_URL, NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY.`)
+  }
+  return config as WritableMigConfig
 }
 
 function parseEnvFile(path: string): Record<string, string> {
@@ -54,5 +70,12 @@ export function loadConfig(env: MigEnv): MigConfig {
     if (ref !== expected) throw new Error(`A URL in ${file} targets ${ref}, expected ${expected}. Refusing.`)
   }
   if (!vars.DATABASE_URL) throw new Error(`${file} has no DATABASE_URL`)
-  return { env, projectRef: expected, databaseUrl: vars.DATABASE_URL }
+  return {
+    env,
+    projectRef: expected,
+    databaseUrl: vars.DATABASE_URL,
+    directUrl: vars.DIRECT_URL,
+    supabaseUrl: vars.NEXT_PUBLIC_SUPABASE_URL,
+    serviceRoleKey: vars.SUPABASE_SERVICE_ROLE_KEY,
+  }
 }
