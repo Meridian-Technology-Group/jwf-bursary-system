@@ -31,6 +31,7 @@ import type {
   Profile,
   Prisma,
 } from "@prisma/client";
+import { PORTAL_APPLICATION } from "@/lib/applications/migration-source";
 
 // ─── List Applications ────────────────────────────────────────────────────────
 
@@ -522,6 +523,7 @@ export async function getApplicationWithDetails(
       closedById: true,
       closeReasonId: true,
       purgedAt: true,
+      migrationSource: true,
       closeReason: { select: { id: true, label: true, purgeOnClose: true } },
       createdAt: true,
       updatedAt: true,
@@ -668,6 +670,7 @@ export async function getApplicationForUser(
   const where = {
     leadApplicantId: userId,
     formStatus: { not: "SUBMITTED" as const },
+    ...PORTAL_APPLICATION,
   };
   const include = {
     round: {
@@ -713,7 +716,7 @@ export async function getCurrentApplicationForUser(
   // E2: preference folded into the ownership WHERE — see getApplicationForUser.
   if (preferredId) {
     const preferred = await tx.application.findFirst({
-      where: { leadApplicantId: userId, id: preferredId },
+      where: { leadApplicantId: userId, id: preferredId, ...PORTAL_APPLICATION },
       include,
     });
     if (preferred) return preferred;
@@ -721,6 +724,7 @@ export async function getCurrentApplicationForUser(
   return tx.application.findFirst({
     where: {
       leadApplicantId: userId,
+      ...PORTAL_APPLICATION,
     },
     orderBy: { updatedAt: "desc" },
     include,
@@ -754,13 +758,13 @@ export async function getPortalNavState(
   // active-application preference applies here too (ownership WHERE intact).
   if (preferredId) {
     const preferred = await tx.application.findFirst({
-      where: { leadApplicantId: userId, id: preferredId },
+      where: { leadApplicantId: userId, id: preferredId, ...PORTAL_APPLICATION },
       select: { formStatus: true },
     });
     if (preferred) return { formStatus: preferred.formStatus };
   }
   const app = await tx.application.findFirst({
-    where: { leadApplicantId: userId },
+    where: { leadApplicantId: userId, ...PORTAL_APPLICATION },
     orderBy: { updatedAt: "desc" },
     select: {
       formStatus: true,
@@ -810,12 +814,12 @@ export async function getApplicationPausedStateForUser(
     const app =
       (preferredId
         ? await tx.application.findFirst({
-            where: { leadApplicantId: userId, id: preferredId },
+            where: { leadApplicantId: userId, id: preferredId, ...PORTAL_APPLICATION },
             select,
           })
         : null) ??
       (await tx.application.findFirst({
-        where: { leadApplicantId: userId },
+        where: { leadApplicantId: userId, ...PORTAL_APPLICATION },
         orderBy: { updatedAt: "desc" },
         select,
       }));

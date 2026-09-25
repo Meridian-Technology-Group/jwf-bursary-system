@@ -204,6 +204,13 @@ export const AUDIT_ACTIONS = {
    * them unlabelled (and uncoloured) in the audit UI. Do not add new writers.
    */
   BURSARY_ACCOUNT_FEES_CODE_UPDATED: "BURSARY_ACCOUNT_FEES_CODE_UPDATED",
+
+  // GT data migration (docs/migration/gt/04-toolkit.md). Written only by the
+  // toolkit, one per migrated application, with the run id in metadata.
+  /** An account was loaded from Grant Tracker. */
+  DATA_MIGRATION_IMPORT: "DATA_MIGRATION_IMPORT",
+  /** A migration run's rows for an account were removed by a rollback. */
+  DATA_MIGRATION_ROLLBACK: "DATA_MIGRATION_ROLLBACK",
 } as const;
 
 export type AuditAction = (typeof AUDIT_ACTIONS)[keyof typeof AUDIT_ACTIONS];
@@ -363,6 +370,8 @@ const ACTION_COLOUR: Partial<Record<AuditAction, string>> = {
   [AUDIT_ACTIONS.APPLICATION_PURGED]: "bg-red-400",
   [AUDIT_ACTIONS.APPLICATION_MARKED_ACTIVE]: "bg-green-500",
   [AUDIT_ACTIONS.BULK_EMAIL_SENT]: "bg-blue-500",
+  [AUDIT_ACTIONS.DATA_MIGRATION_IMPORT]: "bg-blue-500",
+  [AUDIT_ACTIONS.DATA_MIGRATION_ROLLBACK]: "bg-red-400",
 };
 
 /**

@@ -27,6 +27,7 @@ import { submittedLabel } from "@/lib/portal/status-projection";
 import { SubmissionDownloadOffer } from "@/components/portal/submission-download-offer";
 import { PortalPage } from "@/components/portal/portal-page";
 import { formatLondonDate } from "@/lib/datetime";
+import { PORTAL_APPLICATION } from "@/lib/applications/migration-source";
 
 export const metadata = {
   title: "Application Submitted",
@@ -50,12 +51,13 @@ export default async function SubmittedPage() {
               id: activeApplicationId,
               leadApplicantId: user.id,
               formStatus: "SUBMITTED",
+              ...PORTAL_APPLICATION,
             },
             select: { id: true },
           })
         : null) ??
       tx.application.findFirst({
-        where: { leadApplicantId: user.id, formStatus: "SUBMITTED" },
+        where: { leadApplicantId: user.id, formStatus: "SUBMITTED", ...PORTAL_APPLICATION },
         orderBy: { submittedAt: "desc" },
         select: { id: true },
       })
