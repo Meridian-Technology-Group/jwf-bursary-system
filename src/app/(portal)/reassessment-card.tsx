@@ -19,6 +19,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { ContactBursaryTeam } from "@/components/portal/contact-bursary-team";
 import { RefreshCw } from "lucide-react";
+import { schoolName } from "@/lib/schools";
 
 interface ReassessmentCardProps {
   /** Child's full name, pre-filled from last year's record. */
@@ -30,9 +31,7 @@ interface ReassessmentCardProps {
 }
 
 function schoolLabel(school: ReassessmentCardProps["school"]): string {
-  if (school === "TRINITY") return "Trinity School";
-  if (school === "WHITGIFT") return "Whitgift School";
-  return "your child's school";
+  return schoolName(school) || "your child's school";
 }
 
 export function ReassessmentCard({

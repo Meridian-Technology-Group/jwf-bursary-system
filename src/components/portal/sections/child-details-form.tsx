@@ -32,13 +32,10 @@ import type { ChildDetailsFormValues } from "@/lib/schemas/child-details";
 import { CHILD_TITLES } from "@/lib/schemas/child-details";
 import type { UploadedDocument } from "@/components/portal/file-upload";
 import type { DocumentMeta } from "@/lib/db/queries/applications";
+import { schoolName } from "@/lib/schools";
 
 const GENDERS = ["Male", "Female", "Other"];
 
-const SCHOOL_LABELS: Record<string, string> = {
-  TRINITY: "Trinity School",
-  WHITGIFT: "Whitgift School",
-};
 
 /** The stored Parent/Guardian 1 address, shown when the child shares it (D1). */
 export interface StoredParentAddress {
@@ -105,7 +102,7 @@ export function ChildDetailsForm({
             School
           </p>
           <p className="mt-1 text-sm font-medium text-primary-900">
-            {lockedSchool ? SCHOOL_LABELS[lockedSchool] ?? lockedSchool : "—"}
+            {lockedSchool ? schoolName(lockedSchool) || lockedSchool : "—"}
           </p>
           <p className="mt-2 text-xs text-slate-500">
             The school for this application was set when you were invited and

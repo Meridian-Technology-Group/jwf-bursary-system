@@ -37,6 +37,7 @@ import { listStaffUsers } from "@/lib/db/queries/profiles";
 import { formatLondonDate } from "@/lib/datetime";
 import { cn } from "@/lib/utils";
 import { EmptyState } from "@/components/shared/empty-state";
+import { schoolName } from "@/lib/schools";
 
 export const metadata = {
   title: "Assessments",
@@ -510,7 +511,7 @@ export default async function AssessmentsPage({
                     </Link>
                   </td>
                   <td className="px-4 py-3 text-slate-600">
-                    {row.school === "TRINITY" ? "Trinity" : "Whitgift"}
+                    {schoolName(row.school, "short")}
                   </td>
                   <td className="px-4 py-3 text-slate-600">
                     {row.academicYear ?? "—"}

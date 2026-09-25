@@ -34,6 +34,7 @@ import {
   type SiblingAccountOption,
 } from "@/components/admin/sibling-fees-block";
 import type { SiblingDetail } from "@/types/assessment-v2";
+import { schoolName } from "@/lib/schools";
 
 export const metadata = {
   title: "Assessment — Bursary Award Calculation",
@@ -114,9 +115,7 @@ export default async function AssessmentAwardPage({ params }: Props) {
         <span className="text-sm text-slate-600">
           {/* Epic 15 M1: the ASSESSMENT's school (assessor-picked, switchable)
               wins over the application's when present. */}
-          {(assessment?.assessmentSchool ?? application.school) === "TRINITY"
-            ? "Trinity"
-            : "Whitgift"}
+          {schoolName(assessment?.assessmentSchool ?? application.school, "short")}
         </span>
         <span className="ml-auto flex items-baseline gap-4 text-sm text-slate-500">
           {assessment?.annualFees != null && (

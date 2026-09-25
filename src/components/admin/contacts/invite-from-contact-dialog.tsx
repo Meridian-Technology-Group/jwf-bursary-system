@@ -32,6 +32,7 @@ import { cn } from "@/lib/utils";
 import { sendInvitationFromContactAction } from "@/app/(admin)/contacts/invite-actions";
 import type { ContactListItem } from "@/lib/db/queries/contacts";
 import { entryAcademicYearLabelOrNull } from "@/lib/schools/academic-year";
+import { schoolName } from "@/lib/schools";
 
 interface RoundOption {
   id: string;
@@ -39,7 +40,7 @@ interface RoundOption {
 }
 
 function schoolLabel(school: string): string {
-  return school === "TRINITY" ? "Trinity School" : "Whitgift School";
+  return schoolName(school);
 }
 
 export function InviteFromContactDialog({

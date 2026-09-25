@@ -41,18 +41,13 @@ import {
   ManageDisclosure,
   ShowOnAssessmentRoute,
 } from "@/components/admin/assessment-route-chrome";
+import type { School } from "@prisma/client";
+import { SCHOOL_BADGE_COLOUR, schoolName } from "@/lib/schools";
 
-function SchoolBadge({ school }: { school: "WHITGIFT" | "TRINITY" }) {
-  if (school === "WHITGIFT") {
-    return (
-      <span className="inline-flex items-center rounded-full bg-primary-100 px-2.5 py-0.5 text-xs font-medium text-primary-800">
-        Whitgift
-      </span>
-    );
-  }
+function SchoolBadge({ school }: { school: School }) {
   return (
-    <span className="inline-flex items-center rounded-full bg-blue-50 px-2.5 py-0.5 text-xs font-medium text-blue-700">
-      Trinity
+    <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${SCHOOL_BADGE_COLOUR[school]}`}>
+      {schoolName(school, "short")}
     </span>
   );
 }

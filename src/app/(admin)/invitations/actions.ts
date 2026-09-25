@@ -71,6 +71,7 @@ import { composeChildName } from "@/lib/applications/child-name";
 import { listOpenRounds } from "@/lib/db/queries/reports";
 
 import { AUDIT_ACTIONS, AUDIT_ENTITY_TYPES } from "@/lib/audit/actions";
+import { schoolName } from "@/lib/schools";
 
 // ---------------------------------------------------------------------------
 // Validation schema
@@ -146,7 +147,7 @@ function composeApplicantName(
 
 function schoolLabel(school: School | undefined | null): string {
   if (!school) return "";
-  return school === "TRINITY" ? "Trinity School" : "Whitgift School";
+  return schoolName(school);
 }
 
 // ---------------------------------------------------------------------------

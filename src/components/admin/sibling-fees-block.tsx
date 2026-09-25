@@ -30,6 +30,7 @@ import type { SiblingDetail } from "@/types/assessment-v2";
 import { CurrencyInput } from "@/components/admin/earner-form-v2";
 import { saveAssessmentAction } from "@/app/(admin)/applications/[id]/assessment/actions";
 import { toast } from "@/hooks/use-toast";
+import { schoolName } from "@/lib/schools";
 
 export interface SiblingAccountOption {
   bursaryAccountId: string;
@@ -197,7 +198,7 @@ export function SiblingFeesBlock({
                             className="text-xs"
                           >
                             {o.childName} —{" "}
-                            {o.school === "TRINITY" ? "Trinity" : "Whitgift"}
+                            {schoolName(o.school, "short")}
                           </SelectItem>
                         ))}
                       </SelectContent>

@@ -103,6 +103,7 @@ import {
 } from "@/lib/applications/queue-filter";
 import { REVIEW_PHASE_LABEL, REVIEW_PHASE_FILTER_OPTIONS } from "@/lib/applications/review-phase-labels";
 import type { School, Role } from "@prisma/client";
+import { SCHOOL_BADGE_COLOUR, schoolName } from "@/lib/schools";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -207,16 +208,9 @@ interface ApplicationTableProps {
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function SchoolBadge({ school }: { school: School }) {
-  if (school === "WHITGIFT") {
-    return (
-      <span className="inline-flex items-center rounded-full bg-primary-100 px-2 py-0.5 text-xs font-medium text-primary-800">
-        Whitgift
-      </span>
-    );
-  }
   return (
-    <span className="inline-flex items-center rounded-full bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-700">
-      Trinity
+    <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${SCHOOL_BADGE_COLOUR[school]}`}>
+      {schoolName(school, "short")}
     </span>
   );
 }

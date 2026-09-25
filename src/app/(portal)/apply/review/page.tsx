@@ -43,6 +43,7 @@ import {
   parentIncomeTotal,
   readIncomeItems,
 } from "@/lib/portal/income-model";
+import { schoolName } from "@/lib/schools";
 
 export const metadata = {
   title: "Review Your Application",
@@ -79,9 +80,7 @@ function fmtCurrency(value: number | undefined | null): string {
 
 function fmtSchool(school: string | undefined | null): string {
   if (!school) return "—";
-  if (school === "TRINITY") return "Trinity School";
-  if (school === "WHITGIFT") return "Whitgift School";
-  return school;
+  return schoolName(school) || school;
 }
 
 // Income totalling handles BOTH the new status-driven shape and any legacy flat

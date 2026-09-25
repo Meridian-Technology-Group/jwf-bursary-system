@@ -31,6 +31,7 @@ import { withUserContext, type RlsRole } from "@/lib/db/prisma";
 import { HorizontalBarChart } from "@/components/admin/charts/horizontal-bar-chart";
 import { RoundSelector } from "@/components/admin/charts/round-selector";
 import { entryAcademicYearLabelOrNull } from "@/lib/schools/academic-year";
+import { schoolName } from "@/lib/schools";
 
 export const metadata: Metadata = {
   title: "Reports",
@@ -229,10 +230,6 @@ function formatGBP(value: number | null): string {
   }).format(value);
 }
 
-const SCHOOL_LABEL: Record<string, string> = {
-  TRINITY: "Trinity",
-  WHITGIFT: "Whitgift",
-};
 
 // ─── Final-year bursaries table ───────────────────────────────────────────────
 
@@ -281,7 +278,7 @@ function FinalYearTable({ rows }: { rows: FinalYearBursaryRow[] }) {
                 {row.childName}
               </td>
               <td className="px-4 py-3 text-slate-700">
-                {SCHOOL_LABEL[row.school] ?? row.school}
+                {schoolName(row.school, "short") || row.school}
               </td>
               <td className="px-4 py-3 tabular-nums text-slate-700">
                 {entryAcademicYearLabelOrNull(row.entryYear) ?? "—"}
@@ -385,7 +382,7 @@ function SiblingSummaryTable({ rows }: { rows: SiblingSummaryRow[] }) {
                     {child.childName}
                   </td>
                   <td className="px-4 py-2 text-slate-700">
-                    {SCHOOL_LABEL[child.school] ?? child.school}
+                    {schoolName(child.school, "short") || child.school}
                   </td>
                   <td className="px-4 py-2 text-right tabular-nums text-slate-800">
                     {formatGBP(child.yearlyPayableFees)}

@@ -38,6 +38,7 @@ import {
   londonEndOfDayUtc,
   formatLondonDateString,
 } from "@/lib/datetime";
+import { schoolName } from "@/lib/schools";
 
 export const metadata = {
   title: "Applications",
@@ -410,10 +411,6 @@ const DERIVED_LABELS: Record<string, string> = {
   awaitingOutcome: "Awaiting outcome",
 };
 
-const SCHOOL_LABELS: Record<School, string> = {
-  TRINITY: "Trinity",
-  WHITGIFT: "Whitgift",
-};
 
 function describeActiveFilter({
   roundId,
@@ -457,7 +454,7 @@ function describeActiveFilter({
     if (status) parts.push(REVIEW_PHASE_LABEL[status]);
   }
 
-  if (school) parts.push(SCHOOL_LABELS[school]);
+  if (school) parts.push(schoolName(school, "short"));
 
   if (submittedFrom || submittedTo) {
     const fromLabel = submittedFrom

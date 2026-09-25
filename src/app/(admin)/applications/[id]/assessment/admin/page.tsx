@@ -42,6 +42,7 @@ import { PreSystemHistoryEditor } from "@/components/admin/pre-system-history-ed
 import { CloseBursaryAccountDialog } from "@/components/admin/close-bursary-account-dialog";
 import { getAllCloseReasons } from "@/lib/db/queries/reference-tables";
 import type { SiblingDetail } from "@/types/assessment-v2";
+import { schoolName } from "@/lib/schools";
 
 export const metadata = {
   title: "Assessment — Admin",
@@ -185,7 +186,7 @@ export default async function AssessmentAdminPage({ params }: Props) {
           {application.reference}
         </span>
         <span className="text-slate-600">
-          {application.school === "TRINITY" ? "Trinity School" : "Whitgift School"}
+          {schoolName(application.school)}
         </span>
         <span className="text-slate-500">
           {application.round.academicYear} assessment round
