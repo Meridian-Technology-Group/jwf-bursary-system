@@ -279,6 +279,13 @@ model Application {
   /// Stamped when the reason-driven close purge (item 10) ran for this
   /// application — the idempotency gate: a second close/purge attempt no-ops.
   purgedAt                  DateTime?                @map("purged_at") @db.Timestamptz(6)
+  /// GT migration (E5): where a migrated application came from — see
+  /// lib/applications/migration-source.ts (`GRANT_TRACKER`, `MANUAL_PB`). NULL
+  /// ⇒ created in this system. A migrated application is a placeholder that
+  /// carries the assessment, recommendation and account; it has no form
+  /// sections, so the admin UI shows a "migrated" card instead of the form and
+  /// the portal never treats it as the parent's current application.
+  migrationSource           String?                  @map("migration_source")
   createdAt                 DateTime                 @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt                 DateTime                 @updatedAt @map("updated_at") @db.Timestamptz(6)
   assignedToId              String?                  @map("assigned_to_id") @db.Uuid
@@ -1257,6 +1264,38 @@ model AuditLog {
   @@index([entityType, entityId])
   @@index([userId, createdAt])
   @@map("audit_logs")
+}
+
+/// GT migration toolkit (docs/migration/gt/04-toolkit.md §4): one row per
+/// entity a data-migration run created, so a rollback deletes exactly those
+/// and nothing else. DB rows are ledgered in the same transaction as the rows
+/// they describe (`state = done`); external side effects (auth users, storage
+/// objects) are written `intent` first, then flipped to `done` after the call,
+/// so a crash leaves a reconcilable trace. A reused pre-existing row is never
+/// ledgered. Written only by the toolkit (service role); admin-only under RLS.
+/// No FKs: it must outlive the rows it describes, through a rollback.
+model DataMigrationLedger {
+  id         String   @id @default(uuid()) @db.Uuid
+  /// e.g. `rh-r1-20260929`, `prod-20261002`
+  runId      String   @map("run_id")
+  /// identities | accounts | assessments | documents
+  phase      String
+  /// sha256 of the normalised account reference — never the reference itself.
+  accountKey String   @map("account_key")
+  /// Prisma model name (`Application`, `Assessment`, …) or `AuthUser` /
+  /// `StorageObject` for the external side effects.
+  entityType String   @map("entity_type")
+  /// A uuid, or the storage object key.
+  entityId   String   @map("entity_id")
+  /// intent | done | rolled_back
+  state      String
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt  DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@unique([entityType, entityId])
+  @@index([runId, phase])
+  @@index([accountKey])
+  @@map("data_migration_ledger")
 }
 
 enum Role {

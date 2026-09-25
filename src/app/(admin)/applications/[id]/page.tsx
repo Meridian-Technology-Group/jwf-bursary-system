@@ -19,6 +19,7 @@ import { getApplicationContributors } from "@/lib/db/queries/contributors";
 import { contributorRoleLabel, isParentOwnedSection } from "@/lib/contributors/dual-view";
 import { deriveReviewPhase } from "@/lib/applications/status";
 import { canEditOnBehalf } from "@/lib/applications/edit-on-behalf";
+import { isMigrated, MIGRATED_NOTICE } from "@/lib/applications/migration-source";
 import { getSiblingLinks } from "@/lib/db/queries/siblings";
 import { getScheduleForAccount, type ScheduleEntryRow } from "@/lib/db/queries/schedule";
 import { getYoyFinancialsRows } from "@/lib/db/queries/assessments";
@@ -150,7 +151,10 @@ export default async function ApplicantDataPage({ params }: Props) {
     outcome: application.assessment?.outcome ?? null,
     closedAt: application.closedAt,
   });
+  // A migrated application (GT migration) has no form to edit.
+  const migrated = isMigrated(application);
   const showEditOnBehalf =
+    !migrated &&
     canEditOnBehalf(reviewPhase) &&
     (isAdmin ||
       (user.role === Role.ASSESSOR && application.assignedToId === user.id));
@@ -208,11 +212,22 @@ export default async function ApplicantDataPage({ params }: Props) {
       <div className="space-y-5">
         {editOnBehalfButton}
 
-        <div className="rounded-xl border border-dashed border-slate-300 bg-white p-10 text-center">
-          <p className="text-sm text-slate-400">
-            No application sections have been submitted yet.
-          </p>
-        </div>
+        {migrated ? (
+          <>
+            <div className="rounded-xl border border-slate-200 bg-slate-50 p-5">
+              <p className="text-sm text-slate-600">{MIGRATED_NOTICE}</p>
+            </div>
+            {/* No form, so no document checklist, but staff can still add a
+                document to a migrated account. */}
+            <AdminUpload applicationId={application.id} />
+          </>
+        ) : (
+          <div className="rounded-xl border border-dashed border-slate-300 bg-white p-10 text-center">
+            <p className="text-sm text-slate-400">
+              No application sections have been submitted yet.
+            </p>
+          </div>
+        )}
 
         {/* CALC-10 — YoY financials history */}
         {bursaryAccountId && <AccountAdminSection yoyRows={yoyRows} />}

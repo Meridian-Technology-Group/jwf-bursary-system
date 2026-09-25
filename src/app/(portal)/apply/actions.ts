@@ -41,6 +41,7 @@ import { logError } from "@/lib/log";
 import { getActiveApplicationId } from "@/lib/portal/active-application";
 
 import { AUDIT_ACTIONS } from "@/lib/audit/actions";
+import { PORTAL_APPLICATION } from "@/lib/applications/migration-source";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -109,13 +110,14 @@ async function getOwnedApplicationId(): Promise<string | null> {
             id: activeId,
             leadApplicantId: user.id,
             formStatus: { not: "SUBMITTED" },
+            ...PORTAL_APPLICATION,
           },
           select: { id: true },
         });
         if (preferred) return preferred;
       }
       return tx.application.findFirst({
-        where: { leadApplicantId: user.id, formStatus: { not: "SUBMITTED" } },
+        where: { leadApplicantId: user.id, formStatus: { not: "SUBMITTED" }, ...PORTAL_APPLICATION },
         select: { id: true },
       });
     }
@@ -166,12 +168,13 @@ async function getOwnedApplicationContext(): Promise<{
                 id: activeId,
                 leadApplicantId: user.id,
                 formStatus: { not: "SUBMITTED" },
+                ...PORTAL_APPLICATION,
               },
               select: { id: true },
             })
           : null) ??
         (await tx.application.findFirst({
-          where: { leadApplicantId: user.id, formStatus: { not: "SUBMITTED" } },
+          where: { leadApplicantId: user.id, formStatus: { not: "SUBMITTED" }, ...PORTAL_APPLICATION },
           select: { id: true },
         }));
       if (!application) return null;

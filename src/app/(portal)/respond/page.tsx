@@ -24,6 +24,7 @@ import { getApplicationPausedState } from "@/lib/db/queries/applications";
 import { getActiveApplicationId } from "@/lib/portal/active-application";
 import { PortalPage } from "@/components/portal/portal-page";
 import { RespondMissingDocsClient } from "./respond-client";
+import { PORTAL_APPLICATION } from "@/lib/applications/migration-source";
 
 export const metadata = {
   title: "Respond to Document Request",
@@ -60,12 +61,12 @@ export default async function RespondPage() {
     async (tx) =>
       (activeApplicationId
         ? await tx.application.findFirst({
-            where: { id: activeApplicationId, leadApplicantId: user.id },
+            where: { id: activeApplicationId, leadApplicantId: user.id, ...PORTAL_APPLICATION },
             select: respondSelect,
           })
         : null) ??
       tx.application.findFirst({
-        where: { leadApplicantId: user.id },
+        where: { leadApplicantId: user.id, ...PORTAL_APPLICATION },
         orderBy: { updatedAt: "desc" },
         select: respondSelect,
       })

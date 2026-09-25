@@ -9,6 +9,9 @@
  *
  * Sub-route based (deep-linkable); the ASSESSMENT MODEL tab is the index
  * route, so its active check is exact while the others are prefix-based.
+ *
+ * GT migration (PR-D): a migrated application has no form, so its
+ * APPLICATION FORM tab renders disabled (`applicationFormDisabled`).
  */
 
 import Link from "next/link";
@@ -23,7 +26,15 @@ const TABS = [
   { label: "ASSESSMENT ADMIN", segment: "admin" },
 ] as const;
 
-export function AssessmentTabNav({ applicationId }: { applicationId: string }) {
+const DISABLED_TAB_TITLE = "Migrated from Grant Tracker: there is no application form.";
+
+export function AssessmentTabNav({
+  applicationId,
+  applicationFormDisabled = false,
+}: {
+  applicationId: string;
+  applicationFormDisabled?: boolean;
+}) {
   const pathname = usePathname() ?? "";
   const base = `/applications/${applicationId}/assessment`;
 
@@ -38,6 +49,18 @@ export function AssessmentTabNav({ applicationId }: { applicationId: string }) {
           const active = tab.segment
             ? pathname.startsWith(href)
             : pathname === base || pathname === `${base}/`;
+          if (applicationFormDisabled && tab.segment === "application-form") {
+            return (
+              <span
+                key={tab.label}
+                aria-disabled="true"
+                title={DISABLED_TAB_TITLE}
+                className="cursor-not-allowed whitespace-nowrap border-b-2 border-transparent px-4 py-2.5 text-xs font-semibold tracking-wide text-slate-300"
+              >
+                {tab.label}
+              </span>
+            );
+          }
           return (
             <Link
               key={tab.label}
