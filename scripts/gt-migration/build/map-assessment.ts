@@ -68,9 +68,24 @@ export interface AccountOverrides {
    * moves NDI by nothing and the income figure by that amount.
    */
   rentAddBack?: { type: RentAddBackType; amount?: number | null; fromIncomeSupport?: number }
+  /**
+   * C6X (25 Sep): the income-support figure is really another kind of income.
+   * All of it (both earners together must come to `amount`) moves to `to`, on
+   * the earner that held it; friends & family is household-level, so it goes
+   * on the first earner. Income total unchanged; only the line it sits on.
+   */
+  incomeSupportTo?: { to: IncomeSupportTarget; amount: number }
   /** S24: sibling payable fees she supplied, one per sibling row. */
   siblings?: readonly { name?: string | null; payableFees: number }[]
 }
+
+/** C6X. Where a re-classified income-support figure goes. */
+export type IncomeSupportTarget =
+  | 'DIVIDENDS'
+  | 'PROPERTY_INCOME'
+  | 'REDUNDANCY'
+  | 'STUDENT_SUPPORT'
+  | 'FRIENDS_FAMILY'
 
 /** GT control name → every value recorded against it on the assessment. */
 export type Controls = ReadonlyMap<string, readonly string[]>
@@ -219,10 +234,22 @@ function earnerRecord(
     incomeSupport = 0
   }
 
+  // C6X: the figure leaves income support; FRIENDS_FAMILY is placed by the caller.
+  const target = ov.incomeSupportTo?.to
+  const movedFromIncomeSupport = target ? incomeSupport : 0
+  const moved = (t: IncomeSupportTarget) => (target === t ? movedFromIncomeSupport : 0)
+  if (movedFromIncomeSupport) {
+    notes.push(`C6X: ${who.toLowerCase()} earner income support moved to ${target!.toLowerCase().replace('_', ' ')}`)
+    incomeSupport = 0
+  }
+
   const values = {
     annualSalaryPaye: up('netPay'),
     grossSalaried: lo('seSalary'),
-    dividends: lo('dividends'),
+    dividends: lo('dividends') + moved('DIVIDENDS'),
+    propertyIncome: moved('PROPERTY_INCOME'),
+    redundancy: moved('REDUNDANCY'),
+    grantSupport: moved('STUDENT_SUPPORT'),
     otherInvestmentIncome: up('companyProfits'),
     privatePension: up('pensionP60'),
     statePension: up('pensionPayments'),
@@ -234,17 +261,18 @@ function earnerRecord(
     housingBenefit: lo('housingBenefit'),
     other: incomeSupport + up('otherBenefits'),
   }
+  const friendsFamily = moved('FRIENDS_FAMILY')
   const any = Object.values(values).some((v) => v !== 0)
-  return { values, any, rentFreeMarker }
+  return { values, any, rentFreeMarker, movedFromIncomeSupport, friendsFamily }
 }
 
 function toIncomeRecord(v: ReturnType<typeof earnerRecord>['values']): AssessorIncomeRecord {
   const record: AssessorIncomeRecord = { total: 0, documentsConfirmed: true }
   if (v.annualSalaryPaye) record.employed = { annualSalaryPaye: v.annualSalaryPaye }
-  if (v.grossSalaried || v.dividends || v.otherInvestmentIncome) {
+  if (v.grossSalaried || v.dividends || v.otherInvestmentIncome || v.propertyIncome) {
     record.selfEmployed = {
       grossSalaried: v.grossSalaried,
-      propertyIncome: 0,
+      propertyIncome: v.propertyIncome,
       dividends: v.dividends,
       otherInvestmentIncome: v.otherInvestmentIncome,
     }
@@ -252,7 +280,9 @@ function toIncomeRecord(v: ReturnType<typeof earnerRecord>['values']): AssessorI
   if (v.privatePension || v.statePension) {
     record.retired = { statePension: v.statePension, privatePension: v.privatePension }
   }
-  if (v.jsa) record.unemployed = { finalGrossPay: 0, redundancy: 0, jsa: v.jsa, grantSupport: 0, leavePay: 0 }
+  if (v.jsa || v.redundancy || v.grantSupport) {
+    record.unemployed = { finalGrossPay: 0, redundancy: v.redundancy, jsa: v.jsa, grantSupport: v.grantSupport, leavePay: 0 }
+  }
   const benefits = v.universalCredit + v.childBenefit + v.housingBenefit + v.childWorkingTaxCredit + v.pipOrDla + v.other
   if (benefits) {
     record.benefits = {
@@ -287,10 +317,20 @@ export function mapAssessment(
   const second = earnerRecord(controls, 'Second', rules, notes, ov)
   const earner1 = toIncomeRecord(first.values)
 
+  // A ruling written against a figure GT no longer holds must not half-apply.
+  if (ov.incomeSupportTo) {
+    const found = first.movedFromIncomeSupport + second.movedFromIncomeSupport
+    if (found !== ov.incomeSupportTo.amount) {
+      throw new Error(
+        `C6X ${account.key}: ruling moves ${ov.incomeSupportTo.amount} of income support; GT holds ${found}`,
+      )
+    }
+  }
+
   const maintenance = num(controls, C.maintenance)
   if (maintenance) earner1.divorcedSeparated = { maintenanceReceived: maintenance, sharedCustodyNote: '' }
 
-  const friendsFamily = num(controls, C.friendsFamily)
+  const friendsFamily = num(controls, C.friendsFamily) + first.friendsFamily + second.friendsFamily
   if (friendsFamily) {
     earner1.thirdParty = { incomeSupportReceived: friendsFamily, supportNote: '', numberOfKidsDivisor: 1 }
   }
@@ -301,7 +341,7 @@ export function mapAssessment(
       grossSalaried: earner1.selfEmployed?.grossSalaried ?? 0,
       dividends: earner1.selfEmployed?.dividends ?? 0,
       otherInvestmentIncome: earner1.selfEmployed?.otherInvestmentIncome ?? 0,
-      propertyIncome,
+      propertyIncome: (earner1.selfEmployed?.propertyIncome ?? 0) + propertyIncome,
     }
     notes.push('§3: additional property income counted as income; GT left it out of its income total')
   }
