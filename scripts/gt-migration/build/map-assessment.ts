@@ -59,6 +59,8 @@ export interface AccountOverrides {
   /** C7: her per-property split, summed. Replaces GT's other-property figures. */
   otherValue?: number
   otherMortgage?: number
+  /** C7: the family-home mortgage she gave, where GT's form disagrees with a sibling's. */
+  homeMortgage?: number
   /** S24: sibling payable fees she supplied, one per sibling row. */
   siblings?: readonly { name?: string | null; payableFees: number }[]
 }
@@ -294,6 +296,10 @@ export function mapAssessment(
 
   // ── property (§4, C7, C16) ──────────────────────────────────────────────
   const home = { value: num(controls, C.homeValue), mortgageBalance: num(controls, C.homeMortgage) }
+  if (ov.homeMortgage != null && ov.homeMortgage !== home.mortgageBalance) {
+    home.mortgageBalance = ov.homeMortgage
+    notes.push('C7: home mortgage is the figure she gave, not GT\'s')
+  }
   const other = { value: num(controls, C.otherValue), mortgageBalance: num(controls, C.otherMortgage) }
   if (ov.otherValue != null || ov.otherMortgage != null) {
     other.value = ov.otherValue ?? other.value

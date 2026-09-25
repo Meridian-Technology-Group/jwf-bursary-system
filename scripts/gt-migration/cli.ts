@@ -1,9 +1,10 @@
 /**
  * GT migration toolkit — command router.
  *
- *   npm run mig -- calc --env nonprod [--debt as-entered|x5] [--variant <name>]
+ *   npm run mig -- calc --env nonprod [--debt as-entered|x5] [--mortgage-free on|off] [--variant <name>]
  *
  * --debt defaults to as-entered (C12, Brian 24 Sep).
+ * --mortgage-free defaults to on (C16, Brian 24 Sep); off shows what it moves.
  *
  * Only `calc` exists so far; the rest of 04-toolkit.md §2 is built in M3.
  */
@@ -28,6 +29,9 @@ async function main() {
       if (debt === 'as-entered') rules.debt = 'AS_ENTERED'
       else if (debt === 'x5') rules.debt = 'TIMES_REPAYMENT_YEARS'
       else if (debt) throw new Error('--debt as-entered|x5')
+      const mortgageFree = flag(args, 'mortgage-free')
+      if (mortgageFree === 'off') rules.mortgageFreeAddBack = false
+      else if (mortgageFree && mortgageFree !== 'on') throw new Error('--mortgage-free on|off')
       await runCalc(loadConfig(env), rules, flag(args, 'variant'))
       return
     }

@@ -206,6 +206,12 @@ describe('mapAssessment — per-account rulings', () => {
     expect(r.input.propertyAssets.other).toEqual({ value: 220000, mortgageBalance: 202000 })
   })
 
+  it('uses her home mortgage over GT', () => {
+    const ctl = controls({ ...base, [C.homeValue]: 700000, [C.homeMortgage]: 200000 })
+    const r = mapped(account({ overrides: { homeMortgage: 600000 } }), ctl)
+    expect(r.input.propertyAssets.home).toEqual({ value: 700000, mortgageBalance: 600000 })
+  })
+
   it('uses her family type over GT', () => {
     expect(mapped(account({ overrides: { familyType: 2 } }), controls(base)).input.familyTypeCategory).toBe(2)
   })
