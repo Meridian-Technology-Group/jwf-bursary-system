@@ -14,6 +14,9 @@
  */
 
 import { AssessmentTabNav } from "@/components/admin/assessment-tab-nav";
+import { requireRole, Role } from "@/lib/auth/roles";
+import { withUserContext, type RlsRole } from "@/lib/db/prisma";
+import { isMigrated } from "@/lib/applications/migration-source";
 
 export default async function AssessmentWorkspaceLayout({
   children,
@@ -22,9 +25,21 @@ export default async function AssessmentWorkspaceLayout({
   children: React.ReactNode;
   params: { id: string };
 }) {
+  // GT migration (PR-D): a migrated application has no form to show.
+  const user = await requireRole([Role.ADMIN, Role.ASSESSOR, Role.VIEWER]);
+  const app = await withUserContext(user.id, user.role as RlsRole, (tx) =>
+    tx.application.findUnique({
+      where: { id: params.id },
+      select: { migrationSource: true },
+    })
+  );
+
   return (
     <div className="space-y-4">
-      <AssessmentTabNav applicationId={params.id} />
+      <AssessmentTabNav
+        applicationId={params.id}
+        applicationFormDisabled={app ? isMigrated(app) : false}
+      />
       {children}
     </div>
   );

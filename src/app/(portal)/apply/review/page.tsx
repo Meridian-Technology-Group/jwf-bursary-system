@@ -44,6 +44,7 @@ import {
   readIncomeItems,
 } from "@/lib/portal/income-model";
 import { schoolName } from "@/lib/schools";
+import { PORTAL_APPLICATION } from "@/lib/applications/migration-source";
 
 export const metadata = {
   title: "Review Your Application",
@@ -366,14 +367,14 @@ export default async function ReviewPage() {
     async (tx) => {
       if (activeApplicationId) {
         const preferred = await tx.application.findFirst({
-          where: { id: activeApplicationId, leadApplicantId: user.id },
+          where: { id: activeApplicationId, leadApplicantId: user.id, ...PORTAL_APPLICATION },
           select: { id: true },
         });
         if (preferred) return preferred.id;
       }
       return tx.application
         .findFirst({
-          where: { leadApplicantId: user.id },
+          where: { leadApplicantId: user.id, ...PORTAL_APPLICATION },
           orderBy: { updatedAt: "desc" },
           select: { id: true },
         })
