@@ -70,6 +70,7 @@ import {
 import type { OptionScenario } from "@/lib/assessment/recommendation-options";
 import { cn } from "@/lib/utils";
 import type { AssessmentOutcome } from "@prisma/client";
+import { schoolName } from "@/lib/schools";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -359,7 +360,7 @@ export function SiblingContextPanel({ rows }: { rows: SiblingContextRow[] }) {
                     {r.childName}
                   </td>
                   <td className="py-2 pr-4 text-slate-600">
-                    {r.school === "TRINITY" ? "Trinity" : "Whitgift"}
+                    {schoolName(r.school, "short")}
                   </td>
                   <td className="py-2 text-right font-semibold text-primary-900">
                     {formatCurrency(r.absorbedPayableFees)}

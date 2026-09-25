@@ -17,6 +17,7 @@
  * one-line reason and a link to the bursary team's email (risk mitigation §8).
  */
 
+import type { School } from "@prisma/client";
 import * as React from "react";
 import { GraduationCap, RefreshCw, Lock } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -32,7 +33,7 @@ interface ApplicationTypeChooserProps {
   /** Pre-filled child name from the invitation, if supplied. */
   defaultChildName?: string | null;
   /** School (re-assessment only) — known from last year. */
-  school?: "TRINITY" | "WHITGIFT" | null;
+  school?: School | null;
   /** New round's academic year, for the re-assessment "welcome back" copy. */
   academicYear?: string | null;
 }

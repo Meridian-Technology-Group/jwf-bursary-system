@@ -39,6 +39,7 @@ import { ensurePrimaryContributor } from "@/lib/db/queries/contributors";
 import { applicationCreateData } from "@/lib/applications/status";
 
 import { AUDIT_ACTIONS, AUDIT_ENTITY_TYPES } from "@/lib/audit/actions";
+import { schoolName } from "@/lib/schools";
 
 // ─── Validation schema ────────────────────────────────────────────────────────
 
@@ -332,7 +333,7 @@ export async function createInternalRequestAction(
   const { application, invitationId, invitationToken, round, expiresAt } = result;
 
   // 6. Send the invitation email
-  const schoolLabel = school === "TRINITY" ? "Trinity School" : "Whitgift School";
+  const schoolLabel = schoolName(school);
   // B3 (CG-26): internal requests use the INTERNAL template for the school.
   const emailResult = await sendEmail(
     parentEmail,

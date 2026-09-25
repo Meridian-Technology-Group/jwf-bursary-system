@@ -18,6 +18,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import { entryAcademicYearLabel } from "@/lib/schools/academic-year";
+import { schoolName } from "@/lib/schools";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -39,10 +40,6 @@ interface SiblingLinkerProps {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-const SCHOOL_LABELS: Record<string, string> = {
-  WHITGIFT: "Whitgift",
-  TRINITY: "Trinity",
-};
 
 function useDebounce<T>(value: T, delayMs: number): T {
   const [debounced, setDebounced] = React.useState<T>(value);
@@ -220,7 +217,7 @@ export function SiblingLinker({
                         {/* D13-1a: the account exposes no reference — school +
                             entry year identify it alongside the child's name. */}
                         <p className="text-xs text-slate-500 truncate">
-                          {SCHOOL_LABELS[account.school] ?? account.school}
+                          {schoolName(account.school, "short") || account.school}
                           {" · "}
                           Entered {entryAcademicYearLabel(account.entryYear)}
                         </p>

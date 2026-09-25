@@ -43,6 +43,7 @@ import { getSectionGapStatuses, type SectionGap } from "@/lib/portal/section-gap
 import { logError } from "@/lib/log";
 
 import { AUDIT_ACTIONS, AUDIT_ENTITY_TYPES } from "@/lib/audit/actions";
+import { schoolName } from "@/lib/schools";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -323,7 +324,7 @@ export async function submitContribution(): Promise<never> {
   // ── Send confirmation email to the secondary (non-blocking on failure) ─────
   // Merge fields match the seeded SECONDARY_PARENT_RECEIVED template:
   // secondary_parent_name, child_name, school, round_year.
-  const schoolLabel = ctx.school === "TRINITY" ? "Trinity School" : "Whitgift School";
+  const schoolLabel = schoolName(ctx.school);
   const emailResult = await sendEmail(user.email, "SECONDARY_PARENT_RECEIVED", {
     secondary_parent_name:
       `${user.firstName ?? ""} ${user.lastName ?? ""}`.trim() || user.email,

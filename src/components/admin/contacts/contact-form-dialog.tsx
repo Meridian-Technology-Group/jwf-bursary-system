@@ -9,6 +9,8 @@
  * disambiguates twins (D12).
  */
 
+import { ALL_SCHOOLS, ROLLING_OVER_ONLY_MESSAGE, schoolAllowsSituation, schoolName } from "@/lib/schools";
+import type { School } from "@prisma/client";
 import { useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
@@ -67,7 +69,7 @@ export interface ContactFormValues {
   childFirstName: string;
   childLastName: string;
   childDob: string;
-  school: "TRINITY" | "WHITGIFT" | "";
+  school: School | "";
   situation: "NEW" | "INTERNAL" | "ROLLING_OVER";
   /** START year of the academic year of entry — 2027 means "2027/2028". */
   entryYear: string;
@@ -91,7 +93,7 @@ const schema = z.object({
   childFirstName: z.string().min(1, "Child's first name is required"),
   childLastName: z.string().min(1, "Child's surname is required"),
   childDob: z.string().min(1, "Child's date of birth is required"),
-  school: z.enum(["TRINITY", "WHITGIFT"], { error: "A school is required" }),
+  school: z.enum(["TRINITY", "WHITGIFT", "OP_PARTNER"], { error: "A school is required" }),
   // B3 (CG-26) — the invitation-template situation; defaults to NEW.
   situation: z.enum(["NEW", "INTERNAL", "ROLLING_OVER"]),
   // CH-26: captured (and shown back) as the academic year "2027/2028"; the
@@ -110,6 +112,9 @@ const schema = z.object({
   town: z.string().optional(),
   postcode: z.string().optional(),
   notes: z.string().optional(),
+}).refine((v) => schoolAllowsSituation(v.school, v.situation), {
+  message: ROLLING_OVER_ONLY_MESSAGE,
+  path: ["situation"],
 });
 
 type Values = z.infer<typeof schema>;
@@ -428,10 +433,11 @@ export function ContactFormDialog({
                           </SelectTrigger>
                         </FormControl>
                         <SelectContent>
-                          <SelectItem value="TRINITY">Trinity School</SelectItem>
-                          <SelectItem value="WHITGIFT">
-                            Whitgift School
-                          </SelectItem>
+                          {ALL_SCHOOLS.map((s) => (
+                            <SelectItem key={s} value={s}>
+                              {schoolName(s)}
+                            </SelectItem>
+                          ))}
                         </SelectContent>
                       </Select>
                       <FormMessage />

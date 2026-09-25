@@ -26,9 +26,8 @@ export function awardFundOptionsForSchool(school: School): AwardFundType[] {
       return ["JWF", "WSP_JWF", "WFA"];
     case "TRINITY":
       return ["JWF", "TBF"];
-    default:
-      // Future schools (e.g. the Old Palace partnering cohort) default to the
-      // Foundation's own fund until she says otherwise.
+    case "OP_PARTNER":
+      // GT migration: Old Palace awards are paid from the Foundation's fund.
       return ["JWF"];
   }
 }

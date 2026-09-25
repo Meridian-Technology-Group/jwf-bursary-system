@@ -39,9 +39,11 @@ import { cn } from "@/lib/utils";
 import { AssessmentSynopsis } from "@/components/admin/assessment-synopsis";
 import { WatchOutNotesEditor } from "@/components/admin/watch-out-notes-editor";
 import { PreSystemHistoryEditor } from "@/components/admin/pre-system-history-editor";
+import { AnnualFeesOverrideEditor } from "@/components/admin/annual-fees-override-editor";
 import { CloseBursaryAccountDialog } from "@/components/admin/close-bursary-account-dialog";
 import { getAllCloseReasons } from "@/lib/db/queries/reference-tables";
 import type { SiblingDetail } from "@/types/assessment-v2";
+import { schoolHasFeeTable, schoolName } from "@/lib/schools";
 
 export const metadata = {
   title: "Assessment — Admin",
@@ -80,6 +82,7 @@ export default async function AssessmentAdminPage({ params }: Props) {
     scheduleRows,
     accountStatus,
     closeReasons,
+    accountFees,
   } = await withUserContext(user.id, user.role as RlsRole, async (tx) => {
     const app = await getApplicationWithDetails(tx, params.id);
     if (!app) {
@@ -93,6 +96,7 @@ export default async function AssessmentAdminPage({ params }: Props) {
         scheduleRows: [],
         accountStatus: null,
         closeReasons: [],
+        accountFees: null,
       };
     }
     const a = await getAssessment(tx, params.id);
@@ -111,7 +115,12 @@ export default async function AssessmentAdminPage({ params }: Props) {
     const account = app.bursaryAccountId
       ? await tx.bursaryAccount.findUnique({
           where: { id: app.bursaryAccountId },
-          select: { preSystemHistory: true, status: true },
+          select: {
+            preSystemHistory: true,
+            status: true,
+            school: true,
+            annualFeesOverride: true,
+          },
         })
       : null;
     // Epic 18b — the manual account close's reason picker (ADMIN only).
@@ -134,6 +143,18 @@ export default async function AssessmentAdminPage({ params }: Props) {
       scheduleRows: schedule,
       accountStatus: account?.status ?? null,
       closeReasons: reasons,
+      // S9: shown where the school has no fee table (the OP partnering school),
+      // or wherever an override has been set.
+      accountFees:
+        account &&
+        (!schoolHasFeeTable(account.school) || account.annualFeesOverride != null)
+          ? {
+              value:
+                account.annualFeesOverride == null
+                  ? null
+                  : Number(account.annualFeesOverride),
+            }
+          : null,
     };
   });
   if (!application) notFound();
@@ -185,7 +206,7 @@ export default async function AssessmentAdminPage({ params }: Props) {
           {application.reference}
         </span>
         <span className="text-slate-600">
-          {application.school === "TRINITY" ? "Trinity School" : "Whitgift School"}
+          {schoolName(application.school)}
         </span>
         <span className="text-slate-500">
           {application.round.academicYear} assessment round
@@ -260,6 +281,25 @@ export default async function AssessmentAdminPage({ params }: Props) {
             assessment has been started (Assessment Model tab).
           </p>
         </div>
+      )}
+
+      {/* S9 — the account's own annual fees (OP partnering school: no fee table). */}
+      {accountFees && application.bursaryAccountId && (
+        <section className="space-y-2 rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+          <p className="text-xs font-semibold uppercase tracking-wide text-slate-600">
+            Account annual fees
+          </p>
+          <p className="text-xs text-slate-500">
+            This school has no fee table, so the assessment uses this account&apos;s own
+            fee. No VAT is added.
+          </p>
+          <AnnualFeesOverrideEditor
+            bursaryAccountId={application.bursaryAccountId}
+            applicationId={params.id}
+            initial={accountFees.value}
+            readOnly={user.role !== Role.ADMIN}
+          />
+        </section>
       )}
 
       {/* 3. Year-on-year history. */}

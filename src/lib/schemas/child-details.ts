@@ -70,7 +70,10 @@ export const childAddressSchema = z.object({
 
 export const childDetailsSchema = z
   .object({
-    school: z.enum(["TRINITY", "WHITGIFT"] as const, {
+    // Accepts every school: the school is LOCKED from the invitation (D1), and
+    // an Old Palace child's re-assessment arrives as OP_PARTNER. The parent
+    // never picks it, so this is not an offer of OP (S9).
+    school: z.enum(["TRINITY", "WHITGIFT", "OP_PARTNER"] as const, {
       message: "Please select a school",
     }),
     // NOTE: entry year / entry year-group are deliberately ABSENT here.

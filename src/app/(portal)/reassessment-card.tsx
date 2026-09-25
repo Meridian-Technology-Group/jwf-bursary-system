@@ -13,26 +13,26 @@
  * and drops them into the shorter form.
  */
 
+import type { School } from "@prisma/client";
 import * as React from "react";
 import { beginReassessmentAction } from "@/app/(portal)/actions";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { ContactBursaryTeam } from "@/components/portal/contact-bursary-team";
 import { RefreshCw } from "lucide-react";
+import { schoolName } from "@/lib/schools";
 
 interface ReassessmentCardProps {
   /** Child's full name, pre-filled from last year's record. */
   defaultChildName?: string | null;
   /** School the child currently attends (TRINITY | WHITGIFT). */
-  school?: "TRINITY" | "WHITGIFT" | null;
+  school?: School | null;
   /** Academic year of the new round, e.g. "2026/2027". */
   academicYear?: string | null;
 }
 
 function schoolLabel(school: ReassessmentCardProps["school"]): string {
-  if (school === "TRINITY") return "Trinity School";
-  if (school === "WHITGIFT") return "Whitgift School";
-  return "your child's school";
+  return schoolName(school) || "your child's school";
 }
 
 export function ReassessmentCard({

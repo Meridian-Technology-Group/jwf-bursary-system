@@ -11,6 +11,7 @@
  * `thirdParty.numberOfKidsDivisor`).
  */
 
+import type { School } from "@prisma/client";
 import type {
   ParentIncomeRecord,
   DivorcedSeparatedIncome,
@@ -95,6 +96,6 @@ export interface DebtsRecord {
  */
 export interface SiblingDetail {
   name?: string
-  school?: 'TRINITY' | 'WHITGIFT' | null
+  school?: School | null
   netPayableFees?: number | null
 }
