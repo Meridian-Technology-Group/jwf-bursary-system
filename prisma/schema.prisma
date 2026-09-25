@@ -158,6 +158,11 @@ model BursaryAccount {
   /// Display data only — feeds the ASSESSMENT ADMIN tab's history table,
   /// never a calculation. System years derive from assessment snapshots.
   preSystemHistory     Json?                  @map("pre_system_history")
+  /// S9 (GT migration PR-C): this account's own annual school fees, before
+  /// VAT. The OP partnering school has no fee table and every account's fee
+  /// differs; the assessment uses this for the account's school in place of
+  /// the Settings fee table. Edited by ADMIN on the ASSESSMENT ADMIN tab.
+  annualFeesOverride   Decimal?               @map("annual_fees_override") @db.Decimal(10, 2)
   createdAt            DateTime               @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt            DateTime               @updatedAt @map("updated_at") @db.Timestamptz(6)
   applications         Application[]

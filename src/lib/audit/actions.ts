@@ -194,6 +194,8 @@ export const AUDIT_ACTIONS = {
    * WITHDRAWN and from the automatic schedule-complete close.
    */
   BURSARY_ACCOUNT_CLOSED: "BURSARY_ACCOUNT_CLOSED",
+  /** S9 — ADMIN set or cleared the account's own annual fee (OP partnering school). */
+  BURSARY_ACCOUNT_FEES_OVERRIDE_UPDATED: "BURSARY_ACCOUNT_FEES_OVERRIDE_UPDATED",
   /**
    * CALC-10 — the account's fees-account code field was edited.
    *
@@ -357,6 +359,7 @@ const ACTION_COLOUR: Partial<Record<AuditAction, string>> = {
   [AUDIT_ACTIONS.SCHEDULE_SHOW_ON_PORTAL_TOGGLED]: "bg-blue-500",
   [AUDIT_ACTIONS.BURSARY_ACCOUNT_WITHDRAWN]: "bg-red-400",
   [AUDIT_ACTIONS.BURSARY_ACCOUNT_CLOSED]: "bg-red-400",
+  [AUDIT_ACTIONS.BURSARY_ACCOUNT_FEES_OVERRIDE_UPDATED]: "bg-blue-500",
   [AUDIT_ACTIONS.BURSARY_ACCOUNT_FEES_CODE_UPDATED]: "bg-blue-500",
   [AUDIT_ACTIONS.UPDATE_REFERENCE]: "bg-blue-500",
   [AUDIT_ACTIONS.APPLICATION_CLOSED]: "bg-red-400",

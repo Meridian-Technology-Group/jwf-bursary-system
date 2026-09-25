@@ -14,6 +14,7 @@
  * server/client boundary).
  */
 
+import { FEE_TABLE_SCHOOLS, feesBySchool as buildFeesBySchool } from "@/lib/schools";
 import { notFound, redirect } from "next/navigation";
 import type { ReactNode } from "react";
 import type { Decimal } from "@prisma/client/runtime/library";
@@ -381,22 +382,24 @@ export default async function AssessmentPage({ params }: Props) {
       // Epic 15 M1 (CH-11/14): the v2 form needs BOTH schools' fee pairs so
       // the assessor's school pick (and mid-assessment switch) recalculates
       // instantly. Same fee-year anchor as above.
-      const [trinityFees, whitgiftFees] = await Promise.all([
-        getSchoolFeesForYear(tx, "TRINITY", round.academicYear),
-        getSchoolFeesForYear(tx, "WHITGIFT", round.academicYear),
-      ]);
-      const bySchool = {
-        TRINITY: {
-          annual: trinityFees?.currentYearAnnualFees ?? null,
-          nextYear: trinityFees?.nextYearAnnualFees ?? null,
-        },
-        WHITGIFT: {
-          annual: whitgiftFees?.currentYearAnnualFees ?? null,
-          nextYear: whitgiftFees?.nextYearAnnualFees ?? null,
-        },
-        // S9: no fee table; the account carries its own fee.
-        OP_PARTNER: { annual: null, nextYear: null },
-      };
+      const tableFees = await Promise.all(
+        FEE_TABLE_SCHOOLS.map((s) => getSchoolFeesForYear(tx, s, round.academicYear))
+      );
+      const account = bursaryAccountId
+        ? await tx.bursaryAccount.findUnique({
+            where: { id: bursaryAccountId },
+            select: { school: true, annualFeesOverride: true },
+          })
+        : null;
+      // S9: the fee table per school, then the account's own fee for its school.
+      const bySchool = buildFeesBySchool(
+        Object.fromEntries(FEE_TABLE_SCHOOLS.map((s, i) => [s, tableFees[i]])),
+        account && {
+          school: account.school,
+          annualFeesOverride:
+            account.annualFeesOverride == null ? null : Number(account.annualFeesOverride),
+        }
+      );
 
       // Load sibling payable fees for sequential income absorption.
       // Only siblings with a lower priority order than this child are used —

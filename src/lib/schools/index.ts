@@ -113,3 +113,31 @@ export function entrySchoolYearOptions(school: School | string | null | undefine
   const last = finalEligibleSchoolYear(school);
   return Array.from({ length: last - 5 }, (_, i) => i + 6);
 }
+
+export interface SchoolFeePair {
+  annual: number | null;
+  nextYear: number | null;
+}
+
+/**
+ * The fee pair the assessment offers for each school: the Settings fee table
+ * where the school has one, then the account's own fee for its school, which
+ * wins (S9: the OP partnering school has no table). An account fee has no
+ * next-year figure; the award summary falls back to the current-year fee.
+ */
+export function feesBySchool(
+  table: Partial<Record<School, { currentYearAnnualFees: number | null; nextYearAnnualFees: number | null } | null>>,
+  account: { school: School; annualFeesOverride: number | null } | null,
+): Record<School, SchoolFeePair> {
+  const out = Object.fromEntries(
+    ALL_SCHOOLS.map((s) => [s, { annual: null, nextYear: null }]),
+  ) as Record<School, SchoolFeePair>;
+  for (const s of FEE_TABLE_SCHOOLS) {
+    const row = table[s];
+    out[s] = { annual: row?.currentYearAnnualFees ?? null, nextYear: row?.nextYearAnnualFees ?? null };
+  }
+  if (account?.annualFeesOverride != null) {
+    out[account.school] = { annual: account.annualFeesOverride, nextYear: null };
+  }
+  return out;
+}
