@@ -61,6 +61,13 @@ export interface AccountOverrides {
   otherMortgage?: number
   /** C7: the family-home mortgage she gave, where GT's form disagrees with a sibling's. */
   homeMortgage?: number
+  /**
+   * C16/C5 per account (25 Sep): the rent add-back she set. `fromIncomeSupport`
+   * is a figure GT's assessor keyed into income support as an add-back; it
+   * leaves income and becomes the £ add-back (`rentAddBackOverride`), which
+   * moves NDI by nothing and the income figure by that amount.
+   */
+  rentAddBack?: { type: RentAddBackType; amount?: number | null; fromIncomeSupport?: number }
   /** S24: sibling payable fees she supplied, one per sibling row. */
   siblings?: readonly { name?: string | null; payableFees: number }[]
 }
@@ -95,14 +102,16 @@ export interface MappingRules {
 
 /**
  * The "Proposed" column of the 22 Sep pack, except C12 (Brian, 24 Sep: take
- * loan/lease figures as GT entered them, since GT treated them as balances),
- * plus C16 (Brian, 24 Sep: yes, subject to her confirmation).
+ * loan/lease figures as GT entered them, since GT treated them as balances).
+ * C16 is off: on all four accounts it touched, GT's assessor had already keyed
+ * the add-back into income, so the model's add-back counted it twice. She set
+ * each one by hand on 25 Sep (`AccountOverrides.rentAddBack`).
  */
 export const DEFAULT_RULES: MappingRules = {
   debt: 'AS_ENTERED',
   otherProperty: 'ONE_SECOND_PROPERTY',
   rentFree: 'RENT_FREE_ADD_BACK',
-  mortgageFreeAddBack: true,
+  mortgageFreeAddBack: false,
   siblingPayableFees: [],
 }
 
@@ -193,6 +202,12 @@ function earnerRecord(
     rentFreeMarker = incomeSupport
     incomeSupport = 0
     notes.push(`C5: ${who.toLowerCase()} earner income support is the rent-free marker; removed from income, rent added back instead`)
+  }
+
+  const fromIs = ov.rentAddBack?.fromIncomeSupport
+  if (fromIs && incomeSupport === fromIs) {
+    incomeSupport = 0
+    notes.push(`C16: ${who.toLowerCase()} earner income support is her rent add-back; moved out of income`)
   }
 
   let childBenefit = lo('childBenefit')
@@ -326,7 +341,12 @@ export function mapAssessment(
   propertyAssets.portfolioType = portfolioType
 
   let rentAddBackType: RentAddBackType = 'NONE'
-  if (rentFree) {
+  let rentAddBackOverride: number | null = null
+  if (ov.rentAddBack) {
+    rentAddBackType = ov.rentAddBack.type
+    rentAddBackOverride = ov.rentAddBack.amount ?? null
+    notes.push('C16: rent add-back as she set it for this account')
+  } else if (rentFree) {
     rentAddBackType = 'FULL_RENT_FREE'
   } else if (rules.mortgageFreeAddBack && home.value > 0 && home.mortgageBalance === 0) {
     rentAddBackType = 'FULL_MORTGAGE_FREE'
@@ -366,6 +386,7 @@ export function mapAssessment(
     manualAdjustment: 0,
     familyTypeCategory,
     rentAddBackType,
+    rentAddBackOverride,
     multiPropertyRentAddBack: false,
     councilTaxSupport: false,
     usesCar: num(controls, C.cars) > 0,

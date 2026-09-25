@@ -111,11 +111,12 @@ describe('mapAssessment — property (C7, C16)', () => {
   })
 
   it('applies the mortgage-free add-back only to an owner with no mortgage', () => {
-    const outright = mapped(account(), controls({ ...base, [C.homeValue]: 400000 }))
+    const on = { ...DEFAULT_RULES, mortgageFreeAddBack: true }
+    const outright = mapped(account(), controls({ ...base, [C.homeValue]: 400000 }), on)
     expect(outright.input.rentAddBackType).toBe('FULL_MORTGAGE_FREE')
-    const mortgaged = mapped(account(), controls({ ...base, [C.homeValue]: 400000, [C.homeMortgage]: 100000 }))
+    const mortgaged = mapped(account(), controls({ ...base, [C.homeValue]: 400000, [C.homeMortgage]: 100000 }), on)
     expect(mortgaged.input.rentAddBackType).toBe('NONE')
-    const off = mapped(account(), controls({ ...base, [C.homeValue]: 400000 }), { ...DEFAULT_RULES, mortgageFreeAddBack: false })
+    const off = mapped(account(), controls({ ...base, [C.homeValue]: 400000 }))
     expect(off.input.rentAddBackType).toBe('NONE')
   })
 
@@ -210,6 +211,20 @@ describe('mapAssessment — per-account rulings', () => {
     const ctl = controls({ ...base, [C.homeValue]: 700000, [C.homeMortgage]: 200000 })
     const r = mapped(account({ overrides: { homeMortgage: 600000 } }), ctl)
     expect(r.input.propertyAssets.home).toEqual({ value: 700000, mortgageBalance: 600000 })
+  })
+
+  it('moves an income-support add-back into the rent add-back she set', () => {
+    const ctl = controls({ ...base, [C.homeValue]: 600000, 'First Earner yearly net pay': 30000, 'First Earner yearly income support': 10000 })
+    const r = mapped(account({ overrides: { rentAddBack: { type: 'FULL_MORTGAGE_FREE', amount: 10000, fromIncomeSupport: 10000 } } }), ctl)
+    expect(calculateEarnerAggregateIncome(r.input.earners)).toBe(30000)
+    expect(r.input.rentAddBackType).toBe('FULL_MORTGAGE_FREE')
+    expect(r.input.rentAddBackOverride).toBe(10000)
+  })
+
+  it('sets no add-back where she ruled none', () => {
+    const r = mapped(account({ overrides: { rentAddBack: { type: 'NONE' } } }), controls({ ...base, [C.homeValue]: 450000 }))
+    expect(r.input.rentAddBackType).toBe('NONE')
+    expect(r.input.rentAddBackOverride).toBeNull()
   })
 
   it('uses her family type over GT', () => {
