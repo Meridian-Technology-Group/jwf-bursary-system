@@ -19,13 +19,14 @@ export const gapReasons = [
   // --- D4 CLOSED (6 Sep 2026), extended 8 Sep 2026 — her definitive gap list ---
   // From her reviewed "Reason & Gap Codes" listing, in her four groups:
   // 1-3 External · 4-6 Pastoral Leniency · 7-10 Internal Bursary Bias ·
-  // 11-13 Contextual (grouping: src/lib/reason-codes/gap-category.ts).
+  // 11-17 Contextual (grouping: src/lib/reason-codes/gap-category.ts).
   // Codes 1-10 above are deprecated, never deleted.
   //
   // Her 8 Sep additions (112, 113) are appended rather than inserted in
   // sequence, so no existing code is renumbered. Display order therefore
   // comes from `sortOrder`, NOT from `code - 100` — 112 sits at display 10,
-  // pushing 110/111 to 11/12, and 113 is display 13.
+  // pushing 110/111 to 11/12, and 113 is display 13. Her 7 Oct additions
+  // (114–117) are appended the same way, at display 14–17.
   { code: 101, label: "Out of sync due to scholarship applied on place offer", sortOrder: 1, isDeprecated: false },
   { code: 102, label: "Out of sync due to new scholarship offered mid cursus", sortOrder: 2, isDeprecated: false },
   { code: 103, label: "Original Old Assessment Benchmark (year 2020)", sortOrder: 3, isDeprecated: false },
@@ -39,4 +40,8 @@ export const gapReasons = [
   { code: 110, label: "Affordability Adjusted Calculation Preferred", sortOrder: 11, isDeprecated: false },
   { code: 111, label: "Theoretical Benchmark Calculation Preferred", sortOrder: 12, isDeprecated: false },
   { code: 113, label: "Immaterial gap, less than £100", sortOrder: 13, isDeprecated: false },
+  { code: 114, label: "Additional wealth outside the scope of direct family", sortOrder: 14, isDeprecated: false },
+  { code: 115, label: "SE income partially or not declared to HMRC", sortOrder: 15, isDeprecated: false },
+  { code: 116, label: "Using cash injections from business in a questionable way", sortOrder: 16, isDeprecated: false },
+  { code: 117, label: "Multiple cash deposits seemingly undeclared", sortOrder: 17, isDeprecated: false },
 ] as const;

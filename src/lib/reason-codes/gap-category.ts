@@ -7,6 +7,7 @@
  *
  * Her 8 Sep additions (Acrimonious Separation at display 10, Immaterial gap at
  * display 13) were appended as codes 112/113 rather than inserted in sequence,
+ * and her 7 Oct additions (display 14–17) as codes 114–117,
  * so that no existing code had to be renumbered. That breaks the original
  * `display = code − 100` rule: her groups are no longer contiguous in code
  * space, so membership below is explicit rather than a numeric range. Display
@@ -23,7 +24,7 @@ export const GAP_CODE_GROUPS = [
   { label: "External", range: "1 – 3", codes: [101, 102, 103] },
   { label: "Pastoral Leniency", range: "4 – 6", codes: [104, 105, 106] },
   { label: "Internal Bursary Bias", range: "7 – 10", codes: [107, 108, 109, 112] },
-  { label: "Contextual", range: "11 – 13", codes: [110, 111, 113] },
+  { label: "Contextual", range: "11 – 17", codes: [110, 111, 113, 114, 115, 116, 117] },
 ] as const;
 
 /** The selector's group heading for a gap code — "1 – 3: External" etc. */
