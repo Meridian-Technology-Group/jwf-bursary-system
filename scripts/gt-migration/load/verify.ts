@@ -54,13 +54,6 @@ export async function verify(ctx: LoadContext, runId: string) {
   add('B6', migrated.every((a) => a.assessment?.status !== 'COMPLETED'), `${migrated.filter((a) => a.assessment?.status === 'COMPLETED').length} COMPLETED`)
   add('B7', migrated.every((a) => a.submittedAt && !a.closedAt), `${migrated.length} migrated applications`)
 
-  // B5: recommended = max(0, actual) on every migrated assessment.
-  const b5 = await db.$queryRaw<{ n: bigint }[]>`
-    SELECT count(*) AS n FROM assessments s JOIN applications a ON a.id = s.application_id
-    WHERE a.migration_source IS NOT NULL
-      AND abs(s.recommended_payable_fees - GREATEST(0, s.actual_remaining_di)) > 0.005`
-  add('B5', Number(b5[0].n) === 0, `${b5[0].n} migrated rows break the rule`)
-
   // B10: DB ledger ≡ local mirror, no open intents.
   const dbRows = await db.dataMigrationLedger.findMany({ where: { runId }, select: { entityType: true, entityId: true, state: true } })
   const mirrorFile = resolve(dir, 'ledger.jsonl')
@@ -114,6 +107,19 @@ export async function verify(ctx: LoadContext, runId: string) {
       failedKeys.push(`${plan.key}: ${err instanceof Error ? err.message : err}`)
     }
   }
+  // B5: recommended = max(0, actual) on every migrated assessment, except an
+  // account her batch 1 ruling (8 Oct) takes from another leg; group A above
+  // has already checked those against their own leg (A4).
+  const ruled = new Set(Array.from(plans.values()).filter((p) => p.expect.referenceLeg !== 'ACTUAL').map((p) => p.key))
+  const offActual = await db.$queryRaw<{ key: string | null }[]>`
+    SELECT l.account_key AS key FROM assessments s
+    JOIN applications a ON a.id = s.application_id
+    LEFT JOIN data_migration_ledger l ON l.entity_type = 'Assessment' AND l.entity_id = s.id::text AND l.state = 'done'
+    WHERE a.migration_source IS NOT NULL
+      AND abs(s.recommended_payable_fees - GREATEST(0, s.actual_remaining_di)) > 0.005`
+  const unexplained = offActual.filter((r) => !r.key || !ruled.has(r.key)).length
+  add('B5', unexplained === 0, `${offActual.length} off the actual leg, ${offActual.length - unexplained} by her reference-leg ruling, ${unexplained} unexplained`)
+
   add('A (re-run)', aFailures === 0, `${aFailures} accounts fail`)
   add('B8', Math.abs(sumConfirmed - expectConfirmed) < 0.01 && Math.abs(sumAward - expectAward) < 0.01,
     `confirmed £${sumConfirmed.toFixed(2)} vs sheet £${expectConfirmed.toFixed(2)}; award £${sumAward.toFixed(2)} vs sheet £${expectAward.toFixed(2)}`)
