@@ -100,11 +100,16 @@ async function main() {
         const { hash, plans, held } = await planAll(ctx, { only: list(flag(args, 'only')) })
         const reasons = held.reduce<Record<string, number>>((m, h) => ((m[h.reason ?? '?'] = (m[h.reason ?? '?'] ?? 0) + 1), m), {})
         const unmapped = Array.from(plans.values()).filter((p) => p.unmappedReasons.length).length
-        const gaps = Array.from(plans.values()).reduce<Record<string, number>>((m, p) => ((m[p.gapLabel ?? '(no gap)'] = (m[p.gapLabel ?? '(no gap)'] ?? 0) + 1), m), {})
+        const gaps = Array.from(plans.values()).reduce<Record<string, number>>((m, p) => {
+          for (const g of p.gapLabels.length ? p.gapLabels : ['(no gap)']) m[g] = (m[g] ?? 0) + 1
+          return m
+        }, {})
+        const fromM5 = Array.from(plans.values()).filter((p) => p.reasonsFrom === 'M5').length
         console.log(`target: ${env} (${config.projectRef}) | canonical: ${hash}`)
         console.log(`plannable: ${plans.size} | held back: ${held.length} ${JSON.stringify(reasons)}`)
         console.log(`logins: ${new Set(Array.from(plans.values()).map((p) => p.leadEmail)).size} | with an unmapped GT reason code: ${unmapped}`)
-        console.log(`gap codes: ${JSON.stringify(gaps)}`)
+        console.log(`reason + gap codes from her returned report: ${fromM5} | from the GT crosswalk and fallback: ${plans.size - fromM5}`)
+        console.log(`gap codes (an account can carry several): ${JSON.stringify(gaps)}`)
       } finally {
         await ctx.prisma.$disconnect()
       }

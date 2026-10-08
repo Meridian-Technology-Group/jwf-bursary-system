@@ -15,7 +15,7 @@ import { calculateEarnerIncome } from '../../../src/lib/assessment/v2/income'
 import { schoolVatRate } from '../../../src/lib/schools'
 import type { AwardFundType, EntryYearGroup, School } from '@prisma/client'
 import type { CanonicalAccount } from '../build/map-assessment'
-import { crosswalkReasonCodes, gapReasonLabel } from './reason-codes'
+import { crosswalkReasonCodes, gapReasonLabels } from './reason-codes'
 import { LEG_NAME, recommendedFromLeg, type ReferenceLeg } from '../build/reference-leg'
 
 /** The canonical fields the loader reads beyond what the mapper needs. */
@@ -38,6 +38,12 @@ export interface LoadAccount extends CanonicalAccount {
   gt?: { id: string } | null
   /** Her pick from the returned reconciliation report (S19), when ingested. */
   gapCode?: string | null
+  /**
+   * Phase 2: her final reason and gap codes from the returned M5 report
+   * (labels without display numbers). When present they replace the GT
+   * crosswalk and the gap-code fallback.
+   */
+  m5?: { reasonLabels: string[]; gapLabels: string[]; batch: string } | null
   held?: string | null
   /** Flags her rulings settled, flag → decision id. */
   resolved?: Record<string, string>
@@ -98,7 +104,9 @@ export interface AccountPlan {
   }
   recommendation: Omit<UpsertRecommendationInput, 'roundId' | 'bursaryAccountId'>
   reasonLabels: string[]
-  gapLabel: string | null
+  gapLabels: string[]
+  /** Where the reason and gap codes came from: her returned report, or the GT crosswalk and fallback. */
+  reasonsFrom: 'M5' | 'GT'
   unmappedReasons: string[]
   account: { benchmarkPayableFees: number; annualFeesOverride: number | null }
   /** R3 / A7: her sheet's arithmetic was off and she ruled on it. */
@@ -179,14 +187,18 @@ export function planAccount(
   const referenceLeg: ReferenceLeg = a.overrides?.referenceLeg ?? 'ACTUAL'
   const recommended = recommendedFromLeg(out, referenceLeg)
   const gapAmount = computeGapAmount(a.payable, recommended)
-  const { labels: reasonLabels, unmapped } = crosswalkReasonCodes({
+  const crosswalk = crosswalkReasonCodes({
     yoyCodes: a.yoyCodes,
     majorIncome: a.majorIncome,
     majorAssets: a.majorAssets,
     isNew,
     addLabels: a.addReasonCodes,
   })
-  const gapLabel = gapReasonLabel(gapAmount, a.gapCode)
+  // Her returned report is final for the accounts it covers.
+  const fromM5 = Boolean(a.m5?.reasonLabels.length)
+  const reasonLabels = fromM5 ? a.m5!.reasonLabels : crosswalk.labels
+  const unmapped = fromM5 ? [] : crosswalk.unmapped
+  const gapLabels = gapReasonLabels(gapAmount, a.m5?.gapLabels ?? (a.gapCode ? [a.gapCode] : []))
 
   const siblingNames = (a.siblings ?? []).map((s) => s.name).filter(Boolean)
   const suppliedFees = a.overrides?.siblings ?? []
@@ -326,7 +338,8 @@ export function planAccount(
       familySynopsis: null,
     },
     reasonLabels,
-    gapLabel,
+    gapLabels,
+    reasonsFrom: fromM5 ? 'M5' : 'GT',
     unmappedReasons: unmapped,
     account: {
       benchmarkPayableFees: a.payable,

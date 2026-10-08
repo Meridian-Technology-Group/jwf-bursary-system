@@ -7,6 +7,7 @@ import type { AssessmentV2Input, AssessmentV2Output } from '../../../src/lib/ass
 import {
   crosswalkReasonCodes,
   gapReasonLabel,
+  gapReasonLabels,
   resolveLabels,
   stripDisplayNumber,
   FIRST_ASSESSMENT,
@@ -62,6 +63,21 @@ describe('gap code (S19)', () => {
     expect(gapReasonLabel(100)).toBe(GAP_FALLBACK)
     expect(gapReasonLabel(-2500, '11 - Affordability Adjusted Calculation Preferred')).toBe('Affordability Adjusted Calculation Preferred')
     expect(gapReasonLabel(null)).toBeNull()
+  })
+})
+
+describe('gap codes from her returned report (Phase 2)', () => {
+  it('keeps all her picks in order, numbers stripped, duplicates dropped', () => {
+    expect(gapReasonLabels(2500, ['3 - Original Old Assessment Benchmark (year 2020)', 'SE income partially or not declared to HMRC', '3 - Original Old Assessment Benchmark (year 2020)'])).toEqual([
+      'Original Old Assessment Benchmark (year 2020)',
+      'SE income partially or not declared to HMRC',
+    ])
+  })
+
+  it('none within a penny, even where she coded one; the fallback when she gave none', () => {
+    expect(gapReasonLabels(0, ['Immaterial gap, less than £100'])).toEqual([])
+    expect(gapReasonLabels(-40)).toEqual([GAP_IMMATERIAL])
+    expect(gapReasonLabels(-4000, [])).toEqual([GAP_FALLBACK])
   })
 })
 
@@ -164,7 +180,8 @@ describe('planAccount (02-target-model Part 1)', () => {
     expect(p.assessmentLock).toMatchObject({ status: 'ROLLED_OVER', awardFundType: 'JWF', vatRate: 20 })
     expect(p.recommendation).toMatchObject({ confirmedPayableFees: 19410, bursaryAward: 10000, gapAmount: 0, lastPayableFees: null })
     expect(p.reasonLabels).toEqual(['No real change'])
-    expect(p.gapLabel).toBeNull()
+    expect(p.gapLabels).toEqual([])
+    expect(p.reasonsFrom).toBe('GT')
     expect(p.account).toEqual({ benchmarkPayableFees: 19410, annualFeesOverride: null })
     expect(p.assessmentSave.nextYearAnnualFees).toBeNull()
     expect(p.assessmentSave.earnersV2?.[0].incomeDetail.total).toBe(40000)
@@ -191,7 +208,7 @@ describe('planAccount (02-target-model Part 1)', () => {
   it('a material gap gets a gap code; her corrected reference wins', () => {
     const p = planAccount(account({ referenceCorrected: 'WS-TEST01-TEST, Pupil Two' }), input(), output(17000), '2026-09-29')
     expect(p.recommendation.gapAmount).toBe(2410)
-    expect(p.gapLabel).toBe(GAP_FALLBACK)
+    expect(p.gapLabels).toEqual([GAP_FALLBACK])
     expect(p.reference).toBe('WS-TEST01-TEST, Pupil Two')
   })
 
@@ -214,6 +231,27 @@ describe('planAccount (02-target-model Part 1)', () => {
     // the snapshot keeps every leg as calculated
     expect(p.assessmentSave.actualRemainingDi).toBe(25000)
     expect(p.assessmentLock.synopsis).toContain('taken from the affordability-adjusted leg')
+  })
+
+  it('her returned report replaces the GT crosswalk and the gap fallback', () => {
+    const m5 = {
+      reasonLabels: ['Sudden unemployment', 'New job and increased pay'],
+      gapLabels: ['Original Old Assessment Benchmark (year 2020)', 'Additional wealth outside the scope of direct family'],
+      batch: 'batch5',
+    }
+    const p = planAccount(account({ m5, yoyCodes: '29 - unmapped GT code' }), input(), output(17000), '2026-09-29')
+    expect(p.reasonsFrom).toBe('M5')
+    expect(p.reasonLabels).toEqual(m5.reasonLabels)
+    expect(p.unmappedReasons).toEqual([])
+    expect(p.gapLabels).toEqual(m5.gapLabels)
+  })
+
+  it('her gap codes are dropped where the gap is nil', () => {
+    const m5 = { reasonLabels: ['No real change'], gapLabels: ['Immaterial gap, less than £100'], batch: 'batch2' }
+    const p = planAccount(account({ m5 }), input(), output(), '2026-09-29')
+    expect(p.recommendation.gapAmount).toBe(0)
+    expect(p.gapLabels).toEqual([])
+    expect(p.reasonLabels).toEqual(['No real change'])
   })
 
   it('a negative reference leg floors at £0', () => {

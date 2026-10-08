@@ -100,9 +100,20 @@ export function crosswalkReasonCodes(input: ReasonInput): ReasonResult {
  * when the gap is within a penny.
  */
 export function gapReasonLabel(gapAmount: number | null, herPick?: string | null): string | null {
-  if (gapAmount == null || Math.abs(gapAmount) <= GAP_TOLERANCE) return null
-  if (herPick) return stripDisplayNumber(herPick)
-  return Math.abs(gapAmount) < IMMATERIAL_BELOW ? GAP_IMMATERIAL : GAP_FALLBACK
+  return gapReasonLabels(gapAmount, herPick ? [herPick] : [])[0] ?? null
+}
+
+/**
+ * Phase 2 (7 Oct on): her returned report often gives several gap reasons for
+ * one account, and all of them load. Same rule as `gapReasonLabel`: none
+ * within a penny (even where she coded one, e.g. "Immaterial" on a £0 gap);
+ * her picks when she gave any; otherwise the immaterial or fallback code.
+ */
+export function gapReasonLabels(gapAmount: number | null, herPicks: readonly string[] = []): string[] {
+  if (gapAmount == null || Math.abs(gapAmount) <= GAP_TOLERANCE) return []
+  const picks = Array.from(new Set(herPicks.map(stripDisplayNumber).filter(Boolean)))
+  if (picks.length) return picks
+  return [Math.abs(gapAmount) < IMMATERIAL_BELOW ? GAP_IMMATERIAL : GAP_FALLBACK]
 }
 
 /** Resolve labels against the target's active codes. Throws on any miss. */

@@ -474,7 +474,7 @@ async function loadAssessment(ctx: LoadContext, ledger: Ledger, plan: AccountPla
       if (property) created.push({ entityType: 'AssessmentProperty', entityId: property.id })
 
       const reasonCodeIds = resolveLabels(plan.reasonLabels, ctx.reasonCodes, 'reason code')
-      const gapReasonIds = plan.gapLabel ? resolveLabels([plan.gapLabel], ctx.gapReasons, 'gap reason') : []
+      const gapReasonIds = resolveLabels(plan.gapLabels, ctx.gapReasons, 'gap reason')
       const rec = await upsertRecommendation(tx, assessment.id, {
         ...plan.recommendation,
         roundId: ctx.round.id,
