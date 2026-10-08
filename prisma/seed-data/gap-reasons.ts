@@ -28,7 +28,9 @@ export const gapReasons = [
   // pushing 110/111 to 11/12, and 113 is display 13. Her 7 Oct additions
   // (114–117) are appended the same way. Her batch-4
   // additions (118 Contextual, 119 Pastoral) are appended too; 119 sits at
-  // display 7 with its group, moving 107–117 down one place.
+  // display 7 with its group, moving 107–117 down one place. Her 8 Oct
+  // addition (120, Internal Bursary Bias) sits at display 12, moving the
+  // Contextual codes down one more place.
   { code: 101, label: "Out of sync due to scholarship applied on place offer", sortOrder: 1, isDeprecated: false },
   { code: 102, label: "Out of sync due to new scholarship offered mid cursus", sortOrder: 2, isDeprecated: false },
   { code: 103, label: "Original Old Assessment Benchmark (year 2020)", sortOrder: 3, isDeprecated: false },
@@ -40,12 +42,13 @@ export const gapReasons = [
   { code: 108, label: "Internal Bursary Bias - Severe Illness", sortOrder: 9, isDeprecated: false },
   { code: 109, label: "Internal Bursary Bias - Family crippled with debt, top pupil", sortOrder: 10, isDeprecated: false },
   { code: 112, label: "Internal Bursary Bias - Acrimonious Separation", sortOrder: 11, isDeprecated: false },
-  { code: 110, label: "Affordability Adjusted Calculation Preferred", sortOrder: 12, isDeprecated: false },
-  { code: 111, label: "Theoretical Benchmark Calculation Preferred", sortOrder: 13, isDeprecated: false },
-  { code: 113, label: "Immaterial gap, less than £100", sortOrder: 14, isDeprecated: false },
-  { code: 114, label: "Additional wealth outside the scope of direct family", sortOrder: 15, isDeprecated: false },
-  { code: 115, label: "SE income partially or not declared to HMRC", sortOrder: 16, isDeprecated: false },
-  { code: 116, label: "Using cash injections from business in a questionable way", sortOrder: 17, isDeprecated: false },
-  { code: 117, label: "Multiple cash deposits seemingly undeclared", sortOrder: 18, isDeprecated: false },
-  { code: 118, label: "Household at a financial crossroads for the better- award at risk", sortOrder: 19, isDeprecated: false },
+  { code: 120, label: "Internal Bursary Bias - Main Earner losing income source", sortOrder: 12, isDeprecated: false },
+  { code: 110, label: "Affordability Adjusted Calculation Preferred", sortOrder: 13, isDeprecated: false },
+  { code: 111, label: "Theoretical Benchmark Calculation Preferred", sortOrder: 14, isDeprecated: false },
+  { code: 113, label: "Immaterial gap, less than £100", sortOrder: 15, isDeprecated: false },
+  { code: 114, label: "Additional wealth outside the scope of direct family", sortOrder: 16, isDeprecated: false },
+  { code: 115, label: "SE income partially or not declared to HMRC", sortOrder: 17, isDeprecated: false },
+  { code: 116, label: "Using cash injections from business in a questionable way", sortOrder: 18, isDeprecated: false },
+  { code: 117, label: "Multiple cash deposits seemingly undeclared", sortOrder: 19, isDeprecated: false },
+  { code: 118, label: "Household at a financial crossroads for the better- award at risk", sortOrder: 20, isDeprecated: false },
 ] as const;

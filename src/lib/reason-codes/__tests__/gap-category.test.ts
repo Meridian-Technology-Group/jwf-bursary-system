@@ -7,39 +7,44 @@ import {
 import { gapReasons } from "../../../../prisma/seed-data/gap-reasons";
 
 // D4 (6 Sep 2026), extended 8 Sep 2026 — Charlotte's four gap-code groups,
-// DB codes 101–119. Her two 8 Sep additions were appended (112 = Acrimonious
+// DB codes 101–120. Her two 8 Sep additions were appended (112 = Acrimonious
 // Separation at display 10, 113 = Immaterial gap at display 13), so the groups
 // are deliberately non-contiguous in code space. Her 7 Oct additions (114–117)
 // extend Contextual; her batch-4 additions add 118 (Contextual) and 119
-// (Pastoral, display 7), moving the later groups down one place.
+// (Pastoral, display 7), moving the later groups down one place. Her 8 Oct
+// addition 120 (Internal Bursary Bias, display 12) moves Contextual down again.
 
 describe("gap-code grouping", () => {
   it("buckets each display range under her group heading", () => {
     expect(gapGroupHeadingForCode(101)).toBe("1 – 3: External");
     expect(gapGroupHeadingForCode(103)).toBe("1 – 3: External");
     expect(gapGroupHeadingForCode(104)).toBe("4 – 7: Pastoral Leniency");
-    expect(gapGroupHeadingForCode(107)).toBe("8 – 11: Internal Bursary Bias");
-    expect(gapGroupHeadingForCode(109)).toBe("8 – 11: Internal Bursary Bias");
-    expect(gapGroupHeadingForCode(110)).toBe("12 – 19: Contextual");
-    expect(gapGroupHeadingForCode(111)).toBe("12 – 19: Contextual");
+    expect(gapGroupHeadingForCode(107)).toBe("8 – 12: Internal Bursary Bias");
+    expect(gapGroupHeadingForCode(109)).toBe("8 – 12: Internal Bursary Bias");
+    expect(gapGroupHeadingForCode(110)).toBe("13 – 20: Contextual");
+    expect(gapGroupHeadingForCode(111)).toBe("13 – 20: Contextual");
   });
 
   it("groups her 8 Sep additions despite their out-of-sequence codes", () => {
     // 112 joins Internal Bursary Bias (display 11 since batch 4), not Contextual.
-    expect(gapGroupHeadingForCode(112)).toBe("8 – 11: Internal Bursary Bias");
-    // 113 joins Contextual (display 14 since batch 4).
-    expect(gapGroupHeadingForCode(113)).toBe("12 – 19: Contextual");
+    expect(gapGroupHeadingForCode(112)).toBe("8 – 12: Internal Bursary Bias");
+    // 113 joins Contextual (display 15 since 8 Oct).
+    expect(gapGroupHeadingForCode(113)).toBe("13 – 20: Contextual");
   });
 
   it("groups her 7 Oct additions (114–117) under Contextual", () => {
     for (const code of [114, 115, 116, 117]) {
-      expect(gapGroupHeadingForCode(code)).toBe("12 – 19: Contextual");
+      expect(gapGroupHeadingForCode(code)).toBe("13 – 20: Contextual");
     }
   });
 
   it("groups her batch-4 additions with their named groups", () => {
     expect(gapGroupHeadingForCode(119)).toBe("4 – 7: Pastoral Leniency");
-    expect(gapGroupHeadingForCode(118)).toBe("12 – 19: Contextual");
+    expect(gapGroupHeadingForCode(118)).toBe("13 – 20: Contextual");
+  });
+
+  it("groups her 8 Oct addition (120) under Internal Bursary Bias", () => {
+    expect(gapGroupHeadingForCode(120)).toBe("8 – 12: Internal Bursary Bias");
   });
 
   it("deprecated originals (1–10) and unknown codes bucket under Other", () => {
@@ -63,19 +68,20 @@ describe("gap-code grouping", () => {
   });
 
   // Her display numbering is now carried by sortOrder, not `code − 100`.
-  it("sortOrder reproduces her 1–19 display numbering in her stated order", () => {
+  it("sortOrder reproduces her 1–20 display numbering in her stated order", () => {
     const live = gapReasons.filter((g) => !g.isDeprecated);
     expect(live.map((g) => g.sortOrder).sort((a, b) => a - b)).toEqual([
-      1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19,
+      1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20,
     ]);
     const bySort = [...live].sort((a, b) => a.sortOrder - b.sortOrder);
     expect(bySort[6].label).toBe("Pastoral Exceptional Leniency - Ukraine or war refugee scheme");
     expect(bySort[10].label).toBe("Internal Bursary Bias - Acrimonious Separation");
-    expect(bySort[11].label).toBe("Affordability Adjusted Calculation Preferred");
-    expect(bySort[12].label).toBe("Theoretical Benchmark Calculation Preferred");
-    expect(bySort[13].label).toBe("Immaterial gap, less than £100");
-    expect(bySort[14].label).toBe("Additional wealth outside the scope of direct family");
-    expect(bySort[17].label).toBe("Multiple cash deposits seemingly undeclared");
-    expect(bySort[18].label).toBe("Household at a financial crossroads for the better- award at risk");
+    expect(bySort[11].label).toBe("Internal Bursary Bias - Main Earner losing income source");
+    expect(bySort[12].label).toBe("Affordability Adjusted Calculation Preferred");
+    expect(bySort[13].label).toBe("Theoretical Benchmark Calculation Preferred");
+    expect(bySort[14].label).toBe("Immaterial gap, less than £100");
+    expect(bySort[15].label).toBe("Additional wealth outside the scope of direct family");
+    expect(bySort[18].label).toBe("Multiple cash deposits seemingly undeclared");
+    expect(bySort[19].label).toBe("Household at a financial crossroads for the better- award at risk");
   });
 });
