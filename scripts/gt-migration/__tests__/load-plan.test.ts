@@ -134,10 +134,12 @@ const input = (vatRate = 20) =>
     confirmedPayableFees: 19410,
   }) as unknown as AssessmentV2Input
 
-const output = (recommended = 19410) =>
+const output = (recommended = 19410, legs: { theoreticalBenchmarkDi?: number; affordabilityAdjustedDi?: number } = {}) =>
   ({
     householdNetIncome: 40000,
     actualRemainingDi: recommended,
+    theoreticalBenchmarkDi: legs.theoreticalBenchmarkDi ?? recommended,
+    affordabilityAdjustedDi: legs.affordabilityAdjustedDi ?? recommended,
     recommendedPayableFees: recommended,
     incomeCategory: 3,
     propertyCategoryDerived: 1,
@@ -196,6 +198,35 @@ describe('planAccount (02-target-model Part 1)', () => {
   it('falls back to the received date when GT holds no completion date', () => {
     const p = planAccount(account({ latest: { completed: '', received: '2026-04-15' } }), input(), output(), '2026-09-29')
     expect(p.submittedAt.toISOString()).toBe('2026-04-15T12:00:00.000Z')
+  })
+
+  it('her reference-leg ruling takes the recommendation and gap from that leg, and says so', () => {
+    const p = planAccount(
+      account({ overrides: { referenceLeg: 'AFFORDABILITY' } }),
+      input(),
+      output(25000, { affordabilityAdjustedDi: 18000.455 }),
+      '2026-09-29',
+    )
+    expect(p.recommendation.recommendedPayableFees).toBe(18000.46)
+    expect(p.assessmentSave.recommendedPayableFees).toBe(18000.46)
+    expect(p.recommendation.gapAmount).toBe(1409.54)
+    expect(p.expect).toMatchObject({ recommendedPayableFees: 18000.46, gapAmount: 1409.54, referenceLeg: 'AFFORDABILITY' })
+    // the snapshot keeps every leg as calculated
+    expect(p.assessmentSave.actualRemainingDi).toBe(25000)
+    expect(p.assessmentLock.synopsis).toContain('taken from the affordability-adjusted leg')
+  })
+
+  it('a negative reference leg floors at £0', () => {
+    const p = planAccount(account({ overrides: { referenceLeg: 'THEORETICAL' } }), input(), output(5000, { theoreticalBenchmarkDi: -300 }), '2026-09-29')
+    expect(p.recommendation.recommendedPayableFees).toBe(0)
+    expect(p.recommendation.gapAmount).toBe(19410)
+  })
+
+  it('without a ruling the recommendation stays on the actual leg and the synopsis is unchanged', () => {
+    const p = planAccount(account(), input(), output(19410, { affordabilityAdjustedDi: 1 }), '2026-09-29')
+    expect(p.recommendation.recommendedPayableFees).toBe(19410)
+    expect(p.expect.referenceLeg).toBe('ACTUAL')
+    expect(p.assessmentLock.synopsis).not.toContain('leg')
   })
 
   it.each([

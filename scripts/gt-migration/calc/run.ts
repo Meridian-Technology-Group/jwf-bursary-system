@@ -18,6 +18,8 @@ import {
   type MappingRules,
 } from '../build/map-assessment'
 import { loadReferenceBundle } from './reference'
+import { recommendedFromLeg, type ReferenceLeg } from '../build/reference-leg'
+import { computeGapAmount } from '../../../src/lib/assessment/recommendation-v2'
 
 /** Legs closer than this to her payable fees count as "matching" (S19). */
 const CLOSE_ENOUGH = 100
@@ -45,7 +47,14 @@ export interface CalcRow {
     | 'theoreticalBenchmarkDi'
     | 'affordabilityAdjustedDi'
     | 'recommendedPayableFees'
-  > & { gapAmount: number | null; yearlyPayableFeesInclVat: number | null; closestLeg: string; closestLegDistance: number }
+  > & {
+    gapAmount: number | null
+    yearlyPayableFeesInclVat: number | null
+    closestLeg: string
+    closestLegDistance: number
+    /** Present only when her ruling takes the recommendation from another leg. */
+    referenceLeg?: ReferenceLeg
+  }
 }
 
 export function latestCanonical(): { hash: string; dir: string } {
@@ -78,6 +87,7 @@ export async function runCalc(config: MigConfig, rules: MappingRules = DEFAULT_R
   console.log(`target: ${config.env} (${config.projectRef}) | canonical: ${hash} | accounts: ${accounts.length}`)
   console.log(`rules: ${JSON.stringify({ ...rules, siblingPayableFees: rules.siblingPayableFees.length })}`)
   console.log(`accounts with per-account rulings: ${accounts.filter((a) => a.overrides).length}`)
+  console.log(`recommendation from another leg: ${accounts.filter((a) => a.overrides?.referenceLeg).length}`)
 
   const ref = await loadReferenceBundle(config)
   // The assessment form normally sits on the latest assessed entity; a ruling
@@ -93,6 +103,8 @@ export async function runCalc(config: MigConfig, rules: MappingRules = DEFAULT_R
     if (mapped.status === 'NOT_ASSESSED') return { key: account.key, status: 'NOT_ASSESSED', reason: mapped.reason }
     try {
       const out = calculateAssessmentV2(mapped.input, ref)
+      const leg = account.overrides?.referenceLeg
+      const recommended = recommendedFromLeg(out, leg)
       return {
         key: account.key,
         status: 'CALCULATED',
@@ -113,10 +125,11 @@ export async function runCalc(config: MigConfig, rules: MappingRules = DEFAULT_R
           actualRemainingDi: out.actualRemainingDi,
           theoreticalBenchmarkDi: out.theoreticalBenchmarkDi,
           affordabilityAdjustedDi: out.affordabilityAdjustedDi,
-          recommendedPayableFees: out.recommendedPayableFees,
-          gapAmount: out.awardSummary?.gapAmount ?? null,
+          recommendedPayableFees: recommended,
+          gapAmount: !out.awardSummary ? null : leg ? computeGapAmount(account.payable, recommended) : out.awardSummary.gapAmount,
           yearlyPayableFeesInclVat: out.awardSummary?.yearlyPayableFeesInclVat ?? null,
           ...closestLeg(account.payable, out),
+          ...(leg ? { referenceLeg: leg } : {}),
         },
       }
     } catch (err) {

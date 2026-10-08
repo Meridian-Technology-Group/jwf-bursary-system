@@ -77,6 +77,8 @@ export interface AccountOverrides {
   incomeSupportTo?: { to: IncomeSupportTarget; amount: number }
   /** S24: sibling payable fees she supplied, one per sibling row. */
   siblings?: readonly { name?: string | null; payableFees: number }[]
+  /** Batch 1 (8 Oct): the leg the recommendation is taken from; the actual leg when absent. */
+  referenceLeg?: 'THEORETICAL' | 'AFFORDABILITY'
 }
 
 /** C6X. Where a re-classified income-support figure goes. */

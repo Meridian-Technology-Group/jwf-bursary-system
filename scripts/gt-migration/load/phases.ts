@@ -35,6 +35,7 @@ import { mapAssessment } from '../build/map-assessment'
 import { Ledger, type LedgerEntry, type Phase } from './ledger'
 import { planAccount, PlanError, MIGRATION_SOURCE, type AccountPlan, type LoadAccount } from './plan'
 import { resolveLabels } from './reason-codes'
+import { recommendedFromLeg } from '../build/reference-leg'
 import { SYSTEM_PROFILE_EMAIL, type LoadContext } from './context'
 
 type Tx = Prisma.TransactionClient
@@ -114,7 +115,7 @@ export async function planAll(ctx: LoadContext, opts: Pick<LoadOptions, 'only' |
       hold('no reviewed calculation')
       continue
     }
-    if (Math.abs(was.out.recommendedPayableFees - out.recommendedPayableFees) > PENNY) {
+    if (Math.abs(was.out.recommendedPayableFees - recommendedFromLeg(out, a.overrides?.referenceLeg)) > PENNY) {
       hold('engine result differs from the reviewed calculation (A10)')
       continue
     }
@@ -507,7 +508,15 @@ export async function checkAssessmentInvariants(tx: Tx, plan: AccountPlan, asses
   const a = await tx.assessment.findUniqueOrThrow({ where: { id: assessmentId }, include: { recommendation: { include: { reasonCodes: true, gapReasons: true } } } })
   if (a.calculationVersion !== 2 || a.status !== plan.assessmentLock.status || a.outcome != null || !a.completedAt || !a.awardFundType) fail('A3')
   const recommended = Number(a.recommendedPayableFees)
-  if (Math.abs(recommended - Math.max(0, Number(a.actualRemainingDi))) > PENNY) fail('A4')
+  const legs = {
+    actualRemainingDi: Number(a.actualRemainingDi),
+    theoreticalBenchmarkDi: Number(a.theoreticalBenchmarkDi),
+    affordabilityAdjustedDi: Number(a.affordabilityAdjustedDi),
+  }
+  // The stored leg was rounded by the database, the recommendation by
+  // `recommendedFromLeg`: on a half-penny they can sit a penny apart.
+  const legTolerance = plan.expect.referenceLeg === 'ACTUAL' ? PENNY : 0.0101
+  if (Math.abs(recommended - recommendedFromLeg(legs, plan.expect.referenceLeg)) > legTolerance) fail('A4')
   if (Number(a.vatRate) !== plan.expect.vatRate || Math.abs(Number(a.annualFees) - plan.expect.annualFees) > PENNY) fail('A5')
   const r = a.recommendation
   if (!r) return fail('A6: no recommendation')

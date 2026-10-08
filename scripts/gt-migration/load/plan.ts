@@ -16,6 +16,7 @@ import { schoolVatRate } from '../../../src/lib/schools'
 import type { AwardFundType, EntryYearGroup, School } from '@prisma/client'
 import type { CanonicalAccount } from '../build/map-assessment'
 import { crosswalkReasonCodes, gapReasonLabel } from './reason-codes'
+import { LEG_NAME, recommendedFromLeg, type ReferenceLeg } from '../build/reference-leg'
 
 /** The canonical fields the loader reads beyond what the mapper needs. */
 export interface LoadAccount extends CanonicalAccount {
@@ -110,6 +111,8 @@ export interface AccountPlan {
     annualFees: number
     vatRate: number
     gapAmount: number | null
+    /** A4: the leg the recommendation must equal. */
+    referenceLeg: ReferenceLeg
   }
 }
 
@@ -129,11 +132,15 @@ export function composeSynopsis(
   completed: string | null | undefined,
   today: string,
   received?: string | null,
+  referenceLeg: ReferenceLeg = 'ACTUAL',
 ): string {
   const footer =
     `Migrated from Grant Tracker on ${today}.` +
     (completed ? ` GT assessment completed ${completed}.` : received ? ` GT holds no completion date; the review was received ${received}.` : '') +
-    ' Figures recalculated by the current model from GT inputs; award and payable fees as confirmed by the Head of Fees & Bursaries.'
+    ' Figures recalculated by the current model from GT inputs; award and payable fees as confirmed by the Head of Fees & Bursaries.' +
+    (referenceLeg === 'ACTUAL'
+      ? ''
+      : ` Recommended payable fees taken from the ${LEG_NAME[referenceLeg]} leg, as instructed by the Head of Fees & Bursaries; re-saving the assessment recalculates them from the actual leg.`)
   const body = (gtText ?? '').trim()
   return body ? `${body}\n\n— ${footer}` : `— ${footer}`
 }
@@ -169,7 +176,8 @@ export function planAccount(
 
   const summary = out.awardSummary
   if (!summary) throw new PlanError('engine produced no award summary')
-  const recommended = out.recommendedPayableFees
+  const referenceLeg: ReferenceLeg = a.overrides?.referenceLeg ?? 'ACTUAL'
+  const recommended = recommendedFromLeg(out, referenceLeg)
   const gapAmount = computeGapAmount(a.payable, recommended)
   const { labels: reasonLabels, unmapped } = crosswalkReasonCodes({
     yoyCodes: a.yoyCodes,
@@ -299,7 +307,7 @@ export function planAccount(
       status: isNew ? 'NEW_AWARD' : 'ROLLED_OVER',
       awardFundType: a.fund as AwardFundType,
       completedAt,
-      synopsis: composeSynopsis(a.synopsis, a.latest?.completed, today, a.latest?.received),
+      synopsis: composeSynopsis(a.synopsis, a.latest?.completed, today, a.latest?.received, referenceLeg),
       vatRate,
     },
     recommendation: {
@@ -332,6 +340,7 @@ export function planAccount(
       annualFees: a.fees,
       vatRate,
       gapAmount,
+      referenceLeg,
     },
   }
 }
