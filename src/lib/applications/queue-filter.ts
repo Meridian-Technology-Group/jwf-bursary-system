@@ -137,15 +137,24 @@ function reviewPhaseFragment(phase: ReviewPhase): Prisma.ApplicationWhereInput {
   switch (phase) {
     case "CLOSED":
       return { closedAt: { not: null } };
+    // Epic 18 lock states alongside the legacy outcome values, as in
+    // matchesReviewPhase.
     case "QUALIFIES":
       return {
         closedAt: null,
-        assessment: {
-          is: { outcome: { in: ["AWARDED", "QUALIFIES_NOT_AWARDED"] } },
-        },
+        OR: [
+          { assessment: { is: { outcome: { in: ["AWARDED", "QUALIFIES_NOT_AWARDED"] } } } },
+          { assessment: { is: { status: { in: ["NEW_AWARD", "ROLLED_OVER", "WAITING_LIST"] } } } },
+        ],
       };
     case "DOES_NOT_QUALIFY":
-      return { closedAt: null, assessment: { is: { outcome: "DOES_NOT_QUALIFY" } } };
+      return {
+        closedAt: null,
+        OR: [
+          { assessment: { is: { outcome: "DOES_NOT_QUALIFY" } } },
+          { assessment: { is: { status: "CLOSED_ARCHIVED" } } },
+        ],
+      };
     case "COMPLETED":
       return {
         closedAt: null,
