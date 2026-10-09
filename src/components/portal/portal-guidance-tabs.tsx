@@ -219,8 +219,8 @@ export function PortalGuidanceTabs({
                   {TERMS_AND_CONDITIONS_LABEL}
                 </p>
                 <p className="mt-0.5 text-xs text-slate-500">
-                  These terms apply when you accept a bursary award. You will be
-                  asked to confirm them when you submit your application.
+                  These terms apply to your use of the bursary portal. You will
+                  be asked to confirm them when you submit your application.
                 </p>
               </div>
             </div>
