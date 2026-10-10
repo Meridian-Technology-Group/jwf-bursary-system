@@ -33,6 +33,8 @@ export interface LoadAccount extends CanonicalAccount {
   yoyCodes?: string | null
   addReasonCodes?: string[]
   synopsis?: string | null
+  /** Outward code taken from her synopsis (10 Oct, her item 2); null when it names none. */
+  postcode?: string | null
   siblings?: { name: string; gtFees: number }[]
   latest?: { completed?: string; received?: string; eid?: string; formEid?: string } | null
   gt?: { id: string } | null
@@ -225,7 +227,7 @@ export function planAccount(
     multiPropertyRentAddBack: input.multiPropertyRentAddBack,
     councilTaxSupport: input.councilTaxSupport,
     councilTaxOverride: null,
-    postcode: null,
+    postcode: a.postcode ?? null,
     usesCar: input.usesCar,
     usesPublicTransport: input.usesPublicTransport,
     feeInsuranceAnnual: input.feeInsuranceAnnual,

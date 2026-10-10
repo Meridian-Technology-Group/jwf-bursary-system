@@ -164,6 +164,11 @@ const output = (recommended = 19410, legs: { theoreticalBenchmarkDi?: number; af
   }) as unknown as AssessmentV2Output
 
 describe('planAccount (02-target-model Part 1)', () => {
+  it('carries the postcode district taken from her synopsis, or none', () => {
+    expect(planAccount(account({ postcode: 'CR0' }), input(), output(), '2026-10-10').assessmentSave.postcode).toBe('CR0')
+    expect(planAccount(account(), input(), output(), '2026-10-10').assessmentSave.postcode).toBeNull()
+  })
+
   it('a rolling-over Whitgift account', () => {
     const p = planAccount(account(), input(), output(), '2026-09-29')
     expect(p.leadEmail).toBe('parent@example.test')
