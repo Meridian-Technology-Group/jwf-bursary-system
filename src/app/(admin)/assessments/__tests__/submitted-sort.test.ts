@@ -1,4 +1,6 @@
 import { describe, it, expect } from "vitest";
+import { sortAssessmentQueueRows } from "@/lib/assessments/queue-filters";
+import type { AssessmentQueueRow } from "@/lib/db/queries/assessments-queue";
 
 /**
  * CH-45 — the Submitted column's sort comparator.
@@ -7,24 +9,20 @@ import { describe, it, expect } from "vitest";
  * clicking the Submitted header. She initially thanked us for it, then corrected
  * herself: the sort she had seen was on the **Applications** page, not this one.
  *
- * The comparator is duplicated here rather than imported because the page is a
- * server component with `requireRole` at the top — importing it would drag the
- * auth and Prisma boundary into a unit test for four lines of ordering. If the
- * page's comparator changes, this drifts silently, so it is a deliberate
- * trade-off: the value here is pinning the NULL and direction behaviour, which
- * is where an ordering bug actually hides.
+ * The comparator now lives in the pure `sortAssessmentQueueRows` (10 Oct 2026,
+ * when the Reference sort joined it), so this pins the real code rather than a
+ * copy: the NULL and direction behaviour, which is where an ordering bug hides.
  */
 type Row = { submittedAt: Date | null; ref: string };
 
 function sortRows(rows: Row[], sort: "submitted_asc" | "submitted_desc"): Row[] {
-  return [...rows].sort((a, b) => {
-    const at = a.submittedAt?.getTime();
-    const bt = b.submittedAt?.getTime();
-    if (at === undefined && bt === undefined) return 0;
-    if (at === undefined) return 1;
-    if (bt === undefined) return -1;
-    return sort === "submitted_asc" ? at - bt : bt - at;
-  });
+  const queueRows = rows.map(
+    (r) => ({ submittedAt: r.submittedAt, reference: r.ref }) as unknown as AssessmentQueueRow
+  );
+  return sortAssessmentQueueRows(queueRows, sort).map((r) => ({
+    submittedAt: r.submittedAt,
+    ref: r.reference,
+  }));
 }
 
 const d = (iso: string) => new Date(iso);

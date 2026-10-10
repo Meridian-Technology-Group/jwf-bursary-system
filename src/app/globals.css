@@ -134,6 +134,36 @@
   .sidebar-transition {
     transition: width 200ms ease-in-out, transform 200ms ease-in-out;
   }
+
+  /*
+   * Assessment form: entered values read black, hints read as hints.
+   * Charlotte, 10 Oct 2026: "could the entries … show in black ink as opposed
+   * to grey, so that the user can see quickly what is pre-filled (and may need
+   * an entry) from what has been entered … Right now, the post code section
+   * looks like SM4 is the entry."
+   *
+   * A locked assessment renders its fields `disabled`, and the shared inputs
+   * fade disabled fields to 50% opacity, which turned every value grey. Scoped
+   * to `.assessment-values` (the form's root) rather than changed in
+   * components/ui, so other forms keep the standard disabled look. The
+   * selectors outrank the `disabled:` / `placeholder:` utilities on specificity.
+   */
+  .assessment-values :is(input, textarea, button[role="combobox"]) {
+    @apply text-slate-900;
+  }
+  .assessment-values :is(input:not([type="checkbox"]):not([type="radio"]), textarea, button[role="combobox"]):disabled {
+    @apply cursor-not-allowed bg-slate-50 opacity-100;
+  }
+  /* A ticked box keeps its filled background; it only stops fading. */
+  .assessment-values button[role="checkbox"]:disabled {
+    @apply cursor-not-allowed opacity-100;
+  }
+  .assessment-values :is(input, textarea)::placeholder {
+    @apply italic text-slate-400 opacity-100;
+  }
+  .assessment-values button[role="combobox"][data-placeholder] {
+    @apply italic text-slate-400;
+  }
 }
 
 @layer utilities {

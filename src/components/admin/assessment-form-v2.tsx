@@ -999,7 +999,8 @@ export function AssessmentFormV2({
 
   // ── Render ──────────────────────────────────────────────────────────────────
   return (
-    <div className="space-y-4">
+    // `assessment-values` (globals.css): entered values black, hints italic grey.
+    <div className="assessment-values space-y-4">
       {/* Epic 14 C2 (CG-21): the actions banner leads, level with the tab
           titles; the live computation sits BEHIND the SEE COMPUTATION
           disclosure below it (collapsed by default, preference persisted). */}
@@ -1281,11 +1282,11 @@ export function AssessmentFormV2({
                     id="v2-postcode"
                     value={postcode}
                     disabled={isReadOnly}
-                    placeholder="SM4"
+                    placeholder="e.g. SM4"
                     maxLength={8}
                     onChange={(e) => setPostcode(e.target.value)}
                     onBlur={scheduleAutoSave}
-                    className="w-28 font-mono uppercase"
+                    className="w-28 font-mono uppercase placeholder:normal-case"
                   />
                   <span className="text-xs text-slate-500">
                     {formatPostcodeAreaLabel(postcode, postcodeAreas) ?? "—"}
