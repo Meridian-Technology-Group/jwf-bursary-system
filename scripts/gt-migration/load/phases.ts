@@ -6,6 +6,8 @@
  *                 contributor), bursary account, schedule (year 1 COMPLETE)
  *   assessments → per account: assessment (+ earners, property) locked as
  *                 ROLLED_OVER / NEW_AWARD, recommendation (+ reason, gap codes)
+ *   documents   → per account: its staged GT documents on the migrated
+ *                 application (M8; load/documents.ts)
  *
  * One account = one transaction; the group-A invariants run inside it before
  * commit. Concurrency 1. Logs carry the account key and GT grant id only.
@@ -37,6 +39,7 @@ import { planAccount, PlanError, MIGRATION_SOURCE, type AccountPlan, type LoadAc
 import { resolveLabels } from './reason-codes'
 import { recommendedFromLeg } from '../build/reference-leg'
 import { SYSTEM_PROFILE_EMAIL, type LoadContext } from './context'
+import { loadDocumentsForAccount, stagedByAccount } from './documents'
 
 type Tx = Prisma.TransactionClient
 
@@ -51,7 +54,7 @@ export interface LoadOptions {
 export interface AccountOutcome {
   key: string
   gtGrantId: string | null
-  status: 'LOADED' | 'SKIPPED_ALREADY_LOADED' | 'HELD' | 'FAILED' | 'PLANNED'
+  status: 'LOADED' | 'SKIPPED_ALREADY_LOADED' | 'HELD' | 'FAILED' | 'PLANNED' | 'NOTHING_TO_LOAD'
   reason?: string
   created?: Record<string, number>
   reusedLogin?: boolean
@@ -152,9 +155,14 @@ export async function runPhase(ctx: LoadContext, opts: LoadOptions) {
   } else {
     let failures = 0
     let consecutive = 0
-    const step = opts.phase === 'accounts' ? loadAccount : loadAssessment
+    const staged = opts.phase === 'documents' ? stagedByAccount(hash) : null
+    const step = staged
+      ? (c: LoadContext, l: Ledger, p: AccountPlan) => loadDocumentsForAccount(c, l, p, staged.get(p.key) ?? [], opts)
+      : opts.phase === 'accounts'
+        ? loadAccount
+        : loadAssessment
     for (const plan of Array.from(plans.values())) {
-      if (opts.dryRun) {
+      if (opts.dryRun && !staged) {
         outcomes.push({ key: plan.key, gtGrantId: plan.gtGrantId, status: 'PLANNED' })
         continue
       }

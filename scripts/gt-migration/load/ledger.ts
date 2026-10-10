@@ -34,6 +34,8 @@ export type EntityType =
   | 'Recommendation'
   | 'RecommendationReasonCode'
   | 'RecommendationGapReason'
+  | 'Document'
+  | 'StorageObject'
 
 export interface LedgerEntry {
   entityType: EntityType
@@ -121,6 +123,41 @@ export class Ledger {
       select: { state: true },
     })
     return row?.state === 'intent'
+  }
+
+  /**
+   * A storage object (M8), step 1. Its key is deterministic, so the ledger row
+   * outlives a rollback: a rolled-back row is reopened as an intent. Returns
+   * the state found, so the caller knows whether an existing object is ours.
+   */
+  async objectIntent(phase: Phase, accountKey: string, key: string): Promise<'new' | 'intent' | 'done' | 'rolled_back'> {
+    const row = await this.prisma.dataMigrationLedger.findUnique({
+      where: { entityType_entityId: { entityType: 'StorageObject', entityId: key } },
+      select: { state: true },
+    })
+    if (row?.state === 'done') return 'done'
+    if (row) {
+      await this.prisma.dataMigrationLedger.update({
+        where: { entityType_entityId: { entityType: 'StorageObject', entityId: key } },
+        data: { state: 'intent', runId: this.runId, phase, accountKey },
+      })
+      return row.state as 'intent' | 'rolled_back'
+    }
+    await this.prisma.dataMigrationLedger.create({
+      data: { runId: this.runId, phase, accountKey, entityType: 'StorageObject', entityId: key, state: 'intent' },
+    })
+    return 'new'
+  }
+
+  /** Storage objects, step 2: inside the transaction that writes their rows, so both commit together. */
+  async confirmObjects(tx: Tx, phase: Phase, accountKey: string, keys: readonly string[]) {
+    if (keys.length === 0) return
+    await tx.dataMigrationLedger.updateMany({
+      where: { entityType: 'StorageObject', entityId: { in: [...keys] }, state: 'intent' },
+      data: { state: 'done', runId: this.runId },
+    })
+    const at = new Date().toISOString()
+    this.pending.push(...keys.map((k) => ({ entityType: 'StorageObject' as const, entityId: k, runId: this.runId, phase, accountKey, state: 'done' as const, at })))
   }
 
   /** Rollback: flip to rolled_back (never delete: the history stays), and mirror it. */

@@ -17,6 +17,9 @@ const DEAD_PROJECT_REF = 'bzxoepyhmfvydoxfklft'
 const REPO_ROOT = resolve(__dirname, '../..')
 export const DATA_DIR = process.env.MIG_DATA_DIR ?? resolve(REPO_ROOT, '../data/migration')
 export const EXTRACT_DIR = resolve(DATA_DIR, 'extract/20260910')
+/** M8: GT's encrypted document store, and where the selected files are decrypted to (deleted after M8). */
+export const DOC_ARCHIVE = process.env.MIG_DOC_ARCHIVE ?? resolve(DATA_DIR, '../legacy-doc-export/DocumentStore.zip')
+export const DOCS_STAGING_DIR = resolve(DATA_DIR, 'docs-staging')
 
 export interface MigConfig {
   env: MigEnv

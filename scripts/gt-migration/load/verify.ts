@@ -16,6 +16,8 @@ import {
   runDir,
 } from './phases'
 import { MIGRATION_SOURCE } from './plan'
+import { BUCKET, GT_SLOT_PREFIX, stagedByAccount } from './documents'
+import { storageKey } from '../docs/select'
 
 interface Check {
   id: string
@@ -124,10 +126,78 @@ export async function verify(ctx: LoadContext, runId: string) {
   add('B8', Math.abs(sumConfirmed - expectConfirmed) < 0.01 && Math.abs(sumAward - expectAward) < 0.01,
     `confirmed £${sumConfirmed.toFixed(2)} vs sheet £${expectConfirmed.toFixed(2)}; award £${sumAward.toFixed(2)} vs sheet £${expectAward.toFixed(2)}`)
 
+  if (manifests.includes('manifest-documents.json')) await verifyDocuments(ctx, plans, add, failedKeys)
+
   const ok = checks.every((c) => c.ok)
   writeFileSync(resolve(dir, 'verify.json'), JSON.stringify({ runId, at: new Date().toISOString(), ok, checks, failedKeys }, null, 1))
   for (const c of checks) console.log(`  ${c.ok ? 'ok  ' : 'FAIL'} ${c.id}: ${c.detail ?? ''}`)
   failedKeys.forEach((k) => console.log(`    ${k}`))
   console.log(ok ? 'verified' : 'NOT VERIFIED')
   return ok
+}
+
+/**
+ * M8 step 6, for every account with a migrated application:
+ *   D1 its GT documents are exactly the staged selection (by object key)
+ *   D2 every object exists in storage at the staged size
+ *   D3 total bytes in the rows = total bytes staged
+ *   D4 coverage: no account with staged documents is still without them
+ *      (fails after a canary by design; D1–D3 judge what was loaded)
+ */
+async function verifyDocuments(
+  ctx: LoadContext,
+  plans: Awaited<ReturnType<typeof planAll>>['plans'],
+  add: (id: string, ok: boolean, detail?: string) => void,
+  failedKeys: string[],
+) {
+  const { hash } = (await import('../calc/run')).latestCanonical()
+  const staged = stagedByAccount(hash)
+  let d1 = 0
+  let d2 = 0
+  let accounts = 0
+  let rowsBytes = 0
+  let stagedBytes = 0
+  let objects = 0
+  let pending = 0
+  for (const plan of Array.from(plans.values())) {
+    const leadId = await leadProfileId(ctx, plan)
+    if (!leadId) continue
+    const apps = (await findMigratedApplication(ctx.prisma, ctx, plan, leadId)).filter((a) => a.migrationSource === MIGRATION_SOURCE)
+    if (apps.length !== 1) continue
+    accounts++
+    const appId = apps[0].id
+    const docs = staged.get(plan.key) ?? []
+    const expected = new Map(docs.map((d) => [storageKey(appId, d), d.size]))
+    const rows = await ctx.prisma.document.findMany({
+      where: { applicationId: appId, slot: { startsWith: GT_SLOT_PREFIX } },
+      select: { storagePath: true, fileSize: true, slot: true },
+    })
+    if (rows.length === 0 && docs.length > 0) {
+      pending++
+      continue
+    }
+    stagedBytes += docs.reduce((s, d) => s + d.size, 0)
+    rowsBytes += rows.reduce((s, r) => s + r.fileSize, 0)
+    if (rows.length !== expected.size || rows.some((r) => expected.get(r.storagePath) !== r.fileSize)) {
+      d1++
+      failedKeys.push(`${plan.key}: D1 ${rows.length} GT documents, ${expected.size} staged`)
+    }
+    const stored = new Map<string, number>()
+    for (const slot of Array.from(new Set(rows.map((r) => r.slot)))) {
+      const folder = `documents/${appId}/${slot}`
+      const { data, error } = await ctx.supabase.storage.from(BUCKET).list(folder, { limit: 1000 })
+      if (error) throw new Error(`storage list: ${error.message}`)
+      for (const o of data ?? []) stored.set(`${folder}/${o.name}`, Number((o.metadata as { size?: number } | null)?.size ?? -1))
+    }
+    objects += stored.size
+    const bad = rows.filter((r) => stored.get(r.storagePath) !== r.fileSize).length
+    if (bad) {
+      d2++
+      failedKeys.push(`${plan.key}: D2 ${bad} objects missing or the wrong size`)
+    }
+  }
+  add('D1', d1 === 0, `${accounts} accounts checked, ${d1} differ from the staged selection`)
+  add('D2', d2 === 0, `${objects} objects listed, ${d2} accounts with a missing or mis-sized object`)
+  add('D4', pending === 0, `${pending} accounts with staged documents have none loaded`)
+  add('D3', rowsBytes === stagedBytes, `rows ${(rowsBytes / 1e9).toFixed(3)} GB vs staged ${(stagedBytes / 1e9).toFixed(3)} GB`)
 }

@@ -8,6 +8,13 @@
  * moved on stops the rollback; it is never "fixed". Audit rows are never
  * deleted (append-only); a DATA_MIGRATION_ROLLBACK row is added instead.
  * Ledger rows flip to `rolled_back`; the history stays.
+ *
+ * Documents (M8): their rows go first, inside the account's transaction; the
+ * storage objects are removed only after it commits (they cannot join it), and
+ * their ledger rows flip once the removal succeeded. Objects a crashed run left
+ * as open intents are removed too. Rolling back an account while documents
+ * from another run still sit on its application stops: the cascade would
+ * delete their rows and orphan their objects.
  */
 import { resolve } from 'node:path'
 import type { Prisma } from '@prisma/client'
@@ -15,6 +22,7 @@ import { createAuditLog } from '../../../src/lib/audit/log'
 import { AUDIT_ACTIONS, AUDIT_ENTITY_TYPES } from '../../../src/lib/audit/actions'
 import { Ledger, type EntityType, type Phase } from './ledger'
 import { runDir } from './phases'
+import { BUCKET } from './documents'
 import type { LoadContext } from './context'
 
 type Tx = Prisma.TransactionClient
@@ -29,6 +37,7 @@ export interface RollbackOptions {
 
 /** Reverse of creation (06 §4). */
 const ORDER: EntityType[] = [
+  'Document',
   'RecommendationGapReason',
   'RecommendationReasonCode',
   'Recommendation',
@@ -58,6 +67,12 @@ export async function rollback(ctx: LoadContext, opts: RollbackOptions) {
     select: { phase: true, accountKey: true, entityType: true, entityId: true, createdAt: true },
   })
   const intents = await ctx.prisma.dataMigrationLedger.count({ where: { runId: opts.runId, state: 'intent' } })
+  const objectIntents = !opts.phase || opts.phase === 'documents'
+    ? await ctx.prisma.dataMigrationLedger.findMany({
+        where: { runId: opts.runId, state: 'intent', entityType: 'StorageObject', ...(opts.only?.length ? { accountKey: { in: opts.only } } : {}) },
+        select: { entityId: true },
+      })
+    : []
 
   const counts = rows.reduce<Record<string, number>>((m, r) => ((m[r.entityType] = (m[r.entityType] ?? 0) + 1), m), {})
   const times = rows.map((r) => r.createdAt.getTime())
@@ -69,7 +84,8 @@ export async function rollback(ctx: LoadContext, opts: RollbackOptions) {
   if (times.length) {
     console.log(`  first: ${new Date(Math.min(...times)).toISOString()} | last: ${new Date(Math.max(...times)).toISOString()}`)
   }
-  if (opts.dryRun || rows.length === 0) return { counts, removed: 0 }
+  if (objectIntents.length) console.log(`  open storage intents (a crashed upload): ${objectIntents.length}`)
+  if (opts.dryRun || (rows.length === 0 && objectIntents.length === 0)) return { counts, removed: 0 }
 
   const ledger = new Ledger(ctx.prisma, opts.runId, resolve(runDir(opts.runId), 'ledger.jsonl'))
   const byAccount = new Map<string, Row[]>()
@@ -84,6 +100,7 @@ export async function rollback(ctx: LoadContext, opts: RollbackOptions) {
   for (const key of Array.from(byAccount.keys()).filter((k) => k.startsWith('LEAD:') || k === 'SYSTEM')) {
     removed += await rollbackIdentity(ctx, ledger, key, byAccount.get(key)!)
   }
+  removed += await removeObjectIntents(ctx, objectIntents.map((r) => r.entityId))
   console.log(`rolled back ${removed} rows`)
   return { counts, removed }
 }
@@ -117,9 +134,18 @@ async function assertUntouched(tx: Tx, rows: Row[]) {
 }
 
 async function rollbackAccount(ctx: LoadContext, ledger: Ledger, key: string, rows: Row[]): Promise<number> {
+  const objects = rows.filter((r) => r.entityType === 'StorageObject')
+  const dbRows = rows.filter((r) => r.entityType !== 'StorageObject')
   try {
     await ctx.prisma.$transaction(async (tx) => {
       await assertUntouched(tx, rows)
+      if (ids(rows, 'Application').length) {
+        const listed = new Set(ids(rows, 'Document'))
+        const others = await tx.dataMigrationLedger.count({
+          where: { accountKey: key, entityType: 'Document', state: 'done', entityId: { notIn: Array.from(listed) } },
+        })
+        if (others > 0) throw new Error(`STOP: ${others} documents from another run are still on this application; roll back their documents phase first`)
+      }
       for (const type of ORDER) {
         const list = ids(rows, type)
         if (list.length === 0) continue
@@ -176,23 +202,55 @@ async function rollbackAccount(ctx: LoadContext, ledger: Ledger, key: string, ro
           case 'Contact':
             await tx.contact.deleteMany({ where: { id: { in: list } } })
             break
+          case 'Document':
+            await tx.document.deleteMany({ where: { id: { in: list } } })
+            break
           default:
             throw new Error(`unexpected ${type} on an account key`)
         }
       }
       await ledger.markRolledBack(
         tx,
-        rows.map((r) => ({ entityType: r.entityType as EntityType, entityId: r.entityId, phase: r.phase as Phase, accountKey: r.accountKey })),
+        dbRows.map((r) => ({ entityType: r.entityType as EntityType, entityId: r.entityId, phase: r.phase as Phase, accountKey: r.accountKey })),
       )
     }, { timeout: 30_000, maxWait: 10_000 })
     ledger.commit()
-    return rows.length
   } catch (err) {
     ledger.discard()
     console.log(`  FAILED ${key}: ${err instanceof Error ? err.message : err}`)
     if (err instanceof Error && err.message.startsWith('STOP')) throw err
     return 0
   }
+  // Rows are gone; now the objects. A failure leaves them `done` for the next rollback.
+  for (let i = 0; i < objects.length; i += 100) {
+    const batch = objects.slice(i, i + 100)
+    const { error } = await ctx.supabase.storage.from(BUCKET).remove(batch.map((o) => o.entityId))
+    if (error) {
+      console.log(`  FAILED ${key}: removing ${batch.length} storage objects: ${error.message}`)
+      return dbRows.length
+    }
+    await ctx.prisma.$transaction((tx) =>
+      ledger.markRolledBack(tx, batch.map((o) => ({ entityType: 'StorageObject' as const, entityId: o.entityId, phase: o.phase as Phase, accountKey: o.accountKey }))),
+    )
+    ledger.commit()
+  }
+  return rows.length
+}
+
+/** Objects a crashed upload left behind: remove them (absent is fine), then drop the intent. */
+async function removeObjectIntents(ctx: LoadContext, keys: string[]): Promise<number> {
+  let removed = 0
+  for (let i = 0; i < keys.length; i += 100) {
+    const batch = keys.slice(i, i + 100)
+    const { error } = await ctx.supabase.storage.from(BUCKET).remove(batch)
+    if (error) {
+      console.log(`  FAILED removing ${batch.length} intended storage objects: ${error.message}`)
+      return removed
+    }
+    await ctx.prisma.dataMigrationLedger.deleteMany({ where: { entityType: 'StorageObject', entityId: { in: batch }, state: 'intent' } })
+    removed += batch.length
+  }
+  return removed
 }
 
 /** A login and profile go only once none of that parent's migrated rows remain. */

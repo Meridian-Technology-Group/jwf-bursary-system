@@ -2,7 +2,8 @@
  * GT migration toolkit — command router (04-toolkit.md §2).
  *
  *   npm run mig -- calc     --env <e> [--debt as-entered|x5] [--mortgage-free on|off] [--variant <name>]
- *   npm run mig -- load     --env <e> --phase identities|accounts|assessments --run <id>
+ *   npm run mig -- docs-extract [--only k1,k2]               (M8: decrypt + reconcile; no database)
+ *   npm run mig -- load     --env <e> --phase identities|accounts|assessments|documents --run <id>
  *                           [--only k1,k2] [--limit n] [--dry-run]
  *   npm run mig -- plan     --env <e> [--only k1,k2]          (read-only preview)
  *   npm run mig -- verify   --env <e> --run <id>
@@ -49,6 +50,11 @@ function assertApproved(env: MigEnv, hash: string, phase: string) {
 
 async function main() {
   const [command, ...args] = process.argv.slice(2)
+  if (command === 'docs-extract') {
+    const { extractDocuments } = await import('./docs/extract')
+    await extractDocuments({ only: list(flag(args, 'only')) })
+    return
+  }
   const env = flag(args, 'env') as MigEnv | undefined
   if (!env || !MIG_ENVS.includes(env)) throw new Error(`--env ${MIG_ENVS.join('|')} is required`)
   const config = loadConfig(env)
@@ -71,8 +77,8 @@ async function main() {
     }
     case 'load': {
       const phase = flag(args, 'phase')
-      if (phase !== 'identities' && phase !== 'accounts' && phase !== 'assessments') {
-        throw new Error('--phase identities|accounts|assessments')
+      if (phase !== 'identities' && phase !== 'accounts' && phase !== 'assessments' && phase !== 'documents') {
+        throw new Error('--phase identities|accounts|assessments|documents')
       }
       const runId = flag(args, 'run')
       if (!runId) throw new Error('--run <id> is required (e.g. rh-r1-20260929)')
@@ -132,7 +138,7 @@ async function main() {
     case 'rollback': {
       const runId = flag(args, 'run')
       if (!runId) throw new Error('--run <id> is required')
-      const phase = flag(args, 'phase') as 'identities' | 'accounts' | 'assessments' | undefined
+      const phase = flag(args, 'phase') as 'identities' | 'accounts' | 'assessments' | 'documents' | undefined
       const dryRun = has(args, 'dry-run')
       if (!dryRun && env === 'prod') {
         throw new Error('Refusing: a prod rollback needs Brian\'s approval for this run id (06 §4), recorded first.')
@@ -148,7 +154,7 @@ async function main() {
       return
     }
     default:
-      throw new Error(`Unknown command: ${command ?? '(none)'}. Available: calc, plan, load, verify, rollback`)
+      throw new Error(`Unknown command: ${command ?? '(none)'}. Available: docs-extract, calc, plan, load, verify, rollback`)
   }
 }
 
