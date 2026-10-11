@@ -13,6 +13,7 @@
  *     previous year; shows the re-assessment info banner.
  */
 
+import type { School } from "@prisma/client";
 import * as React from "react";
 import type { ApplicationSectionType } from "@prisma/client";
 import type { DocumentMeta } from "@/lib/db/queries/applications";
@@ -63,9 +64,9 @@ interface SectionPageClientProps {
   applicationId: string;
   existingData: unknown;
   /** Seed for Section 1 defaults — the school captured on the Application. */
-  applicationSchool?: "TRINITY" | "WHITGIFT";
+  applicationSchool?: School;
   /** The school LOCKED at the admin invite (D1) — shown read-only as Q1. */
-  lockedSchool?: "TRINITY" | "WHITGIFT" | null;
+  lockedSchool?: School | null;
   /** Seed for Section 1 defaults — the child's name captured on the Application. */
   applicationChildName?: string;
   /** The applicant's own name — seeds the locked "guardian" row on FAMILY_ID (Q1). */
@@ -148,7 +149,7 @@ function SectionFormContent({
   parent1EmploymentStatus?: string;
   parent2EmploymentStatus?: string;
   relationshipStatus?: string;
-  lockedSchool?: "TRINITY" | "WHITGIFT" | null;
+  lockedSchool?: School | null;
   parent1Address?: StoredParentAddress | null;
 }) {
   switch (sectionType) {

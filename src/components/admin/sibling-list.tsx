@@ -30,6 +30,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import { entryAcademicYearLabel } from "@/lib/schools/academic-year";
+import { schoolName } from "@/lib/schools";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -58,10 +59,6 @@ interface SiblingListProps {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-const SCHOOL_LABELS: Record<string, string> = {
-  WHITGIFT: "Whitgift",
-  TRINITY: "Trinity",
-};
 
 function fmt(value: number): string {
   return new Intl.NumberFormat("en-GB", {
@@ -286,7 +283,7 @@ export function SiblingList({
                     )}
                   </div>
                   <div className="flex flex-wrap items-center gap-1 mt-0.5 text-xs text-slate-500">
-                    <span>{SCHOOL_LABELS[sibling.bursaryAccount.school] ?? sibling.bursaryAccount.school}</span>
+                    <span>{schoolName(sibling.bursaryAccount.school, "short") || sibling.bursaryAccount.school}</span>
                     <ChevronRight className="h-3 w-3 text-slate-300" aria-hidden="true" />
                     {/* D13-1a: no account reference — the entry year sits
                         beside the school as the disambiguator. */}

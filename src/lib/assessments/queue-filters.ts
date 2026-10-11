@@ -19,6 +19,7 @@
 
 import type { School, BursaryAccountStatus } from "@prisma/client";
 import type { AssessmentQueueRow } from "@/lib/db/queries/assessments-queue";
+import { compareReferences } from "@/lib/applications/reference-sort";
 
 export interface AssessmentQueueFilters {
   /** ACTIVE / CLOSED. Rows with no account are excluded when this is set. */
@@ -30,6 +31,75 @@ export interface AssessmentQueueFilters {
   submittedFrom?: Date;
   /** Inclusive upper bound on submittedAt (callers pass end-of-day). */
   submittedTo?: Date;
+  /** Free-text search (see `matchesAssessmentSearch`). */
+  search?: string;
+}
+
+/**
+ * Charlotte, 10 Oct 2026: *"Can I have a search button at the top of the
+ * assessments and the applications pages? I have just realised that I cannot
+ * search for a specific file."*
+ *
+ * The same fields the Applications search box matches (reference, lead
+ * applicant's name and email — `matchesQueueFilters`), plus the child's name,
+ * which this list shows as a column. Case-insensitive substring; a blank query
+ * matches everything.
+ */
+export function matchesAssessmentSearch(row: AssessmentQueueRow, search: string | undefined): boolean {
+  const q = search?.trim().toLowerCase();
+  if (!q) return true;
+  return [row.reference, row.childName, row.leadApplicantName, row.leadApplicantEmail].some(
+    (field) => field?.toLowerCase().includes(q) ?? false
+  );
+}
+
+/**
+ * True when the row matches the search only through the lead applicant's name
+ * or email. The list never shows those, but returning the row still discloses
+ * that the parent is linked to it, so the page audits these matches the way the
+ * Applications list audits showing the names (NAME_REVEAL).
+ */
+export function matchesOnlyByLeadApplicant(row: AssessmentQueueRow, search: string | undefined): boolean {
+  const q = search?.trim().toLowerCase();
+  if (!q || !matchesAssessmentSearch(row, q)) return false;
+  return !row.reference.toLowerCase().includes(q) && !row.childName.toLowerCase().includes(q);
+}
+
+/** CH-45 Submitted sort, plus the Reference A–Z / Z–A sort (10 Oct 2026). */
+export type AssessmentQueueSort = "submitted_asc" | "submitted_desc" | "reference_asc" | "reference_desc";
+
+export const ASSESSMENT_QUEUE_SORTS: readonly AssessmentQueueSort[] = [
+  "submitted_asc",
+  "submitted_desc",
+  "reference_asc",
+  "reference_desc",
+];
+
+/**
+ * Orders the rows for the chosen header. No sort leaves the query's order
+ * (submittedAt ascending) untouched.
+ *
+ * Submitted: rows with no submission date sort last in both directions. They
+ * have nothing to order by, and burying them at the bottom beats them jumping
+ * to the top when she flips direction.
+ */
+export function sortAssessmentQueueRows(
+  rows: readonly AssessmentQueueRow[],
+  sort: AssessmentQueueSort | undefined
+): AssessmentQueueRow[] {
+  if (!sort) return rows.slice();
+  if (sort === "reference_asc" || sort === "reference_desc") {
+    const dir = sort === "reference_asc" ? 1 : -1;
+    return rows.slice().sort((a, b) => dir * compareReferences(a.reference, b.reference));
+  }
+  return rows.slice().sort((a, b) => {
+    const at = a.submittedAt?.getTime();
+    const bt = b.submittedAt?.getTime();
+    if (at === undefined && bt === undefined) return 0;
+    if (at === undefined) return 1;
+    if (bt === undefined) return -1;
+    return sort === "submitted_asc" ? at - bt : bt - at;
+  });
 }
 
 /**
@@ -45,9 +115,10 @@ export function filterAssessmentQueueRows(
   rows: readonly AssessmentQueueRow[],
   filters: AssessmentQueueFilters
 ): AssessmentQueueRow[] {
-  const { bursaryStatus, academicYear, school, submittedFrom, submittedTo } = filters;
+  const { bursaryStatus, academicYear, school, submittedFrom, submittedTo, search } = filters;
 
   return rows.filter((row) => {
+    if (!matchesAssessmentSearch(row, search)) return false;
     if (bursaryStatus && row.bursaryStatus !== bursaryStatus) return false;
     if (academicYear && row.academicYear !== academicYear) return false;
     if (school && row.school !== school) return false;

@@ -3,6 +3,9 @@ import {
   filterAssessmentQueueRows,
   academicYearOptions,
   parseDateBoundary,
+  matchesAssessmentSearch,
+  matchesOnlyByLeadApplicant,
+  sortAssessmentQueueRows,
 } from "../queue-filters";
 import type { AssessmentQueueRow } from "@/lib/db/queries/assessments-queue";
 
@@ -22,6 +25,8 @@ function row(over: Partial<AssessmentQueueRow> = {}): AssessmentQueueRow {
     submittedAt: new Date("2026-06-15T09:00:00.000Z"),
     updatedAt: null,
     bursaryStatus: "ACTIVE",
+    leadApplicantName: "Grace Kaluba",
+    leadApplicantEmail: "grace.kaluba@example.com",
     ...over,
   };
 }
@@ -184,5 +189,81 @@ describe("bursaryStatus on a queue row", () => {
   it("a real closed account still filters as CLOSED", () => {
     const closed = row({ bursaryStatus: "CLOSED" });
     expect(filterAssessmentQueueRows([closed], { bursaryStatus: "CLOSED" })).toHaveLength(1);
+  });
+});
+
+// Charlotte, 10 Oct 2026: a search box on the Assessments list, and the
+// Reference column sortable A–Z.
+describe("search (matchesAssessmentSearch / filter search)", () => {
+  const migrated = row({
+    applicationId: "app-5",
+    reference: "TS - ALI04 - ALI, Mir",
+    childName: "Mir Ali",
+    leadApplicantName: "Sara Ali",
+    leadApplicantEmail: "s.ali@example.com",
+  });
+
+  it("matches the reference, child name, lead applicant name and email, ignoring case", () => {
+    expect(matchesAssessmentSearch(migrated, "ali04")).toBe(true);
+    expect(matchesAssessmentSearch(migrated, "MIR ALI")).toBe(true);
+    expect(matchesAssessmentSearch(migrated, "sara")).toBe(true);
+    expect(matchesAssessmentSearch(migrated, "s.ali@")).toBe(true);
+    expect(matchesAssessmentSearch(migrated, "kaluba")).toBe(false);
+  });
+
+  it("treats a blank or whitespace query as no filter", () => {
+    expect(matchesAssessmentSearch(migrated, undefined)).toBe(true);
+    expect(matchesAssessmentSearch(migrated, "   ")).toBe(true);
+  });
+
+  it("copes with a row that has no lead applicant details", () => {
+    const bare = row({ leadApplicantName: null, leadApplicantEmail: null });
+    expect(matchesAssessmentSearch(bare, "grace")).toBe(false);
+    expect(matchesAssessmentSearch(bare, "REF-1")).toBe(true);
+  });
+
+  it("composes with the other filters (AND)", () => {
+    expect(
+      filterAssessmentQueueRows([...all, migrated], { search: "ali", school: "WHITGIFT" }).map(
+        (r) => r.applicationId
+      )
+    ).toEqual(["app-5"]);
+    expect(filterAssessmentQueueRows([...all, migrated], { search: "ali", school: "TRINITY" })).toEqual([]);
+  });
+
+  it("flags a match that came only through the parent's name or email", () => {
+    expect(matchesOnlyByLeadApplicant(migrated, "sara")).toBe(true);
+    expect(matchesOnlyByLeadApplicant(migrated, "ali04")).toBe(false); // the reference matched
+    expect(matchesOnlyByLeadApplicant(migrated, "mir")).toBe(false); // the child's name matched
+    expect(matchesOnlyByLeadApplicant(migrated, "nobody")).toBe(false);
+    expect(matchesOnlyByLeadApplicant(migrated, undefined)).toBe(false);
+  });
+});
+
+describe("sortAssessmentQueueRows — Reference A–Z / Z–A", () => {
+  const refs = ["TS-PARA02-X", "TS - ALI04 - ALI", "OP-ALI04-ALI", "ts-adam10", "TS-ADAM2"];
+  const rows = refs.map((reference, i) => row({ applicationId: `a${i}`, reference }));
+
+  it("sorts A–Z ignoring spacing and case, numbers in numeric order", () => {
+    expect(sortAssessmentQueueRows(rows, "reference_asc").map((r) => r.reference)).toEqual([
+      "OP-ALI04-ALI",
+      "TS-ADAM2",
+      "ts-adam10",
+      "TS - ALI04 - ALI",
+      "TS-PARA02-X",
+    ]);
+  });
+
+  it("sorts Z–A as the exact reverse", () => {
+    expect(sortAssessmentQueueRows(rows, "reference_desc").map((r) => r.reference)).toEqual(
+      sortAssessmentQueueRows(rows, "reference_asc").map((r) => r.reference).reverse()
+    );
+  });
+
+  it("leaves the query order alone when no sort is chosen, and never mutates its input", () => {
+    const before = rows.map((r) => r.reference);
+    expect(sortAssessmentQueueRows(rows, undefined).map((r) => r.reference)).toEqual(before);
+    sortAssessmentQueueRows(rows, "reference_desc");
+    expect(rows.map((r) => r.reference)).toEqual(before);
   });
 });

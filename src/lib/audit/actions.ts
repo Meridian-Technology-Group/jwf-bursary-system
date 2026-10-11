@@ -194,6 +194,8 @@ export const AUDIT_ACTIONS = {
    * WITHDRAWN and from the automatic schedule-complete close.
    */
   BURSARY_ACCOUNT_CLOSED: "BURSARY_ACCOUNT_CLOSED",
+  /** S9 — ADMIN set or cleared the account's own annual fee (OP partnering school). */
+  BURSARY_ACCOUNT_FEES_OVERRIDE_UPDATED: "BURSARY_ACCOUNT_FEES_OVERRIDE_UPDATED",
   /**
    * CALC-10 — the account's fees-account code field was edited.
    *
@@ -204,6 +206,13 @@ export const AUDIT_ACTIONS = {
    * them unlabelled (and uncoloured) in the audit UI. Do not add new writers.
    */
   BURSARY_ACCOUNT_FEES_CODE_UPDATED: "BURSARY_ACCOUNT_FEES_CODE_UPDATED",
+
+  // GT data migration (docs/migration/gt/04-toolkit.md). Written only by the
+  // toolkit, one per migrated application, with the run id in metadata.
+  /** An account was loaded from Grant Tracker. */
+  DATA_MIGRATION_IMPORT: "DATA_MIGRATION_IMPORT",
+  /** A migration run's rows for an account were removed by a rollback. */
+  DATA_MIGRATION_ROLLBACK: "DATA_MIGRATION_ROLLBACK",
 } as const;
 
 export type AuditAction = (typeof AUDIT_ACTIONS)[keyof typeof AUDIT_ACTIONS];
@@ -357,12 +366,15 @@ const ACTION_COLOUR: Partial<Record<AuditAction, string>> = {
   [AUDIT_ACTIONS.SCHEDULE_SHOW_ON_PORTAL_TOGGLED]: "bg-blue-500",
   [AUDIT_ACTIONS.BURSARY_ACCOUNT_WITHDRAWN]: "bg-red-400",
   [AUDIT_ACTIONS.BURSARY_ACCOUNT_CLOSED]: "bg-red-400",
+  [AUDIT_ACTIONS.BURSARY_ACCOUNT_FEES_OVERRIDE_UPDATED]: "bg-blue-500",
   [AUDIT_ACTIONS.BURSARY_ACCOUNT_FEES_CODE_UPDATED]: "bg-blue-500",
   [AUDIT_ACTIONS.UPDATE_REFERENCE]: "bg-blue-500",
   [AUDIT_ACTIONS.APPLICATION_CLOSED]: "bg-red-400",
   [AUDIT_ACTIONS.APPLICATION_PURGED]: "bg-red-400",
   [AUDIT_ACTIONS.APPLICATION_MARKED_ACTIVE]: "bg-green-500",
   [AUDIT_ACTIONS.BULK_EMAIL_SENT]: "bg-blue-500",
+  [AUDIT_ACTIONS.DATA_MIGRATION_IMPORT]: "bg-blue-500",
+  [AUDIT_ACTIONS.DATA_MIGRATION_ROLLBACK]: "bg-red-400",
 };
 
 /**

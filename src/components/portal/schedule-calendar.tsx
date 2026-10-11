@@ -22,6 +22,8 @@ import type { PortalScheduleRow } from "@/lib/bursary-accounts/portal-schedule";
 
 interface ScheduleCalendarProps {
   rows: PortalScheduleRow[];
+  /** The last school year the bursary covers (13; 11 at the OP partnering school). */
+  finalYear?: number;
 }
 
 /** Per-state row styling. State is ALSO surfaced as text, never colour alone. */
@@ -38,11 +40,11 @@ const BADGE_CLASS: Record<PortalScheduleRow["state"], string> = {
   greyed: "border border-slate-200 bg-slate-100 text-slate-400",
 };
 
-export function ScheduleCalendar({ rows }: ScheduleCalendarProps) {
+export function ScheduleCalendar({ rows, finalYear = 13 }: ScheduleCalendarProps) {
   return (
     <ol
       className="space-y-2"
-      aria-label="Year 6 to Year 13 bursary assessment schedule"
+      aria-label={`Year 6 to Year ${finalYear} bursary assessment schedule`}
     >
       {rows.map((row) => {
         const isGreyed = row.state === "greyed";

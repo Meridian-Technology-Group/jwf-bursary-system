@@ -14,6 +14,7 @@
 import React from "react";
 import { Document, Page, Text, View, StyleSheet } from "@react-pdf/renderer";
 import type { SubmittedSummary } from "@/lib/portal/application-summary";
+import { schoolName } from "@/lib/schools";
 
 // ─── Brand colours ──────────────────────────────────────────────────────────
 
@@ -144,12 +145,7 @@ export function SubmissionPDF({
   termsAccepted,
   generatedAt,
 }: SubmissionPDFProps) {
-  const schoolLabel =
-    school === "TRINITY"
-      ? "Trinity School"
-      : school === "WHITGIFT"
-        ? "Whitgift School"
-        : school;
+  const schoolLabel = schoolName(school) || school;
 
   return (
     <Document>

@@ -15,6 +15,7 @@ import type { SchoolFeesRow } from "@/lib/db/queries/reference-tables";
 import { maxPayableFeesInclVat } from "@/lib/assessment/v2/award";
 import type { School } from "@prisma/client";
 import { academicYearLabelFor } from "@/lib/schools/academic-year";
+import { schoolName } from "@/lib/schools";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -26,10 +27,6 @@ function formatGBP(value: number): string {
   }).format(value);
 }
 
-const SCHOOL_LABELS: Record<School, string> = {
-  TRINITY: "Trinity School",
-  WHITGIFT: "Whitgift School",
-};
 
 // ─── Props ────────────────────────────────────────────────────────────────────
 
@@ -73,7 +70,7 @@ export function SchoolFeesRow({ fees }: SchoolFeesRowProps) {
     });
   }
 
-  const schoolLabel = SCHOOL_LABELS[fees.school] ?? fees.school;
+  const schoolLabel = schoolName(fees.school) || fees.school;
   const yearLabel = academicYearLabelFor(new Date(fees.effectiveFrom));
 
   if (!editing) {

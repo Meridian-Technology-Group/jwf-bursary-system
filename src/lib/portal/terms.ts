@@ -22,8 +22,8 @@ export const TERMS_AND_CONDITIONS_PATH = "/legal/terms-and-conditions.pdf";
  * `applications.terms_version` at submission so a later document swap never
  * rewrites what a parent previously agreed to. Bump on every PDF replacement.
  */
-export const TERMS_AND_CONDITIONS_VERSION = "2026-06";
+export const TERMS_AND_CONDITIONS_VERSION = "2026-10";
 
 /** Human label for the document, used in viewers and the submitted summary. */
 export const TERMS_AND_CONDITIONS_LABEL =
-  "Bursary Terms & Conditions (parent as legal customer)";
+  "Bursary Portal System Terms & Conditions";

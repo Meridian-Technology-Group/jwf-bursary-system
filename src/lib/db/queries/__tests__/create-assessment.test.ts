@@ -11,8 +11,9 @@ import { CURRENT_CALCULATION_VERSION } from "@/lib/assessment/engine-version";
  * app-detail "Begin Review" track — see status.test.ts).
  */
 describe("createAssessment — calculationVersion default (CALC-14)", () => {
-  function makeTx() {
+  function makeTx(school = "WHITGIFT") {
     return {
+      application: { findUniqueOrThrow: vi.fn(async () => ({ school })) },
       assessment: {
         create: vi.fn(async (args: { data: Record<string, unknown> }) => ({
           id: "asmt-new",
@@ -45,5 +46,15 @@ describe("createAssessment — calculationVersion default (CALC-14)", () => {
       data: Record<string, unknown>;
     };
     expect(arg.data.calculationVersion).toBe(1);
+  });
+
+  // S9 (GT migration PR-C): VAT is stamped from the application's school.
+  it("stamps 20% VAT for Whitgift and Trinity, 0% for the OP partnering school", async () => {
+    for (const [school, vat] of [["WHITGIFT", 20], ["TRINITY", 20], ["OP_PARTNER", 0]] as const) {
+      const tx = makeTx(school);
+      await createAssessment(tx as never, "app-1", "assessor-1");
+      const arg = tx.assessment.create.mock.calls[0]![0] as { data: Record<string, unknown> };
+      expect(arg.data.vatRate, school).toBe(vat);
+    }
   });
 });

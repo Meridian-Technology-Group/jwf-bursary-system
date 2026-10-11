@@ -14,16 +14,13 @@
 
 import { CheckCircle2, Download, FileSpreadsheet } from "lucide-react";
 import type { ExportReadiness } from "@/lib/db/queries/round-cockpit";
+import { schoolName } from "@/lib/schools";
 
 interface ExportReadinessPanelProps {
   exportReadiness: ExportReadiness[];
   roundId: string;
 }
 
-const SCHOOL_LABELS: Record<string, string> = {
-  TRINITY: "Trinity",
-  WHITGIFT: "Whitgift",
-};
 
 function formatExportDate(date: Date | null): string {
   if (!date) return "Not yet exported";
@@ -64,7 +61,7 @@ export function ExportReadinessPanel({
       ) : (
         <ul className="mt-3 divide-y divide-slate-100">
           {exportReadiness.map((row) => {
-            const schoolLabel = SCHOOL_LABELS[row.school] ?? row.school;
+            const schoolLabel = schoolName(row.school, "short") || row.school;
             const href = `/api/exports/recommendations?roundId=${encodeURIComponent(
               roundId,
             )}&school=${encodeURIComponent(row.school)}&format=xlsx`;

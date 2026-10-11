@@ -13,6 +13,7 @@
  * pure `buildPortalScheduleRows` helper.
  */
 
+import { finalEligibleSchoolYear } from "@/lib/schools";
 import { redirect } from "next/navigation";
 import { CalendarRange } from "lucide-react";
 import { getCurrentUser } from "@/lib/auth/roles";
@@ -44,7 +45,9 @@ export default async function SchedulePage() {
     firstAssessmentYear: data.firstAssessmentYear,
     visibleEntries: data.visibleEntries,
     currentAcademicYearStart: academicYearStartForDate(),
+    school: data.school,
   });
+  const finalYear = finalEligibleSchoolYear(data.school);
 
   return (
     <PortalPage className="space-y-8">
@@ -58,7 +61,7 @@ export default async function SchedulePage() {
         </h1>
         <p className="mt-2 max-w-prose text-sm text-slate-500">
           Bursaries are reviewed every year. This is your assessment schedule for
-          your child&rsquo;s time at the school — from Year 6 through to Year 13.
+          your child&rsquo;s time at the school — from Year 6 through to Year {finalYear}.
           We&rsquo;ll email you when each year&rsquo;s assessment opens; there is
           nothing for you to do here.
         </p>
@@ -68,9 +71,9 @@ export default async function SchedulePage() {
       <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
         <h2 className="mb-4 flex items-center gap-2 text-sm font-semibold uppercase tracking-wider text-slate-400">
           <CalendarRange className="h-4 w-4 text-slate-400" aria-hidden="true" />
-          Year 6 to Year 13
+          Year 6 to Year {finalYear}
         </h2>
-        <ScheduleCalendar rows={rows} />
+        <ScheduleCalendar rows={rows} finalYear={finalYear} />
       </div>
 
       {/* Legend — text labels so the meaning never depends on colour alone. */}

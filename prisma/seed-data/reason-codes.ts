@@ -99,9 +99,15 @@ export const reasonCodes = [
   // From her reviewed "Reason & Gap Codes" listing, using the regrouping:
   // 1-7 Circumstances · 8-26 Income & Employment · 27-33 Property & Assets ·
   // 34-37 Documentation & Compliance · 38-41 Fees & Adjustments. Labels
-  // transcribed verbatim. DB codes 201-241 (display = code - 200); the
-  // 101-137 generation above is deprecated, never deleted — historic
-  // recommendations keep rendering their labels.
+  // transcribed verbatim. DB codes 201-241 (display = code - 200 as of
+  // 6 Sep); the 101-137 generation above is deprecated, never deleted —
+  // historic recommendations keep rendering their labels.
+  //
+  // S18 (19 Sep 2026): her 43-code list adds 27 "Major change in income"
+  // (code 242) and 35 "Major change in assets" (code 243); the old 27-41
+  // renumber to 28-43 in their labels and sortOrder only. DB codes never
+  // move, so display = code - 200 holds only up to 226. Groups are now
+  // 8-27 Income · 28-35 Property · 36-39 Documentation · 40-43 Fees.
   { code: 201, label: "1 - No year on year comparison, first assessment", sortOrder: 1, isDeprecated: false },
   { code: 202, label: "2 - No real change", sortOrder: 2, isDeprecated: false },
   { code: 203, label: "3 - Additional family member since last year", sortOrder: 3, isDeprecated: false },
@@ -128,19 +134,21 @@ export const reasonCodes = [
   { code: 224, label: "24 - Legal claim impact", sortOrder: 24, isDeprecated: false },
   { code: 225, label: "25 - Changed from working FT to PT", sortOrder: 25, isDeprecated: false },
   { code: 226, label: "26 - Increased working hours / Got a second job", sortOrder: 26, isDeprecated: false },
-  { code: 227, label: "27 - Mortgage now fully paid", sortOrder: 27, isDeprecated: false },
-  { code: 228, label: "28 - New property asset acquired", sortOrder: 28, isDeprecated: false },
-  { code: 229, label: "29 - Property asset has increased in value", sortOrder: 29, isDeprecated: false },
-  { code: 230, label: "30 - Property asset sold", sortOrder: 30, isDeprecated: false },
-  { code: 231, label: "31 - Additional asset not disclosed last year", sortOrder: 31, isDeprecated: false },
-  { code: 232, label: "32 - Re-mortgage agreement", sortOrder: 32, isDeprecated: false },
-  { code: 233, label: "33 - Change in accommodation arrangements", sortOrder: 33, isDeprecated: false },
-  { code: 234, label: "34 - Failure to meet the deadline", sortOrder: 34, isDeprecated: false },
-  { code: 235, label: "35 - Out of date documents used last year", sortOrder: 35, isDeprecated: false },
-  { code: 236, label: "36 - Forged or tampered with documents", sortOrder: 36, isDeprecated: false },
-  { code: 237, label: "37 - Failure to provide required documents", sortOrder: 37, isDeprecated: false },
-  { code: 238, label: "38 - Reduced Payable fees due to new scholarship offer", sortOrder: 38, isDeprecated: false },
-  { code: 239, label: "39 - Out of sync due to Internal/ Pastoral Bursary", sortOrder: 39, isDeprecated: false },
-  { code: 240, label: "40 - Sibling on full/partial fees taking up most or all of NDI", sortOrder: 40, isDeprecated: false },
-  { code: 241, label: "41 - Other", sortOrder: 41, isDeprecated: false },
+  { code: 242, label: "27 - Major change in income", sortOrder: 27, isDeprecated: false },
+  { code: 227, label: "28 - Mortgage now fully paid", sortOrder: 28, isDeprecated: false },
+  { code: 228, label: "29 - New property asset acquired", sortOrder: 29, isDeprecated: false },
+  { code: 229, label: "30 - Property asset has increased in value", sortOrder: 30, isDeprecated: false },
+  { code: 230, label: "31 - Property asset sold", sortOrder: 31, isDeprecated: false },
+  { code: 231, label: "32 - Additional asset not disclosed last year", sortOrder: 32, isDeprecated: false },
+  { code: 232, label: "33 - Re-mortgage agreement", sortOrder: 33, isDeprecated: false },
+  { code: 233, label: "34 - Change in accommodation arrangements", sortOrder: 34, isDeprecated: false },
+  { code: 243, label: "35 - Major change in assets", sortOrder: 35, isDeprecated: false },
+  { code: 234, label: "36 - Failure to meet the deadline", sortOrder: 36, isDeprecated: false },
+  { code: 235, label: "37 - Out of date documents used last year", sortOrder: 37, isDeprecated: false },
+  { code: 236, label: "38 - Forged or tampered with documents", sortOrder: 38, isDeprecated: false },
+  { code: 237, label: "39 - Failure to provide required documents", sortOrder: 39, isDeprecated: false },
+  { code: 238, label: "40 - Reduced Payable fees due to new scholarship offer", sortOrder: 40, isDeprecated: false },
+  { code: 239, label: "41 - Out of sync due to Internal/ Pastoral Bursary", sortOrder: 41, isDeprecated: false },
+  { code: 240, label: "42 - Sibling on full/partial fees taking up most or all of NDI", sortOrder: 42, isDeprecated: false },
+  { code: 241, label: "43 - Other", sortOrder: 43, isDeprecated: false },
 ] as const;

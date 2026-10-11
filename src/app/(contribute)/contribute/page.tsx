@@ -14,6 +14,7 @@ import { ApplicationContributorStatus } from "@prisma/client";
 import { getCurrentUser } from "@/lib/auth/roles";
 import { withUserContext, type RlsRole } from "@/lib/db/prisma";
 import { getSecondaryContributorContext } from "@/lib/db/queries/contributors";
+import { schoolName } from "@/lib/schools";
 
 export const metadata = { title: "Your Contribution" };
 
@@ -33,7 +34,7 @@ export default async function ContributeLandingPage() {
   }
 
   const firstName = user.firstName ?? "there";
-  const schoolLabel = ctx.school === "TRINITY" ? "Trinity School" : "Whitgift School";
+  const schoolLabel = schoolName(ctx.school);
 
   return (
     <div className="space-y-8">

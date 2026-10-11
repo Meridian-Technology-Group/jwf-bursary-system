@@ -17,6 +17,7 @@ import { SendInvitationForm } from "@/components/admin/send-invitation-form";
 import { inviteBccAddress } from "@/lib/email/send";
 import { InvitationRowActions } from "@/components/admin/invitation-row-actions";
 import { cn } from "@/lib/utils";
+import { schoolName } from "@/lib/schools";
 
 export const metadata = {
   title: "Invitations",
@@ -63,7 +64,7 @@ function formatDate(date: Date): string {
 
 function formatSchool(school: string | null): string {
   if (!school) return "—";
-  return school === "TRINITY" ? "Trinity" : "Whitgift";
+  return schoolName(school, "short");
 }
 
 function formatName(

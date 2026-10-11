@@ -8,6 +8,7 @@
  * anchor). Adding a year that already exists updates it (same upsert).
  */
 
+import { FEE_TABLE_SCHOOLS, schoolName } from "@/lib/schools";
 import * as React from "react";
 import { useTransition } from "react";
 import { Loader2, Plus } from "lucide-react";
@@ -27,10 +28,10 @@ import {
   academicYearStartFor,
 } from "@/lib/schools/academic-year";
 
-const SCHOOLS = [
-  { value: "TRINITY", label: "Trinity School" },
-  { value: "WHITGIFT", label: "Whitgift School" },
-] as const;
+// S9: only schools with a fee table; Old Palace fees are per account.
+const SCHOOLS = [...FEE_TABLE_SCHOOLS]
+  .sort((a, b) => schoolName(a).localeCompare(schoolName(b)))
+  .map((s) => ({ value: s, label: schoolName(s) }));
 
 export function AddSchoolFeesYearForm() {
   const [school, setSchool] = React.useState<string>("");

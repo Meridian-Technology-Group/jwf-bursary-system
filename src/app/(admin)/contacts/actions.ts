@@ -13,6 +13,7 @@
  * file stays focused on the register CRUD.
  */
 
+import { ROLLING_OVER_ONLY_MESSAGE, schoolAllowsSituation } from "@/lib/schools";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { EntryYearGroup, InvitationSituation, School } from "@prisma/client";
@@ -89,6 +90,9 @@ const ContactSchema = z.object({
   town: optionalString,
   postcode: optionalString,
   notes: z.string().trim().max(2000).optional(),
+}).refine((v) => schoolAllowsSituation(v.school, v.situation), {
+  message: ROLLING_OVER_ONLY_MESSAGE,
+  path: ["situation"],
 });
 
 export interface ContactActionResult {

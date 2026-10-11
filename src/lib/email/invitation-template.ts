@@ -39,6 +39,10 @@ export function resolveInvitationTemplate(
     return EmailTemplateType.INVITATION_ROLLING;
   }
   if (!school) return EmailTemplateType.INVITATION;
+  // S9: no family is newly invited to the OP partnering school, so it has no
+  // NEW or INTERNAL template; never borrow Whitgift's (contact validation
+  // already refuses the combination).
+  if (school === School.OP_PARTNER) return EmailTemplateType.INVITATION;
   if (situation === InvitationSituation.NEW) {
     return school === School.TRINITY
       ? EmailTemplateType.INVITATION_NEW_TS

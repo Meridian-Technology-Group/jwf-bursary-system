@@ -11,6 +11,7 @@
  *  4. Download button
  */
 
+import { ALL_SCHOOLS, schoolName } from "@/lib/schools";
 import { useState } from "react";
 import {
   Card,
@@ -43,9 +44,8 @@ interface ExportFilterFormProps {
 
 const SCHOOL_OPTIONS = [
   { value: "__all__", label: "All Schools" },
-  { value: "TRINITY", label: "Trinity" },
-  { value: "WHITGIFT", label: "Whitgift" },
-] as const;
+  ...ALL_SCHOOLS.map((s) => ({ value: s, label: schoolName(s, "short") })),
+];
 
 const FORMAT_OPTIONS = [
   { value: "xlsx", label: "Excel (XLSX)" },

@@ -6,6 +6,7 @@
  * School selection, child info, birth certificate upload, address, current school.
  */
 
+import type { School } from "@prisma/client";
 import * as React from "react";
 import { useFormContext, useWatch } from "react-hook-form";
 import {
@@ -32,13 +33,10 @@ import type { ChildDetailsFormValues } from "@/lib/schemas/child-details";
 import { CHILD_TITLES } from "@/lib/schemas/child-details";
 import type { UploadedDocument } from "@/components/portal/file-upload";
 import type { DocumentMeta } from "@/lib/db/queries/applications";
+import { schoolName } from "@/lib/schools";
 
 const GENDERS = ["Male", "Female", "Other"];
 
-const SCHOOL_LABELS: Record<string, string> = {
-  TRINITY: "Trinity School",
-  WHITGIFT: "Whitgift School",
-};
 
 /** The stored Parent/Guardian 1 address, shown when the child shares it (D1). */
 export interface StoredParentAddress {
@@ -53,7 +51,7 @@ interface ChildDetailsFormProps {
   applicationId: string;
   documentMap?: Record<string, DocumentMeta>;
   /** The school LOCKED at the admin invite (D1) — shown read-only as Q1. */
-  lockedSchool?: "TRINITY" | "WHITGIFT" | null;
+  lockedSchool?: School | null;
   /** Stored Parent 1 address from the contact/parent details — shown read-only
    *  when the child lives at the same address (workbook §3 Q7). */
   parent1Address?: StoredParentAddress | null;
@@ -105,7 +103,7 @@ export function ChildDetailsForm({
             School
           </p>
           <p className="mt-1 text-sm font-medium text-primary-900">
-            {lockedSchool ? SCHOOL_LABELS[lockedSchool] ?? lockedSchool : "—"}
+            {lockedSchool ? schoolName(lockedSchool) || lockedSchool : "—"}
           </p>
           <p className="mt-2 text-xs text-slate-500">
             The school for this application was set when you were invited and

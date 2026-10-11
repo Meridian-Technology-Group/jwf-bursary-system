@@ -4,6 +4,7 @@ import {
   closeAccountIfComplete,
   mirrorApplicationToSchedule,
   reopenAccountForAssessmentYear,
+  scheduleYearLabels,
 } from "../lifecycle";
 
 describe("isScheduleComplete", () => {
@@ -205,5 +206,36 @@ describe("reopenAccountForAssessmentYear", () => {
     const res = await reopenAccountForAssessmentYear(tx as never, PARAMS);
     expect(res.accountReopened).toBe(false);
     expect(tx.bursaryAccount.update).not.toHaveBeenCalled();
+  });
+});
+
+// Rounds are labelled "2026/27"; generated schedule rows are "2026-27". An
+// exact-label lookup never found the row, so no schedule year ever went COMPLETE.
+describe("schedule year matching across label spellings", () => {
+  it("scheduleYearLabels covers both spellings of the same year", () => {
+    expect(scheduleYearLabels("2026/27").sort()).toEqual(["2026-27", "2026/27"]);
+    expect(scheduleYearLabels("2026-27").sort()).toEqual(["2026-27", "2026/27"]);
+    expect(scheduleYearLabels("2099/00").sort()).toEqual(["2099-00", "2099/00"]);
+    expect(scheduleYearLabels("not a year")).toEqual(["not a year"]);
+  });
+
+  it("mirror finds the dashed row from a slashed round label", async () => {
+    const tx = makeMirrorTx({ id: "e1", status: "SCHEDULED" });
+    await mirrorApplicationToSchedule(tx as never, {
+      bursaryAccountId: "acc-1",
+      academicYear: "2026/27",
+      applicationId: "app-1",
+      roundId: "round-1",
+      status: "COMPLETE",
+    });
+    const where = (tx.bursaryScheduleEntry.findFirst.mock.calls[0] as unknown as [{ where: { academicYear: { in: string[] } } }])[0].where;
+    expect(where.academicYear.in).toContain("2026-27");
+  });
+
+  it("reopen finds the dashed row from a slashed round label", async () => {
+    const tx = makeReopenTx({ id: "e1", status: "COMPLETE" }, "ACTIVE");
+    await reopenAccountForAssessmentYear(tx as never, { bursaryAccountId: "acc-1", academicYear: "2026/27" });
+    const where = (tx.bursaryScheduleEntry.findFirst.mock.calls[0] as unknown as [{ where: { academicYear: { in: string[] } } }])[0].where;
+    expect(where.academicYear.in).toContain("2026-27");
   });
 });

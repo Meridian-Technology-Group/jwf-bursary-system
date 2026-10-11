@@ -46,6 +46,7 @@ describe("getApplicationForUser (draft resolver)", () => {
     expect(calls[1].where).toEqual({
       leadApplicantId: "user-1",
       formStatus: { not: "SUBMITTED" },
+      migrationSource: null,
     });
   });
 
@@ -56,6 +57,7 @@ describe("getApplicationForUser (draft resolver)", () => {
     expect(calls[0].where).toEqual({
       leadApplicantId: "user-1",
       formStatus: { not: "SUBMITTED" },
+      migrationSource: null,
     });
   });
 });
@@ -93,5 +95,23 @@ describe("getPortalNavState", () => {
   it("falls back and still returns null with no applications", async () => {
     const { tx } = fakeTx([null, null]);
     expect(await getPortalNavState(tx, "user-1", "gone")).toBeNull();
+  });
+});
+
+// GT migration (PR-D): a migrated placeholder has no form, so no resolver may
+// ever pick it as "the parent's application" — neither by preference nor as
+// the most-recent fallback.
+describe("migrated applications are never the portal's application", () => {
+  const resolvers = [
+    ["getApplicationForUser", getApplicationForUser],
+    ["getCurrentApplicationForUser", getCurrentApplicationForUser],
+    ["getPortalNavState", getPortalNavState],
+  ] as const;
+
+  it.each(resolvers)("%s excludes them from the preference and the fallback", async (_, resolve) => {
+    const { tx, calls } = fakeTx([null, null]);
+    await resolve(tx, "user-1", "app-b");
+    expect(calls).toHaveLength(2);
+    for (const call of calls) expect(call.where).toMatchObject({ migrationSource: null });
   });
 });

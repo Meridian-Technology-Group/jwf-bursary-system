@@ -91,3 +91,60 @@ export async function savePreSystemHistoryAction(
   revalidatePath(`/applications/${applicationId}/assessment/admin`);
   return { success: true };
 }
+
+// ─── S9 — the account's own annual fee (OP partnering school) ────────────────
+
+/** Annual fees before VAT, in pounds; null clears the override. */
+const AnnualFeesSchema = z.number().finite().min(0).max(100_000).nullable();
+
+/**
+ * GT migration PR-C (S9): set or clear `BursaryAccount.annualFeesOverride`.
+ * The OP partnering school has no fee table, so each account carries its own
+ * fee; the assessment reads it for the account's school. ADMIN only; audited
+ * with the before and after figures.
+ */
+export async function saveAnnualFeesOverrideAction(
+  bursaryAccountId: string,
+  applicationId: string,
+  value: unknown
+): Promise<SavePreSystemHistoryResult> {
+  const user = await requireRole([Role.ADMIN]);
+
+  const parsed = AnnualFeesSchema.safeParse(value);
+  if (!parsed.success) {
+    return { success: false, error: "Enter annual fees between £0 and £100,000." };
+  }
+  const fees = parsed.data == null ? null : Math.round(parsed.data * 100) / 100;
+
+  try {
+    await withUserContext(user.id, user.role as RlsRole, async (tx) => {
+      const before = await tx.bursaryAccount.findUniqueOrThrow({
+        where: { id: bursaryAccountId },
+        select: { annualFeesOverride: true },
+      });
+      await tx.bursaryAccount.update({
+        where: { id: bursaryAccountId },
+        data: { annualFeesOverride: fees },
+      });
+      await createAuditLog(tx, {
+        userId: user.id,
+        action: AUDIT_ACTIONS.BURSARY_ACCOUNT_FEES_OVERRIDE_UPDATED,
+        entityType: AUDIT_ENTITY_TYPES.BursaryAccount,
+        entityId: bursaryAccountId,
+        context: "Account annual fees set on the Assessment Admin tab",
+        metadata: {
+          applicationId,
+          before: before.annualFeesOverride == null ? null : Number(before.annualFeesOverride),
+          after: fees,
+        },
+      });
+    });
+  } catch (err) {
+    console.error("[saveAnnualFeesOverrideAction]", err);
+    return { success: false, error: "Failed to save the annual fees." };
+  }
+
+  revalidatePath(`/applications/${applicationId}/assessment/admin`);
+  revalidatePath(`/applications/${applicationId}/assessment`);
+  return { success: true };
+}

@@ -13,6 +13,7 @@
  * Auto-saves on blur. Runs live calculation via CalculationDisplay.
  */
 
+import type { School } from "@prisma/client";
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import {
@@ -153,7 +154,7 @@ export interface SerialisedAssessment {
 interface AssessmentFormProps {
   assessment: SerialisedAssessment;
   applicationId: string;
-  school: "WHITGIFT" | "TRINITY";
+  school: School;
   applicationEntryYear: number | null;
   /** Entry year-group (spec §4) — source of truth for schooling-years. */
   applicationEntryYearGroup: EntryYearGroupCode | null;

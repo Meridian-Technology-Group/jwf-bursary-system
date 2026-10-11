@@ -48,6 +48,7 @@
  * must fire iff the reset actually happened, which only the primitive knows.)
  */
 
+import { schoolVatRate } from "@/lib/schools";
 import type {
   ApplicationFormStatus,
   ApplicationType,
@@ -108,6 +109,9 @@ export interface LifecycleStatusInput {
  * Mirrors the PR-2 backfill table exactly, with the item-2 CLOSED rule on top:
  *   closedAt set                       → CLOSED (wins over everything)
  *   outcome set                        → QUALIFIES / DOES_NOT_QUALIFY
+ *   assessment NEW_AWARD / ROLLED_OVER
+ *     / WAITING_LIST                   → QUALIFIES ("Active")
+ *   assessment CLOSED_ARCHIVED         → DOES_NOT_QUALIFY ("Closed")
  *   assessment COMPLETED               → COMPLETED
  *   assessment PAUSED                  → PAUSED
  *   assessment IN_PROGRESS             → NOT_STARTED (review in progress)
@@ -121,6 +125,17 @@ export function deriveReviewPhase(input: LifecycleStatusInput): ReviewPhase {
   if (outcome != null) {
     return outcome === "DOES_NOT_QUALIFY" ? "DOES_NOT_QUALIFY" : "QUALIFIES";
   }
+  // Epic 18: the post-assessment locks never write `outcome`. Without these a
+  // locked assessment fell through to SUBMITTED ("Awaiting review", with a
+  // Begin Review button that then fails). Mirrors `matchesReviewPhase`.
+  if (
+    assessmentStatus === "NEW_AWARD" ||
+    assessmentStatus === "ROLLED_OVER" ||
+    assessmentStatus === "WAITING_LIST"
+  ) {
+    return "QUALIFIES";
+  }
+  if (assessmentStatus === "CLOSED_ARCHIVED") return "DOES_NOT_QUALIFY";
   if (assessmentStatus === "COMPLETED") return "COMPLETED";
   if (assessmentStatus === "PAUSED") return "PAUSED";
   if (assessmentStatus === "IN_PROGRESS") return "NOT_STARTED";
@@ -495,6 +510,10 @@ async function ensureAssessmentRow(
   });
   if (existing) return existing;
 
+  const { school } = await tx.application.findUniqueOrThrow({
+    where: { id: applicationId },
+    select: { school: true },
+  });
   const created = await tx.assessment.create({
     data: {
       applicationId,
@@ -502,7 +521,7 @@ async function ensureAssessmentRow(
       calculationVersion: CURRENT_CALCULATION_VERSION,
       status: ASSESSMENT_INITIAL_STATUS,
       scholarshipPct: 0,
-      vatRate: 20,
+      vatRate: schoolVatRate(school),
       manualAdjustment: 0,
     },
     select: { id: true, status: true },

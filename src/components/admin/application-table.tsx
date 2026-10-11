@@ -84,6 +84,7 @@ import {
 } from "@/components/ui/dialog";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
+import { compareReferences } from "@/lib/applications/reference-sort";
 
 import { ApplicationRowActions } from "@/components/admin/application-row-actions";
 import type { CloseReasonOption } from "@/components/admin/close-application-dialog";
@@ -103,6 +104,7 @@ import {
 } from "@/lib/applications/queue-filter";
 import { REVIEW_PHASE_LABEL, REVIEW_PHASE_FILTER_OPTIONS } from "@/lib/applications/review-phase-labels";
 import type { School, Role } from "@prisma/client";
+import { ALL_SCHOOLS, SCHOOL_BADGE_COLOUR, schoolName } from "@/lib/schools";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -207,16 +209,9 @@ interface ApplicationTableProps {
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function SchoolBadge({ school }: { school: School }) {
-  if (school === "WHITGIFT") {
-    return (
-      <span className="inline-flex items-center rounded-full bg-primary-100 px-2 py-0.5 text-xs font-medium text-primary-800">
-        Whitgift
-      </span>
-    );
-  }
   return (
-    <span className="inline-flex items-center rounded-full bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-700">
-      Trinity
+    <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${SCHOOL_BADGE_COLOUR[school]}`}>
+      {schoolName(school, "short")}
     </span>
   );
 }
@@ -895,6 +890,10 @@ export function ApplicationTable({
       }),
       columnHelper.accessor("reference", {
         header: "Reference",
+        // Charlotte, 10 Oct 2026: A–Z on clicking the header, the same order as
+        // the Assessments list (spacing/punctuation and case ignored).
+        sortingFn: (a, b) => compareReferences(a.original.reference, b.original.reference),
+        sortDescFirst: false,
         // D13-1a: the reference is a free-text label that is routinely re-edited
         // to the fees-system code (`TS-SMITH05-Smith, Bob`), at which point it
         // no longer names the child. The child's name therefore renders beside
@@ -1105,8 +1104,11 @@ export function ApplicationTable({
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All schools</SelectItem>
-            <SelectItem value="WHITGIFT">Whitgift</SelectItem>
-            <SelectItem value="TRINITY">Trinity</SelectItem>
+            {ALL_SCHOOLS.map((s) => (
+              <SelectItem key={s} value={s}>
+                {schoolName(s, "short")}
+              </SelectItem>
+            ))}
           </SelectContent>
         </Select>
 

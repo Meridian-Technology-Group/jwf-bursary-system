@@ -29,6 +29,7 @@ import {
   formatAcademicYearLabel,
 } from "@/lib/assessment/fee-year";
 import { ENTRY_YEAR_GROUP_LABELS } from "@/lib/assessment/schooling-years";
+import { schoolName } from "@/lib/schools";
 
 /** Segment separator: space + en dash + space. */
 const SEPARATOR = " – ";
@@ -54,9 +55,7 @@ export interface ApplicationReferenceInput {
 
 /** "TRINITY" → "Trinity School". Unknown/absent → "" (segment omitted). */
 function schoolSegment(school: School | string | null | undefined): string {
-  if (school === "TRINITY") return "Trinity School";
-  if (school === "WHITGIFT") return "Whitgift School";
-  return "";
+  return schoolName(school);
 }
 
 /**

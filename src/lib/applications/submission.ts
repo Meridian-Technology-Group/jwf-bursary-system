@@ -40,6 +40,7 @@ import { logError } from "@/lib/log";
 
 import { AUDIT_ENTITY_TYPES, type AuditAction } from "@/lib/audit/actions";
 import { SUBMISSION_DEADLINE_PASSED_MESSAGE } from "@/lib/applications/submission-error";
+import { schoolName } from "@/lib/schools";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -451,7 +452,7 @@ export async function submitApplicationCore(
   }
 
   // ── Send confirmation email (non-blocking on failure) ─────────────────────
-  const schoolLabel = application.school === "TRINITY" ? "Trinity School" : "Whitgift School";
+  const schoolLabel = schoolName(application.school);
   const emailResult = await sendEmail(confirmation.to, "CONFIRMATION", {
     applicant_name: confirmation.applicantName,
     child_name: application.childName,
