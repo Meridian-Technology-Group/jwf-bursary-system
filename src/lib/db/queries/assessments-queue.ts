@@ -51,6 +51,12 @@ export interface AssessmentQueueRow {
    * account, rather than the test record, which never had one.
    */
   bursaryStatus: BursaryAccountStatus | null;
+  /**
+   * For the search box only (Charlotte, 10 Oct 2026). Never rendered by the
+   * list: the page matches on them server-side and audits the search.
+   */
+  leadApplicantName: string | null;
+  leadApplicantEmail: string | null;
 }
 
 export async function listAssessmentQueueRows(
@@ -74,6 +80,7 @@ export async function listAssessmentQueueRows(
       closedAt: true,
       assignedToId: true,
       assignedTo: { select: { firstName: true, lastName: true, email: true } },
+      leadApplicant: { select: { firstName: true, lastName: true, email: true } },
       round: { select: { academicYear: true } },
       bursaryAccount: { select: { status: true } },
       assessment: {
@@ -103,5 +110,9 @@ export async function listAssessmentQueueRows(
     submittedAt: app.submittedAt,
     updatedAt: app.assessment?.updatedAt ?? null,
     bursaryStatus: app.bursaryAccount?.status ?? null,
+    leadApplicantName: app.leadApplicant
+      ? [app.leadApplicant.firstName, app.leadApplicant.lastName].filter(Boolean).join(" ") || null
+      : null,
+    leadApplicantEmail: app.leadApplicant?.email ?? null,
   }));
 }

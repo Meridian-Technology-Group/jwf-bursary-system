@@ -31,7 +31,13 @@ import {
   filterAssessmentQueueRows,
   academicYearOptions,
   parseDateBoundary,
+  sortAssessmentQueueRows,
+  matchesOnlyByLeadApplicant,
+  ASSESSMENT_QUEUE_SORTS,
+  type AssessmentQueueSort,
 } from "@/lib/assessments/queue-filters";
+import { createAuditLog } from "@/lib/audit/log";
+import { AUDIT_ACTIONS, AUDIT_ENTITY_TYPES } from "@/lib/audit/actions";
 import type { School, BursaryAccountStatus } from "@prisma/client";
 import { listStaffUsers } from "@/lib/db/queries/profiles";
 import { formatLondonDate } from "@/lib/datetime";
@@ -55,12 +61,24 @@ type SearchParams = Record<string, string | string[] | undefined>;
  * table to the Applications page's client-side `@tanstack/react-table` setup —
  * that would be a large refactor of a page she uses daily, for one column. The
  * affordance and the chevrons match the other table.
+ *
+ * 10 Oct 2026: the Reference column sorts the same way (A–Z / Z–A).
  */
-type SubmittedSort = "submitted_asc" | "submitted_desc";
-
-function parseSort(value: string | string[] | undefined): SubmittedSort | undefined {
+function parseSort(value: string | string[] | undefined): AssessmentQueueSort | undefined {
   const raw = firstValue(value);
-  return raw === "submitted_asc" || raw === "submitted_desc" ? raw : undefined;
+  return ASSESSMENT_QUEUE_SORTS.find((s) => s === raw);
+}
+
+/** Search box text: trimmed, capped, and absent when blank. */
+function parseSearch(value: string | string[] | undefined): string | undefined {
+  const raw = firstValue(value)?.trim().slice(0, 100);
+  return raw ? raw : undefined;
+}
+
+function SortChevron({ direction }: { direction: "asc" | "desc" | null }) {
+  if (direction === "asc") return <ChevronUp className="ml-1 inline h-3 w-3" aria-hidden="true" />;
+  if (direction === "desc") return <ChevronDown className="ml-1 inline h-3 w-3" aria-hidden="true" />;
+  return <ChevronsUpDown className="ml-1 inline h-3 w-3 opacity-40" aria-hidden="true" />;
 }
 
 function firstValue(value: string | string[] | undefined): string | undefined {
@@ -153,6 +171,7 @@ export default async function AssessmentsPage({
   const schoolFilter = parseSchool(params.school);
   const fromParam = parseDateParam(params.from);
   const toParam = parseDateParam(params.to);
+  const searchQuery = parseSearch(params.q);
   const assigneeFilter =
     user.role === Role.ASSESSOR ? user.id : firstValue(params.assignee);
 
@@ -194,6 +213,7 @@ export default async function AssessmentsPage({
     school: schoolFilter,
     submittedFrom: parseDateBoundary(fromParam, "start"),
     submittedTo: parseDateBoundary(toParam, "end"),
+    search: searchQuery,
   });
 
   const filtered = statusFilter
@@ -201,19 +221,29 @@ export default async function AssessmentsPage({
     : narrowed;
 
   // CH-45 — the query already returns submittedAt ascending, so no sort param
-  // leaves the existing order untouched. Nulls sort last either way: an
-  // application with no submission date has nothing to order by, and burying it
-  // at the bottom beats it jumping to the top when she flips direction.
-  const visible = sort
-    ? [...filtered].sort((a, b) => {
-        const at = a.submittedAt?.getTime();
-        const bt = b.submittedAt?.getTime();
-        if (at === undefined && bt === undefined) return 0;
-        if (at === undefined) return 1;
-        if (bt === undefined) return -1;
-        return sort === "submitted_asc" ? at - bt : bt - at;
+  // leaves the existing order untouched.
+  const visible = sortAssessmentQueueRows(filtered, sort);
+
+  // A row returned only because the parent's name or email matched discloses
+  // that link, though the list never shows it: audit it as the Applications
+  // list audits showing those names.
+  const leadOnlyMatches = searchQuery
+    ? visible.filter((r) => matchesOnlyByLeadApplicant(r, searchQuery))
+    : [];
+  if (leadOnlyMatches.length > 0) {
+    await withUserContext(user.id, user.role as RlsRole, (tx) =>
+      createAuditLog(tx, {
+        userId: user.id,
+        action: AUDIT_ACTIONS.NAME_REVEAL,
+        entityType: AUDIT_ENTITY_TYPES.Application,
+        context: "Assessments list — search matched the lead applicant's name or email",
+        metadata: {
+          applicationIds: leadOnlyMatches.map((r) => r.applicationId),
+          count: leadOnlyMatches.length,
+        },
       })
-    : filtered;
+    );
+  }
 
   // Counts are taken from the OTHER filters' result, not the raw rows: with a
   // round or school selected, a chip claiming a count the list cannot show
@@ -232,7 +262,7 @@ export default async function AssessmentsPage({
   const hrefWith = (
     overrides: {
       status?: AssessmentQueueStatus | null;
-      sort?: SubmittedSort | null;
+      sort?: AssessmentQueueSort | null;
     } = {}
   ) => {
     const qp = new URLSearchParams();
@@ -246,6 +276,7 @@ export default async function AssessmentsPage({
     if (schoolFilter) qp.set("school", schoolFilter);
     if (fromParam) qp.set("from", fromParam);
     if (toParam) qp.set("to", toParam);
+    if (searchQuery) qp.set("q", searchQuery);
     if (nextSort) qp.set("sort", nextSort);
 
     const qs = qp.toString();
@@ -257,10 +288,20 @@ export default async function AssessmentsPage({
 
   // CH-45 — the header link keeps whatever filters are active and only flips
   // the direction, so sorting never silently widens the list she is looking at.
-  const sortHref = (next: SubmittedSort) => hrefWith({ sort: next });
+  const sortHref = (next: AssessmentQueueSort) => hrefWith({ sort: next });
+  const submittedDirection =
+    sort === "submitted_asc" ? "asc" : sort === "submitted_desc" ? "desc" : null;
+  const referenceDirection =
+    sort === "reference_asc" ? "asc" : sort === "reference_desc" ? "desc" : null;
 
   const anyFilterActive = Boolean(
-    statusFilter || bursaryFilter || yearFilter || schoolFilter || fromParam || toParam
+    statusFilter ||
+      bursaryFilter ||
+      yearFilter ||
+      schoolFilter ||
+      fromParam ||
+      toParam ||
+      searchQuery
   );
 
   return (
@@ -324,6 +365,23 @@ export default async function AssessmentsPage({
       >
         {statusFilter && <input type="hidden" name="status" value={statusFilter} />}
         {sort && <input type="hidden" name="sort" value={sort} />}
+
+        {/* 10 Oct 2026 — her search box, matching the Applications list's.
+            Enter (or Apply) runs it together with the other filters. */}
+        <div className="flex flex-col gap-1">
+          <label htmlFor="q" className="text-xs font-medium text-slate-500">
+            Search
+          </label>
+          <input
+            type="search"
+            id="q"
+            name="q"
+            defaultValue={searchQuery ?? ""}
+            placeholder="Search name, email or reference…"
+            maxLength={100}
+            className="h-8 w-[240px] rounded-md border border-slate-300 bg-white px-2 text-xs text-slate-900 placeholder:text-slate-400"
+          />
+        </div>
 
         <div className="flex flex-col gap-1">
           <label htmlFor="bursary" className="text-xs font-medium text-slate-500">
@@ -460,7 +518,22 @@ export default async function AssessmentsPage({
           <table className="w-full min-w-[860px] text-left text-sm">
             <thead>
               <tr className="border-b border-slate-200 text-xs uppercase tracking-wider text-slate-400">
-                <th className="px-4 py-3 font-medium">Reference</th>
+                <th className="px-4 py-3 font-medium">
+                  <Link
+                    href={sortHref(
+                      sort === "reference_asc" ? "reference_desc" : "reference_asc"
+                    )}
+                    className="inline-flex items-center hover:text-primary-700"
+                    aria-label={
+                      sort === "reference_asc"
+                        ? "Sort by reference, Z to A"
+                        : "Sort by reference, A to Z"
+                    }
+                  >
+                    Reference
+                    <SortChevron direction={referenceDirection} />
+                  </Link>
+                </th>
                 <th className="px-4 py-3 font-medium">Child</th>
                 <th className="px-4 py-3 font-medium">School</th>
                 <th className="px-4 py-3 font-medium">Round</th>
@@ -480,16 +553,7 @@ export default async function AssessmentsPage({
                     }
                   >
                     Submitted
-                    {sort === "submitted_asc" ? (
-                      <ChevronUp className="ml-1 inline h-3 w-3" aria-hidden="true" />
-                    ) : sort === "submitted_desc" ? (
-                      <ChevronDown className="ml-1 inline h-3 w-3" aria-hidden="true" />
-                    ) : (
-                      <ChevronsUpDown
-                        className="ml-1 inline h-3 w-3 opacity-40"
-                        aria-hidden="true"
-                      />
-                    )}
+                    <SortChevron direction={submittedDirection} />
                   </Link>
                 </th>
               </tr>
