@@ -1,6 +1,8 @@
 ---
 title: "Epic 21 — CR-002 Phase 4: system changes from the migration review"
-status: planned — not started (awaiting Charlotte's written approval of the quote)
+status: approved — ready to build (Charlotte approved the £1,100 quote in writing 12 Oct 2026)
+approved: "2026-10-12 07:49 UTC, Gmail message 1a12f1663ee413ce, thread 1a11fad6a8b0e010"
+due_on_migration_staging: 2026-10-26 (10 working days from approval)
 opened: 2026-10-11
 opened_by: Brian Wagner
 quote: "£1,100 net of VAT — Gmail draft r1309823553813329048, thread 1a11fad6a8b0e010"
@@ -15,7 +17,7 @@ code_surveyed_at: origin/staging 0be83db (11 Oct 2026)
 
 **This document is the handover.** It assumes no context beyond the repo, this file and the migration workspace (`../data/migration/STATE.md`). Read §0–§3 before touching code, then work the tranche you are given.
 
-**Do not start building until Charlotte has approved the quote in writing** (MSA 9.5(c)). Tranche T1 is a licence fix and can start at any time.
+**Approved.** Charlotte accepted the quote in writing on 12 Oct 2026 (MSA 9.5(c)): "Please go ahead with those changes and do send me your invoice". Everything is due on migration staging by **Mon 26 Oct 2026**. D-1 and D-2 were still unanswered at approval (§2).
 
 ---
 
@@ -28,9 +30,7 @@ code_surveyed_at: origin/staging 0be83db (11 Oct 2026)
 
 ### Git hygiene before the sprint
 
-Done for this plan: the plan lives on `docs/epic-21-cr002-phase4` in its own worktree (`../bursary-system-epic21`), branched from `origin/staging`.
-
-Recommended before building. **Each item needs Brian's OK**, because CLAUDE.md requires approval to delete branches other than the one just merged.
+**Status 12 Oct 2026 (before the sprint):** G1 done (toolkit pushed, `fb92782`). G3/G4 approved by Brian; the branch deletions are run by Brian (Claude's auto mode blocks `git branch -d/-D`). Local `staging`, `main` and `chore/gt-rehearsal` fast-forwarded to their remotes. G5 and G6 open. The sprint worktree `../bursary-system-epic21` has `node_modules`, `.env`, `.env.local` and `.env.migration.rehearsal`; baseline at `0be83db`: `tsc` clean, 2,559 tests pass.
 
 | # | Item | Action | Why |
 |---|---|---|---|
@@ -41,12 +41,16 @@ Recommended before building. **Each item needs Brian's OK**, because CLAUDE.md r
 | G5 | Open PRs: #350 release-please 2.1.0, #343, #378, #416, #419 (docs) | Brian decides: merge #350 to tag 2.1.0; close or refresh the stale docs PRs | None block this sprint |
 | G6 | `chore/gt-rehearsal` is at `ebd4f01` (#430's head), i.e. staging minus the squash commit | Fast-forward or reset it to `origin/staging` at the start of each rehearsal deploy (§6). It is a deploy branch, so a hard reset of it is a force-push: **ask first** | Rehearsal must run exactly the staging code under test |
 
-**Build every tranche in its own worktree off fresh `origin/staging`**, never in the main checkout (which stays on the toolkit branch):
+**Build every tranche in the sprint worktree `../bursary-system-epic21`**, never in the main checkout (which stays on the toolkit branch for migration work). Start each tranche from fresh `origin/staging`:
 
 ```bash
+cd ../bursary-system-epic21
 git fetch origin
-git worktree add ../bursary-system-<tranche> -b <branch> origin/staging
+git switch -c <branch> origin/staging
+npm ci   # only if package-lock.json changed since the last tranche
 ```
+
+T8 is the exception: it is toolkit work on `chore/gt-migration-toolkit` in the main checkout.
 
 ---
 
