@@ -3,6 +3,7 @@ import {
   resolveScheduleHorizon,
   planSchedule,
   generateSchedule,
+  scheduleDatesForYear,
   effectiveHorizon,
   planEndAfterYear,
   planAddYear,
@@ -67,13 +68,15 @@ describe("planSchedule — dates + labels + show/hide", () => {
     expect(rows[2].academicYear).toBe("2028-29");
   });
 
-  it("shifts availableOn/requiredBy forward one year per row", () => {
-    expect(rows[0].availableOn?.getUTCFullYear()).toBe(2026);
-    expect(rows[1].availableOn?.getUTCFullYear()).toBe(2027);
-    expect(rows[2].requiredBy?.getUTCFullYear()).toBe(2028);
-    // Month/day preserved.
-    expect(rows[1].availableOn?.getUTCMonth()).toBe(8);
-    expect(rows[1].requiredBy?.getUTCMonth()).toBe(11);
+  it("Year 1 keeps the award round's dates; later years take the rolling-over window (Epic 21 F2, D-1)", () => {
+    const iso = (d: Date | null) => d?.toISOString().slice(0, 10);
+    expect(iso(rows[0].availableOn)).toBe("2026-09-01");
+    expect(iso(rows[0].requiredBy)).toBe("2026-12-01");
+    // 2027-28 → 15/04/2027–21/05/2027; 2028-29 → 15/04/2028–21/05/2028.
+    expect(iso(rows[1].availableOn)).toBe("2027-04-15");
+    expect(iso(rows[1].requiredBy)).toBe("2027-05-21");
+    expect(iso(rows[2].availableOn)).toBe("2028-04-15");
+    expect(iso(rows[2].requiredBy)).toBe("2028-05-21");
   });
 
   it("shows every year of the award by default (Epic 21 #5, D-2)", () => {
@@ -255,5 +258,34 @@ describe("scheduleEditControls", () => {
   it("says Add re-opens a closed account", () => {
     const c = scheduleEditControls({ ...base, accountClosed: true, rows: [linked(row(1, "COMPLETE"), "app-1")] });
     expect(c.add).toEqual({ enabled: true, addedYear: "2027-28", reopens: true });
+  });
+});
+
+describe("scheduleDatesForYear (Epic 21 F2)", () => {
+  const open = new Date(Date.UTC(2026, 7, 21)); // 21 Aug 2026
+  const close = new Date(Date.UTC(2026, 8, 17)); // 17 Sep 2026
+  const iso = (d: Date | null) => d?.toISOString().slice(0, 10);
+
+  it("year 1 is the award round's own dates", () => {
+    const r = scheduleDatesForYear({ awardStartYear: 2026, awardOpenDate: open, awardCloseDate: close, scheduleYear: 1 });
+    expect([iso(r.availableOn), iso(r.requiredBy)]).toEqual(["2026-08-21", "2026-09-17"]);
+  });
+
+  it("a later year is that year's rolling-over window, whatever the award round's dates", () => {
+    const r = scheduleDatesForYear({ awardStartYear: 2026, awardOpenDate: open, awardCloseDate: close, scheduleYear: 2 });
+    expect([iso(r.availableOn), iso(r.requiredBy)]).toEqual(["2027-04-15", "2027-05-21"]);
+  });
+
+  it("works without award round dates (round not found)", () => {
+    const r = scheduleDatesForYear({ awardStartYear: 2026, awardOpenDate: null, awardCloseDate: null, scheduleYear: 3 });
+    expect([iso(r.availableOn), iso(r.requiredBy)]).toEqual(["2028-04-15", "2028-05-21"]);
+  });
+
+  it("falls back to shifting the award dates when the award year can't be parsed (leap day safe)", () => {
+    const leap = new Date(Date.UTC(2028, 1, 29)); // 29 Feb 2028
+    const r = scheduleDatesForYear({ awardStartYear: null, awardOpenDate: leap, awardCloseDate: null, scheduleYear: 2 });
+    // setUTCFullYear rolls 29 Feb into 1 Mar in a non-leap year.
+    expect(iso(r.availableOn)).toBe("2029-03-01");
+    expect(r.requiredBy).toBeNull();
   });
 });
