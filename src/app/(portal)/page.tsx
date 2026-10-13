@@ -8,7 +8,9 @@
  * When the user has no Application but does have an accepted Invitation, they
  * see an onboarding card to confirm school + child name before entering the
  * form. When there is no invitation at all, a neutral fallback message is
- * shown directing them to the bursary team's email address.
+ * shown directing them to the bursary team's email address — unless the family
+ * already has a schedule (migrated / between rounds), in which case the
+ * schedule is the page (Epic 21 WP-F1, `portalHomeMain`).
  */
 
 import { redirect } from "next/navigation";
@@ -43,6 +45,11 @@ import {
 import { getScheduleHomeForUser } from "@/lib/db/queries/schedule";
 import { getActiveApplicationId } from "@/lib/portal/active-application";
 import { buildScheduleHomeRows } from "@/lib/bursary-accounts/schedule-home";
+import { portalHomeMain } from "@/lib/portal/home-state";
+import {
+  TERMS_AND_CONDITIONS_PATH,
+  TERMS_AND_CONDITIONS_LABEL,
+} from "@/lib/portal/terms";
 import {
   ScheduleHome,
   type ScheduleHomeBlock,
@@ -347,6 +354,15 @@ export default async function PortalDashboardPage() {
   // EXCEPT "invited, not started", where the help affordance is elevated for
   // first-timers (the bordered card under the chooser, below). All point at the
   // single guidance page that PR-4 stood up.
+  const homeMain = portalHomeMain({
+    hasApplication: application != null,
+    hasInvitation: invitation != null,
+    hasSchedule,
+  });
+
+  // Quiet help line (Decision 7), shown in every home-page state. The T&Cs
+  // link opens the PDF directly (Epic 21 F5); it used to be reachable only
+  // from /help and the invited-not-started card.
   const quietHelpLink = (
     <div className="rounded-xl border border-slate-200 bg-white p-4 text-sm shadow-sm">
       <span className="text-slate-500">Need help? </span>
@@ -354,8 +370,18 @@ export default async function PortalDashboardPage() {
         href="/help"
         className="font-medium text-accent-700 underline underline-offset-2 hover:text-accent-800"
       >
-        How to apply &middot; Checklist &middot; Terms &amp; Conditions
+        How to apply &middot; Checklist
       </Link>
+      <span className="text-slate-400"> &middot; </span>
+      <a
+        href={TERMS_AND_CONDITIONS_PATH}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="font-medium text-accent-700 underline underline-offset-2 hover:text-accent-800"
+      >
+        {TERMS_AND_CONDITIONS_LABEL}
+        <span className="sr-only"> (PDF, opens in a new tab)</span>
+      </a>
     </div>
   );
 
@@ -392,7 +418,7 @@ export default async function PortalDashboardPage() {
         />
       )}
 
-      {application ? (
+      {homeMain === "application" && application && (
         <>
           {/* Submission countdown / deadline-missed lockout (Epic 05 §3.2).
               Only while the form is still an editable draft; keyed on the
@@ -557,11 +583,10 @@ export default async function PortalDashboardPage() {
 
             </div>
           </div>
-
-          {/* Quiet help link — demoted off the fold (Decision 7). */}
-          {quietHelpLink}
         </>
-      ) : invitation ? (
+      )}
+
+      {homeMain === "invitation" && invitation && (
         /* No application yet, but an invitation exists ("invited, not started").
            Show BOTH application types as mutually-exclusive cards (feedback #4):
            the type matching the invitation is active, the other is disabled with
@@ -610,26 +635,27 @@ export default async function PortalDashboardPage() {
             </div>
           </div>
         </>
-      ) : (
-        /* No invitation found — neutral fallback */
-        <>
-          <div className="rounded-xl border border-slate-200 bg-white p-8 text-center shadow-sm">
-            <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-slate-100">
-              <FileText className="h-6 w-6 text-slate-400" aria-hidden="true" />
-            </div>
-            <h2 className="mt-4 text-lg font-semibold text-slate-800">
-              No invitation found
-            </h2>
-            <p className="mt-2 text-sm text-slate-500">
-              We can&rsquo;t find an invitation linked to your account. If you
-              believe this is an error, <ContactBursaryTeam />.
-            </p>
-          </div>
-
-          {/* Quiet help link — guidance is still reachable here (Decision 7). */}
-          {quietHelpLink}
-        </>
       )}
+
+      {homeMain === "no-invitation" && (
+        /* No invitation found — neutral fallback. Not shown to a family with a
+           schedule (homeMain "none"): the schedule above is the page. */
+        <div className="rounded-xl border border-slate-200 bg-white p-8 text-center shadow-sm">
+          <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-slate-100">
+            <FileText className="h-6 w-6 text-slate-400" aria-hidden="true" />
+          </div>
+          <h2 className="mt-4 text-lg font-semibold text-slate-800">
+            No invitation found
+          </h2>
+          <p className="mt-2 text-sm text-slate-500">
+            We can&rsquo;t find an invitation linked to your account. If you
+            believe this is an error, <ContactBursaryTeam />.
+          </p>
+        </div>
+      )}
+
+      {/* Quiet help link — demoted off the fold (Decision 7), every state. */}
+      {quietHelpLink}
     </PortalPage>
   );
 }

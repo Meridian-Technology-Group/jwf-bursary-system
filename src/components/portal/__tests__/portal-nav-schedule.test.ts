@@ -11,7 +11,7 @@ vi.mock("next/navigation", () => ({
 import { buildPortalNav } from "../portal-nav";
 
 /**
- * Gap F2 — the "Assessment Schedule" calendar nav item is shown ONLY for an
+ * Gap F2 — the "Application Schedule" calendar nav item is shown ONLY for an
  * ACTIVE family with a portal-visible schedule (`hasSchedule`), using the same
  * conditional-visibility mechanism as the Missing Documents item. First-year
  * applicants (no schedule) never see it. `buildPortalNav` is pure, so we test
@@ -20,7 +20,7 @@ import { buildPortalNav } from "../portal-nav";
 const hasScheduleItem = (items: { href: string }[]) =>
   items.some((i) => i.href === "/schedule");
 
-describe("buildPortalNav — Assessment Schedule item (gap F2)", () => {
+describe("buildPortalNav — Application Schedule item (gap F2)", () => {
   it("HIDES the calendar for a family with no schedule", () => {
     const items = buildPortalNav("/apply/child-details", false, false);
     expect(hasScheduleItem(items)).toBe(false);
@@ -31,7 +31,7 @@ describe("buildPortalNav — Assessment Schedule item (gap F2)", () => {
     expect(hasScheduleItem(items)).toBe(true);
 
     const item = items.find((i) => i.href === "/schedule")!;
-    expect(item.label).toBe("Assessment Schedule");
+    expect(item.label).toBe("Application Schedule");
     expect(item.match).toBe("/schedule");
     // Read-only link — no `highlight` CTA styling (that's Missing Documents).
     expect("highlight" in item).toBe(false);

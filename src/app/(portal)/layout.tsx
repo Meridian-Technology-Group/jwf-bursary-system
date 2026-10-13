@@ -63,7 +63,7 @@ export default async function PortalLayout({
   // there is no extra context hop and no full-application fetch on every page.
   // Decision 5: NO round read is added here — the round label stays out of the
   // global nav (it lives in the stepper + dashboard only).
-  // gap F2 — the "Assessment Schedule" calendar item is shown ONLY for an ACTIVE
+  // gap F2 — the "Application Schedule" calendar item is shown ONLY for an ACTIVE
   // family with ≥1 portal-visible schedule entry. We fold that cheap count into
   // the SAME RLS context as the access guard + nav state, so the nav decision
   // costs no extra context hop.

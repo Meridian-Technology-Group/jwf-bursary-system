@@ -103,6 +103,8 @@ describe("buildPortalScheduleRows — greyed vs active vs current", () => {
     });
     const current = rows.find((r) => r.state === "current");
     expect(current?.academicYear).toBe("2026-27");
+    // Epic 21 F4: the family sees "application", never "assessment".
+    expect(current?.stateLabel).toBe("This year's application");
   });
 
   it("falls back to the latest visible year as current when all are in the past", () => {
