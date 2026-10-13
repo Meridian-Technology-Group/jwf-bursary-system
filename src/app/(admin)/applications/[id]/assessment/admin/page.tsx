@@ -17,8 +17,15 @@
  *  4. Payable-fees schedule: one row per Epic 10 schedule year with reason
  *     codes, payable fees + Δ, school year, submit-by and the three statuses;
  *     future rows read "Scheduled / Not started".
+ *
+ * Epic 21 #3: this page is the "door" to previous years (as in Grant
+ * Tracker). Each schedule year, year-on-year row and the wizard callout links
+ * to that year's assessment; the year being viewed reads "This year". Links
+ * resolve under the viewer's own RLS context, so an ASSESSOR only sees links
+ * to applications assigned to them (D-4).
  */
 
+import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { Lightbulb } from "lucide-react";
 import { requireRole, Role } from "@/lib/auth/roles";
@@ -35,6 +42,7 @@ import {
   parsePreSystemHistory,
 } from "@/lib/assessments/admin-tab";
 import { formatLondonDate } from "@/lib/datetime";
+import { scheduleRowLink } from "@/lib/assessment/previous-year";
 import { cn } from "@/lib/utils";
 import { AssessmentSynopsis } from "@/components/admin/assessment-synopsis";
 import { WatchOutNotesEditor } from "@/components/admin/watch-out-notes-editor";
@@ -249,7 +257,13 @@ export default async function AssessmentAdminPage({ params }: Props) {
           />
           <div>
             <p className="text-sm font-semibold text-amber-900">
-              Assessor&apos;s wizard — from {watchOut.academicYear}
+              Assessor&apos;s wizard — from{" "}
+              <Link
+                href={`/applications/${watchOut.applicationId}/assessment`}
+                className="underline underline-offset-2 hover:text-amber-700"
+              >
+                {watchOut.academicYear}
+              </Link>
             </p>
             <p className="mt-1 whitespace-pre-wrap text-sm text-amber-800">
               {watchOut.watchOutNotes}
@@ -396,8 +410,18 @@ export default async function AssessmentAdminPage({ params }: Props) {
                   >
                     <td className="px-3 py-2 font-mono text-xs font-semibold text-primary-900">
                       {/* CH-56 — label the completed tax year the figures came
-                          from, not the award's academic year. */}
-                      {priorAcademicYear(row.academicYear)}
+                          from, not the award's academic year. Epic 21 #3:
+                          a system row links to that year's assessment. */}
+                      {row.applicationId && row.applicationId !== params.id ? (
+                        <Link
+                          href={`/applications/${row.applicationId}/assessment`}
+                          className="underline underline-offset-2 hover:text-primary-700"
+                        >
+                          {priorAcademicYear(row.academicYear)}
+                        </Link>
+                      ) : (
+                        priorAcademicYear(row.academicYear)
+                      )}
                       {row.source === "MANUAL" && (
                         <span className="ml-1.5 rounded bg-slate-100 px-1 py-0.5 text-[10px] font-medium text-slate-500">
                           manual
@@ -504,13 +528,33 @@ export default async function AssessmentAdminPage({ params }: Props) {
                 </tr>
               </thead>
               <tbody>
-                {scheduleRows.map((row) => (
+                {scheduleRows.map((row) => {
+                  // Epic 21 #3 — the door to that year's assessment.
+                  const link = scheduleRowLink(row, params.id);
+                  return (
                   <tr
                     key={row.scheduleYear}
-                    className="border-b border-slate-100 last:border-b-0"
+                    className={cn(
+                      "border-b border-slate-100 last:border-b-0",
+                      link.kind === "current" && "bg-accent-50/60"
+                    )}
                   >
                     <td className="px-3 py-2 font-mono text-xs font-semibold text-primary-900">
-                      {row.academicYear}
+                      {link.kind === "link" ? (
+                        <Link
+                          href={link.href}
+                          className="underline underline-offset-2 hover:text-primary-700"
+                        >
+                          {row.academicYear}
+                        </Link>
+                      ) : (
+                        row.academicYear
+                      )}
+                      {link.kind === "current" && (
+                        <span className="ml-1.5 rounded bg-accent-100 px-1 py-0.5 font-sans text-[10px] font-medium text-accent-800">
+                          This year
+                        </span>
+                      )}
                     </td>
                     <td className="px-3 py-2 text-xs text-slate-600">
                       {row.reasonCodes.length > 0 ? row.reasonCodes.join("; ") : "—"}
@@ -539,7 +583,8 @@ export default async function AssessmentAdminPage({ params }: Props) {
                     <td className="px-3 py-2 text-xs text-slate-600">{row.assessmentStatus}</td>
                     <td className="px-3 py-2 text-xs text-slate-600">{row.bursaryStatus}</td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           </div>

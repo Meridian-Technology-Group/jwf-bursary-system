@@ -12,9 +12,13 @@
  * Props are plain serialised data (no Prisma Date/Decimal crosses the boundary).
  * ADMIN gates the mutations server-side; VIEWER/ASSESSOR see a read-only grid
  * (no toggle/regenerate controls) — `canManage` drives that.
+ *
+ * Epic 21 #3: each year with an application links to that year's assessment;
+ * the year being viewed reads "This year".
  */
 
 import * as React from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { CalendarRange, Loader2, RefreshCw } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -31,6 +35,7 @@ import {
 } from "@/components/ui/table";
 import { formatLondonDate } from "@/lib/datetime";
 import type { ScheduleEntryRow } from "@/lib/db/queries/schedule";
+import { scheduleRowLink } from "@/lib/assessment/previous-year";
 import type { BursaryAccountStatus } from "@prisma/client";
 import {
   regenerateScheduleAction,
@@ -51,6 +56,34 @@ const STATUS_LABEL: Record<ScheduleEntryRow["status"], string> = {
   RECEIVED: "Received",
   COMPLETE: "Complete",
 };
+
+/** Epic 21 #3 — the academic year as a link to that year's assessment. */
+function ScheduleYearCell({
+  entry,
+  currentApplicationId,
+}: {
+  entry: ScheduleEntryRow;
+  currentApplicationId: string;
+}) {
+  const link = scheduleRowLink(entry, currentApplicationId);
+  if (link.kind === "link") {
+    return (
+      <Link href={link.href} className="underline underline-offset-2 hover:text-primary-700">
+        {entry.academicYear}
+      </Link>
+    );
+  }
+  return (
+    <>
+      {entry.academicYear}
+      {link.kind === "current" && (
+        <span className="ml-1.5 rounded bg-accent-100 px-1 py-0.5 text-[10px] font-medium text-accent-800">
+          This year
+        </span>
+      )}
+    </>
+  );
+}
 
 function fmt(iso: string | null): string {
   if (!iso) return "—";
@@ -191,7 +224,9 @@ export function ScheduleGrid({
                 {entries.map((e) => (
                   <TableRow key={e.id}>
                     <TableCell className="font-medium">{e.scheduleYear}</TableCell>
-                    <TableCell>{e.academicYear}</TableCell>
+                    <TableCell>
+                      <ScheduleYearCell entry={e} currentApplicationId={applicationId} />
+                    </TableCell>
                     <TableCell className="text-slate-500">{e.type}</TableCell>
                     <TableCell>
                       <Badge variant={STATUS_VARIANT[e.status]}>
