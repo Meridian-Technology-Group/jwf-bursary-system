@@ -17,7 +17,14 @@ code_surveyed_at: origin/staging 0be83db (11 Oct 2026)
 
 **This document is the handover.** It assumes no context beyond the repo, this file and the migration workspace (`../data/migration/STATE.md`). Read §0–§3 before touching code, then work the tranche you are given.
 
-**Approved.** Charlotte accepted the quote in writing on 12 Oct 2026 (MSA 9.5(c)): "Please go ahead with those changes and do send me your invoice". Everything is due on migration staging by **Mon 26 Oct 2026**. D-1 and D-2 were still unanswered at approval (§2).
+**Approved.** Charlotte accepted the quote in writing on 12 Oct 2026 (MSA 9.5(c)): "Please go ahead with those changes and do send me your invoice". Everything is due on migration staging by **Mon 26 Oct 2026**.
+
+**Update 13 Oct (read this first).** Her test-login feedback (12 Oct 08:44 UTC, Gmail msg `1a12f49699543fe4`, thread `1a12c831e7b0a657`) and Brian's reply (sent 12 Oct 11:39) changed the plan:
+- **D-1 answered:** every rolling-over year opens **15 April** and closes **21 May** (e.g. 2027-28 → 15/04/2027–21/05/2027). T7 is unblocked.
+- **D-2 confirmed:** her screenshot showed an in-award Year 13 as "Outside your award", which is the years-1–2 tick default. Brian told her every year of the award will be ticked and an unticked year is hidden. Build T5 as proposed.
+- **Two new licence fixes, folded into T1:** F4 ("Application", not "Assessment", on the family's side) and F5 (T&Cs link on the portal home page). Both were promised to her in the 12 Oct reply.
+- **Keep the portal row labels** "Scheduled" / "Outside your award" (`portal-schedule.ts` `STATE_LABELS`) as they are; she may send new wording.
+- **Out of scope:** her "Parent View" redesign, quoted separately as Phase 5 (§8). Don't pre-build any of it.
 
 ---
 
@@ -30,7 +37,7 @@ code_surveyed_at: origin/staging 0be83db (11 Oct 2026)
 
 ### Git hygiene before the sprint
 
-**Status 12 Oct 2026 (before the sprint):** G1 done (toolkit pushed, `fb92782`). G3/G4 approved by Brian; the branch deletions are run by Brian (Claude's auto mode blocks `git branch -d/-D`). Local `staging`, `main` and `chore/gt-rehearsal` fast-forwarded to their remotes. G5 and G6 open. The sprint worktree `../bursary-system-epic21` has `node_modules`, `.env`, `.env.local` and `.env.migration.rehearsal`; baseline at `0be83db`: `tsc` clean, 2,559 tests pass.
+**Status 13 Oct 2026 (sprint start):** G1 done (toolkit pushed, `fb92782`). G3/G4 approved by Brian but **not yet run**: the stale worktree and merged branches are still there; Brian runs the deletions (Claude's auto mode blocks `git branch -d/-D`). They don't block the sprint. Local `staging`, `main` and `chore/gt-rehearsal` fast-forwarded to their remotes. G5 and G6 open. The sprint worktree `../bursary-system-epic21` has `node_modules`, `.env`, `.env.local` and `.env.migration.rehearsal`; baseline at `0be83db`: `tsc` clean, 2,559 tests pass.
 
 | # | Item | Action | Why |
 |---|---|---|---|
@@ -68,6 +75,8 @@ Charlotte's six changes (her numbering), the quote, and three fixes found while 
 | 6 | Standing synopsis on the admin page | £250 | T6 |
 | F1 | "No invitation found" box shown to migrated/active families | £0 (fix) | T1 |
 | F2 | Future-year dates on the schedule follow the new-applicant round, not the rolling-over window | £0 (fix) | T7 |
+| F4 | Family-facing "Assessment Schedule" → "Application Schedule" and "This year's assessment" → "This year's application" (her 12 Oct email; admin keeps "Assessment") | £0 (fix) | T1 |
+| F5 | Terms & Conditions reachable from the portal home page (her 12 Oct email) | £0 (fix) | T1 |
 | F3 | Next spring's re-assessment invitations ignore the schedule (a Year 13 family would be invited for a year they don't have) | £0 (fix) | T4 |
 | — | Migration footer dates as "10 October 2026" (promised 11 Oct) | toolkit | T8 |
 
@@ -81,8 +90,8 @@ Mark each answered with date and source before building the tranche that needs i
 
 | ID | Question | Who | Default if no answer | Blocks |
 |---|---|---|---|---|
-| **D-1** | Rolling-over years: which dates should the family see? Her window is "mid-April to 7 June"; the code's built-in RA default is 12 Apr → 22 May | Charlotte (asked in the test-login email) | Don't build T7 | T7 |
-| **D-2** | The show-on-portal fix: make the home page obey the tick. Today the tick defaults on for years 1–2 only, so obeying it would **hide years 3+ from every family**. Proposal: default the tick **on for every year**, so it becomes a "hide this year" switch, and backfill existing rows | Charlotte, then Brian (prod backfill) | Default on for all years + backfill | T5 |
+| **D-1** | Rolling-over years: which dates should the family see? | Charlotte | **ANSWERED 12 Oct:** open 15 April, close 21 May, every rolling-over year | T7 |
+| **D-2** | The show-on-portal fix: make the home page obey the tick. Today the tick defaults on for years 1–2 only, so obeying it would **hide years 3+ from every family**. Proposal: default the tick **on for every year**, so it becomes a "hide this year" switch, and backfill existing rows | Charlotte, then Brian (prod backfill) | **CONFIRMED 12 Oct** (her "Outside your award" screenshot; Brian's reply promised it). Default on for all years + backfill; the prod backfill still needs Brian's approval in the PR | T5 |
 | **D-3** | Should the gap-code picker in the assessment list codes in ranking order? (asked 11 Oct, unanswered) | Charlotte | Keep the current order (`sortOrder`); ranking is its own column | T2 (picker only) |
 | **D-4** | Previous-year links for an ASSESSOR: last year's application is usually not assigned to them, so RLS and the `[id]/layout.tsx` assignment redirect hide or bounce it | Brian | Show links only where the viewer can open the target (ADMIN/VIEWER always; ASSESSOR when assigned). No RLS change | T3 |
 | **D-5** | After "End after this year", does the account stay ACTIVE through the funded year (closed later with a reason, as today), or close immediately? | Charlotte | Stays ACTIVE; closes by the existing Close action or auto-close when the last row completes | T4 |
@@ -113,13 +122,13 @@ Each tranche is one PR to `staging` and independently promotable.
 
 | T | Contents | Branch | Migration | Needs |
 |---|---|---|---|---|
-| **T1** | F1 · hide "No invitation found" when the family has an active schedule | `fix/portal-home-no-invitation-box` | none | — |
+| **T1** | F1 · hide "No invitation found" when the family has an active schedule · F4 "Application" wording · F5 T&Cs link on home | `fix/portal-home-no-invitation-box` | none | — |
 | **T2** | #1 adjusted gap + #2 gap ranking (export, Settings, Reports "Gap" section) | `feature/gap-ranking-and-adjusted-gap` | `gap_reasons.rank` | D-9; D-3 for the picker only |
 | **T3** | #3 previous-year links | `feature/previous-year-links` | none | D-4 |
 | **T4** | #4 End after this year / Add a year + F3 invitation filter + schedule-anchor fix | `feature/schedule-end-and-add-year` | `bursary_accounts.schedule_end_year` | D-5 |
 | **T5** | #5 show-on-portal on the home page + default and backfill | `fix/portal-home-respects-show-on-portal` | data migration (backfill) | D-2 |
 | **T6** | #6 standing synopsis | `feature/standing-synopsis` | new table `account_synopsis_entries` + RLS | D-6, D-7 |
-| **T7** | F2 rolling-over dates on future schedule years | `fix/schedule-rolling-over-dates` | data migration (backfill SCHEDULED rows) | **D-1** |
+| **T7** | F2 rolling-over dates on future schedule years | `fix/schedule-rolling-over-dates` | data migration (backfill SCHEDULED rows) | D-1 (answered) |
 | **T8** | Toolkit: footer date format, A9 invariant vs ended schedules, seed the standing synopsis, re-plan with new defaults | `chore/gt-migration-toolkit` (local, then push per G1) | — | T4, T6 merged |
 
 **Merge order: T1 → T2 → T3 → T4 → T5 → T6 → T7 → T8.** T1 and T2 can be built in parallel. After that, go one at a time, because the files overlap:
@@ -153,6 +162,17 @@ Rebase each branch on fresh staging after the previous one merges (merge `origin
 **Accept.** The TS-NOWS01 test family on rehearsal sees three schedules and no "No invitation found" card. A fresh applicant with no invitation still sees the card.
 
 **Blast radius.** Display only. Prod: the 2 active accounts' families stop seeing the card if they currently do.
+
+**F4 · "Application" on the family's side.** Family-facing text only; the admin `ScheduleGrid` heading (`src/components/admin/schedule-grid.tsx:127`) stays "Assessment Schedule".
+- `src/components/portal/portal-nav.tsx:100` nav label → "Application Schedule" (and its doc comments, 66 and 202).
+- `src/app/(portal)/schedule/page.tsx:28` metadata title, `:60` heading, `:63` intro ("your assessment schedule" → "your application schedule").
+- `src/components/portal/schedule-calendar.tsx:47` aria-label → "bursary application schedule".
+- `src/lib/bursary-accounts/portal-schedule.ts:84` `current: "This year's application"`. Leave `active` / `greyed` as they are (§0 update).
+- Grep `(portal)` and `components/portal` for any other family-visible "assessment schedule" / "This year's assessment". Update `portal-nav-schedule.test.ts:34` and the portal-schedule tests.
+
+**F5 · T&Cs on the home page.** Today the T&Cs PDF (`TERMS_AND_CONDITIONS_PATH`, `src/lib/portal/terms.ts`, version 2026-10) is reachable only from `/help` and from the "New to bursary applications?" card, which shows only to invited-not-started parents. Add one quiet link ("Terms & Conditions", opens the PDF) rendered in **every** home-page state, using `TERMS_AND_CONDITIONS_LABEL`. Keep it small: Phase 5 (§8) will redesign the home page.
+
+**Accept (F4/F5).** As the TS-NOWS01 test family on rehearsal: the menu and `/schedule` say "Application Schedule"; the current row says "This year's application"; the home page shows a T&Cs link that opens the PDF. As an admin, the account page still says "Assessment Schedule".
 
 ---
 
@@ -412,7 +432,7 @@ Write the policies **in this migration**, using the patterns in `20260606210000_
 - Those values win over everything else in the home page's date order (`schedule-home.ts:17-23, 149-171`), so the RA (rolling-over) window code (`src/lib/rounds/round-scenario.ts:8-13, 107-115`, default 12 Apr → 22 May) is never reached.
 - Award news shows only when `roundId` is set (year 1). Future years show "—", which is correct until those rounds exist.
 
-**Change (when D-1 is answered).**
+**Change (D-1 answered 12 Oct: open 15 April, close 21 May).** Set the `round-scenario.ts` RA default to 15 Apr → 21 May (it's 12 Apr → 22 May today). For academic year `YYYY-(YY+1)` the dates fall in spring `YYYY`: 2027-28 → `availableOn` 2027-04-15, `requiredBy` 2027-05-21.
 - `planSchedule`: year 1 keeps the award round's dates. Years ≥2 use the rolling-over window of the round they will fall in: the award round's `RoundWindow` for scenario `RA` if set, else her D-1 dates, else the `round-scenario.ts` RA default. Each is shifted to that year. Put her window into `round-scenario.ts` as the RA default if she gives fixed dates; it is a per-round setting already editable on the Rounds page (`saveRoundWindowsAction`, `rounds/actions.ts:433`).
 - Data migration: re-date future `SCHEDULED` rows with `scheduleYear ≥ 2` and `round_id IS NULL`. Name it in the PR. Prod: about 7 rows today. Rehearsal: re-run after deploy.
 
@@ -452,20 +472,20 @@ Write the policies **in this migration**, using the patterns in `20260606210000_
 
 | Day | Work |
 |---|---|
-| 0 | Git hygiene G1–G6 (with OK) · T1 built and merged (can start before approval: licence fix) |
+| 0 (Mon 12 Oct) | Approved. Git hygiene G1 · plan merged (#432) |
+| 1 (Tue 13 Oct) | T1 (F1 + F4 + F5) |
 | 1–2 | T2 · T3 started |
 | 3 | T3 merged · batch 1 (T1+T2) to rehearsal, email Charlotte |
 | 4–6 | T4 (largest: generation, two actions, invite filter, UI, tests) |
 | 6 | T5 |
 | 7 | Batch 2 (T3+T4+T5) to rehearsal, email Charlotte |
 | 7–8 | T6 |
-| 9 | T7 (if D-1 answered) · T8 |
-| 10 | Batch 3 to rehearsal, email Charlotte. **Promise met** |
+| 9 | T7 · T8 |
+| 10 (Mon 26 Oct) | Batch 3 to rehearsal, email Charlotte. **Promise met** |
 | after | Her sign-off → promotion (Brian) → live load (D-8) → invoice £1,100 |
 
 **Risks.**
 - **T4 is the risky one:** a wrong horizon or invite filter means a family is invited, or not, next spring. Mitigation: pure seams, the prod eligibility query in the PR, and a test family on rehearsal.
-- **D-1 may come late:** T7 slips without blocking the rest. The promise covers the six charged or fixed items; F2 is extra.
 - **Parallel worktree agents** have collided before (`feedback_parallel_agents_worktree_cwd`): build tranches one at a time and verify each PR's file list.
 
 ---
@@ -477,3 +497,4 @@ Write the policies **in this migration**, using the patterns in `20260606210000_
 - Reports school filter. T2 splits by school inside the section instead.
 - Account-level reporting of ended schedules (`reports.ts:612-669` computes years remaining from the final school year, not the schedule). Note it if she asks.
 - Year 14 / beyond the natural horizon: refused by design.
+- **Phase 5, the "Parent View" redesign** (her workbook, 12 Oct, thread `1a12f98bb30f54cf`). Quoted 13 Oct at £1,300 (Home, My Bursary Application(s), My Application(s) Schedule, Help form to the fees inbox, My Details); Paused Assessment page parked. Awaiting her decision, and it starts only after Phase 4 is on migration staging. That quote also lists two licence items for the home page (remove "Your bursary portal is ready"; guidance sections always visible): build those with Phase 5, not here. The workbook holds a real family's personal and bank data: never commit it.
