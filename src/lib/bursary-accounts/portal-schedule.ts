@@ -81,7 +81,7 @@ export interface BuildPortalScheduleParams {
 }
 
 const STATE_LABELS: Record<PortalScheduleRowState, string> = {
-  current: "This year's assessment",
+  current: "This year's application",
   active: "Scheduled",
   greyed: "Outside your award",
 };

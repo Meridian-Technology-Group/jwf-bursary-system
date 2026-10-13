@@ -63,7 +63,7 @@ export interface PortalNavItem {
  * is directed exactly where it needs to be without cluttering the interface.
  *
  * When `hasSchedule` is true (the family has an ACTIVE bursary account with ≥1
- * portal-visible schedule entry — gap F2) an "Assessment Schedule" item links to
+ * portal-visible schedule entry — gap F2) an "Application Schedule" item links to
  * the standing, read-only Year 6 → Year 13 calendar (`/schedule`). It is shown
  * ONLY for active, scheduled families — the same conditional-visibility
  * mechanism as Missing Documents — so first-year applicants never see it.
@@ -97,7 +97,7 @@ export function buildPortalNav(
     ...(hasSchedule
       ? [
           {
-            label: "Assessment Schedule",
+            label: "Application Schedule",
             href: "/schedule",
             icon: CalendarRange,
             match: "/schedule",
@@ -199,7 +199,7 @@ interface PortalNavProps {
   needsDocs?: boolean;
   /**
    * Whether the family has an ACTIVE account with a portal-visible schedule
-   * (gap F2). Gates the "Assessment Schedule" calendar item.
+   * (gap F2). Gates the "Application Schedule" calendar item.
    */
   hasSchedule?: boolean;
 }

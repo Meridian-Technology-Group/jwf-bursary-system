@@ -148,7 +148,7 @@ export async function getPortalScheduleForUser(
 
 /**
  * Gap F2 — does the signed-in user have an ACTIVE account with ≥1 portal-visible
- * schedule entry? Drives the conditional "Assessment Schedule" nav item: the
+ * schedule entry? Drives the conditional "Application Schedule" nav item: the
  * calendar link is shown ONLY to ACTIVE families that actually have a schedule.
  *
  * Defined as "the account `getPortalScheduleForUser` would load has ≥1

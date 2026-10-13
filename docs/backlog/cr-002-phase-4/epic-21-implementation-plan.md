@@ -92,13 +92,13 @@ Mark each answered with date and source before building the tranche that needs i
 |---|---|---|---|---|
 | **D-1** | Rolling-over years: which dates should the family see? | Charlotte | **ANSWERED 12 Oct:** open 15 April, close 21 May, every rolling-over year | T7 |
 | **D-2** | The show-on-portal fix: make the home page obey the tick. Today the tick defaults on for years 1–2 only, so obeying it would **hide years 3+ from every family**. Proposal: default the tick **on for every year**, so it becomes a "hide this year" switch, and backfill existing rows | Charlotte, then Brian (prod backfill) | **CONFIRMED 12 Oct** (her "Outside your award" screenshot; Brian's reply promised it). Default on for all years + backfill; the prod backfill still needs Brian's approval in the PR | T5 |
-| **D-3** | Should the gap-code picker in the assessment list codes in ranking order? (asked 11 Oct, unanswered) | Charlotte | Keep the current order (`sortOrder`); ranking is its own column | T2 (picker only) |
-| **D-4** | Previous-year links for an ASSESSOR: last year's application is usually not assigned to them, so RLS and the `[id]/layout.tsx` assignment redirect hide or bounce it | Brian | Show links only where the viewer can open the target (ADMIN/VIEWER always; ASSESSOR when assigned). No RLS change | T3 |
-| **D-5** | After "End after this year", does the account stay ACTIVE through the funded year (closed later with a reason, as today), or close immediately? | Charlotte | Stays ACTIVE; closes by the existing Close action or auto-close when the last row completes | T4 |
-| **D-6** | Standing synopsis: on a re-lock (revert, then lock again), replace that year's entry or add another? Can staff edit or delete their own notes? | Brian (Charlotte informed) | One entry per assessment, replaced on re-lock; notes editable by ADMIN, never deleted; every change audited | T6 |
-| **D-7** | Retention: is the standing synopsis kept verbatim at the close purge, like `Assessment.synopsis` (decision D-2 in `close-purge.ts`)? | Brian / DPO later | Same as the assessment synopsis (kept) | T6 |
-| **D-8** | Live load timing: before or after this sprint? | Brian + Charlotte | **After T4–T7 land**, so loaded accounts come out with the right defaults; otherwise a backfill per tranche (§4) | T5, T6, T7, T8 |
-| **D-9** | Scholarship-adjusted gap basis: `gap + scholarshipSpendBeforeVat × (1 + vatRate/100)`. This is the incl-VAT figure already quoted to her (−£851,622 → −£83,565) | Brian (confirm only) | As stated | T2 |
+| **D-3** | Should the gap-code picker in the assessment list codes in ranking order? (asked 11 Oct, unanswered) | Charlotte | **BUILD ON DEFAULT (Brian, 13 Oct):** keep the current order (`sortOrder`); ranking is its own column. Stated in the batch-1 email so she can object | T2 (picker only) |
+| **D-4** | Previous-year links for an ASSESSOR: last year's application is usually not assigned to them, so RLS and the `[id]/layout.tsx` assignment redirect hide or bounce it | Brian | **ACCEPTED 13 Oct:** show links only where the viewer can open the target (ADMIN/VIEWER always; ASSESSOR when assigned). No RLS change | T3 |
+| **D-5** | After "End after this year", does the account stay ACTIVE through the funded year (closed later with a reason, as today), or close immediately? | Charlotte | **BUILD ON DEFAULT (Brian, 13 Oct):** stays ACTIVE; closes by the existing Close action or auto-close when the last row completes. Stated in the batch-1 email so she can object before T4 merges | T4 |
+| **D-6** | Standing synopsis: on a re-lock (revert, then lock again), replace that year's entry or add another? Can staff edit or delete their own notes? | Brian (Charlotte informed) | **ACCEPTED 13 Oct:** one entry per assessment, replaced on re-lock; notes editable by ADMIN, never deleted; every change audited | T6 |
+| **D-7** | Retention: is the standing synopsis kept verbatim at the close purge, like `Assessment.synopsis` (decision D-2 in `close-purge.ts`)? | Brian / DPO later | **ACCEPTED 13 Oct:** same as the assessment synopsis (kept) | T6 |
+| **D-8** | Live load timing: before or after this sprint? | Brian + Charlotte | **DECIDED 13 Oct: hold the live load until T7 has merged**, so loaded accounts come out with the right defaults and no prod backfill is needed | T5, T6, T7, T8 |
+| **D-9** | Scholarship-adjusted gap basis: `gap + scholarshipSpendBeforeVat × (1 + vatRate/100)`. This is the incl-VAT figure already quoted to her (−£851,622 → −£83,565) | Brian (confirm only) | **ACCEPTED 13 Oct:** as stated | T2 |
 
 ---
 
@@ -152,6 +152,8 @@ Rebase each branch on fresh staging after the previous one merges (merge `origin
 ## §5 · Work packages
 
 ### T1 · WP-F1 — hide "No invitation found" for families with a schedule
+
+**Status: BUILT 13 Oct** on `fix/portal-home-no-invitation-box` (seam `src/lib/portal/home-state.ts` `portalHomeMain`). The quiet help line now renders in every home-page state and carries the direct T&Cs link. F4 also covers `(portal)/layout.tsx:66`, `queries/schedule.ts:151` (comments) and the `/schedule` intro line "each year's application opens".
 
 **Problem.** Migrated families (and any family between rounds) see a "No invitation found… If you believe this is an error" card under their schedule. `src/app/(portal)/page.tsx:613-632` is the final `else` of `application ? … : invitation ? … : …`, shown when both are null. Migrated applications are excluded from "the current application" by design (`PORTAL_APPLICATION = { migrationSource: null }`, `src/lib/applications/migration-source.ts:34`, used by `getCurrentApplicationForUser`, `src/lib/db/queries/applications.ts:701-732`).
 
@@ -470,19 +472,21 @@ Write the policies **in this migration**, using the patterns in `20260606210000_
 
 ## §7 · Timeline (working days from Charlotte's approval)
 
-| Day | Work |
-|---|---|
-| 0 (Mon 12 Oct) | Approved. Git hygiene G1 · plan merged (#432) |
-| 1 (Tue 13 Oct) | T1 (F1 + F4 + F5) |
-| 1–2 | T2 · T3 started |
-| 3 | T3 merged · batch 1 (T1+T2) to rehearsal, email Charlotte |
-| 4–6 | T4 (largest: generation, two actions, invite filter, UI, tests) |
-| 6 | T5 |
-| 7 | Batch 2 (T3+T4+T5) to rehearsal, email Charlotte |
-| 7–8 | T6 |
-| 9 | T7 · T8 |
-| 10 (Mon 26 Oct) | Batch 3 to rehearsal, email Charlotte. **Promise met** |
-| after | Her sign-off → promotion (Brian) → live load (D-8) → invoice £1,100 |
+Sprint planned 13 Oct. Day 1 is Tue 13 Oct; slack is about one day, held in T4.
+
+| Day | Date | Work | Done when |
+|---|---|---|---|
+| 0 | Mon 12 Oct | Approved. G1 · plan merged (#432) | — |
+| 1 | Tue 13 Oct | T1 (F1 + F4 + F5) | PR open |
+| 2 | Wed 14 Oct | T2 | PR open |
+| 3 | Thu 15 Oct | T3 · batch 1 (T1+T2) to rehearsal; email Charlotte (incl. D-3/D-5 defaults) | Batch 1 sent |
+| 4–6 | Fri 16 – Tue 20 Oct | T4 (largest: generation, two actions, invite filter, UI, tests) | PR open, prod eligibility count in body |
+| 6 | Tue 20 Oct | T5 (backfill needs Brian's approval) | PR open |
+| 7 | Wed 21 Oct | Batch 2 (T3+T4+T5) to rehearsal; email Charlotte | Batch 2 sent |
+| 7–8 | Wed 21 – Thu 22 Oct | T6 | PR open |
+| 9 | Fri 23 Oct | T7 · T8 | PRs open |
+| 10 | Mon 26 Oct | Batch 3 (T6+T7+T8) to rehearsal; email Charlotte. **Promise met** | — |
+| after | — | Her sign-off → promotion (Brian) → live load (D-8) → invoice £1,100 | — |
 
 **Risks.**
 - **T4 is the risky one:** a wrong horizon or invite filter means a family is invited, or not, next spring. Mitigation: pure seams, the prod eligibility query in the PR, and a test family on rehearsal.
