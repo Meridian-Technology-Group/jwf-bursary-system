@@ -82,7 +82,7 @@ export default async function SchedulePage() {
         your award</span> fall before your child started or after their final
         eligible year, or are not yet open. The year marked{" "}
         <span className="font-medium text-slate-600">This year&rsquo;s
-        assessment</span> is the one we&rsquo;ll contact you about next.
+        application</span> is the one we&rsquo;ll contact you about next.
       </p>
     </PortalPage>
   );
