@@ -292,6 +292,25 @@ Changes from the plan:
 
 ### T4 · WP-4 — End after this year / Add a year (+ F3, + anchor fix)
 
+**Status: BUILT 13 Oct** on `feature/schedule-end-and-add-year`. Migration `20261013180000_bursary_account_schedule_end_year`.
+
+**Pure decisions** (in `src/lib/bursary-accounts/schedule.ts`):
+- `effectiveHorizon`
+- `planEndAfterYear`
+- `planAddYear`
+- `findThisYearRow`
+- `scheduleEditControls`: decides the button states, from the same planners the actions use.
+- `roundDatesForAccount`: the anchor fix.
+
+**Invite filter (F3):** `reassessmentEligibleWhere` in `src/lib/bursary-accounts/reassessment-eligibility.ts`.
+
+**Prod check (13 Oct, read-only):** 2 ACTIVE accounts, both with a SCHEDULED 2027-28 row. The F3 filter drops no one on prod today.
+
+**Changes from the plan:**
+- **Audit entries:** both actions log against the **application** (entity `Application`), with the account id in the metadata, so they appear on that application's History tab. Account-level entries don't show there.
+- **Re-opening a CLOSED account on "Add a year":** done inline (status ACTIVE; `closedAt` and `closeReasonId` cleared), not through `reopenAccountForAssessmentYear`. That helper only reverses an automatic close. The close being reversed is kept in the audit metadata, and the `closedAt` doc comment in the schema now names this exception.
+- **Added year:** `manuallyCreated: true`.
+
 **Facts that shape the design.**
 
 1. **Deleting rows alone does not stick.** `generateSchedule` (`src/lib/bursary-accounts/schedule.ts:156-204`) inserts every missing `scheduleYear` up to the horizon. It is called by Regenerate (`schedule-actions.ts:78`) and by **every award lock**: `promoteToActiveAccount` (`account-promotion.ts:114`), called from `post-assessment-core.ts:221`.

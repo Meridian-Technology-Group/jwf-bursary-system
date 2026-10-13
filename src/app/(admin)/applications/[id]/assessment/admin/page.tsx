@@ -49,6 +49,11 @@ import { WatchOutNotesEditor } from "@/components/admin/watch-out-notes-editor";
 import { PreSystemHistoryEditor } from "@/components/admin/pre-system-history-editor";
 import { AnnualFeesOverrideEditor } from "@/components/admin/annual-fees-override-editor";
 import { CloseBursaryAccountDialog } from "@/components/admin/close-bursary-account-dialog";
+import { ScheduleEndAddControls } from "@/components/admin/schedule-end-add-controls";
+import {
+  resolveScheduleHorizon,
+  scheduleEditControls,
+} from "@/lib/bursary-accounts/schedule";
 import { getAllCloseReasons } from "@/lib/db/queries/reference-tables";
 import type { SiblingDetail } from "@/types/assessment-v2";
 import { schoolHasFeeTable, schoolName } from "@/lib/schools";
@@ -91,6 +96,7 @@ export default async function AssessmentAdminPage({ params }: Props) {
     accountStatus,
     closeReasons,
     accountFees,
+    scheduleControls,
   } = await withUserContext(user.id, user.role as RlsRole, async (tx) => {
     const app = await getApplicationWithDetails(tx, params.id);
     if (!app) {
@@ -105,6 +111,7 @@ export default async function AssessmentAdminPage({ params }: Props) {
         accountStatus: null,
         closeReasons: [],
         accountFees: null,
+        scheduleControls: null,
       };
     }
     const a = await getAssessment(tx, params.id);
@@ -128,6 +135,13 @@ export default async function AssessmentAdminPage({ params }: Props) {
             status: true,
             school: true,
             annualFeesOverride: true,
+            // Epic 21 #4 — End after this year / Add a year.
+            entryYearGroup: true,
+            firstAssessmentYear: true,
+            scheduleEntries: {
+              orderBy: { scheduleYear: "asc" },
+              select: { id: true, scheduleYear: true, academicYear: true, status: true, applicationId: true },
+            },
           },
         })
       : null;
@@ -141,6 +155,19 @@ export default async function AssessmentAdminPage({ params }: Props) {
     const schedule = app.bursaryAccountId
       ? await getPayableFeesScheduleRows(tx, app.bursaryAccountId)
       : [];
+    // Epic 21 #4 — ADMIN only; each button enabled only when its action would succeed.
+    const controls =
+      user.role === Role.ADMIN && account
+        ? scheduleEditControls({
+            rows: account.scheduleEntries,
+            applicationId: params.id,
+            roundAcademicYear: app.round.academicYear,
+            firstAssessmentYear: account.firstAssessmentYear,
+            naturalHorizon: resolveScheduleHorizon(account.entryYearGroup, undefined, account.school),
+            school: account.school,
+            accountClosed: account.status === "CLOSED",
+          })
+        : null;
     return {
       application: app,
       assessment: a,
@@ -151,6 +178,7 @@ export default async function AssessmentAdminPage({ params }: Props) {
       scheduleRows: schedule,
       accountStatus: account?.status ?? null,
       closeReasons: reasons,
+      scheduleControls: controls,
       // S9: shown where the school has no fee table (the OP partnering school),
       // or wherever an override has been set.
       accountFees:
@@ -224,24 +252,33 @@ export default async function AssessmentAdminPage({ params }: Props) {
             Siblings: <span className="text-slate-700">{siblingNames.join(", ")}</span>
           </span>
         )}
-        {/* Epic 18b — her April–May leavers window: close the ACTIVE account
-            with a structured reason. ADMIN only; hidden once closed. */}
-        {user.role === Role.ADMIN &&
-          accountStatus === "ACTIVE" &&
-          application.bursaryAccountId && (
-            <span className="ml-auto">
+        <span className="ml-auto flex flex-wrap items-center gap-2">
+          {accountStatus === "CLOSED" && (
+            <span className="rounded bg-slate-100 px-2 py-1 text-xs font-semibold uppercase tracking-wide text-slate-500">
+              Account closed
+            </span>
+          )}
+          {/* Epic 21 #4 — her conditional bursary: end the schedule after
+              this year, or add a year back. ADMIN only. */}
+          {scheduleControls && (
+            <ScheduleEndAddControls
+              applicationId={params.id}
+              end={scheduleControls.end}
+              add={scheduleControls.add}
+            />
+          )}
+          {/* Epic 18b — her April–May leavers window: close the ACTIVE account
+              with a structured reason. ADMIN only; hidden once closed. */}
+          {user.role === Role.ADMIN &&
+            accountStatus === "ACTIVE" &&
+            application.bursaryAccountId && (
               <CloseBursaryAccountDialog
                 bursaryAccountId={application.bursaryAccountId}
                 applicationId={params.id}
                 closeReasons={closeReasons}
               />
-            </span>
-          )}
-        {accountStatus === "CLOSED" && (
-          <span className="ml-auto rounded bg-slate-100 px-2 py-1 text-xs font-semibold uppercase tracking-wide text-slate-500">
-            Account closed
-          </span>
-        )}
+            )}
+        </span>
       </div>
 
       {/* Previous assessor's wizard notes (CALC-10) — read-only context. */}
