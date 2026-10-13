@@ -742,6 +742,10 @@ model GapReason {
   label           String
   isDeprecated    Boolean                   @default(false) @map("is_deprecated")
   sortOrder       Int                       @map("sort_order")
+  /// Epic 21 #2 — precedence as the main gap explanation (1 = highest).
+  /// When an assessment carries several gap codes, the lowest rank is the
+  /// "main gap" in exports and Reports. NULL = unranked (deprecated codes).
+  rank            Int?
   createdAt       DateTime                  @default(now()) @map("created_at") @db.Timestamptz(6)
   recommendations RecommendationGapReason[]
 

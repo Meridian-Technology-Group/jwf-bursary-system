@@ -7,6 +7,7 @@
  *   3. Income Bands
  *   4. Property Categories
  *   5. Reason Code Frequency
+ *   6. Gap (Epic 21: scholarship-adjusted gap + gap by main reason)
  *
  * Round is selected via URL search param ?roundId=... (defaults to active round).
  */
@@ -22,6 +23,7 @@ import {
   getIncomeBandDistribution,
   getPropertyCategoryDistribution,
   getReasonCodeFrequency,
+  getGapSummary,
   getFinalYearBursaries,
   getSiblingBursarySummary,
   type FinalYearBursaryRow,
@@ -32,6 +34,7 @@ import { HorizontalBarChart } from "@/components/admin/charts/horizontal-bar-cha
 import { RoundSelector } from "@/components/admin/charts/round-selector";
 import { entryAcademicYearLabelOrNull } from "@/lib/schools/academic-year";
 import { schoolName } from "@/lib/schools";
+import type { GapSummary, GapTotals } from "@/lib/reason-codes/gap-metrics";
 
 export const metadata: Metadata = {
   title: "Reports",
@@ -45,6 +48,7 @@ const SECTIONS = [
   { id: "income-bands", label: "Income Bands" },
   { id: "property-categories", label: "Property Categories" },
   { id: "reason-codes", label: "Reason Codes" },
+  { id: "gap", label: "Gap" },
   { id: "final-year-bursaries", label: "Final-Year Bursaries" },
   { id: "sibling-summary", label: "Sibling Summary" },
 ] as const;
@@ -230,6 +234,88 @@ function formatGBP(value: number | null): string {
   }).format(value);
 }
 
+// ─── Gap section (Epic 21 #1 + #2) ──────────────────────────────────────────
+
+function GapFigure({ label, value, hint }: { label: string; value: string; hint?: string }) {
+  return (
+    <div>
+      <dt className="text-xs text-slate-500">{label}</dt>
+      <dd className="mt-0.5 text-lg font-semibold tabular-nums text-primary-900">{value}</dd>
+      {hint && <p className="mt-0.5 text-xs text-slate-400">{hint}</p>}
+    </div>
+  );
+}
+
+function GapTotalsCard({ title, totals }: { title: string; totals: GapTotals }) {
+  return (
+    <div className="rounded-lg border border-slate-200 bg-slate-50 p-5">
+      <h3 className="text-sm font-semibold uppercase tracking-wide text-primary-900">{title}</h3>
+      <dl className="mt-4 grid grid-cols-2 gap-4">
+        <GapFigure label="Total gap" value={formatGBP(totals.gap)} />
+        <GapFigure label="Scholarship spend (incl VAT)" value={formatGBP(totals.scholarshipInclVat)} />
+        <GapFigure
+          label="Scholarship-adjusted gap"
+          value={formatGBP(totals.adjustedGap)}
+          hint="Gap with the scholarship added back"
+        />
+        <GapFigure
+          label="Accounts"
+          value={String(totals.accounts)}
+          hint={`${totals.accountsWithGap} with a gap · ${totals.accountsWithScholarship} with a scholarship`}
+        />
+      </dl>
+    </div>
+  );
+}
+
+function GapByReasonTable({ summary }: { summary: GapSummary }) {
+  const th = "px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500";
+  const td = "px-4 py-3 tabular-nums";
+  return (
+    <div className="overflow-x-auto rounded-lg border border-slate-200">
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="border-b border-slate-200 bg-slate-50">
+            <th className={`${th} w-14 text-left`}>Rank</th>
+            <th className={`${th} w-16 text-left`}>Code</th>
+            <th className={`${th} text-left`}>Main gap reason</th>
+            <th className={`${th} w-24 text-right`}>Accounts</th>
+            <th className={`${th} w-32 text-right`}>Total gap</th>
+            <th className={`${th} w-40 text-right`}>Scholarship-adjusted</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-slate-100">
+          {summary.byMainReason.map((row) => (
+            <tr key={row.code} className="hover:bg-slate-50">
+              <td className={`${td} text-xs font-medium text-slate-400`}>{row.rank ?? "—"}</td>
+              <td className={`${td} font-mono text-xs font-semibold text-primary-900`}>{row.code}</td>
+              <td className="px-4 py-3 text-slate-700">{row.label}</td>
+              <td className={`${td} text-right`}>{row.accounts}</td>
+              <td className={`${td} text-right`}>{formatGBP(row.gap)}</td>
+              <td className={`${td} text-right`}>{formatGBP(row.adjustedGap)}</td>
+            </tr>
+          ))}
+          <tr className="hover:bg-slate-50">
+            <td className={`${td} text-xs text-slate-400`}>—</td>
+            <td className={td} />
+            <td className="px-4 py-3 italic text-slate-500">No gap code</td>
+            <td className={`${td} text-right`}>{summary.noCode.accounts}</td>
+            <td className={`${td} text-right`}>{formatGBP(summary.noCode.gap)}</td>
+            <td className={`${td} text-right`}>{formatGBP(summary.noCode.adjustedGap)}</td>
+          </tr>
+        </tbody>
+        <tfoot>
+          <tr className="border-t border-slate-200 bg-slate-50 font-semibold text-slate-900">
+            <td className="px-4 py-3" colSpan={3}>Total</td>
+            <td className={`${td} text-right`}>{summary.totals.accounts}</td>
+            <td className={`${td} text-right`}>{formatGBP(summary.totals.gap)}</td>
+            <td className={`${td} text-right`}>{formatGBP(summary.totals.adjustedGap)}</td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+  );
+}
 
 // ─── Final-year bursaries table ───────────────────────────────────────────────
 
@@ -474,6 +560,7 @@ export default async function ReportsPage({ searchParams }: PageProps) {
     incomeBands,
     propertyCategories,
     reasonCodes,
+    gapSummary,
     finalYearBursaries,
     siblingSummary,
   ] = await withUserContext(
@@ -486,6 +573,7 @@ export default async function ReportsPage({ searchParams }: PageProps) {
         getIncomeBandDistribution(tx, selectedRoundId),
         getPropertyCategoryDistribution(tx, selectedRoundId),
         getReasonCodeFrequency(tx, selectedRoundId),
+        getGapSummary(tx, selectedRoundId),
         // Bursary accounts span rounds, so these two reports are not round-scoped.
         getFinalYearBursaries(tx),
         getSiblingBursarySummary(tx),
@@ -613,7 +701,37 @@ export default async function ReportsPage({ searchParams }: PageProps) {
         <ReasonCodeTable rows={reasonCodes} />
       </ReportSection>
 
-      {/* ── Section 6: Active bursaries approaching final year ───────────────── */}
+      {/* ── Section 6: Gap (Epic 21 #1 + #2) ───────────────────────────────── */}
+      <ReportSection id="gap" title="Gap">
+        <p className="mb-4 text-sm text-slate-500">
+          The gap is confirmed minus recommended payable fees (negative when the
+          family pays less than recommended). The scholarship-adjusted gap adds
+          the scholarship spend (incl VAT) back, because scholarship costs the
+          bursary fund nothing. Each account is counted once, under its
+          highest-ranked gap code (ranking set in Settings).
+        </p>
+        {gapSummary.totals.accounts > 0 ? (
+          <div className="space-y-4">
+            <GapTotalsCard title="All schools" totals={gapSummary.totals} />
+            {gapSummary.bySchool.length > 1 && (
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                {gapSummary.bySchool.map((s) => (
+                  <GapTotalsCard
+                    key={s.school}
+                    title={schoolName(s.school, "short") || s.school}
+                    totals={s}
+                  />
+                ))}
+              </div>
+            )}
+            <GapByReasonTable summary={gapSummary} />
+          </div>
+        ) : (
+          <NoDataPlaceholder height={160} />
+        )}
+      </ReportSection>
+
+      {/* ── Section 7: Active bursaries approaching final year ───────────────── */}
       <ReportSection
         id="final-year-bursaries"
         title="Active bursaries approaching final year"
@@ -626,7 +744,7 @@ export default async function ReportsPage({ searchParams }: PageProps) {
         <FinalYearTable rows={finalYearBursaries} />
       </ReportSection>
 
-      {/* ── Section 7: Sibling bursary summary ──────────────────────────────── */}
+      {/* ── Section 8: Sibling bursary summary ──────────────────────────────── */}
       <ReportSection id="sibling-summary" title="Sibling bursary summary">
         <p className="mb-4 text-sm text-slate-500">
           Families with two or more linked bursary accounts, with combined
