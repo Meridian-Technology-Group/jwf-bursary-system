@@ -11,14 +11,19 @@
  *     Schedule" button) so re-awarding never duplicates rows and never rewrites
  *     a RECEIVED year.
  *
- * Date policy (D19 default): each future year's `availableOn`/`requiredBy`
- * derive from the award round's open/close dates, shifted forward one academic
- * year per schedule year. Epic 03 owns the per-round date model; when a future
+ * Date policy: Year 1 (the award year) carries the award round's open/close
+ * dates. Every later year is a rolling-over year, so it carries the
+ * rolling-over window for its academic year (`scheduleDatesForYear`; Epic 21
+ * F2, D-1: 15 April → 21 May). It used to shift the award round's dates, which
+ * gave rolling-over families the new-applicant dates every year. Epic 03 owns the per-round date model; when a future
  * year is materialised into a real Round the entry is linked via `roundId` and
  * the round's own dates take over. Until then these are the planned dates.
  *
- * Show/Hide on portal (illustration default): the current/next schedule year is
- * shown; far-future years are hidden until they approach.
+ * Show/Hide on portal (Epic 21 #5, D-2): every year of the award is shown by
+ * default, and the tick is the admin's "hide this year from the family"
+ * switch. It governs the portal home page and the calendar alike. (It used to
+ * default on for years 1–2 only, which hid years 3+ from every family once the
+ * home page obeyed it.)
  *
  * Epic 21 #4: an ADMIN can end the schedule after a year (a conditional
  * bursary) or add a year back. The account's `scheduleEndYear` caps the
@@ -37,6 +42,7 @@ import {
 // Single source of truth for group → school-year (CH-26 added Y8/Y10/Y11/Y13);
 // OTHER / null / unrecognised → null and the caller falls back to the default.
 import { schoolYearForEntryYearGroup as schoolYearForGroup } from "@/lib/assessment/schooling-years";
+import { resolveRoundScenario } from "@/lib/rounds/round-scenario";
 
 /**
  * The final school year a bursary can run to at Trinity and Whitgift (Year 13 /
@@ -46,9 +52,6 @@ export const FINAL_ELIGIBLE_SCHOOL_YEAR = 13;
 
 /** Hard ceiling on generated years, so a bad entry-year never explodes the grid. */
 export const MAX_SCHEDULE_YEARS = 8;
-
-/** How many future years (incl. the award year) are shown on the portal by default. */
-const DEFAULT_PORTAL_VISIBLE_YEARS = 2;
 
 /**
  * D19 horizon: number of assessment years to generate, counting the award year
@@ -216,6 +219,34 @@ export interface PlannedScheduleEntry {
   showOnPortal: boolean;
 }
 
+/**
+ * Epic 21 F2 (D-1) — the planned dates for one schedule year. Year 1 keeps
+ * the award round's dates; later years take the rolling-over (RA) window of
+ * their own academic year: 2027-28 → 15/04/2027–21/05/2027. Unparseable award
+ * years fall back to shifting the award round's dates (the old behaviour).
+ */
+export function scheduleDatesForYear(params: {
+  awardStartYear: number | null;
+  awardOpenDate: Date | null;
+  awardCloseDate: Date | null;
+  scheduleYear: number;
+}): { availableOn: Date | null; requiredBy: Date | null } {
+  const offset = params.scheduleYear - 1;
+  if (offset === 0 || params.awardStartYear == null) {
+    return {
+      availableOn: shiftYears(params.awardOpenDate, offset),
+      requiredBy: shiftYears(params.awardCloseDate, offset),
+    };
+  }
+  const ra = resolveRoundScenario({
+    applicationType: "ROLLING_OVER",
+    roundStartYear: params.awardStartYear + offset,
+    // Unused for RA: its window depends only on the round's year.
+    onDate: new Date(0),
+  });
+  return { availableOn: ra.opensOn, requiredBy: ra.submitBy };
+}
+
 /** Shifts a date forward by `n` whole years (null-safe). */
 function shiftYears(date: Date | null, n: number): Date | null {
   if (!date) return null;
@@ -254,10 +285,14 @@ export function planSchedule(params: {
     rows.push({
       scheduleYear,
       academicYear,
-      availableOn: shiftYears(awardOpenDate, i),
-      requiredBy: shiftYears(awardCloseDate, i),
-      // Current + next year shown; far-future hidden until they approach.
-      showOnPortal: scheduleYear <= DEFAULT_PORTAL_VISIBLE_YEARS,
+      ...scheduleDatesForYear({
+        awardStartYear: startYear,
+        awardOpenDate,
+        awardCloseDate,
+        scheduleYear,
+      }),
+      // Epic 21 #5 (D-2): every year shown; the admin hides one by unticking.
+      showOnPortal: true,
     });
   }
   return rows;
