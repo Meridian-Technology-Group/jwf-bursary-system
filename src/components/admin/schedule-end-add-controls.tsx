@@ -156,7 +156,7 @@ export function ScheduleEndAddControls({
                 ? "Saving…"
                 : mode === "end"
                   ? "End schedule"
-                  : "Add year"}
+                  : "Add a year"}
             </Button>
           </DialogFooter>
         </DialogContent>

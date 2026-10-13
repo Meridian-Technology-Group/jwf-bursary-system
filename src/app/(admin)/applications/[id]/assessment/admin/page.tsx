@@ -602,7 +602,7 @@ export default async function AssessmentAdminPage({ params }: Props) {
                       link.kind === "current" && "bg-accent-50/60"
                     )}
                   >
-                    <td className="px-3 py-2 font-mono text-xs font-semibold text-primary-900">
+                    <td className="whitespace-nowrap px-3 py-2 font-mono text-xs font-semibold text-primary-900">
                       {link.kind === "link" ? (
                         <Link
                           href={link.href}
@@ -614,7 +614,7 @@ export default async function AssessmentAdminPage({ params }: Props) {
                         row.academicYear
                       )}
                       {link.kind === "current" && (
-                        <span className="ml-1.5 rounded bg-accent-100 px-1 py-0.5 font-sans text-[10px] font-medium text-accent-800">
+                        <span className="ml-1.5 inline-block whitespace-nowrap rounded bg-accent-100 px-1 py-0.5 font-sans text-[10px] font-medium text-accent-800">
                           This year
                         </span>
                       )}
