@@ -253,6 +253,16 @@ These are mislabels found during the survey, are licence fixes, and belong in a 
 
 ### T3 · WP-3 — links to previous years
 
+**Status: BUILT 13 Oct** on `feature/previous-year-links`. The pure core is `src/lib/assessment/previous-year.ts` (`isEarlierAcademicYear`, `pickPreviousYear`, `scheduleRowLink`).
+
+Links are in all six places listed below.
+
+Changes from the plan:
+- `getPreviousAssessment` now picks the latest **earlier** academic year. It is no longer the latest-submitted application.
+- The watch-out callout is restricted to earlier years too.
+- **`previousYearApplicationQuery` is deliberately unchanged.** It runs only when a re-assessment is created for a new round, which is always the newest year, so it can't pick a later year. Leaving it alone keeps the rollover path stable.
+- `ScheduleGrid` links resolve through the viewer's own RLS read, so the D-4 rule holds even where a schedule row has a hard `applicationId`.
+
 **Facts.**
 - The admin tab (`src/app/(admin)/applications/[id]/assessment/admin/page.tsx`) renders an inline "Payable-fees schedule" table (446-547) from `getPayableFeesScheduleRows` (`src/lib/db/queries/payable-fees-schedule.ts`). That query already matches each schedule row to an application (`entry.applicationId`, falling back to the academic year, 117-120), but drops the id from `PayableFeesScheduleTableRow` (17-36).
 - `ScheduleGrid` (`src/components/admin/schedule-grid.tsx`) is a different table on the Applicant Data tab. Its `ScheduleEntryRow` reduces `applicationId` to `hasApplication`.

@@ -31,6 +31,8 @@ export interface PreSystemHistoryRow {
 export interface YoyHistoryDisplayRow {
   academicYear: string
   source: 'MANUAL' | 'SYSTEM'
+  /** Epic 21 #3 — the year's application, for the link; null on manual rows. */
+  applicationId: string | null
   netIncome: number | null
   savings: number | null
   propertyEquity: number | null
@@ -100,6 +102,7 @@ export function mergeYoyHistory(
     .map((r) => ({
       academicYear: r.academicYear,
       source: 'MANUAL' as const,
+      applicationId: null,
       netIncome: r.netIncome ?? null,
       savings: r.savings ?? null,
       propertyEquity: r.propertyEquity ?? null,
@@ -118,6 +121,7 @@ export function mergeYoyHistory(
   const system: YoyHistoryDisplayRow[] = systemRows.map((r) => ({
     academicYear: r.academicYear,
     source: 'SYSTEM' as const,
+    applicationId: r.applicationId,
     netIncome: r.totalHouseholdNetIncome,
     savings: r.totalCashSavings,
     propertyEquity: r.totalPropertyEquity,

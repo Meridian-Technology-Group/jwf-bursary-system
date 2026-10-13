@@ -14,6 +14,7 @@
  */
 
 import * as React from "react";
+import Link from "next/link";
 import { TrendingDown, TrendingUp, Minus, Info } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { PreviousAssessmentSnapshot } from "@/lib/db/queries/reassessment";
@@ -266,6 +267,13 @@ export function YearComparison({
         </h3>
         <p className="mt-0.5 text-xs text-slate-500">
           Previous application: {previous.applicationReference} ({previous.academicYear})
+          {/* Epic 21 #3 — open last year's assessment. */}
+          <Link
+            href={`/applications/${previous.applicationId}/assessment`}
+            className="ml-2 font-medium text-primary-700 underline underline-offset-2 hover:text-primary-900"
+          >
+            Last year&apos;s assessment →
+          </Link>
         </p>
       </div>
 
