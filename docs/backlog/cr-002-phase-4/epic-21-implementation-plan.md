@@ -386,6 +386,14 @@ ALTER TABLE "bursary_accounts" ADD COLUMN "schedule_end_year" INTEGER;
 
 ### T5 · WP-5 — the show-on-portal tick governs the home page too
 
+**Status: BUILT 13 Oct** on `fix/portal-home-respects-show-on-portal`. Migration `20261013190000_schedule_show_on_portal_all_years`.
+
+**Change from the plan:** the backfill skips any row with a `SCHEDULE_SHOW_ON_PORTAL_TOGGLED` audit entry, so an admin's deliberate "hide" survives. Only untouched defaults are ticked.
+
+**Prod, checked read-only:** 5 of 9 rows hidden; all 5 would be ticked.
+
+The admin grid now reads "Shown to family" / "Hidden from family".
+
 **Facts.**
 - `showOnPortal` is filtered only in `getPortalScheduleForUser` (`src/lib/db/queries/schedule.ts:127-131`), which serves the `/schedule` calendar and the nav gate.
 - The home page query `getScheduleHomeForUser` (190-313) ignores it.
