@@ -294,6 +294,8 @@ Changes from the plan:
 
 **Status: BUILT 13 Oct** on `feature/schedule-end-and-add-year`. Migration `20261013180000_bursary_account_schedule_end_year`.
 
+**Follow-up (13 Oct, `fix/schedule-labels-and-badge`):** the "This year" badge no longer wraps, and the pre-system history button now reads "Add pre-system row" so it isn't mistaken for the schedule's "Add a year" (`follow-ups.md`).
+
 **Pure decisions** (in `src/lib/bursary-accounts/schedule.ts`):
 - `effectiveHorizon`
 - `planEndAfterYear`

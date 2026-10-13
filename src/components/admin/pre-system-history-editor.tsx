@@ -80,7 +80,7 @@ export function PreSystemHistoryEditor({
           <div className="flex items-center gap-2">
             <Button variant="outline" size="sm" onClick={addRow}>
               <Plus className="mr-1 h-3.5 w-3.5" aria-hidden="true" />
-              Add year
+              Add pre-system row
             </Button>
             <Button size="sm" onClick={save} disabled={saving || !dirty}>
               <Save className="mr-1 h-3.5 w-3.5" aria-hidden="true" />
