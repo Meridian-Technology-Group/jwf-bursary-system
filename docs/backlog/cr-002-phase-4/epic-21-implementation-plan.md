@@ -408,6 +408,21 @@ ALTER TABLE "bursary_accounts" ADD COLUMN "schedule_end_year" INTEGER;
 
 ### T6 · WP-6 — standing synopsis on the admin page
 
+**Status: BUILT 13 Oct** on `feature/standing-synopsis`. Migration `20261013200000_account_synopsis_entries` (new table plus RLS: staff read; ADMIN and ASSESSOR insert/update; no DELETE for `app_user`).
+
+**Where the code is:**
+- Core: `src/lib/bursary-accounts/standing-synopsis.ts`.
+- Read path: `src/lib/db/queries/account-synopsis.ts`.
+- Notes: `account-synopsis-actions.ts`.
+- Card: `account-synopsis-card.tsx`.
+
+**Additions to the plan:**
+- **GDPR cascade.** `purgeApplication` now deletes the lead's synopsis entries. The cascade scrubs accounts but doesn't delete them, so the entries would otherwise outlive an erasure.
+- **v1 path.** Prod held no v1 assessments on 13 Oct, so the legacy v1 outcome path is commented, not hooked.
+- **Audit.** Note actions log against the application, so they appear on its History tab.
+
+**Prod backfill (2 locked awards).** Not written yet. It's optional and offered in the PR.
+
 **Facts.**
 - `Assessment.synopsis` is per year, plain text, autosaved by `saveSynopsis` (`assessment/checklist-actions.ts:31-70`; ADMIN/ASSESSOR; no status guard; audits `ASSESSMENT_SYNOPSIS_SAVE`).
 - All award locks go through `setPostAssessmentFinalState` (`src/lib/applications/post-assessment-core.ts:123-320`), one transaction (137-280). `isAwardLock` is at 173 and the lifecycle write at 259. It is called by the award form and by `bulkLockRolledOverAction`. A revert (`revertPostAssessmentState`, 329-379) followed by a re-lock calls the core again.
