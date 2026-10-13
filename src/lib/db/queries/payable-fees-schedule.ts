@@ -17,6 +17,12 @@ import { AWARD_FUND_LABELS } from "@/lib/assessment/award-fund";
 export interface PayableFeesScheduleTableRow {
   scheduleYear: number;
   academicYear: string;
+  /**
+   * Epic 21 #3 — the year's application (matched by link, else by round year),
+   * for the "door" to previous years. Null for years with no application, or
+   * one the viewer cannot read under RLS (an ASSESSOR's unassigned years, D-4).
+   */
+  applicationId: string | null;
   /** "Year 7" etc.; null when the entry year-group gives no deterministic base. */
   schoolYearLabel: string | null;
   /** The year's YoY reason-code labels (from its recommendation), workbook order. */
@@ -113,7 +119,7 @@ export async function getPayableFeesScheduleRows(
   const bursaryStatus = account.status === "ACTIVE" ? "Active" : "Closed";
 
   const rows: PayableFeesScheduleTableRow[] = account.scheduleEntries.map(
-    (entry, idx) => {
+    (entry) => {
       const app =
         (entry.applicationId ? appById.get(entry.applicationId) : null) ??
         appByYear.get(normaliseAcademicYear(entry.academicYear)) ??
@@ -150,7 +156,10 @@ export async function getPayableFeesScheduleRows(
       return {
         scheduleYear: entry.scheduleYear,
         academicYear: entry.academicYear,
-        schoolYearLabel: base != null ? `Year ${base + idx}` : null,
+        applicationId: app?.id ?? null,
+        // Epic 21 #4: from the row's own scheduleYear, not its position, so a
+        // gap left by an ended-then-added schedule never mislabels later rows.
+        schoolYearLabel: base != null ? `Year ${base + entry.scheduleYear - 1}` : null,
         reasonCodes,
         payableFees,
         deltaPayableFees: null, // filled in the pass below

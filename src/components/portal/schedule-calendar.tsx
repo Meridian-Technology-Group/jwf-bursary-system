@@ -44,7 +44,7 @@ export function ScheduleCalendar({ rows, finalYear = 13 }: ScheduleCalendarProps
   return (
     <ol
       className="space-y-2"
-      aria-label={`Year 6 to Year ${finalYear} bursary assessment schedule`}
+      aria-label={`Year 6 to Year ${finalYear} bursary application schedule`}
     >
       {rows.map((row) => {
         const isGreyed = row.state === "greyed";

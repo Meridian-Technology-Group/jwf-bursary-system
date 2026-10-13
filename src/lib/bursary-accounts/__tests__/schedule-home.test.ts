@@ -184,8 +184,9 @@ describe("buildScheduleHomeRows — dates", () => {
       today: TODAY,
       entries: [entry({})],
     });
-    expect(row.openingDate).toEqual(d("2027-04-12"));
-    expect(row.submissionDeadline).toEqual(d("2027-05-22"));
+    // Epic 21 D-1: the rolling-over default is 15 Apr → 21 May.
+    expect(row.openingDate).toEqual(d("2027-04-15"));
+    expect(row.submissionDeadline).toEqual(d("2027-05-21"));
     expect(row.awardCommunicationDate).toBeNull();
   });
 

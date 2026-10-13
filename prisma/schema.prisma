@@ -133,6 +133,12 @@ model BursaryAccount {
   /// assessment years generated on AWARD. NULL for legacy accounts created
   /// before the schedule landed.
   scheduleYears        Int?                   @map("schedule_years")
+  /// Epic 21 #4 — where an ADMIN ended the schedule ("End after this year"):
+  /// the last `scheduleYear` kept. NULL = the natural horizon (to Year 13, or
+  /// Year 11 at the OP partnering school). `generateSchedule` never plans past
+  /// it, so Regenerate and award locks cannot re-create an ended year.
+  /// "Add a year" moves it on, and clears it at the natural horizon.
+  scheduleEndYear      Int?                   @map("schedule_end_year")
   benchmarkPayableFees Decimal?               @map("benchmark_payable_fees") @db.Decimal(10, 2)
   leadApplicantId      String                 @map("lead_applicant_id") @db.Uuid
   status               BursaryAccountStatus   @default(ACTIVE)
@@ -143,7 +149,10 @@ model BursaryAccount {
   /// (`reopenAccountForAssessmentYear`, Epic 13 / C1, D13-2) clears it and
   /// returns the account to ACTIVE, because the completion that triggered the
   /// auto-close has itself been withdrawn. That reversal only ever undoes an
-  /// automatic close, and only while no outcome has been set. Nothing else may
+  /// automatic close, and only while no outcome has been set. Two further
+  /// re-openings are deliberate ADMIN decisions: a re-award of a CLOSED
+  /// account (`promoteToActiveAccount`, D18) and "Add a year" on a CLOSED
+  /// account (Epic 21 #4, audited with the previous close). Nothing else may
   /// rewrite this field. `Application.closedAt` mirrors this rule.
   closedAt             DateTime?              @map("closed_at") @db.Timestamptz(6)
   /// Epic 18b — why the account was closed manually (her April–May leavers
@@ -172,6 +181,7 @@ model BursaryAccount {
   siblingLinks         SiblingLink[]
   contacts             Contact[]
   scheduleEntries      BursaryScheduleEntry[]
+  synopsisEntries      AccountSynopsisEntry[]
 
   @@index([leadApplicantId])
   @@map("bursary_accounts")
@@ -575,6 +585,8 @@ model Assessment {
   application                   Application           @relation(fields: [applicationId], references: [id], onDelete: Cascade)
   assessor                      Profile               @relation("AssessmentAssessor", fields: [assessorId], references: [id])
   recommendation                Recommendation?
+  /// Epic 21 #6 — this year's entry in the account's standing synopsis.
+  accountSynopsisEntry          AccountSynopsisEntry?
 
   @@map("assessments")
 }
@@ -742,6 +754,10 @@ model GapReason {
   label           String
   isDeprecated    Boolean                   @default(false) @map("is_deprecated")
   sortOrder       Int                       @map("sort_order")
+  /// Epic 21 #2 — precedence as the main gap explanation (1 = highest).
+  /// When an assessment carries several gap codes, the lowest rank is the
+  /// "main gap" in exports and Reports. NULL = unranked (deprecated codes).
+  rank            Int?
   createdAt       DateTime                  @default(now()) @map("created_at") @db.Timestamptz(6)
   recommendations RecommendationGapReason[]
 
@@ -1520,6 +1536,42 @@ enum EmailTemplateType {
 enum BursaryAccountStatus {
   ACTIVE
   CLOSED
+}
+
+/// Epic 21 #6 (CR-002 Phase 4) — the account's standing synopsis: one timeline
+/// across every year of the bursary, shown at the top of the ASSESSMENT ADMIN
+/// tab (Charlotte, 11 Oct 2026: "the generic one that sustains all years").
+///
+/// YEAR entries are written at each award lock from that year's
+/// `Assessment.synopsis` (one per assessment, replaced on a re-lock, kept in
+/// step with later edits). NOTE entries are free-text notes staff add any time.
+/// Nobody deletes an entry (D-6); every change is audited. A child table, not a
+/// column on BursaryAccount, so writes never move the account's `updated_at`
+/// (the migration toolkit's rollback guard keys on it).
+model AccountSynopsisEntry {
+  id               String              @id @default(uuid()) @db.Uuid
+  bursaryAccountId String              @map("bursary_account_id") @db.Uuid
+  kind             AccountSynopsisKind
+  /// YEAR entries: the assessment they summarise (one each). NULL for NOTEs.
+  assessmentId     String?             @unique @map("assessment_id") @db.Uuid
+  /// YEAR entries: the academic year, e.g. "2026/27".
+  academicYear     String?             @map("academic_year")
+  body             String
+  /// NULL for system / migration writes.
+  createdById      String?             @map("created_by_id") @db.Uuid
+  createdAt        DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime            @updatedAt @map("updated_at") @db.Timestamptz(6)
+  bursaryAccount   BursaryAccount      @relation(fields: [bursaryAccountId], references: [id], onDelete: Cascade)
+  assessment       Assessment?         @relation(fields: [assessmentId], references: [id], onDelete: SetNull)
+
+  @@index([bursaryAccountId, createdAt])
+  @@map("account_synopsis_entries")
+}
+
+/// Epic 21 #6 — a standing-synopsis entry: a year's synopsis, or a staff note.
+enum AccountSynopsisKind {
+  YEAR
+  NOTE
 }
 
 /// Epic 10 — schedule-row type ("AnnualType" in the illustration). Extensible.

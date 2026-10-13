@@ -186,6 +186,14 @@ export const AUDIT_ACTIONS = {
   // Bursary-account forward schedule (Epic 10)
   SCHEDULE_REGENERATED: "SCHEDULE_REGENERATED",
   SCHEDULE_SHOW_ON_PORTAL_TOGGLED: "SCHEDULE_SHOW_ON_PORTAL_TOGGLED",
+  /** Epic 21 #6 — a staff note added to the account's standing synopsis. */
+  ACCOUNT_SYNOPSIS_NOTE_ADDED: "ACCOUNT_SYNOPSIS_NOTE_ADDED",
+  /** Epic 21 #6 — an ADMIN edited a standing-synopsis note. */
+  ACCOUNT_SYNOPSIS_NOTE_EDITED: "ACCOUNT_SYNOPSIS_NOTE_EDITED",
+  /** Epic 21 #4 — ADMIN ended the schedule after a year (conditional bursary). */
+  SCHEDULE_ENDED_AFTER_YEAR: "SCHEDULE_ENDED_AFTER_YEAR",
+  /** Epic 21 #4 — ADMIN added a year back to the schedule (may re-open the account). */
+  SCHEDULE_YEAR_ADDED: "SCHEDULE_YEAR_ADDED",
   /** Assessor/admin closed (withdrew) a bursary account at account level (gap F1). */
   BURSARY_ACCOUNT_WITHDRAWN: "BURSARY_ACCOUNT_WITHDRAWN",
   /**
@@ -364,6 +372,10 @@ const ACTION_COLOUR: Partial<Record<AuditAction, string>> = {
   [AUDIT_ACTIONS.NAME_REVEAL]: "bg-orange-400",
   [AUDIT_ACTIONS.SCHEDULE_REGENERATED]: "bg-blue-500",
   [AUDIT_ACTIONS.SCHEDULE_SHOW_ON_PORTAL_TOGGLED]: "bg-blue-500",
+  [AUDIT_ACTIONS.ACCOUNT_SYNOPSIS_NOTE_ADDED]: "bg-blue-500",
+  [AUDIT_ACTIONS.ACCOUNT_SYNOPSIS_NOTE_EDITED]: "bg-blue-500",
+  [AUDIT_ACTIONS.SCHEDULE_ENDED_AFTER_YEAR]: "bg-orange-400",
+  [AUDIT_ACTIONS.SCHEDULE_YEAR_ADDED]: "bg-blue-500",
   [AUDIT_ACTIONS.BURSARY_ACCOUNT_WITHDRAWN]: "bg-red-400",
   [AUDIT_ACTIONS.BURSARY_ACCOUNT_CLOSED]: "bg-red-400",
   [AUDIT_ACTIONS.BURSARY_ACCOUNT_FEES_OVERRIDE_UPDATED]: "bg-blue-500",

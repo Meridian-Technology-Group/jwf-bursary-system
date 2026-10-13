@@ -10,7 +10,10 @@
  *  | NA_CURRENT      | NEW, this year  | any time (20 Aug – 19 Aug) | previous/current by the 12 Apr rule |
  *  | NA_NEXT_WINTER  | NEW, next year  | 10 Nov – 11 Apr     | PREVIOUS (tax year not yet ended) |
  *  | NA_NEXT_SPRING  | NEW, next year  | 12 Apr – 19 Aug     | CURRENT (tax year just ended)     |
- *  | RA              | ROLLING_OVER    | 12 Apr – 22 May     | CURRENT                            |
+ *  | RA              | ROLLING_OVER    | 15 Apr – 21 May     | CURRENT                            |
+ *
+ * Epic 21 D-1 (her 12 Oct 2026 answer): every rolling-over year opens
+ * 15 April and closes 21 May (it was 12 Apr – 22 May).
  *
  * LA-4 (locked): the "approx. 10 days after tax-year end" boundary is a FIXED
  * 12 April cutover each year; admin-editable dates (RoundWindow rows) cover
@@ -31,6 +34,14 @@ export type RoundScenarioApplicationType = 'NEW' | 'ROLLING_OVER'
 /** LA-4 — the fixed tax-year cutover: 12 April. */
 export const TAX_YEAR_CUTOVER_MONTH = 3 // April (0-based)
 export const TAX_YEAR_CUTOVER_DAY = 12
+
+/**
+ * Epic 21 D-1 — the rolling-over window: 15 April → 21 May of the spring
+ * before the academic year (2027-28 → 15/04/2027–21/05/2027). Separate from
+ * the 12 April tax-year cutover (LA-4), which is unchanged.
+ */
+export const RA_OPENS_DAY = 15 // April
+export const RA_SUBMIT_BY_DAY = 21 // May
 
 /** The academic year boundary per Charlotte's NA-current window: 20 August. */
 export const ACADEMIC_YEAR_START_MONTH = 7 // August (0-based)
@@ -95,7 +106,7 @@ export interface RoundScenarioDefaults {
 }
 
 /**
- * Resolve the scenario + derived defaults. RA is fixed 12 Apr → 22 May of the
+ * Resolve the scenario + derived defaults. RA is fixed 15 Apr → 21 May of the
  * round's starting calendar year; NA windows follow her table with the LA-4
  * cutover splitting winter/spring for next-year applications.
  */
@@ -109,8 +120,8 @@ export function resolveRoundScenario(
       scenario: 'RA',
       // RA runs after the tax year ends, declaring the just-ended year.
       defaultTaxYear: academicYearTaxLabel(roundStartYear - 1),
-      opensOn: utcDate(roundStartYear, 3, 12), // 12 Apr
-      submitBy: utcDate(roundStartYear, 4, 22), // 22 May
+      opensOn: utcDate(roundStartYear, 3, RA_OPENS_DAY), // 15 Apr (D-1)
+      submitBy: utcDate(roundStartYear, 4, RA_SUBMIT_BY_DAY), // 21 May (D-1)
     }
   }
 

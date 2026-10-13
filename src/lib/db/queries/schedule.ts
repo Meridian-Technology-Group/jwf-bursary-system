@@ -25,6 +25,12 @@ export interface ScheduleEntryRow {
   showOnPortal: boolean;
   hasRound: boolean;
   hasApplication: boolean;
+  /**
+   * Epic 21 #3 — the year's application the VIEWER can open (linked, else
+   * matched by academic year), for the link to that year's assessment. Null
+   * when there is none, or when RLS hides it from this viewer (D-4).
+   */
+  applicationId: string | null;
 }
 
 /**
@@ -55,6 +61,17 @@ export async function getScheduleForAccount(
     },
   });
 
+  // Epic 21 #3 — only applications this viewer can read (RLS), keyed by id
+  // and by the academic year's start (rows are "2026-27", rounds "2026/27").
+  const visibleApps = await tx.application.findMany({
+    where: { bursaryAccountId },
+    select: { id: true, round: { select: { academicYear: true } } },
+  });
+  const visibleIds = new Set(visibleApps.map((a) => a.id));
+  const appByStartYear = new Map(
+    visibleApps.map((a) => [parseAcademicYearStart(a.round.academicYear), a.id])
+  );
+
   return entries.map((e) => ({
     id: e.id,
     scheduleYear: e.scheduleYear,
@@ -68,6 +85,10 @@ export async function getScheduleForAccount(
     showOnPortal: e.showOnPortal,
     hasRound: e.roundId != null,
     hasApplication: e.applicationId != null,
+    applicationId:
+      e.applicationId && visibleIds.has(e.applicationId)
+        ? e.applicationId
+        : (appByStartYear.get(parseAcademicYearStart(e.academicYear)) ?? null),
   }));
 }
 
@@ -148,7 +169,7 @@ export async function getPortalScheduleForUser(
 
 /**
  * Gap F2 — does the signed-in user have an ACTIVE account with ≥1 portal-visible
- * schedule entry? Drives the conditional "Assessment Schedule" nav item: the
+ * schedule entry? Drives the conditional "Application Schedule" nav item: the
  * calendar link is shown ONLY to ACTIVE families that actually have a schedule.
  *
  * Defined as "the account `getPortalScheduleForUser` would load has ≥1
@@ -200,6 +221,9 @@ export async function getScheduleHomeForUser(
       school: true,
       entryYearGroup: true,
       scheduleEntries: {
+        // Epic 21 #5: the show-on-portal tick governs the home page too, as
+        // it already does the calendar (`getPortalScheduleForUser`).
+        where: { showOnPortal: true },
         orderBy: { scheduleYear: "asc" },
         select: {
           scheduleYear: true,

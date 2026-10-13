@@ -14,6 +14,7 @@ import {
   School,
 } from "@prisma/client";
 import { deriveCurrentYearGroupNumber } from "@/lib/assessment/schooling-years";
+import { summariseGaps, type GapSummary } from "@/lib/reason-codes/gap-metrics";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -589,6 +590,48 @@ export async function getReasonCodeFrequency(
   }
 
   return Array.from(freqMap.values()).sort((a, b) => b.count - a.count);
+}
+
+// ─── getGapSummary ─────────────────────────────────────────────────────────────
+
+/**
+ * Epic 21 #1 + #2 — the Reports "Gap" section for one round: total gap,
+ * scholarship spend incl VAT, the scholarship-adjusted gap, per-school totals,
+ * and the gap counted once per account under its main (highest-ranked) gap
+ * code. The reduction is pure (`summariseGaps`, gap-metrics.ts).
+ */
+export async function getGapSummary(tx: Tx, roundId: string): Promise<GapSummary> {
+  const recs = await tx.recommendation.findMany({
+    where: { roundId },
+    select: {
+      gapAmount: true,
+      scholarshipSpendBeforeVat: true,
+      assessment: {
+        select: {
+          vatRate: true,
+          application: { select: { school: true } },
+        },
+      },
+      gapReasons: {
+        select: {
+          gapReason: {
+            select: { code: true, label: true, rank: true, sortOrder: true },
+          },
+        },
+      },
+    },
+  });
+
+  return summariseGaps(
+    recs.map((r) => ({
+      school: r.assessment.application.school,
+      gapAmount: r.gapAmount != null ? Number(r.gapAmount) : null,
+      scholarshipSpendBeforeVat:
+        r.scholarshipSpendBeforeVat != null ? Number(r.scholarshipSpendBeforeVat) : null,
+      vatRate: r.assessment.vatRate != null ? Number(r.assessment.vatRate) : null,
+      gapReasons: r.gapReasons.map((g) => g.gapReason),
+    }))
+  );
 }
 
 // ─── getFinalYearBursaries ─────────────────────────────────────────────────────

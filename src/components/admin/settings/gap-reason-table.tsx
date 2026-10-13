@@ -6,6 +6,11 @@
  * mechanics) — GapReason has the identical shape (code, label, isDeprecated,
  * sortOrder), minus the reason-code "category" grouping which doesn't apply
  * to gap reasons (Appendix E).
+ *
+ * Epic 21 #2 adds two columns: **Rank** (precedence as the main gap
+ * explanation — saving a taken rank moves the others down, see
+ * `planGapRanks`) and **List order** (`sortOrder`, the picker's display
+ * order). List order used to be edited under the "Status" header.
  */
 
 import * as React from "react";
@@ -39,11 +44,13 @@ function EditableRow({ row }: EditableRowProps) {
   const [code, setCode] = React.useState(String(row.code));
   const [label, setLabel] = React.useState(row.label);
   const [sortOrder, setSortOrder] = React.useState(String(row.sortOrder));
+  const [rank, setRank] = React.useState(row.rank != null ? String(row.rank) : "");
 
   function handleCancel() {
     setCode(String(row.code));
     setLabel(row.label);
     setSortOrder(String(row.sortOrder));
+    setRank(row.rank != null ? String(row.rank) : "");
     setError(null);
     setEditing(false);
   }
@@ -56,6 +63,7 @@ function EditableRow({ row }: EditableRowProps) {
     fd.set("label", label);
     fd.set("isDeprecated", String(row.isDeprecated));
     fd.set("sortOrder", sortOrder);
+    fd.set("rank", rank);
 
     startTransition(async () => {
       const result = await upsertGapReasonAction(fd);
@@ -74,6 +82,9 @@ function EditableRow({ row }: EditableRowProps) {
     fd.set("label", row.label);
     fd.set("isDeprecated", String(!row.isDeprecated));
     fd.set("sortOrder", String(row.sortOrder));
+    // Re-post the rank: the action re-ranks on every save (deprecating
+    // unranks; restoring leaves the code unranked until a rank is set).
+    fd.set("rank", row.rank != null ? String(row.rank) : "");
 
     startTransition(async () => {
       const result = await upsertGapReasonAction(fd);
@@ -86,10 +97,14 @@ function EditableRow({ row }: EditableRowProps) {
   if (!editing) {
     return (
       <TableRow className={row.isDeprecated ? "opacity-60" : undefined}>
+        <TableCell className="tabular-nums text-sm font-semibold text-primary-900">
+          {row.rank ?? <span className="text-slate-300">—</span>}
+        </TableCell>
         <TableCell className="font-mono text-sm font-semibold text-slate-600">
           {row.code}
         </TableCell>
         <TableCell className="text-sm text-slate-700 max-w-md">{row.label}</TableCell>
+        <TableCell className="tabular-nums text-sm text-slate-500">{row.sortOrder}</TableCell>
         <TableCell>
           {row.isDeprecated ? (
             <Badge variant="secondary" className="text-xs">
@@ -144,6 +159,18 @@ function EditableRow({ row }: EditableRowProps) {
       <TableCell>
         <Input
           type="number"
+          min={1}
+          value={rank}
+          onChange={(e) => setRank(e.target.value)}
+          className="h-8 text-sm w-16"
+          placeholder={row.isDeprecated ? "—" : "None"}
+          disabled={row.isDeprecated}
+          aria-label="Rank"
+        />
+      </TableCell>
+      <TableCell>
+        <Input
+          type="number"
           value={code}
           onChange={(e) => setCode(e.target.value)}
           className="h-8 text-sm w-20"
@@ -165,9 +192,10 @@ function EditableRow({ row }: EditableRowProps) {
           value={sortOrder}
           onChange={(e) => setSortOrder(e.target.value)}
           className="h-8 text-sm w-20"
-          aria-label="Sort order"
+          aria-label="List order"
         />
       </TableCell>
+      <TableCell />
       <TableCell>
         <div className="flex items-center gap-1">
           <Button
@@ -210,6 +238,7 @@ function AddGapReasonRow({ onDone }: { onDone: () => void }) {
   const [code, setCode] = React.useState("");
   const [label, setLabel] = React.useState("");
   const [sortOrder, setSortOrder] = React.useState("");
+  const [rank, setRank] = React.useState("");
   const [error, setError] = React.useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
@@ -220,6 +249,7 @@ function AddGapReasonRow({ onDone }: { onDone: () => void }) {
     fd.set("label", label);
     fd.set("isDeprecated", "false");
     fd.set("sortOrder", sortOrder || code);
+    fd.set("rank", rank);
 
     startTransition(async () => {
       const result = await upsertGapReasonAction(fd);
@@ -233,6 +263,17 @@ function AddGapReasonRow({ onDone }: { onDone: () => void }) {
 
   return (
     <TableRow className="bg-blue-50/40">
+      <TableCell>
+        <Input
+          type="number"
+          min={1}
+          value={rank}
+          onChange={(e) => setRank(e.target.value)}
+          className="h-8 text-sm w-16"
+          placeholder="None"
+          aria-label="Rank"
+        />
+      </TableCell>
       <TableCell>
         <Input
           type="number"
@@ -260,9 +301,10 @@ function AddGapReasonRow({ onDone }: { onDone: () => void }) {
           onChange={(e) => setSortOrder(e.target.value)}
           className="h-8 text-sm w-20"
           placeholder="Auto"
-          aria-label="Sort order"
+          aria-label="List order"
         />
       </TableCell>
+      <TableCell />
       <TableCell>
         <div className="flex items-center gap-1">
           <Button
@@ -354,8 +396,10 @@ export function GapReasonTable({ gapReasons }: GapReasonTableProps) {
         <Table>
           <TableHeader>
             <TableRow className="bg-slate-50">
+              <TableHead className="w-20 text-xs">Rank</TableHead>
               <TableHead className="w-20 text-xs">Code</TableHead>
               <TableHead className="text-xs">Description</TableHead>
+              <TableHead className="w-24 text-xs">List order</TableHead>
               <TableHead className="w-28 text-xs">Status</TableHead>
               <TableHead className="w-36 text-xs">Actions</TableHead>
             </TableRow>
@@ -368,7 +412,7 @@ export function GapReasonTable({ gapReasons }: GapReasonTableProps) {
             {filtered.length === 0 && !showAdd && (
               <TableRow>
                 <TableCell
-                  colSpan={4}
+                  colSpan={6}
                   className="py-8 text-center text-sm text-slate-400"
                 >
                   No gap reasons match the current filter.
@@ -381,7 +425,11 @@ export function GapReasonTable({ gapReasons }: GapReasonTableProps) {
 
       <p className="text-xs text-slate-400">
         {gapReasons.filter((gr) => !gr.isDeprecated).length} active,{" "}
-        {gapReasons.filter((gr) => gr.isDeprecated).length} deprecated
+        {gapReasons.filter((gr) => gr.isDeprecated).length} deprecated. Rank
+        decides which code is the main gap reason when an assessment has more
+        than one (1 = highest); giving a code a rank that is taken moves the
+        others down. List order is the order in the assessment&rsquo;s gap
+        code picker.
       </p>
     </div>
   );

@@ -9,8 +9,18 @@ import {
   type AwardFigures,
 } from "../account-promotion";
 
-function makeTx() {
+function makeTx(
+  existing: Record<string, unknown> = {},
+  existingRows: { scheduleYear: number }[] = []
+) {
   return {
+    round: {
+      // Epic 21 #4: the schedule anchors on the account's first round.
+      findUnique: vi.fn(async (args: { where: { academicYear: string } }) => ({
+        openDate: new Date(`${args.where.academicYear.slice(0, 4)}-09-01`),
+        closeDate: new Date(`${args.where.academicYear.slice(0, 4)}-12-01`),
+      })),
+    },
     bursaryAccount: {
       create: vi.fn(async (_args: { data: Record<string, unknown> }) => ({
         id: "account-new",
@@ -19,9 +29,12 @@ function makeTx() {
       })),
       findUnique: vi.fn(async () => ({
         id: "existing",
+        school: "WHITGIFT",
         entryYearGroup: "Y7",
         firstAssessmentYear: "2025/2026",
         status: "ACTIVE",
+        scheduleEndYear: null,
+        ...existing,
       })),
       update: vi.fn(async () => ({})),
     },
@@ -29,7 +42,7 @@ function makeTx() {
       update: vi.fn(async () => ({})),
     },
     bursaryScheduleEntry: {
-      findMany: vi.fn(async () => []),
+      findMany: vi.fn(async () => existingRows),
       create: vi.fn(async () => ({})),
     },
   };
@@ -105,5 +118,68 @@ describe("promoteToActiveAccount (Epic 10 seam)", () => {
       data: { entryYear: number };
     };
     expect(createArg.data.entryYear).toBe(2025);
+  });
+
+  // ─── Epic 21 #4 ─────────────────────────────────────────────────────────
+
+  function createdRows(tx: ReturnType<typeof makeTx>) {
+    return (tx.bursaryScheduleEntry.create.mock.calls as unknown as unknown[][]).map(
+      (c) => (c[0] as unknown as { data: { scheduleYear: number; academicYear: string } }).data
+    );
+  }
+
+  it("anchors a re-award's schedule top-up on the account's FIRST year, not this round", async () => {
+    // Account first assessed 2025/26 (year 1 exists); re-award in 2026/27.
+    const tx = makeTx({}, [{ scheduleYear: 1 }]);
+    await promoteToActiveAccount(
+      tx as never,
+      baseApp({
+        bursaryAccountId: "existing",
+        round: { academicYear: "2026/2027", openDate: new Date("2026-09-01"), closeDate: new Date("2026-12-01") },
+      }),
+      awards
+    );
+    const rows = createdRows(tx);
+    // Year 2 is 2026-27 (not 2027-28, as anchoring on this round produced).
+    expect(rows.find((r) => r.scheduleYear === 2)?.academicYear).toBe("2026-27");
+    expect(tx.round.findUnique).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { academicYear: "2025/2026" } })
+    );
+  });
+
+  it("does not regrow years after an ADMIN's End after this year", async () => {
+    const tx = makeTx({ scheduleEndYear: 2 }, [{ scheduleYear: 1 }, { scheduleYear: 2 }]);
+    await promoteToActiveAccount(tx as never, baseApp({ bursaryAccountId: "existing" }), awards);
+    expect(tx.bursaryScheduleEntry.create).not.toHaveBeenCalled();
+  });
+
+  it("re-activates a CLOSED account when the locked year is inside its schedule", async () => {
+    const tx = makeTx({ status: "CLOSED" }, [{ scheduleYear: 1 }]);
+    await promoteToActiveAccount(
+      tx as never,
+      baseApp({
+        bursaryAccountId: "existing",
+        round: { academicYear: "2026/2027", openDate: null, closeDate: null },
+      }),
+      awards
+    );
+    expect(tx.bursaryAccount.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: { status: "ACTIVE", closedAt: null } })
+    );
+  });
+
+  it("leaves a CLOSED account closed when the locked year is past its ended schedule", async () => {
+    const tx = makeTx({ status: "CLOSED", scheduleEndYear: 1 }, [{ scheduleYear: 1 }]);
+    await promoteToActiveAccount(
+      tx as never,
+      baseApp({
+        bursaryAccountId: "existing",
+        round: { academicYear: "2026/2027", openDate: null, closeDate: null },
+      }),
+      awards
+    );
+    expect(tx.bursaryAccount.update).not.toHaveBeenCalledWith(
+      expect.objectContaining({ data: { status: "ACTIVE", closedAt: null } })
+    );
   });
 });

@@ -38,6 +38,11 @@ export interface AssessmentSynopsisProps {
    * disable the textarea — the synopsis is always editable.
    */
   assessmentCompleted?: boolean;
+  /**
+   * Epic 21 #6 — the admin page shows this beside the account's standing
+   * synopsis, so it is titled "This year's synopsis" there.
+   */
+  title?: string;
   className?: string;
 }
 
@@ -51,6 +56,7 @@ export function AssessmentSynopsis({
   applicationId,
   synopsis,
   assessmentCompleted = false,
+  title = "Assessment Synopsis",
   className,
 }: AssessmentSynopsisProps) {
   const [value, setValue] = React.useState(synopsis ?? "");
@@ -111,7 +117,7 @@ export function AssessmentSynopsis({
             />
             <div>
               <CardTitle className="text-sm font-semibold text-slate-700">
-                Assessment Synopsis
+                {title}
               </CardTitle>
               <p className="mt-0.5 text-xs text-slate-400">
                 {assessmentCompleted

@@ -27,6 +27,11 @@ import type { ChecklistTab } from "@prisma/client";
  * Upserts the single `Assessment.synopsis` narrative. Permissive by design:
  * there is NO status guard, so the synopsis can be edited even after the
  * assessment is COMPLETED. An empty/whitespace-only value is stored as NULL.
+ *
+ * Epic 21 #6: once the year is locked it has an entry in the account's
+ * standing synopsis; an edit here updates that entry in the same transaction,
+ * so the two never disagree. (Clearing the synopsis leaves the entry's last
+ * text in place: entries are never blanked or deleted, D-6.)
  */
 export async function saveSynopsis(
   assessmentId: string,
@@ -42,6 +47,14 @@ export async function saveSynopsis(
         where: { id: assessmentId },
         data: { synopsis: value },
       });
+
+      // Epic 21 #6 — keep this year's standing-synopsis entry in step.
+      if (value) {
+        await tx.accountSynopsisEntry.updateMany({
+          where: { assessmentId, kind: "YEAR" },
+          data: { body: value.trim() },
+        });
+      }
 
       await createAuditLog(tx, {
         userId: user.id,
@@ -61,6 +74,7 @@ export async function saveSynopsis(
     // recommendation screen, so revalidate both.
     revalidatePath(`/applications/${applicationId}/assessment`);
     revalidatePath(`/applications/${applicationId}/recommendation`);
+    revalidatePath(`/applications/${applicationId}/assessment/admin`);
 
     return { success: true };
   } catch (err) {

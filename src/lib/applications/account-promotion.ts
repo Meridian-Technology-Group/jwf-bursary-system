@@ -21,7 +21,13 @@
  */
 
 import type { Tx } from "@/lib/db/prisma";
-import { generateSchedule } from "@/lib/bursary-accounts/schedule";
+import {
+  effectiveHorizon,
+  generateSchedule,
+  resolveScheduleHorizon,
+  roundDatesForAccount,
+} from "@/lib/bursary-accounts/schedule";
+import { parseAcademicYearStart } from "@/lib/assessment/fee-year";
 import type { School, EntryYearGroup } from "@prisma/client";
 
 /** The bursary + scholarship awards an AWARDED outcome grants. */
@@ -100,18 +106,33 @@ export async function promoteToActiveAccount(
         entryYearGroup: true,
         firstAssessmentYear: true,
         status: true,
+        scheduleEndYear: true,
       },
     });
     if (account) {
       // A re-award re-activates a previously CLOSED account (D18 — access
-      // returns when the account is ACTIVE again).
+      // returns when the account is ACTIVE again). Epic 21 #4: only when the
+      // locked year is inside the account's (possibly ended) schedule.
       if (account.status === "CLOSED") {
-        await tx.bursaryAccount.update({
-          where: { id: account.id },
-          data: { status: "ACTIVE", closedAt: null },
-        });
+        const horizon = effectiveHorizon(
+          resolveScheduleHorizon(account.entryYearGroup, undefined, account.school),
+          account.scheduleEndYear
+        );
+        const awardStart = parseAcademicYearStart(application.round.academicYear);
+        const firstStart = parseAcademicYearStart(account.firstAssessmentYear);
+        const lockedYear =
+          awardStart != null && firstStart != null ? awardStart - firstStart + 1 : null;
+        if (lockedYear == null || lockedYear <= horizon) {
+          await tx.bursaryAccount.update({
+            where: { id: account.id },
+            data: { status: "ACTIVE", closedAt: null },
+          });
+        }
       }
-      await generateSchedule(tx, account, roundDates);
+      // Epic 21 #4: anchor on the account's FIRST assessment year, not this
+      // award's round, so a re-inserted year gets the right academic year and
+      // dates; and respect an ADMIN's "End after this year".
+      await generateSchedule(tx, account, await roundDatesForAccount(tx, account));
     }
     return { bursaryAccountId: application.bursaryAccountId, created: false };
   }

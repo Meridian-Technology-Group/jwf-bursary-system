@@ -84,6 +84,7 @@ import {
 } from "@/components/ui/dialog";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
+import { compareReferences } from "@/lib/applications/reference-sort";
 
 import { ApplicationRowActions } from "@/components/admin/application-row-actions";
 import type { CloseReasonOption } from "@/components/admin/close-application-dialog";
@@ -889,6 +890,10 @@ export function ApplicationTable({
       }),
       columnHelper.accessor("reference", {
         header: "Reference",
+        // Charlotte, 10 Oct 2026: A–Z on clicking the header, the same order as
+        // the Assessments list (spacing/punctuation and case ignored).
+        sortingFn: (a, b) => compareReferences(a.original.reference, b.original.reference),
+        sortDescFirst: false,
         // D13-1a: the reference is a free-text label that is routinely re-edited
         // to the fees-system code (`TS-SMITH05-Smith, Bob`), at which point it
         // no longer names the child. The child's name therefore renders beside

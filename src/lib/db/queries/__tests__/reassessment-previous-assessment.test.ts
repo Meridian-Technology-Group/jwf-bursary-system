@@ -31,18 +31,32 @@ interface FakeAssessment {
   } | null;
 }
 
-function makeFakeTx(assessment: FakeAssessment | null): Tx {
+// Epic 21 #3: the lookup reads the current round, lists the account's other
+// applications, picks the latest EARLIER year, then reads that one in full.
+function makeFakeTx(
+  assessment: FakeAssessment | null,
+  {
+    currentYear = "2026/2027",
+    candidates = [
+      { id: "app-prev", submittedAt: new Date("2025-05-01"), round: { academicYear: "2025/2026" } },
+    ],
+  }: {
+    currentYear?: string;
+    candidates?: { id: string; submittedAt: Date | null; round: { academicYear: string } }[];
+  } = {}
+): Tx {
   return {
+    round: {
+      findUnique: vi.fn(async () => ({ academicYear: currentYear })),
+    },
     application: {
-      findFirst: vi.fn(async () =>
-        assessment === null
+      findMany: vi.fn(async () => (assessment === null ? [] : candidates)),
+      findUnique: vi.fn(async (args: { where: { id: string } }) => {
+        const c = candidates.find((x) => x.id === args.where.id);
+        return assessment === null || !c
           ? null
-          : {
-              reference: "JWF-PREV",
-              round: { academicYear: "2025/2026" },
-              assessment,
-            }
-      ),
+          : { id: c.id, reference: "JWF-PREV", round: c.round, assessment };
+      }),
     },
   } as unknown as Tx;
 }
@@ -125,5 +139,44 @@ describe("getPreviousAssessment — v1/v2 fallback walk (CALC-12)", () => {
     const tx = makeFakeTx(null);
     const result = await getPreviousAssessment(tx, "account-1", "round-current");
     expect(result).toBeNull();
+  });
+});
+
+describe("getPreviousAssessment — earlier years only (Epic 21 #3)", () => {
+  const blank: FakeAssessment = {
+    totalHouseholdNetIncome: 1,
+    netAssetsYearlyValuation: null,
+    hndiAfterNs: null,
+    requiredBursary: null,
+    grossFees: null,
+    bursaryAward: null,
+    yearlyPayableFees: null,
+    monthlyPayableFees: null,
+    schoolingYearsRemaining: null,
+    recommendation: null,
+  };
+
+  it("never treats a later year as previous", async () => {
+    const tx = makeFakeTx(blank, {
+      currentYear: "2026/2027",
+      candidates: [
+        { id: "app-later", submittedAt: new Date("2027-05-01"), round: { academicYear: "2027/2028" } },
+      ],
+    });
+    expect(await getPreviousAssessment(tx, "account-1", "round-current")).toBeNull();
+  });
+
+  it("picks the latest earlier year and returns its application id for the link", async () => {
+    const tx = makeFakeTx(blank, {
+      currentYear: "2027/2028",
+      candidates: [
+        { id: "app-2025", submittedAt: new Date("2025-05-01"), round: { academicYear: "2025/2026" } },
+        { id: "app-2026", submittedAt: null, round: { academicYear: "2026/2027" } },
+        { id: "app-2028", submittedAt: new Date("2028-05-01"), round: { academicYear: "2028/2029" } },
+      ],
+    });
+    const result = await getPreviousAssessment(tx, "account-1", "round-current");
+    expect(result?.applicationId).toBe("app-2026");
+    expect(result?.academicYear).toBe("2026/2027");
   });
 });
