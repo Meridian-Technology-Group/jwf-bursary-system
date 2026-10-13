@@ -122,6 +122,14 @@ export async function verify(ctx: LoadContext, runId: string) {
   const unexplained = offActual.filter((r) => !r.key || !ruled.has(r.key)).length
   add('B5', unexplained === 0, `${offActual.length} off the actual leg, ${offActual.length - unexplained} by her reference-leg ruling, ${unexplained} unexplained`)
 
+  // B11: every migrated assessment has its standing-synopsis YEAR entry (Epic 21 #6); A12 checks each one.
+  const [syn] = await db.$queryRaw<{ total: bigint; missing: bigint }[]>`
+    SELECT count(*) AS total, count(*) FILTER (WHERE e.id IS NULL) AS missing FROM assessments s
+    JOIN applications a ON a.id = s.application_id
+    LEFT JOIN account_synopsis_entries e ON e.assessment_id = s.id AND e.kind = 'YEAR'
+    WHERE a.migration_source IS NOT NULL`
+  add('B11', Number(syn.missing) === 0, `${Number(syn.total)} migrated assessments, ${Number(syn.missing)} without a standing-synopsis entry`)
+
   add('A (re-run)', aFailures === 0, `${aFailures} accounts fail`)
   add('B8', Math.abs(sumConfirmed - expectConfirmed) < 0.01 && Math.abs(sumAward - expectAward) < 0.01,
     `confirmed £${sumConfirmed.toFixed(2)} vs sheet £${expectConfirmed.toFixed(2)}; award £${sumAward.toFixed(2)} vs sheet £${expectAward.toFixed(2)}`)

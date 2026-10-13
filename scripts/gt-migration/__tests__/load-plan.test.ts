@@ -17,7 +17,7 @@ import {
   MAJOR_INCOME,
   OTHER,
 } from '../load/reason-codes'
-import { composeSynopsis, parseGtDate, planAccount, PlanError, type LoadAccount } from '../load/plan'
+import { composeSynopsis, formatLongDate, parseGtDate, planAccount, PlanError, type LoadAccount } from '../load/plan'
 
 describe('reason-code crosswalk (C8)', () => {
   it('maps GT numbers to the new labels, splitting on commas and semicolons', () => {
@@ -88,10 +88,17 @@ describe('dates and synopsis', () => {
     expect(parseGtDate('')).toBeNull()
   })
 
-  it('keeps GT text verbatim and adds the migration footer', () => {
+  it('keeps GT text verbatim and adds the migration footer, dates written out', () => {
     const s = composeSynopsis('Family note.', '16 May 2026', '2026-09-29')
-    expect(s.startsWith('Family note.\n\n— Migrated from Grant Tracker on 2026-09-29. GT assessment completed 16 May 2026.')).toBe(true)
-    expect(composeSynopsis('', '', '2026-09-29', '2026-04-15')).toContain('the review was received 2026-04-15')
+    expect(s.startsWith('Family note.\n\n— Migrated from Grant Tracker on 29 September 2026. GT assessment completed 16 May 2026.')).toBe(true)
+    expect(composeSynopsis('', '', '2026-09-29', '2026-04-15')).toContain('the review was received 15 April 2026')
+    expect(composeSynopsis('', '2026-04-05', '2026-10-10')).toContain('on 10 October 2026. GT assessment completed 5 April 2026.')
+  })
+
+  it('formats a date in long form and keeps text it cannot parse', () => {
+    expect(formatLongDate('2026-10-10')).toBe('10 October 2026')
+    expect(formatLongDate('30 May 2025')).toBe('30 May 2025')
+    expect(formatLongDate('not a date ')).toBe('not a date')
   })
 })
 

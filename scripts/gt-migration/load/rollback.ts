@@ -9,6 +9,12 @@
  * deleted (append-only); a DATA_MIGRATION_ROLLBACK row is added instead.
  * Ledger rows flip to `rolled_back`; the history stays.
  *
+ * Standing synopsis (Epic 21 #6): a YEAR entry goes before its assessment (the
+ * FK would only null it, leaving an orphan a reload duplicates). Entries are
+ * derived, so a later `backfill-synopsis` row does not move the "loaded at"
+ * mark the other rows are judged by; each entry is judged by its own. A staff
+ * note on the account stops an accounts rollback (the cascade would take it).
+ *
  * Documents (M8): their rows go first, inside the account's transaction; the
  * storage objects are removed only after it commits (they cannot join it), and
  * their ledger rows flip once the removal succeeded. Objects a crashed run left
@@ -36,8 +42,9 @@ export interface RollbackOptions {
 }
 
 /** Reverse of creation (06 §4). */
-const ORDER: EntityType[] = [
+export const ORDER: EntityType[] = [
   'Document',
+  'AccountSynopsisEntry',
   'RecommendationGapReason',
   'RecommendationReasonCode',
   'Recommendation',
@@ -110,10 +117,24 @@ function ids(rows: Row[], type: EntityType) {
 }
 
 async function assertUntouched(tx: Tx, rows: Row[]) {
-  const loadedAt = Math.max(...rows.map((r) => r.createdAt.getTime()))
+  const loaded = rows.filter((r) => r.entityType !== 'AccountSynopsisEntry')
+  const loadedAt = Math.max(...(loaded.length ? loaded : rows).map((r) => r.createdAt.getTime()))
   const limit = new Date(loadedAt + GRACE_MS)
   const stop = (what: string) => {
     throw new Error(`STOP (06 §3.9): ${what} changed after the load; not rolling back this account`)
+  }
+  for (const r of rows.filter((x) => x.entityType === 'AccountSynopsisEntry')) {
+    const e = await tx.accountSynopsisEntry.findUnique({ where: { id: r.entityId }, select: { updatedAt: true } })
+    if (e && e.updatedAt.getTime() > r.createdAt.getTime() + GRACE_MS) stop('the standing synopsis')
+  }
+  const accountIds = ids(rows, 'BursaryAccount')
+  if (accountIds.length) {
+    // Entries no run ledgered were written in the app: staff notes, or a re-lock's YEAR entry.
+    const onAccount = await tx.accountSynopsisEntry.findMany({ where: { bursaryAccountId: { in: accountIds } }, select: { id: true } })
+    const ledgered = await tx.dataMigrationLedger.count({
+      where: { entityType: 'AccountSynopsisEntry', state: 'done', entityId: { in: onAccount.map((e) => e.id) } },
+    })
+    if (onAccount.length > ledgered) stop(`the standing synopsis (${onAccount.length - ledgered} entries written in the app)`)
   }
   for (const id of ids(rows, 'Application')) {
     const a = await tx.application.findUnique({ where: { id }, select: { migrationSource: true, updatedAt: true } })
@@ -161,6 +182,9 @@ async function rollbackAccount(ctx: LoadContext, ledger: Ledger, key: string, ro
               const [recommendationId, reasonCodeId] = id.split(':')
               await tx.recommendationReasonCode.deleteMany({ where: { recommendationId, reasonCodeId } })
             }
+            break
+          case 'AccountSynopsisEntry':
+            await tx.accountSynopsisEntry.deleteMany({ where: { id: { in: list } } })
             break
           case 'Recommendation':
             await tx.recommendation.deleteMany({ where: { id: { in: list } } })

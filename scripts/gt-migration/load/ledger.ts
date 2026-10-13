@@ -34,6 +34,7 @@ export type EntityType =
   | 'Recommendation'
   | 'RecommendationReasonCode'
   | 'RecommendationGapReason'
+  | 'AccountSynopsisEntry'
   | 'Document'
   | 'StorageObject'
 

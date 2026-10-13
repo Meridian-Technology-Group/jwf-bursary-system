@@ -5,9 +5,12 @@
  *   npm run mig -- docs-extract [--only k1,k2]               (M8: decrypt + reconcile; no database)
  *   npm run mig -- load     --env <e> --phase identities|accounts|assessments|documents --run <id>
  *                           [--only k1,k2] [--limit n] [--dry-run]
- *   npm run mig -- plan     --env <e> [--only k1,k2]          (read-only preview)
+ *   npm run mig -- plan     --env <e> [--only k1,k2] [--out plans.json]  (read-only preview)
  *   npm run mig -- verify   --env <e> --run <id>
  *   npm run mig -- rollback --env <e> --run <id> [--phase <p>] [--only k1,k2] [--dry-run]
+ *   npm run mig -- backfill-synopsis --env <e> --run <id> [--only k1,k2] [--dry-run]
+ *                           (Epic 21 #6: the standing-synopsis entry for accounts
+ *                            loaded before it existed; ledgered under the run)
  *
  * <e> is nonprod | rehearsal | prod. The target's database URLs are pinned
  * into the process environment BEFORE any app module is imported (they are
@@ -116,6 +119,14 @@ async function main() {
         console.log(`logins: ${new Set(Array.from(plans.values()).map((p) => p.leadEmail)).size} | with an unmapped GT reason code: ${unmapped}`)
         console.log(`reason + gap codes from her returned report: ${fromM5} | from the GT crosswalk and fallback: ${plans.size - fromM5}`)
         console.log(`gap codes (an account can carry several): ${JSON.stringify(gaps)}`)
+        // --out: every plan as JSON (account keys, no logs), to diff a re-plan against an earlier one.
+        const out = flag(args, 'out')
+        if (out) {
+          const { writeFileSync } = await import('node:fs')
+          const sorted = Array.from(plans.values()).sort((x, y) => x.key.localeCompare(y.key))
+          writeFileSync(out, JSON.stringify({ env, canonical: hash, plans: sorted, held }, null, 1), { mode: 0o600 })
+          console.log(`plans written: ${out}`)
+        }
       } finally {
         await ctx.prisma.$disconnect()
       }
@@ -153,8 +164,26 @@ async function main() {
       }
       return
     }
+    case 'backfill-synopsis': {
+      const runId = flag(args, 'run')
+      if (!runId) throw new Error('--run <id> is required')
+      const dryRun = has(args, 'dry-run')
+      if (!dryRun) {
+        const { latestCanonical } = await import('./calc/run')
+        assertApproved(env, latestCanonical().hash, 'backfill-synopsis')
+      }
+      const { openContext } = await import('./load/context')
+      const { backfillSynopsis } = await import('./load/backfill-synopsis')
+      const ctx = await openContext(requireWritable(config))
+      try {
+        await backfillSynopsis(ctx, { runId, only: list(flag(args, 'only')), dryRun })
+      } finally {
+        await ctx.prisma.$disconnect()
+      }
+      return
+    }
     default:
-      throw new Error(`Unknown command: ${command ?? '(none)'}. Available: docs-extract, calc, plan, load, verify, rollback`)
+      throw new Error(`Unknown command: ${command ?? '(none)'}. Available: docs-extract, calc, plan, load, verify, rollback, backfill-synopsis`)
   }
 }
 

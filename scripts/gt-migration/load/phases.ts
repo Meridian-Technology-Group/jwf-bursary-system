@@ -5,7 +5,9 @@
  *   accounts    → per account: contact, placeholder application (+ PRIMARY
  *                 contributor), bursary account, schedule (year 1 COMPLETE)
  *   assessments → per account: assessment (+ earners, property) locked as
- *                 ROLLED_OVER / NEW_AWARD, recommendation (+ reason, gap codes)
+ *                 ROLLED_OVER / NEW_AWARD, recommendation (+ reason, gap codes),
+ *                 and the year's entry in the account's standing synopsis
+ *                 (Epic 21 #6), as an award lock writes it
  *   documents   → per account: its staged GT documents on the migrated
  *                 application (M8; load/documents.ts)
  *
@@ -24,7 +26,8 @@ import { createProfile } from '../../../src/lib/auth/create-profile'
 import { ensurePrimaryContributor } from '../../../src/lib/db/queries/contributors'
 import { promoteToActiveAccount } from '../../../src/lib/applications/account-promotion'
 import { mirrorApplicationToSchedule } from '../../../src/lib/bursary-accounts/lifecycle'
-import { resolveScheduleHorizon } from '../../../src/lib/bursary-accounts/schedule'
+import { effectiveHorizon, resolveScheduleHorizon } from '../../../src/lib/bursary-accounts/schedule'
+import { upsertYearSynopsisEntry } from '../../../src/lib/bursary-accounts/standing-synopsis'
 import { saveAssessment } from '../../../src/lib/db/queries/assessments'
 import { upsertRecommendation } from '../../../src/lib/db/queries/recommendations'
 import { createAuditLog } from '../../../src/lib/audit/log'
@@ -410,7 +413,11 @@ async function loadAccount(ctx: LoadContext, ledger: Ledger, plan: AccountPlan):
   }
 }
 
-/** 06 §1 group A, accounts phase: A1, A2, A8, A9. */
+/**
+ * 06 §1 group A, accounts phase: A1, A2, A8, A9. A9 counts rows against the
+ * effective horizon: an admin may end the schedule early (Epic 21 #4,
+ * `scheduleEndYear`), and Add a year moves it back towards the natural one.
+ */
 export async function checkAccountInvariants(tx: Tx, ctx: LoadContext, plan: AccountPlan, appId: string, accountId: string) {
   const app = await tx.application.findUniqueOrThrow({ where: { id: appId } })
   const fail = (m: string) => {
@@ -424,7 +431,7 @@ export async function checkAccountInvariants(tx: Tx, ctx: LoadContext, plan: Acc
   if (Math.abs(Number(acc.benchmarkPayableFees) - plan.expect.confirmedPayableFees) > PENNY) fail('A8: benchmark')
   if (plan.school === 'OP_PARTNER' && acc.annualFeesOverride == null) fail('A8: OP fee')
   const rows = await tx.bursaryScheduleEntry.findMany({ where: { bursaryAccountId: accountId }, orderBy: { scheduleYear: 'asc' } })
-  const horizon = resolveScheduleHorizon(plan.entryYearGroup, undefined, plan.school)
+  const horizon = effectiveHorizon(resolveScheduleHorizon(plan.entryYearGroup, undefined, plan.school), acc.scheduleEndYear)
   if (rows.length !== horizon) fail(`A9: ${rows.length} schedule rows, expected ${horizon}`)
   const y1 = rows[0]
   if (!y1 || y1.status !== 'COMPLETE' || y1.applicationId !== appId || y1.roundId !== ctx.round.id) fail('A9: year 1')
@@ -476,6 +483,10 @@ async function loadAssessment(ctx: LoadContext, ledger: Ledger, plan: AccountPla
           vatRate: plan.assessmentLock.vatRate,
         },
       })
+      if (!app.bursaryAccountId) throw new Error('migrated application has no bursary account')
+      // The year's entry in the standing synopsis, as an award lock writes it (Epic 21 #6).
+      const entryId = await writeYearSynopsis(tx, ctx, app.bursaryAccountId, assessment.id, plan.assessmentLock.synopsis)
+      created.push({ entityType: 'AccountSynopsisEntry', entityId: entryId })
       const earners = await tx.assessmentEarner.findMany({ where: { assessmentId: assessment.id }, select: { id: true } })
       created.push(...earners.map((e) => ({ entityType: 'AssessmentEarner' as const, entityId: e.id })))
       const property = await tx.assessmentProperty.findUnique({ where: { assessmentId: assessment.id }, select: { id: true } })
@@ -508,12 +519,39 @@ async function loadAssessment(ctx: LoadContext, ledger: Ledger, plan: AccountPla
   }
 }
 
-/** 06 §1 group A, assessments phase: A3–A7. (A10 ran at planning; A11 is the ledger itself.) */
+/**
+ * The YEAR entry for a migrated assessment; returns its id for the ledger.
+ * The load and `mig backfill-synopsis` both write it here. No author: a system write.
+ */
+export async function writeYearSynopsis(tx: Tx, ctx: LoadContext, bursaryAccountId: string, assessmentId: string, synopsis: string | null) {
+  const wrote = await upsertYearSynopsisEntry(tx, {
+    bursaryAccountId,
+    assessmentId,
+    academicYear: ctx.round.academicYear,
+    synopsis,
+    userId: null,
+  })
+  if (!wrote) throw new Error('blank synopsis: no standing-synopsis entry')
+  const entry = await tx.accountSynopsisEntry.findUniqueOrThrow({ where: { assessmentId }, select: { id: true } })
+  return entry.id
+}
+
+/**
+ * 06 §1 group A, assessments phase: A3–A7, and A12 (the standing-synopsis
+ * entry). A10 ran at planning; A11 is the ledger itself.
+ */
 export async function checkAssessmentInvariants(tx: Tx, plan: AccountPlan, assessmentId: string) {
   const fail = (m: string) => {
     throw new Error(`invariant ${m}`)
   }
-  const a = await tx.assessment.findUniqueOrThrow({ where: { id: assessmentId }, include: { recommendation: { include: { reasonCodes: true, gapReasons: true } } } })
+  const a = await tx.assessment.findUniqueOrThrow({
+    where: { id: assessmentId },
+    include: {
+      recommendation: { include: { reasonCodes: true, gapReasons: true } },
+      accountSynopsisEntry: true,
+      application: { select: { bursaryAccountId: true } },
+    },
+  })
   if (a.calculationVersion !== 2 || a.status !== plan.assessmentLock.status || a.outcome != null || !a.completedAt || !a.awardFundType) fail('A3')
   const recommended = Number(a.recommendedPayableFees)
   const legs = {
@@ -536,4 +574,9 @@ export async function checkAssessmentInvariants(tx: Tx, plan: AccountPlan, asses
   if (r.reasonCodes.length === 0) fail('A6: reason code')
   const net = Number(r.netFeesBeforeVat)
   if (Math.abs(net * (1 + plan.expect.vatRate / 100) - Number(r.yearlyPayableFees)) > 1.5 && !plan.sheetArithResolved) fail('A7')
+  // A12: one YEAR entry, on this account, agreeing with the year's synopsis
+  // (staff edits keep them in step; a blanked synopsis leaves the entry as was).
+  const e = a.accountSynopsisEntry
+  if (!e || e.kind !== 'YEAR' || e.bursaryAccountId !== a.application.bursaryAccountId) fail('A12: standing synopsis entry')
+  if (a.synopsis?.trim() && e!.body !== a.synopsis.trim()) fail('A12: standing synopsis differs from the year\'s synopsis')
 }

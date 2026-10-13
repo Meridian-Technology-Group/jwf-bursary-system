@@ -137,6 +137,14 @@ export function parseGtDate(s: string | null | undefined): Date | null {
   return Number.isNaN(d.getTime()) ? null : d
 }
 
+const LONG_DATE = new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Europe/London' })
+
+/** "2026-10-10" or "10 Oct 2026" → "10 October 2026" (promised 11 Oct); unparseable text is kept as given. */
+export function formatLongDate(s: string): string {
+  const d = parseGtDate(s)
+  return d ? LONG_DATE.format(d) : s.trim()
+}
+
 export function composeSynopsis(
   gtText: string | null | undefined,
   completed: string | null | undefined,
@@ -145,8 +153,12 @@ export function composeSynopsis(
   referenceLeg: ReferenceLeg = 'ACTUAL',
 ): string {
   const footer =
-    `Migrated from Grant Tracker on ${today}.` +
-    (completed ? ` GT assessment completed ${completed}.` : received ? ` GT holds no completion date; the review was received ${received}.` : '') +
+    `Migrated from Grant Tracker on ${formatLongDate(today)}.` +
+    (completed
+      ? ` GT assessment completed ${formatLongDate(completed)}.`
+      : received
+        ? ` GT holds no completion date; the review was received ${formatLongDate(received)}.`
+        : '') +
     ' Figures recalculated by the current model from GT inputs; award and payable fees as confirmed by the Head of Fees & Bursaries.' +
     (referenceLeg === 'ACTUAL'
       ? ''
