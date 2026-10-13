@@ -45,6 +45,8 @@ import { formatLondonDate } from "@/lib/datetime";
 import { scheduleRowLink } from "@/lib/assessment/previous-year";
 import { cn } from "@/lib/utils";
 import { AssessmentSynopsis } from "@/components/admin/assessment-synopsis";
+import { AccountSynopsisCard } from "@/components/admin/account-synopsis-card";
+import { getAccountSynopsisTimeline } from "@/lib/db/queries/account-synopsis";
 import { WatchOutNotesEditor } from "@/components/admin/watch-out-notes-editor";
 import { PreSystemHistoryEditor } from "@/components/admin/pre-system-history-editor";
 import { AnnualFeesOverrideEditor } from "@/components/admin/annual-fees-override-editor";
@@ -97,6 +99,7 @@ export default async function AssessmentAdminPage({ params }: Props) {
     closeReasons,
     accountFees,
     scheduleControls,
+    synopsisTimeline,
   } = await withUserContext(user.id, user.role as RlsRole, async (tx) => {
     const app = await getApplicationWithDetails(tx, params.id);
     if (!app) {
@@ -112,6 +115,7 @@ export default async function AssessmentAdminPage({ params }: Props) {
         closeReasons: [],
         accountFees: null,
         scheduleControls: null,
+        synopsisTimeline: null,
       };
     }
     const a = await getAssessment(tx, params.id);
@@ -155,6 +159,10 @@ export default async function AssessmentAdminPage({ params }: Props) {
     const schedule = app.bursaryAccountId
       ? await getPayableFeesScheduleRows(tx, app.bursaryAccountId)
       : [];
+    // Epic 21 #6 — the account's standing synopsis (all years).
+    const timeline = app.bursaryAccountId
+      ? await getAccountSynopsisTimeline(tx, app.bursaryAccountId)
+      : null;
     // Epic 21 #4 — ADMIN only; each button enabled only when its action would succeed.
     const controls =
       user.role === Role.ADMIN && account
@@ -179,6 +187,7 @@ export default async function AssessmentAdminPage({ params }: Props) {
       accountStatus: account?.status ?? null,
       closeReasons: reasons,
       scheduleControls: controls,
+      synopsisTimeline: timeline,
       // S9: shown where the school has no fee table (the OP partnering school),
       // or wherever an override has been set.
       accountFees:
@@ -309,7 +318,23 @@ export default async function AssessmentAdminPage({ params }: Props) {
         </div>
       )}
 
-      {/* 2. Account synopsis + this year's wizard notes. */}
+      {/* Epic 21 #6 — the standing synopsis across every year of the account,
+          above this year's (her 11 Oct question: "the generic one that
+          sustains all years"). */}
+      {synopsisTimeline && (
+        <AccountSynopsisCard
+          applicationId={params.id}
+          entries={synopsisTimeline.map((e) => ({
+            ...e,
+            createdAt: e.createdAt.toISOString(),
+            updatedAt: e.updatedAt.toISOString(),
+          }))}
+          canAddNote={user.role === Role.ADMIN || user.role === Role.ASSESSOR}
+          canEditNotes={user.role === Role.ADMIN}
+        />
+      )}
+
+      {/* 2. This year's synopsis + wizard notes. */}
       {assessment ? (
         <>
           <AssessmentSynopsis
@@ -317,6 +342,7 @@ export default async function AssessmentAdminPage({ params }: Props) {
             applicationId={params.id}
             synopsis={assessment.synopsis}
             assessmentCompleted={assessment.status === "COMPLETED"}
+            title="This year's synopsis"
           />
           <WatchOutNotesEditor
             assessmentId={assessment.id}
