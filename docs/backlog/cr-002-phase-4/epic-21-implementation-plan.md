@@ -481,6 +481,16 @@ Write the policies **in this migration**, using the patterns in `20260606210000_
 
 ### T7 · WP-F2 — rolling-over dates on future schedule years (blocked on D-1)
 
+**Status: BUILT 13 Oct** on `fix/schedule-rolling-over-dates`.
+- **RA default:** `round-scenario.ts` now uses 15 Apr → 21 May (`RA_OPENS_DAY` / `RA_SUBMIT_BY_DAY`).
+- **Planning:** later years are planned through `scheduleDatesForYear`.
+- **Migration:** `20261013210000_schedule_rolling_over_dates` re-dates 7 prod rows.
+
+**Change from the plan.** Later years use her D-1 dates (the RA default), not the award round's stored RA `RoundWindow`.
+- Prod's 2026/27 round stores RA 15 Apr → **22 May** 2027. That contradicts her 21 May answer by a day.
+- Its dates also sit a year later than the resolver gives for the same round, so the row's meaning is unclear.
+- **To confirm with her:** 21 or 22 May. Whichever she says, correct the window row on the Rounds page so the invitation deadline and the schedule agree.
+
 **Facts.**
 - `planSchedule` (`schedule.ts:94-122`) sets every year's `availableOn` and `requiredBy` to the award round's `openDate` and `closeDate` shifted by N years. That gives 21 Aug and 30 Nov forever.
 - Those values win over everything else in the home page's date order (`schedule-home.ts:17-23, 149-171`), so the RA (rolling-over) window code (`src/lib/rounds/round-scenario.ts:8-13, 107-115`, default 12 Apr → 22 May) is never reached.

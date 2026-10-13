@@ -11,9 +11,11 @@
  *     Schedule" button) so re-awarding never duplicates rows and never rewrites
  *     a RECEIVED year.
  *
- * Date policy (D19 default): each future year's `availableOn`/`requiredBy`
- * derive from the award round's open/close dates, shifted forward one academic
- * year per schedule year. Epic 03 owns the per-round date model; when a future
+ * Date policy: Year 1 (the award year) carries the award round's open/close
+ * dates. Every later year is a rolling-over year, so it carries the
+ * rolling-over window for its academic year (`scheduleDatesForYear`; Epic 21
+ * F2, D-1: 15 April → 21 May). It used to shift the award round's dates, which
+ * gave rolling-over families the new-applicant dates every year. Epic 03 owns the per-round date model; when a future
  * year is materialised into a real Round the entry is linked via `roundId` and
  * the round's own dates take over. Until then these are the planned dates.
  *
@@ -37,6 +39,7 @@ import {
 // Single source of truth for group → school-year (CH-26 added Y8/Y10/Y11/Y13);
 // OTHER / null / unrecognised → null and the caller falls back to the default.
 import { schoolYearForEntryYearGroup as schoolYearForGroup } from "@/lib/assessment/schooling-years";
+import { resolveRoundScenario } from "@/lib/rounds/round-scenario";
 
 /**
  * The final school year a bursary can run to at Trinity and Whitgift (Year 13 /
@@ -216,6 +219,34 @@ export interface PlannedScheduleEntry {
   showOnPortal: boolean;
 }
 
+/**
+ * Epic 21 F2 (D-1) — the planned dates for one schedule year. Year 1 keeps
+ * the award round's dates; later years take the rolling-over (RA) window of
+ * their own academic year: 2027-28 → 15/04/2027–21/05/2027. Unparseable award
+ * years fall back to shifting the award round's dates (the old behaviour).
+ */
+export function scheduleDatesForYear(params: {
+  awardStartYear: number | null;
+  awardOpenDate: Date | null;
+  awardCloseDate: Date | null;
+  scheduleYear: number;
+}): { availableOn: Date | null; requiredBy: Date | null } {
+  const offset = params.scheduleYear - 1;
+  if (offset === 0 || params.awardStartYear == null) {
+    return {
+      availableOn: shiftYears(params.awardOpenDate, offset),
+      requiredBy: shiftYears(params.awardCloseDate, offset),
+    };
+  }
+  const ra = resolveRoundScenario({
+    applicationType: "ROLLING_OVER",
+    roundStartYear: params.awardStartYear + offset,
+    // Unused for RA: its window depends only on the round's year.
+    onDate: new Date(0),
+  });
+  return { availableOn: ra.opensOn, requiredBy: ra.submitBy };
+}
+
 /** Shifts a date forward by `n` whole years (null-safe). */
 function shiftYears(date: Date | null, n: number): Date | null {
   if (!date) return null;
@@ -254,8 +285,12 @@ export function planSchedule(params: {
     rows.push({
       scheduleYear,
       academicYear,
-      availableOn: shiftYears(awardOpenDate, i),
-      requiredBy: shiftYears(awardCloseDate, i),
+      ...scheduleDatesForYear({
+        awardStartYear: startYear,
+        awardOpenDate,
+        awardCloseDate,
+        scheduleYear,
+      }),
       // Current + next year shown; far-future hidden until they approach.
       showOnPortal: scheduleYear <= DEFAULT_PORTAL_VISIBLE_YEARS,
     });
