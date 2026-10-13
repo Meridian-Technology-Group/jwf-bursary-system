@@ -3,6 +3,11 @@ import {
   resolveScheduleHorizon,
   planSchedule,
   generateSchedule,
+  effectiveHorizon,
+  planEndAfterYear,
+  planAddYear,
+  scheduleEditControls,
+  type PlannerRow,
   FINAL_ELIGIBLE_SCHOOL_YEAR,
   MAX_SCHEDULE_YEARS,
 } from "../schedule";
@@ -142,5 +147,115 @@ describe("generateSchedule — idempotency", () => {
     expect(res.created).toBe(1);
     expect(res.skipped).toBe(1);
     expect(tx.bursaryScheduleEntry.create).toHaveBeenCalledTimes(1);
+  });
+});
+
+// ─── Epic 21 #4 — End after this year / Add a year ───────────────────────────
+
+describe("effectiveHorizon", () => {
+  it("is the natural horizon when the schedule was never ended", () => {
+    expect(effectiveHorizon(7, null)).toBe(7);
+    expect(effectiveHorizon(7, undefined)).toBe(7);
+  });
+  it("caps at the ADMIN's end year, never above the natural horizon or below 1", () => {
+    expect(effectiveHorizon(7, 1)).toBe(1);
+    expect(effectiveHorizon(7, 9)).toBe(7);
+    expect(effectiveHorizon(7, 0)).toBe(1);
+  });
+});
+
+describe("generateSchedule — respects scheduleEndYear", () => {
+  const longAccount = { ...account, entryYearGroup: "Y8" as const }; // 6-year horizon
+
+  it("never re-creates an ended year (Regenerate / award lock)", async () => {
+    const tx = makeTx([1]);
+    const res = await generateSchedule(tx as never, { ...longAccount, scheduleEndYear: 1 }, round);
+    expect(res.horizon).toBe(1);
+    expect(tx.bursaryScheduleEntry.create).not.toHaveBeenCalled();
+    expect(tx.bursaryAccount.update).toHaveBeenCalledWith({
+      where: { id: "acc-1" },
+      data: { scheduleYears: 1 },
+    });
+  });
+
+  it("is idempotent when run twice on an ended account", async () => {
+    const tx = makeTx([1, 2]);
+    await generateSchedule(tx as never, { ...longAccount, scheduleEndYear: 2 }, round);
+    await generateSchedule(tx as never, { ...longAccount, scheduleEndYear: 2 }, round);
+    expect(tx.bursaryScheduleEntry.create).not.toHaveBeenCalled();
+  });
+});
+
+function row(scheduleYear: number, status: PlannerRow["status"] = "SCHEDULED"): PlannerRow {
+  return { id: `e${scheduleYear}`, scheduleYear, academicYear: `${2025 + scheduleYear}-${String(26 + scheduleYear).slice(-2)}`, status };
+}
+
+describe("planEndAfterYear", () => {
+  it("removes every SCHEDULED year after this one", () => {
+    const plan = planEndAfterYear([row(1, "COMPLETE"), row(2), row(3), row(4)], 1);
+    expect(plan).toEqual({ ok: true, deleteIds: ["e2", "e3", "e4"], removedYears: ["2027-28", "2028-29", "2029-30"] });
+  });
+
+  it("refuses when a later year has started, naming it", () => {
+    const plan = planEndAfterYear([row(1, "COMPLETE"), row(2, "RECEIVED"), row(3)], 1);
+    expect(plan).toEqual({ ok: false, reason: expect.stringContaining("2027-28 has already started") });
+  });
+
+  it("refuses when there is nothing after this year", () => {
+    const plan = planEndAfterYear([row(1), row(2)], 2);
+    expect(plan.ok).toBe(false);
+  });
+});
+
+describe("planAddYear", () => {
+  it("adds the year after the last one", () => {
+    expect(planAddYear([row(1), row(2)], 7, "WHITGIFT")).toEqual({ ok: true, scheduleYear: 3 });
+  });
+
+  it("refuses past the natural horizon (no Year 14)", () => {
+    const plan = planAddYear([row(1), row(2)], 2, "WHITGIFT");
+    expect(plan).toEqual({ ok: false, reason: expect.stringContaining("Year 13") });
+  });
+
+  it("names Year 11 at the OP partnering school", () => {
+    const plan = planAddYear([row(1)], 1, "OP_PARTNER");
+    expect(plan).toEqual({ ok: false, reason: expect.stringContaining("Year 11") });
+  });
+});
+
+describe("scheduleEditControls", () => {
+  const base = {
+    applicationId: "app-1",
+    roundAcademicYear: "2026/27",
+    firstAssessmentYear: "2026/27",
+    naturalHorizon: 3,
+    school: "WHITGIFT" as const,
+    accountClosed: false,
+  };
+  const linked = (r: PlannerRow, applicationId: string | null = null) => ({ ...r, applicationId });
+
+  it("enables End with the years it would remove, and Add when there is room", () => {
+    const c = scheduleEditControls({
+      ...base,
+      rows: [linked(row(1, "COMPLETE"), "app-1"), linked(row(2))],
+    });
+    expect(c.end).toEqual({ enabled: true, thisYear: "2026-27", removedYears: ["2027-28"] });
+    expect(c.add).toEqual({ enabled: true, addedYear: "2028-29", reopens: false });
+  });
+
+  it("disables both with reasons when there is nothing to remove and no room to add", () => {
+    const c = scheduleEditControls({
+      ...base,
+      rows: [linked(row(1), "app-1"), linked(row(2)), linked(row(3))].slice(0, 3),
+      applicationId: "app-3",
+      roundAcademicYear: "2028/29",
+    });
+    expect(c.end.enabled).toBe(false);
+    expect(c.add).toEqual({ enabled: false, why: expect.stringContaining("Year 13") });
+  });
+
+  it("says Add re-opens a closed account", () => {
+    const c = scheduleEditControls({ ...base, accountClosed: true, rows: [linked(row(1, "COMPLETE"), "app-1")] });
+    expect(c.add).toEqual({ enabled: true, addedYear: "2027-28", reopens: true });
   });
 });

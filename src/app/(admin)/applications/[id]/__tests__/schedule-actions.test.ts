@@ -28,9 +28,15 @@ vi.mock("@/lib/audit/log", () => ({ createAuditLog: () => auditMock() }));
 const generateScheduleMock = vi.fn(
   async (..._args: unknown[]) => ({ horizon: 3, created: 1, skipped: 2 })
 );
-vi.mock("@/lib/bursary-accounts/schedule", () => ({
-  generateSchedule: (...args: unknown[]) => generateScheduleMock(...args),
-}));
+vi.mock("@/lib/bursary-accounts/schedule", async () => {
+  const actual = await vi.importActual<typeof import("@/lib/bursary-accounts/schedule")>(
+    "@/lib/bursary-accounts/schedule"
+  );
+  return {
+    ...actual,
+    generateSchedule: (...args: unknown[]) => generateScheduleMock(...args),
+  };
+});
 
 let fakeTx: ReturnType<typeof makeFakeTx>;
 vi.mock("@/lib/db/prisma", () => ({

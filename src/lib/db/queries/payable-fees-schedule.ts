@@ -119,7 +119,7 @@ export async function getPayableFeesScheduleRows(
   const bursaryStatus = account.status === "ACTIVE" ? "Active" : "Closed";
 
   const rows: PayableFeesScheduleTableRow[] = account.scheduleEntries.map(
-    (entry, idx) => {
+    (entry) => {
       const app =
         (entry.applicationId ? appById.get(entry.applicationId) : null) ??
         appByYear.get(normaliseAcademicYear(entry.academicYear)) ??
@@ -157,7 +157,9 @@ export async function getPayableFeesScheduleRows(
         scheduleYear: entry.scheduleYear,
         academicYear: entry.academicYear,
         applicationId: app?.id ?? null,
-        schoolYearLabel: base != null ? `Year ${base + idx}` : null,
+        // Epic 21 #4: from the row's own scheduleYear, not its position, so a
+        // gap left by an ended-then-added schedule never mislabels later rows.
+        schoolYearLabel: base != null ? `Year ${base + entry.scheduleYear - 1}` : null,
         reasonCodes,
         payableFees,
         deltaPayableFees: null, // filled in the pass below

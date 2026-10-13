@@ -84,6 +84,10 @@ function makeFakeTx(application: Record<string, unknown>) {
       findMany: vi.fn(async () => []),
       create: vi.fn(async () => ({})),
     },
+    // Epic 21 #4: a re-award anchors the schedule on the account's first round.
+    round: {
+      findUnique: vi.fn(async () => ({ openDate: null, closeDate: null })),
+    },
     assessment: {
       update: vi.fn(async () => ({})),
     },

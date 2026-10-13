@@ -133,6 +133,12 @@ model BursaryAccount {
   /// assessment years generated on AWARD. NULL for legacy accounts created
   /// before the schedule landed.
   scheduleYears        Int?                   @map("schedule_years")
+  /// Epic 21 #4 — where an ADMIN ended the schedule ("End after this year"):
+  /// the last `scheduleYear` kept. NULL = the natural horizon (to Year 13, or
+  /// Year 11 at the OP partnering school). `generateSchedule` never plans past
+  /// it, so Regenerate and award locks cannot re-create an ended year.
+  /// "Add a year" moves it on, and clears it at the natural horizon.
+  scheduleEndYear      Int?                   @map("schedule_end_year")
   benchmarkPayableFees Decimal?               @map("benchmark_payable_fees") @db.Decimal(10, 2)
   leadApplicantId      String                 @map("lead_applicant_id") @db.Uuid
   status               BursaryAccountStatus   @default(ACTIVE)
@@ -143,7 +149,10 @@ model BursaryAccount {
   /// (`reopenAccountForAssessmentYear`, Epic 13 / C1, D13-2) clears it and
   /// returns the account to ACTIVE, because the completion that triggered the
   /// auto-close has itself been withdrawn. That reversal only ever undoes an
-  /// automatic close, and only while no outcome has been set. Nothing else may
+  /// automatic close, and only while no outcome has been set. Two further
+  /// re-openings are deliberate ADMIN decisions: a re-award of a CLOSED
+  /// account (`promoteToActiveAccount`, D18) and "Add a year" on a CLOSED
+  /// account (Epic 21 #4, audited with the previous close). Nothing else may
   /// rewrite this field. `Application.closedAt` mirrors this rule.
   closedAt             DateTime?              @map("closed_at") @db.Timestamptz(6)
   /// Epic 18b — why the account was closed manually (her April–May leavers

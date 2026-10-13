@@ -74,6 +74,8 @@ function makeFakeTx() {
         entryYearGroup: "Y6",
         leadApplicant: { id: "lead-1", email: "parent@example.test" },
       })),
+      // Epic 21 F3 — the account has a SCHEDULED year for this round.
+      count: vi.fn(async () => 1),
     },
     round: {
       findUnique: vi.fn(async () => ({ academicYear: "2028/29" })),
@@ -170,5 +172,20 @@ describe("createReassessmentApplicationAction — rollover reference (D13-1a Q5)
 
     expect(created[0].reference).not.toMatch(/^REA-/);
     expect(created[0].reference).not.toMatch(/BA-/);
+  });
+});
+
+describe("createReassessmentApplicationAction — schedule eligibility (Epic 21 F3)", () => {
+  it("refuses an account with no scheduled year for the round, and creates nothing", async () => {
+    const { tx } = makeFakeTx();
+    tx.bursaryAccount.count.mockResolvedValueOnce(0);
+    fakeTx = tx;
+    referenceSourceMock.mockResolvedValue(null);
+
+    const res = await createReassessmentApplicationAction(ACCOUNT_ID, ROUND_ID);
+
+    expect(res.success).toBe(false);
+    expect(res.error).toContain("no scheduled year for 2028/29");
+    expect(tx.application.create).not.toHaveBeenCalled();
   });
 });

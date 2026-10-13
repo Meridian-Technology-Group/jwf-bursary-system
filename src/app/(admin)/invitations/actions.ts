@@ -19,6 +19,7 @@
  *      `?token=<token>` link as the registration URL.
  */
 
+import { reassessmentEligibleWhere } from "@/lib/bursary-accounts/reassessment-eligibility";
 import { randomBytes } from "node:crypto";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
@@ -1315,6 +1316,20 @@ export async function createReassessmentApplicationAction(
         where: { id: roundId },
         select: { academicYear: true },
       });
+
+      // Epic 21 F3 — the same eligibility as the invitation batch: the
+      // account's schedule must have a SCHEDULED year for this round.
+      if (round) {
+        const eligible = await tx.bursaryAccount.count({
+          where: { id: bursaryAccountId, ...reassessmentEligibleWhere(round.academicYear) },
+        });
+        if (eligible === 0) {
+          return {
+            success: false as const,
+            error: `This bursary account has no scheduled year for ${round.academicYear}: its schedule has ended, or the account is closed. Use "Add a year" on the Admin tab first if this is intended.`,
+          };
+        }
+      }
 
       const priorReferenceSource = await getPreviousYearReferenceSource(
         tx,

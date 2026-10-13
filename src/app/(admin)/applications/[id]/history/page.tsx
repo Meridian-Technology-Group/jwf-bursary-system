@@ -32,6 +32,8 @@ const ACTION_LABELS: Record<string, string> = {
   APPLICATION_PAUSED: "Application paused",
   APPLICATION_RESUMED: "Application resumed",
   APPLICATION_OUTCOME_SET: "Outcome set",
+  SCHEDULE_ENDED_AFTER_YEAR: "Schedule ended after this year",
+  SCHEDULE_YEAR_ADDED: "Schedule year added",
   DOCUMENT_UPLOADED_BY_ASSESSOR: "Document uploaded by assessor",
   SECTION_SAVED_BY_ASSESSOR: "Section saved by assessor",
   EDIT_ON_BEHALF_FINISHED: "Editing on behalf finished",
