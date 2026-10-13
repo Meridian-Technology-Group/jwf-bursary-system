@@ -386,6 +386,14 @@ ALTER TABLE "bursary_accounts" ADD COLUMN "schedule_end_year" INTEGER;
 
 ### T5 · WP-5 — the show-on-portal tick governs the home page too
 
+**Status: MERGED 13 Oct** (#437; backfill approved by Brian 13 Oct). Built on `fix/portal-home-respects-show-on-portal`. Migration `20261013190000_schedule_show_on_portal_all_years`.
+
+**Change from the plan:** the backfill skips any row with a `SCHEDULE_SHOW_ON_PORTAL_TOGGLED` audit entry, so an admin's deliberate "hide" survives. Only untouched defaults are ticked.
+
+**Prod, checked read-only:** 5 of 9 rows hidden; all 5 would be ticked.
+
+The admin grid now reads "Shown to family" / "Hidden from family".
+
 **Facts.**
 - `showOnPortal` is filtered only in `getPortalScheduleForUser` (`src/lib/db/queries/schedule.ts:127-131`), which serves the `/schedule` calendar and the nav gate.
 - The home page query `getScheduleHomeForUser` (190-313) ignores it.
@@ -421,7 +429,7 @@ ALTER TABLE "bursary_accounts" ADD COLUMN "schedule_end_year" INTEGER;
 - **v1 path.** Prod held no v1 assessments on 13 Oct, so the legacy v1 outcome path is commented, not hooked.
 - **Audit.** Note actions log against the application, so they appear on its History tab.
 
-**Prod backfill (2 locked awards).** Not written yet. It's optional and offered in the PR.
+**Prod backfill (2 locked awards).** Approved by Brian 13 Oct, to run **after promotion** and only on his go-ahead: TS-WILL05 and TS-EMIN01 (2026/27 NEW_AWARD, both with a synopsis) get one YEAR entry each, keyed by `assessment_id` (idempotent).
 
 **Facts.**
 - `Assessment.synopsis` is per year, plain text, autosaved by `saveSynopsis` (`assessment/checklist-actions.ts:31-70`; ADMIN/ASSESSOR; no status guard; audits `ASSESSMENT_SYNOPSIS_SAVE`).
@@ -481,7 +489,7 @@ Write the policies **in this migration**, using the patterns in `20260606210000_
 
 ### T7 · WP-F2 — rolling-over dates on future schedule years (blocked on D-1)
 
-**Status: BUILT 13 Oct** on `fix/schedule-rolling-over-dates`.
+**Status: MERGED 13 Oct** (#439; backfill approved by Brian 13 Oct; merged after T5, `planSchedule` conflict resolved as T7's dates + T5's `showOnPortal: true`). Built on `fix/schedule-rolling-over-dates`.
 - **RA default:** `round-scenario.ts` now uses 15 Apr → 21 May (`RA_OPENS_DAY` / `RA_SUBMIT_BY_DAY`).
 - **Planning:** later years are planned through `scheduleDatesForYear`.
 - **Migration:** `20261013210000_schedule_rolling_over_dates` re-dates 7 prod rows.
@@ -490,6 +498,7 @@ Write the policies **in this migration**, using the patterns in `20260606210000_
 - Prod's 2026/27 round stores RA 15 Apr → **22 May** 2027. That contradicts her 21 May answer by a day.
 - Its dates also sit a year later than the resolver gives for the same round, so the row's meaning is unclear.
 - **To confirm with her:** 21 or 22 May. Whichever she says, correct the window row on the Rounds page so the invitation deadline and the schedule agree.
+- **Brian, 13 Oct:** build on 21 May (her written D-1) and ask her in the batch email. If she confirms 21, the prod RA row is corrected on the Rounds page.
 
 **Facts.**
 - `planSchedule` (`schedule.ts:94-122`) sets every year's `availableOn` and `requiredBy` to the award round's `openDate` and `closeDate` shifted by N years. That gives 21 Aug and 30 Nov forever.

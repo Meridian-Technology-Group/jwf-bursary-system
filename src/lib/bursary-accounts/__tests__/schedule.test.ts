@@ -79,10 +79,8 @@ describe("planSchedule — dates + labels + show/hide", () => {
     expect(iso(rows[2].requiredBy)).toBe("2028-05-21");
   });
 
-  it("shows the current+next year, hides far-future years", () => {
-    expect(rows[0].showOnPortal).toBe(true);
-    expect(rows[1].showOnPortal).toBe(true);
-    expect(rows[2].showOnPortal).toBe(false);
+  it("shows every year of the award by default (Epic 21 #5, D-2)", () => {
+    expect(rows.every((r) => r.showOnPortal)).toBe(true);
   });
 
   it("falls back to the raw label when the academic year can't be parsed", () => {

@@ -19,8 +19,11 @@
  * year is materialised into a real Round the entry is linked via `roundId` and
  * the round's own dates take over. Until then these are the planned dates.
  *
- * Show/Hide on portal (illustration default): the current/next schedule year is
- * shown; far-future years are hidden until they approach.
+ * Show/Hide on portal (Epic 21 #5, D-2): every year of the award is shown by
+ * default, and the tick is the admin's "hide this year from the family"
+ * switch. It governs the portal home page and the calendar alike. (It used to
+ * default on for years 1–2 only, which hid years 3+ from every family once the
+ * home page obeyed it.)
  *
  * Epic 21 #4: an ADMIN can end the schedule after a year (a conditional
  * bursary) or add a year back. The account's `scheduleEndYear` caps the
@@ -49,9 +52,6 @@ export const FINAL_ELIGIBLE_SCHOOL_YEAR = 13;
 
 /** Hard ceiling on generated years, so a bad entry-year never explodes the grid. */
 export const MAX_SCHEDULE_YEARS = 8;
-
-/** How many future years (incl. the award year) are shown on the portal by default. */
-const DEFAULT_PORTAL_VISIBLE_YEARS = 2;
 
 /**
  * D19 horizon: number of assessment years to generate, counting the award year
@@ -291,8 +291,8 @@ export function planSchedule(params: {
         awardCloseDate,
         scheduleYear,
       }),
-      // Current + next year shown; far-future hidden until they approach.
-      showOnPortal: scheduleYear <= DEFAULT_PORTAL_VISIBLE_YEARS,
+      // Epic 21 #5 (D-2): every year shown; the admin hides one by unticking.
+      showOnPortal: true,
     });
   }
   return rows;

@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from "vitest";
 
 import {
   getPortalScheduleForUser,
+  getScheduleHomeForUser,
   hasPortalSchedule,
 } from "../schedule";
 
@@ -157,5 +158,18 @@ describe("gate vs loader agree on the same account (siblings edge case)", () => 
     const loaded = await getPortalScheduleForUser(loader.tx, "user-1");
     expect(loaded?.visibleEntries.length).toBeGreaterThan(0);
     expect(await hasPortalSchedule(gate.tx, "user-1")).toBe(true);
+  });
+});
+
+describe("getScheduleHomeForUser — show-on-portal (Epic 21 #5)", () => {
+  it("asks only for the rows the admin has left shown to the family", async () => {
+    const findMany = vi.fn(async (_args: Args) => []);
+    await getScheduleHomeForUser({ bursaryAccount: { findMany } } as never, "user-1");
+    const args = findMany.mock.calls[0]![0] as {
+      where: Args;
+      select: { scheduleEntries: { where: Args } };
+    };
+    expect(args.where).toEqual({ leadApplicantId: "user-1", status: "ACTIVE" });
+    expect(args.select.scheduleEntries.where).toEqual({ showOnPortal: true });
   });
 });
