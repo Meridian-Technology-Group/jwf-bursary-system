@@ -72,6 +72,15 @@ const COLUMNS: ColumnDef[] = [
     numFmt: '£#,##0.00',
   },
   { header: "Gap Reasons", key: "gapReasons", width: 50 },
+  // Epic 21 #1 + #2: the gap code that takes the full justification, and the
+  // gap with the scholarship added back (funding view; display only).
+  { header: "Main Gap Reason", key: "mainGapReason", width: 50 },
+  {
+    header: "Scholarship-adjusted Gap",
+    key: "scholarshipAdjustedGap",
+    width: 24,
+    numFmt: '£#,##0.00',
+  },
   { header: "Debt Status", key: "debtStatus", width: 22 },
   { header: "Lifestyle Squeeze", key: "lifestyleSqueezeLabel", width: 22 },
   // Epic 13 / C2: the household income figure the award rests on, immediately
@@ -147,33 +156,12 @@ export async function buildXlsxBuffer(rows: ExportRow[]): Promise<Buffer> {
   });
   headerRow.height = 20;
 
-  // Add data rows
+  // Add data rows. Values are taken from COLUMNS, so a new column can never
+  // be left out of the sheet while appearing in the CSV (Epic 21).
   rows.forEach((row) => {
-    const addedRow = sheet.addRow({
-      reference: row.reference,
-      childFirstName: row.childFirstName,
-      childLastName: row.childLastName,
-      school: row.school,
-      familySynopsis: row.familySynopsis,
-      accommodationType: row.accommodationType,
-      incomeCategory: row.incomeCategory,
-      propertyCategory: row.propertyCategory,
-      bursaryAward: row.bursaryAward,
-      yearlyPayableFees: row.yearlyPayableFees,
-      monthlyPayableFees: row.monthlyPayableFees,
-      reasonCodes: row.reasonCodes,
-      flags: row.flags,
-      outcome: row.outcome,
-      recommendedPayableFees: row.recommendedPayableFees,
-      confirmedPayableFees: row.confirmedPayableFees,
-      gapAmount: row.gapAmount,
-      gapReasons: row.gapReasons,
-      debtStatus: row.debtStatus,
-      lifestyleSqueezeLabel: row.lifestyleSqueezeLabel,
-      totalHouseholdNetIncome: row.totalHouseholdNetIncome,
-      manualAdjustment: row.manualAdjustment,
-      manualAdjustmentReason: row.manualAdjustmentReason,
-    });
+    const addedRow = sheet.addRow(
+      Object.fromEntries(COLUMNS.map((col) => [col.key, row[col.key]]))
+    );
 
     // Apply number formats to financial columns
     COLUMNS.forEach((col, idx) => {
@@ -185,8 +173,7 @@ export async function buildXlsxBuffer(rows: ExportRow[]): Promise<Buffer> {
   });
 
   // Auto-filter on header row spanning all columns
-  const lastColLetter = String.fromCharCode(64 + COLUMNS.length);
-  sheet.autoFilter = `A1:${lastColLetter}1`;
+  sheet.autoFilter = `A1:${columnLetter(COLUMNS.length)}1`;
 
   // Return as Buffer
   const arrayBuffer = await workbook.xlsx.writeBuffer();
@@ -215,6 +202,21 @@ export function buildCsvString(rows: ExportRow[]): string {
 }
 
 // ─── Internal helpers ─────────────────────────────────────────────────────────
+
+/**
+ * Spreadsheet column letter for a 1-based index: 1 → A, 26 → Z, 27 → AA,
+ * 52 → AZ. Exported for testing (the old `fromCharCode(64 + n)` broke past Z).
+ */
+export function columnLetter(n: number): string {
+  let letters = "";
+  let rest = n;
+  while (rest > 0) {
+    const r = (rest - 1) % 26;
+    letters = String.fromCharCode(65 + r) + letters;
+    rest = Math.floor((rest - 1) / 26);
+  }
+  return letters;
+}
 
 /** Encodes a single CSV row, escaping values that need quoting. */
 function csvRow(values: string[]): string {

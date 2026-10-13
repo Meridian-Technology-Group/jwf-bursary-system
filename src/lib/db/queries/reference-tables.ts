@@ -664,17 +664,20 @@ export interface GapReasonRow {
   label: string;
   isDeprecated: boolean;
   sortOrder: number;
+  /** Epic 21 #2 — precedence as the main gap explanation; null = unranked. */
+  rank: number | null;
   createdAt: Date;
 }
 
 /**
- * Returns ALL gap reasons including deprecated ones, ordered by sortOrder
- * ascending. Mirrors `getAllReasonCodes` exactly — GapReason has the same
- * shape and the same deprecate-never-delete convention.
+ * Returns ALL gap reasons including deprecated ones. Mirrors
+ * `getAllReasonCodes` — GapReason has the same shape and the same
+ * deprecate-never-delete convention. Epic 21 #2: ordered by rank (unranked
+ * last), then display order, so Settings reads as her precedence list.
  */
 export async function getAllGapReasons(tx: Tx): Promise<GapReasonRow[]> {
   const rows = await tx.gapReason.findMany({
-    orderBy: { sortOrder: "asc" },
+    orderBy: [{ rank: { sort: "asc", nulls: "last" } }, { sortOrder: "asc" }],
   });
 
   return rows.map((row) => ({
@@ -683,6 +686,7 @@ export async function getAllGapReasons(tx: Tx): Promise<GapReasonRow[]> {
     label: row.label,
     isDeprecated: row.isDeprecated,
     sortOrder: row.sortOrder,
+    rank: row.rank,
     createdAt: row.createdAt,
   }));
 }

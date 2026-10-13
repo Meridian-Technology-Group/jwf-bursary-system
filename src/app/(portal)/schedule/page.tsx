@@ -25,7 +25,7 @@ import { PortalPage } from "@/components/portal/portal-page";
 import { ScheduleCalendar } from "@/components/portal/schedule-calendar";
 
 export const metadata = {
-  title: "Assessment Schedule",
+  title: "Application Schedule",
 };
 
 export default async function SchedulePage() {
@@ -57,12 +57,12 @@ export default async function SchedulePage() {
           Your bursary
         </div>
         <h1 className="text-2xl font-semibold text-primary-900">
-          Assessment Schedule
+          Application Schedule
         </h1>
         <p className="mt-2 max-w-prose text-sm text-slate-500">
-          Bursaries are reviewed every year. This is your assessment schedule for
+          Bursaries are reviewed every year. This is your application schedule for
           your child&rsquo;s time at the school — from Year 6 through to Year {finalYear}.
-          We&rsquo;ll email you when each year&rsquo;s assessment opens; there is
+          We&rsquo;ll email you when each year&rsquo;s application opens; there is
           nothing for you to do here.
         </p>
       </div>

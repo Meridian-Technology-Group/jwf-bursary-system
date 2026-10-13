@@ -11,6 +11,10 @@
 import type { School } from "@prisma/client";
 import type { Tx } from "@/lib/db/prisma";
 import type { AssessmentOutcome } from "@prisma/client";
+import {
+  mainGapReason,
+  scholarshipAdjustedGap,
+} from "@/lib/reason-codes/gap-metrics";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -38,6 +42,16 @@ export interface ExportRow {
   gapAmount: number | null;
   /** Gap reasons as comma-separated "code – label" strings (mirrors `reasonCodes`). */
   gapReasons: string;
+  /**
+   * Epic 21 #2 — the highest-ranked gap reason ("code – label"), which takes
+   * the full justification of the gap. Blank when there are no gap reasons.
+   */
+  mainGapReason: string;
+  /**
+   * Epic 21 #1 — gap + scholarship spend incl VAT (`gap-metrics.ts`). Equals
+   * `gapAmount` when there is no scholarship; null when `gapAmount` is null.
+   */
+  scholarshipAdjustedGap: number | null;
   /** `Assessment.debtStatusLabel` (v2 only). */
   debtStatus: string;
   /** `Assessment.lifestyleSqueezeLabel` (v2 only). */
@@ -93,6 +107,8 @@ export async function getExportRows(
           totalHouseholdNetIncome: true,
           manualAdjustment: true,
           manualAdjustmentReason: true,
+          // Epic 21 #1 — VAT rate for the scholarship-adjusted gap.
+          vatRate: true,
           recommendation: {
             select: {
               familySynopsis: true,
@@ -109,6 +125,8 @@ export async function getExportRows(
               recommendedPayableFees: true,
               confirmedPayableFees: true,
               gapAmount: true,
+              // Epic 21 #1 — scholarship spend (fees × pct, before VAT).
+              scholarshipSpendBeforeVat: true,
               reasonCodes: {
                 select: {
                   reasonCode: {
@@ -128,6 +146,9 @@ export async function getExportRows(
                     select: {
                       code: true,
                       label: true,
+                      // Epic 21 #2 — precedence for the main gap reason.
+                      rank: true,
+                      sortOrder: true,
                     },
                   },
                 },
@@ -164,6 +185,7 @@ export interface ExportRowSource {
     totalHouseholdNetIncome: unknown;
     manualAdjustment: unknown;
     manualAdjustmentReason: string | null;
+    vatRate: unknown;
     recommendation: {
       familySynopsis: string | null;
       accommodationStatus: string | null;
@@ -177,8 +199,16 @@ export interface ExportRowSource {
       recommendedPayableFees: unknown;
       confirmedPayableFees: unknown;
       gapAmount: unknown;
+      scholarshipSpendBeforeVat: unknown;
       reasonCodes: { reasonCode: { code: number; label: string } }[];
-      gapReasons: { gapReason: { code: number; label: string } }[];
+      gapReasons: {
+        gapReason: {
+          code: number;
+          label: string;
+          rank: number | null;
+          sortOrder: number;
+        };
+      }[];
     } | null;
   } | null;
 }
@@ -214,6 +244,10 @@ export function mapExportRow(app: ExportRowSource): ExportRow {
     .map(({ gapReason }) => `${gapReason.code} – ${gapReason.label}`)
     .join(", ");
 
+  // Epic 21 #2 — the highest-ranked gap reason, same "code – label" form.
+  const main = mainGapReason((rec?.gapReasons ?? []).map((g) => g.gapReason));
+  const mainGapReasonLabel = main ? `${main.code} – ${main.label}` : "";
+
   // Flags
   const flagList: string[] = [];
   if (rec?.dishonestyFlag) flagList.push("Dishonesty");
@@ -246,6 +280,12 @@ export function mapExportRow(app: ExportRowSource): ExportRow {
     confirmedPayableFees: decimalToNumber(rec?.confirmedPayableFees),
     gapAmount: decimalToNumber(rec?.gapAmount),
     gapReasons,
+    mainGapReason: mainGapReasonLabel,
+    scholarshipAdjustedGap: scholarshipAdjustedGap(
+      decimalToNumber(rec?.gapAmount),
+      decimalToNumber(rec?.scholarshipSpendBeforeVat),
+      decimalToNumber(app.assessment?.vatRate)
+    ),
     debtStatus: app.assessment?.debtStatusLabel ?? "",
     lifestyleSqueezeLabel: app.assessment?.lifestyleSqueezeLabel ?? "",
     // Epic 13 / C2 — the income figure and the adjustment that explains it.

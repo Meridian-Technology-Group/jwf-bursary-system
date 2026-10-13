@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { buildCsvString } from "../xlsx";
+import { buildCsvString, columnLetter } from "../xlsx";
 import { mapExportRow, type ExportRowSource } from "@/lib/db/queries/exports";
 
 /**
@@ -31,6 +31,7 @@ function source(overrides: Partial<ExportRowSource> = {}): ExportRowSource {
       totalHouseholdNetIncome: null,
       manualAdjustment: null,
       manualAdjustmentReason: null,
+      vatRate: 20,
       recommendation: {
         familySynopsis: "A family synopsis.",
         accommodationStatus: "Renting",
@@ -44,6 +45,7 @@ function source(overrides: Partial<ExportRowSource> = {}): ExportRowSource {
         recommendedPayableFees: null,
         confirmedPayableFees: null,
         gapAmount: null,
+        scholarshipSpendBeforeVat: null,
         reasonCodes: [],
         gapReasons: [],
       },
@@ -84,5 +86,22 @@ describe("export columns (D13-1a)", () => {
     expect(lines).toHaveLength(3); // header + 2 rows
     expect(lines[1]).toContain("Bob,Smith");
     expect(lines[2]).toContain("Beth,Smith");
+  });
+});
+
+describe("export columns — Epic 21 gap columns", () => {
+  it("places Main Gap Reason and Scholarship-adjusted Gap right after Gap Reasons", () => {
+    const [header] = buildCsvString([mapExportRow(source())]).split("\r\n");
+    expect(header).toContain(
+      "Gap Amount,Gap Reasons,Main Gap Reason,Scholarship-adjusted Gap,Debt Status"
+    );
+  });
+
+  it("names spreadsheet columns past Z correctly (auto-filter range)", () => {
+    expect(columnLetter(1)).toBe("A");
+    expect(columnLetter(26)).toBe("Z");
+    expect(columnLetter(27)).toBe("AA");
+    expect(columnLetter(52)).toBe("AZ");
+    expect(columnLetter(53)).toBe("BA");
   });
 });
