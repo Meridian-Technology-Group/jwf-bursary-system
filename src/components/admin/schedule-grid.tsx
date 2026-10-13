@@ -217,7 +217,9 @@ export function ScheduleGrid({
                   <TableHead>Available On</TableHead>
                   <TableHead>Required By</TableHead>
                   <TableHead>Received On</TableHead>
-                  <TableHead className="text-right">Show on Portal</TableHead>
+                  {/* Epic 21 #5: the tick governs the family's home page and
+                      calendar alike, so say so. */}
+                  <TableHead className="text-right">Shown to family</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -254,12 +256,15 @@ export function ScheduleGrid({
                             onCheckedChange={(next) => handleToggle(e.id, next)}
                             aria-label={`${
                               e.showOnPortal ? "Hide" : "Show"
-                            } year ${e.scheduleYear} on the portal`}
+                            } year ${e.scheduleYear} ${e.showOnPortal ? "from" : "to"} the family`}
                           />
+                          <span className="w-28 text-left text-xs text-slate-500">
+                            {e.showOnPortal ? "Shown to family" : "Hidden from family"}
+                          </span>
                         </div>
                       ) : (
                         <span className="text-slate-500">
-                          {e.showOnPortal ? "Shown" : "Hidden"}
+                          {e.showOnPortal ? "Shown to family" : "Hidden from family"}
                         </span>
                       )}
                     </TableCell>

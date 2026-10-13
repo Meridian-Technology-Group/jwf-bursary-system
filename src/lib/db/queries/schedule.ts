@@ -221,6 +221,9 @@ export async function getScheduleHomeForUser(
       school: true,
       entryYearGroup: true,
       scheduleEntries: {
+        // Epic 21 #5: the show-on-portal tick governs the home page too, as
+        // it already does the calendar (`getPortalScheduleForUser`).
+        where: { showOnPortal: true },
         orderBy: { scheduleYear: "asc" },
         select: {
           scheduleYear: true,
