@@ -162,6 +162,8 @@ async function seedReasonCodes(): Promise<void> {
 async function seedGapReasons(): Promise<void> {
   section("Gap reasons (CALC-02)");
   for (const gr of gapReasons) {
+    // `rank` goes in `create` only: it is edited in Settings, and a rerun of
+    // seed:reference must not wipe her edits (Epic 21 #2).
     await prisma.gapReason.upsert({
       where: { code: gr.code },
       create: gr,

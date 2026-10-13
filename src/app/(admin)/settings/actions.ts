@@ -20,6 +20,7 @@ import { isLockedEmailTemplateType } from "@/lib/email/locked-types";
 import { DEFAULT_CUSTOM_TEMPLATE_MERGE_FIELDS } from "@/lib/email/template-defaults";
 import { validateBandSet, type ValidatableBand } from "@/lib/settings/band-set-validation";
 import { isDuplicateEffectiveFrom } from "@/lib/settings/reference-versioning";
+import { planGapRanks } from "@/lib/reason-codes/gap-rank";
 import type { School, EmailTemplateType, NotionalCostType, DebtSavingsContext } from "@prisma/client";
 import { NotionalCostType as NotionalCostTypeEnum } from "@prisma/client";
 
@@ -1332,6 +1333,12 @@ export async function createLifestyleSqueezeBandVersionAction(
 //
 // Mirrors upsertReasonCodeAction exactly: create new or update existing by
 // id, soft-deprecate via isDeprecated, never delete.
+//
+// Epic 21 #2: each live code also carries a `rank` (precedence as the main
+// gap explanation). Saving a taken rank inserts the code there and moves the
+// others down one (`planGapRanks`); deprecating a code unranks it and closes
+// the gap. Every form that posts here re-posts `rank`, the deprecate toggle
+// included, so a toggle never clears it by omission.
 
 export async function upsertGapReasonAction(
   formData: FormData
@@ -1344,15 +1351,27 @@ export async function upsertGapReasonAction(
     const label = (formData.get("label") as string)?.trim();
     const isDeprecated = formData.get("isDeprecated") === "true";
     const sortOrderRaw = formData.get("sortOrder") as string;
+    const rankRaw = ((formData.get("rank") as string | null) ?? "").trim();
 
     const code = parseInt(codeRaw, 10);
     const sortOrder = parseInt(sortOrderRaw, 10);
+    const rank = rankRaw === "" ? null : Number(rankRaw);
 
     if (!label || isNaN(code)) {
       return { success: false, error: "Code and label are required." };
     }
+    if (rank !== null && (!Number.isInteger(rank) || rank < 1)) {
+      return {
+        success: false,
+        error: "Rank must be a whole number from 1 (or blank for unranked).",
+      };
+    }
 
     await withUserContext(user.id, user.role as RlsRole, async (tx) => {
+      const before = id
+        ? await tx.gapReason.findUnique({ where: { id }, select: { rank: true } })
+        : null;
+
       let gapReason;
       if (id) {
         gapReason = await tx.gapReason.update({
@@ -1375,6 +1394,24 @@ export async function upsertGapReasonAction(
         });
       }
 
+      // Epic 21 #2 — re-rank the live codes around this one.
+      const desiredRank = gapReason.isDeprecated ? null : rank;
+      const live = await tx.gapReason.findMany({
+        where: { isDeprecated: false },
+        select: { id: true, code: true, rank: true },
+      });
+      const rankChanges = planGapRanks(
+        live,
+        { id: gapReason.id, code, currentRank: before?.rank ?? null },
+        desiredRank
+      );
+      for (const change of rankChanges) {
+        await tx.gapReason.update({
+          where: { id: change.id },
+          data: { rank: change.to },
+        });
+      }
+
       await createAuditLog(tx, {
         userId: user.id,
         action: id
@@ -1385,7 +1422,17 @@ export async function upsertGapReasonAction(
         context: id
           ? `Updated gap reason ${code}: ${label}`
           : `Created gap reason ${code}: ${label}`,
-        metadata: { code, label, isDeprecated },
+        metadata: {
+          code,
+          label,
+          isDeprecated,
+          sortOrder: gapReason.sortOrder,
+          rank: desiredRank,
+          // Other codes whose rank moved to make room (or close a gap).
+          reranked: rankChanges
+            .filter((c) => c.id !== gapReason.id)
+            .map(({ code: c, from, to }) => ({ code: c, from, to })),
+        },
       });
     });
 

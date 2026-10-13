@@ -158,6 +158,14 @@ Rebase each branch on fresh staging after the previous one merges (merge `origin
 
 ### T2 · WP-1 + WP-2 — scholarship-adjusted gap and gap ranking
 
+**Status: BUILT 13 Oct** on `feature/gap-ranking-and-adjusted-gap`. Migration `20261013160000_gap_reason_rank`. Pure core in `src/lib/reason-codes/gap-metrics.ts` (`scholarshipAdjustedGap`, `mainGapReason`, `summariseGaps`) and `gap-rank.ts` (`planGapRanks`). Rehearsal check, read-only: 271 recommendations, gap −£851,622, scholarship incl VAT £768,057, adjusted −£83,565. These are the quoted figures.
+
+Two changes from the plan:
+- **Duplicate rank.** Saving a rank another code holds **inserts** the code there and moves the others down; it isn't rejected. Deprecating a code unranks it and closes the gap, so live ranks stay 1…n. Rejecting would make "add a new code at rank 5" sixteen separate edits.
+- **Export rows.** `xlsx.ts` builds each row from `COLUMNS`, so the hand-written `addRow` list (the drift risk) is gone.
+
+The mislabels are logged in `follow-ups.md`.
+
 **Facts.**
 - The gap is `Recommendation.gapAmount = confirmed − recommended` (`src/lib/assessment/recommendation-v2.ts:27-32`), recomputed server-side on save (`recommendation/actions.ts:102-141`). It is negative when the family pays less than recommended.
 - Scholarship spend is `Recommendation.scholarshipSpendBeforeVat` (`award.ts:250`, fees × pct, before VAT). The VAT rate is `Assessment.vatRate` (default 20).
