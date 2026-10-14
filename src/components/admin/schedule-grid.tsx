@@ -239,7 +239,16 @@ export function ScheduleGrid({
                       {e.manuallyCreated ? "Yes" : "No"}
                     </TableCell>
                     <TableCell>{fmt(e.availableOn)}</TableCell>
-                    <TableCell>{fmt(e.requiredBy)}</TableCell>
+                    <TableCell>
+                      {fmt(e.requiredBy)}
+                      {/* Epic 21 R2 — this family's own deadline (an
+                          extension or an earlier date) when it differs. */}
+                      {e.familyDeadline && (
+                        <span className="block whitespace-nowrap text-xs font-medium text-amber-700">
+                          Family: {fmt(e.familyDeadline)}
+                        </span>
+                      )}
+                    </TableCell>
                     <TableCell>{fmt(e.receivedOn)}</TableCell>
                     <TableCell className="text-right">
                       {canManage ? (

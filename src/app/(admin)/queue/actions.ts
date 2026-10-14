@@ -296,6 +296,7 @@ export async function createInternalRequestAction(
             defaultSubmissionDeadlineNew: round.defaultSubmissionDeadlineNew,
             defaultSubmissionDeadlineRolling:
               round.defaultSubmissionDeadlineRolling,
+            windows: round.windows,
           },
         },
         expiresAt,

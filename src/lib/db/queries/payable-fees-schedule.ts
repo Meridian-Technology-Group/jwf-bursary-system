@@ -13,6 +13,7 @@
 import type { Tx } from "@/lib/db/prisma";
 import { schoolYearForEntryYearGroup } from "@/lib/assessment/schooling-years";
 import { AWARD_FUND_LABELS } from "@/lib/assessment/award-fund";
+import { scheduleRowDates } from "@/lib/bursary-accounts/schedule-dates";
 
 export interface PayableFeesScheduleTableRow {
   scheduleYear: number;
@@ -30,6 +31,11 @@ export interface PayableFeesScheduleTableRow {
   payableFees: number | null;
   deltaPayableFees: number | null;
   submitBy: Date | null;
+  /**
+   * Epic 21 R2 — that year's application's own deadline (override) when it
+   * falls on another day than `submitBy`; null otherwise.
+   */
+  familyDeadline: Date | null;
   applicationStatus: string;
   assessmentStatus: string;
   bursaryStatus: string;
@@ -89,6 +95,8 @@ export async function getPayableFeesScheduleRows(
       formStatus: true,
       closedAt: true,
       applicationType: true,
+      // Epic 21 R2 — the family's own deadline, shown beside the window.
+      submissionDeadlineAt: true,
       round: { select: { academicYear: true } },
       assessment: {
         select: {
@@ -164,6 +172,14 @@ export async function getPayableFeesScheduleRows(
         payableFees,
         deltaPayableFees: null, // filled in the pass below
         submitBy: entry.requiredBy,
+        familyDeadline: (() => {
+          const dates = scheduleRowDates({
+            availableOn: null,
+            requiredBy: entry.requiredBy,
+            application: app,
+          });
+          return dates.hasOwnDeadline ? dates.submitBy : null;
+        })(),
         applicationStatus,
         assessmentStatus,
         bursaryStatus,

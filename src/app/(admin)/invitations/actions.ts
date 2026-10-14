@@ -1542,6 +1542,7 @@ export async function addSecondParentAction(
             defaultSubmissionDeadlineNew: app.round.defaultSubmissionDeadlineNew,
             defaultSubmissionDeadlineRolling:
               app.round.defaultSubmissionDeadlineRolling,
+            windows: app.round.windows,
           },
         },
         existingProfileId: profile?.id ?? null,

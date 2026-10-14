@@ -641,6 +641,12 @@ export default async function AssessmentAdminPage({ params }: Props) {
                     </td>
                     <td className="px-3 py-2 text-xs text-slate-600">
                       {row.submitBy ? formatLondonDate(row.submitBy) : "—"}
+                      {/* Epic 21 R2 — this family's own deadline when it differs. */}
+                      {row.familyDeadline && (
+                        <span className="block whitespace-nowrap font-medium text-amber-700">
+                          Family: {formatLondonDate(row.familyDeadline)}
+                        </span>
+                      )}
                     </td>
                     <td className="px-3 py-2 text-xs text-slate-600">{row.applicationStatus}</td>
                     <td className="px-3 py-2 text-xs text-slate-600">{row.assessmentStatus}</td>

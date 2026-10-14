@@ -30,6 +30,7 @@ import {
   effectiveSubmissionDeadline,
   type SubmissionDeadlineApplicationType,
   type SubmissionDeadlineRound,
+  DEADLINE_ROUND_SELECT,
 } from "@/lib/rounds/submission-deadline";
 
 /**
@@ -89,8 +90,4 @@ export function invitationDeadlineFields(
  * `SubmissionDeadlineRound`. Kept here so a new invitation path cannot forget a
  * column and silently fall through to the close date.
  */
-export const INVITATION_ROUND_DEADLINE_SELECT = {
-  closeDate: true,
-  defaultSubmissionDeadlineNew: true,
-  defaultSubmissionDeadlineRolling: true,
-} as const;
+export const INVITATION_ROUND_DEADLINE_SELECT = DEADLINE_ROUND_SELECT;

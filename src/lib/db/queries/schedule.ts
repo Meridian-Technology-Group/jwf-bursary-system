@@ -9,6 +9,7 @@
 import type { Tx } from "@/lib/db/prisma";
 import type { ScheduleEntryStatus, ScheduleEntryType } from "@prisma/client";
 import { parseAcademicYearStart } from "@/lib/assessment/fee-year";
+import { scheduleRowDates } from "@/lib/bursary-accounts/schedule-dates";
 
 /** A schedule-grid row, serialised for the client component. */
 export interface ScheduleEntryRow {
@@ -31,6 +32,12 @@ export interface ScheduleEntryRow {
    * when there is none, or when RLS hides it from this viewer (D-4).
    */
   applicationId: string | null;
+  /**
+   * Epic 21 R2 — the family's own deadline (that year's application's
+   * `submissionDeadlineAt` override) when it falls on another day than
+   * `requiredBy`; null otherwise. ISO string.
+   */
+  familyDeadline: string | null;
 }
 
 /**
@@ -65,31 +72,44 @@ export async function getScheduleForAccount(
   // and by the academic year's start (rows are "2026-27", rounds "2026/27").
   const visibleApps = await tx.application.findMany({
     where: { bursaryAccountId },
-    select: { id: true, round: { select: { academicYear: true } } },
+    select: {
+      id: true,
+      submissionDeadlineAt: true,
+      round: { select: { academicYear: true } },
+    },
   });
-  const visibleIds = new Set(visibleApps.map((a) => a.id));
+  const appById = new Map(visibleApps.map((a) => [a.id, a]));
   const appByStartYear = new Map(
-    visibleApps.map((a) => [parseAcademicYearStart(a.round.academicYear), a.id])
+    visibleApps.map((a) => [parseAcademicYearStart(a.round.academicYear), a])
   );
 
-  return entries.map((e) => ({
-    id: e.id,
-    scheduleYear: e.scheduleYear,
-    academicYear: e.academicYear,
-    type: e.type,
-    status: e.status,
-    manuallyCreated: e.manuallyCreated,
-    availableOn: e.availableOn ? e.availableOn.toISOString() : null,
-    requiredBy: e.requiredBy ? e.requiredBy.toISOString() : null,
-    receivedOn: e.receivedOn ? e.receivedOn.toISOString() : null,
-    showOnPortal: e.showOnPortal,
-    hasRound: e.roundId != null,
-    hasApplication: e.applicationId != null,
-    applicationId:
-      e.applicationId && visibleIds.has(e.applicationId)
-        ? e.applicationId
-        : (appByStartYear.get(parseAcademicYearStart(e.academicYear)) ?? null),
-  }));
+  return entries.map((e) => {
+    const app =
+      (e.applicationId ? appById.get(e.applicationId) : undefined) ??
+      appByStartYear.get(parseAcademicYearStart(e.academicYear)) ??
+      null;
+    const dates = scheduleRowDates({
+      availableOn: e.availableOn,
+      requiredBy: e.requiredBy,
+      application: app,
+    });
+    return {
+      id: e.id,
+      scheduleYear: e.scheduleYear,
+      academicYear: e.academicYear,
+      type: e.type,
+      status: e.status,
+      manuallyCreated: e.manuallyCreated,
+      availableOn: e.availableOn ? e.availableOn.toISOString() : null,
+      requiredBy: e.requiredBy ? e.requiredBy.toISOString() : null,
+      receivedOn: e.receivedOn ? e.receivedOn.toISOString() : null,
+      showOnPortal: e.showOnPortal,
+      hasRound: e.roundId != null,
+      hasApplication: e.applicationId != null,
+      applicationId: app?.id ?? null,
+      familyDeadline: dates.hasOwnDeadline && dates.submitBy ? dates.submitBy.toISOString() : null,
+    };
+  });
 }
 
 /**

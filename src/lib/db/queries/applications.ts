@@ -13,7 +13,7 @@ import {
 import { londonStartOfDayUtc, londonEndOfDayUtc } from "@/lib/datetime";
 // Value import (not type-only): the deadline-range filter branches on the
 // application type at runtime (E1/D13-8).
-import { ApplicationType } from "@prisma/client";
+import { ApplicationType, RoundScenario } from "@prisma/client";
 import type {
   School,
   Application,
@@ -32,6 +32,7 @@ import type {
   Prisma,
 } from "@prisma/client";
 import { PORTAL_APPLICATION } from "@/lib/applications/migration-source";
+import { DEADLINE_ROUND_SELECT } from "@/lib/rounds/submission-deadline";
 
 // ─── List Applications ────────────────────────────────────────────────────────
 
@@ -81,7 +82,10 @@ export interface ApplicationListItem {
     | "closeDate"
     | "defaultSubmissionDeadlineNew"
     | "defaultSubmissionDeadlineRolling"
-  >;
+  > & {
+    /** Epic 21 R2 — the RA window (the rolling-over deadline's third tier). */
+    windows: { scenario: RoundScenario; submitBy: Date | null }[];
+  };
   secondParent: SecondParentIndicator;
   /**
    * The rolling BursaryAccount this application is linked to, or null when none
@@ -180,13 +184,13 @@ export function submittedDateRangeWhere(
 
 /**
  * Builds the Prisma where-fragment for the submission-by (deadline) range
- * filter (Item 7.2), matching the SAME three-tier chain
- * `effectiveSubmissionDeadline()` computes (src/lib/rounds/submission-deadline.ts,
- * Item 12/D-1): `application.submissionDeadlineAt` (override) ?? the round
- * default FOR THAT ROW'S APPLICATION TYPE ?? round's `closeDate`. Only the
- * first tier that is SET applies for a given row — a round default, if present,
- * is checked INSTEAD OF closeDate, never in addition (matches the helper's
- * precedence).
+ * filter (Item 7.2), matching the SAME chain `effectiveSubmissionDeadline()`
+ * computes (src/lib/rounds/submission-deadline.ts, Item 12/D-1, Epic 21 R2):
+ * `application.submissionDeadlineAt` (override) ?? the round default FOR THAT
+ * ROW'S APPLICATION TYPE ?? (ROLLING_OVER rows only) the round's RA window
+ * `submitBy` ?? round's `closeDate`. Only the first tier that is SET applies
+ * for a given row — a round default, if present, is checked INSTEAD OF the
+ * later tiers, never in addition (matches the helper's precedence).
  *
  * Type-awareness (E1/D13-8): the middle tier reads
  * `defaultSubmissionDeadlineNew` for `applicationType = NEW` rows and
@@ -265,10 +269,22 @@ export function effectiveDeadlineRangeWhere(
     ],
   };
 
+  // Epic 21 R2 — ROLLING_OVER rows with no override and no rolling default
+  // read the round's RA window `submitBy`. NEW rows never do.
+  const raWindowSet = { scenario: RoundScenario.RA, submitBy: { not: null } };
+  const rollingWindowInRange: Prisma.ApplicationWhereInput = {
+    submissionDeadlineAt: null,
+    applicationType: ApplicationType.ROLLING_OVER,
+    round: {
+      defaultSubmissionDeadlineRolling: null,
+      windows: { some: { scenario: RoundScenario.RA, submitBy: dateInRange } },
+    },
+  };
+
   // Only reached when there's no override AND no round default ON THIS ROW'S
-  // CLOCK — a round with a default set for this application type never falls
-  // through to closeDate, even if the default itself is out of range (matches
-  // the helper's strict precedence).
+  // CLOCK (AND, for ROLLING_OVER, no RA window date) — a round with an earlier
+  // tier set never falls through to closeDate, even if that tier's date is out
+  // of range (matches the helper's strict precedence).
   const closeDateInRange: Prisma.ApplicationWhereInput = {
     submissionDeadlineAt: null,
     OR: [
@@ -283,13 +299,16 @@ export function effectiveDeadlineRangeWhere(
         applicationType: ApplicationType.ROLLING_OVER,
         round: {
           defaultSubmissionDeadlineRolling: null,
+          windows: { none: raWindowSet },
           closeDate: dateInRange,
         },
       },
     ],
   };
 
-  return { OR: [overrideInRange, roundDefaultInRange, closeDateInRange] };
+  return {
+    OR: [overrideInRange, roundDefaultInRange, rollingWindowInRange, closeDateInRange],
+  };
 }
 
 /**
@@ -387,9 +406,8 @@ export async function listApplications(
         select: {
           id: true,
           academicYear: true,
-          closeDate: true,
-          defaultSubmissionDeadlineNew: true,
-          defaultSubmissionDeadlineRolling: true,
+          // Every deadline tier, incl. the RA window (Epic 21 R2).
+          ...DEADLINE_ROUND_SELECT,
         },
       },
       bursaryAccount: {
@@ -479,7 +497,8 @@ export type ApplicationWithDetails = Omit<
   // PR-6a) — the detail view derives the review phase from the lifecycle columns.
   "childName" | "status"
 > & {
-  round: Round;
+  /** Epic 21 R2 — with its RA window, so the deadline has every tier. */
+  round: Round & { windows: { scenario: RoundScenario; submitBy: Date | null }[] };
   sections: ApplicationSection[];
   documents: Document[];
   assessment: Assessment | null;
@@ -527,7 +546,8 @@ export async function getApplicationWithDetails(
       closeReason: { select: { id: true, label: true, purgeOnClose: true } },
       createdAt: true,
       updatedAt: true,
-      round: true,
+      // Epic 21 R2 — the RA window feeds the effective deadline.
+      round: { include: { windows: DEADLINE_ROUND_SELECT.windows } },
       sections: {
         orderBy: { section: "asc" },
       },
