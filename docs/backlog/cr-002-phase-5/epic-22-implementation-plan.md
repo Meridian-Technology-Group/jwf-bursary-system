@@ -151,7 +151,7 @@ Merge order **P1 → P2 → P3 → P4 → P5**. After each merge, staging is bro
 
 ### P1 · My Bursary Application(s) (#2)
 
-**Status: NOT STARTED.**
+**Status: DONE — merged to staging 14 Oct (#443 + fix #444).** Built as planned, with these differences: the page is at **`/my-applications`** (the middleware treats `/applications*` as admin — #444); "Last login" is copied from Supabase's `auth.users.last_sign_in_at` by the portal layout (and the page) on the first load after a new sign-in, which covers every sign-in path without wiring each form; a per-invitation start action (`startInvitationApplicationAction`) was needed because both existing start actions take the family's latest invitation. Also fixed: starting a second child's re-assessment reused the first child's draft (idempotency now per account). Browser-checked on nonprod (test family `jwf-testing+applicant2`): block % = rail % (73.5), continue → first un-ticked section, review → `/apply/review`, submit disabled with gaps, last login = previous sign-in. TS-NOWS01 check waits for migration staging (§6.4).
 
 **Page** `src/app/(portal)/applications/page.tsx`. **Nav:** "My Bursary Application(s)" replaces "My Application" in `buildPortalNav` (href `/applications`; the wizard rail still nests under it on `/apply/*`). One block per child (ACTIVE account, plus any child with an invitation or a non-migrated application but no account yet). Each block:
 - Child's first name and surname as the heading; "Click on the following options to access the form."
@@ -183,7 +183,7 @@ Merge order **P1 → P2 → P3 → P4 → P5**. After each merge, staging is bro
 
 ### P2 · Contact us by email (#4, L3)
 
-**Status: NOT STARTED.**
+**Status: DONE — merged to staging 14 Oct (#445).** As planned. The parent's question is HTML-escaped before sending (the shared `plainTextToHtml` doesn't escape). Browser-checked in test mode on nonprod (preview, audit row with no question text, `?tab=checklist`). **Brian to set `PORTAL_ENQUIRY_INBOX`** — Production: fees@johnwhitgiftfoundation.org; Preview: the Meridian test inbox; `rehearsal`: unset (test mode).
 
 **Shared module** `src/lib/portal/enquiry.ts`:
 - `composeEnquiry({ parent, child?, reference?, subject?, body })` → `{ subject, text }`. Pure, tested. Subject (D-16): `Bursary portal question — {reference}` (or `— {child name} (no application yet)` / `— general question`), then `— {their subject}` when given. Body: parent name, login email, child, reference, the question, sent time (Europe/London), and an admin link to the application.
@@ -216,7 +216,7 @@ The server action runs as the parent (ownership of the chosen child checked serv
 
 ### P3 · Rejection record (#5)
 
-**Status: NOT STARTED.**
+**Status: DONE — merged to staging 14 Oct (#446).** As planned, plus a `child_name` column so a first-year rejection (no account yet) can be matched to the child later. Verified on nonprod: Reject & restart on a review fixture wrote one row (dates, reference, replacement id, audit `rejectionRecordId`); RLS — owning parent sees 1, another parent 0, admin 1, a parent's insert is refused. The schedule-row reset (D-18) is unit-tested; nonprod has no pre-outcome rolling-over application with a RECEIVED row to try it on.
 
 **Migration** `<ts>_application_rejections` — new table `application_rejections`:
 - `id` uuid pk; `round_id` → rounds; `academic_year` text (copied, so the row reads without joins); `lead_applicant_id` → profiles **ON DELETE CASCADE**; `bursary_account_id` → bursary_accounts nullable, **ON DELETE CASCADE** (null for a new applicant with no account yet); `reference` text; `submitted_at` timestamptz (the rejected form's `submittedAt`; nullable for safety, always set in practice); `rejected_at` timestamptz default now(); `rejected_by` → profiles nullable ON DELETE SET NULL; `replacement_application_id` uuid, **no FK** (the replacement can itself be rejected and deleted later; the next record links on); `from_phase` text.
