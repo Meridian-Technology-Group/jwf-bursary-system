@@ -32,3 +32,31 @@ describe("portalHomeMain (Epic 21 T1 / WP-F1)", () => {
     ).toBe("no-invitation");
   });
 });
+
+import {
+  activeBursariesText,
+  homeHeading,
+  homeVariant,
+} from "@/lib/portal/home-state";
+
+describe("homeVariant / heading / count (Epic 22 P4)", () => {
+  it("a family with an active bursary gets the rolling-over version", () => {
+    expect(homeVariant({ activeAccounts: 3 })).toBe("rolling-over");
+    expect(homeHeading("rolling-over", "Pat")).toBe("Welcome back, Pat");
+    expect(activeBursariesText(3)).toBe(
+      "You currently have 3 active bursaries with the John Whitgift Foundation."
+    );
+  });
+
+  it("one bursary is singular", () => {
+    expect(activeBursariesText(1)).toBe(
+      "You currently have 1 active bursary with the John Whitgift Foundation."
+    );
+  });
+
+  it("a family with no active account gets the new version", () => {
+    expect(homeVariant({ activeAccounts: 0 })).toBe("new");
+    expect(homeHeading("new", "Pat")).toBe("Welcome, Pat");
+    expect(activeBursariesText(0)).toBe("You currently do not have an active bursary.");
+  });
+});

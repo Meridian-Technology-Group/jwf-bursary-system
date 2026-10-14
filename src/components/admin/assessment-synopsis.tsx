@@ -10,10 +10,12 @@
  * Key behaviours (plan §5.3c):
  *  - Always visible: docked in the assessment workspace AND rendered on the
  *    completed/final + recommendation screens.
- *  - EDITABLE AFTER COMPLETION: this component deliberately does NOT take a
- *    read-only flag. The rest of the assessment form / recommendation form lock
- *    on COMPLETED / outcome, but the synopsis stays editable, backed by the
- *    always-permissive `saveSynopsis` server action.
+ *  - EDITABLE AFTER COMPLETION: the rest of the assessment form locks on
+ *    COMPLETED, but the synopsis stays editable while the assessment is
+ *    stored as complete.
+ *  - LOCKS WITH THE ASSESSMENT (Epic 21 #6 rework, 14 Oct 2026): once the
+ *    assessment is in a post-assessment final state (`isSynopsisLocked`) the
+ *    box is read-only, and `saveSynopsis` refuses on the server.
  *  - Auto-saves on blur (debounced 600 ms); shows a saving / saved / error
  *    indicator. Skips redundant saves.
  */
@@ -39,10 +41,15 @@ export interface AssessmentSynopsisProps {
    */
   assessmentCompleted?: boolean;
   /**
-   * Epic 21 #6 — the admin page shows this beside the account's standing
+   * Epic 21 #6 — the admin page shows this beside the account's main
    * synopsis, so it is titled "This year's synopsis" there.
    */
   title?: string;
+  /**
+   * Epic 21 #6 rework — true once the assessment is locked
+   * (`isSynopsisLocked(status)`): the box is read-only and never saves.
+   */
+  locked?: boolean;
   className?: string;
 }
 
@@ -57,6 +64,7 @@ export function AssessmentSynopsis({
   synopsis,
   assessmentCompleted = false,
   title = "Assessment Synopsis",
+  locked = false,
   className,
 }: AssessmentSynopsisProps) {
   const [value, setValue] = React.useState(synopsis ?? "");
@@ -67,7 +75,7 @@ export function AssessmentSynopsis({
 
   const save = React.useCallback(
     async (next: string) => {
-      if (next === savedValue.current) return;
+      if (locked || next === savedValue.current) return;
       setStatus("saving");
       const result = await saveSynopsis(assessmentId, applicationId, next);
       if (result.success) {
@@ -81,7 +89,7 @@ export function AssessmentSynopsis({
         setStatus("error");
       }
     },
-    [assessmentId, applicationId]
+    [assessmentId, applicationId, locked]
   );
 
   const scheduleSave = React.useCallback(
@@ -120,9 +128,11 @@ export function AssessmentSynopsis({
                 {title}
               </CardTitle>
               <p className="mt-0.5 text-xs text-slate-400">
-                {assessmentCompleted
-                  ? "Editable after completion — auto-saved on blur"
-                  : "One qualitative narrative for this assessment — auto-saved on blur"}
+                {locked
+                  ? "Locked with the assessment"
+                  : assessmentCompleted
+                    ? "Editable after completion — auto-saved on blur"
+                    : "One qualitative narrative for this assessment — auto-saved on blur"}
               </p>
             </div>
           </div>
@@ -138,7 +148,9 @@ export function AssessmentSynopsis({
           id="assessment-synopsis"
           aria-label="Assessment synopsis"
           value={value}
+          readOnly={locked}
           onChange={(e) => {
+            if (locked) return;
             setValue(e.target.value);
             scheduleSave(e.target.value);
           }}
@@ -147,14 +159,22 @@ export function AssessmentSynopsis({
           rows={8}
           className={cn(
             "resize-y border-slate-200 text-sm leading-relaxed text-slate-700",
-            "placeholder:text-slate-300 focus-visible:ring-primary/30"
+            "placeholder:text-slate-300 focus-visible:ring-primary/30",
+            locked && "cursor-default bg-slate-50 text-slate-600"
           )}
         />
-        {assessmentCompleted && (
+        {locked ? (
           <p className="mt-1.5 text-xs text-slate-400">
-            This assessment is completed. The synopsis remains editable — other
-            assessment fields are locked.
+            This assessment has been decided, so this year&apos;s synopsis is
+            locked. Reverse the decision to change it, or use the main synopsis.
           </p>
+        ) : (
+          assessmentCompleted && (
+            <p className="mt-1.5 text-xs text-slate-400">
+              This assessment is completed. The synopsis remains editable — other
+              assessment fields are locked.
+            </p>
+          )
         )}
       </CardContent>
     </Card>
