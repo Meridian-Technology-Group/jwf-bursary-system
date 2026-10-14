@@ -65,6 +65,7 @@ import {
 } from "@/lib/reason-codes/gap-category";
 import type { ReasonCodeOption } from "@/components/admin/reason-code-selector";
 import { AssessmentSynopsis } from "@/components/admin/assessment-synopsis";
+import { isSynopsisLocked } from "@/lib/bursary-accounts/standing-synopsis";
 import {
   ReadOnlyBanner,
   RedFlagBanner,
@@ -936,6 +937,7 @@ export function RecommendationFormV2({
         applicationId={applicationId}
         synopsis={synopsis}
         assessmentCompleted
+        locked={isSynopsisLocked(assessmentStatus)}
       />
 
       {/* ── Reason codes (year-on-year) ──────────────────────────────────── */}

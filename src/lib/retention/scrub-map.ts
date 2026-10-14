@@ -25,9 +25,10 @@
  * staff, and the residual risk is flagged to the DPO. The GDPR cascade is
  * unaffected (it deletes the whole assessment row).
  *
- * Epic 21 #6 (D-7): the account's standing synopsis (`account_synopsis_entries`)
- * takes the same verdict — retained verbatim on a close purge, deleted by the
- * GDPR cascade (every entry on the lead's accounts).
+ * Epic 21 #6 (D-7): the account's main synopsis (`account_synopsis_entries`,
+ * one MAIN row per account since the 14 Oct 2026 rework) takes the same
+ * verdict — retained verbatim on a close purge, deleted by the GDPR cascade
+ * (every entry on the lead's accounts).
  */
 
 /** Replacement for a scrubbed child name (both routines, all models). */
@@ -141,7 +142,7 @@ export const CLOSE_PURGE_SUMMARY = {
   retained: [
     "Bursary reference and key dates",
     "All assessment financial figures and the outcome",
-    "Assessment synopsis and the account's standing synopsis (verbatim — may contain personal data; see D-2)",
+    "Assessment synopsis and the account's main synopsis (verbatim — may contain personal data; see D-2)",
     "Recommendation awards, fee figures and reason codes",
     "Close reason, closing user and close date",
     "Audit trail (append-only; user links nulled only on full profile erasure)",

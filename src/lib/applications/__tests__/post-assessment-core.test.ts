@@ -94,9 +94,10 @@ function makeFakeTx(application: Record<string, unknown>) {
     closeReason: {
       findUnique: vi.fn(async () => ({ id: "close-reason-1", isDeprecated: false })),
     },
-    // Epic 21 #6 — the standing synopsis's YEAR entry, written at the lock.
+    // Epic 21 #6 — the account's main synopsis, seeded at the first lock.
     accountSynopsisEntry: {
-      upsert: vi.fn(async () => ({})),
+      findFirst: vi.fn(async (): Promise<{ id: string } | null> => null),
+      createMany: vi.fn(async () => ({ count: 1 })),
     },
     auditLog: {
       create: vi.fn(
@@ -467,55 +468,61 @@ describe("Epic 18b — the archive close reason", () => {
 
 // ─── Epic 21 #6 — the account's standing synopsis ───────────────────────────
 
-describe("Epic 21 #6 — the YEAR entry written at the award lock", () => {
-  function upsertArg() {
-    return (fakeTx.accountSynopsisEntry.upsert.mock.calls as unknown as unknown[][])[0][0] as {
-      where: { assessmentId: string };
-      create: Record<string, unknown>;
-      update: Record<string, unknown>;
+describe("Epic 21 #6 — the main synopsis seeded at the award lock (rework 14 Oct)", () => {
+  function createArg() {
+    return (fakeTx.accountSynopsisEntry.createMany.mock.calls as unknown as unknown[][])[0][0] as {
+      data: Record<string, unknown>[];
+      skipDuplicates: boolean;
     };
   }
 
-  it("a NEW_AWARD lock creates this year's entry on the new account", async () => {
+  it("a NEW_AWARD lock seeds the new account's main synopsis from this year's", async () => {
     fakeTx = makeFakeTx(withAssessment({ synopsis: "  Two earners; modest savings.  " }));
     await setPostAssessmentFinalState("app-1", "NEW_AWARD", { awardFundType: "JWF" });
 
-    const arg = upsertArg();
-    expect(arg.where).toEqual({ assessmentId: "assess-1" });
-    expect(arg.create).toMatchObject({
-      bursaryAccountId: "account-1",
-      kind: "YEAR",
-      academicYear: "2026/2027",
-      body: "Two earners; modest savings.",
-      createdById: "assessor-1",
+    expect(fakeTx.accountSynopsisEntry.findFirst).toHaveBeenCalledWith({
+      where: { bursaryAccountId: "account-1", kind: "MAIN" },
+      select: { id: true },
+    });
+    expect(createArg()).toEqual({
+      data: [
+        {
+          bursaryAccountId: "account-1",
+          kind: "MAIN",
+          body: "Two earners; modest savings.",
+          createdById: "assessor-1",
+        },
+      ],
+      skipDuplicates: true,
     });
   });
 
-  it("a re-lock replaces the entry rather than adding another (keyed by assessment)", async () => {
+  it("never overwrites an existing main synopsis (a re-lock, or a later year)", async () => {
     fakeTx = makeFakeTx(withAssessment({ synopsis: "Revised after the revert." }));
+    fakeTx.accountSynopsisEntry.findFirst.mockResolvedValueOnce({ id: "main-1" });
     await setPostAssessmentFinalState("app-1", "NEW_AWARD", { awardFundType: "JWF" });
-    expect(upsertArg().update).toEqual({ body: "Revised after the revert.", academicYear: "2026/2027" });
+    expect(fakeTx.accountSynopsisEntry.createMany).not.toHaveBeenCalled();
   });
 
-  it("a blank synopsis writes no entry", async () => {
+  it("a blank synopsis seeds nothing", async () => {
     fakeTx = makeFakeTx(withAssessment({ synopsis: "   " }));
     await setPostAssessmentFinalState("app-1", "NEW_AWARD", { awardFundType: "JWF" });
-    expect(fakeTx.accountSynopsisEntry.upsert).not.toHaveBeenCalled();
+    expect(fakeTx.accountSynopsisEntry.createMany).not.toHaveBeenCalled();
   });
 
-  it("a ROLLED_OVER lock writes the entry on the continued account", async () => {
+  it("a ROLLED_OVER lock seeds a continued account that has none", async () => {
     const app = rollingApplication();
     fakeTx = makeFakeTx({
       ...app,
       assessment: { ...(app.assessment as Record<string, unknown>), synopsis: "Year two." },
     });
     await setPostAssessmentFinalState("app-1", "ROLLED_OVER", { awardFundType: "JWF" });
-    expect(upsertArg().create).toMatchObject({ bursaryAccountId: app.bursaryAccountId, body: "Year two." });
+    expect(createArg().data[0]).toMatchObject({ bursaryAccountId: app.bursaryAccountId, body: "Year two." });
   });
 
-  it("parking or archiving writes no entry (only award locks do)", async () => {
+  it("parking or archiving seeds nothing (only award locks do)", async () => {
     fakeTx = makeFakeTx(withAssessment({ synopsis: "Anything." }));
     await setPostAssessmentFinalState("app-1", "WAITING_LIST");
-    expect(fakeTx.accountSynopsisEntry.upsert).not.toHaveBeenCalled();
+    expect(fakeTx.accountSynopsisEntry.createMany).not.toHaveBeenCalled();
   });
 });

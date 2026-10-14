@@ -1,7 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-// Epic 21 #6 — notes on the account's standing synopsis (D-6): ADMIN and
-// ASSESSOR add, ADMIN edits, nobody deletes, YEAR entries are not edited here.
+// Epic 21 #6 (rework, 14 Oct 2026) — the account's one editable main synopsis:
+// ADMIN and ASSESSOR save it, every save is audited against the account (so
+// every year's History tab shows it), and the audit row carries no prose.
 
 let role = "ADMIN";
 const requireRoleMock = vi.fn(async (allowed: string[]) => {
@@ -26,102 +27,102 @@ vi.mock("@/lib/db/prisma", () => ({
   withUserContext: (_u: string, _r: string, fn: (tx: unknown) => unknown) => fn(fakeTx),
 }));
 
-import {
-  addAccountSynopsisNoteAction,
-  editAccountSynopsisNoteAction,
-} from "../account-synopsis-actions";
+import { saveMainSynopsisAction } from "../account-synopsis-actions";
 
-function makeFakeTx(entry: Record<string, unknown> | null = {
-  id: "note-1",
-  kind: "NOTE",
-  bursaryAccountId: "acc-1",
-  body: "Old",
-}) {
+function makeFakeTx(
+  main: { id: string; body: string } | null = { id: "main-1", body: "Old text" },
+  bursaryAccountId: string | null = "acc-1"
+) {
   return {
-    application: { findUnique: vi.fn(async () => ({ bursaryAccountId: "acc-1" })) },
+    application: { findUnique: vi.fn(async () => ({ bursaryAccountId })) },
     accountSynopsisEntry: {
-      create: vi.fn(async () => ({ id: "note-new" })),
-      findUnique: vi.fn(async () => entry),
-      update: vi.fn(async () => ({})),
+      findFirst: vi.fn(async () => main),
+      create: vi.fn(async () => ({ id: "main-new" })),
+      update: vi.fn(async () => ({ id: main?.id ?? "?" })),
     },
   };
 }
 
 function audit() {
-  return auditMock.mock.calls[0]?.[1] as { action: string; entityType: string; metadata: Record<string, unknown> };
+  return auditMock.mock.calls[0]?.[1] as {
+    action: string;
+    entityType: string;
+    entityId: string;
+    metadata: Record<string, unknown>;
+  };
 }
 
-describe("addAccountSynopsisNoteAction", () => {
+describe("saveMainSynopsisAction", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     role = "ADMIN";
   });
 
-  it("an ASSESSOR can add a note; it is attributed and audited on the application", async () => {
-    role = "ASSESSOR";
+  it("an ADMIN edits the main synopsis; audited on the account, lengths only", async () => {
     fakeTx = makeFakeTx();
-    const res = await addAccountSynopsisNoteAction({ applicationId: "app-1", body: "  Spoke to the family.  " });
+    const res = await saveMainSynopsisAction({ applicationId: "app-1", body: "  New text.  " });
+
+    expect(res).toEqual({ success: true });
+    expect(fakeTx.accountSynopsisEntry.findFirst).toHaveBeenCalledWith({
+      where: { bursaryAccountId: "acc-1", kind: "MAIN" },
+      select: { id: true, body: true },
+    });
+    expect(fakeTx.accountSynopsisEntry.update).toHaveBeenCalledWith({
+      where: { id: "main-1" },
+      data: { body: "New text." },
+      select: { id: true },
+    });
+    expect(audit()).toMatchObject({
+      action: "ACCOUNT_MAIN_SYNOPSIS_SAVED",
+      entityType: "BursaryAccount",
+      entityId: "acc-1",
+      metadata: { applicationId: "app-1", entryId: "main-1", previousLength: 8, length: 9 },
+    });
+    expect(JSON.stringify(audit())).not.toContain("New text");
+  });
+
+  it("an ASSESSOR creates the main synopsis when the account has none", async () => {
+    role = "ASSESSOR";
+    fakeTx = makeFakeTx(null);
+    const res = await saveMainSynopsisAction({ applicationId: "app-1", body: "First words." });
 
     expect(res).toEqual({ success: true });
     expect(fakeTx.accountSynopsisEntry.create).toHaveBeenCalledWith({
-      data: { bursaryAccountId: "acc-1", kind: "NOTE", body: "Spoke to the family.", createdById: "user-1" },
+      data: { bursaryAccountId: "acc-1", kind: "MAIN", body: "First words.", createdById: "user-1" },
       select: { id: true },
     });
-    expect(audit()).toMatchObject({ action: "ACCOUNT_SYNOPSIS_NOTE_ADDED", entityType: "Application" });
+    expect(audit()).toMatchObject({ metadata: { entryId: "main-new", previousLength: 0 } });
   });
 
-  it("refuses an empty note", async () => {
+  it("an unchanged save writes nothing and logs nothing", async () => {
+    fakeTx = makeFakeTx({ id: "main-1", body: "Same" });
+    const res = await saveMainSynopsisAction({ applicationId: "app-1", body: " Same " });
+    expect(res).toEqual({ success: true });
+    expect(fakeTx.accountSynopsisEntry.update).not.toHaveBeenCalled();
+    expect(auditMock).not.toHaveBeenCalled();
+  });
+
+  it("staff may clear it", async () => {
     fakeTx = makeFakeTx();
-    const res = await addAccountSynopsisNoteAction({ applicationId: "app-1", body: "  " });
-    expect(res.success).toBe(false);
-    expect(fakeTx.accountSynopsisEntry.create).not.toHaveBeenCalled();
+    const res = await saveMainSynopsisAction({ applicationId: "app-1", body: "   " });
+    expect(res).toEqual({ success: true });
+    expect(fakeTx.accountSynopsisEntry.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: { body: "" } })
+    );
   });
 
-  it("a VIEWER cannot add a note", async () => {
+  it("a VIEWER cannot save", async () => {
     role = "VIEWER";
     fakeTx = makeFakeTx();
-    const res = await addAccountSynopsisNoteAction({ applicationId: "app-1", body: "Hello" });
+    const res = await saveMainSynopsisAction({ applicationId: "app-1", body: "Hello" });
     expect(res.success).toBe(false);
+    expect(fakeTx.accountSynopsisEntry.update).not.toHaveBeenCalled();
+  });
+
+  it("refuses an application without a bursary account", async () => {
+    fakeTx = makeFakeTx(null, null);
+    const res = await saveMainSynopsisAction({ applicationId: "app-1", body: "Hello" });
+    expect(res).toEqual({ success: false, error: "This application has no bursary account." });
     expect(fakeTx.accountSynopsisEntry.create).not.toHaveBeenCalled();
-  });
-});
-
-describe("editAccountSynopsisNoteAction", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    role = "ADMIN";
-  });
-
-  it("an ADMIN edits a note and it is audited", async () => {
-    fakeTx = makeFakeTx();
-    const res = await editAccountSynopsisNoteAction({ applicationId: "app-1", entryId: "note-1", body: "New" });
-    expect(res).toEqual({ success: true });
-    expect(fakeTx.accountSynopsisEntry.update).toHaveBeenCalledWith({
-      where: { id: "note-1" },
-      data: { body: "New" },
-    });
-    expect(audit()).toMatchObject({ action: "ACCOUNT_SYNOPSIS_NOTE_EDITED" });
-  });
-
-  it("an ASSESSOR cannot edit", async () => {
-    role = "ASSESSOR";
-    fakeTx = makeFakeTx();
-    const res = await editAccountSynopsisNoteAction({ applicationId: "app-1", entryId: "note-1", body: "New" });
-    expect(res.success).toBe(false);
-    expect(fakeTx.accountSynopsisEntry.update).not.toHaveBeenCalled();
-  });
-
-  it("a YEAR entry is not edited here", async () => {
-    fakeTx = makeFakeTx({ id: "year-1", kind: "YEAR", bursaryAccountId: "acc-1", body: "x" });
-    const res = await editAccountSynopsisNoteAction({ applicationId: "app-1", entryId: "year-1", body: "New" });
-    expect(res).toEqual({ success: false, error: expect.stringContaining("that year's assessment") });
-    expect(fakeTx.accountSynopsisEntry.update).not.toHaveBeenCalled();
-  });
-
-  it("refuses a note from another account", async () => {
-    fakeTx = makeFakeTx({ id: "note-x", kind: "NOTE", bursaryAccountId: "OTHER", body: "x" });
-    const res = await editAccountSynopsisNoteAction({ applicationId: "app-1", entryId: "note-x", body: "New" });
-    expect(res.success).toBe(false);
-    expect(fakeTx.accountSynopsisEntry.update).not.toHaveBeenCalled();
   });
 });
