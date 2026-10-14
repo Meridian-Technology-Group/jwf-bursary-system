@@ -243,7 +243,7 @@ The server action runs as the parent (ownership of the chosen child checked serv
 
 ### P4 · Home (#1, L1, L2)
 
-**Status: NOT STARTED. Waits for the Phase 4 rework to merge and for her parent-side Phase 4 reply (§0).**
+**Status: DONE — merged to staging 14 Oct (#448), on Brian's instruction before her parent-side Phase 4 reply (built on defaults; the PR lists what her reply could change).** One difference: `currentSchoolYear` is anchored like the schedule's School Year column (entry year-group in the first assessment year, +1 per academic year, turning on 20 August) rather than on `deriveCurrentYearGroupNumber` (1 September, entry calendar year), so Home and P5 agree. The elevated "New to bursary applications?" card went too (the L2 cards repeat it). `ScheduleHome` deleted. Child links point at `/schedule#account-{id}`; P5 adds the anchors. Not on migration staging.
 
 **Variants** (pure seam `homeVariant({ activeAccounts, hasApplication, hasInvitation })` in `src/lib/portal/home-state.ts`, extending `portalHomeMain`; unit-test every combination):
 - **New family** (no ACTIVE account): heading "Welcome, {first name}"; "You currently do not have an active bursary."; with an invitation: "You have been invited to fill in the following bursary application for us to assess your household:" and the existing start/continue affordance (`ApplicationTypeChooser` or the continue card). Without an invitation: the existing `no-invitation` state.
