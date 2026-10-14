@@ -41,17 +41,19 @@ model Profile {
   contributorsInvited     ApplicationContributor[] @relation("ContributorInvitedBy")
   contacts                Contact[]                @relation("ContactProfile")
   contactsCreated         Contact[]                @relation("ContactCreator")
+  rejectionsAsLead        ApplicationRejection[]   @relation("ApplicationRejectionLead")
+  rejectionsMade          ApplicationRejection[]   @relation("ApplicationRejectionBy")
 
   @@map("profiles")
 }
 
 /// An assessment cycle for one academic year.
 model Round {
-  id                               String           @id @default(uuid()) @db.Uuid
-  academicYear                     String           @unique @map("academic_year")
-  openDate                         DateTime         @map("open_date") @db.Date
-  closeDate                        DateTime         @map("close_date") @db.Date
-  decisionDate                     DateTime?        @map("decision_date") @db.Date
+  id                               String                 @id @default(uuid()) @db.Uuid
+  academicYear                     String                 @unique @map("academic_year")
+  openDate                         DateTime               @map("open_date") @db.Date
+  closeDate                        DateTime               @map("close_date") @db.Date
+  decisionDate                     DateTime?              @map("decision_date") @db.Date
   /// LEGACY, NO READERS (Epic 13 / E1, D13-8). The single round-level default
   /// submission-by date, superseded by the two application-type-aware columns
   /// below. Retained for one release only so E1 can be rolled back without data
@@ -59,7 +61,7 @@ model Round {
   /// two-step precedent as Epic 01 PR-6 / #177. Still WRITTEN (mirrored from
   /// `defaultSubmissionDeadlineNew`) so a code rollback lands on a sane value,
   /// but nothing reads it. Do not add a reader.
-  defaultSubmissionDeadline        DateTime?        @map("default_submission_deadline") @db.Date
+  defaultSubmissionDeadline        DateTime?              @map("default_submission_deadline") @db.Date
   /// Round-level default submission-by date for NEW applications (D13-8,
   /// date-only, optional). Every `applicationType = NEW` application in the
   /// round inherits this unless it has its own `Application.submissionDeadlineAt`
@@ -71,19 +73,20 @@ model Round {
   ///     ?? endOfDay(round.closeDate)                          (fallback — D-1)
   /// NULL means the round has no NEW default; those applications fall through
   /// to the close-date fallback above.
-  defaultSubmissionDeadlineNew     DateTime?        @map("default_submission_deadline_new") @db.Date
+  defaultSubmissionDeadlineNew     DateTime?              @map("default_submission_deadline_new") @db.Date
   /// Round-level default submission-by date for ROLLING_OVER (re-assessment)
   /// applications (D13-8, date-only, optional). Q4 (Brian, 2026-08-14): this is
   /// ONE GLOBAL date per round, conventionally in April — deliberately NOT
   /// per-school, so two columns on `Round` are the whole model. Same three-tier
   /// derivation and same NULL semantics as `defaultSubmissionDeadlineNew`.
-  defaultSubmissionDeadlineRolling DateTime?        @map("default_submission_deadline_rolling") @db.Date
-  status                           RoundStatus      @default(DRAFT)
-  createdAt                        DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+  defaultSubmissionDeadlineRolling DateTime?              @map("default_submission_deadline_rolling") @db.Date
+  status                           RoundStatus            @default(DRAFT)
+  createdAt                        DateTime               @default(now()) @map("created_at") @db.Timestamptz(6)
   applications                     Application[]
   invitations                      Invitation[]
   recommendations                  Recommendation[]
   windows                          RoundWindow[]
+  rejections                       ApplicationRejection[]
 
   @@map("rounds")
 }
@@ -189,6 +192,7 @@ model BursaryAccount {
   contacts             Contact[]
   scheduleEntries      BursaryScheduleEntry[]
   synopsisEntries      AccountSynopsisEntry[]
+  rejections           ApplicationRejection[]
 
   @@index([leadApplicantId])
   @@map("bursary_accounts")
@@ -1616,4 +1620,43 @@ enum RentAddBackType {
   FULL_MORTGAGE_FREE
   FULL_RENT_FREE
   PARTIAL_LOWER_RENT
+}
+
+/// Epic 22 P3 (CR-002 Phase 5 #5) — one row per Reject and restart. The
+/// rejected application is hard-deleted (the unique round/lead/child tuple
+/// can't hold two), so this keeps what the family's schedule needs to show
+/// "Submitted → Rejected → the new attempt": the year, the dates and the
+/// replacement. Nothing from the form, and not the assessor's note (that stays
+/// in the audit log and the email). Written only by `rejectAndRestartApplication`
+/// (service-role context); never updated; removed only by cascade.
+model ApplicationRejection {
+  id                       String          @id @default(uuid()) @db.Uuid
+  roundId                  String          @map("round_id") @db.Uuid
+  /// Copied from the round so the row reads without a join.
+  academicYear             String          @map("academic_year")
+  leadApplicantId          String          @map("lead_applicant_id") @db.Uuid
+  /// Null for a first-year applicant who has no account yet.
+  bursaryAccountId         String?         @map("bursary_account_id") @db.Uuid
+  /// Copied so a first-year rejection can be matched to the child's account
+  /// once one exists (the portal matches unlinked applications by name).
+  childName                String          @map("child_name")
+  reference                String
+  /// The rejected form's `submittedAt`. Every reject-able phase is
+  /// post-submission, so it is always set in practice.
+  submittedAt              DateTime?       @map("submitted_at") @db.Timestamptz(6)
+  rejectedAt               DateTime        @default(now()) @map("rejected_at") @db.Timestamptz(6)
+  rejectedById             String?         @map("rejected_by") @db.Uuid
+  /// The blank application created in its place. No FK on purpose: the
+  /// replacement can itself be rejected and deleted (the next row links on).
+  replacementApplicationId String?         @map("replacement_application_id") @db.Uuid
+  /// The review phase it was rejected from (SUBMITTED / NOT_STARTED / PAUSED).
+  fromPhase                String          @map("from_phase")
+  round                    Round           @relation(fields: [roundId], references: [id], onDelete: Cascade)
+  leadApplicant            Profile         @relation("ApplicationRejectionLead", fields: [leadApplicantId], references: [id], onDelete: Cascade)
+  bursaryAccount           BursaryAccount? @relation(fields: [bursaryAccountId], references: [id], onDelete: Cascade)
+  rejectedBy               Profile?        @relation("ApplicationRejectionBy", fields: [rejectedById], references: [id], onDelete: SetNull)
+
+  @@index([bursaryAccountId, academicYear])
+  @@index([leadApplicantId])
+  @@map("application_rejections")
 }
