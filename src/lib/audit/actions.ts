@@ -42,6 +42,13 @@ export const AUDIT_ACTIONS = {
   APPLICATION_MARKED_ACTIVE: "APPLICATION_MARKED_ACTIVE",
   INTERNAL_REQUEST_CREATED: "INTERNAL_REQUEST_CREATED",
   MISSING_DOCS_RESPONDED: "MISSING_DOCS_RESPONDED",
+  /** Epic 22 P2 — a parent's "Contact us by email" question was sent to the inbox. */
+  PORTAL_ENQUIRY_SENT: "PORTAL_ENQUIRY_SENT",
+  /**
+   * Epic 22 P2 (D-6) — test mode: no inbox configured, so the parent was shown
+   * what would have been sent and nothing left the system.
+   */
+  PORTAL_ENQUIRY_PREVIEWED: "PORTAL_ENQUIRY_PREVIEWED",
   NAME_REVEAL: "NAME_REVEAL",
 
   // Assessment / recommendation (normalised from dotted keys in backlog #10)
