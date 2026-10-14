@@ -30,6 +30,7 @@ import {
   isBulkResolvable,
   type BulkMergeDataApplication,
 } from "@/lib/email/bulk-merge-data";
+import { DEADLINE_ROUND_SELECT } from "@/lib/rounds/submission-deadline";
 
 /** Hard cap on a single bulk send — keeps one batch bounded and reviewable. */
 const MAX_BULK_RECIPIENTS = 500;
@@ -136,9 +137,8 @@ async function fetchRecipientApplications(
         round: {
           select: {
             academicYear: true,
-            closeDate: true,
-            defaultSubmissionDeadlineNew: true,
-            defaultSubmissionDeadlineRolling: true,
+            // Every deadline tier (E1/D13-8, Epic 21 R2 RA window).
+            ...DEADLINE_ROUND_SELECT,
           },
         },
         leadApplicant: {

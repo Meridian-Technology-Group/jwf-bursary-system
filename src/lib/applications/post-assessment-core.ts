@@ -45,7 +45,7 @@ import {
 } from "@/lib/applications/recommendation-gate";
 import { promoteToActiveAccount } from "@/lib/applications/account-promotion";
 import { mirrorApplicationToSchedule } from "@/lib/bursary-accounts/lifecycle";
-import { upsertYearSynopsisEntry } from "@/lib/bursary-accounts/standing-synopsis";
+import { seedMainSynopsisAtLock } from "@/lib/bursary-accounts/standing-synopsis";
 import { validateReferenceInput } from "@/lib/applications/reference";
 import { isAwardFundValidForSchool, AWARD_FUND_LABELS } from "@/lib/assessment/award-fund";
 import type { AwardFundType } from "@prisma/client";
@@ -107,7 +107,7 @@ async function fetchApplicationForLifecycle(
           // Epic 18b — the fund options are the ASSESSED school's (CH-11: the
           // assessor picks it and it can differ from the application's).
           assessmentSchool: true,
-          // Epic 21 #6 — copied to the account's standing synopsis at lock.
+          // Epic 21 #6 — seeds the account's main synopsis at the first lock.
           synopsis: true,
           yearlyPayableFees: true,
           recommendedPayableFees: true,
@@ -226,12 +226,10 @@ export async function setPostAssessmentFinalState(
           scholarshipAward: null,
         });
 
-        // Epic 21 #6 — this year's entry in the account's standing synopsis.
-        // Keyed by assessment, so a re-lock after a revert replaces it (D-6).
-        await upsertYearSynopsisEntry(tx, {
+        // Epic 21 #6 (rework 14 Oct) — an account with no main synopsis yet
+        // takes this year's as its starting text. Never overwrites one.
+        await seedMainSynopsisAtLock(tx, {
           bursaryAccountId: promotion.bursaryAccountId,
-          assessmentId: assessment.id,
-          academicYear: application.round.academicYear,
           synopsis: assessment.synopsis,
           userId: user.id,
         });

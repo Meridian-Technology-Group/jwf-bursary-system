@@ -178,7 +178,7 @@ export async function purgeApplication(
       where: { leadApplicantId },
       data: { ...BURSARY_ACCOUNT_CHILD_SCRUB },
     });
-    // f3. Epic 21 #6 — the account's standing synopsis is synopsis prose (it
+    // f3. Epic 21 #6 — the account's main synopsis is synopsis prose (it
     //     can name the family), and the accounts above are scrubbed, not
     //     deleted, so their entries would otherwise outlive the erasure.
     //     Same verdict as Assessment.synopsis on this route: deleted.

@@ -33,7 +33,9 @@ import { getSectionGapStatuses, type SectionGap } from "@/lib/portal/section-gap
 import { SECTION_ORDER } from "@/lib/portal/sections";
 import { familyIdConsistencyIssues } from "@/lib/schemas/family-id";
 import { isTwoParentHousehold } from "@/lib/schemas/parent-details";
-import { isSubmissionDeadlinePassed } from "@/lib/rounds/submission-deadline";
+import { isSubmissionDeadlinePassed,
+  DEADLINE_ROUND_SELECT,
+} from "@/lib/rounds/submission-deadline";
 import { mirrorApplicationToSchedule } from "@/lib/bursary-accounts/lifecycle";
 import { TERMS_AND_CONDITIONS_VERSION } from "@/lib/portal/terms";
 import { logError } from "@/lib/log";
@@ -158,9 +160,7 @@ export async function submitApplicationCore(
           round: {
             select: {
               academicYear: true,
-              closeDate: true,
-              defaultSubmissionDeadlineNew: true,
-              defaultSubmissionDeadlineRolling: true,
+              ...DEADLINE_ROUND_SELECT,
             },
           },
           sections: {

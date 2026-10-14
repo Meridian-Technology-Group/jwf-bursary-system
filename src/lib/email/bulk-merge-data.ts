@@ -64,6 +64,8 @@ export interface BulkMergeDataApplication {
     defaultSubmissionDeadlineNew: Date | null;
     /** Round default submit-by for ROLLING_OVER rows — same tier, other clock. */
     defaultSubmissionDeadlineRolling: Date | null;
+    /** Epic 21 R2 — the RA window, the rolling-over third tier. */
+    windows: readonly { scenario: string; submitBy: Date | null }[];
   };
   leadApplicant: {
     firstName: string | null;
@@ -92,6 +94,7 @@ export function buildBulkMergeData(
         application.round.defaultSubmissionDeadlineNew,
       defaultSubmissionDeadlineRolling:
         application.round.defaultSubmissionDeadlineRolling,
+      windows: application.round.windows,
     }
   );
 

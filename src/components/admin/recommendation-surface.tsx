@@ -15,6 +15,7 @@
  */
 
 import { notFound } from "next/navigation";
+import { isSynopsisLocked } from "@/lib/bursary-accounts/standing-synopsis";
 import { ClipboardCheck, AlertTriangle, PencilRuler } from "lucide-react";
 import type { Decimal } from "@prisma/client/runtime/library";
 import type { CurrentUser } from "@/lib/auth/roles";
@@ -398,6 +399,7 @@ export async function RecommendationSurface({
         assessmentOutcome={assessment.outcome}
         assessmentId={assessment.id}
         synopsis={assessment.synopsis}
+        synopsisLocked={isSynopsisLocked(assessment.status)}
         assessmentValues={assessmentValues}
         recommendation={serialisedRecommendation}
         reasonCodes={serialisedReasonCodes}

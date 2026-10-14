@@ -4,6 +4,7 @@ import {
   planSchedule,
   generateSchedule,
   scheduleDatesForYear,
+  rollingRedateWhere,
   effectiveHorizon,
   planEndAfterYear,
   planAddYear,
@@ -98,6 +99,8 @@ describe("planSchedule — dates + labels + show/hide", () => {
 
 function makeTx(existingYears: number[] = []) {
   return {
+    // Epic 21 R2 — later schedule years read each round's stored RA window.
+    roundWindow: { findMany: vi.fn(async () => [] as unknown[]) },
     bursaryScheduleEntry: {
       findMany: vi.fn(async () =>
         existingYears.map((y) => ({ scheduleYear: y }))
@@ -287,5 +290,107 @@ describe("scheduleDatesForYear (Epic 21 F2)", () => {
     // setUTCFullYear rolls 29 Feb into 1 Mar in a non-leap year.
     expect(iso(r.availableOn)).toBe("2029-03-01");
     expect(r.requiredBy).toBeNull();
+  });
+});
+
+// ─── Epic 21 R2 — later years follow their own round's RA window ─────────────
+
+describe("scheduleDatesForYear — the round's stored RA window (Epic 21 R2)", () => {
+  const iso = (d: Date | null) => d?.toISOString().slice(0, 10);
+  const open = new Date(Date.UTC(2026, 8, 1));
+  const close = new Date(Date.UTC(2026, 10, 30));
+
+  it("a later year takes its round's RA window (her real date, 22 May)", () => {
+    const r = scheduleDatesForYear({
+      awardStartYear: 2026,
+      awardOpenDate: open,
+      awardCloseDate: close,
+      scheduleYear: 2,
+      raWindow: { opensOn: new Date(Date.UTC(2027, 3, 15)), submitBy: new Date(Date.UTC(2027, 4, 22)) },
+    });
+    expect([iso(r.availableOn), iso(r.requiredBy)]).toEqual(["2027-04-15", "2027-05-22"]);
+  });
+
+  it("year 1 ignores any window: it keeps the award round's dates", () => {
+    const r = scheduleDatesForYear({
+      awardStartYear: 2026,
+      awardOpenDate: open,
+      awardCloseDate: close,
+      scheduleYear: 1,
+      raWindow: { opensOn: new Date(Date.UTC(2027, 3, 15)), submitBy: new Date(Date.UTC(2027, 4, 22)) },
+    });
+    expect([iso(r.availableOn), iso(r.requiredBy)]).toEqual(["2026-09-01", "2026-11-30"]);
+  });
+});
+
+describe("planSchedule — rolling windows by academic year (Epic 21 R2)", () => {
+  const iso = (d: Date | null) => d?.toISOString().slice(0, 10);
+  it("each later year reads the window of the round for ITS year; others keep the placeholder", () => {
+    const rows = planSchedule({
+      awardAcademicYear: "2026/27",
+      awardOpenDate: new Date(Date.UTC(2026, 8, 1)),
+      awardCloseDate: new Date(Date.UTC(2026, 10, 30)),
+      horizon: 3,
+      rollingWindows: new Map([
+        // The award year's own RA window must NOT move year 1.
+        [2026, { opensOn: new Date(Date.UTC(2026, 3, 1)), submitBy: new Date(Date.UTC(2026, 3, 2)) }],
+        [2027, { opensOn: null, submitBy: new Date(Date.UTC(2027, 4, 22)) }],
+      ]),
+    });
+    expect(rows.map((r) => [r.academicYear, iso(r.availableOn), iso(r.requiredBy)])).toEqual([
+      ["2026-27", "2026-09-01", "2026-11-30"],
+      // A window with only a close keeps the placeholder opening date.
+      ["2027-28", "2027-04-15", "2027-05-22"],
+      ["2028-29", "2028-04-15", "2028-05-21"],
+    ]);
+  });
+});
+
+describe("generateSchedule — loads the stored RA windows (Epic 21 R2)", () => {
+  it("dates year 2 from the 2027/28 round's RA window", async () => {
+    const tx = makeTx([]);
+    tx.roundWindow.findMany.mockResolvedValueOnce([
+      {
+        opensOn: new Date(Date.UTC(2027, 3, 15)),
+        submitBy: new Date(Date.UTC(2027, 4, 22)),
+        round: { academicYear: "2027/28" },
+      },
+    ]);
+    await generateSchedule(tx as never, account, round);
+    expect(tx.roundWindow.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { scenario: "RA" } })
+    );
+    const year2 = (tx.bursaryScheduleEntry.create.mock.calls as unknown as unknown[][])[1][0] as {
+      data: { scheduleYear: number; requiredBy: Date };
+    };
+    expect(year2.data.scheduleYear).toBe(2);
+    expect(year2.data.requiredBy.toISOString().slice(0, 10)).toBe("2027-05-22");
+  });
+});
+
+describe("rollingRedateWhere — what a Rounds-page save re-dates (Epic 21 R2)", () => {
+  it("only that year's planned rolling-over rows: year ≥ 2, SCHEDULED, no round", () => {
+    expect(rollingRedateWhere("2027/28")).toEqual({
+      academicYear: "2027-28",
+      scheduleYear: { gte: 2 },
+      status: "SCHEDULED",
+      roundId: null,
+    });
+  });
+
+  it("never touches year-1 rows (prod's 2026-27 award rows are SCHEDULED with no round)", () => {
+    const where = rollingRedateWhere("2026/27")!;
+    const prodYear1 = { academicYear: "2026-27", scheduleYear: 1, status: "SCHEDULED", roundId: null };
+    const matches =
+      prodYear1.academicYear === where.academicYear &&
+      prodYear1.scheduleYear >= where.scheduleYear.gte &&
+      prodYear1.status === where.status &&
+      prodYear1.roundId === where.roundId;
+    expect(matches).toBe(false);
+  });
+
+  it("accepts either label form and refuses an unparseable one", () => {
+    expect(rollingRedateWhere("2027/2028")?.academicYear).toBe("2027-28");
+    expect(rollingRedateWhere("next year")).toBeNull();
   });
 });

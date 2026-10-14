@@ -20,6 +20,7 @@ function makeApp(
       closeDate: new Date("2026-09-30T00:00:00.000Z"),
       defaultSubmissionDeadlineNew: null,
       defaultSubmissionDeadlineRolling: null,
+      windows: [],
     },
     leadApplicant: { firstName: "Pat", lastName: "Smith", email: "pat@example.test" },
     ...overrides,
@@ -79,6 +80,7 @@ describe("buildBulkMergeData", () => {
           closeDate: new Date(2026, 8, 30),
           defaultSubmissionDeadlineNew: null,
       defaultSubmissionDeadlineRolling: null,
+      windows: [],
         },
       })
     );
@@ -94,6 +96,7 @@ describe("buildBulkMergeData", () => {
           closeDate: new Date(2026, 8, 30),
           defaultSubmissionDeadlineNew: null,
       defaultSubmissionDeadlineRolling: null,
+      windows: [],
         },
       })
     );

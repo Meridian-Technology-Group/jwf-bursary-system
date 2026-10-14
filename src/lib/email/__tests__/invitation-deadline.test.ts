@@ -18,6 +18,7 @@ const round: SubmissionDeadlineRound = {
   closeDate: new Date("2026-09-30T00:00:00"),
   defaultSubmissionDeadlineNew: new Date("2026-09-20T00:00:00"),
   defaultSubmissionDeadlineRolling: new Date("2026-04-30T00:00:00"),
+  windows: [],
 };
 
 /** A token expiry deliberately unlike either round date. */
@@ -73,6 +74,7 @@ describe("invitationDeadlineFields", () => {
       closeDate: new Date("2026-09-30T00:00:00"),
       defaultSubmissionDeadlineNew: null,
       defaultSubmissionDeadlineRolling: null,
+      windows: [],
     };
     const fields = invitationDeadlineFields(noDefaults, "NEW", expiresAt);
     expect(fields.deadline).toBe(
@@ -114,6 +116,9 @@ describe("INVITATION_ROUND_DEADLINE_SELECT", () => {
       "closeDate",
       "defaultSubmissionDeadlineNew",
       "defaultSubmissionDeadlineRolling",
+      // Epic 21 R2 — the RA window, the rolling-over third tier.
+      "windows",
     ]);
+    expect(INVITATION_ROUND_DEADLINE_SELECT.windows.where).toEqual({ scenario: "RA" });
   });
 });

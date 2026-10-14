@@ -266,11 +266,26 @@ export function ScheduleGrid({
                       {e.manuallyCreated ? "Yes" : "No"}
                     </TableCell>
                     <TableCell className="hidden xl:table-cell">{fmt(e.availableOn)}</TableCell>
-                    <TableCell className="hidden xl:table-cell">{fmt(e.requiredBy)}</TableCell>
-                    {/* R3: Available On / Required By, stacked, below xl. */}
+                    <TableCell className="hidden xl:table-cell">
+                      {fmt(e.requiredBy)}
+                      {/* Epic 21 R2 — this family's own deadline (an
+                          extension or an earlier date) when it differs. */}
+                      {e.familyDeadline && (
+                        <span className="block whitespace-nowrap text-xs font-medium text-amber-700">
+                          Family: {fmt(e.familyDeadline)}
+                        </span>
+                      )}
+                    </TableCell>
+                    {/* R3: Available On / Required By (and the family's own
+                        deadline), stacked, below xl. */}
                     <TableCell className="whitespace-nowrap text-xs xl:hidden">
                       <span className="block">{fmt(e.availableOn)}</span>
                       <span className="block text-slate-500">to {fmt(e.requiredBy)}</span>
+                      {e.familyDeadline && (
+                        <span className="block font-medium text-amber-700">
+                          Family: {fmt(e.familyDeadline)}
+                        </span>
+                      )}
                     </TableCell>
                     <TableCell className="hidden xl:table-cell">{fmt(e.receivedOn)}</TableCell>
                     <TableCell className="text-right">

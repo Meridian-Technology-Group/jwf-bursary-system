@@ -120,6 +120,8 @@ export interface RecommendationFormProps {
   assessmentId: string;
   /** Current single synopsis (Epic 06), shown + editable on this screen too. */
   synopsis: string | null;
+  /** Epic 21 #6 rework — the synopsis locks with the assessment. */
+  synopsisLocked?: boolean;
   /** Values pre-populated from the completed assessment */
   assessmentValues: {
     bursaryAward: number | null;
@@ -448,6 +450,7 @@ export function RecommendationForm({
   assessmentOutcome,
   assessmentId,
   synopsis,
+  synopsisLocked = false,
   assessmentValues,
   recommendation,
   reasonCodes,
@@ -733,12 +736,14 @@ export function RecommendationForm({
 
       {/* ── Single assessment synopsis (Epic 06) ─────────────────────────── */}
       {/* The qualitative narrative now lives on Assessment.synopsis and is
-          shown + EDITABLE here, independent of the recommendation lock above. */}
+          shown + EDITABLE here, independent of the recommendation lock above,
+          until the assessment itself locks (Epic 21 #6 rework). */}
       <AssessmentSynopsis
         assessmentId={assessmentId}
         applicationId={applicationId}
         synopsis={synopsis}
         assessmentCompleted
+        locked={synopsisLocked}
       />
 
       {/* ── Section C: Reason Codes ──────────────────────────────────────── */}
