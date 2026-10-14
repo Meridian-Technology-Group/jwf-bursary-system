@@ -48,6 +48,11 @@ interface SubmissionDeadlineCardProps {
   effectiveDeadline: string;
   /** Which tier produced `effectiveDeadline` — drives the provenance label. */
   source: SubmissionDeadlineSource;
+  /**
+   * Licence fix (14 Oct 2026): the override is the "Submit by" date chosen
+   * when the invitation was sent.
+   */
+  setAtInvitation?: boolean;
 }
 
 /** Converts an ISO instant to the `datetime-local` input value (local time). */
@@ -79,6 +84,7 @@ export function SubmissionDeadlineCard({
   applicationType,
   effectiveDeadline,
   source,
+  setAtInvitation = false,
 }: SubmissionDeadlineCardProps) {
   const router = useRouter();
   const [value, setValue] = useState<string>(toLocalInput(submissionDeadlineAt));
@@ -123,7 +129,7 @@ export function SubmissionDeadlineCard({
           </span>{" "}
           {source === "override" ? (
             <span className="rounded-full bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-700">
-              Override
+              {setAtInvitation ? "Set at invitation" : "Override"}
             </span>
           ) : source === "roundDefault" ? (
             <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-500">

@@ -130,6 +130,9 @@ export async function createInvitation(
     authUserId?: string;
     /** Epic 14 B3 — which invitation template variant this invite uses. */
     situation?: InvitationSituation | null;
+    /** Licence fix (14 Oct 2026) — the per-invitation "Submit by" instant
+     *  (end of the chosen day, Europe/London); null = none. */
+    submissionDeadlineAt?: Date | null;
     token?: string;
     createdBy: string;
     expiresAt: Date;
@@ -148,6 +151,7 @@ export async function createInvitation(
       entryYear: data.entryYear ?? null,
       entryYearGroup: data.entryYearGroup ?? null,
       situation: data.situation ?? null,
+      submissionDeadlineAt: data.submissionDeadlineAt ?? null,
       roundId: data.roundId ?? null,
       bursaryAccountId: data.bursaryAccountId ?? null,
       contactId: data.contactId ?? null,
