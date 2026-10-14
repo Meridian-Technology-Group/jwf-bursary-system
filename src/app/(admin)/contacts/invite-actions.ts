@@ -43,6 +43,10 @@ import {
   ROUND_WINDOWS_SELECT,
 } from "@/lib/rounds/window-consumption";
 import { sendEmail, normaliseBccAddress } from "@/lib/email/send";
+import {
+  emailDeadlineOverride,
+  parseInvitationSubmitBy,
+} from "@/lib/invitations/submit-by";
 import { createAuditLog } from "@/lib/audit/log";
 import { AUDIT_ACTIONS, AUDIT_ENTITY_TYPES } from "@/lib/audit/actions";
 import {
@@ -71,6 +75,12 @@ export async function sendInvitationFromContactAction(
      * no copy. Ignored when `skipEmail` is set, since there is no email to copy.
      */
     bcc?: string;
+    /**
+     * Licence fix (14 Oct 2026) — optional "Submit by" date (`yyyy-MM-dd`):
+     * not in the past (Europe/London), not after the round's close date.
+     * Stored as the end of that day; the application inherits it.
+     */
+    submitBy?: string | null;
   }
 ): Promise<InviteFromContactResult> {
   const user = await requireRole([Role.ADMIN]);
@@ -101,6 +111,8 @@ export async function sendInvitationFromContactAction(
   let deadlineRound: SubmissionDeadlineRound | null = null;
   // B3 — feeds the rolling template's {{opening_date}}.
   let roundOpenDate: Date | null = null;
+  // Licence fix — the validated per-invitation "Submit by" instant, or null.
+  let submitBy: Date | null = null;
   try {
     const loaded = await withAdminContext(async (tx) => {
       const c = await tx.contact.findUnique({
@@ -161,6 +173,13 @@ export async function sendInvitationFromContactAction(
     });
 
     if (!loaded.ok) return { success: false, error: loaded.error };
+    const checkedSubmitBy = parseInvitationSubmitBy(
+      options?.submitBy,
+      loaded.deadlineRound.closeDate,
+      new Date()
+    );
+    if (!checkedSubmitBy.ok) return { success: false, error: checkedSubmitBy.error };
+    submitBy = checkedSubmitBy.submitBy;
     contact = loaded.contact;
     academicYear = loaded.academicYear;
     roundOpenDate = loaded.roundOpenDate;
@@ -278,6 +297,7 @@ export async function sendInvitationFromContactAction(
         // B3 — the situation chosen when the contact was created; resends
         // then reuse it from the invitation row.
         situation: contact.situation,
+        submissionDeadlineAt: submitBy,
         authUserId,
         createdBy: user.id,
         expiresAt,
@@ -296,6 +316,7 @@ export async function sendInvitationFromContactAction(
           school: contact.school,
           entryYear: contact.entryYear,
           authUserId,
+          submitBy: submitBy?.toISOString() ?? null,
         },
       });
 
@@ -351,10 +372,12 @@ export async function sendInvitationFromContactAction(
       // E1/CF-11: {{deadline}} is the round's SUBMISSION deadline (typed by
       // situation), not the 30-day token expiry — that now has its own
       // {{link_expiry}} field.
+      // Licence fix: the invitation's "Submit by" date, when set, wins.
       ...invitationDeadlineFields(
         deadlineRound,
         deadlineTypeForSituation(contact.situation),
-        expiresAt
+        expiresAt,
+        emailDeadlineOverride(submitBy)
       ),
     },
     // CH-32 — blind-copy the bursary inbox so the send is on record.

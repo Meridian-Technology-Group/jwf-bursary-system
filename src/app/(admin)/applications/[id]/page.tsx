@@ -72,6 +72,7 @@ export default async function ApplicantDataPage({ params }: Props) {
     scheduleEntries,
     accountStatus,
     yoyRows,
+    deadlineSetAtInvitation,
   } = await withUserContext(user.id, user.role as RlsRole, async (tx) => {
     const app = await getApplicationWithDetails(tx, params.id);
     if (!app)
@@ -83,6 +84,7 @@ export default async function ApplicantDataPage({ params }: Props) {
         scheduleEntries: [] as ScheduleEntryRow[],
         accountStatus: null as BursaryAccountStatus | null,
         yoyRows: [] as YoyFinancialsTableRow[],
+        deadlineSetAtInvitation: false,
       };
     const siblings = app.bursaryAccountId
       ? await getSiblingLinks(tx, app.bursaryAccountId)
@@ -103,6 +105,18 @@ export default async function ApplicantDataPage({ params }: Props) {
       : [];
     const revealed = await getApplicationNamesForReveal(tx, app.id, user.id);
     const ctribs = await getApplicationContributors(tx, params.id);
+    // Licence fix (14 Oct 2026): the override came from the invitation's
+    // "Submit by" date when this family has an invitation into this round
+    // carrying exactly that instant.
+    const fromInvitation = app.submissionDeadlineAt
+      ? (await tx.invitation.count({
+          where: {
+            authUserId: app.leadApplicantId,
+            roundId: app.roundId,
+            submissionDeadlineAt: app.submissionDeadlineAt,
+          },
+        })) > 0
+      : false;
     return {
       application: app,
       siblingLinks: siblings,
@@ -111,6 +125,7 @@ export default async function ApplicantDataPage({ params }: Props) {
       scheduleEntries: schedule,
       accountStatus: account?.status ?? null,
       yoyRows: yoy,
+      deadlineSetAtInvitation: fromInvitation,
     };
   });
 
@@ -286,6 +301,7 @@ export default async function ApplicantDataPage({ params }: Props) {
           applicationType={application.applicationType}
           effectiveDeadline={effective.deadline.toISOString()}
           source={effective.source}
+          setAtInvitation={deadlineSetAtInvitation}
         />
       )}
 

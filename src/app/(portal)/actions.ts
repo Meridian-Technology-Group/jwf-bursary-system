@@ -177,6 +177,7 @@ export async function startApplicationAction(
             entryYear: invitation.entryYear,
             entryYearGroup: invitation.entryYearGroup,
             contactId: invitation.contactId,
+            submissionDeadlineAt: invitation.submissionDeadlineAt,
           });
           return { error: null, applicationId: createdId };
         }
@@ -435,6 +436,7 @@ export async function startInvitationApplicationAction(
           entryYear: invitation.entryYear,
           entryYearGroup: invitation.entryYearGroup,
           contactId: invitation.contactId,
+          submissionDeadlineAt: invitation.submissionDeadlineAt,
         }));
       if (invitation.status === InvitationStatus.PENDING) {
         await markInvitationAccepted(tx, invitation.id, user.id);

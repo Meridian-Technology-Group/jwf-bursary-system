@@ -4,8 +4,9 @@
  *
  * Precedence, per the D1 reconciliation decision:
  *  - {{deadline}} stays on the Epic 13 E1 chain
- *    (override → per-type round default → closeDate). A stored window's
- *    `submitBy` FILLS the per-type default only when the E1 column is null —
+ *    (override → per-type round default → closeDate). A stored ROLLING_OVER
+ *    window's `submitBy` FILLS the rolling default only when the E1 column is
+ *    null (NEW windows no longer fill anything — licence fix, 14 Oct 2026) —
  *    the explicitly-set E1 column always wins. For ROLLING_OVER this gives the
  *    same date as the RA-window tier the portal, submit guard and queue use
  *    (Epic 21 R2, `effectiveSubmissionDeadline`), so the email and the
@@ -63,9 +64,17 @@ export function windowForScenario(
 }
 
 /**
- * Applies a stored window's `submitBy` as the per-type round default ONLY
+ * Applies a stored window's `submitBy` as the ROLLING_OVER round default ONLY
  * where the E1 column is null (the E1 column, when set, always wins).
  * Returns a new object; never mutates the input.
+ *
+ * Licence fix (14 Oct 2026): NEW-applicant windows no longer fill
+ * {{deadline}}. The portal lockout, submit guard and queue ignore NA windows
+ * for NEW (`effectiveSubmissionDeadline`, PR #449), so an NA window date in the
+ * email told families a deadline the portal never enforced (prod's NA_CURRENT
+ * said 17 Sep while the portal allowed submission until the 30 Nov close).
+ * A per-family date now goes on the invitation itself
+ * (`Invitation.submissionDeadlineAt`), which the application inherits.
  */
 export function applyWindowToDeadlineRound(
   round: SubmissionDeadlineRound,
@@ -73,17 +82,11 @@ export function applyWindowToDeadlineRound(
   situation: InvitationSituation | null | undefined,
 ): SubmissionDeadlineRound {
   if (!window?.submitBy) return round
-  if (situation === 'ROLLING_OVER') {
-    return {
-      ...round,
-      defaultSubmissionDeadlineRolling:
-        round.defaultSubmissionDeadlineRolling ?? window.submitBy,
-    }
-  }
+  if (situation !== 'ROLLING_OVER') return round
   return {
     ...round,
-    defaultSubmissionDeadlineNew:
-      round.defaultSubmissionDeadlineNew ?? window.submitBy,
+    defaultSubmissionDeadlineRolling:
+      round.defaultSubmissionDeadlineRolling ?? window.submitBy,
   }
 }
 
