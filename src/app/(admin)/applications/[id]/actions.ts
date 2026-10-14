@@ -29,6 +29,7 @@ import { humaniseSlot } from "@/lib/documents/slots";
 import { deleteDocument } from "@/lib/storage/documents";
 import { createSupabaseAdminClient } from "@/lib/auth/supabase-admin";
 import { restartApplicationFromRejection } from "@/lib/applications/create-from-invitation";
+import { recordRejection } from "@/lib/applications/rejection-record";
 import { getAppUrl } from "@/lib/app-url";
 import { isPurgeable, notYetPurgeableMessage } from "@/lib/retention/policy";
 import {
@@ -383,6 +384,9 @@ export async function rejectAndRestartApplication(
           custodyArrangement: true,
           formStatus: true,
           closedAt: true,
+          // Epic 22 P3: kept on the rejection record.
+          submittedAt: true,
+          round: { select: { academicYear: true } },
           leadApplicant: {
             select: { email: true, firstName: true, lastName: true },
           },
@@ -438,6 +442,23 @@ export async function rejectAndRestartApplication(
         custodyArrangement: application.custodyArrangement,
       });
 
+      // Epic 22 P3: keep a record of the rejection for the family's schedule
+      // (Submitted → Rejected → the new attempt), and put the year's schedule
+      // row back to SCHEDULED for the new attempt (D-18).
+      const { rejectionId } = await recordRejection(tx, {
+        rejectedApplicationId: application.id,
+        newApplicationId,
+        roundId: application.roundId,
+        academicYear: application.round.academicYear,
+        leadApplicantId: application.leadApplicantId,
+        bursaryAccountId: application.bursaryAccountId,
+        childName: application.childName,
+        reference: oldReference,
+        submittedAt: application.submittedAt,
+        rejectedById: user.id,
+        fromPhase: phase,
+      });
+
       // Audit on the OLD application id (entityId is a loose UUID — the row was
       // just deleted, but the append-only audit trail persists).
       await createAuditLog(tx, {
@@ -452,6 +473,7 @@ export async function rejectAndRestartApplication(
           customMessage: customMessage?.trim() || null,
           clearedDocumentCount,
           newApplicationId,
+          rejectionRecordId: rejectionId,
         },
       });
 

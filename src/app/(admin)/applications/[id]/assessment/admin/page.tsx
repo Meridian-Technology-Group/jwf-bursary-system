@@ -5,7 +5,8 @@
  *  1. Header strip: recipient name · Bursary Reference · school · siblings
  *     (the "Fees Account Code" column renders `Application.reference` —
  *     Epic 13 D13-1a dropped the separate code).
- *  2. Account Synopsis (existing component + save path) and the Assessor's
+ *  2. Main synopsis (the account's, all years — Epic 21 #6), this year's
+ *     synopsis (locks with the assessment), and the Assessor's
  *     wizard notes editor (relocated from the form's section F — same
  *     storage/save, read-only once COMPLETED), plus the previous year's
  *     wizard callout.
@@ -46,7 +47,8 @@ import { scheduleRowLink } from "@/lib/assessment/previous-year";
 import { cn } from "@/lib/utils";
 import { AssessmentSynopsis } from "@/components/admin/assessment-synopsis";
 import { AccountSynopsisCard } from "@/components/admin/account-synopsis-card";
-import { getAccountSynopsisTimeline } from "@/lib/db/queries/account-synopsis";
+import { getMainSynopsis } from "@/lib/db/queries/account-synopsis";
+import { isSynopsisLocked } from "@/lib/bursary-accounts/standing-synopsis";
 import { WatchOutNotesEditor } from "@/components/admin/watch-out-notes-editor";
 import { PreSystemHistoryEditor } from "@/components/admin/pre-system-history-editor";
 import { AnnualFeesOverrideEditor } from "@/components/admin/annual-fees-override-editor";
@@ -99,7 +101,7 @@ export default async function AssessmentAdminPage({ params }: Props) {
     closeReasons,
     accountFees,
     scheduleControls,
-    synopsisTimeline,
+    mainSynopsis,
   } = await withUserContext(user.id, user.role as RlsRole, async (tx) => {
     const app = await getApplicationWithDetails(tx, params.id);
     if (!app) {
@@ -115,7 +117,7 @@ export default async function AssessmentAdminPage({ params }: Props) {
         closeReasons: [],
         accountFees: null,
         scheduleControls: null,
-        synopsisTimeline: null,
+        mainSynopsis: null,
       };
     }
     const a = await getAssessment(tx, params.id);
@@ -159,9 +161,9 @@ export default async function AssessmentAdminPage({ params }: Props) {
     const schedule = app.bursaryAccountId
       ? await getPayableFeesScheduleRows(tx, app.bursaryAccountId)
       : [];
-    // Epic 21 #6 — the account's standing synopsis (all years).
-    const timeline = app.bursaryAccountId
-      ? await getAccountSynopsisTimeline(tx, app.bursaryAccountId)
+    // Epic 21 #6 (rework) — the account's main synopsis (all years).
+    const main = app.bursaryAccountId
+      ? await getMainSynopsis(tx, app.bursaryAccountId)
       : null;
     // Epic 21 #4 — ADMIN only; each button enabled only when its action would succeed.
     const controls =
@@ -187,7 +189,7 @@ export default async function AssessmentAdminPage({ params }: Props) {
       accountStatus: account?.status ?? null,
       closeReasons: reasons,
       scheduleControls: controls,
-      synopsisTimeline: timeline,
+      mainSynopsis: main,
       // S9: shown where the school has no fee table (the OP partnering school),
       // or wherever an override has been set.
       accountFees:
@@ -318,19 +320,15 @@ export default async function AssessmentAdminPage({ params }: Props) {
         </div>
       )}
 
-      {/* Epic 21 #6 — the standing synopsis across every year of the account,
+      {/* Epic 21 #6 (rework, 14 Oct) — the account's one main synopsis,
           above this year's (her 11 Oct question: "the generic one that
-          sustains all years"). */}
-      {synopsisTimeline && (
+          sustains all years"). Only once the account exists. */}
+      {application.bursaryAccountId && (
         <AccountSynopsisCard
           applicationId={params.id}
-          entries={synopsisTimeline.map((e) => ({
-            ...e,
-            createdAt: e.createdAt.toISOString(),
-            updatedAt: e.updatedAt.toISOString(),
-          }))}
-          canAddNote={user.role === Role.ADMIN || user.role === Role.ASSESSOR}
-          canEditNotes={user.role === Role.ADMIN}
+          body={mainSynopsis?.body ?? null}
+          updatedAt={mainSynopsis?.updatedAt.toISOString() ?? null}
+          canEdit={user.role === Role.ADMIN || user.role === Role.ASSESSOR}
         />
       )}
 
@@ -342,6 +340,7 @@ export default async function AssessmentAdminPage({ params }: Props) {
             applicationId={params.id}
             synopsis={assessment.synopsis}
             assessmentCompleted={assessment.status === "COMPLETED"}
+            locked={isSynopsisLocked(assessment.status)}
             title="This year's synopsis"
           />
           <WatchOutNotesEditor
@@ -602,7 +601,7 @@ export default async function AssessmentAdminPage({ params }: Props) {
                       link.kind === "current" && "bg-accent-50/60"
                     )}
                   >
-                    <td className="px-3 py-2 font-mono text-xs font-semibold text-primary-900">
+                    <td className="whitespace-nowrap px-3 py-2 font-mono text-xs font-semibold text-primary-900">
                       {link.kind === "link" ? (
                         <Link
                           href={link.href}
@@ -614,7 +613,7 @@ export default async function AssessmentAdminPage({ params }: Props) {
                         row.academicYear
                       )}
                       {link.kind === "current" && (
-                        <span className="ml-1.5 rounded bg-accent-100 px-1 py-0.5 font-sans text-[10px] font-medium text-accent-800">
+                        <span className="ml-1.5 inline-block whitespace-nowrap rounded bg-accent-100 px-1 py-0.5 font-sans text-[10px] font-medium text-accent-800">
                           This year
                         </span>
                       )}

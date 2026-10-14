@@ -77,7 +77,7 @@ function ScheduleYearCell({
     <>
       {entry.academicYear}
       {link.kind === "current" && (
-        <span className="ml-1.5 rounded bg-accent-100 px-1 py-0.5 text-[10px] font-medium text-accent-800">
+        <span className="ml-1.5 inline-block whitespace-nowrap rounded bg-accent-100 px-1 py-0.5 text-[10px] font-medium text-accent-800">
           This year
         </span>
       )}
@@ -226,7 +226,7 @@ export function ScheduleGrid({
                 {entries.map((e) => (
                   <TableRow key={e.id}>
                     <TableCell className="font-medium">{e.scheduleYear}</TableCell>
-                    <TableCell>
+                    <TableCell className="whitespace-nowrap">
                       <ScheduleYearCell entry={e} currentApplicationId={applicationId} />
                     </TableCell>
                     <TableCell className="text-slate-500">{e.type}</TableCell>

@@ -10,7 +10,8 @@
  *   - Metadata JSON (collapsed by default — future enhancement)
  *
  * Uses getAuditLogsForApplicationHistory from src/lib/db/queries/audit.ts
- * (Application-entity rows plus CR-001 edit-on-behalf section saves).
+ * (Application-entity rows, CR-001 edit-on-behalf section saves, and the
+ * account's main-synopsis edits — Epic 21 #6 rework).
  */
 
 import { notFound } from "next/navigation";
@@ -34,6 +35,7 @@ const ACTION_LABELS: Record<string, string> = {
   APPLICATION_OUTCOME_SET: "Outcome set",
   ACCOUNT_SYNOPSIS_NOTE_ADDED: "Account synopsis note added",
   ACCOUNT_SYNOPSIS_NOTE_EDITED: "Account synopsis note edited",
+  ACCOUNT_MAIN_SYNOPSIS_SAVED: "Main synopsis edited",
   SCHEDULE_ENDED_AFTER_YEAR: "Schedule ended after this year",
   SCHEDULE_YEAR_ADDED: "Schedule year added",
   DOCUMENT_UPLOADED_BY_ASSESSOR: "Document uploaded by assessor",
@@ -197,7 +199,11 @@ export default async function HistoryPage({ params }: Props) {
     async (tx) => {
       const app = await getApplicationWithDetails(tx, params.id);
       if (!app) return { application: null, logs: [] };
-      const auditLogs = await getAuditLogsForApplicationHistory(tx, params.id);
+      const auditLogs = await getAuditLogsForApplicationHistory(
+        tx,
+        params.id,
+        app.bursaryAccountId
+      );
       return { application: app, logs: auditLogs };
     }
   );

@@ -22,7 +22,14 @@ export { Role };
 export type CurrentUser = Pick<
   Profile,
   "id" | "email" | "role" | "firstName" | "lastName" | "phone"
->;
+> & {
+  /**
+   * Supabase's record of this session's sign-in (`auth.users.last_sign_in_at`),
+   * passed through so the portal can keep "Last login" (Epic 22 P1) without a
+   * second auth round-trip. Optional: tests and mocks may omit it.
+   */
+  authLastSignInAt?: string | null;
+};
 
 /** Minimal application shape required by access-check helpers. */
 type ApplicationWithAssignee = Pick<Application, "assignedToId">;
@@ -66,7 +73,9 @@ export async function getCurrentUser(): Promise<CurrentUser | null> {
     }),
   );
 
-  return profile;
+  return profile
+    ? { ...profile, authLastSignInAt: user.last_sign_in_at ?? null }
+    : null;
 }
 
 /**

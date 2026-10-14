@@ -371,11 +371,15 @@ export async function createReassessmentApplicationFromInvitation(
     );
   }
 
-  // Idempotency: reuse an existing in-progress application for this round.
+  // Idempotency: reuse an existing in-progress application for this round AND
+  // this child's account. Epic 22 P1: without the account a parent with two
+  // children on re-assessment was dropped into the first child's draft when
+  // they started the second (one login, many children — Epic 14 E1).
   const existing = await tx.application.findFirst({
     where: {
       leadApplicantId: authUserId,
       roundId,
+      bursaryAccountId,
       formStatus: { not: "SUBMITTED" },
     },
     select: { id: true },

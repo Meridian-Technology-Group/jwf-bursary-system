@@ -26,6 +26,33 @@ code_surveyed_at: origin/staging 0be83db (11 Oct 2026)
 - **Keep the portal row labels** "Scheduled" / "Outside your award" (`portal-schedule.ts` `STATE_LABELS`) as they are; she may send new wording.
 - **Out of scope:** her "Parent View" redesign, quoted separately as Phase 5 (§8). Don't pre-build any of it.
 
+**Rework (14 Oct) — read this before T6 or T7.** Charlotte replied 13 Oct 20:57 UTC (thread `1a11fad6a8b0e010`); Brian replied 22:15 and decided the rest on 14 Oct. Three tranches, one PR each to `staging`, merged **R1 → R2 → R3**. Gates as §3; any migration that rewrites existing rows needs Brian's approval before merge.
+
+| R | Branch | What | Charge |
+|---|---|---|---|
+| **R1** | `feature/main-synopsis` | T6 reworked to one editable "Main synopsis" per account; "This year's synopsis" locks with the assessment; timeline card and notes removed | inside the £250 |
+| **R2** | `fix/schedule-dates-follow-round` | one rolling-over deadline; schedule years ≥2 follow the round for that year; per-family deadline override shown on the schedule | £0 (licence) |
+| **R3** | `fix/schedule-grid-fits-card` | ScheduleGrid's "Shown to family" column fits the card below ~1024px | £0 (licence) |
+
+*R1 decisions (Brian, 14 Oct):*
+- **One MAIN per account.** A new `AccountSynopsisKind` value `MAIN`, plus the raw partial unique index `account_synopsis_entries_one_main_per_account` (one MAIN per account). No column on `bursary_accounts` (it would block toolkit rollback). YEAR and NOTE stay in the enum (Postgres can't drop a value) but nothing writes them.
+- **Pre-fill.** Migrated accounts get the Grant Tracker synopsis (toolkit). A new award's first lock (NEW_AWARD or ROLLED_OVER) copies that year's synopsis in when the account has no MAIN; a later lock never overwrites it (`seedMainSynopsisAtLock`).
+- **Editing.** ADMIN and ASSESSOR edit it with an explicit Edit/Save (not autosave, so each save is one History entry). Blank is allowed.
+- **History.** Each save is audited as `ACCOUNT_MAIN_SYNOPSIS_SAVED` against the **BursaryAccount**; `getAuditLogsForApplicationHistory` includes those rows, so every year's History tab shows them. The audit row records lengths, not the text: `audit_logs` is append-only and synopsis prose can name the family (same rule as `ASSESSMENT_SYNOPSIS_SAVE`). **Open for Brian:** if Charlotte wants to *read* earlier versions, that needs a versions table under the retention rules, not audit metadata.
+- **"This year's synopsis" locks** once the assessment is in a post-assessment final state (NEW_AWARD, ROLLED_OVER, WAITING_LIST, CLOSED_ARCHIVED), the set that already makes the recommendation form read-only. Allowlist (`isSynopsisLocked`), so a future status locks. `saveSynopsis` refuses on the server; the box renders read-only. Reversing the decision to COMPLETED unlocks it.
+- **Notes removed** (actions, card, tests). The audit keys `ACCOUNT_SYNOPSIS_NOTE_ADDED/_EDITED` stay so old History rows keep their labels.
+- **Data.** Migrations `20261014130000_account_synopsis_main_kind` (enum only) and `20261014130100_account_synopsis_main_backfill`: each account's newest YEAR entry becomes its MAIN **in place** (same row id, so the toolkit ledger on migration staging stays exact), then the other YEAR rows and all NOTEs are removed. Nonprod: 0 rows (no-op). Prod: table arrives empty (no-op). Migration staging: by hand, 271 YEAR → 271 MAIN, 1 test NOTE removed. **Needs Brian's approval before merge.**
+- **Retention (D-7 unchanged).** Close purge keeps the MAIN verbatim; the GDPR cascade deletes every entry on the lead's accounts. Tests extended.
+- **Toolkit follow-up (main checkout, `chore/gt-migration-toolkit`, Brian):** the T8 loader, `mig backfill-synopsis` and `verify` write/check **MAIN** (one per migrated account) instead of YEAR. Rehearsal needs no re-backfill: the migration converts its 271 entries in place. The prod backfill for TS-WILL05 and TS-EMIN01 (script not written) writes MAIN.
+
+*R2 decisions (Brian, 14 Oct, corrected by the prod data check the same day):*
+- **Spring-2027 rolling-over (RA) applications go into a NEW 2027/28 round**, never 2026/27. Reasons in code: the F3 invite filter (`invitations.ts` ~326) needs a SCHEDULED row for the round's own academic year; the submit mirror matches the schedule row by the round's academic year; the form's tax year derives from it; `resolveRoundScenario` already defines RA for round Y/Y+1 as 15 Apr–21 May of year Y. The 2027/28 round is created on prod by hand (ledgered, after promotion), **as DRAFT, not OPEN**: `getActiveRound` (`reports.ts:124`) picks the OPEN round with the latest `openDate`, so opening it flips the dashboard, reports and queue defaults to an empty round. It has to open before the first 2027-entry invite (NA winter window, 10 Nov). Not built by code; stated in R2's PR.
+- **Deadline chain:** override → per-type round default → **(ROLLING_OVER only)** the round's stored RA window `submitBy` → `closeDate`. NEW stays exactly as today: prod's 2026/27 has an NA_CURRENT window with `submit_by` 2026-09-17, and a type-blind tier would move every live NEW deadline from 30 Nov to 17 Sep. `effectiveDeadlineRangeWhere` (the queue's query copy) changes to match.
+- **Re-date on window save:** when a round's windows are saved, re-date only rows with `schedule_year ≥ 2`, `status = SCHEDULED`, `round_id IS NULL` and `academic_year` = that round's year. Never year-1 rows (prod's two 2026-27 year-1 rows are SCHEDULED with `round_id` null), never RECEIVED/COMPLETE.
+- **Keep 22 May 2027** as the real 2026/27 RA date (she gives till Saturday and edits it per round). The 21 May constant is only the placeholder.
+- The date resolution is one pure helper that Epic 22 P5 (the parent schedule table) will call; named and documented here when R2 lands.
+
+
 ---
 
 ## §0 · Starting position (11 Oct 2026)
@@ -294,6 +321,8 @@ Changes from the plan:
 
 **Status: BUILT 13 Oct** on `feature/schedule-end-and-add-year`. Migration `20261013180000_bursary_account_schedule_end_year`.
 
+**Follow-up (13 Oct, `fix/schedule-labels-and-badge`):** the "This year" badge no longer wraps, and the pre-system history button now reads "Add pre-system row" so it isn't mistaken for the schedule's "Add a year" (`follow-ups.md`).
+
 **Pure decisions** (in `src/lib/bursary-accounts/schedule.ts`):
 - `effectiveHorizon`
 - `planEndAfterYear`
@@ -416,7 +445,7 @@ The admin grid now reads "Shown to family" / "Hidden from family".
 
 ### T6 · WP-6 — standing synopsis on the admin page
 
-**Status: BUILT 13 Oct** on `feature/standing-synopsis`. Migration `20261013200000_account_synopsis_entries` (new table plus RLS: staff read; ADMIN and ASSESSOR insert/update; no DELETE for `app_user`).
+**Status: MERGED 13 Oct (#438), then REWORKED 14 Oct (R1, `feature/main-synopsis`): one editable MAIN per account, no timeline, no notes. The rework box under the plan header supersedes the behaviour, display and notes below.** First build on `feature/standing-synopsis`. Migration `20261013200000_account_synopsis_entries` (new table plus RLS: staff read; ADMIN and ASSESSOR insert/update; no DELETE for `app_user`).
 
 **Where the code is:**
 - Core: `src/lib/bursary-accounts/standing-synopsis.ts`.
@@ -585,4 +614,4 @@ Sprint planned 13 Oct. Day 1 is Tue 13 Oct; slack is about one day, held in T4.
 - Reports school filter. T2 splits by school inside the section instead.
 - Account-level reporting of ended schedules (`reports.ts:612-669` computes years remaining from the final school year, not the schedule). Note it if she asks.
 - Year 14 / beyond the natural horizon: refused by design.
-- **Phase 5, the "Parent View" redesign** (her workbook, 12 Oct, thread `1a12f98bb30f54cf`). Quoted 13 Oct at £1,300 (Home, My Bursary Application(s), My Application(s) Schedule, Help form to the fees inbox, My Details); Paused Assessment page parked. Awaiting her decision, and it starts only after Phase 4 is on migration staging. That quote also lists two licence items for the home page (remove "Your bursary portal is ready"; guidance sections always visible): build those with Phase 5, not here. The workbook holds a real family's personal and bank data: never commit it.
+- **Phase 5, the "Parent View" redesign** (her workbook, 12 Oct, thread `1a12f98bb30f54cf`). Quoted 13 Oct at £1,300 (Home, My Bursary Application(s), My Application(s) Schedule, Help form to the fees inbox, My Details); Paused Assessment page parked. Awaiting her decision, and it starts only after Phase 4 is on migration staging. Prepared for the sprint as Epic 22: `../cr-002-phase-5/epic-22-implementation-plan.md` (not to be built until she accepts). That quote also lists two licence items for the home page (remove "Your bursary portal is ready"; guidance sections always visible): build those with Phase 5, not here. The workbook holds a real family's personal and bank data: never commit it.

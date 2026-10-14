@@ -443,6 +443,12 @@ export async function sendRawEmail(
   options?: {
     /** Epic 15 X2 (CI-05) — optional blind copy on ad-hoc/bulk sends. */
     bcc?: string;
+    /**
+     * Epic 22 P2 — Reply-To override. A parent's portal question goes to the
+     * bursary inbox; the team's reply must go back to the parent, not to the
+     * team's own address. Every other caller keeps `replyToAddress()`.
+     */
+    replyTo?: string;
   }
 ): Promise<SendEmailResult> {
   try {
@@ -451,7 +457,7 @@ export async function sendRawEmail(
 
     const { data, error } = await resend.emails.send({
       from: fromAddress(),
-      replyTo: replyToAddress(),
+      replyTo: options?.replyTo ?? replyToAddress(),
       to,
       ...(options?.bcc ? { bcc: options.bcc } : {}),
       subject,
