@@ -15,11 +15,13 @@
  * - Migrated (Grant Tracker) accounts are skipped: the toolkit owns theirs.
  * - Each write is audited (ACCOUNT_MAIN_SYNOPSIS_SAVED against the
  *   BursaryAccount, lengths only, no prose), in the same transaction.
- * - Prints application references and account ids only, never names or text.
+ * - Prints family codes (e.g. TS-WILL05) and account ids only. Prod references
+ *   embed the child's name, so a reference is never printed whole.
  *
  * Usage:
- *   npm run backfill:main-synopsis -- [--ref <applicationReference> ...]
+ *   npm run backfill:main-synopsis -- [--ref <family code> ...]
  *   npm run backfill:main-synopsis -- --apply --project <ref> [--ref ...]
+ *   (`--ref TS-WILL05` matches references starting with that code.)
  *
  * Env: DATABASE_URL already in the shell wins; otherwise `.env.local`, then
  * `.env` (both point at nonprod). To target prod, export prod's DATABASE_URL
@@ -39,6 +41,7 @@ import { createAuditLog } from "../src/lib/audit/log";
 import { AUDIT_ACTIONS, AUDIT_ENTITY_TYPES } from "../src/lib/audit/actions";
 import {
   decideSeed,
+  safeLabel,
   supabaseProjectRef,
   type CandidateAccount,
   type SeedDecision,
@@ -71,7 +74,9 @@ async function asServiceRole<T>(fn: (tx: Prisma.TransactionClient) => Promise<T>
 
 async function loadCandidates(tx: Prisma.TransactionClient): Promise<CandidateAccount[]> {
   const accounts = await tx.bursaryAccount.findMany({
-    where: REFS.length ? { applications: { some: { reference: { in: REFS } } } } : {},
+    where: REFS.length
+      ? { applications: { some: { OR: REFS.map((r) => ({ reference: { startsWith: r } })) } } }
+      : {},
     select: {
       id: true,
       synopsisEntries: { where: { kind: "MAIN" }, select: { id: true } },
@@ -101,7 +106,7 @@ async function loadCandidates(tx: Prisma.TransactionClient): Promise<CandidateAc
 }
 
 function line(d: SeedDecision): string {
-  const ref = d.reference ?? "(no reference)";
+  const ref = safeLabel(d.reference);
   if (d.action === "SEED") {
     return `  SEED  ${ref.padEnd(12)} account ${d.accountId}  from ${d.academicYear} assessment ${d.assessmentId} (${d.body.length} chars)`;
   }
@@ -161,7 +166,7 @@ async function main() {
       }
       return ok;
     });
-    console.log(`  ${wrote ? "written" : "already had one (skipped)"}  ${d.reference ?? d.accountId}`);
+    console.log(`  ${wrote ? "written" : "already had one (skipped)"}  ${safeLabel(d.reference)} account ${d.accountId}`);
     if (wrote) written++;
   }
   console.log(`Done: ${written} written.`);

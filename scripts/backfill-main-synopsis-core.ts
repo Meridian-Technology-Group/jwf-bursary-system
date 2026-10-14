@@ -79,6 +79,16 @@ export function decideSeed(account: CandidateAccount): SeedDecision {
 }
 
 /**
+ * A printable label for an application reference. Prod references embed the
+ * child's name (e.g. "<CODE>-<SURNAME>, <First>" or "<Name> – <School> – …"),
+ * so only a leading family code like "TS-WILL05" is ever printed.
+ */
+export function safeLabel(reference: string | null): string {
+  const m = reference?.match(/^([A-Z]{2}-[A-Z]{3,5}\d{2})\b/);
+  return m ? m[1] : "(no family code)";
+}
+
+/**
  * The Supabase project ref a Postgres URL points at: the pooler username
  * `postgres.<ref>` / `app_user.<ref>`, or the direct host `db.<ref>.supabase.co`.
  * Null when neither shape matches.

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { decideSeed, supabaseProjectRef, type CandidateAccount } from "../backfill-main-synopsis-core";
+import { decideSeed, safeLabel, supabaseProjectRef, type CandidateAccount } from "../backfill-main-synopsis-core";
 
 function account(overrides: Partial<CandidateAccount> = {}): CandidateAccount {
   return {
@@ -89,5 +89,16 @@ describe("supabaseProjectRef", () => {
     expect(supabaseProjectRef(undefined)).toBeNull();
     expect(supabaseProjectRef("postgresql://postgres:pw@localhost:5432/postgres")).toBeNull();
     expect(supabaseProjectRef("not a url")).toBeNull();
+  });
+});
+
+describe("safeLabel", () => {
+  it("prints only the leading family code", () => {
+    expect(safeLabel("TS-ABCD05-SURNAME,First")).toBe("TS-ABCD05");
+    expect(safeLabel("WS-ABC01")).toBe("WS-ABC01");
+  });
+  it("never prints a reference without a family code (they embed names)", () => {
+    expect(safeLabel("First SURNAME – Trinity School – Year 11 – 2026-27")).toBe("(no family code)");
+    expect(safeLabel(null)).toBe("(no family code)");
   });
 });
