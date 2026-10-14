@@ -1,18 +1,22 @@
 /**
- * `mig backfill-synopsis` (Epic 21 #6, T8): gives accounts loaded before the
- * standing synopsis existed their year's entry, as the load now writes it.
+ * `mig backfill-synopsis` (Epic 21 #6; R1 rework, 14 Oct 2026): gives accounts
+ * loaded before the Main synopsis existed their MAIN entry, as the load now
+ * writes it.
  *
  * For every assessment the run ledgered (state done): one transaction writes
- * the YEAR entry from the assessment's synopsis as it stands now (staff edits
- * included) and ledgers it under the same run, phase `assessments` and account
- * key, so `rollback` removes exactly what this added. An assessment that
- * already has an entry is skipped, so a rerun is a no-op. Nothing else moves:
- * the account, assessment and recommendation are only read.
+ * the account's MAIN entry from the assessment's synopsis as it stands now and
+ * ledgers it under the same run, phase `assessments` and account key, so
+ * `rollback` removes exactly what this added. An account that already has a
+ * MAIN (from an earlier backfill, the in-place YEAR -> MAIN conversion of
+ * migration 20261014130100, or staff) is skipped, so a rerun is a no-op and the
+ * one-MAIN-per-account index is never tripped. Nothing else moves: the account,
+ * assessment and recommendation are only read.
  */
 import { resolve } from 'node:path'
 import { writeFileSync } from 'node:fs'
 import { Ledger } from './ledger'
-import { runDir, writeYearSynopsis } from './phases'
+import { runDir } from './phases'
+import { findMainSynopsis, writeMainSynopsis } from './main-synopsis'
 import type { LoadContext } from './context'
 
 export interface BackfillOptions {
@@ -21,7 +25,7 @@ export interface BackfillOptions {
   dryRun?: boolean
 }
 
-type Outcome = 'WRITTEN' | 'PLANNED' | 'SKIPPED_HAS_ENTRY' | 'SKIPPED_NOT_MIGRATED' | 'FAILED'
+type Outcome = 'WRITTEN' | 'PLANNED' | 'SKIPPED_HAS_MAIN' | 'SKIPPED_NOT_MIGRATED' | 'FAILED'
 
 export async function backfillSynopsis(ctx: LoadContext, opts: BackfillOptions) {
   const ledger = new Ledger(ctx.prisma, opts.runId, resolve(runDir(opts.runId), 'ledger.jsonl'))
@@ -47,7 +51,6 @@ export async function backfillSynopsis(ctx: LoadContext, opts: BackfillOptions) 
       select: {
         id: true,
         synopsis: true,
-        accountSynopsisEntry: { select: { id: true } },
         application: { select: { migrationSource: true, bursaryAccountId: true } },
       },
     })
@@ -55,8 +58,9 @@ export async function backfillSynopsis(ctx: LoadContext, opts: BackfillOptions) 
       outcomes.push({ key: row.accountKey, status: 'SKIPPED_NOT_MIGRATED' })
       continue
     }
-    if (a.accountSynopsisEntry) {
-      outcomes.push({ key: row.accountKey, status: 'SKIPPED_HAS_ENTRY' })
+    const accountId = a.application.bursaryAccountId
+    if (await findMainSynopsis(ctx.prisma, accountId)) {
+      outcomes.push({ key: row.accountKey, status: 'SKIPPED_HAS_MAIN' })
       continue
     }
     if (opts.dryRun) {
@@ -65,7 +69,9 @@ export async function backfillSynopsis(ctx: LoadContext, opts: BackfillOptions) 
     }
     try {
       await ctx.prisma.$transaction(async (tx) => {
-        const entryId = await writeYearSynopsis(tx, ctx, a.application.bursaryAccountId!, a.id, a.synopsis)
+        // Re-checked inside the transaction: null means a MAIN arrived meanwhile.
+        const entryId = await writeMainSynopsis(tx, accountId, a.synopsis)
+        if (!entryId) throw new Error('account gained a main synopsis meanwhile')
         await ledger.record(tx, 'assessments', row.accountKey, [{ entityType: 'AccountSynopsisEntry', entityId: entryId }])
       })
       ledger.commit()

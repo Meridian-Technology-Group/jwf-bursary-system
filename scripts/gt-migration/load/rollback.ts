@@ -9,11 +9,17 @@
  * deleted (append-only); a DATA_MIGRATION_ROLLBACK row is added instead.
  * Ledger rows flip to `rolled_back`; the history stays.
  *
- * Standing synopsis (Epic 21 #6): a YEAR entry goes before its assessment (the
- * FK would only null it, leaving an orphan a reload duplicates). Entries are
- * derived, so a later `backfill-synopsis` row does not move the "loaded at"
- * mark the other rows are judged by; each entry is judged by its own. A staff
- * note on the account stops an accounts rollback (the cascade would take it).
+ * Main synopsis (Epic 21 #6, R1): the account's MAIN entry is ledgered and
+ * deleted by id, before its assessment (a reload of the assessments phase
+ * writes it afresh, and the one-MAIN-per-account index would refuse a second).
+ * Rehearsal rows written as YEAR entries keep their ids through the in-place
+ * YEAR -> MAIN conversion (migration 20261014130100), so their ledger rows stay
+ * valid; a ledgered id that no longer exists is simply not there to delete.
+ * Entries are derived, so a later `backfill-synopsis` row does not move the
+ * "loaded at" mark the other rows are judged by; each entry is judged by its
+ * own `updated_at`, so a staff edit of the Main synopsis stops the rollback. A
+ * MAIN no run ledgered (written in the app) stops an accounts rollback (the
+ * cascade would take it).
  *
  * Documents (M8): their rows go first, inside the account's transaction; the
  * storage objects are removed only after it commits (they cannot join it), and
@@ -125,16 +131,16 @@ async function assertUntouched(tx: Tx, rows: Row[]) {
   }
   for (const r of rows.filter((x) => x.entityType === 'AccountSynopsisEntry')) {
     const e = await tx.accountSynopsisEntry.findUnique({ where: { id: r.entityId }, select: { updatedAt: true } })
-    if (e && e.updatedAt.getTime() > r.createdAt.getTime() + GRACE_MS) stop('the standing synopsis')
+    if (e && e.updatedAt.getTime() > r.createdAt.getTime() + GRACE_MS) stop('the main synopsis')
   }
   const accountIds = ids(rows, 'BursaryAccount')
   if (accountIds.length) {
-    // Entries no run ledgered were written in the app: staff notes, or a re-lock's YEAR entry.
+    // Entries no run ledgered were written in the app (e.g. a MAIN seeded by an award lock).
     const onAccount = await tx.accountSynopsisEntry.findMany({ where: { bursaryAccountId: { in: accountIds } }, select: { id: true } })
     const ledgered = await tx.dataMigrationLedger.count({
       where: { entityType: 'AccountSynopsisEntry', state: 'done', entityId: { in: onAccount.map((e) => e.id) } },
     })
-    if (onAccount.length > ledgered) stop(`the standing synopsis (${onAccount.length - ledgered} entries written in the app)`)
+    if (onAccount.length > ledgered) stop(`the main synopsis (${onAccount.length - ledgered} entries written in the app)`)
   }
   for (const id of ids(rows, 'Application')) {
     const a = await tx.application.findUnique({ where: { id }, select: { migrationSource: true, updatedAt: true } })

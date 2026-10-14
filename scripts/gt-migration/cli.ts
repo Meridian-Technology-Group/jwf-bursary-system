@@ -9,8 +9,9 @@
  *   npm run mig -- verify   --env <e> --run <id>
  *   npm run mig -- rollback --env <e> --run <id> [--phase <p>] [--only k1,k2] [--dry-run]
  *   npm run mig -- backfill-synopsis --env <e> --run <id> [--only k1,k2] [--dry-run]
- *                           (Epic 21 #6: the standing-synopsis entry for accounts
- *                            loaded before it existed; ledgered under the run)
+ *                           (Epic 21 R1: the account's Main synopsis for accounts
+ *                            loaded before it existed; skips any account that has
+ *                            one; ledgered under the run)
  *
  * <e> is nonprod | rehearsal | prod. The target's database URLs are pinned
  * into the process environment BEFORE any app module is imported (they are

@@ -122,13 +122,23 @@ export async function verify(ctx: LoadContext, runId: string) {
   const unexplained = offActual.filter((r) => !r.key || !ruled.has(r.key)).length
   add('B5', unexplained === 0, `${offActual.length} off the actual leg, ${offActual.length - unexplained} by her reference-leg ruling, ${unexplained} unexplained`)
 
-  // B11: every migrated assessment has its standing-synopsis YEAR entry (Epic 21 #6); A12 checks each one.
-  const [syn] = await db.$queryRaw<{ total: bigint; missing: bigint }[]>`
-    SELECT count(*) AS total, count(*) FILTER (WHERE e.id IS NULL) AS missing FROM assessments s
-    JOIN applications a ON a.id = s.application_id
-    LEFT JOIN account_synopsis_entries e ON e.assessment_id = s.id AND e.kind = 'YEAR'
-    WHERE a.migration_source IS NOT NULL`
-  add('B11', Number(syn.missing) === 0, `${Number(syn.total)} migrated assessments, ${Number(syn.missing)} without a standing-synopsis entry`)
+  // B11: every migrated account has exactly one Main synopsis and no retired
+  // YEAR/NOTE entry (Epic 21 R1); A12 checks each account in turn.
+  const [syn] = await db.$queryRaw<{ total: bigint; bad_main: bigint; retired: bigint }[]>`
+    SELECT count(*) AS total,
+           count(*) FILTER (WHERE x.mains <> 1) AS bad_main,
+           coalesce(sum(x.retired), 0)::bigint AS retired
+    FROM (
+      SELECT b.id,
+             (SELECT count(*) FROM account_synopsis_entries e WHERE e.bursary_account_id = b.id AND e.kind = 'MAIN') AS mains,
+             (SELECT count(*) FROM account_synopsis_entries e WHERE e.bursary_account_id = b.id AND e.kind <> 'MAIN') AS retired
+      FROM bursary_accounts b
+      WHERE EXISTS (
+        SELECT 1 FROM applications a JOIN assessments s ON s.application_id = a.id
+        WHERE a.bursary_account_id = b.id AND a.migration_source IS NOT NULL)
+    ) x`
+  add('B11', Number(syn.bad_main) === 0 && Number(syn.retired) === 0,
+    `${Number(syn.total)} migrated accounts, ${Number(syn.bad_main)} without exactly one main synopsis, ${Number(syn.retired)} retired YEAR/NOTE entries`)
 
   add('A (re-run)', aFailures === 0, `${aFailures} accounts fail`)
   add('B8', Math.abs(sumConfirmed - expectConfirmed) < 0.01 && Math.abs(sumAward - expectAward) < 0.01,
