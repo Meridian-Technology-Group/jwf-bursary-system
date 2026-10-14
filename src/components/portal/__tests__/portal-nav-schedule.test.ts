@@ -53,7 +53,7 @@ describe("buildPortalNav — Application Schedule item (gap F2)", () => {
 describe("buildPortalNav — My Bursary Application(s) (Epic 22 P1, D-8)", () => {
   it("replaces My Application with the per-child list", () => {
     const items = buildPortalNav();
-    const item = items.find((i) => i.href === "/applications")!;
+    const item = items.find((i) => i.href === "/my-applications")!;
     expect(item.label).toBe("My Bursary Application(s)");
     expect(item.alsoMatch).toEqual(["/apply", "/status", "/submitted"]);
     expect(items.some((i) => i.label === "My Application")).toBe(false);

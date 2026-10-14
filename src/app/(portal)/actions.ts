@@ -449,7 +449,7 @@ export async function startInvitationApplicationAction(
       await setActiveApplicationId(result.applicationId);
     }
     revalidatePath("/");
-    revalidatePath("/applications");
+    revalidatePath("/my-applications");
   } catch (err) {
     const message = err instanceof Error ? err.message : "Something went wrong.";
     console.error("[portal/actions] startInvitationApplicationAction error:", err);

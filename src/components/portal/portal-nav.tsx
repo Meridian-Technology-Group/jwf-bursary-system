@@ -41,6 +41,13 @@ import { GuardedLink } from "./guarded-link";
 /** Charlotte's label for the per-child applications item (Epic 22 P1). */
 export const MY_APPLICATIONS_LABEL = "My Bursary Application(s)";
 
+/**
+ * Its path. NOT `/applications`: the middleware treats `/applications*` as an
+ * admin route (the staff application pages live at `/applications/[id]`), so a
+ * parent would be bounced to the home page.
+ */
+export const MY_APPLICATIONS_PATH = "/my-applications";
+
 export interface PortalNavItem {
   label: string;
   href: string;
@@ -50,7 +57,7 @@ export interface PortalNavItem {
   matchMode?: "exact" | "prefix";
   /**
    * Further path prefixes that also mark the item active — the per-child list
-   * (`/applications`) owns the form and its status pages too.
+   * (`/my-applications`) owns the form and its status pages too.
    */
   alsoMatch?: string[];
   /**
@@ -64,7 +71,7 @@ export interface PortalNavItem {
 /**
  * Constant nav membership. Documents is first-class (Decision 2) — it points at
  * `/documents` and is never hidden or disabled. "My Bursary Application(s)"
- * (Epic 22 P1, D-8) points at the per-child list `/applications`, where each
+ * (Epic 22 P1, D-8) points at the per-child list `/my-applications`, where each
  * child's options open the right form; it replaced the adaptive single
  * "My Application" link, so it stays active across `/apply/*`, `/status` and
  * `/submitted`.
@@ -101,9 +108,9 @@ export function buildPortalNav(
       : []),
     {
       label: MY_APPLICATIONS_LABEL,
-      href: "/applications",
+      href: MY_APPLICATIONS_PATH,
       icon: FileText,
-      match: "/applications",
+      match: MY_APPLICATIONS_PATH,
       matchMode: "prefix",
       alsoMatch: ["/apply", "/status", "/submitted"],
     },
@@ -246,7 +253,7 @@ export function PortalNav({
                     reads the shared store and is pathname-gated to /apply/*, so
                     it is null off the wizard and the wrapper collapses to empty
                     (border/padding on an empty div is invisible). */}
-                {item.href === "/applications" ? (
+                {item.href === MY_APPLICATIONS_PATH ? (
                   <div className="mt-1 border-l border-slate-100 pl-2 empty:mt-0 empty:border-0 empty:pl-0">
                     <RailStepper />
                   </div>
