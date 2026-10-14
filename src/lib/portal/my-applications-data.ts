@@ -17,6 +17,7 @@ import { InvitationStatus } from "@prisma/client";
 import type { CurrentUser } from "@/lib/auth/roles";
 import { withAdminContext, withUserContext, type RlsRole } from "@/lib/db/prisma";
 import { getScheduleHomeForUser } from "@/lib/db/queries/schedule";
+import { syncSignInTimes } from "@/lib/auth/sign-in-times";
 import { resolveOwningContributorId } from "@/lib/db/queries/contributors";
 import { buildScheduleHomeRows } from "@/lib/bursary-accounts/schedule-home";
 import { PORTAL_APPLICATION } from "@/lib/applications/migration-source";
@@ -41,6 +42,12 @@ export async function loadMyApplications(
   user: CurrentUser,
   today: Date
 ): Promise<MyApplicationsData> {
+  // The layout runs the same sync, but Next renders layout and page
+  // concurrently, so on the first page after a sign-in this page could read
+  // the times before the layout shifted them. The write is guarded on the
+  // value read, so the two calls shift the times once.
+  await syncSignInTimes(user.id, user.authLastSignInAt);
+
   const [accountData, adminFacts] = await Promise.all([
     withAdminContext((tx) => getScheduleHomeForUser(tx, user.id)),
     withAdminContext(async (tx) => {
