@@ -2,7 +2,7 @@
 
 /**
  * RailStepper — the section progress stepper as it appears nested inside the
- * persistent portal rail, under the "My Application" nav item.
+ * persistent portal rail, under the "My Bursary Application(s)" nav item.
  *
  * It is a thin wrapper over the existing `PortalSidebarContent` (the leaf
  * stepper component shared with `/contribute`), pinned to the lead-applicant

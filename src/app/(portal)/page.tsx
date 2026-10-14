@@ -9,8 +9,16 @@
  * see an onboarding card to confirm school + child name before entering the
  * form. When there is no invitation at all, a neutral fallback message is
  * shown directing them to the bursary team's email address — unless the family
- * already has a schedule (migrated / between rounds), in which case the
- * schedule is the page (Epic 21 WP-F1, `portalHomeMain`).
+ * already has an active bursary (migrated / between rounds), in which case the
+ * children list is the page (Epic 21 WP-F1, `portalHomeMain`).
+ *
+ * Epic 22 P4 (CR-002 Phase 5 #1) — her two versions of Home (`homeVariant`):
+ * a rolling-over family gets "Welcome back", the active-bursary count and one
+ * line per child ("Currently in Year X at <school>", linking to that child's
+ * schedule); a new family gets "Welcome", "You currently do not have an active
+ * bursary." and the first-application card. The per-child schedule table moved
+ * to My Application(s) Schedule (D-3), and the three guidance sections are on
+ * every version (L2).
  */
 
 import { redirect } from "next/navigation";
@@ -35,6 +43,7 @@ import { ContactBursaryTeam } from "@/components/portal/contact-bursary-team";
 import {
   effectiveSubmissionDeadline,
   isSubmissionDeadlinePassed,
+  DEADLINE_ROUND_SELECT,
 } from "@/lib/rounds/submission-deadline";
 import { isRollingOverApplication } from "@/lib/db/queries/reassessment";
 import {
@@ -42,30 +51,29 @@ import {
   SECTION_TO_SLUG,
   SECTION_TITLES,
 } from "@/lib/portal/sections";
-import { getScheduleHomeForUser } from "@/lib/db/queries/schedule";
 import { getActiveApplicationId } from "@/lib/portal/active-application";
-import { buildScheduleHomeRows } from "@/lib/bursary-accounts/schedule-home";
-import { portalHomeMain } from "@/lib/portal/home-state";
 import {
-  TERMS_AND_CONDITIONS_PATH,
-  TERMS_AND_CONDITIONS_LABEL,
-} from "@/lib/portal/terms";
-import {
-  ScheduleHome,
-  type ScheduleHomeBlock,
-} from "@/components/portal/schedule-home";
+  activeBursariesText,
+  homeHeading,
+  homeVariant,
+  portalHomeMain,
+  INVITED_TO_APPLY_TEXT,
+} from "@/lib/portal/home-state";
+import { getFamilyAccountsForUser } from "@/lib/db/queries/family-accounts";
+import { childYearLine } from "@/lib/portal/current-school-year";
+import { PortalHelpCards } from "@/components/portal/portal-help-cards";
 import {
   FileText,
   ArrowRight,
   ClipboardList,
   Upload,
   Lock,
-  HelpCircle,
+  ChevronRight,
 } from "lucide-react";
 import Link from "next/link";
 
 export const metadata = {
-  title: "My Application",
+  title: "Home",
 };
 
 // All form sections in workbook order come from the canonical SECTION_ORDER
@@ -191,13 +199,9 @@ export default async function PortalDashboardPage() {
               if (app.formStatus !== "SUBMITTED") {
                 const round = await tx.round.findUnique({
                   where: { id: app.roundId },
-                  select: {
-                    closeDate: true,
-                    // Both typed defaults (E1/D13-8); the resolver branches on
-                    // the application's own type.
-                    defaultSubmissionDeadlineNew: true,
-                    defaultSubmissionDeadlineRolling: true,
-                  },
+                  // Every tier (E1/D13-8 typed defaults, Epic 21 R2 RA
+                  // window); the resolver branches on the application's type.
+                  select: DEADLINE_ROUND_SELECT,
                 });
                 if (round) {
                   const deadlineApp = {
@@ -306,27 +310,15 @@ export default async function PortalDashboardPage() {
         inviteRoundYear: null,
       };
 
-  // D3 (CG-02): returning parents — ≥1 ACTIVE bursary account led by this
-  // profile — get the per-child Bursary Application Schedule as the lead
-  // section. First-time applicants (no account) keep the single-path home
-  // (CG-03). Admin context is required (round_windows is staff-read under
-  // RLS); the query is hard-scoped to this user and returns derived,
-  // parent-safe rows only.
-  const scheduleBlocks: ScheduleHomeBlock[] = user
-    ? (
-        await withAdminContext((tx) => getScheduleHomeForUser(tx, user.id))
-      ).map((account) => ({
-        accountId: account.accountId,
-        childName: account.childName,
-        school: account.school,
-        rows: buildScheduleHomeRows({
-          entryYearGroup: account.entryYearGroup,
-          entries: account.entries,
-          today: new Date(),
-        }),
-      }))
+  // Epic 22 P4: the family's ACTIVE accounts — the children list and the
+  // active-bursary count. Under the parent's own RLS context.
+  const familyAccounts = user
+    ? await withUserContext(user.id, user.role as RlsRole, (tx) =>
+        getFamilyAccountsForUser(tx, user.id)
+      )
     : [];
-  const hasSchedule = scheduleBlocks.some((b) => b.rows.length > 0);
+  const variant = homeVariant({ activeAccounts: familyAccounts.length });
+  const today = new Date();
 
   const isDraft =
     application != null && application.formStatus !== "SUBMITTED";
@@ -350,40 +342,13 @@ export default async function PortalDashboardPage() {
   const continueHref = `/apply/${continueSlug}`;
   const nextSectionTitle = nextSection ? SECTION_TITLES[nextSection] : null;
 
-  // Tiered help (Decision 7): a quiet "Need help?" link row used in every state
-  // EXCEPT "invited, not started", where the help affordance is elevated for
-  // first-timers (the bordered card under the chooser, below). All point at the
-  // single guidance page that PR-4 stood up.
+  // "none" = a family with an active bursary and nothing to fill in: the
+  // children list above is the page.
   const homeMain = portalHomeMain({
     hasApplication: application != null,
     hasInvitation: invitation != null,
-    hasSchedule,
+    hasSchedule: familyAccounts.length > 0,
   });
-
-  // Quiet help line (Decision 7), shown in every home-page state. The T&Cs
-  // link opens the PDF directly (Epic 21 F5); it used to be reachable only
-  // from /help and the invited-not-started card.
-  const quietHelpLink = (
-    <div className="rounded-xl border border-slate-200 bg-white p-4 text-sm shadow-sm">
-      <span className="text-slate-500">Need help? </span>
-      <Link
-        href="/help"
-        className="font-medium text-accent-700 underline underline-offset-2 hover:text-accent-800"
-      >
-        How to apply &middot; Checklist
-      </Link>
-      <span className="text-slate-400"> &middot; </span>
-      <a
-        href={TERMS_AND_CONDITIONS_PATH}
-        target="_blank"
-        rel="noopener noreferrer"
-        className="font-medium text-accent-700 underline underline-offset-2 hover:text-accent-800"
-      >
-        {TERMS_AND_CONDITIONS_LABEL}
-        <span className="sr-only"> (PDF, opens in a new tab)</span>
-      </a>
-    </div>
-  );
 
   // Paused → "respond to a document request" CTA. The signal lives on the
   // assessment, which the applicant cannot read under RLS, so probe just the
@@ -396,26 +361,63 @@ export default async function PortalDashboardPage() {
 
   return (
     <PortalPage className="space-y-8">
-      {/* Welcome heading */}
+      {/* Welcome heading — her two versions (Epic 22 P4). "Your bursary
+          portal is ready." is gone (L1); the round line stays with an
+          application. */}
       <div>
         <h1 className="text-2xl font-semibold text-primary-900 md:text-3xl">
-          Welcome back, {firstName}
+          {homeHeading(variant, firstName)}
         </h1>
-        <p className="mt-1 text-sm text-slate-500">
-          {application
-            ? isDraft
-              ? `${roundLabel} — continue your bursary application below.`
-              : `${roundLabel} — view your application status below.`
-            : "Your bursary portal is ready."}
+        <p className="mt-2 text-base text-slate-700">
+          {activeBursariesText(familyAccounts.length)}
         </p>
+        {application && (
+          <p className="mt-1 text-sm text-slate-500">
+            {isDraft
+              ? `${roundLabel} — continue your bursary application below.`
+              : `${roundLabel} — view your application status below.`}
+          </p>
+        )}
       </div>
 
-      {/* D3 (CG-02): returning families lead with the per-child schedule. */}
-      {hasSchedule && (
-        <ScheduleHome
-          blocks={scheduleBlocks.filter((b) => b.rows.length > 0)}
-          hasStartAffordance={!application && invitation != null}
-        />
+      {/* Rolling-over: one line per child, each opening that child's schedule
+          (D-3 — the table itself lives on My Application(s) Schedule). */}
+      {familyAccounts.length > 0 && (
+        <ul
+          className="divide-y divide-slate-100 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm"
+          role="list"
+          aria-label="Your children with an active bursary"
+        >
+          {familyAccounts.map((account) => (
+            <li key={account.id}>
+              <Link
+                href={`/schedule#account-${account.id}`}
+                className="group flex items-center gap-4 px-5 py-4 transition-colors hover:bg-slate-50 focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-accent-600"
+              >
+                <span className="min-w-0 flex-1">
+                  <span className="block font-semibold text-primary-900">
+                    {account.childName}
+                  </span>
+                  <span className="block text-sm text-slate-600">
+                    {childYearLine({
+                      entryYearGroup: account.entryYearGroup,
+                      firstAssessmentYear: account.firstAssessmentYear,
+                      school: account.school,
+                      today,
+                    })}
+                  </span>
+                </span>
+                <span className="hidden text-xs font-medium text-accent-700 sm:inline">
+                  View schedule
+                </span>
+                <ChevronRight
+                  className="h-4 w-4 shrink-0 text-slate-300 transition-colors group-hover:text-primary-600"
+                  aria-hidden="true"
+                />
+              </Link>
+            </li>
+          ))}
+        </ul>
       )}
 
       {homeMain === "application" && application && (
@@ -596,8 +598,12 @@ export default async function PortalDashboardPage() {
            below is the one ELEVATED tier (Decision 7) — first-timers benefit
            most from the guidance before they start. */
         <>
-          {/* D3: schedule rows' START APPLICATION buttons anchor here. */}
-          <div id="start-application">
+          {/* My Bursary Application(s)' start option anchors here when the
+              invitation needs the parent to confirm details. */}
+          <div id="start-application" className="space-y-3">
+            <p className="text-sm font-medium text-slate-700">
+              {INVITED_TO_APPLY_TEXT}
+            </p>
             <ApplicationTypeChooser
               eligibleType={invitation.bursaryAccountId ? "ROLLING_OVER" : "NEW"}
               defaultChildName={invitation.childName}
@@ -606,40 +612,12 @@ export default async function PortalDashboardPage() {
             />
           </div>
 
-          {/* Elevated help card (Decision 7) — same destination as the quiet
-              link, more prominence for first-timers. NOTE: this is currently
-              shown for ALL invited-not-started parents, including re-assessment
-              (ROLLING_OVER) invitations who have done this before. Product may
-              later want to gate elevation to NEW applicants only. */}
-          <div className="rounded-xl border border-accent-400 bg-accent-50 p-6 shadow-sm">
-            <div className="flex items-start gap-4">
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-accent-100 text-accent-700">
-                <HelpCircle className="h-5 w-5" aria-hidden="true" />
-              </div>
-              <div className="min-w-0 flex-1">
-                <p className="font-semibold text-primary-900">
-                  New to bursary applications?
-                </p>
-                <p className="mt-1 text-sm text-slate-600">
-                  Read how to apply, the document checklist, and the bursary
-                  terms &amp; conditions before you begin.
-                </p>
-                <Link
-                  href="/help"
-                  className="mt-3 inline-flex items-center gap-2 rounded-lg border border-accent-400 bg-white px-3.5 py-2 text-sm font-medium text-accent-700 shadow-sm transition-colors hover:bg-accent-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-600"
-                >
-                  Read the guidance
-                  <ArrowRight className="h-4 w-4 shrink-0" aria-hidden="true" />
-                </Link>
-              </div>
-            </div>
-          </div>
         </>
       )}
 
       {homeMain === "no-invitation" && (
-        /* No invitation found — neutral fallback. Not shown to a family with a
-           schedule (homeMain "none"): the schedule above is the page. */
+        /* No invitation found — neutral fallback. Not shown to a family with an
+           active bursary (homeMain "none"): the children list is the page. */
         <div className="rounded-xl border border-slate-200 bg-white p-8 text-center shadow-sm">
           <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-slate-100">
             <FileText className="h-6 w-6 text-slate-400" aria-hidden="true" />
@@ -654,8 +632,8 @@ export default async function PortalDashboardPage() {
         </div>
       )}
 
-      {/* Quiet help link — demoted off the fold (Decision 7), every state. */}
-      {quietHelpLink}
+      {/* L2: the three guidance sections, always visible, every version. */}
+      <PortalHelpCards />
     </PortalPage>
   );
 }

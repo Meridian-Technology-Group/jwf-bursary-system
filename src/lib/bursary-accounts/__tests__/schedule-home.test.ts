@@ -243,3 +243,29 @@ describe("buildScheduleHomeRows — labelling", () => {
     );
   });
 });
+
+describe("buildScheduleHomeRows — the family's own deadline (Epic 21 R2)", () => {
+  it("an extension on that year's application shows instead of the window close", () => {
+    const ext = new Date("2027-06-05T16:00:00.000Z");
+    const [row] = buildScheduleHomeRows({
+      entryYearGroup: "Y7",
+      // Past the 22 May window but inside the family's extension.
+      today: d("2027-05-30"),
+      entries: [
+        entry({
+          availableOn: d("2027-04-15"),
+          requiredBy: d("2027-05-22"),
+          round: round2027,
+          application: {
+            id: "app-1",
+            formStatus: "IN_PROGRESS",
+            applicationType: "ROLLING_OVER",
+            submissionDeadlineAt: ext,
+          },
+        }),
+      ],
+    });
+    expect(row.submissionDeadline).toEqual(ext);
+    expect(row.state).toBe("continue");
+  });
+});

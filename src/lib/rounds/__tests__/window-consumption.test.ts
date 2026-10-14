@@ -17,6 +17,7 @@ const baseRound = {
   closeDate: d('2027-08-19'),
   defaultSubmissionDeadlineNew: null,
   defaultSubmissionDeadlineRolling: null,
+  windows: [],
 }
 
 function windows(overrides: Partial<StoredRoundWindow> = {}): StoredRoundWindow[] {

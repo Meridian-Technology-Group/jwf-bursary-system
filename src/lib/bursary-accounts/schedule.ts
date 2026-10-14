@@ -14,8 +14,11 @@
  * Date policy: Year 1 (the award year) carries the award round's open/close
  * dates. Every later year is a rolling-over year, so it carries the
  * rolling-over window for its academic year (`scheduleDatesForYear`; Epic 21
- * F2, D-1: 15 April → 21 May). It used to shift the award round's dates, which
- * gave rolling-over families the new-applicant dates every year. Epic 03 owns the per-round date model; when a future
+ * F2): the RA window of the round for that year once it exists, else the
+ * 15 April → 21 May placeholder (Epic 21 R2, `schedule-dates.ts`). It used to
+ * shift the award round's dates, which gave rolling-over families the
+ * new-applicant dates every year. Saving a round's windows re-dates that
+ * year's still-SCHEDULED rows (`rollingRedateWhere`). Epic 03 owns the per-round date model; when a future
  * year is materialised into a real Round the entry is linked via `roundId` and
  * the round's own dates take over. Until then these are the planned dates.
  *
@@ -42,7 +45,11 @@ import {
 // Single source of truth for group → school-year (CH-26 added Y8/Y10/Y11/Y13);
 // OTHER / null / unrecognised → null and the caller falls back to the default.
 import { schoolYearForEntryYearGroup as schoolYearForGroup } from "@/lib/assessment/schooling-years";
-import { resolveRoundScenario } from "@/lib/rounds/round-scenario";
+import {
+  rollingOverWindowFor,
+  type RollingWindowsByYear,
+  type StoredRollingWindow,
+} from "@/lib/bursary-accounts/schedule-dates";
 
 /**
  * The final school year a bursary can run to at Trinity and Whitgift (Year 13 /
@@ -220,16 +227,20 @@ export interface PlannedScheduleEntry {
 }
 
 /**
- * Epic 21 F2 (D-1) — the planned dates for one schedule year. Year 1 keeps
+ * Epic 21 F2 / R2 — the planned dates for one schedule year. Year 1 keeps
  * the award round's dates; later years take the rolling-over (RA) window of
- * their own academic year: 2027-28 → 15/04/2027–21/05/2027. Unparseable award
- * years fall back to shifting the award round's dates (the old behaviour).
+ * their own academic year (`rollingOverWindowFor`): that year's round's stored
+ * RA window when given, else the placeholder (2027-28 → 15/04/2027–21/05/2027).
+ * Unparseable award years fall back to shifting the award round's dates (the
+ * old behaviour).
  */
 export function scheduleDatesForYear(params: {
   awardStartYear: number | null;
   awardOpenDate: Date | null;
   awardCloseDate: Date | null;
   scheduleYear: number;
+  /** The stored RA window of the round for THIS year's academic year, if any. */
+  raWindow?: StoredRollingWindow | null;
 }): { availableOn: Date | null; requiredBy: Date | null } {
   const offset = params.scheduleYear - 1;
   if (offset === 0 || params.awardStartYear == null) {
@@ -238,13 +249,49 @@ export function scheduleDatesForYear(params: {
       requiredBy: shiftYears(params.awardCloseDate, offset),
     };
   }
-  const ra = resolveRoundScenario({
-    applicationType: "ROLLING_OVER",
-    roundStartYear: params.awardStartYear + offset,
-    // Unused for RA: its window depends only on the round's year.
-    onDate: new Date(0),
-  });
+  const ra = rollingOverWindowFor(params.awardStartYear + offset, params.raWindow);
   return { availableOn: ra.opensOn, requiredBy: ra.submitBy };
+}
+
+/**
+ * Epic 21 R2 — the rows a save of one round's windows re-dates: that
+ * academic year's rolling-over rows that are still only planned. Never
+ * year 1 (it carries the award round's own dates; prod's 2026-27 year-1 rows
+ * are SCHEDULED with no round), never a row already linked to a round, never
+ * RECEIVED/COMPLETE history.
+ */
+export function rollingRedateWhere(roundAcademicYear: string): {
+  academicYear: string;
+  scheduleYear: { gte: 2 };
+  status: "SCHEDULED";
+  roundId: null;
+} | null {
+  const start = parseAcademicYearStart(roundAcademicYear);
+  if (start == null) return null;
+  return {
+    // Rows are labelled "2027-28", rounds "2027/28".
+    academicYear: formatAcademicYearLabel(start),
+    scheduleYear: { gte: 2 },
+    status: "SCHEDULED",
+    roundId: null,
+  };
+}
+
+/**
+ * Loads every round's stored RA window, keyed by the round's academic start
+ * year. A handful of rows (one per round at most).
+ */
+export async function loadRollingWindowsByYear(tx: Tx): Promise<Map<number, StoredRollingWindow>> {
+  const windows = await tx.roundWindow.findMany({
+    where: { scenario: "RA" },
+    select: { opensOn: true, submitBy: true, round: { select: { academicYear: true } } },
+  });
+  const byYear = new Map<number, StoredRollingWindow>();
+  for (const w of windows) {
+    const start = parseAcademicYearStart(w.round.academicYear);
+    if (start != null) byYear.set(start, { opensOn: w.opensOn, submitBy: w.submitBy });
+  }
+  return byYear;
 }
 
 /** Shifts a date forward by `n` whole years (null-safe). */
@@ -269,8 +316,10 @@ export function planSchedule(params: {
   awardOpenDate: Date | null;
   awardCloseDate: Date | null;
   horizon: number;
+  /** Epic 21 R2 — stored RA windows by academic start year (absent = placeholders). */
+  rollingWindows?: RollingWindowsByYear;
 }): PlannedScheduleEntry[] {
-  const { awardAcademicYear, awardOpenDate, awardCloseDate, horizon } = params;
+  const { awardAcademicYear, awardOpenDate, awardCloseDate, horizon, rollingWindows } = params;
   const startYear = parseAcademicYearStart(awardAcademicYear);
 
   const rows: PlannedScheduleEntry[] = [];
@@ -290,6 +339,7 @@ export function planSchedule(params: {
         awardOpenDate,
         awardCloseDate,
         scheduleYear,
+        raWindow: startYear != null ? rollingWindows?.get(startYear + i) : null,
       }),
       // Epic 21 #5 (D-2): every year shown; the admin hides one by unticking.
       showOnPortal: true,
@@ -347,6 +397,8 @@ export async function generateSchedule(
     awardOpenDate: round.openDate,
     awardCloseDate: round.closeDate,
     horizon,
+    // Epic 21 R2 — later years follow their own round's RA window.
+    rollingWindows: await loadRollingWindowsByYear(tx),
   });
 
   // Existing rows by scheduleYear — the idempotency key.

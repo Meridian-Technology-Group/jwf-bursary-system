@@ -30,7 +30,9 @@ import {
   PREPOPULATED_SECTIONS,
   isRollingOverApplication,
 } from "@/lib/db/queries/reassessment";
-import { isSubmissionDeadlinePassed } from "@/lib/rounds/submission-deadline";
+import { isSubmissionDeadlinePassed,
+  DEADLINE_ROUND_SELECT,
+} from "@/lib/rounds/submission-deadline";
 import { resolveTaxYearBasisYear } from "@/lib/portal/tax-year";
 import {
   SECTION_ORDER,
@@ -110,13 +112,9 @@ export default async function SectionPage({ params }: PageProps) {
     (tx) =>
       tx.round.findUnique({
         where: { id: application.roundId },
-        select: {
-          closeDate: true,
-          // Both typed defaults (E1/D13-8) — a rolling-over draft is judged
-          // against the round's rolling date, not the NEW one.
-          defaultSubmissionDeadlineNew: true,
-          defaultSubmissionDeadlineRolling: true,
-        },
+        // Every tier (E1/D13-8, Epic 21 R2) — a rolling-over draft is judged
+        // against the round's rolling date, not the NEW one.
+        select: DEADLINE_ROUND_SELECT,
       })
   );
   if (

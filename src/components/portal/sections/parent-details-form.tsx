@@ -136,7 +136,14 @@ function ParentContactFields({
         {parentLabel} — Contact details
       </h3>
       <p className="text-xs text-slate-500">
-        Your contact details are in the &lsquo;Manage My Details&rsquo; section of the Portal.
+        If any of these details need changing, use{" "}
+        <a
+          href="/help"
+          className="font-medium text-accent-700 underline underline-offset-2 hover:text-accent-800"
+        >
+          Contact us by email
+        </a>
+        .
       </p>
 
       <div className="grid grid-cols-3 gap-4">

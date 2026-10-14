@@ -17,8 +17,9 @@
  * Date columns per row, first source wins:
  *   opening    — entry.availableOn → RoundWindow.opensOn (D1 scenario) →
  *                Round.openDate → resolver derived default
- *   submit by  — entry.requiredBy → the Epic 13 E1 chain (application
- *                override → typed round default, window-filled per D2 →
+ *   submit by  — the family's own override (Epic 21 R2: an extension shows)
+ *                → entry.requiredBy (`scheduleRowDates`) → the Epic 13 E1
+ *                chain (typed round default, window-filled per D2 →
  *                closeDate) → resolver derived default
  *   award news — Round.decisionDate (nothing else knows it) → null ("—")
  *
@@ -46,6 +47,7 @@ import {
   type StoredRoundWindow,
 } from "@/lib/rounds/window-consumption";
 import { schoolYearForEntryYearGroup } from "@/lib/assessment/schooling-years";
+import { scheduleRowDates } from "@/lib/bursary-accounts/schedule-dates";
 
 export type ScheduleHomeRowState =
   | "submitted"
@@ -153,7 +155,12 @@ export function buildScheduleHomeRows(
         derived?.opensOn ??
         null;
 
-      let submissionDeadline: Date | null = entry.requiredBy;
+      // Epic 21 R2 — the family's own deadline (an override) beats the window.
+      let submissionDeadline: Date | null = scheduleRowDates({
+        availableOn: entry.availableOn,
+        requiredBy: entry.requiredBy,
+        application: entry.application,
+      }).submitBy;
       if (!submissionDeadline && entry.round) {
         const filled = applyWindowToDeadlineRound(
           entry.round,

@@ -17,6 +17,7 @@ const noDefaults: SubmissionDeadlineRound = {
   closeDate: new Date("2026-09-30T00:00:00"),
   defaultSubmissionDeadlineNew: null,
   defaultSubmissionDeadlineRolling: null,
+  windows: [],
 };
 
 /**
@@ -27,6 +28,7 @@ const typedDefaults: SubmissionDeadlineRound = {
   closeDate: new Date("2026-09-30T00:00:00"),
   defaultSubmissionDeadlineNew: new Date("2026-09-20T00:00:00"),
   defaultSubmissionDeadlineRolling: new Date("2026-04-30T00:00:00"),
+  windows: [],
 };
 
 describe("effectiveSubmissionDeadline", () => {
@@ -137,6 +139,7 @@ describe("effectiveSubmissionDeadline", () => {
       closeDate: new Date("2026-09-30T00:00:00"),
       defaultSubmissionDeadlineNew: new Date("2026-09-20T00:00:00"),
       defaultSubmissionDeadlineRolling: null,
+      windows: [],
     };
     const rolling = effectiveSubmissionDeadline(
       { submissionDeadlineAt: null, applicationType: "ROLLING_OVER" },
@@ -333,5 +336,76 @@ describe("defaultRollingDeadlineFor", () => {
     expect(defaultRollingDeadlineFor("2026")).toBe("");
     expect(defaultRollingDeadlineFor("2026/2027")).toBe("");
     expect(defaultRollingDeadlineFor("not-a-year")).toBe("");
+  });
+});
+
+// ─── Epic 21 R2 — the RA-window tier (rolling-over only) ─────────────────────
+
+describe("effectiveSubmissionDeadline — the RA window tier (Epic 21 R2)", () => {
+  /** Prod's 2026/27 shape on 14 Oct 2026: close 30 Nov, no typed defaults. */
+  const prodShape = (windows: SubmissionDeadlineRound["windows"]): SubmissionDeadlineRound => ({
+    closeDate: new Date("2026-11-30T00:00:00"),
+    defaultSubmissionDeadlineNew: null,
+    defaultSubmissionDeadlineRolling: null,
+    windows,
+  });
+  const RA = { scenario: "RA", submitBy: new Date("2027-05-22T00:00:00") };
+  const NA_CURRENT = { scenario: "NA_CURRENT", submitBy: new Date("2026-09-17T00:00:00") };
+
+  it("a ROLLING_OVER application with no rolling default reads the RA window (end of day)", () => {
+    const result = effectiveSubmissionDeadline(
+      { submissionDeadlineAt: null, applicationType: "ROLLING_OVER" },
+      prodShape([NA_CURRENT, RA])
+    );
+    expect(result.source).toBe("roundWindow");
+    expect(result.isOverride).toBe(false);
+    expect(result.deadline.getFullYear()).toBe(2027);
+    expect(result.deadline.getMonth()).toBe(4);
+    expect(result.deadline.getDate()).toBe(22);
+    expect(result.deadline.getHours()).toBe(23);
+  });
+
+  it("a NEW application keeps closeDate on a round with an NA_CURRENT window (and an RA one)", () => {
+    const result = effectiveSubmissionDeadline(
+      { submissionDeadlineAt: null, applicationType: "NEW" },
+      prodShape([NA_CURRENT, RA])
+    );
+    expect(result.source).toBe("closeDate");
+    expect(result.deadline.getMonth()).toBe(10); // 30 Nov, not 17 Sep
+    expect(result.deadline.getDate()).toBe(30);
+  });
+
+  it("the rolling round default beats the window", () => {
+    const result = effectiveSubmissionDeadline(
+      { submissionDeadlineAt: null, applicationType: "ROLLING_OVER" },
+      { ...prodShape([RA]), defaultSubmissionDeadlineRolling: new Date("2027-04-30T00:00:00") }
+    );
+    expect(result.source).toBe("roundDefault");
+    expect(result.deadline.getMonth()).toBe(3);
+  });
+
+  it("the override beats the window", () => {
+    const override = new Date("2027-06-05T16:00:00.000Z");
+    const result = effectiveSubmissionDeadline(
+      { submissionDeadlineAt: override, applicationType: "ROLLING_OVER" },
+      prodShape([RA])
+    );
+    expect(result).toEqual({ deadline: override, isOverride: true, source: "override" });
+  });
+
+  it("an RA window without a date, or only NA windows, falls through to closeDate", () => {
+    for (const windows of [[{ scenario: "RA", submitBy: null }], [NA_CURRENT]]) {
+      expect(
+        effectiveSubmissionDeadline(
+          { submissionDeadlineAt: null, applicationType: "ROLLING_OVER" },
+          prodShape(windows)
+        ).source
+      ).toBe("closeDate");
+    }
+  });
+
+  it("roundSubmissionDeadline (the email's tiers) reads the window too, for ROLLING_OVER only", () => {
+    expect(roundSubmissionDeadline(prodShape([RA]), "ROLLING_OVER").getFullYear()).toBe(2027);
+    expect(roundSubmissionDeadline(prodShape([RA]), "NEW").getMonth()).toBe(10);
   });
 });
