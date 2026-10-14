@@ -268,7 +268,7 @@ The server action runs as the parent (ownership of the chosen child checked serv
 
 ### P5 · My Application(s) Schedule (#3)
 
-**Status: NOT STARTED. Waits for the Phase 4 rework's date fixes (§0).**
+**Status: DONE — merged to staging 14 Oct (#451), on Brian's instruction after R2 (#449).** Dates from `scheduleRowDates` on the stored row only (no round windows), so prod's stale 2026-27 NA window (17 Sep) can't show — tested with prod's shape. Added to her wording: "Not submitted" (a past year with nothing in) and "Your own date" under To be submitted by. Migrated years show no completion/submission details. Page is wider than other portal pages so nine columns fit at laptop width. Retired `schedule-calendar.tsx` / `portal-schedule.ts`. TS-NOWS01 check waits for migration staging (§6.4).
 
 **Page** `/schedule` is rebuilt: one section per child — heading "{child name} — Currently in Year {X} at {school}" (P4's helper; if P4 hasn't merged, build the helper here and P4 reuses it) — then a table:
 
