@@ -31,7 +31,7 @@ describe("buildPortalNav — Application Schedule item (gap F2)", () => {
     expect(hasScheduleItem(items)).toBe(true);
 
     const item = items.find((i) => i.href === "/schedule")!;
-    expect(item.label).toBe("Application Schedule");
+    expect(item.label).toBe("My Application(s) Schedule");
     expect(item.match).toBe("/schedule");
     // Read-only link — no `highlight` CTA styling (that's Missing Documents).
     expect("highlight" in item).toBe(false);

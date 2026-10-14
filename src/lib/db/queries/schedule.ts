@@ -113,99 +113,58 @@ export async function getScheduleForAccount(
 }
 
 /**
- * Gap F2 — the minimal account + portal-visible schedule a parent may see.
- *
- * Returned to the read-only portal calendar (`(portal)/schedule`). It carries
- * ONLY what the calendar needs to draw the Year 6 → Year 13 span:
- *   - the account's `entryYearGroup` + `firstAssessmentYear` (anchor the span),
- *   - the academic year + 1-based `scheduleYear` of each `showOnPortal` entry.
- *
- * It deliberately carries NO prior application data — no application ids, no
- * round links, no assessment/financial fields. The calendar is informational
- * reassurance only.
- */
-export interface PortalScheduleData {
-  bursaryAccountId: string;
-  school: import("@prisma/client").School;
-  entryYearGroup: import("@prisma/client").EntryYearGroup | null;
-  firstAssessmentYear: string;
-  /** ONLY the entries flagged `showOnPortal` — already filtered server-side. */
-  visibleEntries: { scheduleYear: number; academicYear: string }[];
-}
-
-/**
- * Loads the signed-in family's ACTIVE account and its PORTAL-VISIBLE schedule
- * entries (where `showOnPortal` is true). Returns `null` when the user has no
- * ACTIVE account (the calendar is then not shown).
+ * Epic 22 P5 — every ACTIVE account the parent leads, each with its
+ * PORTAL-VISIBLE schedule rows (`showOnPortal`), for My Application(s)
+ * Schedule. Replaces gap F2's single-account loader, which showed a family
+ * with several children only one calendar.
  *
  * Runs under the CALLER's RLS context: the `bursary_schedule_entries_select`
- * policy already scopes an applicant to their own account's rows, so this is
- * the parent reading their own data — never another family's. The `showOnPortal`
- * filter is applied in SQL so hidden (far-future / admin-withheld) rows never
- * leave the database.
+ * policy scopes an applicant to their own accounts' rows, and the
+ * `showOnPortal` filter is applied in SQL so hidden years never leave the
+ * database. Only accounts with at least one visible row are returned.
  */
-export async function getPortalScheduleForUser(
-  tx: Tx,
-  userId: string
-): Promise<PortalScheduleData | null> {
-  // SINGLE-ACCOUNT ASSUMPTION: a lead applicant with more than one ACTIVE
-  // account (e.g. separate accounts per sibling) currently sees only ONE
-  // calendar — the deterministically-resolved account below. Rendering one
-  // calendar per account is out of scope for gap F2; `hasPortalSchedule` MUST
-  // resolve the SAME account (it delegates here) so the nav gate and this page
-  // loader never disagree about which account is "the user's schedule".
-  const account = await tx.bursaryAccount.findFirst({
+export async function getPortalScheduleAccountsForUser(tx: Tx, userId: string) {
+  const accounts = await tx.bursaryAccount.findMany({
     where: { leadApplicantId: userId, status: "ACTIVE" },
-    // Deterministic single-account selection. `createdAt` is the primary key of
-    // the ordering; `id` is a stable tiebreak so two accounts created in the
-    // same instant still resolve to one fixed account across both queries.
-    orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+    orderBy: [{ createdAt: "asc" }, { id: "asc" }],
     select: {
       id: true,
+      childName: true,
       school: true,
       entryYearGroup: true,
       firstAssessmentYear: true,
       scheduleEntries: {
         where: { showOnPortal: true },
         orderBy: { scheduleYear: "asc" },
-        select: { scheduleYear: true, academicYear: true },
+        select: {
+          scheduleYear: true,
+          academicYear: true,
+          status: true,
+          availableOn: true,
+          requiredBy: true,
+          receivedOn: true,
+          applicationId: true,
+        },
       },
     },
   });
-
-  if (!account) return null;
-
-  return {
-    bursaryAccountId: account.id,
-    school: account.school,
-    entryYearGroup: account.entryYearGroup,
-    firstAssessmentYear: account.firstAssessmentYear,
-    visibleEntries: account.scheduleEntries.map((e) => ({
-      scheduleYear: e.scheduleYear,
-      academicYear: e.academicYear,
-    })),
-  };
+  return accounts.filter((a) => a.scheduleEntries.length > 0);
 }
 
 /**
- * Gap F2 — does the signed-in user have an ACTIVE account with ≥1 portal-visible
- * schedule entry? Drives the conditional "Application Schedule" nav item: the
- * calendar link is shown ONLY to ACTIVE families that actually have a schedule.
- *
- * Defined as "the account `getPortalScheduleForUser` would load has ≥1
- * portal-visible entry" — it delegates to that loader rather than running its
- * own account-resolution query. This guarantees the nav item is shown IFF the
- * page would render a non-empty calendar for the SAME account: with more than
- * one ACTIVE account (siblings) a count across all accounts could otherwise be
- * positive while the loader picks a different, empty account (nav shown, blank
- * page). See the single-account assumption in `getPortalScheduleForUser`.
+ * Does the signed-in parent have an ACTIVE account with ≥1 portal-visible
+ * schedule row? Drives the "My Application(s) Schedule" nav item (gap F2).
+ * Epic 22 P5: any of the family's accounts counts — the page now shows all of
+ * them, so the single-account tie-break this used to need is gone.
  */
-export async function hasPortalSchedule(
-  tx: Tx,
-  userId: string
-): Promise<boolean> {
-  const data = await getPortalScheduleForUser(tx, userId);
-  return data != null && data.visibleEntries.length > 0;
+export async function hasPortalSchedule(tx: Tx, userId: string): Promise<boolean> {
+  const count = await tx.bursaryScheduleEntry.count({
+    where: {
+      showOnPortal: true,
+      bursaryAccount: { leadApplicantId: userId, status: "ACTIVE" },
+    },
+  });
+  return count > 0;
 }
 
 /**
@@ -241,8 +200,8 @@ export async function getScheduleHomeForUser(
       school: true,
       entryYearGroup: true,
       scheduleEntries: {
-        // Epic 21 #5: the show-on-portal tick governs the home page too, as
-        // it already does the calendar (`getPortalScheduleForUser`).
+        // Epic 21 #5: the show-on-portal tick governs this as it does the
+        // family's schedule page (`getPortalScheduleAccountsForUser`).
         where: { showOnPortal: true },
         orderBy: { scheduleYear: "asc" },
         select: {
