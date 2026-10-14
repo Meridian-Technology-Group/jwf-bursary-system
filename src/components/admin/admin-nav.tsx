@@ -190,7 +190,7 @@ export function AdminNav({ collapsed, userName, userEmail, userRole }: AdminNavP
 
       {/* Navigation groups */}
       <nav
-        className="flex-1 overflow-y-auto px-2 py-4 space-y-6"
+        className="scroll-hint-primary-800 flex-1 overflow-y-auto px-2 py-4 space-y-6"
         aria-label="Main navigation"
       >
         {NAV_GROUPS.filter(

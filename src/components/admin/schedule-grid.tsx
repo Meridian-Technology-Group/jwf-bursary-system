@@ -15,6 +15,15 @@
  *
  * Epic 21 #3: each year with an application links to that year's assessment;
  * the year being viewed reads "This year".
+ *
+ * Epic 21 R3 (14 Oct 2026): the grid fits its card without a horizontal
+ * scroll below the `xl` breakpoint (a 1024px window, or a larger one zoomed
+ * in, left the "Shown to family" column off the card's edge). Below `xl`:
+ * Type (always ANNUAL) and Manually Created are hidden — a manual row says
+ * "Manual" under its year — Available On / Required By stack in one "Window"
+ * column, Received On moves under the status badge, and the toggle drops its
+ * visible caption (the switch keeps its
+ * accessible name). From `xl` up the full grid shows, as before.
  */
 
 import * as React from "react";
@@ -77,7 +86,8 @@ function ScheduleYearCell({
     <>
       {entry.academicYear}
       {link.kind === "current" && (
-        <span className="ml-1.5 inline-block whitespace-nowrap rounded bg-accent-100 px-1 py-0.5 text-[10px] font-medium text-accent-800">
+        // R3: under the year when the grid is compact, beside it from xl.
+        <span className="mt-0.5 block w-fit whitespace-nowrap rounded bg-accent-100 px-1 py-0.5 text-[10px] font-medium text-accent-800 xl:ml-1.5 xl:mt-0 xl:inline-block">
           This year
         </span>
       )}
@@ -211,36 +221,58 @@ export function ScheduleGrid({
                 <TableRow>
                   <TableHead>Year</TableHead>
                   <TableHead>Academic Year</TableHead>
-                  <TableHead>Type</TableHead>
+                  {/* R3: hidden below xl so the grid fits its card. */}
+                  <TableHead className="hidden xl:table-cell">Type</TableHead>
                   <TableHead>Status</TableHead>
-                  <TableHead>Manually Created</TableHead>
-                  <TableHead>Available On</TableHead>
-                  <TableHead>Required By</TableHead>
-                  <TableHead>Received On</TableHead>
+                  <TableHead className="hidden xl:table-cell">Manually Created</TableHead>
+                  <TableHead className="hidden xl:table-cell">Available On</TableHead>
+                  <TableHead className="hidden xl:table-cell">Required By</TableHead>
+                  <TableHead className="xl:hidden">Window</TableHead>
+                  <TableHead className="hidden xl:table-cell">Received On</TableHead>
                   {/* Epic 21 #5: the tick governs the family's home page and
                       calendar alike, so say so. */}
-                  <TableHead className="text-right">Shown to family</TableHead>
+                  <TableHead className="w-20 whitespace-normal text-right leading-tight xl:w-auto">
+                    Shown to family
+                  </TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {entries.map((e) => (
                   <TableRow key={e.id}>
-                    <TableCell className="font-medium">{e.scheduleYear}</TableCell>
+                    <TableCell className="font-medium">
+                      {e.scheduleYear}
+                      {e.manuallyCreated && (
+                        <span className="block text-[10px] font-normal text-slate-500 xl:hidden">
+                          Manual
+                        </span>
+                      )}
+                    </TableCell>
                     <TableCell className="whitespace-nowrap">
                       <ScheduleYearCell entry={e} currentApplicationId={applicationId} />
                     </TableCell>
-                    <TableCell className="text-slate-500">{e.type}</TableCell>
+                    <TableCell className="hidden text-slate-500 xl:table-cell">{e.type}</TableCell>
                     <TableCell>
                       <Badge variant={STATUS_VARIANT[e.status]}>
                         {STATUS_LABEL[e.status]}
                       </Badge>
+                      {/* R3: the received date sits under the status below xl. */}
+                      {e.receivedOn && (
+                        <span className="mt-0.5 block whitespace-nowrap text-xs text-slate-500 xl:hidden">
+                          Received {fmt(e.receivedOn)}
+                        </span>
+                      )}
                     </TableCell>
-                    <TableCell className="text-slate-500">
+                    <TableCell className="hidden text-slate-500 xl:table-cell">
                       {e.manuallyCreated ? "Yes" : "No"}
                     </TableCell>
-                    <TableCell>{fmt(e.availableOn)}</TableCell>
-                    <TableCell>{fmt(e.requiredBy)}</TableCell>
-                    <TableCell>{fmt(e.receivedOn)}</TableCell>
+                    <TableCell className="hidden xl:table-cell">{fmt(e.availableOn)}</TableCell>
+                    <TableCell className="hidden xl:table-cell">{fmt(e.requiredBy)}</TableCell>
+                    {/* R3: Available On / Required By, stacked, below xl. */}
+                    <TableCell className="whitespace-nowrap text-xs xl:hidden">
+                      <span className="block">{fmt(e.availableOn)}</span>
+                      <span className="block text-slate-500">to {fmt(e.requiredBy)}</span>
+                    </TableCell>
+                    <TableCell className="hidden xl:table-cell">{fmt(e.receivedOn)}</TableCell>
                     <TableCell className="text-right">
                       {canManage ? (
                         <div className="flex items-center justify-end gap-2">
@@ -258,13 +290,14 @@ export function ScheduleGrid({
                               e.showOnPortal ? "Hide" : "Show"
                             } year ${e.scheduleYear} ${e.showOnPortal ? "from" : "to"} the family`}
                           />
-                          <span className="w-28 text-left text-xs text-slate-500">
+                          <span className="hidden w-28 text-left text-xs text-slate-500 xl:inline">
                             {e.showOnPortal ? "Shown to family" : "Hidden from family"}
                           </span>
                         </div>
                       ) : (
-                        <span className="text-slate-500">
-                          {e.showOnPortal ? "Shown to family" : "Hidden from family"}
+                        <span className="text-xs text-slate-500 xl:text-sm">
+                          {e.showOnPortal ? "Shown" : "Hidden"}
+                          <span className="hidden xl:inline"> {e.showOnPortal ? "to family" : "from family"}</span>
                         </span>
                       )}
                     </TableCell>
