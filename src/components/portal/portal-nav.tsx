@@ -26,7 +26,7 @@ import {
   Home,
   FileText,
   Upload,
-  HelpCircle,
+  Mail,
   AlertCircle,
   CalendarRange,
 } from "lucide-react";
@@ -126,9 +126,11 @@ export function buildPortalNav(
       matchMode: "prefix",
     },
     {
-      label: "Help & guidance",
+      // Epic 22 P2 (D-8, D-17): Help became "Contact us by email"; the URL and
+      // the guidance tabs (below the form) stay.
+      label: "Contact us by email",
       href: "/help",
-      icon: HelpCircle,
+      icon: Mail,
       match: "/help",
       matchMode: "prefix",
     },

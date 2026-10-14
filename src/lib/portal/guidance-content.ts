@@ -147,3 +147,17 @@ export const CHECKLIST_ITEMS: ChecklistItem[] = [
       "Use the Additional Information section for anything else relevant to your assessment, with any supporting documents.",
   },
 ];
+
+// ─── Guidance tabs deep link (Epic 22 D-17) ──────────────────────────────────
+
+/** The three tabs, in order. `/help?tab=<value>` opens one (Epic 22 D-17). */
+export const GUIDANCE_TABS = ["how-to-apply", "checklist", "terms"] as const;
+export type GuidanceTab = (typeof GUIDANCE_TABS)[number];
+
+/** Whitelist for the `?tab=` deep link; anything else opens How to Apply. */
+export function parseGuidanceTab(raw: string | string[] | undefined): GuidanceTab {
+  const value = Array.isArray(raw) ? raw[0] : raw;
+  return (GUIDANCE_TABS as readonly string[]).includes(value ?? "")
+    ? (value as GuidanceTab)
+    : "how-to-apply";
+}

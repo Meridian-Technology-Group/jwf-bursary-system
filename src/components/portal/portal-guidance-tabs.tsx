@@ -27,6 +27,7 @@ import {
   CHECKLIST_UPLOAD_NOTES,
   CHECKLIST_ITEMS,
   BURSARIES_CONTACT_EMAIL,
+  type GuidanceTab,
 } from "@/lib/portal/guidance-content";
 import {
   TERMS_AND_CONDITIONS_PATH,
@@ -34,6 +35,8 @@ import {
 } from "@/lib/portal/terms";
 
 interface PortalGuidanceTabsProps {
+  /** The tab open on arrival (from `/help?tab=`). Defaults to How to Apply. */
+  initialTab?: GuidanceTab;
   /**
    * When true, the identity-documents checklist block is shown as
    * "already on file" for rolling-over re-assessments (it is only required on a
@@ -43,14 +46,16 @@ interface PortalGuidanceTabsProps {
 }
 
 export function PortalGuidanceTabs({
+  initialTab = "how-to-apply",
   isRollingOver = false,
 }: PortalGuidanceTabsProps) {
   return (
     <section
+      id="guidance"
       aria-label="How to apply, checklist and terms"
-      className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6"
+      className="scroll-mt-6 rounded-xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6"
     >
-      <Tabs defaultValue="how-to-apply">
+      <Tabs defaultValue={initialTab}>
         <TabsList className="flex h-auto w-full flex-wrap justify-start gap-1 bg-slate-100 p-1">
           <TabsTrigger value="how-to-apply" className="flex-1 sm:flex-none">
             Section 1 — How to Apply
