@@ -6,7 +6,10 @@
  *  - {{deadline}} stays on the Epic 13 E1 chain
  *    (override → per-type round default → closeDate). A stored window's
  *    `submitBy` FILLS the per-type default only when the E1 column is null —
- *    the explicitly-set E1 column always wins.
+ *    the explicitly-set E1 column always wins. For ROLLING_OVER this gives the
+ *    same date as the RA-window tier the portal, submit guard and queue use
+ *    (Epic 21 R2, `effectiveSubmissionDeadline`), so the email and the
+ *    lockout agree.
  *  - {{opening_date}} has no E1 equivalent, so a stored window's `opensOn`
  *    wins over `Round.openDate`; absent both, the resolver's derived default.
  *
@@ -111,8 +114,14 @@ export const ROUND_WINDOWS_SELECT = {
   },
 } as const
 
+/** A deadline round as an invitation path reads it, before its windows join. */
+export type DeadlineRoundColumns = Omit<SubmissionDeadlineRound, 'windows'>
+
 export interface InvitationScenarioFields {
-  /** The deadline round with any window `submitBy` filled into null defaults. */
+  /**
+   * The deadline round with any window `submitBy` filled into null defaults,
+   * carrying the round's stored windows (Epic 21 R2).
+   */
   deadlineRound: SubmissionDeadlineRound | null
   /** The {{opening_date}} source date, or null when there is no round at all. */
   openingDate: Date | null
@@ -129,12 +138,14 @@ export function invitationScenarioFields(input: {
   academicYear: string | null | undefined
   /** The send instant — passed in, never read from the clock here. */
   onDate: Date
-  deadlineRound: SubmissionDeadlineRound | null
+  deadlineRound: DeadlineRoundColumns | SubmissionDeadlineRound | null
   roundOpenDate: Date | null
   windows: readonly StoredRoundWindow[]
 }): InvitationScenarioFields {
-  const { situation, academicYear, onDate, deadlineRound, roundOpenDate, windows } =
-    input
+  const { situation, academicYear, onDate, roundOpenDate, windows } = input
+  const deadlineRound: SubmissionDeadlineRound | null = input.deadlineRound
+    ? { ...input.deadlineRound, windows }
+    : null
   const match = academicYear?.match(/(\d{4})/)
   if (!match) {
     return { deadlineRound, openingDate: roundOpenDate }

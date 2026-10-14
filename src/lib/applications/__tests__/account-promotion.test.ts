@@ -41,6 +41,8 @@ function makeTx(
     application: {
       update: vi.fn(async () => ({})),
     },
+    // Epic 21 R2 — later schedule years read each round's stored RA window.
+    roundWindow: { findMany: vi.fn(async () => [] as unknown[]) },
     bursaryScheduleEntry: {
       findMany: vi.fn(async () => existingRows),
       create: vi.fn(async () => ({})),

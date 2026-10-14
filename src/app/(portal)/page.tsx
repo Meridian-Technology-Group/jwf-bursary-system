@@ -43,6 +43,7 @@ import { ContactBursaryTeam } from "@/components/portal/contact-bursary-team";
 import {
   effectiveSubmissionDeadline,
   isSubmissionDeadlinePassed,
+  DEADLINE_ROUND_SELECT,
 } from "@/lib/rounds/submission-deadline";
 import { isRollingOverApplication } from "@/lib/db/queries/reassessment";
 import {
@@ -198,13 +199,9 @@ export default async function PortalDashboardPage() {
               if (app.formStatus !== "SUBMITTED") {
                 const round = await tx.round.findUnique({
                   where: { id: app.roundId },
-                  select: {
-                    closeDate: true,
-                    // Both typed defaults (E1/D13-8); the resolver branches on
-                    // the application's own type.
-                    defaultSubmissionDeadlineNew: true,
-                    defaultSubmissionDeadlineRolling: true,
-                  },
+                  // Every tier (E1/D13-8 typed defaults, Epic 21 R2 RA
+                  // window); the resolver branches on the application's type.
+                  select: DEADLINE_ROUND_SELECT,
                 });
                 if (round) {
                   const deadlineApp = {

@@ -38,6 +38,7 @@ import {
   resolveScheduleHorizon,
   roundDatesForAccount,
   findThisYearRow,
+  loadRollingWindowsByYear,
 } from "@/lib/bursary-accounts/schedule";
 import type { Tx } from "@/lib/db/prisma";
 
@@ -338,6 +339,8 @@ export async function addScheduleYearAction(input: {
         awardOpenDate: dates.openDate,
         awardCloseDate: dates.closeDate,
         horizon: plan.scheduleYear,
+        // Epic 21 R2 — the added year follows its own round's RA window.
+        rollingWindows: await loadRollingWindowsByYear(tx),
       })[plan.scheduleYear - 1];
 
       await tx.bursaryScheduleEntry.create({

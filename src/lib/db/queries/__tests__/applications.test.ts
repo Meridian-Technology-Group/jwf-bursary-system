@@ -6,6 +6,7 @@ import {
 import {
   effectiveSubmissionDeadline,
   roundDefaultForType,
+  rollingWindowSubmitBy,
   type SubmissionDeadlineApplicationType,
   type SubmissionDeadlineRound,
 } from "@/lib/rounds/submission-deadline";
@@ -26,7 +27,7 @@ interface DeadlineRow {
 /** Terse round fixture: `mkRound(close, { new: …, rolling: … })`. */
 function mkRound(
   closeDate: string,
-  defaults: { forNew?: string; forRolling?: string } = {}
+  defaults: { forNew?: string; forRolling?: string; raWindow?: string; naWindow?: string } = {}
 ): SubmissionDeadlineRound {
   return {
     closeDate: new Date(`${closeDate}T00:00:00.000Z`),
@@ -36,6 +37,15 @@ function mkRound(
     defaultSubmissionDeadlineRolling: defaults.forRolling
       ? new Date(`${defaults.forRolling}T00:00:00.000Z`)
       : null,
+    // Epic 21 R2 — stored windows (RA feeds the rolling-over tier; NA never does).
+    windows: [
+      ...(defaults.raWindow
+        ? [{ scenario: "RA", submitBy: new Date(`${defaults.raWindow}T00:00:00.000Z`) }]
+        : []),
+      ...(defaults.naWindow
+        ? [{ scenario: "NA_CURRENT", submitBy: new Date(`${defaults.naWindow}T00:00:00.000Z`) }]
+        : []),
+    ],
   };
 }
 
@@ -60,27 +70,30 @@ function matchesSubmittedFragment(
 }
 
 type Bound = { gte?: Date; lte?: Date };
+type WindowFilter = { some?: { scenario: string; submitBy: Bound }; none?: { scenario: string } };
 /** One `applicationType`-keyed arm inside the round-default / close branches. */
 type TypeArm = {
   applicationType: SubmissionDeadlineApplicationType;
-  round: Record<string, Bound | null>;
+  round: Record<string, Bound | null | WindowFilter>;
 };
 
 /**
- * Simulates matching `effectiveDeadlineRangeWhere`'s known shape: a 3-branch
- * OR (override / round default / close date), where the latter two each fan
- * out into a per-application-type arm (E1/D13-8).
+ * Simulates matching `effectiveDeadlineRangeWhere`'s known shape: a 4-branch
+ * OR (override / round default / RA window / close date). The round-default
+ * and close branches fan out into a per-application-type arm (E1/D13-8); the
+ * RA-window branch is ROLLING_OVER only (Epic 21 R2).
  */
 function matchesDeadlineFragment(
   row: DeadlineRow,
   fragment: Prisma.ApplicationWhereInput | undefined
 ): boolean {
   if (!fragment) return true;
-  const [overrideBranch, defaultBranch, closeBranch] = (
+  const [overrideBranch, defaultBranch, windowBranch, closeBranch] = (
     fragment as {
       OR: [
         { submissionDeadlineAt: Bound },
         { OR: TypeArm[] },
+        TypeArm,
         { OR: TypeArm[] },
       ];
     }
@@ -107,14 +120,28 @@ function matchesDeadlineFragment(
     roundDefault !== null &&
     inBounds(roundDefault.getTime(), defaultArm.round[column] as Bound);
 
+  // The RA window: a row matches `windows.some` when it has an RA window
+  // whose submitBy is in bounds; `windows.none` when it has no dated RA window.
+  const raSubmitBy = rollingWindowSubmitBy(row.round);
+  const windowFilter = windowBranch.round.windows as WindowFilter;
+  const windowMatches =
+    row.submissionDeadlineAt === null &&
+    row.applicationType === windowBranch.applicationType &&
+    roundDefault === null &&
+    windowBranch.round.defaultSubmissionDeadlineRolling === null &&
+    raSubmitBy !== null &&
+    inBounds(raSubmitBy.getTime(), windowFilter.some!.submitBy);
+
   const closeArm = armFor(closeBranch);
+  const closeWindows = closeArm.round.windows as WindowFilter | undefined;
   const closeMatches =
     row.submissionDeadlineAt === null &&
     roundDefault === null &&
     closeArm.round[column] === null &&
+    (!closeWindows?.none || raSubmitBy === null) &&
     inBounds(row.round.closeDate.getTime(), closeArm.round.closeDate as Bound);
 
-  return overrideMatches || defaultMatches || closeMatches;
+  return overrideMatches || defaultMatches || windowMatches || closeMatches;
 }
 
 /**
@@ -147,7 +174,9 @@ function referenceEffectiveInRange(
   const sourceDate =
     source === "roundDefault"
       ? roundDefaultForType(row.round, row.applicationType)!
-      : row.round.closeDate;
+      : source === "roundWindow"
+        ? rollingWindowSubmitBy(row.round)!
+        : row.round.closeDate;
   const sourceDateStr = sourceDate.toISOString().slice(0, 10);
   if (from && sourceDateStr < from) return false;
   if (to && sourceDateStr > to) return false;
@@ -198,17 +227,28 @@ describe("effectiveDeadlineRangeWhere (Item 7.2)", () => {
     expect(effectiveDeadlineRangeWhere(undefined, undefined)).toBeUndefined();
   });
 
-  it("returns a 3-branch OR (override / round default / close date) when a bound is set", () => {
+  it("returns a 4-branch OR (override / round default / RA window / close date) when a bound is set", () => {
     const fragment = effectiveDeadlineRangeWhere("2026-07-01", "2026-07-31");
     expect(fragment).toHaveProperty("OR");
-    expect((fragment as { OR: unknown[] }).OR).toHaveLength(3);
+    expect((fragment as { OR: unknown[] }).OR).toHaveLength(4);
+  });
+
+  it("the RA-window branch is ROLLING_OVER only (Epic 21 R2)", () => {
+    const fragment = effectiveDeadlineRangeWhere("2026-07-01", "2026-07-31") as {
+      OR: Prisma.ApplicationWhereInput[];
+    };
+    expect(fragment.OR[2]).toMatchObject({
+      submissionDeadlineAt: null,
+      applicationType: "ROLLING_OVER",
+      round: { defaultSubmissionDeadlineRolling: null, windows: { some: { scenario: "RA" } } },
+    });
   });
 
   it("the round-default branch only applies when there is no override, and fans out per application type", () => {
     const fragment = effectiveDeadlineRangeWhere("2026-07-01", "2026-07-31") as {
-      OR: [Prisma.ApplicationWhereInput, Prisma.ApplicationWhereInput, Prisma.ApplicationWhereInput];
+      OR: Prisma.ApplicationWhereInput[];
     };
-    const [, roundDefaultBranch, closeDateBranch] = fragment.OR;
+    const [, roundDefaultBranch, , closeDateBranch] = fragment.OR;
     expect(roundDefaultBranch).toMatchObject({ submissionDeadlineAt: null });
     // E1/D13-8: NEW reads default_submission_deadline_new, ROLLING_OVER reads
     // default_submission_deadline_rolling — the legacy single column is gone
@@ -333,6 +373,36 @@ describe("effectiveDeadlineRangeWhere (Item 7.2)", () => {
       applicationType: "NEW",
       round: mkRound("2026-07-31", { forRolling: "2026-04-30" }),
     },
+    // ── Epic 21 R2: the RA window, rolling-over only ───────────────────────
+    // No rolling default: the RA window governs, not closeDate.
+    rollingReadsTheRaWindow: {
+      submittedAt: null,
+      submissionDeadlineAt: null,
+      applicationType: "ROLLING_OVER",
+      round: mkRound("2026-11-30", { raWindow: "2026-07-22" }),
+    },
+    // A rolling default still beats the window.
+    rollingDefaultBeatsTheRaWindow: {
+      submittedAt: null,
+      submissionDeadlineAt: null,
+      applicationType: "ROLLING_OVER",
+      round: mkRound("2026-11-30", { forRolling: "2026-04-30", raWindow: "2026-07-22" }),
+    },
+    // A NEW row never reads a window: prod's 2026/27 shape (NA_CURRENT window
+    // 17 Sep, close 30 Nov) keeps closeDate.
+    newIgnoresEveryWindow: {
+      submittedAt: null,
+      submissionDeadlineAt: null,
+      applicationType: "NEW",
+      round: mkRound("2026-07-31", { raWindow: "2026-07-05", naWindow: "2026-07-10" }),
+    },
+    // An NA window alone does not move a rolling-over row off closeDate.
+    rollingIgnoresAnNaWindow: {
+      submittedAt: null,
+      submissionDeadlineAt: null,
+      applicationType: "ROLLING_OVER",
+      round: mkRound("2026-07-31", { naWindow: "2026-07-10" }),
+    },
     // An override still wins on a rolling-over row.
     rollingOverrideGoverns: {
       submittedAt: null,
@@ -354,6 +424,9 @@ describe("effectiveDeadlineRangeWhere (Item 7.2)", () => {
     { from: "2026-07-21", to: "2026-07-25" },
     // Straddles the April rolling deadline, so the two types diverge.
     { from: "2026-04-01", to: "2026-04-30" },
+    // Holds the RA window date (22 Jul) but not the 30 Nov close.
+    { from: "2026-07-22", to: "2026-07-22" },
+    { from: "2026-11-01", to: "2026-11-30" },
   ];
 
   for (const [rowName, row] of Object.entries(rows)) {
