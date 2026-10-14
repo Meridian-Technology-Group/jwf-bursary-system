@@ -17,6 +17,13 @@ model Profile {
   lastName                String?                  @map("last_name")
   email                   String                   @unique
   phone                   String?
+  /// Epic 22 P1 — the family's latest sign-in, copied from
+  /// `auth.users.last_sign_in_at` on the first portal page after it changes
+  /// (`syncSignInTimes`). NULL until the first sign-in after deploy.
+  lastSignInAt            DateTime?                @map("last_sign_in_at") @db.Timestamptz(6)
+  /// Epic 22 P1 — the sign-in before `lastSignInAt`: what "Last login" on My
+  /// Bursary Application(s) shows (D-5). NULL until a second recorded sign-in.
+  previousSignInAt        DateTime?                @map("previous_sign_in_at") @db.Timestamptz(6)
   createdAt               DateTime                 @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt               DateTime                 @updatedAt @map("updated_at") @db.Timestamptz(6)
   assignedApplications    Application[]            @relation("ApplicationAssignee")
