@@ -31,3 +31,35 @@ export function portalHomeMain({
   if (hasInvitation) return "invitation";
   return hasSchedule ? "none" : "no-invitation";
 }
+
+// ─── Epic 22 P4 — the two versions of Home in her sheet ──────────────────────
+
+/**
+ * "rolling-over" — the family holds at least one ACTIVE bursary account:
+ *   "Welcome back", the active-bursary count and one line per child.
+ * "new" — no active account yet: "Welcome", "You currently do not have an
+ *   active bursary." and the first-application card.
+ * A family can be both (a bursary for one child, a first application for
+ * another): it gets the rolling-over version, with the application or
+ * invitation card below the children.
+ */
+export type HomeVariant = "new" | "rolling-over";
+
+export function homeVariant({ activeAccounts }: { activeAccounts: number }): HomeVariant {
+  return activeAccounts > 0 ? "rolling-over" : "new";
+}
+
+export function homeHeading(variant: HomeVariant, firstName: string): string {
+  return variant === "rolling-over" ? `Welcome back, ${firstName}` : `Welcome, ${firstName}`;
+}
+
+/** Her sentences, with the count. */
+export function activeBursariesText(activeAccounts: number): string {
+  if (activeAccounts <= 0) return "You currently do not have an active bursary.";
+  return `You currently have ${activeAccounts} active ${
+    activeAccounts === 1 ? "bursary" : "bursaries"
+  } with the John Whitgift Foundation.`;
+}
+
+export const INVITED_TO_APPLY_TEXT =
+  "You have been invited to fill in the following bursary application for us to assess your household:";
