@@ -113,7 +113,9 @@ describe("purgeApplication — single parent", () => {
       where: { leadApplicantId: "lead-1" },
       data: { childName: "[Child Removed]", childDob: null },
     });
-    // Epic 21 #6 — the standing synopsis goes with the person.
+    // Epic 21 #6 — the account's main synopsis goes with the person: every
+    // entry on the lead's accounts, whatever its kind (MAIN, or a retired
+    // YEAR/NOTE), so no kind filter.
     expect(tx.accountSynopsisEntry.deleteMany).toHaveBeenCalledWith({
       where: { bursaryAccount: { leadApplicantId: "lead-1" } },
     });

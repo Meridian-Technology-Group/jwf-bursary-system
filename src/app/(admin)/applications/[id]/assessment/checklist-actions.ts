@@ -9,9 +9,11 @@
  * in-flight saves and is removed at the Epic 08 cutover.
  *
  * Both require ADMIN/ASSESSOR, write an audit entry, and revalidate the
- * assessment path. Neither carries a status guard — the synopsis is
- * deliberately EDITABLE AFTER the assessment is COMPLETED (plan §5.2 / §5.3);
- * the read-only behaviour lives entirely in the client.
+ * assessment path. The synopsis is deliberately EDITABLE AFTER the assessment
+ * is COMPLETED (plan §5.2 / §5.3), but since Epic 21 #6 (rework, 14 Oct 2026)
+ * it LOCKS with the assessment: `saveSynopsis` refuses once the assessment is
+ * in a post-assessment final state (`isSynopsisLocked`). The account's main
+ * synopsis is the box that stays editable across years.
  */
 
 import { revalidatePath } from "next/cache";
@@ -20,18 +22,19 @@ import { createAuditLog } from "@/lib/audit/log";
 import { AUDIT_ACTIONS, AUDIT_ENTITY_TYPES } from "@/lib/audit/actions";
 import { withUserContext, type RlsRole } from "@/lib/db/prisma";
 import type { ChecklistTab } from "@prisma/client";
+import {
+  isSynopsisLocked,
+  SYNOPSIS_LOCKED_MESSAGE,
+} from "@/lib/bursary-accounts/standing-synopsis";
 
 // ─── Save Synopsis (Epic 06) ──────────────────────────────────────────────────
 
 /**
- * Upserts the single `Assessment.synopsis` narrative. Permissive by design:
- * there is NO status guard, so the synopsis can be edited even after the
- * assessment is COMPLETED. An empty/whitespace-only value is stored as NULL.
- *
- * Epic 21 #6: once the year is locked it has an entry in the account's
- * standing synopsis; an edit here updates that entry in the same transaction,
- * so the two never disagree. (Clearing the synopsis leaves the entry's last
- * text in place: entries are never blanked or deleted, D-6.)
+ * Upserts the single `Assessment.synopsis` narrative. Editable while the
+ * assessment is worked and once stored as complete; refused once it is locked
+ * (NEW_AWARD, ROLLED_OVER, WAITING_LIST, CLOSED_ARCHIVED — Epic 21 #6 rework).
+ * The client renders the box read-only then; this is the rule. An
+ * empty/whitespace-only value is stored as NULL.
  */
 export async function saveSynopsis(
   assessmentId: string,
@@ -42,19 +45,22 @@ export async function saveSynopsis(
     const user = await requireRole([Role.ADMIN, Role.ASSESSOR]);
     const value = synopsis.trim().length > 0 ? synopsis : null;
 
-    await withUserContext(user.id, user.role as RlsRole, async (tx) => {
+    const result = await withUserContext(user.id, user.role as RlsRole, async (tx) => {
+      const current = await tx.assessment.findUnique({
+        where: { id: assessmentId },
+        select: { status: true },
+      });
+      if (!current) {
+        return { success: false as const, error: "Assessment not found." };
+      }
+      if (isSynopsisLocked(current.status)) {
+        return { success: false as const, error: SYNOPSIS_LOCKED_MESSAGE };
+      }
+
       await tx.assessment.update({
         where: { id: assessmentId },
         data: { synopsis: value },
       });
-
-      // Epic 21 #6 — keep this year's standing-synopsis entry in step.
-      if (value) {
-        await tx.accountSynopsisEntry.updateMany({
-          where: { assessmentId, kind: "YEAR" },
-          data: { body: value.trim() },
-        });
-      }
 
       await createAuditLog(tx, {
         userId: user.id,
@@ -68,7 +74,9 @@ export async function saveSynopsis(
           synopsisLength: value?.length ?? 0,
         },
       });
+      return { success: true as const };
     });
+    if (!result.success) return result;
 
     // The synopsis renders in both the assessment workspace and on the
     // recommendation screen, so revalidate both.

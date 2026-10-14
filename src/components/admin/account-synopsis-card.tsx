@@ -1,37 +1,25 @@
 "use client";
 
 /**
- * Epic 21 #6 — "Account synopsis (all years)": the standing synopsis at the
- * top of the ASSESSMENT ADMIN tab. A timeline, newest first:
- *   - each locked year's synopsis, headed by its academic year (read-only
- *     here; it is edited in that year's assessment, linked);
- *   - staff notes, headed by date and author. ADMIN and ASSESSOR add notes;
- *     ADMIN edits them; nobody deletes (D-6).
+ * Epic 21 #6 (rework, 14 Oct 2026) — "Main synopsis": the account's one
+ * standing synopsis, at the top of the ASSESSMENT ADMIN tab. It sustains every
+ * year of the bursary (Charlotte, 11 Oct 2026); "This year's synopsis" below it
+ * pertains to this year's assessment only.
+ *
+ * Pre-filled from the Grant Tracker synopsis (migrated accounts) or from the
+ * first locked year's synopsis (new awards). ADMIN and ASSESSOR edit it; each
+ * save is audited, so earlier versions are on the History tab, not here.
  */
 
 import * as React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { BookOpenText, Pencil, Plus } from "lucide-react";
+import { BookOpenText, Pencil } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import {
-  addAccountSynopsisNoteAction,
-  editAccountSynopsisNoteAction,
-} from "@/app/(admin)/applications/[id]/account-synopsis-actions";
-
-export interface AccountSynopsisCardEntry {
-  id: string;
-  kind: "YEAR" | "NOTE";
-  academicYear: string | null;
-  body: string;
-  /** ISO strings — formatted here. */
-  createdAt: string;
-  updatedAt: string;
-  applicationId: string | null;
-  authorName: string | null;
-}
+import { saveMainSynopsisAction } from "@/app/(admin)/applications/[id]/account-synopsis-actions";
+import { MAIN_SYNOPSIS_MAX } from "@/lib/bursary-accounts/standing-synopsis";
 
 function fmtDate(iso: string): string {
   return new Intl.DateTimeFormat("en-GB", {
@@ -42,72 +30,26 @@ function fmtDate(iso: string): string {
   }).format(new Date(iso));
 }
 
-function NoteEditor({
-  initial,
-  onSave,
-  onCancel,
-  saveLabel,
-}: {
-  initial: string;
-  onSave: (body: string) => Promise<string | null>;
-  onCancel: () => void;
-  saveLabel: string;
-}) {
-  const [body, setBody] = React.useState(initial);
-  const [pending, setPending] = React.useState(false);
-  const [error, setError] = React.useState<string | null>(null);
-  return (
-    <div className="space-y-2">
-      <Textarea
-        value={body}
-        onChange={(e) => setBody(e.target.value)}
-        rows={4}
-        maxLength={5000}
-        aria-label="Note"
-        autoFocus
-      />
-      {error && (
-        <p className="text-sm font-medium text-red-600" role="alert">
-          {error}
-        </p>
-      )}
-      <div className="flex gap-2">
-        <Button
-          type="button"
-          size="sm"
-          disabled={pending || !body.trim()}
-          onClick={async () => {
-            setPending(true);
-            setError(null);
-            const err = await onSave(body);
-            setPending(false);
-            if (err) setError(err);
-          }}
-        >
-          {pending ? "Saving…" : saveLabel}
-        </Button>
-        <Button type="button" size="sm" variant="outline" disabled={pending} onClick={onCancel}>
-          Cancel
-        </Button>
-      </div>
-    </div>
-  );
-}
-
 export function AccountSynopsisCard({
   applicationId,
-  entries,
-  canAddNote,
-  canEditNotes,
+  body,
+  updatedAt,
+  canEdit,
 }: {
   applicationId: string;
-  entries: AccountSynopsisCardEntry[];
-  canAddNote: boolean;
-  canEditNotes: boolean;
+  /** The MAIN entry's text; null when the account has none yet. */
+  body: string | null;
+  /** ISO string; null when there is no entry. */
+  updatedAt: string | null;
+  canEdit: boolean;
 }) {
   const router = useRouter();
-  const [adding, setAdding] = React.useState(false);
-  const [editingId, setEditingId] = React.useState<string | null>(null);
+  const [editing, setEditing] = React.useState(false);
+  const [draft, setDraft] = React.useState(body ?? "");
+  const [pending, setPending] = React.useState(false);
+  const [error, setError] = React.useState<string | null>(null);
+
+  const hasText = !!body?.trim();
 
   return (
     <Card className="overflow-hidden">
@@ -116,113 +58,92 @@ export function AccountSynopsisCard({
           <div className="flex items-start gap-2">
             <BookOpenText className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" aria-hidden="true" />
             <div>
-              <CardTitle className="text-sm font-semibold text-slate-700">
-                Account synopsis (all years)
-              </CardTitle>
+              <CardTitle className="text-sm font-semibold text-slate-700">Main synopsis</CardTitle>
               <p className="mt-0.5 text-xs text-slate-400">
-                Each year&apos;s synopsis is added when its award is locked. Notes
-                can be added at any time.
+                The account&apos;s synopsis across every year. Earlier versions are on the{" "}
+                <Link
+                  href={`/applications/${applicationId}/history`}
+                  className="underline underline-offset-2 hover:text-slate-600"
+                >
+                  History
+                </Link>{" "}
+                tab.
+                {updatedAt && hasText ? ` Last changed ${fmtDate(updatedAt)}.` : ""}
               </p>
             </div>
           </div>
-          {canAddNote && !adding && (
-            <Button type="button" size="sm" variant="outline" onClick={() => setAdding(true)}>
-              <Plus className="mr-1.5 h-3.5 w-3.5" aria-hidden="true" />
-              Add a note
+          {canEdit && !editing && (
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={() => {
+                setDraft(body ?? "");
+                setError(null);
+                setEditing(true);
+              }}
+            >
+              <Pencil className="mr-1.5 h-3.5 w-3.5" aria-hidden="true" />
+              Edit
             </Button>
           )}
         </div>
       </CardHeader>
-      <CardContent className="space-y-4 px-5 py-4">
-        {adding && (
-          <NoteEditor
-            initial=""
-            saveLabel="Add note"
-            onCancel={() => setAdding(false)}
-            onSave={async (body) => {
-              const res = await addAccountSynopsisNoteAction({ applicationId, body });
-              if (!res.success) return res.error;
-              setAdding(false);
-              router.refresh();
-              return null;
-            }}
-          />
-        )}
-
-        {entries.length === 0 && !adding ? (
-          <p className="text-sm text-slate-400">
-            Nothing yet. A year&apos;s synopsis appears here when its award is locked.
-          </p>
+      <CardContent className="px-5 py-4">
+        {editing ? (
+          <div className="space-y-2">
+            <Textarea
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              rows={10}
+              maxLength={MAIN_SYNOPSIS_MAX}
+              aria-label="Main synopsis"
+              autoFocus
+              className="resize-y border-slate-200 text-sm leading-relaxed text-slate-700"
+            />
+            {error && (
+              <p className="text-sm font-medium text-red-600" role="alert">
+                {error}
+              </p>
+            )}
+            <div className="flex gap-2">
+              <Button
+                type="button"
+                size="sm"
+                disabled={pending}
+                onClick={async () => {
+                  setPending(true);
+                  setError(null);
+                  const res = await saveMainSynopsisAction({ applicationId, body: draft });
+                  setPending(false);
+                  if (!res.success) {
+                    setError(res.error);
+                    return;
+                  }
+                  setEditing(false);
+                  router.refresh();
+                }}
+              >
+                {pending ? "Saving…" : "Save"}
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                disabled={pending}
+                onClick={() => setEditing(false)}
+              >
+                Cancel
+              </Button>
+            </div>
+          </div>
+        ) : hasText ? (
+          <p className="whitespace-pre-wrap text-sm leading-relaxed text-slate-700">{body}</p>
         ) : (
-          <ol className="space-y-4">
-            {entries.map((e) => (
-              <li key={e.id} className="border-l-2 border-slate-200 pl-3">
-                <div className="flex flex-wrap items-baseline gap-x-2 text-xs">
-                  {e.kind === "YEAR" ? (
-                    <>
-                      <span className="font-semibold text-primary-900">{e.academicYear}</span>
-                      <span className="text-slate-400">synopsis</span>
-                      {e.applicationId && e.applicationId !== applicationId && (
-                        <Link
-                          href={`/applications/${e.applicationId}/assessment`}
-                          className="text-primary-700 underline underline-offset-2 hover:text-primary-900"
-                        >
-                          edit in that year&apos;s assessment
-                        </Link>
-                      )}
-                      {e.applicationId === applicationId && (
-                        <span className="text-slate-400">(this year: edit below)</span>
-                      )}
-                    </>
-                  ) : (
-                    <>
-                      <span className="font-semibold text-slate-700">Note</span>
-                      <span className="text-slate-500">
-                        {fmtDate(e.createdAt)}
-                        {e.authorName ? ` · ${e.authorName}` : ""}
-                        {/* createdAt is the DB clock, updatedAt Prisma's: allow drift. */}
-                        {new Date(e.updatedAt).getTime() - new Date(e.createdAt).getTime() > 5000
-                          ? " · edited"
-                          : ""}
-                      </span>
-                      {canEditNotes && editingId !== e.id && (
-                        <button
-                          type="button"
-                          onClick={() => setEditingId(e.id)}
-                          className="inline-flex items-center gap-1 text-primary-700 hover:text-primary-900"
-                        >
-                          <Pencil className="h-3 w-3" aria-hidden="true" />
-                          Edit
-                        </button>
-                      )}
-                    </>
-                  )}
-                </div>
-                {editingId === e.id ? (
-                  <div className="mt-2">
-                    <NoteEditor
-                      initial={e.body}
-                      saveLabel="Save note"
-                      onCancel={() => setEditingId(null)}
-                      onSave={async (body) => {
-                        const res = await editAccountSynopsisNoteAction({
-                          applicationId,
-                          entryId: e.id,
-                          body,
-                        });
-                        if (!res.success) return res.error;
-                        setEditingId(null);
-                        router.refresh();
-                        return null;
-                      }}
-                    />
-                  </div>
-                ) : (
-                  <p className="mt-1 whitespace-pre-wrap text-sm text-slate-700">{e.body}</p>
-                )}
-              </li>
-            ))}
-          </ol>
+          <p className="text-sm text-slate-400">
+            No main synopsis yet. It is filled in from this year&apos;s synopsis when the award is
+            locked{canEdit ? ", or you can write one now" : ""}.
+          </p>
         )}
       </CardContent>
     </Card>

@@ -47,7 +47,12 @@ export async function getAuditLogsForEntity(
  */
 export async function getAuditLogsForApplicationHistory(
   tx: Tx,
-  applicationId: string
+  applicationId: string,
+  /**
+   * Epic 21 #6 (rework) — the application's bursary account. Its main-synopsis
+   * edits are account-wide, so every year's History tab shows them.
+   */
+  bursaryAccountId?: string | null
 ): Promise<AuditLogWithUser[]> {
   return tx.auditLog.findMany({
     where: {
@@ -57,6 +62,15 @@ export async function getAuditLogsForApplicationHistory(
           entityType: "ApplicationSection",
           metadata: { path: ["applicationId"], equals: applicationId },
         },
+        ...(bursaryAccountId
+          ? [
+              {
+                entityType: "BursaryAccount",
+                entityId: bursaryAccountId,
+                action: "ACCOUNT_MAIN_SYNOPSIS_SAVED",
+              },
+            ]
+          : []),
       ],
     },
     include: {
