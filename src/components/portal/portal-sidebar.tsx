@@ -23,6 +23,7 @@ import {
 import { cn } from "@/lib/utils";
 import { JwfLogo } from "@/components/brand/jwf-logo";
 import { GuardedLink } from "./guarded-link";
+import { applicationCompletion } from "@/lib/portal/application-completion";
 import {
   DEFAULT_SIDEBAR_SECTIONS,
   type SectionStatus,
@@ -134,18 +135,9 @@ export function PortalSidebarContent({
   const countedSections = countSynthetic
     ? sectionList
     : sectionList.filter((s) => !s.isSynthetic);
-  const totalSatisfied = countedSections.reduce(
-    (acc, s) => acc + s.progressSatisfied,
-    0
-  );
-  const totalItems = countedSections.reduce(
-    (acc, s) => acc + s.progressTotal,
-    0
-  );
-  const progressPct =
-    totalItems > 0
-      ? Math.min(100, parseFloat(((totalSatisfied / totalItems) * 100).toFixed(1)))
-      : 0;
+  // Epic 22 D-4: the one shared measure (My Bursary Application(s) shows the
+  // same number). `countedSections` is already filtered, hence `true`.
+  const progressPct = applicationCompletion(countedSections, true);
 
   // Human-readable label: show satisfied / total at the item level.
   const completedSections = countedSections.filter(

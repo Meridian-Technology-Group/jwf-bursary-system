@@ -18,7 +18,10 @@ import {
   markInvitationAccepted,
 } from "@/lib/db/queries/invitations";
 import { createReassessmentApplicationFromInvitation } from "@/lib/db/queries/reassessment";
-import { createFirstYearApplicationFromSource } from "@/lib/applications/create-from-invitation";
+import {
+  canCreateFirstYearApplication,
+  createFirstYearApplicationFromSource,
+} from "@/lib/applications/create-from-invitation";
 import { setActiveApplicationId } from "@/lib/portal/active-application";
 import { resumeReview } from "@/lib/applications/status";
 import { createAuditLog } from "@/lib/audit/log";
@@ -298,6 +301,158 @@ export async function beginReassessmentAction(): Promise<BeginReassessmentResult
     const message =
       err instanceof Error ? err.message : "Something went wrong.";
     console.error("[portal/actions] beginReassessmentAction error:", err);
+    return { success: false, error: message };
+  }
+
+  redirect("/apply/child-details");
+}
+
+// ---------------------------------------------------------------------------
+// startInvitationApplicationAction
+// ---------------------------------------------------------------------------
+
+/**
+ * Epic 22 P1 — "I would like to start the application" on My Bursary
+ * Application(s), for ONE child's invitation.
+ *
+ * The two actions above each act on the family's LATEST invitation, which is
+ * right for the home page's single card but wrong when a parent has an
+ * invitation per child. This one takes the invitation id (checked against the
+ * signed-in parent), creates that child's application — re-assessment or
+ * first-year — and opens it at the start of the form. Starting twice reopens
+ * the same draft.
+ */
+const StartInvitationSchema = z.object({ invitationId: z.string().uuid() });
+
+export async function startInvitationApplicationAction(
+  formData: FormData
+): Promise<StartApplicationResult> {
+  const user = await requireRole([Role.APPLICANT]);
+
+  const parsed = StartInvitationSchema.safeParse({
+    invitationId: formData.get("invitationId"),
+  });
+  if (!parsed.success) {
+    return { success: false, error: "That invitation could not be found." };
+  }
+  const { invitationId } = parsed.data;
+
+  try {
+    const result = await withAdminContext(async (tx) => {
+      const invitation = await tx.invitation.findFirst({
+        where: {
+          id: invitationId,
+          authUserId: user.id,
+          // Secondary-parent invitations go through /register (see
+          // getOrAcceptLatestInvitationForUser); never started from here.
+          applicationId: null,
+          status: { in: [InvitationStatus.PENDING, InvitationStatus.ACCEPTED] },
+        },
+      });
+
+      if (!invitation) {
+        return {
+          error:
+            "We could not find that invitation for your account. Please contact the Foundation.",
+        };
+      }
+      if (!invitation.roundId) {
+        return {
+          error:
+            "Your invitation does not have an assessment round assigned. Please contact the Foundation.",
+        };
+      }
+
+      // Re-assessment (rolling-over) — as beginReassessmentAction.
+      if (invitation.bursaryAccountId) {
+        if (
+          invitation.status === InvitationStatus.PENDING &&
+          invitation.expiresAt < new Date()
+        ) {
+          return {
+            error:
+              "This re-assessment invitation has expired. Please contact the Foundation for a new one.",
+          };
+        }
+        const { id: applicationId } =
+          await createReassessmentApplicationFromInvitation(tx, invitation);
+        if (invitation.status === InvitationStatus.PENDING) {
+          await markInvitationAccepted(tx, invitation.id, user.id);
+          await createAuditLog(tx, {
+            userId: user.id,
+            action: AUDIT_ACTIONS.ACCEPT_INVITATION,
+            entityType: AUDIT_ENTITY_TYPES.Invitation,
+            entityId: invitation.id,
+            context: `Re-assessment invitation accepted by ${invitation.email}`,
+            metadata: {
+              email: invitation.email,
+              roundId: invitation.roundId,
+              bursaryAccountId: invitation.bursaryAccountId,
+              applicationId,
+            },
+          });
+        }
+        return { error: null, applicationId };
+      }
+
+      // First-year — only when the invitation carries everything the form
+      // needs; otherwise the family starts from the home page's chooser.
+      if (
+        !canCreateFirstYearApplication({
+          leadApplicantId: user.id,
+          roundId: invitation.roundId,
+          school: invitation.school,
+          childName: invitation.childName,
+          entryYear: invitation.entryYear,
+          entryYearGroup: invitation.entryYearGroup,
+        })
+      ) {
+        return {
+          error:
+            "Please start this application from the Home page, where you can confirm your child's details.",
+        };
+      }
+
+      // Same per-child dedupe as startApplicationAction (E2, CG-04).
+      const existing = await tx.application.findFirst({
+        where: {
+          leadApplicantId: user.id,
+          roundId: invitation.roundId,
+          childName: { equals: invitation.childName!, mode: "insensitive" },
+        },
+        select: { id: true },
+      });
+      const applicationId =
+        existing?.id ??
+        (await createFirstYearApplicationFromSource(tx, {
+          leadApplicantId: user.id,
+          roundId: invitation.roundId,
+          school: invitation.school!,
+          childName: invitation.childName!,
+          childFirstName: invitation.childFirstName,
+          childLastName: invitation.childLastName,
+          childDob: invitation.childDob,
+          entryYear: invitation.entryYear,
+          entryYearGroup: invitation.entryYearGroup,
+          contactId: invitation.contactId,
+        }));
+      if (invitation.status === InvitationStatus.PENDING) {
+        await markInvitationAccepted(tx, invitation.id, user.id);
+      }
+      return { error: null, applicationId };
+    });
+
+    if (result.error) {
+      return { success: false, error: result.error };
+    }
+    if ("applicationId" in result && result.applicationId) {
+      await setActiveApplicationId(result.applicationId);
+    }
+    revalidatePath("/");
+    revalidatePath("/applications");
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Something went wrong.";
+    console.error("[portal/actions] startInvitationApplicationAction error:", err);
     return { success: false, error: message };
   }
 

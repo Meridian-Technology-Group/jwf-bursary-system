@@ -3,14 +3,16 @@
 /**
  * PortalNav — the persistent left-rail navigation for the applicant portal.
  *
- * This is the lead-applicant nav (Home / My Application / Documents / Help),
+ * This is the lead-applicant nav (Home / My Bursary Application(s) / Documents /
+ * Help),
  * modelled on `admin-nav.tsx`. The History item was removed by Epic 13 D1
  * (D13-4): applicants keep status visibility, but no route back into what they
  * submitted. It is a DISTINCT component family from the
  * `/contribute`-shared stepper shell (`PortalDesktopSidebar` /
  * `PortalMobileHeader`) — do NOT parameterise one to do both (Decision 6).
  *
- * The section stepper is rendered nested under the "My Application" item via the
+ * The section stepper is rendered nested under the "My Bursary Application(s)"
+ * item (Epic 22 P1; it was "My Application") via the
  * `RailStepper` component. `RailStepper` reads the shared stepper-data store
  * (written from the apply content subtree) and is pathname-gated to `/apply/*`,
  * so off the wizard it renders null and the rail stays nav-only. This replaces
@@ -36,6 +38,9 @@ import { GuardedLink } from "./guarded-link";
 
 // ─── Nav model (the single source of nav membership) ──────────────────────────
 
+/** Charlotte's label for the per-child applications item (Epic 22 P1). */
+export const MY_APPLICATIONS_LABEL = "My Bursary Application(s)";
+
 export interface PortalNavItem {
   label: string;
   href: string;
@@ -43,6 +48,11 @@ export interface PortalNavItem {
   /** Pathname to match for active state. */
   match: string;
   matchMode?: "exact" | "prefix";
+  /**
+   * Further path prefixes that also mark the item active — the per-child list
+   * (`/applications`) owns the form and its status pages too.
+   */
+  alsoMatch?: string[];
   /**
    * Colour-coded, attention-drawing item (the "Missing Documents" call to
    * action). Only ever set on the conditional Missing Documents entry, which is
@@ -53,8 +63,11 @@ export interface PortalNavItem {
 
 /**
  * Constant nav membership. Documents is first-class (Decision 2) — it points at
- * `/documents` and is never hidden or disabled. `applicationHref` is the
- * adaptive "My Application" target (default `/apply/child-details`).
+ * `/documents` and is never hidden or disabled. "My Bursary Application(s)"
+ * (Epic 22 P1, D-8) points at the per-child list `/applications`, where each
+ * child's options open the right form; it replaced the adaptive single
+ * "My Application" link, so it stays active across `/apply/*`, `/status` and
+ * `/submitted`.
  *
  * When `needsDocs` is true (an assessor has paused the application pending
  * documents) a dedicated, colour-coded "Missing Documents" item is surfaced near
@@ -69,7 +82,6 @@ export interface PortalNavItem {
  * mechanism as Missing Documents — so first-year applicants never see it.
  */
 export function buildPortalNav(
-  applicationHref: string,
   needsDocs = false,
   hasSchedule = false
 ): PortalNavItem[] {
@@ -88,11 +100,12 @@ export function buildPortalNav(
         ]
       : []),
     {
-      label: "My Application",
-      href: applicationHref,
+      label: MY_APPLICATIONS_LABEL,
+      href: "/applications",
       icon: FileText,
-      match: "/apply",
+      match: "/applications",
       matchMode: "prefix",
+      alsoMatch: ["/apply", "/status", "/submitted"],
     },
     ...(hasSchedule
       ? [
@@ -124,7 +137,9 @@ export function buildPortalNav(
 
 function isItemActive(pathname: string, item: PortalNavItem): boolean {
   if (item.matchMode === "prefix") {
-    return pathname === item.match || pathname.startsWith(`${item.match}/`);
+    return [item.match, ...(item.alsoMatch ?? [])].some(
+      (m) => pathname === m || pathname.startsWith(`${m}/`)
+    );
   }
   return pathname === item.match;
 }
@@ -189,12 +204,6 @@ function PortalNavLink({
 
 interface PortalNavProps {
   userName: string;
-  /**
-   * Adaptive target for "My Application": the wizard while drafting, `/status`
-   * after submit. Defaults to `/apply/child-details`; made adaptive in PR-9
-   * (Decision 4 — the LABEL is always "My Application").
-   */
-  applicationHref?: string;
   /** Whether a paused document request exists (badges Documents). Wired PR-9. */
   needsDocs?: boolean;
   /**
@@ -206,12 +215,11 @@ interface PortalNavProps {
 
 export function PortalNav({
   userName,
-  applicationHref = "/apply/child-details",
   needsDocs = false,
   hasSchedule = false,
 }: PortalNavProps) {
   const pathname = usePathname() ?? "/";
-  const items = buildPortalNav(applicationHref, needsDocs, hasSchedule);
+  const items = buildPortalNav(needsDocs, hasSchedule);
 
   return (
     <div className="flex h-full flex-col">
@@ -234,11 +242,11 @@ export function PortalNav({
             return (
               <li key={item.href}>
                 <PortalNavLink item={item} isActive={active} />
-                {/* The stepper renders nested under "My Application". RailStepper
+                {/* The stepper renders nested under "My Bursary Application(s)". RailStepper
                     reads the shared store and is pathname-gated to /apply/*, so
                     it is null off the wizard and the wrapper collapses to empty
                     (border/padding on an empty div is invisible). */}
-                {item.label === "My Application" ? (
+                {item.href === "/applications" ? (
                   <div className="mt-1 border-l border-slate-100 pl-2 empty:mt-0 empty:border-0 empty:pl-0">
                     <RailStepper />
                   </div>

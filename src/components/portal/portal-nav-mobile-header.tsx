@@ -7,7 +7,7 @@
  * `/contribute`-shared `PortalMobileHeader` — Decision 6; do NOT repurpose that
  * one). It exposes TWO independent Sheets:
  *
- *   1. a hamburger → PORTAL NAV Sheet (Home / My Application / Documents /
+ *   1. a hamburger → PORTAL NAV Sheet (Home / My Bursary Application(s) / Documents /
  *      History / Help + the account/sign-out footer), and
  *   2. an "All sections" → STEPPER Sheet rendering the same context-driven
  *      `RailStepper` as the desktop rail. The trigger is shown only on
@@ -33,8 +33,6 @@ import { RailStepper, isApplyRoute } from "./rail-stepper";
 
 interface PortalNavMobileHeaderProps {
   userName: string;
-  /** Adaptive "My Application" target (default `/apply/child-details`). */
-  applicationHref?: string;
   /** Whether a paused document request exists (badges Documents). PR-9. */
   needsDocs?: boolean;
   /** Whether the family has a portal-visible schedule (gap F2). */
@@ -43,7 +41,6 @@ interface PortalNavMobileHeaderProps {
 
 export function PortalNavMobileHeader({
   userName,
-  applicationHref,
   needsDocs,
   hasSchedule,
 }: PortalNavMobileHeaderProps) {
@@ -81,7 +78,6 @@ export function PortalNavMobileHeader({
                 so it stays a clean menu even on /apply/*. */}
             <PortalNav
               userName={userName}
-              applicationHref={applicationHref}
               needsDocs={needsDocs}
               hasSchedule={hasSchedule}
             />
