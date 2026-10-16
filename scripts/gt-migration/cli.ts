@@ -12,6 +12,10 @@
  *                           (Epic 21 R1: the account's Main synopsis for accounts
  *                            loaded before it existed; skips any account that has
  *                            one; ledgered under the run)
+ *   npm run mig -- patch-dob --env <e> --run <id> [--only k1,k2] [--dry-run] [--undo] [--blank-list <csv>]
+ *                           (Epic 23 T2: child DOB from GT's Recurring forms
+ *                            where NULL; raw SQL, no updated_at moves; undo
+ *                            log in runs/<id>/patch-dob.jsonl)
  *
  * <e> is nonprod | rehearsal | prod. The target's database URLs are pinned
  * into the process environment BEFORE any app module is imported (they are
@@ -183,8 +187,26 @@ async function main() {
       }
       return
     }
+    case 'patch-dob': {
+      const runId = flag(args, 'run')
+      if (!runId) throw new Error('--run <id> is required')
+      const dryRun = has(args, 'dry-run')
+      if (!dryRun) {
+        const { latestCanonical } = await import('./calc/run')
+        assertApproved(env, latestCanonical().hash, 'patch-dob')
+      }
+      const { openContext } = await import('./load/context')
+      const { patchDob } = await import('./load/patch-dob')
+      const ctx = await openContext(requireWritable(config))
+      try {
+        await patchDob(ctx, { runId, only: list(flag(args, 'only')), dryRun, undo: has(args, 'undo'), blankList: flag(args, 'blank-list') })
+      } finally {
+        await ctx.prisma.$disconnect()
+      }
+      return
+    }
     default:
-      throw new Error(`Unknown command: ${command ?? '(none)'}. Available: docs-extract, calc, plan, load, verify, rollback, backfill-synopsis`)
+      throw new Error(`Unknown command: ${command ?? '(none)'}. Available: docs-extract, calc, plan, load, verify, rollback, backfill-synopsis, patch-dob`)
   }
 }
 

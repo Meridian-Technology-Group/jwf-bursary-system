@@ -18,6 +18,7 @@ import type { CanonicalAccount } from '../build/map-assessment'
 import { crosswalkReasonCodes, gapReasonLabels } from './reason-codes'
 import { LEG_NAME, recommendedFromLeg, type ReferenceLeg } from '../build/reference-leg'
 import { familyCategoryMetas } from '../../../prisma/seed-data/profiling-reference'
+import { dobAsDate } from '../build/gt-dob'
 
 /**
  * "Number of schooling age children" — display only (the v2 savings test
@@ -73,7 +74,8 @@ export interface AccountPlan {
   /** The lead's email as matched (lower-cased); one login + profile per email. */
   leadEmail: string
   parent: { title: string | null; firstName: string | null; lastName: string }
-  child: { firstName: string | null; lastName: string | null; name: string; dob: null }
+  /** dob: "YYYY-MM-DD" from GT's Recurring forms when consistent (Epic 23 T2), else null. */
+  child: { firstName: string | null; lastName: string | null; name: string; dob: string | null }
   school: School
   entryYearGroup: EntryYearGroup
   isNew: boolean
@@ -87,6 +89,7 @@ export interface AccountPlan {
     childFirstName: string | null
     childLastName: string | null
     childName: string
+    childDob: Date | null
     school: School
     situation: 'NEW' | 'ROLLING_OVER'
     entryYear: number
@@ -97,6 +100,7 @@ export interface AccountPlan {
     reference: string
     school: School
     childName: string
+    childDob: Date | null
     childFirstName: string | null
     childLastName: string | null
     entryYear: number
@@ -185,6 +189,8 @@ export function planAccount(
   input: AssessmentV2Input,
   out: AssessmentV2Output,
   today: string,
+  /** The recipient's DOB (ISO) when GT's Recurring forms agree; null otherwise (D-2). */
+  dob: string | null = null,
 ): AccountPlan {
   if (a.excluded) throw new PlanError('excluded by ruling')
   if (a.held) throw new PlanError('held: ruling unclear')
@@ -305,7 +311,7 @@ export function planAccount(
     gtGrantId: a.gt?.id ?? null,
     leadEmail: a.email.trim().toLowerCase(),
     parent: { title: a.parent.title, firstName: a.parent.firstName, lastName: a.parent.lastName },
-    child: { firstName: childFirstName, lastName: childLastName, name: childName, dob: null },
+    child: { firstName: childFirstName, lastName: childLastName, name: childName, dob },
     school,
     entryYearGroup,
     isNew,
@@ -319,6 +325,7 @@ export function planAccount(
       childFirstName,
       childLastName,
       childName,
+      childDob: dob ? dobAsDate(dob) : null,
       school,
       situation: isNew ? 'NEW' : 'ROLLING_OVER',
       entryYear: ENTRY_YEAR,
@@ -329,6 +336,7 @@ export function planAccount(
       reference,
       school,
       childName,
+      childDob: dob ? dobAsDate(dob) : null,
       childFirstName,
       childLastName,
       entryYear: ENTRY_YEAR,

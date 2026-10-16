@@ -182,6 +182,15 @@ describe('planAccount (02-target-model Part 1)', () => {
     expect(planAccount(account(), input(), output(), '2026-10-10').assessmentSave.postcode).toBeNull()
   })
 
+  it('carries the DOB GT agrees on to the child, contact and application (Epic 23 T2), else null', () => {
+    const p = planAccount(account(), input(), output(), '2026-10-16', '2014-09-02')
+    expect(p.child.dob).toBe('2014-09-02')
+    expect(p.contact.childDob?.toISOString()).toBe('2014-09-02T00:00:00.000Z')
+    expect(p.application.childDob?.toISOString()).toBe('2014-09-02T00:00:00.000Z')
+    const none = planAccount(account(), input(), output(), '2026-10-16')
+    expect([none.child.dob, none.contact.childDob, none.application.childDob]).toEqual([null, null, null])
+  })
+
   it('a rolling-over Whitgift account', () => {
     const p = planAccount(account(), input(), output(), '2026-09-29')
     expect(p.leadEmail).toBe('parent@example.test')

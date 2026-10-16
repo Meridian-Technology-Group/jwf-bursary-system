@@ -35,6 +35,7 @@ import { isAwardFundValidForSchool } from '../../../src/lib/assessment/award-fun
 import { DATA_DIR, EXTRACT_DIR } from '../config'
 import { latestCanonical } from '../calc/run'
 import { readGtForms } from '../build/gt-forms'
+import { dobCollisions, readGtDobs } from '../build/gt-dob'
 import { mapAssessment } from '../build/map-assessment'
 import { Ledger, type LedgerEntry, type Phase } from './ledger'
 import { mainSynopsisProblem, writeMainSynopsis } from './main-synopsis'
@@ -102,6 +103,16 @@ export async function planAll(ctx: LoadContext, opts: Pick<LoadOptions, 'only' |
     resolve(EXTRACT_DIR, 'gt_forms.tsv'),
     new Set(selected.map(formEid).filter((e): e is string => Boolean(e))),
   )
+  // Epic 23 T2 (D-2): the recipient's DOB where GT's Recurring forms agree.
+  const dobs = await readGtDobs(
+    resolve(EXTRACT_DIR, 'gt_progress.tsv'),
+    resolve(EXTRACT_DIR, 'gt_forms.tsv'),
+    new Set(selected.map((a) => a.gt?.id).filter((g): g is string => Boolean(g))),
+  )
+  const dobOf = (a: LoadAccount): string | null => {
+    const v = a.gt?.id ? dobs.get(a.gt.id) : undefined
+    return v?.status === 'CONSISTENT' ? v.dob : null
+  }
 
   const plans = new Map<string, AccountPlan>()
   const held: AccountOutcome[] = []
@@ -126,12 +137,24 @@ export async function planAll(ctx: LoadContext, opts: Pick<LoadOptions, 'only' |
       continue
     }
     try {
-      plans.set(a.key, planAccount(a, mapped.input, out, today()))
+      plans.set(a.key, planAccount(a, mapped.input, out, today(), dobOf(a)))
     } catch (err) {
       if (err instanceof PlanError) hold(err.message)
       else throw err
     }
   }
+  // Same lead + same child name + same DOB would trip the Contact / Application
+  // unique keys: leave those DOBs blank (the twin case; none expected).
+  const twins = dobCollisions(
+    Array.from(plans.values()).map((p) => ({ key: p.key, leadEmail: p.leadEmail, childName: p.child.name, dob: p.child.dob })),
+  )
+  for (const key of twins.flat()) {
+    const p = plans.get(key)!
+    p.child.dob = null
+    p.contact.childDob = null
+    p.application.childDob = null
+  }
+  if (twins.length) console.log(`DOB left blank on ${twins.flat().length} accounts: same lead, child name and date (twin case)`)
   if (opts.limit != null) {
     for (const k of Array.from(plans.keys()).slice(opts.limit)) plans.delete(k)
   }
@@ -304,8 +327,9 @@ async function identities(
 // ── accounts ────────────────────────────────────────────────────────────────
 
 export async function findMigratedApplication(tx: Tx, ctx: LoadContext, plan: AccountPlan, leadId: string) {
-  // The table's own key is (round, lead, childName, childDob); DOB is NULL for
-  // migrated rows, so NULLs never collide in the index: match on name here.
+  // The table's own key is (round, lead, childName, childDob). DOB was NULL on
+  // the first loads and is still NULL where GT's dates disagree, so match on
+  // name: a reload must find an earlier load's row whatever its DOB.
   return tx.application.findMany({
     where: { roundId: ctx.round.id, leadApplicantId: leadId, childName: { equals: plan.child.name, mode: 'insensitive' } },
     select: { id: true, migrationSource: true, bursaryAccountId: true, reference: true },
@@ -361,7 +385,7 @@ async function loadAccount(ctx: LoadContext, ledger: Ledger, plan: AccountPlan):
           id: app.id,
           school: plan.school,
           childName: plan.child.name,
-          childDob: null,
+          childDob: plan.application.childDob,
           entryYear: plan.application.entryYear,
           entryYearGroup: plan.entryYearGroup,
           bursaryAccountId: null,
