@@ -40,7 +40,12 @@ import {
   SECTION_TITLES as CANONICAL_SECTION_TITLES,
 } from "@/lib/portal/sections";
 import { SectionPageClient } from "@/app/(portal)/apply/[section]/section-page-client";
-import { saveSectionOnBehalf } from "../actions";
+import { saveSectionDraftOnBehalf, saveSectionOnBehalf } from "../actions";
+import { NeedsCorrectionButton } from "@/components/admin/needs-correction-button";
+import {
+  getLatestReturn,
+  isReturnedForCorrection,
+} from "@/lib/applications/return-for-correction";
 
 // Page-header titles — same one-key FAMILY_ID override the portal wizard uses
 // (see apply/[section]/page.tsx; the copy divergence is a PR-5 product note).
@@ -79,6 +84,7 @@ export default async function EditSectionPage({ params }: PageProps) {
           school: true,
           childName: true,
           formStatus: true,
+          submittedAt: true,
           closedAt: true,
           isReassessment: true,
           applicationType: true,
@@ -103,6 +109,13 @@ export default async function EditSectionPage({ params }: PageProps) {
   if (!canEditOnBehalf(phase)) {
     redirect(`/applications/${params.id}`);
   }
+
+  // Epic 23 T7: a form back with the family for correction can be left
+  // incomplete on their behalf (the parent's draft semantics).
+  const returned = isReturnedForCorrection(
+    application,
+    await withUserContext(user.id, user.role as RlsRole, (tx) => getLatestReturn(tx, params.id))
+  );
 
   const isReassessment = application.isReassessment;
   const isRollingOver = isRollingOverApplication(application);
@@ -176,32 +189,42 @@ export default async function EditSectionPage({ params }: PageProps) {
   const nextLabel = nextSection ? undefined : "Save and Finish";
 
   return (
-    <SectionPageClient
-      sectionType={sectionType}
-      sectionTitle={SECTION_TITLES[sectionType]}
-      applicationId={application.id}
-      existingData={existingSection?.data ?? null}
-      applicationSchool={application.school}
-      lockedSchool={application.school}
-      applicationChildName={application.childName}
-      academicYear={application.round?.academicYear ?? null}
-      documentMap={documentMap}
-      childFullName={childFullName}
-      parent1Address={parent1Address}
-      isSoleParent={isSoleParent}
-      parent1EmploymentStatus={parent1Status}
-      parent2EmploymentStatus={parent2Status}
-      relationshipStatus={relationshipStatus}
-      dependentChildrenCount={dependentChildrenCount}
-      nextLabel={nextLabel}
-      backHref={backHref}
-      nextHref={nextHref}
-      stepNumber={currentIndex + 1}
-      totalSteps={activeSectionOrder.length}
-      isReassessment={isReassessment}
-      isPrepopulated={isPrepopulated}
-      saveOverride={saveSectionOnBehalf}
-      onBehalf
-    />
+    <div className="space-y-4">
+      {returned && (
+        <NeedsCorrectionButton
+          applicationId={application.id}
+          section={sectionType}
+          isComplete={existingSection?.isComplete === true}
+        />
+      )}
+      <SectionPageClient
+        sectionType={sectionType}
+        sectionTitle={SECTION_TITLES[sectionType]}
+        applicationId={application.id}
+        existingData={existingSection?.data ?? null}
+        applicationSchool={application.school}
+        lockedSchool={application.school}
+        applicationChildName={application.childName}
+        academicYear={application.round?.academicYear ?? null}
+        documentMap={documentMap}
+        childFullName={childFullName}
+        parent1Address={parent1Address}
+        isSoleParent={isSoleParent}
+        parent1EmploymentStatus={parent1Status}
+        parent2EmploymentStatus={parent2Status}
+        relationshipStatus={relationshipStatus}
+        dependentChildrenCount={dependentChildrenCount}
+        nextLabel={nextLabel}
+        backHref={backHref}
+        nextHref={nextHref}
+        stepNumber={currentIndex + 1}
+        totalSteps={activeSectionOrder.length}
+        isReassessment={isReassessment}
+        isPrepopulated={isPrepopulated}
+        saveOverride={saveSectionOnBehalf}
+        draftOverride={returned ? saveSectionDraftOnBehalf : undefined}
+        onBehalf
+      />
+    </div>
   );
 }

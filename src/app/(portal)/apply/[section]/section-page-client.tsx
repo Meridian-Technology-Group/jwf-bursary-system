@@ -117,6 +117,17 @@ interface SectionPageClientProps {
     data: unknown
   ) => Promise<SaveSectionResult>;
   /**
+   * Epic 23 T7: on a form RETURNED for correction, the edit-on-behalf shell
+   * also passes the parent's draft-save semantics (`saveSectionDraftOnBehalf`),
+   * so leaving a section with a figure cleared saves it incomplete instead of
+   * refusing. Absent everywhere else.
+   */
+  draftOverride?: (
+    applicationId: string,
+    section: ApplicationSectionType,
+    data: unknown
+  ) => Promise<SaveSectionResult>;
+  /**
    * True when an assessor is editing on behalf of the applicant (CR-001).
    * A DECLARATION save never submits for on-behalf editing — staff submission
    * is an explicit, separate, audited action in the edit-on-behalf chrome.
@@ -210,6 +221,7 @@ export function SectionPageClient({
   isReassessment = false,
   isPrepopulated = false,
   saveOverride,
+  draftOverride,
   onBehalf = false,
 }: SectionPageClientProps) {
   // FAMILY_ID validates against sibling sections (dependent-children count and
@@ -312,6 +324,9 @@ export function SectionPageClient({
     // validates. Their unsaved work is never silently dropped — the guard keeps
     // them on the page and surfaces the errors.
     if (saveOverride) {
+      if (!complete && draftOverride) {
+        return draftOverride(applicationId, sectionType, data);
+      }
       if (!complete) {
         return {
           success: false,

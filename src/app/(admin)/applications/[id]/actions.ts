@@ -28,8 +28,17 @@ import { sendEmail } from "@/lib/email/send";
 import { humaniseSlot } from "@/lib/documents/slots";
 import { deleteDocument } from "@/lib/storage/documents";
 import { createSupabaseAdminClient } from "@/lib/auth/supabase-admin";
-import { restartApplicationFromRejection } from "@/lib/applications/create-from-invitation";
-import { recordRejection } from "@/lib/applications/rejection-record";
+import {
+  canReturnForCorrection,
+  defaultReturnSubmitBy,
+  parseReturnSubmitBy,
+  returnApplicationForCorrection,
+} from "@/lib/applications/return-for-correction";
+import {
+  DEADLINE_ROUND_SELECT,
+  effectiveSubmissionDeadline,
+} from "@/lib/rounds/submission-deadline";
+import { formatEmailDate } from "@/lib/email/invitation-deadline";
 import { getAppUrl } from "@/lib/app-url";
 import { isPurgeable, notYetPurgeableMessage } from "@/lib/retention/policy";
 import {
@@ -331,39 +340,39 @@ export async function pauseApplication(
   }
 }
 
-// ─── rejectAndRestartApplication (Full Rejection) ────────────────────────────
+// ─── rejectAndRestartApplication (Return for correction) ─────────────────────
 
 /**
- * Full Rejection: the submitted application is invalid as a whole. The assessor
- * voids it and the applicant is asked to start a brand-new application from
- * scratch.
+ * Return for correction (Epic 23 T7; Charlotte, 16 Oct 2026, decision 4). The
+ * name is kept so the History tab's APPLICATION_REJECTED_RESTART rows and
+ * every caller keep working; the behaviour is new.
  *
- * Because of the `@@unique([roundId, leadApplicantId, childName, childDob])`
- * constraint the rejected application cannot coexist with its replacement, so it
- * is HARD-DELETED (its cascades clear sections, contributors, documents,
- * assessment and invitations — this subsumes "clear all documents") and a fresh
- * blank application is created in its place, reusing the freed `reference`.
- * Storage objects are removed after the transaction commits (the DB cascade only
- * drops the Document rows). An `APPLICATION_RESTART_REQUIRED` email points the
- * applicant back into the portal, and the rejection is recorded in the
- * append-only audit log (which survives the row delete).
+ * The submitted application goes BACK to the family with every answer and
+ * document kept, a "returned for correction" message, and a NEW Submit by (the
+ * original has usually passed). Staff then remove the specific bad items (a
+ * wrong-year P60, a forged return, a blurry statement, wrong figures) through
+ * edit-on-behalf so the gaps show. Nothing is deleted: see
+ * `returnApplicationForCorrection` for exactly what changes.
  *
  * Allowed before a final outcome only (SUBMITTED / NOT_STARTED / PAUSED).
  *
- * @param applicationId The application being rejected.
- * @param customMessage The assessor's note explaining what was wrong / what to
- *                      address in the new submission (shown in the email).
+ * @param applicationId The application being returned.
+ * @param customMessage The note to the family (email + portal banner).
+ * @param newSubmitBy   The new Submit by, `yyyy-MM-dd` (required, in the future).
  */
 export async function rejectAndRestartApplication(
   applicationId: string,
-  customMessage?: string
+  customMessage: string | undefined,
+  newSubmitBy: string
 ): Promise<ActionResult> {
   try {
     const user = await requireRole([Role.ADMIN, Role.ASSESSOR]);
 
-    // Admin context: deleting the application + creating the replacement's
-    // PRIMARY contributor both need service_role (the application_contributors
-    // write policy is admin-only — mirrors startApplicationAction).
+    const submitBy = parseReturnSubmitBy(newSubmitBy, new Date());
+    if (!submitBy.ok) return { success: false, error: submitBy.error };
+    const note = customMessage?.trim() || null;
+
+    // Admin context: the rejection insert policy is service-role only.
     const result = await withAdminContext(async (tx) => {
       const application = await tx.application.findUnique({
         where: { id: applicationId },
@@ -372,26 +381,16 @@ export async function rejectAndRestartApplication(
           reference: true,
           roundId: true,
           leadApplicantId: true,
-          school: true,
           childName: true,
-          childDob: true,
-          entryYear: true,
-          entryYearGroup: true,
-          contactId: true,
-          isReassessment: true,
-          applicationType: true,
           bursaryAccountId: true,
-          custodyArrangement: true,
           formStatus: true,
           closedAt: true,
-          // Epic 22 P3: kept on the rejection record.
           submittedAt: true,
           round: { select: { academicYear: true } },
           leadApplicant: {
             select: { email: true, firstName: true, lastName: true },
           },
           assessment: { select: { status: true, outcome: true } },
-          documents: { select: { storagePath: true } },
         },
       });
 
@@ -406,107 +405,64 @@ export async function rejectAndRestartApplication(
         closedAt: application.closedAt,
       });
 
-      // Reject only before a final outcome. A decided/completed application must
-      // go through the outcome flow, not a restart.
-      if (
-        phase !== "SUBMITTED" &&
-        phase !== "NOT_STARTED" &&
-        phase !== "PAUSED"
-      ) {
+      // Return only before a final outcome. A decided/completed application must
+      // go through the outcome flow.
+      if (!canReturnForCorrection(phase)) {
         return {
           success: false as const,
-          error: `Cannot reject and restart an application from status ${phase}.`,
+          error: `Cannot return an application for correction from status ${phase}.`,
         };
       }
 
-      const storagePaths = application.documents.map((d) => d.storagePath);
-      const clearedDocumentCount = storagePaths.length;
-      const oldReference = application.reference;
-
-      // Void + recreate. Helper deletes the old row (cascade) and creates the
-      // fresh blank application reusing the reference.
-      const newApplicationId = await restartApplicationFromRejection(tx, {
-        id: application.id,
-        reference: application.reference,
-        roundId: application.roundId,
-        leadApplicantId: application.leadApplicantId,
-        school: application.school,
-        childName: application.childName,
-        childDob: application.childDob,
-        entryYear: application.entryYear,
-        entryYearGroup: application.entryYearGroup,
-        contactId: application.contactId,
-        isReassessment: application.isReassessment,
-        applicationType: application.applicationType,
-        bursaryAccountId: application.bursaryAccountId,
-        custodyArrangement: application.custodyArrangement,
+      const { rejectionId, assessmentReset } = await returnApplicationForCorrection(tx, {
+        application: {
+          id: application.id,
+          reference: application.reference,
+          roundId: application.roundId,
+          academicYear: application.round.academicYear,
+          leadApplicantId: application.leadApplicantId,
+          bursaryAccountId: application.bursaryAccountId,
+          childName: application.childName,
+          submittedAt: application.submittedAt,
+          formStatus: application.formStatus,
+        },
+        phase,
+        newSubmitBy: submitBy.submitBy,
+        message: note,
+        staffId: user.id,
       });
 
-      // Epic 22 P3: keep a record of the rejection for the family's schedule
-      // (Submitted → Rejected → the new attempt), and put the year's schedule
-      // row back to SCHEDULED for the new attempt (D-18).
-      const { rejectionId } = await recordRejection(tx, {
-        rejectedApplicationId: application.id,
-        newApplicationId,
-        roundId: application.roundId,
-        academicYear: application.round.academicYear,
-        leadApplicantId: application.leadApplicantId,
-        bursaryAccountId: application.bursaryAccountId,
-        childName: application.childName,
-        reference: oldReference,
-        submittedAt: application.submittedAt,
-        rejectedById: user.id,
-        fromPhase: phase,
-      });
-
-      // Audit on the OLD application id (entityId is a loose UUID — the row was
-      // just deleted, but the append-only audit trail persists).
+      // Same action key as before, so the History tab keeps working.
       await createAuditLog(tx, {
         userId: user.id,
         action: AUDIT_ACTIONS.APPLICATION_REJECTED_RESTART,
         entityType: AUDIT_ENTITY_TYPES.Application,
         entityId: applicationId,
-        context: `Application ${oldReference} rejected and restarted from scratch`,
+        context: `Application ${application.reference} returned to the family for correction`,
         metadata: {
+          mode: "returned",
           fromStatus: phase,
-          reference: oldReference,
-          customMessage: customMessage?.trim() || null,
-          clearedDocumentCount,
-          newApplicationId,
+          reference: application.reference,
+          newSubmitBy: submitBy.submitBy.toISOString(),
           rejectionRecordId: rejectionId,
+          customMessage: note,
+          previousSubmittedAt: application.submittedAt?.toISOString() ?? null,
+          assessmentReset,
         },
       });
 
       return {
         success: true as const,
-        newApplicationId,
-        reference: oldReference,
+        reference: application.reference,
         childName: application.childName,
         leadApplicant: application.leadApplicant,
-        storagePaths,
       };
     });
 
     if (!result.success) return result;
 
-    // Storage cleanup AFTER the DB transaction commits. Non-fatal — the Document
-    // rows are already gone via cascade; an orphaned object is logged, not fatal.
-    for (const path of result.storagePaths) {
-      try {
-        await deleteDocument(path);
-      } catch (err) {
-        console.warn(
-          `[rejectAndRestartApplication] storage cleanup failed for ${path}:`,
-          err
-        );
-      }
-    }
-
-    // Email the applicant — non-blocking. The note explains what was wrong; fall
-    // back to a neutral sentence when the assessor left it blank.
-    const noteForEmail =
-      customMessage?.trim() ||
-      "Having reviewed your application, we are unable to proceed with it as submitted.";
+    // Email the family — non-blocking. Fall back to a neutral sentence when the
+    // assessor left the note blank.
     const emailResult = await sendEmail(
       result.leadApplicant.email,
       "APPLICATION_RESTART_REQUIRED",
@@ -516,8 +472,11 @@ export async function rejectAndRestartApplication(
           "Applicant",
         child_name: result.childName,
         reference: result.reference,
-        custom_message: noteForEmail,
-        restart_link: `${getAppUrl()}/apply/child-details`,
+        custom_message:
+          note ?? "Having reviewed your application, we need you to correct some of it before we can continue.",
+        // Epic 22 P1's "keep working" target: the first section without a green tick.
+        restart_link: `${getAppUrl()}/apply/open/${applicationId}?to=continue`,
+        deadline: formatEmailDate(submitBy.submitBy),
       }
     );
     if (!emailResult.success) {
@@ -527,13 +486,34 @@ export async function rejectAndRestartApplication(
     }
 
     revalidateApplicationPaths(applicationId);
-    revalidatePath(`/applications/${result.newApplicationId}`);
 
     return { success: true };
   } catch (err) {
     console.error("[rejectAndRestartApplication]", err);
-    return { success: false, error: "Failed to reject and restart application." };
+    return { success: false, error: "Failed to return the application for correction." };
   }
+}
+
+/**
+ * The Return-for-correction dialog's pre-filled "New submit-by date": the
+ * later of the form's current effective deadline and today + 7 days
+ * (`yyyy-MM-dd`, Europe/London). Read-only.
+ */
+export async function getReturnSubmitByDefault(applicationId: string): Promise<string> {
+  const user = await requireRole([Role.ADMIN, Role.ASSESSOR]);
+  const now = new Date();
+  const current = await withUserContext(user.id, user.role as RlsRole, async (tx) => {
+    const app = await tx.application.findUnique({
+      where: { id: applicationId },
+      select: {
+        submissionDeadlineAt: true,
+        applicationType: true,
+        round: { select: DEADLINE_ROUND_SELECT },
+      },
+    });
+    return app ? effectiveSubmissionDeadline(app, app.round).deadline : null;
+  });
+  return defaultReturnSubmitBy(current, now);
 }
 
 // ─── reopenForMaterialChange (soft send-back, keep submission date) ───────────

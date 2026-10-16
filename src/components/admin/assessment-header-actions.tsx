@@ -43,7 +43,7 @@ export function AssessmentHeaderActions({
                 size="sm"
                 className="gap-2 border-rose-300 text-rose-700 hover:border-rose-400 hover:bg-rose-50"
               >
-                Reject &amp; Restart
+                Return for correction
               </Button>
             }
           />

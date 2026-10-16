@@ -1667,6 +1667,13 @@ model ApplicationRejection {
   replacementApplicationId String?         @map("replacement_application_id") @db.Uuid
   /// The review phase it was rejected from (SUBMITTED / NOT_STARTED / PAUSED).
   fromPhase                String          @map("from_phase")
+  /// Epic 23 T7: the note staff wrote to the family (shown on the portal's
+  /// returned-for-correction banner and in the email). Free text: scrubbed by
+  /// retention.
+  message                  String?
+  /// Epic 23 T7: the new Submit by set when the form was returned (also
+  /// written to the application's `submissionDeadlineAt`).
+  newSubmitBy              DateTime?       @map("new_submit_by") @db.Timestamptz(6)
   round                    Round           @relation(fields: [roundId], references: [id], onDelete: Cascade)
   leadApplicant            Profile         @relation("ApplicationRejectionLead", fields: [leadApplicantId], references: [id], onDelete: Cascade)
   bursaryAccount           BursaryAccount? @relation(fields: [bursaryAccountId], references: [id], onDelete: Cascade)
