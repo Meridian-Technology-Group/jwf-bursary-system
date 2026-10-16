@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { calculateNotionalSpend } from '../notional-spend'
+import { calculateNotionalSpend, calculateRentAddBack, rentAddBackFor } from '../notional-spend'
 import type { NotionalSpendInput, ReferenceBundle } from '../types'
 import {
   notionalCostConfigs,
@@ -435,5 +435,25 @@ describe('calculateNotionalSpend — totals and NDI sign behaviour', () => {
   it('throws when the ReferenceBundle is missing a notional-cost row for the category', () => {
     const brokenRef: ReferenceBundle = { ...ref, notionalCosts: [] }
     expect(() => calculateNotionalSpend(baseInput(), brokenRef)).toThrow()
+  })
+})
+
+describe('rentAddBackFor (Epic 23 T8: Export Section 2 reads the engine figure)', () => {
+  const cases: Partial<NotionalSpendInput>[] = [
+    { rentAddBackType: 'NONE' },
+    { rentAddBackType: 'FULL_MORTGAGE_FREE' },
+    { rentAddBackType: 'FULL_RENT_FREE', familyTypeCategory: 5 },
+    { rentAddBackType: 'PARTIAL_LOWER_RENT', familyTypeCategory: 2 },
+    { rentAddBackType: 'PARTIAL_LOWER_RENT', rentAddBackOverride: 1234 },
+    { rentAddBackType: 'NONE', rentAddBackOverride: 0 },
+  ]
+  it.each(cases)('equals the engine\'s rentAddBack line: %o', (over) => {
+    const input = baseInput(over)
+    const engine = lineByKey(calculateNotionalSpend(input, ref), 'rentAddBack')?.amount
+    expect(rentAddBackFor(input, ref)).toBe(engine)
+  })
+  it('a negative or NaN override means no override', () => {
+    expect(calculateRentAddBack({ rentAddBackType: 'FULL_RENT_FREE', rentAddBackOverride: -5 }, 9000)).toBe(9000)
+    expect(calculateRentAddBack({ rentAddBackType: 'PARTIAL_LOWER_RENT', rentAddBackOverride: Number.NaN }, 9000)).toBe(2250)
   })
 })
