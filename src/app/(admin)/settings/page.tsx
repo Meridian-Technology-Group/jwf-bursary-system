@@ -12,6 +12,8 @@
  *   8. Email Templates   — subject + body editor with merge field hints
  */
 
+import { getDashboardSamples } from "@/lib/db/queries/dashboard";
+import { DashboardSampleDataTab } from "@/components/admin/settings/dashboard-sample-data-tab";
 import { requireRole, Role } from "@/lib/auth/roles";
 import { withUserContext, type RlsRole } from "@/lib/db/prisma";
 import {
@@ -100,6 +102,7 @@ export default async function SettingsPage() {
     debtRatioBands,
     debtShortfallBands,
     lifestyleSqueezeBands,
+    dashboardSamples,
   ] = await withUserContext(user.id, user.role as RlsRole, (tx) =>
     Promise.all([
       getFamilyTypeConfigs(tx),
@@ -118,6 +121,7 @@ export default async function SettingsPage() {
       getDebtRatioBands(tx),
       getDebtShortfallBands(tx),
       getLifestyleSqueezeBands(tx),
+      getDashboardSamples(tx),
     ])
   );
 
@@ -133,7 +137,7 @@ export default async function SettingsPage() {
 
       {/* Tabs */}
       <Tabs defaultValue="family-types" className="space-y-6">
-        <TabsList className="grid w-full grid-cols-4 sm:grid-cols-8 h-auto gap-0 bg-slate-100 p-1 rounded-lg">
+        <TabsList className="grid w-full grid-cols-3 sm:grid-cols-9 h-auto gap-0 bg-slate-100 p-1 rounded-lg">
           <TabsTrigger
             value="family-types"
             className="text-xs sm:text-sm rounded-md"
@@ -182,7 +186,24 @@ export default async function SettingsPage() {
           >
             Email Templates
           </TabsTrigger>
+          <TabsTrigger
+            value="dashboard-sample-data"
+            className="text-xs sm:text-sm rounded-md"
+          >
+            Dashboard Sample Data
+          </TabsTrigger>
         </TabsList>
+
+        {/* ── Epic 23 T9: Dashboard sample data (D-18) ─────────────────────── */}
+        <TabsContent value="dashboard-sample-data">
+          <div className="rounded-xl border border-slate-200 bg-white p-6">
+            <SectionHeader
+              title="Dashboard Sample Data"
+              description="Illustrative figures for the dashboard panels whose real data does not exist yet."
+            />
+            <DashboardSampleDataTab samples={dashboardSamples} />
+          </div>
+        </TabsContent>
 
         {/* ── Tab 1: Family Types ─────────────────────────────────────────── */}
         <TabsContent value="family-types">

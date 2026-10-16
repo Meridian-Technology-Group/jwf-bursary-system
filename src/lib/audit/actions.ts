@@ -163,6 +163,8 @@ export const AUDIT_ACTIONS = {
 
   // Settings (normalised from dotted keys in backlog #10)
   SETTINGS_FAMILY_TYPE_CONFIG_UPSERT: "SETTINGS_FAMILY_TYPE_CONFIG_UPSERT",
+  // Epic 23 T9 — Settings → Dashboard sample data (illustrative figures).
+  SETTINGS_DASHBOARD_SAMPLE_UPDATE: "SETTINGS_DASHBOARD_SAMPLE_UPDATE",
   SETTINGS_SCHOOL_FEES_UPSERT: "SETTINGS_SCHOOL_FEES_UPSERT",
   SETTINGS_COUNCIL_TAX_UPDATE: "SETTINGS_COUNCIL_TAX_UPDATE",
   SETTINGS_REASON_CODE_CREATE: "SETTINGS_REASON_CODE_CREATE",
@@ -274,6 +276,7 @@ export const AUDIT_ENTITY_TYPES = {
   ReasonCode: "ReasonCode",
   CloseReason: "CloseReason",
   EmailTemplate: "EmailTemplate",
+  DashboardSampleData: "DashboardSampleData",
   BursaryAccount: "BursaryAccount",
   BursaryScheduleEntry: "BursaryScheduleEntry",
 
