@@ -13,7 +13,8 @@
  *
  * Dates come from Epic 21 R2's `scheduleRowDates` (D-13): opening =
  * `opensOn`, closing = `closesOn` (the window, for everyone), to be submitted
- * by = `submitBy` (the family's own deadline when one was set).
+ * by = `submitBy` (the family's own deadline when one was set). A Grant
+ * Tracker year shows the dates it ran on in GT instead (`migratedYearDates`).
  *
  * No outcome is ever shown (awards stay off the portal): a submitted year
  * stays "Submitted" after it is assessed, and a pause keeps the original
@@ -49,6 +50,8 @@ export interface ParentScheduleApplicationInput {
   submissionDeadlineAt: Date | null;
   /** Non-null for a Grant Tracker placeholder (no form in this system). */
   migrationSource: string | null;
+  /** NEW or ROLLING_OVER — picks a Grant Tracker year's dates. */
+  applicationType: string;
   updatedAt: Date;
 }
 
@@ -79,8 +82,7 @@ export type ParentScheduleStatus =
   | "In progress"
   | "Submitted"
   | "Rejected"
-  | "Not submitted"
-  | "Completed through Grant Tracker";
+  | "Not submitted";
 
 export interface ParentScheduleRow {
   key: string;
@@ -104,6 +106,55 @@ const NONE = "—";
 
 function nameKey(name: string): string {
   return name.trim().replace(/\s+/g, " ").toLowerCase();
+}
+
+/** UTC midnight of an instant's London calendar day (a `@db.Date` value). */
+function londonDate(d: Date): Date {
+  const day = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Europe/London",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(d);
+  return new Date(`${day}T00:00:00.000Z`);
+}
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Rolling-over windows Grant Tracker ran, by academic-year start (her 15 Oct
+ * answer). Only 2026-27 was migrated.
+ */
+const GT_ROLLING_WINDOWS: Record<number, { opensOn: string; closesOn: string; submitBy: string }> = {
+  2026: { opensOn: "2026-04-15", closesOn: "2026-05-21", submitBy: "2026-05-23" },
+};
+
+/**
+ * The dates a Grant Tracker year shows (her 15 Oct answer), or null to keep
+ * the schedule row's own dates:
+ *   - rolling-over: that year's GT renewal window;
+ *   - new: opened 7 days before the GT submission date, closed and due on it.
+ */
+export function migratedYearDates(
+  application: Pick<ParentScheduleApplicationInput, "applicationType" | "submittedAt">,
+  academicYearStart: number | null
+): { opensOn: Date; closesOn: Date; submitBy: Date } | null {
+  if (application.applicationType === "ROLLING_OVER") {
+    const w = academicYearStart != null ? GT_ROLLING_WINDOWS[academicYearStart] : undefined;
+    if (!w) return null;
+    return {
+      opensOn: new Date(`${w.opensOn}T00:00:00.000Z`),
+      closesOn: new Date(`${w.closesOn}T00:00:00.000Z`),
+      submitBy: new Date(`${w.submitBy}T00:00:00.000Z`),
+    };
+  }
+  if (!application.submittedAt) return null;
+  const submitted = londonDate(application.submittedAt);
+  return {
+    opensOn: new Date(submitted.getTime() - 7 * DAY_MS),
+    closesOn: submitted,
+    submitBy: submitted,
+  };
 }
 
 function endOfDay(d: Date): number {
@@ -177,11 +228,19 @@ export function parentScheduleStatus(params: {
     };
   }
 
+  // A Grant Tracker year: "Submitted" on its GT submission date (her 15 Oct
+  // answer — the family never saw Grant Tracker by name).
+  if (migrated) {
+    return {
+      status: "Submitted",
+      completion: COMPLETED,
+      submissionDate: params.application?.submittedAt ?? null,
+    };
+  }
+
   // No form in this system for the year.
-  if (entry.status === "COMPLETE" || (migrated && entry.status !== "SCHEDULED")) {
-    // Migrated pre-portal years: no completion or submission details (her
-    // answer, 13 Oct).
-    return { status: "Completed through Grant Tracker", completion: "", submissionDate: null };
+  if (entry.status === "COMPLETE") {
+    return { status: "Submitted", completion: COMPLETED, submissionDate: entry.receivedOn };
   }
   if (entry.status === "RECEIVED") {
     return { status: "Submitted", completion: COMPLETED, submissionDate: entry.receivedOn };
@@ -210,7 +269,11 @@ export function scheduleRowsForParent(
     const start = parseAcademicYearStart(entry.academicYear);
     const academicYear = start != null ? formatAcademicYearLabel(start) : entry.academicYear;
     const application = applicationForEntry(entry, account, account.applications);
-    const dates = scheduleRowDates({
+    const gtDates =
+      application?.migrationSource != null ? migratedYearDates(application, start) : null;
+    const dates = gtDates
+      ? { ...gtDates, hasOwnDeadline: false }
+      : scheduleRowDates({
       availableOn: entry.availableOn,
       requiredBy: entry.requiredBy,
       application:

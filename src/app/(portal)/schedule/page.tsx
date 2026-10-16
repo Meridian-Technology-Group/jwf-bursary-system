@@ -34,7 +34,6 @@ const STATUS_STYLE: Record<ParentScheduleRow["status"], string> = {
   Submitted: "bg-green-50 text-green-800 border-green-200",
   Rejected: "bg-rose-50 text-rose-800 border-rose-200",
   "Not submitted": "bg-slate-50 text-slate-600 border-slate-200",
-  "Completed through Grant Tracker": "bg-primary-50 text-primary-800 border-primary-200",
 };
 
 const COLUMNS = [
@@ -60,16 +59,9 @@ export default async function SchedulePage() {
   return (
     // Wider than other portal pages: nine columns don't fit the 48rem cap.
     <PortalPage className="max-w-6xl space-y-8">
-      <div>
-        <h1 className="text-2xl font-semibold text-primary-900">
-          My Application(s) Schedule
-        </h1>
-        <p className="mt-2 max-w-prose text-sm text-slate-500">
-          Bursaries are reviewed every year. These are the application dates for
-          each of your children. We&rsquo;ll email you when each year&rsquo;s
-          application opens.
-        </p>
-      </div>
+      <h1 className="text-2xl font-semibold text-primary-900">
+        My Application(s) Schedule
+      </h1>
 
       {sections.map((section) => (
         <section

@@ -1,7 +1,7 @@
 /**
  * Epic 22 P5 — loads My Application(s) Schedule: every ACTIVE account with a
  * portal-visible row, each with its applications (migrated placeholders
- * included, so a Grant Tracker year reads as such), its rejection records (P3)
+ * included, so a Grant Tracker year shows its GT dates), its rejection records (P3)
  * and each draft's completion (P1's figure).
  *
  * Everything runs under the parent's own RLS context: their accounts,
@@ -52,6 +52,7 @@ export async function loadParentSchedule(
           submittedAt: true,
           submissionDeadlineAt: true,
           migrationSource: true,
+          applicationType: true,
           isReassessment: true,
           updatedAt: true,
           round: { select: { academicYear: true } },
@@ -79,6 +80,7 @@ export async function loadParentSchedule(
       submittedAt: a.submittedAt,
       submissionDeadlineAt: a.submissionDeadlineAt,
       migrationSource: a.migrationSource,
+      applicationType: a.applicationType,
       updatedAt: a.updatedAt,
     }));
 
