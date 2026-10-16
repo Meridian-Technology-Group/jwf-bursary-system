@@ -1,12 +1,18 @@
 /**
- * XLSX and CSV export builders for WP-17 — Exports.
+ * XLSX and CSV export builders for WP-17 — Export Recommendations.
  *
  * buildXlsxBuffer — produces an ExcelJS workbook as a Node.js Buffer.
  * buildCsvString  — produces a plain CSV string with the same columns.
+ *
+ * Epic 23 T4: both now delegate to the generic builders in `./build`, which
+ * the three new export sections share. Output is unchanged.
  */
 
-import ExcelJS from "exceljs";
 import type { ExportRow } from "@/lib/db/queries/exports";
+import type { CellValue } from "./columns";
+import { buildSheetCsv, buildSheetXlsx, columnLetter } from "./build";
+
+export { columnLetter };
 
 // ─── Column definitions ───────────────────────────────────────────────────────
 
@@ -31,8 +37,9 @@ const COLUMNS: ColumnDef[] = [
   { header: "Accommodation", key: "accommodationType", width: 22 },
   { header: "Income Category", key: "incomeCategory", width: 22 },
   { header: "Property Category", key: "propertyCategory", width: 20 },
+  // Epic 23 T4: on v2 this holds £ before VAT, not a percentage.
   {
-    header: "Bursary Award (%)",
+    header: "Bursary Award (£, before VAT)",
     key: "bursaryAward",
     width: 18,
     numFmt: "0.00",
@@ -105,128 +112,20 @@ const COLUMNS: ColumnDef[] = [
   },
 ];
 
-// Design tokens
-const NAVY_HEX = "0D1B2A";
-const WHITE_HEX = "FFFFFF";
-
-// ─── XLSX ─────────────────────────────────────────────────────────────────────
+const rows_ = (rows: ExportRow[]) => rows as unknown as Record<string, CellValue>[];
 
 /**
- * Builds an ExcelJS workbook from ExportRow[] and returns it as a Buffer.
- * Features:
- *  - Navy (#0D1B2A) header row with white bold text
- *  - £ currency format on financial columns
- *  - Auto-filter on all columns
- *  - Column widths set explicitly
+ * Builds the Recommendations workbook (navy header, £ formats, auto-filter,
+ * explicit widths) and returns it as a Buffer.
  */
 export async function buildXlsxBuffer(rows: ExportRow[]): Promise<Buffer> {
-  const workbook = new ExcelJS.Workbook();
-
-  workbook.creator = "JWF Bursary System";
-  workbook.created = new Date();
-
-  const sheet = workbook.addWorksheet("Recommendations", {
-    views: [{ state: "frozen", ySplit: 1 }],
-  });
-
-  // Set columns
-  sheet.columns = COLUMNS.map((col) => ({
-    header: col.header,
-    key: col.key,
-    width: col.width,
-  }));
-
-  // Style the header row
-  const headerRow = sheet.getRow(1);
-  headerRow.eachCell((cell) => {
-    cell.fill = {
-      type: "pattern",
-      pattern: "solid",
-      fgColor: { argb: `FF${NAVY_HEX}` },
-    };
-    cell.font = {
-      bold: true,
-      color: { argb: `FF${WHITE_HEX}` },
-      size: 10,
-    };
-    cell.alignment = { vertical: "middle", wrapText: false };
-    cell.border = {
-      bottom: { style: "thin", color: { argb: "FFB8862A" } },
-    };
-  });
-  headerRow.height = 20;
-
-  // Add data rows. Values are taken from COLUMNS, so a new column can never
-  // be left out of the sheet while appearing in the CSV (Epic 21).
-  rows.forEach((row) => {
-    const addedRow = sheet.addRow(
-      Object.fromEntries(COLUMNS.map((col) => [col.key, row[col.key]]))
-    );
-
-    // Apply number formats to financial columns
-    COLUMNS.forEach((col, idx) => {
-      if (col.numFmt) {
-        const cell = addedRow.getCell(idx + 1);
-        cell.numFmt = col.numFmt;
-      }
-    });
-  });
-
-  // Auto-filter on header row spanning all columns
-  sheet.autoFilter = `A1:${columnLetter(COLUMNS.length)}1`;
-
-  // Return as Buffer
-  const arrayBuffer = await workbook.xlsx.writeBuffer();
-  return Buffer.from(arrayBuffer);
+  return buildSheetXlsx(COLUMNS, rows_(rows), "Recommendations");
 }
 
-// ─── CSV ──────────────────────────────────────────────────────────────────────
-
 /**
- * Builds a CSV string from ExportRow[].
- * Values containing commas, quotes, or newlines are double-quote-escaped.
+ * Builds a CSV string with the same columns. Values containing commas,
+ * quotes, or newlines are double-quote-escaped.
  */
 export function buildCsvString(rows: ExportRow[]): string {
-  const headers = COLUMNS.map((col) => col.header);
-  const lines: string[] = [csvRow(headers)];
-
-  for (const row of rows) {
-    const values = COLUMNS.map((col) => {
-      const val = row[col.key];
-      return val != null ? String(val) : "";
-    });
-    lines.push(csvRow(values));
-  }
-
-  return lines.join("\r\n");
-}
-
-// ─── Internal helpers ─────────────────────────────────────────────────────────
-
-/**
- * Spreadsheet column letter for a 1-based index: 1 → A, 26 → Z, 27 → AA,
- * 52 → AZ. Exported for testing (the old `fromCharCode(64 + n)` broke past Z).
- */
-export function columnLetter(n: number): string {
-  let letters = "";
-  let rest = n;
-  while (rest > 0) {
-    const r = (rest - 1) % 26;
-    letters = String.fromCharCode(65 + r) + letters;
-    rest = Math.floor((rest - 1) / 26);
-  }
-  return letters;
-}
-
-/** Encodes a single CSV row, escaping values that need quoting. */
-function csvRow(values: string[]): string {
-  return values.map(csvEscape).join(",");
-}
-
-/** Wraps a value in double-quotes if it contains commas, quotes, or newlines. */
-function csvEscape(value: string): string {
-  if (/[",\r\n]/.test(value)) {
-    return `"${value.replace(/"/g, '""')}"`;
-  }
-  return value;
+  return buildSheetCsv(COLUMNS, rows_(rows));
 }
