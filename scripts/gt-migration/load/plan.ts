@@ -17,6 +17,17 @@ import type { AwardFundType, EntryYearGroup, School } from '@prisma/client'
 import type { CanonicalAccount } from '../build/map-assessment'
 import { crosswalkReasonCodes, gapReasonLabels } from './reason-codes'
 import { LEG_NAME, recommendedFromLeg, type ReferenceLeg } from '../build/reference-leg'
+import { familyCategoryMetas } from '../../../prisma/seed-data/profiling-reference'
+
+/**
+ * "Number of schooling age children" — display only (the v2 savings test
+ * divides by schooling years alone since her 5 Sep respec). GT holds no
+ * children count, so the field takes the family category's default, exactly
+ * as a new assessment does (her 15 Oct check: it read 0).
+ */
+export function defaultSchoolAgeChildren(familyTypeCategory: number): number {
+  return familyCategoryMetas.find((m) => m.category === familyTypeCategory)?.schoolAgeChildren ?? 1
+}
 
 /** The canonical fields the loader reads beyond what the mapper needs. */
 export interface LoadAccount extends CanonicalAccount {
@@ -284,7 +295,7 @@ export function planAccount(
       debts: input.debts,
       cashSavings: input.cashSavings,
       isasPepsShares: input.isasPepsShares,
-      schoolAgeChildrenCount: 0,
+      schoolAgeChildrenCount: defaultSchoolAgeChildren(input.familyTypeCategory),
       derivedSavingsAnnualTotal: out.adjustedSavings,
     },
   }

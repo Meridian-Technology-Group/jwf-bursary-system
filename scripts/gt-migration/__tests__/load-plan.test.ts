@@ -17,7 +17,7 @@ import {
   MAJOR_INCOME,
   OTHER,
 } from '../load/reason-codes'
-import { composeSynopsis, formatLongDate, parseGtDate, planAccount, PlanError, type LoadAccount } from '../load/plan'
+import { composeSynopsis, defaultSchoolAgeChildren, formatLongDate, parseGtDate, planAccount, PlanError, type LoadAccount } from '../load/plan'
 
 describe('reason-code crosswalk (C8)', () => {
   it('maps GT numbers to the new labels, splitting on commas and semicolons', () => {
@@ -78,6 +78,12 @@ describe('gap codes from her returned report (Phase 2)', () => {
     expect(gapReasonLabels(0, ['Immaterial gap, less than £100'])).toEqual([])
     expect(gapReasonLabels(-40)).toEqual([GAP_IMMATERIAL])
     expect(gapReasonLabels(-4000, [])).toEqual([GAP_FALLBACK])
+  })
+})
+
+describe('school-age children (her 15 Oct check)', () => {
+  it('takes the family category default, as a new assessment does', () => {
+    expect([1, 2, 3, 4, 5, 6].map(defaultSchoolAgeChildren)).toEqual([1, 1, 2, 3, 4, 5])
   })
 })
 
