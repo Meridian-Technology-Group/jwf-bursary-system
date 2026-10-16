@@ -16,6 +16,9 @@
  *                           (Epic 23 T2: child DOB from GT's Recurring forms
  *                            where NULL; raw SQL, no updated_at moves; undo
  *                            log in runs/<id>/patch-dob.jsonl)
+ *   npm run mig -- export-statistical --env <e> [--out <file.xlsx>]
+ *                           (Epic 23 T5: Export Section 3 of the migrated
+ *                            2026/27 assessments; read-only; 0600 file)
  *
  * <e> is nonprod | rehearsal | prod. The target's database URLs are pinned
  * into the process environment BEFORE any app module is imported (they are
@@ -205,8 +208,20 @@ async function main() {
       }
       return
     }
+    case 'export-statistical': {
+      // Read-only: Export Section 3 of the migrated accounts (Epic 23 T5).
+      const { openContext } = await import('./load/context')
+      const { exportStatistical } = await import('./load/export-statistical')
+      const ctx = await openContext(requireWritable(config))
+      try {
+        await exportStatistical(ctx, { out: flag(args, 'out') })
+      } finally {
+        await ctx.prisma.$disconnect()
+      }
+      return
+    }
     default:
-      throw new Error(`Unknown command: ${command ?? '(none)'}. Available: docs-extract, calc, plan, load, verify, rollback, backfill-synopsis, patch-dob`)
+      throw new Error(`Unknown command: ${command ?? '(none)'}. Available: docs-extract, calc, plan, load, verify, rollback, backfill-synopsis, patch-dob, export-statistical`)
   }
 }
 
