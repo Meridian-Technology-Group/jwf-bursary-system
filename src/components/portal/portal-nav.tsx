@@ -3,8 +3,9 @@
 /**
  * PortalNav — the persistent left-rail navigation for the applicant portal.
  *
- * This is the lead-applicant nav (Home / My Bursary Application(s) / Documents /
- * Help),
+ * This is the lead-applicant nav (Home / My Bursary Application(s) / Contact us
+ * by email). The Documents page was removed by Epic 23 T3 (her 16 Oct decision:
+ * uploads follow the retention rules; there is no historical uploads page),
  * modelled on `admin-nav.tsx`. The History item was removed by Epic 13 D1
  * (D13-4): applicants keep status visibility, but no route back into what they
  * submitted. It is a DISTINCT component family from the
@@ -25,7 +26,6 @@ import { usePathname } from "next/navigation";
 import {
   Home,
   FileText,
-  Upload,
   Mail,
   AlertCircle,
   CalendarRange,
@@ -69,8 +69,7 @@ export interface PortalNavItem {
 }
 
 /**
- * Constant nav membership. Documents is first-class (Decision 2) — it points at
- * `/documents` and is never hidden or disabled. "My Bursary Application(s)"
+ * Constant nav membership. "My Bursary Application(s)"
  * (Epic 22 P1, D-8) points at the per-child list `/my-applications`, where each
  * child's options open the right form; it replaced the adaptive single
  * "My Application" link, so it stays active across `/apply/*`, `/status` and
@@ -125,13 +124,6 @@ export function buildPortalNav(
           },
         ]
       : []),
-    {
-      label: "Documents",
-      href: "/documents",
-      icon: Upload,
-      match: "/documents",
-      matchMode: "prefix",
-    },
     {
       // Epic 22 P2 (D-8, D-17): Help became "Contact us by email"; the URL and
       // the guidance tabs (below the form) stay.
