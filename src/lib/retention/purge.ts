@@ -48,6 +48,7 @@ import {
   APPLICATION_CHILD_SCRUB,
   BURSARY_ACCOUNT_CHILD_SCRUB,
   CONTACT_SCRUB,
+  REJECTION_SCRUB,
   profileScrubData,
 } from "@/lib/retention/scrub-map";
 
@@ -184,6 +185,12 @@ export async function purgeApplication(
     //     Same verdict as Assessment.synopsis on this route: deleted.
     await tx.accountSynopsisEntry.deleteMany({
       where: { bursaryAccount: { leadApplicantId } },
+    });
+    // f4. Epic 23 T10 — rejection records carry the child's name, the
+    //     reference and staff's note to the family.
+    await tx.applicationRejection.updateMany({
+      where: { leadApplicantId },
+      data: { ...REJECTION_SCRUB },
     });
 
     // g. Delete Invitation records linked to this lead applicant

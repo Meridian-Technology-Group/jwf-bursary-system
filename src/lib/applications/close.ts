@@ -37,6 +37,8 @@ import {
   buildClosePurgeAuditMetadata,
   type ClosePurgeDeps,
 } from "@/lib/retention/close-purge";
+import { isRetentionPurgeEnabled } from "@/lib/retention/policy";
+import { purgeFormAndDocuments } from "@/lib/retention/stages";
 
 export interface CloseApplicationInput {
   applicationId: string;
@@ -54,6 +56,8 @@ export type CloseApplicationResult =
       accountClosed: boolean;
       /** Auth users to delete AFTER the transaction commits (purge only). */
       authUsersToDelete: string[];
+      /** Storage objects to delete AFTER the commit (Epic 23 T10 rule 2; flag on only). */
+      storagePathsToDelete: string[];
     }
   | { success: false; error: string };
 
@@ -169,6 +173,37 @@ export async function closeApplicationCore(
     });
   }
 
+  // 4b. Epic 23 T10, retention rule 2 (DPO, 16 Oct 2026): an UNSUCCESSFUL
+  //     application — no bursary account — loses its form and documents at
+  //     the close; its assessment stays named for 6 years. Behind the
+  //     retention flag: off, it only records what it would have removed.
+  //     Storage objects are deleted by the caller AFTER the commit.
+  let storagePathsToDelete: string[] = [];
+  let retentionFormPurge: "applied" | "skipped-disabled" | "not-applicable" = "not-applicable";
+  if (!purgeRan && application.bursaryAccountId == null) {
+    if (isRetentionPurgeEnabled()) {
+      const stage = await purgeFormAndDocuments(tx, applicationId, now);
+      if (stage.applied) {
+        retentionFormPurge = "applied";
+        storagePathsToDelete = stage.storagePaths;
+      }
+    } else {
+      const [documents, sections] = await Promise.all([
+        tx.document.count({ where: { applicationId } }),
+        tx.applicationSection.count({ where: { applicationId } }),
+      ]);
+      retentionFormPurge = "skipped-disabled";
+      await createAuditLog(tx, {
+        userId: actorId,
+        action: AUDIT_ACTIONS.RETENTION_PURGE_SKIPPED_DISABLED,
+        entityType: AUDIT_ENTITY_TYPES.Application,
+        entityId: applicationId,
+        context: `Retention purging is off: the form and documents of ${application.reference} were kept (rule 2 would remove them at the close)`,
+        metadata: { rule: "unsuccessful", wouldDelete: { documents, sections } },
+      });
+    }
+  }
+
   // 5. The close itself — atomic with the state change.
   await createAuditLog(tx, {
     userId: actorId,
@@ -182,6 +217,7 @@ export async function closeApplicationCore(
       closeReasonLabel: reason.label,
       purgeRan,
       accountClosed,
+      retentionFormPurge,
     },
   });
 
@@ -192,5 +228,6 @@ export async function closeApplicationCore(
     purgeRan,
     accountClosed,
     authUsersToDelete,
+    storagePathsToDelete,
   };
 }

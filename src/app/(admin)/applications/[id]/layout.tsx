@@ -29,6 +29,7 @@ import { getAllCloseReasons } from "@/lib/db/queries/reference-tables";
 import { ApplicationActions } from "@/components/admin/application-actions";
 import { AssignAssessorSelect } from "@/components/admin/assign-assessor-select";
 import { GdprDeleteAction } from "@/components/admin/gdpr-delete-action";
+import { ErasureRequestAction } from "@/components/admin/erasure-request-action";
 import { AddSecondParentCard } from "@/components/admin/add-second-parent-card";
 import { EditReferenceDialog } from "@/components/admin/edit-reference-dialog";
 import { CloseApplicationDialog } from "@/components/admin/close-application-dialog";
@@ -429,6 +430,11 @@ export default async function ApplicationDetailLayout({
 
             {/* B7: GDPR right-to-erasure — ADMIN only. The server action also
                 enforces ADMIN/ASSESSOR + the 7-year retention guard. */}
+            {/* Epic 23 T10 — retention rule 3: an erasure request at the
+                new-application stage (no bursary account yet). */}
+            {canManageGdpr && application.bursaryAccountId == null && application.retentionStage == null && (
+              <ErasureRequestAction applicationId={application.id} reference={application.reference} />
+            )}
             {canManageGdpr && (
               <GdprDeleteAction
                 applicationId={application.id}

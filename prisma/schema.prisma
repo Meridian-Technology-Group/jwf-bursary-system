@@ -312,6 +312,11 @@ model Application {
   /// sections, so the admin UI shows a "migrated" card instead of the form and
   /// the portal never treats it as the parent's current application.
   migrationSource           String?                  @map("migration_source")
+  /// Epic 23 T10 — the retention stage this application has reached
+  /// (`FORM_DOCS_PURGED` / `ANONYMISED` / `ASSESSMENT_PURGED`; NULL = none),
+  /// and when. The cron never repeats a stage. See src/lib/retention/policy.ts.
+  retentionStage            String?                  @map("retention_stage")
+  retentionStageAt          DateTime?                @map("retention_stage_at") @db.Timestamptz(6)
   createdAt                 DateTime                 @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt                 DateTime                 @updatedAt @map("updated_at") @db.Timestamptz(6)
   assignedToId              String?                  @map("assigned_to_id") @db.Uuid
@@ -507,6 +512,10 @@ model Assessment {
   /// illustration's "prompt asking for close reasons"). Cleared on reopen? No
   /// — kept as history; a re-archive overwrites it.
   archiveCloseReasonId          String?               @map("archive_close_reason_id") @db.Uuid
+  /// Epic 23 T10 — when the assessment was moved to CLOSED_ARCHIVED (cleared
+  /// on reversal). The retention anchor for an unsuccessful application that
+  /// was archived rather than closed (D-20).
+  archivedAt                    DateTime?             @map("archived_at") @db.Timestamptz(6)
   archiveCloseReason            CloseReason?          @relation("AssessmentArchiveCloseReason", fields: [archiveCloseReasonId], references: [id], onDelete: Restrict)
   multiPropertyRentAddBack      Boolean?              @map("multi_property_rent_add_back")
   councilTaxSupport             Boolean?              @map("council_tax_support")
