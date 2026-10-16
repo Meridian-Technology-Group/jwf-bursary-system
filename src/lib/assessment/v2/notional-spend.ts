@@ -55,6 +55,41 @@ function normaliseOverride(value: number | null | undefined): number | null {
 }
 
 /**
+ * C57 — the primary rent add-back for a notional rent of `rentAmount`: the
+ * full rent when mortgage- or rent-free, a quarter for lower rent, else 0;
+ * CH-21 — the assessor's manual £ figure wins over the dropdown-derived one.
+ * The one definition: `calculateNotionalSpend` uses it, and so does Export
+ * Section 2's "ADD BACK IN NOTIONAL RENT APPLIED" (Epic 23 T8).
+ */
+export function calculateRentAddBack(
+  input: Pick<NotionalSpendInput, 'rentAddBackType' | 'rentAddBackOverride'>,
+  rentAmount: number,
+): number {
+  let derived = 0
+  switch (input.rentAddBackType) {
+    case 'FULL_MORTGAGE_FREE':
+    case 'FULL_RENT_FREE':
+      derived = rentAmount
+      break
+    case 'PARTIAL_LOWER_RENT':
+      derived = rentAmount * 0.25
+      break
+    case 'NONE':
+    default:
+      derived = 0
+  }
+  return normaliseOverride(input.rentAddBackOverride) ?? derived
+}
+
+/** The add-back for a stored assessment: its category's notional rent from `ref`, then C57. */
+export function rentAddBackFor(
+  input: Pick<NotionalSpendInput, 'familyTypeCategory' | 'rentAddBackType' | 'rentAddBackOverride'>,
+  ref: ReferenceBundle,
+): number {
+  return calculateRentAddBack(input, requireNotionalCost(ref, input.familyTypeCategory, 'RENT'))
+}
+
+/**
  * Calculates the full notional-spend block for one assessment.
  *
  * Line order mirrors the workbook (C56 → C83):
@@ -99,21 +134,7 @@ export function calculateNotionalSpend(
 
   // ── C56/C57 — rent + primary add-back ──────────────────────────────────
   const rentLine = deduction('rent', 'Notional rent (C56)', rentAmount)
-  let derivedRentAddBack = 0
-  switch (input.rentAddBackType) {
-    case 'FULL_MORTGAGE_FREE':
-    case 'FULL_RENT_FREE':
-      derivedRentAddBack = rentAmount
-      break
-    case 'PARTIAL_LOWER_RENT':
-      derivedRentAddBack = rentAmount * 0.25
-      break
-    case 'NONE':
-    default:
-      derivedRentAddBack = 0
-  }
-  // CH-21 — the assessor's manual £ figure wins over the dropdown-derived one.
-  const rentAddBackAmount = normaliseOverride(input.rentAddBackOverride) ?? derivedRentAddBack
+  const rentAddBackAmount = calculateRentAddBack(input, rentAmount)
   const rentAddBackLine = addBack('rentAddBack', 'Rent add-back (C57)', rentAddBackAmount)
 
   // ── C58 — independent multi-property add-back ──────────────────────────
