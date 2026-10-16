@@ -4,7 +4,7 @@
  * This layout owns the wizard's ONE canonical sticky footer (`ApplyFooter`) and
  * the `SectionSavingProvider` that lets that single footer reflect the section
  * form's saving state. It is scoped to `/apply/*` — so the footer + provider
- * never leak onto Home / Status / Documents / Help, which the old layout's
+ * never leak onto Home / Status / Schedule / Help, which the old layout's
  * always-rendered `PortalBottomNav` did.
  *
  * It is ALSO the section stepper's data source. It fetches the gap data via

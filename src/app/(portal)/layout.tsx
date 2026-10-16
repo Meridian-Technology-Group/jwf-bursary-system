@@ -127,8 +127,8 @@ export default async function PortalLayout({
           bridge them. The store is the only data path from content → rail. */}
       <StepperDataProvider>
         {/* ── Desktop persistent rail (hidden on mobile) ─────────────────────
-            The ONE rail: PortalNav (Home / My Bursary Application(s) / Documents
-            / Help + account/sign-out footer). PortalNav renders the RailStepper
+            The ONE rail: PortalNav (Home / My Bursary Application(s) / Schedule
+            / Contact us + account/sign-out footer). PortalNav renders the RailStepper
             internally under that item; the stepper reads the bridge store
             and is pathname-gated to /apply/*. */}
         <aside className="hidden md:flex md:flex-col md:w-[280px] md:shrink-0 md:fixed md:inset-y-0 md:left-0 md:z-30 bg-white border-r border-slate-200 shadow-xs">
@@ -166,7 +166,7 @@ export default async function PortalLayout({
               span the full work area as an anchored action bar instead of being
               trapped at max-w-4xl and rendering as a narrow floating island on
               wide monitors. Readable width is re-established below:
-                • non-apply pages (Home / Status / History / Help / Documents /
+                • non-apply pages (Home / Status / Help / Schedule /
                   Submitted / Respond) wrap content in <PortalPage> (max-w-3xl);
                 • the apply section CARD re-caps itself — Income to the full
                   max-w-4xl, every other section back to max-w-3xl;

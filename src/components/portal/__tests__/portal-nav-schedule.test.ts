@@ -66,3 +66,27 @@ describe("buildPortalNav — My Bursary Application(s) (Epic 22 P1, D-8)", () =>
     );
   });
 });
+
+/**
+ * Epic 23 T3 (her 16 Oct decision 5): the parent Documents page is gone —
+ * uploads follow the retention rules and there is no historical uploads page.
+ * The flags cover every state: draft / submitted (neither), paused (needsDocs),
+ * an active or migrated family (hasSchedule), and paused + scheduled.
+ */
+describe("buildPortalNav — no Documents item (Epic 23 T3)", () => {
+  it.each([
+    ["draft or submitted", false, false],
+    ["paused", true, false],
+    ["active or migrated, scheduled", false, true],
+    ["paused and scheduled", true, true],
+  ])("%s: no Documents link", (_state, needsDocs, hasSchedule) => {
+    const items = buildPortalNav(needsDocs, hasSchedule);
+    expect(items.some((i) => i.href === "/documents" || /^documents$/i.test(i.label))).toBe(false);
+    expect(items.map((i) => i.href)).toContain("/help");
+  });
+
+  it("the paused case still reaches /respond through Missing Documents", () => {
+    const missing = buildPortalNav(true, false).find((i) => i.href === "/respond");
+    expect(missing?.highlight).toBe(true);
+  });
+});

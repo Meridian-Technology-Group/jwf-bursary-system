@@ -65,6 +65,14 @@ const nextConfig = {
   async headers() {
     return [{ source: "/:path*", headers: securityHeaders }];
   },
+  // Epic 23 T3: the parent Documents page is gone (her 16 Oct decision).
+  // Old bookmarks and links land on Home. Temporary, so browsers don't cache it.
+  async redirects() {
+    return [
+      { source: "/documents", destination: "/", permanent: false },
+      { source: "/documents/:path*", destination: "/", permanent: false },
+    ];
+  },
 };
 
 // Wrap with Sentry. Source maps upload only when SENTRY_AUTH_TOKEN is present
