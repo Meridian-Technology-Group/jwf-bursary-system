@@ -379,7 +379,7 @@ describe("bulkCloseApplicationsAction", () => {
       closeReasonLabel: "Relocation",
       purgeRan: false,
       accountClosed: false,
-      authUsersToDelete: [],
+      authUsersToDelete: [], storagePathsToDelete: [],
     });
     await bulkCloseApplicationsAction(["app-a", "app-b"], "reason-1");
     // One call to resolve references up front + one call per row.
@@ -402,7 +402,7 @@ describe("bulkCloseApplicationsAction", () => {
             closeReasonLabel: "Relocation",
             purgeRan: false,
             accountClosed: false,
-            authUsersToDelete: [],
+            authUsersToDelete: [], storagePathsToDelete: [],
           };
         }
         return { success: false, error: "Application is already closed." };
@@ -435,7 +435,7 @@ describe("bulkCloseApplicationsAction", () => {
       closeReasonLabel: "Declined by the school",
       purgeRan: true,
       accountClosed: false,
-      authUsersToDelete: ["user-123"],
+      authUsersToDelete: ["user-123"], storagePathsToDelete: [],
     });
     await bulkCloseApplicationsAction(["app-purge"], "reason-2");
     expect(deleteAuthMock).toHaveBeenCalledTimes(1);
@@ -451,7 +451,7 @@ describe("bulkCloseApplicationsAction", () => {
       closeReasonLabel: "Relocation",
       purgeRan: false,
       accountClosed: true,
-      authUsersToDelete: [],
+      authUsersToDelete: [], storagePathsToDelete: [],
     });
     await bulkCloseApplicationsAction(["app-plain"], "reason-1");
     expect(deleteAuthMock).not.toHaveBeenCalled();

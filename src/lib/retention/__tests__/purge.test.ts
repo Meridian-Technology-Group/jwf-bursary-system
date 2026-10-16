@@ -30,6 +30,7 @@ function makeTx() {
       document: { deleteMany: vi.fn() },
       application: { update: vi.fn() },
       contact: { updateMany: vi.fn() },
+      applicationRejection: { updateMany: vi.fn(async () => ({ count: 0 })) },
       bursaryAccount: { updateMany: vi.fn() },
       accountSynopsisEntry: { deleteMany: vi.fn() },
       invitation: { deleteMany: vi.fn() },

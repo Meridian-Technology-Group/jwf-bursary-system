@@ -12,6 +12,9 @@
  *   8. Email Templates   — subject + body editor with merge field hints
  */
 
+import { retentionSchedule } from "@/lib/retention/schedule";
+import { isRetentionPurgeEnabled } from "@/lib/retention/policy";
+import { RetentionPanel } from "@/components/admin/settings/retention-panel";
 import { getDashboardSamples } from "@/lib/db/queries/dashboard";
 import { DashboardSampleDataTab } from "@/components/admin/settings/dashboard-sample-data-tab";
 import { requireRole, Role } from "@/lib/auth/roles";
@@ -103,6 +106,7 @@ export default async function SettingsPage() {
     debtShortfallBands,
     lifestyleSqueezeBands,
     dashboardSamples,
+    retentionItems,
   ] = await withUserContext(user.id, user.role as RlsRole, (tx) =>
     Promise.all([
       getFamilyTypeConfigs(tx),
@@ -122,6 +126,7 @@ export default async function SettingsPage() {
       getDebtShortfallBands(tx),
       getLifestyleSqueezeBands(tx),
       getDashboardSamples(tx),
+      retentionSchedule(tx, new Date()),
     ])
   );
 
@@ -137,7 +142,7 @@ export default async function SettingsPage() {
 
       {/* Tabs */}
       <Tabs defaultValue="family-types" className="space-y-6">
-        <TabsList className="grid w-full grid-cols-3 sm:grid-cols-9 h-auto gap-0 bg-slate-100 p-1 rounded-lg">
+        <TabsList className="grid w-full grid-cols-3 sm:grid-cols-10 h-auto gap-0 bg-slate-100 p-1 rounded-lg">
           <TabsTrigger
             value="family-types"
             className="text-xs sm:text-sm rounded-md"
@@ -192,7 +197,24 @@ export default async function SettingsPage() {
           >
             Dashboard Sample Data
           </TabsTrigger>
+          <TabsTrigger
+            value="retention"
+            className="text-xs sm:text-sm rounded-md"
+          >
+            Retention
+          </TabsTrigger>
         </TabsList>
+
+        {/* ── Epic 23 T10: Retention (read-only) ───────────────────────────── */}
+        <TabsContent value="retention">
+          <div className="rounded-xl border border-slate-200 bg-white p-6">
+            <SectionHeader
+              title="Retention"
+              description="What the retention rules delete next, and when — by reference."
+            />
+            <RetentionPanel items={retentionItems} enabled={isRetentionPurgeEnabled()} />
+          </div>
+        </TabsContent>
 
         {/* ── Epic 23 T9: Dashboard sample data (D-18) ─────────────────────── */}
         <TabsContent value="dashboard-sample-data">

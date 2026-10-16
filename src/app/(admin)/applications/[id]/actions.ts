@@ -40,13 +40,14 @@ import {
 } from "@/lib/rounds/submission-deadline";
 import { formatEmailDate } from "@/lib/email/invitation-deadline";
 import { getAppUrl } from "@/lib/app-url";
-import { isPurgeable, notYetPurgeableMessage } from "@/lib/retention/policy";
+import { isPurgeable, isRetentionPurgeEnabled, notYetPurgeableMessage } from "@/lib/retention/policy";
 import {
   purgeApplication,
   buildPurgeAuditMetadata,
 } from "@/lib/retention/purge";
 import { deleteAuthUsersPostCommit } from "@/lib/retention/close-purge";
 import { closeApplicationCore } from "@/lib/applications/close";
+import { anonymiseForErasure, deleteStorageObjectsPostCommit } from "@/lib/retention/stages";
 import { promoteToActiveAccount } from "@/lib/applications/account-promotion";
 import {
   beginReview,
@@ -844,12 +845,16 @@ export async function gdprDeleteApplicantAction(
           submittedAt: true,
           archivedAt: true,
           closedAt: true,
+          retentionStage: true,
+          retentionStageAt: true,
           leadApplicantId: true,
           documents: { select: { id: true, storagePath: true } },
           assessment: {
             select: {
               id: true,
               outcome: true,
+              status: true,
+              archivedAt: true,
               property: { select: { id: true } },
               recommendation: { select: { id: true } },
             },
@@ -869,20 +874,19 @@ export async function gdprDeleteApplicantAction(
     //    with the auto-purge cron. Replaces the old flat 7-year-from-submission
     //    guard; the horizon now depends on the outcome (declined / qualifies-
     //    not-awarded / awarded) and anchors from the correct date.
-    const evaluation = isPurgeable(
-      {
-        outcome: application.assessment?.outcome ?? null,
-        closedAt: application.closedAt,
-        archivedAt: application.archivedAt,
-        submittedAt: application.submittedAt,
-      },
-      application.bursaryAccount
-        ? {
-            status: application.bursaryAccount.status,
-            closedAt: application.bursaryAccount.closedAt,
-          }
-        : null
-    );
+    // Epic 23 T10: the DPO-signed rules — a whole-family erasure only once
+    // the application's last retention stage (the assessment purge) is due.
+    const evaluation = isPurgeable({
+      bursaryAccount: application.bursaryAccount
+        ? { closedAt: application.bursaryAccount.closedAt }
+        : null,
+      closedAt: application.closedAt,
+      assessment: application.assessment
+        ? { status: application.assessment.status, archivedAt: application.assessment.archivedAt }
+        : null,
+      retentionStage: application.retentionStage,
+      retentionStageAt: application.retentionStageAt,
+    });
     if (!evaluation.purgeable) {
       return {
         success: false,
@@ -1127,6 +1131,9 @@ export async function closeApplicationAction(
     );
 
     if (!result.success) return result;
+
+    // Epic 23 T10 rule 2 (flag on only): the closed form's files, after the commit.
+    await deleteStorageObjectsPostCommit(result.storagePathsToDelete, deleteDocument);
 
     // Post-commit: auth-user deletion is external to Postgres (non-fatal —
     // failures are logged; the data-side purge has already committed).
@@ -1415,6 +1422,9 @@ export async function bulkCloseApplicationsAction(
         continue;
       }
 
+      // Epic 23 T10 rule 2 (flag on only): the closed form's files, after the commit.
+      await deleteStorageObjectsPostCommit(result.storagePathsToDelete, deleteDocument);
+
       // Post-commit: auth-user deletion is external to Postgres (non-fatal —
       // failures are logged; this row's data-side purge has already
       // committed). Runs after EACH row's own transaction, not the whole batch.
@@ -1439,5 +1449,39 @@ export async function bulkCloseApplicationsAction(
       skipped: [],
       error: "Failed to close applications.",
     };
+  }
+}
+
+// ─── requestErasureAction (Epic 23 T10 — retention rule 3) ─────────────────────
+
+/**
+ * A parent's erasure request at the new-application stage (DPO-signed rule 3):
+ * the application's form and documents are deleted at once and the name and
+ * reference anonymised ("XXXX"); the assessment is kept ANONYMOUS for 6 years
+ * and then purged by the weekly retention run. ADMIN only; the dialog's typed
+ * confirmation is the second step. Refused while retention purging is off.
+ */
+export async function requestErasureAction(applicationId: string): Promise<ActionResult> {
+  try {
+    const user = await requireRole([Role.ADMIN]);
+    if (!isRetentionPurgeEnabled()) {
+      return { success: false, error: "Retention purging is not enabled on this environment." };
+    }
+    const now = new Date();
+    const result = await withAdminContext((tx) => anonymiseForErasure(tx, applicationId, now, user.id));
+    if (!result.applied) {
+      return { success: false, error: result.skipped ?? "This application cannot be erased." };
+    }
+    await deleteStorageObjectsPostCommit(result.storagePaths, deleteDocument);
+    if (result.authUsersToDelete.length > 0) {
+      await deleteAuthUsersPostCommit(result.authUsersToDelete, {
+        deleteAuthUser: (uid) => createSupabaseAdminClient().auth.admin.deleteUser(uid),
+      });
+    }
+    revalidateApplicationPaths(applicationId);
+    return { success: true };
+  } catch (err) {
+    console.error("[requestErasureAction]", err);
+    return { success: false, error: "Failed to erase the application." };
   }
 }
