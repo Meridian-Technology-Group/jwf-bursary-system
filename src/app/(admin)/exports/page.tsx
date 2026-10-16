@@ -1,9 +1,12 @@
 /**
- * Export Recommendations page — /admin/exports
+ * Exports page — /exports
  *
  * Server component. Requires ADMIN, ASSESSOR, or VIEWER role.
- * Renders a round selector, optional school filter, format toggle,
- * and a download button that calls /api/exports/recommendations.
+ *
+ * Epic 23: Charlotte's export sections (EXPORTS.xlsx, 15 Oct 2026), each with
+ * its search form and field picker (→ /api/exports/<section>), above the
+ * original Export Recommendations card (round selector, school filter,
+ * format → /api/exports/recommendations).
  */
 
 export const dynamic = "force-dynamic";
@@ -13,9 +16,11 @@ import { requireRole, Role } from "@/lib/auth/roles";
 import { withUserContext, type RlsRole } from "@/lib/db/prisma";
 import { listRounds } from "@/lib/db/queries/rounds";
 import { ExportFilterForm } from "@/components/admin/export-filter-form";
+import { SectionExportCard } from "@/components/admin/exports/section-export-card";
+import { SECTION_DESCRIPTORS } from "@/lib/export/sections/descriptors";
 
 export const metadata = {
-  title: "Export Recommendations",
+  title: "Exports",
 };
 
 export default async function ExportsPage({
@@ -37,19 +42,32 @@ export default async function ExportsPage({
           <Download className="h-5 w-5 text-primary-700" aria-hidden="true" />
         </div>
         <div>
-          <h1 className="text-2xl font-semibold text-primary-900">
-            Export Recommendations
-          </h1>
+          <h1 className="text-2xl font-semibold text-primary-900">Exports</h1>
           <p className="mt-1 text-sm text-slate-500">
-            Download a spreadsheet of recommendation data for a selected
-            assessment round. Only applications with a completed recommendation
-            are included.
+            Choose the search selection and the fields to return, then download
+            the spreadsheet. Every field is ticked to start with: untick any you
+            don&apos;t need for a shorter report.
           </p>
         </div>
       </div>
 
-      {/* Filter form + download */}
-      <ExportFilterForm rounds={rounds} defaultRoundId={searchParams.roundId} />
+      {SECTION_DESCRIPTORS.map((section) => (
+        <SectionExportCard
+          key={section.key}
+          section={section}
+          rounds={rounds.map((r) => ({ id: r.id, academicYear: r.academicYear, status: r.status }))}
+        />
+      ))}
+
+      {/* Export Recommendations (WP-17): unchanged */}
+      <div className="space-y-2">
+        <h2 className="text-lg font-semibold text-primary-900">Export Recommendations</h2>
+        <p className="text-sm text-slate-500">
+          A spreadsheet of recommendation data for a selected assessment round.
+          Only applications with a completed recommendation are included.
+        </p>
+        <ExportFilterForm rounds={rounds} defaultRoundId={searchParams.roundId} />
+      </div>
     </div>
   );
 }
