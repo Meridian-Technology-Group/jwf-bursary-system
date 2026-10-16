@@ -21,6 +21,7 @@ import { DEFAULT_CUSTOM_TEMPLATE_MERGE_FIELDS } from "@/lib/email/template-defau
 import { validateBandSet, type ValidatableBand } from "@/lib/settings/band-set-validation";
 import { isDuplicateEffectiveFrom } from "@/lib/settings/reference-versioning";
 import { planGapRanks } from "@/lib/reason-codes/gap-rank";
+import { SAMPLE_KEYS, SAMPLE_SCHEMAS, type SampleKey } from "@/lib/dashboard/sample-data";
 import type { School, EmailTemplateType, NotionalCostType, DebtSavingsContext } from "@prisma/client";
 import { NotionalCostType as NotionalCostTypeEnum } from "@prisma/client";
 
@@ -1445,5 +1446,48 @@ export async function upsertGapReasonAction(
       return { success: false, error: "A gap reason with that number already exists." };
     }
     return { success: false, error: "Failed to save gap reason." };
+  }
+}
+
+// ─── Dashboard sample data (Epic 23 T9, D-18) ─────────────────────────────────
+
+/**
+ * Saves one illustrative dashboard panel's figures. ADMIN only (the table's
+ * RLS also requires it). Validated with the same schema the dashboard reads
+ * it with, so a stored payload always renders.
+ */
+export async function saveDashboardSampleAction(
+  key: SampleKey,
+  payload: unknown
+): Promise<SettingsActionResult> {
+  try {
+    const user = await requireRole([Role.ADMIN]);
+    if (!(SAMPLE_KEYS as readonly string[]).includes(key)) {
+      return { success: false, error: "Unknown dashboard panel." };
+    }
+    const parsed = SAMPLE_SCHEMAS[key].safeParse(payload);
+    if (!parsed.success) {
+      return { success: false, error: parsed.error.issues[0]?.message ?? "Check the figures." };
+    }
+    await withUserContext(user.id, user.role as RlsRole, async (tx) => {
+      await tx.dashboardSampleData.upsert({
+        where: { key },
+        create: { key, payload: parsed.data, updatedBy: user.id },
+        update: { payload: parsed.data, updatedBy: user.id },
+      });
+      await createAuditLog(tx, {
+        userId: user.id,
+        action: AUDIT_ACTIONS.SETTINGS_DASHBOARD_SAMPLE_UPDATE,
+        entityType: AUDIT_ENTITY_TYPES.DashboardSampleData,
+        context: `Updated dashboard sample data: ${key}`,
+        metadata: { key, payload: parsed.data },
+      });
+    });
+    revalidatePath("/settings");
+    revalidatePath("/admin");
+    return { success: true };
+  } catch (err) {
+    console.error("[saveDashboardSampleAction]", err);
+    return { success: false, error: "Failed to save the sample figures." };
   }
 }

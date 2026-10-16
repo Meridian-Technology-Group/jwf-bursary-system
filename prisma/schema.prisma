@@ -1683,3 +1683,17 @@ model ApplicationRejection {
   @@index([leadApplicantId])
   @@map("application_rejections")
 }
+
+/// Epic 23 T9 — illustrative figures for dashboard panels whose real data does
+/// not exist yet (Charlotte, 6 Sep 2026: "a tab where we could store some
+/// 'fictive data'"). One row per panel; edited in Settings → Dashboard sample
+/// data (ADMIN). A panel shows these, badged "Illustrative data", only while
+/// its real count is zero (`chooseRealOrSample`).
+model DashboardSampleData {
+  key       String   @id
+  payload   Json
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  updatedBy String?  @map("updated_by") @db.Uuid
+
+  @@map("dashboard_sample_data")
+}
