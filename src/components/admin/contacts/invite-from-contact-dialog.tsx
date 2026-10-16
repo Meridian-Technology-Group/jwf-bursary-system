@@ -30,6 +30,7 @@ import {
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 import { sendInvitationFromContactAction } from "@/app/(admin)/contacts/invite-actions";
+import { SubmitByInput } from "@/components/admin/submit-by-input";
 import type { ContactListItem } from "@/lib/db/queries/contacts";
 import { entryAcademicYearLabelOrNull } from "@/lib/schools/academic-year";
 import { schoolName } from "@/lib/schools";
@@ -69,6 +70,8 @@ export function InviteFromContactDialog({
   const [skipEmail, setSkipEmail] = useState(false);
   // CH-32 — option (1): pre-filled with the bursary inbox, shown and clearable.
   const [bcc, setBcc] = useState(defaultBcc ?? "");
+  // Licence fix (14 Oct 2026) — optional per-family deadline (yyyy-MM-dd).
+  const [submitBy, setSubmitBy] = useState("");
   const [registrationLink, setRegistrationLink] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
   const router = useRouter();
@@ -84,6 +87,7 @@ export function InviteFromContactDialog({
     setSuccess(null);
     setSkipEmail(false);
     setBcc(defaultBcc ?? "");
+    setSubmitBy("");
     setRegistrationLink(null);
     setRoundId(liveRounds[0]?.id ?? "");
   }
@@ -97,6 +101,7 @@ export function InviteFromContactDialog({
         // CH-32 — ignored server-side when skipEmail is set; not sent at all
         // here so the intent is unambiguous in the request itself.
         bcc: skipEmail ? undefined : bcc.trim() || undefined,
+        submitBy: submitBy || null,
       });
       if (result.success) {
         router.refresh();
@@ -215,6 +220,13 @@ export function InviteFromContactDialog({
                 </Select>
               )}
             </div>
+
+            <SubmitByInput
+              id="contact-invite-submit-by"
+              value={submitBy}
+              onChange={setSubmitBy}
+              disabled={isPending || registrationLink != null}
+            />
 
             {/* Epic 15 X2 (CI-04) */}
             <label className="flex items-center gap-2 text-sm text-slate-600">

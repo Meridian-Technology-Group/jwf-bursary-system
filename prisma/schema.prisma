@@ -1154,39 +1154,45 @@ model Contact {
 
 /// Tracks invitations sent by assessors.
 model Invitation {
-  id               String               @id @default(uuid()) @db.Uuid
-  email            String
-  firstName        String?              @map("first_name")
-  lastName         String?              @map("last_name")
-  childName        String?              @map("child_name")
+  id                   String               @id @default(uuid()) @db.Uuid
+  email                String
+  firstName            String?              @map("first_name")
+  lastName             String?              @map("last_name")
+  childName            String?              @map("child_name")
   /// Epic 15 G2 (CH-09) — split child identity carried from the contact /
   /// quick-invite so the application (and Part 1 of the assessment) never has
   /// to whitespace-split `childName`. Null on legacy rows.
-  childFirstName   String?              @map("child_first_name")
-  childLastName    String?              @map("child_last_name")
-  childDob         DateTime?            @map("child_dob") @db.Date
-  school           School?
-  roundId          String?              @map("round_id") @db.Uuid
-  bursaryAccountId String?              @map("bursary_account_id") @db.Uuid
-  contactId        String?              @map("contact_id") @db.Uuid
-  applicationId    String?              @map("application_id") @db.Uuid
-  authUserId       String?              @map("auth_user_id") @db.Uuid
-  entryYear        Int?                 @map("entry_year")
-  entryYearGroup   EntryYearGroup?      @map("entry_year_group")
+  childFirstName       String?              @map("child_first_name")
+  childLastName        String?              @map("child_last_name")
+  childDob             DateTime?            @map("child_dob") @db.Date
+  school               School?
+  roundId              String?              @map("round_id") @db.Uuid
+  bursaryAccountId     String?              @map("bursary_account_id") @db.Uuid
+  contactId            String?              @map("contact_id") @db.Uuid
+  applicationId        String?              @map("application_id") @db.Uuid
+  authUserId           String?              @map("auth_user_id") @db.Uuid
+  entryYear            Int?                 @map("entry_year")
+  entryYearGroup       EntryYearGroup?      @map("entry_year_group")
   /// Epic 14 B3 — which of the five invitation templates this invite used;
   /// persisted so resends reuse the same variant. Null on legacy rows.
-  situation        InvitationSituation?
-  token            String               @unique
-  status           InvitationStatus     @default(PENDING)
-  expiresAt        DateTime             @map("expires_at") @db.Timestamptz(6)
-  acceptedAt       DateTime?            @map("accepted_at") @db.Timestamptz(6)
-  createdBy        String               @map("created_by") @db.Uuid
-  createdAt        DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
-  bursaryAccount   BursaryAccount?      @relation(fields: [bursaryAccountId], references: [id])
-  contact          Contact?             @relation(fields: [contactId], references: [id])
-  application      Application?         @relation(fields: [applicationId], references: [id], onDelete: Cascade)
-  creator          Profile              @relation("InvitationCreator", fields: [createdBy], references: [id])
-  round            Round?               @relation(fields: [roundId], references: [id])
+  situation            InvitationSituation?
+  /// The "Submit by" date staff chose when sending this invitation (licence
+  /// fix, 14 Oct 2026): the END of that day in Europe/London. Copied to
+  /// `Application.submissionDeadlineAt` when the application is created from
+  /// this invitation (never over an override already set), and used as the
+  /// email's {{deadline}}. Null = no per-invitation date (the round chain applies).
+  submissionDeadlineAt DateTime?            @map("submission_deadline_at") @db.Timestamptz(6)
+  token                String               @unique
+  status               InvitationStatus     @default(PENDING)
+  expiresAt            DateTime             @map("expires_at") @db.Timestamptz(6)
+  acceptedAt           DateTime?            @map("accepted_at") @db.Timestamptz(6)
+  createdBy            String               @map("created_by") @db.Uuid
+  createdAt            DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
+  bursaryAccount       BursaryAccount?      @relation(fields: [bursaryAccountId], references: [id])
+  contact              Contact?             @relation(fields: [contactId], references: [id])
+  application          Application?         @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  creator              Profile              @relation("InvitationCreator", fields: [createdBy], references: [id])
+  round                Round?               @relation(fields: [roundId], references: [id])
 
   @@index([token])
   @@index([email])

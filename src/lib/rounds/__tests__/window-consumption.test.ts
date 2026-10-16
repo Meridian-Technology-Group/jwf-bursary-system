@@ -49,16 +49,28 @@ describe('scenarioForInvitation', () => {
 })
 
 describe('applyWindowToDeadlineRound', () => {
-  it("fills a NULL new-default from the window's submitBy", () => {
+  it('licence fix (14 Oct 2026): a NEW window no longer fills the new-default', () => {
+    // The portal ignores NA windows for NEW (PR #449), so the email must too.
     const out = applyWindowToDeadlineRound(baseRound, windows()[0], 'NEW')
-    expect(out.defaultSubmissionDeadlineNew).toEqual(d('2027-04-11'))
-    expect(out.defaultSubmissionDeadlineRolling).toBeNull()
+    expect(out).toEqual(baseRound)
+    expect(applyWindowToDeadlineRound(baseRound, windows()[0], 'INTERNAL')).toEqual(baseRound)
+    expect(applyWindowToDeadlineRound(baseRound, windows()[0], null)).toEqual(baseRound)
   })
 
   it('NEVER overrides an explicitly-set E1 column', () => {
     const set = { ...baseRound, defaultSubmissionDeadlineNew: d('2027-03-01') }
     const out = applyWindowToDeadlineRound(set, windows()[0], 'NEW')
     expect(out.defaultSubmissionDeadlineNew).toEqual(d('2027-03-01'))
+    const ra: StoredRoundWindow = {
+      scenario: 'RA',
+      opensOn: null,
+      submitBy: d('2027-05-22'),
+      defaultTaxYear: null,
+    }
+    const rolling = { ...baseRound, defaultSubmissionDeadlineRolling: d('2027-04-30') }
+    expect(
+      applyWindowToDeadlineRound(rolling, ra, 'ROLLING_OVER').defaultSubmissionDeadlineRolling,
+    ).toEqual(d('2027-04-30'))
   })
 
   it('fills the ROLLING column for rolling-over invitations', () => {
@@ -96,7 +108,7 @@ describe('openingDateFromWindow', () => {
 })
 
 describe('invitationScenarioFields', () => {
-  it('winter NEW invite: window fills the null deadline and supplies opening date', () => {
+  it('winter NEW invite: window supplies the opening date but NOT the deadline', () => {
     const out = invitationScenarioFields({
       situation: 'NEW',
       academicYear: '2027/28',
@@ -105,7 +117,7 @@ describe('invitationScenarioFields', () => {
       roundOpenDate: null,
       windows: windows(),
     })
-    expect(out.deadlineRound?.defaultSubmissionDeadlineNew).toEqual(d('2027-04-11'))
+    expect(out.deadlineRound?.defaultSubmissionDeadlineNew).toBeNull()
     expect(out.openingDate).toEqual(d('2026-11-10'))
   })
 

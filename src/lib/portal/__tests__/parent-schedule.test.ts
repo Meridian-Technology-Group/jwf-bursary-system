@@ -33,6 +33,7 @@ function app(over: Partial<ParentScheduleApplicationInput> = {}): ParentSchedule
     submittedAt: null,
     submissionDeadlineAt: null,
     migrationSource: null,
+    applicationType: "NEW",
     updatedAt: d("2026-10-01"),
     ...over,
   };
@@ -65,21 +66,81 @@ describe("scheduleRowsForParent (Epic 22 P5)", () => {
             requiredBy: d("2027-05-22"),
           }),
         ],
-        applications: [app({ id: "gt-1", migrationSource: "GRANT_TRACKER", formStatus: "SUBMITTED" })],
+        applications: [
+          app({
+            id: "gt-1",
+            migrationSource: "GRANT_TRACKER",
+            applicationType: "ROLLING_OVER",
+            formStatus: "SUBMITTED",
+            submittedAt: new Date("2026-05-19T10:30:00Z"),
+          }),
+        ],
       }),
       TODAY
     );
     expect(rows.map((r) => [r.academicYear, r.schoolYear, r.status, r.completion])).toEqual([
-      ["2026-27", 8, "Completed through Grant Tracker", ""],
+      ["2026-27", 8, "Submitted", "100% completed"],
       ["2027-28", 9, "Scheduled", "—"],
     ]);
-    expect(rows[0].submissionDate).toBeNull();
+    // Her 15 Oct answer: the GT renewal window and the GT submission date.
+    expect(rows[0]).toMatchObject({
+      opensOn: d("2026-04-15"),
+      closesOn: d("2026-05-21"),
+      submitBy: d("2026-05-23"),
+      hasOwnDeadline: false,
+      submissionDate: new Date("2026-05-19T10:30:00Z"),
+    });
     expect(rows[1]).toMatchObject({
       opensOn: d("2027-04-15"),
       closesOn: d("2027-05-22"),
       submitBy: d("2027-05-22"),
       hasOwnDeadline: false,
     });
+  });
+
+  it("a new Grant Tracker family: opened 7 days before its GT submission date, closed and due on it", () => {
+    const [row] = scheduleRowsForParent(
+      account({
+        entries: [entry({ status: "COMPLETE", applicationId: "gt-1" })],
+        applications: [
+          app({
+            id: "gt-1",
+            migrationSource: "GRANT_TRACKER",
+            formStatus: "SUBMITTED",
+            // 23:30 UTC on 3 Mar is still 3 Mar in London (GMT).
+            submittedAt: new Date("2026-03-03T23:30:00Z"),
+          }),
+        ],
+      }),
+      TODAY
+    );
+    expect(row).toMatchObject({
+      opensOn: d("2026-02-24"),
+      closesOn: d("2026-03-03"),
+      submitBy: d("2026-03-03"),
+      hasOwnDeadline: false,
+      status: "Submitted",
+      completion: "100% completed",
+      submissionDate: new Date("2026-03-03T23:30:00Z"),
+    });
+  });
+
+  it("a Grant Tracker year reads Submitted even when its row is still SCHEDULED (prod's year-1 rows)", () => {
+    const [row] = scheduleRowsForParent(
+      account({
+        applications: [
+          app({
+            migrationSource: "GRANT_TRACKER",
+            applicationType: "ROLLING_OVER",
+            formStatus: "SUBMITTED",
+            submittedAt: d("2026-05-20"),
+          }),
+        ],
+      }),
+      TODAY
+    );
+    expect(row.status).toBe("Submitted");
+    expect(row.closesOn).toEqual(d("2026-05-21"));
   });
 
   it("prod's 2026-27 shape: the stale 17 Sep NA window never shows — the row's own 30 Nov does", () => {
