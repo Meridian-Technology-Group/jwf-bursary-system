@@ -7,7 +7,8 @@
  * (state-model §4/§5/§6, revised by item 2's unified close):
  *   • Move to active    → the school's OFFERED decision (AWARDED). Routes to the
  *                         recommendation page to capture the award £ figures.
- *   • Reject           → void + recreate (rejectAndRestartApplication)
+ *   • Return for correction → the form goes back to the family with its answers
+ *                          and documents (rejectAndRestartApplication)
  *   • Close…            → item 2's SINGLE terminal state, ADMIN-only, driven by
  *                         an admin-configured close reason whose purgeOnClose
  *                         flag decides purge-vs-retain. REPLACES the old
@@ -32,11 +33,8 @@
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import {
-  AlertCircle,
-  AlertTriangle,
   Archive,
   CheckCircle2,
-  Loader2,
   MoreHorizontal,
   RotateCcw,
 } from "lucide-react";
@@ -50,23 +48,13 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import { Textarea } from "@/components/ui/textarea";
-import { Label } from "@/components/ui/label";
-import {
   Tooltip,
   TooltipContent,
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 
-import { rejectAndRestartApplication } from "@/app/(admin)/applications/[id]/actions";
+import { RejectRestartDialog } from "@/components/admin/reject-restart-dialog";
 import {
   CloseApplicationDialog,
   type CloseReasonOption,
@@ -172,7 +160,7 @@ export function ApplicationRowActions({
             }
             onSelect={() => setActiveDialog("reject")}
             icon={<RotateCcw className="mr-2 h-4 w-4 text-rose-600" />}
-            label="Reject & restart…"
+            label="Return for correction…"
           />
           {/* Unified close (item 2) — ADMIN only, hidden for other roles. */}
           {isAdmin && canClose && (
@@ -188,7 +176,7 @@ export function ApplicationRowActions({
       </DropdownMenu>
 
       {/* Controlled dialogs */}
-      <RejectDialog
+      <RejectRestartDialog
         applicationId={applicationId}
         open={activeDialog === "reject"}
         onOpenChange={(o) => setActiveDialog(o ? "reject" : null)}
@@ -257,142 +245,5 @@ function GatedItem({
         </TooltipContent>
       </Tooltip>
     </TooltipProvider>
-  );
-}
-
-// ─── Shared dialog scaffolding ───────────────────────────────────────────────
-
-interface ControlledDialogProps {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  onDone: () => void;
-}
-
-// ─── Reject dialog ───────────────────────────────────────────────────────────
-
-function RejectDialog({
-  applicationId,
-  open,
-  onOpenChange,
-  onDone,
-}: ControlledDialogProps & { applicationId: string }) {
-  const [message, setMessage] = React.useState("");
-  const [error, setError] = React.useState<string | null>(null);
-  const [isPending, startTransition] = React.useTransition();
-
-  React.useEffect(() => {
-    if (open) {
-      setMessage("");
-      setError(null);
-    }
-  }, [open]);
-
-  function confirm() {
-    setError(null);
-    startTransition(async () => {
-      const result = await rejectAndRestartApplication(
-        applicationId,
-        message.trim() || undefined
-      );
-      if (result.success) {
-        onOpenChange(false);
-        onDone();
-      } else {
-        setError(result.error ?? "An unexpected error occurred.");
-      }
-    });
-  }
-
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg">
-        <DialogHeader>
-          <DialogTitle className="text-rose-700">
-            Reject application &amp; ask applicant to restart
-          </DialogTitle>
-          <DialogDescription>
-            Use this when the whole submission is invalid and the applicant needs
-            to start again from scratch.
-          </DialogDescription>
-        </DialogHeader>
-
-        <div className="space-y-5 py-2">
-          <div className="flex items-start gap-2 rounded-md border border-rose-200 bg-rose-50 px-3 py-2.5">
-            <AlertTriangle
-              className="mt-0.5 h-4 w-4 shrink-0 text-rose-500"
-              aria-hidden="true"
-            />
-            <p className="text-sm text-rose-700">
-              This permanently clears all uploaded documents and the current
-              submission, and creates a fresh blank application for the applicant
-              to complete. The current submission cannot be recovered.
-            </p>
-          </div>
-
-          <div className="space-y-1.5">
-            <Label
-              htmlFor="row-reject-message"
-              className="text-xs font-semibold uppercase tracking-wide text-slate-500"
-            >
-              Note to applicant{" "}
-              <span className="font-normal normal-case tracking-normal text-slate-400">
-                (included in the email)
-              </span>
-            </Label>
-            <Textarea
-              id="row-reject-message"
-              placeholder="Explain what was wrong and what they should address in their new application…"
-              value={message}
-              onChange={(e) => setMessage(e.target.value)}
-              disabled={isPending}
-              rows={4}
-              className="resize-none text-sm"
-            />
-          </div>
-
-          {error && <ErrorBanner message={error} />}
-        </div>
-
-        <DialogFooter className="gap-2 sm:gap-0">
-          <Button
-            type="button"
-            variant="outline"
-            onClick={() => onOpenChange(false)}
-            disabled={isPending}
-          >
-            Cancel
-          </Button>
-          <Button
-            type="button"
-            onClick={confirm}
-            disabled={isPending}
-            className="gap-2 bg-rose-600 hover:bg-rose-700 text-white"
-          >
-            {isPending ? (
-              <>
-                <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
-                Rejecting…
-              </>
-            ) : (
-              <>
-                <RotateCcw className="h-4 w-4" aria-hidden="true" />
-                Reject &amp; Restart
-              </>
-            )}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-// ─── Shared error banner ─────────────────────────────────────────────────────
-
-function ErrorBanner({ message }: { message: string }) {
-  return (
-    <div className="flex items-start gap-2 rounded-md border border-red-200 bg-red-50 px-3 py-2.5">
-      <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-red-500" />
-      <p className="text-sm text-red-700">{message}</p>
-    </div>
   );
 }

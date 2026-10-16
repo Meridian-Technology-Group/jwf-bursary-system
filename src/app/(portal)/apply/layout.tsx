@@ -33,6 +33,7 @@ import { ApplyFooter } from "@/components/portal/apply-footer";
 import { SectionSavingProvider } from "@/components/portal/section-saving-context";
 import { StepperDataWriter } from "@/components/portal/stepper-data-writer";
 import { loadRailStepper } from "@/lib/portal/rail-stepper-data";
+import { ReturnedForCorrectionBanner } from "@/components/portal/returned-for-correction-banner";
 
 export default async function ApplyContentLayout({
   children,
@@ -58,6 +59,13 @@ export default async function ApplyContentLayout({
           the bottom of the viewport on short forms instead of floating mid-page.
           min-h-0 lets this flex child shrink correctly inside the column. */}
       <div className="flex min-h-0 flex-1 flex-col">
+        {/* Epic 23 T7: every section and the review page, while the form is
+            back with the family for correction. */}
+        {stepperData?.returnNotice && (
+          <div className="px-4 pt-4 md:px-8 md:pt-6">
+            <ReturnedForCorrectionBanner notice={stepperData.returnNotice} className="mx-auto max-w-4xl" />
+          </div>
+        )}
         <div className="flex-1">{children}</div>
         {/* The one sticky footer — scoped to the apply segment. It owns its own
             sticky chrome and renders nothing on /apply/review, so no empty bar

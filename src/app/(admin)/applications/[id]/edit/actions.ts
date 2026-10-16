@@ -42,6 +42,10 @@ import {
 } from "@/lib/applications/status";
 import { canEditOnBehalf } from "@/lib/applications/edit-on-behalf";
 import {
+  getLatestReturn,
+  isReturnedForCorrection,
+} from "@/lib/applications/return-for-correction";
+import {
   diffSectionPaths,
   mergeProvenance,
 } from "@/lib/applications/section-diff";
@@ -272,6 +276,153 @@ export async function saveSectionOnBehalf(
       success: false,
       errors: ["Failed to save your data. Please try again."],
     };
+  }
+}
+
+// ─── Returned for correction (Epic 23 T7) ─────────────────────────────────────
+
+/**
+ * Resolves the applicant's owning contributor and confirms the form is back
+ * with the family for correction. The two actions below exist for that case
+ * only: on a form that is still submitted, an incomplete section would
+ * contradict the submission.
+ */
+async function returnedFormContext(
+  user: { id: string; role: string },
+  applicationId: string
+): Promise<{ ok: true; ownerContributorId: string; reference: string } | { ok: false; error: string }> {
+  const found = await withUserContext(user.id, user.role as RlsRole, async (tx) => {
+    const application = await tx.application.findUnique({
+      where: { id: applicationId },
+      select: { id: true, reference: true, formStatus: true, submittedAt: true, leadApplicantId: true },
+    });
+    if (!application) return null;
+    const latest = await getLatestReturn(tx, applicationId);
+    const contributorId = await resolveOwningContributorId(tx, applicationId, application.leadApplicantId);
+    return { application, returned: isReturnedForCorrection(application, latest), contributorId };
+  });
+  if (!found) return { ok: false, error: "Application not found." };
+  if (!found.returned) {
+    return { ok: false, error: "Only a form returned to the family for correction can be left incomplete." };
+  }
+  const ownerContributorId =
+    found.contributorId ??
+    (await withAdminContext((tx) =>
+      ensurePrimaryContributor(tx, applicationId, found.application.leadApplicantId)
+    ));
+  return { ok: true, ownerContributorId, reference: found.application.reference };
+}
+
+function revalidateEditSurfaces(applicationId: string) {
+  revalidatePath(`/applications/${applicationId}`);
+  revalidatePath(`/applications/${applicationId}/history`);
+  revalidatePath("/queue");
+  revalidatePath(`/applications/${applicationId}/edit`, "layout");
+}
+
+/**
+ * The parent's own draft save, made on their behalf — on a form RETURNED for
+ * correction only. The data is written as given (no completeness check) with
+ * `isComplete = false`, exactly as the portal's `saveSectionDraft`, so a figure
+ * staff clear leaves the section without its green tick and the family sees
+ * what to redo. Changed fields are stamped with the editor, as a full save.
+ */
+export async function saveSectionDraftOnBehalf(
+  applicationId: string,
+  section: ApplicationSectionType,
+  data: unknown
+): Promise<SaveSectionResult> {
+  const user = await requireRole([Role.ADMIN, Role.ASSESSOR]);
+  await requireApplicationAccess(user, applicationId);
+  if (!sectionSchemaMap[section]) return { success: false, errors: [`Unknown section: ${section}`] };
+
+  try {
+    const ctx = await returnedFormContext(user, applicationId);
+    if (!ctx.ok) return { success: false, errors: [ctx.error] };
+
+    const editorName = `${user.firstName ?? ""} ${user.lastName ?? ""}`.trim() || user.email;
+    const editedAt = new Date().toISOString();
+    const written = await withUserContext(user.id, user.role as RlsRole, async (tx) => {
+      const existing = await tx.applicationSection.findUnique({
+        where: {
+          applicationId_section_ownerContributorId: {
+            applicationId,
+            section,
+            ownerContributorId: ctx.ownerContributorId,
+          },
+        },
+        select: { data: true, assessorProvenance: true },
+      });
+      const changedFields = diffSectionPaths(existing?.data ?? {}, data);
+      const provenance = mergeProvenance(existing?.assessorProvenance, changedFields, {
+        id: user.id,
+        name: editorName,
+        at: editedAt,
+      });
+      const row = await upsertSection(
+        tx,
+        applicationId,
+        section,
+        data,
+        false,
+        ctx.ownerContributorId,
+        provenance as unknown as Prisma.InputJsonValue
+      );
+      const formStatus = await refreshFormStatus(tx, applicationId, ctx.ownerContributorId);
+      await createAuditLog(tx, {
+        userId: user.id,
+        action: AUDIT_ACTIONS.SECTION_SAVED_BY_ASSESSOR,
+        entityType: AUDIT_ENTITY_TYPES.ApplicationSection,
+        entityId: row.id,
+        context: `${section} saved incomplete on behalf of applicant (returned for correction) — Reference: ${ctx.reference}`,
+        metadata: { applicationId, reference: ctx.reference, section, changedFields, formStatus, draft: true, returnedForCorrection: true },
+      });
+      return true;
+    });
+    if (!written) return { success: false, errors: ["Failed to save your data. Please try again."] };
+    revalidateEditSurfaces(applicationId);
+    return { success: true };
+  } catch (err) {
+    console.error("[saveSectionDraftOnBehalf]", err);
+    return { success: false, errors: ["Failed to save your data. Please try again."] };
+  }
+}
+
+/**
+ * "Needs correction": takes a section's green tick away without editing its
+ * data, for when the issue is a judgement rather than a blank field. On a
+ * form returned for correction only. A section with no row is already
+ * incomplete (no-op).
+ */
+export async function markSectionNeedsCorrection(
+  applicationId: string,
+  section: ApplicationSectionType
+): Promise<ActionResult> {
+  const user = await requireRole([Role.ADMIN, Role.ASSESSOR]);
+  await requireApplicationAccess(user, applicationId);
+  try {
+    const ctx = await returnedFormContext(user, applicationId);
+    if (!ctx.ok) return { success: false, error: ctx.error };
+    await withUserContext(user.id, user.role as RlsRole, async (tx) => {
+      const { count } = await tx.applicationSection.updateMany({
+        where: { applicationId, section, ownerContributorId: ctx.ownerContributorId, isComplete: true },
+        data: { isComplete: false },
+      });
+      await refreshFormStatus(tx, applicationId, ctx.ownerContributorId);
+      await createAuditLog(tx, {
+        userId: user.id,
+        action: AUDIT_ACTIONS.SECTION_MARKED_NEEDS_CORRECTION,
+        entityType: AUDIT_ENTITY_TYPES.Application,
+        entityId: applicationId,
+        context: `${SECTION_TITLES[section] ?? section} marked as needing correction — Reference: ${ctx.reference}`,
+        metadata: { applicationId, reference: ctx.reference, section, changed: count > 0 },
+      });
+    });
+    revalidateEditSurfaces(applicationId);
+    return { success: true };
+  } catch (err) {
+    console.error("[markSectionNeedsCorrection]", err);
+    return { success: false, error: "Failed to mark the section as needing correction." };
   }
 }
 

@@ -1,22 +1,23 @@
 "use client";
 
 /**
- * RejectRestartDialog — Full Rejection.
+ * RejectRestartDialog — Return for correction (Epic 23 T7; Charlotte, 16 Oct
+ * 2026). The component keeps its name; the action is no longer destructive.
  *
- * Triggered from the application detail actions bar. Lets an assessor reject a
- * submission outright and ask the applicant to start a fresh application from
- * scratch. This is destructive: it HARD-DELETES the current application (its
- * sections, documents and assessment) and creates a new blank one in its place
- * (see `rejectAndRestartApplication`). The applicant is emailed a link back into
- * the portal.
+ * Sends a submitted application back to the family with every answer and
+ * document kept, a note explaining what to correct, and a NEW Submit by
+ * (required; pre-filled with the later of the current deadline and today + 7
+ * days). The family is emailed and sees a "returned for correction" banner.
+ * Staff then remove the specific bad items through edit-on-behalf so the
+ * gaps show. See `rejectAndRestartApplication`.
  *
- * Because the current application is deleted, on success we navigate away to the
- * queue (the old detail URL no longer exists).
+ * Uncontrolled (own trigger) on the application and assessment pages; the
+ * applications table row drives it controlled (`open` / `onOpenChange`).
  */
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
-import { AlertCircle, AlertTriangle, Loader2, RotateCcw } from "lucide-react";
+import { AlertCircle, Info, Loader2, RotateCcw } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -27,46 +28,86 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
-import { rejectAndRestartApplication } from "@/app/(admin)/applications/[id]/actions";
+import {
+  getReturnSubmitByDefault,
+  rejectAndRestartApplication,
+} from "@/app/(admin)/applications/[id]/actions";
 
 interface RejectRestartDialogProps {
   applicationId: string;
   /** Optional trigger element — if omitted a default button is rendered. */
   trigger?: React.ReactNode;
+  /** Controlled mode (the table row): no trigger is rendered. */
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  /** Called after a successful return (defaults to refreshing the page). */
+  onDone?: () => void;
+}
+
+/** Tomorrow in the viewer's calendar, `yyyy-MM-dd` (the input's `min`). */
+function tomorrowKey(): string {
+  const d = new Date();
+  d.setDate(d.getDate() + 1);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
 export function RejectRestartDialog({
   applicationId,
   trigger,
+  open: controlledOpen,
+  onOpenChange,
+  onDone,
 }: RejectRestartDialogProps) {
   const router = useRouter();
-  const [open, setOpen] = React.useState(false);
+  const controlled = controlledOpen !== undefined;
+  const [uncontrolledOpen, setUncontrolledOpen] = React.useState(false);
+  const open = controlled ? controlledOpen : uncontrolledOpen;
   const [isPending, startTransition] = React.useTransition();
   const [customMessage, setCustomMessage] = React.useState("");
+  const [submitBy, setSubmitBy] = React.useState("");
   const [error, setError] = React.useState<string | null>(null);
 
-  function handleOpenChange(next: boolean) {
-    if (next) {
-      setCustomMessage("");
-      setError(null);
-    }
-    setOpen(next);
+  function setOpen(next: boolean) {
+    if (controlled) onOpenChange?.(next);
+    else setUncontrolledOpen(next);
   }
+
+  // Reset and pre-fill each time the dialog opens.
+  React.useEffect(() => {
+    if (!open) return;
+    setCustomMessage("");
+    setError(null);
+    setSubmitBy("");
+    let live = true;
+    getReturnSubmitByDefault(applicationId)
+      .then((d) => {
+        if (live) setSubmitBy((v) => v || d);
+      })
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, [open, applicationId]);
 
   function handleConfirm() {
     setError(null);
+    if (!submitBy) {
+      setError("Enter the new submit-by date.");
+      return;
+    }
     startTransition(async () => {
       const result = await rejectAndRestartApplication(
         applicationId,
-        customMessage.trim() || undefined
+        customMessage.trim() || undefined,
+        submitBy
       );
       if (result.success) {
         setOpen(false);
-        // The current application was deleted — its detail page is gone.
-        router.push("/queue");
-        router.refresh();
+        if (onDone) onDone();
+        else router.refresh();
       } else {
         setError(result.error ?? "An unexpected error occurred.");
       }
@@ -74,61 +115,74 @@ export function RejectRestartDialog({
   }
 
   return (
-    <Dialog open={open} onOpenChange={handleOpenChange}>
-      {trigger ? (
-        <DialogTrigger asChild>{trigger}</DialogTrigger>
-      ) : (
+    <Dialog open={open} onOpenChange={setOpen}>
+      {!controlled && (
         <DialogTrigger asChild>
-          <Button
-            variant="outline"
-            size="sm"
-            className="gap-2 border-rose-300 text-rose-700 hover:bg-rose-50 hover:border-rose-400"
-          >
-            <RotateCcw className="h-4 w-4" aria-hidden="true" />
-            Reject &amp; Restart
-          </Button>
+          {trigger ?? (
+            <Button
+              variant="outline"
+              size="sm"
+              className="gap-2 border-rose-300 text-rose-700 hover:bg-rose-50 hover:border-rose-400"
+            >
+              <RotateCcw className="h-4 w-4" aria-hidden="true" />
+              Return for correction
+            </Button>
+          )}
         </DialogTrigger>
       )}
 
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle className="text-rose-700">
-            Reject application &amp; ask applicant to restart
-          </DialogTitle>
+          <DialogTitle className="text-rose-700">Return application for correction</DialogTitle>
           <DialogDescription>
-            Use this when the whole submission is invalid and the applicant needs
-            to start again from scratch.
+            The family gets their answers and documents back with your note, and
+            must correct the form and resubmit by the new date.
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-5 py-2">
-          {/* Destructive warning */}
-          <div className="flex items-start gap-2 rounded-md border border-rose-200 bg-rose-50 px-3 py-2.5">
-            <AlertTriangle
-              className="mt-0.5 h-4 w-4 shrink-0 text-rose-500"
-              aria-hidden="true"
-            />
-            <p className="text-sm text-rose-700">
-              This permanently clears all uploaded documents and the current
-              submission, and creates a fresh blank application for the applicant
-              to complete. The current submission cannot be recovered.
+          <div className="flex items-start gap-2 rounded-md border border-sky-200 bg-sky-50 px-3 py-2.5">
+            <Info className="mt-0.5 h-4 w-4 shrink-0 text-sky-600" aria-hidden="true" />
+            <p className="text-sm text-sky-800">
+              Nothing is deleted. To make a gap show, remove the wrong document or
+              clear the wrong figure on the family&apos;s behalf (Edit form), or mark
+              a section as needing correction. Any review in progress goes back to
+              Not started.
             </p>
           </div>
 
-          {/* Personal note */}
+          <div className="space-y-1.5">
+            <Label
+              htmlFor="return-submit-by"
+              className="text-xs font-semibold uppercase tracking-wide text-slate-500"
+            >
+              New submit-by date
+            </Label>
+            <Input
+              id="return-submit-by"
+              type="date"
+              required
+              min={tomorrowKey()}
+              value={submitBy}
+              onChange={(e) => setSubmitBy(e.target.value)}
+              disabled={isPending}
+              className="w-48"
+            />
+          </div>
+
           <div className="space-y-1.5">
             <Label
               htmlFor="reject-message"
               className="text-xs font-semibold uppercase tracking-wide text-slate-500"
             >
-              Note to applicant{" "}
+              Note to the family{" "}
               <span className="font-normal normal-case tracking-normal text-slate-400">
-                (included in the email)
+                (in the email and on their application)
               </span>
             </Label>
             <Textarea
               id="reject-message"
-              placeholder="Explain what was wrong and what they should address in their new application…"
+              placeholder="Explain what needs correcting, e.g. the P60 is for the wrong year…"
               value={customMessage}
               onChange={(e) => setCustomMessage(e.target.value)}
               disabled={isPending}
@@ -137,7 +191,6 @@ export function RejectRestartDialog({
             />
           </div>
 
-          {/* Error */}
           {error && (
             <div className="flex items-start gap-2 rounded-md border border-red-200 bg-red-50 px-3 py-2.5">
               <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-red-500" />
@@ -147,29 +200,24 @@ export function RejectRestartDialog({
         </div>
 
         <DialogFooter className="gap-2 sm:gap-0">
-          <Button
-            type="button"
-            variant="outline"
-            onClick={() => handleOpenChange(false)}
-            disabled={isPending}
-          >
+          <Button type="button" variant="outline" onClick={() => setOpen(false)} disabled={isPending}>
             Cancel
           </Button>
           <Button
             type="button"
             onClick={handleConfirm}
-            disabled={isPending}
+            disabled={isPending || !submitBy}
             className="gap-2 bg-rose-600 hover:bg-rose-700 text-white"
           >
             {isPending ? (
               <>
                 <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
-                Rejecting…
+                Returning…
               </>
             ) : (
               <>
                 <RotateCcw className="h-4 w-4" aria-hidden="true" />
-                Reject &amp; Restart
+                Return for correction
               </>
             )}
           </Button>

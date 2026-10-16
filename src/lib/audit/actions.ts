@@ -98,6 +98,9 @@ export const AUDIT_ACTIONS = {
 
   // Edit on behalf (CR-001)
   SECTION_SAVED_BY_ASSESSOR: "SECTION_SAVED_BY_ASSESSOR",
+  // Epic 23 T7 — on a form returned for correction, staff mark a section as
+  // needing correction (its green tick goes; the answers stay).
+  SECTION_MARKED_NEEDS_CORRECTION: "SECTION_MARKED_NEEDS_CORRECTION",
   /** An edit-on-behalf pass ended; the applicant was notified of the edited sections. */
   EDIT_ON_BEHALF_FINISHED: "EDIT_ON_BEHALF_FINISHED",
   /** Staff submitted the application on the applicant's behalf (typed-up paper form). */
@@ -378,6 +381,7 @@ const ACTION_COLOUR: Partial<Record<AuditAction, string>> = {
   [AUDIT_ACTIONS.DOCUMENT_DELETED]: "bg-purple-500",
   [AUDIT_ACTIONS.DOCUMENT_URL_GRANTED]: "bg-purple-500",
   [AUDIT_ACTIONS.SECTION_SAVED_BY_ASSESSOR]: "bg-purple-500",
+  [AUDIT_ACTIONS.SECTION_MARKED_NEEDS_CORRECTION]: "bg-purple-500",
   [AUDIT_ACTIONS.EDIT_ON_BEHALF_FINISHED]: "bg-purple-500",
   [AUDIT_ACTIONS.DOCUMENT_VERIFIED]: "bg-orange-400",
   [AUDIT_ACTIONS.DOCUMENT_UNVERIFIED]: "bg-orange-400",

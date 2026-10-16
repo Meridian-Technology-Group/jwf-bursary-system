@@ -1,11 +1,15 @@
 /**
- * Epic 22 P3 (CR-002 Phase 5 #5) — the record Reject and restart leaves behind.
+ * Epic 22 P3 (CR-002 Phase 5 #5) — the record a rejection leaves behind.
  *
- * `rejectAndRestartApplication` hard-deletes the rejected application, so this
- * module writes the short `application_rejections` row the family's schedule
- * reads (Submitted → Rejected → the new attempt), and puts that year's schedule
- * row back to SCHEDULED for the new attempt (D-18). Both run inside the
- * action's transaction, under the service-role context.
+ * Writes the short `application_rejections` row the family's schedule reads
+ * (Submitted → Rejected → the new attempt), and puts that year's schedule row
+ * back to SCHEDULED for the new attempt (D-18). Both run inside the action's
+ * transaction, under the service-role context.
+ *
+ * Epic 23 T7: a rejection now RETURNS the same application
+ * (`return-for-correction.ts`), so the "new attempt" is that application
+ * (`newApplicationId === rejectedApplicationId`), and the row also keeps the
+ * note to the family and the new Submit by for the portal's banner.
  */
 
 import type { ScheduleEntryStatus } from "@prisma/client";
@@ -55,6 +59,9 @@ export interface RecordRejectionParams {
   submittedAt: Date | null;
   rejectedById: string;
   fromPhase: string;
+  /** Epic 23 T7: the note to the family, and the new Submit by. */
+  message?: string | null;
+  newSubmitBy?: Date | null;
 }
 
 export interface RecordRejectionResult {
@@ -83,6 +90,8 @@ export async function recordRejection(
       rejectedById: params.rejectedById,
       replacementApplicationId: params.newApplicationId,
       fromPhase: params.fromPhase,
+      message: params.message?.trim() || null,
+      newSubmitBy: params.newSubmitBy ?? null,
     },
     select: { id: true },
   });
