@@ -27,6 +27,7 @@ import type { Tx } from "@/lib/db/prisma";
 import { generateApplicationReference } from "@/lib/applications/reference";
 import { applicationCreateData } from "@/lib/applications/status";
 import { ensurePrimaryContributor } from "@/lib/db/queries/contributors";
+import { applicationDeadlineFromInvitation } from "@/lib/invitations/submit-by";
 
 export interface FirstYearApplicationSource {
   leadApplicantId: string;
@@ -51,6 +52,12 @@ export interface FirstYearApplicationSource {
   entryYearGroup: EntryYearGroup | null;
   /** The contact this application is seeded from, when invited from a contact. */
   contactId?: string | null;
+  /**
+   * Licence fix (14 Oct 2026) — the invitation's "Submit by" date. Copied to
+   * `Application.submissionDeadlineAt`, the per-application override the
+   * portal, submit guard and queue enforce. Null/absent = no override.
+   */
+  submissionDeadlineAt?: Date | null;
 }
 
 /**
@@ -118,6 +125,11 @@ export async function createFirstYearApplicationFromSource(
       entryYear: source.entryYear ?? null,
       entryYearGroup: source.entryYearGroup,
       contactId: source.contactId ?? null,
+      // A brand-new row has no override yet, so the invitation's date applies.
+      submissionDeadlineAt: applicationDeadlineFromInvitation(
+        null,
+        source.submissionDeadlineAt
+      ),
       isReassessment: false,
       ...applicationCreateData("NEW"),
     },

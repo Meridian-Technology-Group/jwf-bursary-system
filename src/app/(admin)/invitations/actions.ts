@@ -59,6 +59,11 @@ import {
   ROUND_WINDOWS_SELECT,
 } from "@/lib/rounds/window-consumption";
 import { withAdminContext } from "@/lib/db/prisma";
+import {
+  emailDeadlineOverride,
+  parseInvitationSubmitBy,
+  SUBMIT_BY_FIELD,
+} from "@/lib/invitations/submit-by";
 import { createAuditLog } from "@/lib/audit/log";
 import {
   prepopulateReassessment,
@@ -208,6 +213,25 @@ export async function createInvitationAction(
     situation,
   } = parsed.data;
 
+  // Licence fix (14 Oct 2026): the optional per-invitation "Submit by" date.
+  // Validated against the target round BEFORE any auth user is provisioned.
+  let submitBy: Date | null = null;
+  const submitByRaw = formData.get(SUBMIT_BY_FIELD) as string | null;
+  if (submitByRaw?.trim()) {
+    const round = await withAdminContext((tx) =>
+      tx.round.findUnique({ where: { id: roundId }, select: { closeDate: true } })
+    );
+    const checked = parseInvitationSubmitBy(
+      submitByRaw,
+      round?.closeDate ?? null,
+      new Date()
+    );
+    if (!checked.ok) {
+      return { success: false, fieldErrors: { submitBy: [checked.error] } };
+    }
+    submitBy = checked.submitBy;
+  }
+
   // The composed backing store (legacy consumers read `childName`).
   const childName = composeChildName(childFirstName, childLastName);
   const childDob = new Date(`${parsed.data.childDob}T00:00:00.000Z`);
@@ -272,6 +296,7 @@ export async function createInvitationAction(
         entryYearGroup,
         roundId,
         situation,
+        submissionDeadlineAt: submitBy,
         authUserId,
         createdBy: user.id,
         expiresAt,
@@ -323,6 +348,7 @@ export async function createInvitationAction(
           email,
           roundId: roundId ?? null,
           authUserId,
+          submitBy: submitBy?.toISOString() ?? null,
         },
       });
 
@@ -406,11 +432,13 @@ export async function createInvitationAction(
       ),
       // E1/CF-11: {{deadline}} is the SUBMISSION deadline for the round this
       // invitation is for; {{link_expiry}} carries the token expiry that used
-      // to masquerade as it.
+      // to masquerade as it. The invitation's own "Submit by" date, when set,
+      // wins over the round chain (licence fix, 14 Oct 2026).
       ...invitationDeadlineFields(
         deadlineRound,
         deadlineTypeForSituation(situation),
-        expiresAt
+        expiresAt,
+        emailDeadlineOverride(submitBy)
       ),
     },
     // CH-32 — blind-copy the bursary inbox so the send is on record.
@@ -502,6 +530,8 @@ async function sendReassessmentInviteForHolder(
      * Null only if the round could not be read.
      */
     deadlineRound: SubmissionDeadlineRound | null;
+    /** The batch's one "Submit by" date (licence fix), or null for none. */
+    submitBy: Date | null;
     userId: string;
     supabase: ReturnType<typeof createSupabaseAdminClient>;
     appUrl: string;
@@ -553,6 +583,7 @@ async function sendReassessmentInviteForHolder(
         school: holder.school,
         roundId,
         bursaryAccountId: holder.id,
+        submissionDeadlineAt: ctx.submitBy,
         authUserId: authUserId!,
         createdBy: userId,
         expiresAt,
@@ -569,6 +600,7 @@ async function sendReassessmentInviteForHolder(
           roundId,
           bursaryAccountId: holder.id,
           authUserId,
+          submitBy: ctx.submitBy?.toISOString() ?? null,
         },
       });
 
@@ -594,10 +626,12 @@ async function sendReassessmentInviteForHolder(
       // E1/CF-12: a re-assessment invitation is by definition ROLLING_OVER, so
       // {{deadline}} resolves against the round's rolling submission date (the
       // April one), NOT the 30-day token expiry it used to carry.
+      // The batch's "Submit by" date, when set, wins (licence fix).
       ...invitationDeadlineFields(
         ctx.deadlineRound,
         "ROLLING_OVER",
-        txResult.expiresAt
+        txResult.expiresAt,
+        emailDeadlineOverride(ctx.submitBy)
       ),
     });
 
@@ -632,7 +666,8 @@ async function sendReassessmentInviteForHolder(
  */
 async function runReassessmentInvites(
   roundId: string,
-  selectIds: string[] | null
+  selectIds: string[] | null,
+  submitByRaw: string | null = null
 ): Promise<BatchInviteResult> {
   const user = await requireRole([Role.ADMIN]);
 
@@ -644,6 +679,8 @@ async function runReassessmentInvites(
   // round, so the rolling-over submission deadline is identical for all of
   // them (E1; Q4: one global rolling date per round).
   let deadlineRound: SubmissionDeadlineRound | null = null;
+  // Licence fix (14 Oct 2026): one "Submit by" date for the whole batch.
+  let submitBy: Date | null = null;
   try {
     const loaded = await withAdminContext(async (tx) => {
       const h = await getActiveBursaryHolders(tx, roundId);
@@ -690,6 +727,16 @@ async function runReassessmentInvites(
       );
       return result;
     }
+    const checkedSubmitBy = parseInvitationSubmitBy(
+      submitByRaw,
+      loaded.deadlineRound?.closeDate ?? null,
+      new Date()
+    );
+    if (!checkedSubmitBy.ok) {
+      result.errors.push(checkedSubmitBy.error);
+      return result;
+    }
+    submitBy = checkedSubmitBy.submitBy;
     eligible = loaded.holders;
     academicYear = loaded.academicYear;
     // D2 (CG-01): a stored RA window's submit-by fills the rolling default
@@ -730,6 +777,7 @@ async function runReassessmentInvites(
     roundId,
     academicYear,
     deadlineRound,
+    submitBy,
     userId: user.id,
     supabase,
     appUrl,
@@ -759,9 +807,10 @@ async function runReassessmentInvites(
  * backwards compatibility; the selective action is preferred from the UI.
  */
 export async function batchReassessmentInviteAction(
-  roundId: string
+  roundId: string,
+  submitBy: string | null = null
 ): Promise<BatchInviteResult> {
-  return runReassessmentInvites(roundId, null);
+  return runReassessmentInvites(roundId, null, submitBy);
 }
 
 // ---------------------------------------------------------------------------
@@ -778,13 +827,14 @@ export async function batchReassessmentInviteAction(
  */
 export async function reassessmentInviteSelectedAction(
   roundId: string,
-  bursaryAccountIds: string[]
+  bursaryAccountIds: string[],
+  submitBy: string | null = null
 ): Promise<BatchInviteResult> {
   const ids = Array.isArray(bursaryAccountIds) ? bursaryAccountIds : [];
   if (ids.length === 0) {
     return { sent: 0, failed: 0, errors: ["No eligible holders selected"] };
   }
-  return runReassessmentInvites(roundId, ids);
+  return runReassessmentInvites(roundId, ids, submitBy);
 }
 
 // ---------------------------------------------------------------------------
@@ -828,7 +878,10 @@ export interface BulkReassessmentFromApplicationsResult {
  */
 export async function bulkReassessmentInviteFromApplicationsAction(
   applicationIds: string[],
-  targetRoundId?: string | null
+  targetRoundId?: string | null,
+  /** Licence fix (14 Oct 2026): one optional "Submit by" (`yyyy-MM-dd`) for
+   *  every invitation in this batch. */
+  submitBy?: string | null
 ): Promise<BulkReassessmentFromApplicationsResult> {
   await requireRole([Role.ADMIN]);
 
@@ -991,7 +1044,11 @@ export async function bulkReassessmentInviteFromApplicationsAction(
 
   // 3. Delegate to the shared core, which re-filters accountIds to the holders
   //    actually eligible for the open round and provisions each invite.
-  const batch = await runReassessmentInvites(openRound.id, accountIds);
+  const batch = await runReassessmentInvites(
+    openRound.id,
+    accountIds,
+    submitBy ?? null
+  );
 
   // `runReassessmentInvites` pushes a "No eligible holders selected" error when
   // nothing in the set was eligible — that's a skip, not a user-facing failure,
@@ -1124,12 +1181,16 @@ export async function resendInvitationAction(
       // send — only {{link_expiry}} moves, because only the token was renewed.
       // Before this, every resend silently pushed the advertised "deadline"
       // another 30 days into the future.
+      // Licence fix: the invitation's own "Submit by" date is re-stated too.
       ...invitationDeadlineFields(
         scenario.deadlineRound,
         invitation.application?.applicationType ??
           deadlineTypeForSituation(invitation.situation),
         newExpiresAt,
-        invitation.application?.submissionDeadlineAt ?? null
+        emailDeadlineOverride(
+          invitation.submissionDeadlineAt,
+          invitation.application?.submissionDeadlineAt
+        )
       ),
       }
     );
@@ -1542,6 +1603,7 @@ export async function addSecondParentAction(
             defaultSubmissionDeadlineNew: app.round.defaultSubmissionDeadlineNew,
             defaultSubmissionDeadlineRolling:
               app.round.defaultSubmissionDeadlineRolling,
+            windows: app.round.windows,
           },
         },
         existingProfileId: profile?.id ?? null,

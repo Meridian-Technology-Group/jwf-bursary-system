@@ -31,7 +31,7 @@ describe("buildPortalNav — Application Schedule item (gap F2)", () => {
     expect(hasScheduleItem(items)).toBe(true);
 
     const item = items.find((i) => i.href === "/schedule")!;
-    expect(item.label).toBe("Application Schedule");
+    expect(item.label).toBe("My Application(s) Schedule");
     expect(item.match).toBe("/schedule");
     // Read-only link — no `highlight` CTA styling (that's Missing Documents).
     expect("highlight" in item).toBe(false);
@@ -64,5 +64,29 @@ describe("buildPortalNav — My Bursary Application(s) (Epic 22 P1, D-8)", () =>
     expect(labels.indexOf("Missing Documents")).toBeLessThan(
       labels.indexOf("My Bursary Application(s)")
     );
+  });
+});
+
+/**
+ * Epic 23 T3 (her 16 Oct decision 5): the parent Documents page is gone —
+ * uploads follow the retention rules and there is no historical uploads page.
+ * The flags cover every state: draft / submitted (neither), paused (needsDocs),
+ * an active or migrated family (hasSchedule), and paused + scheduled.
+ */
+describe("buildPortalNav — no Documents item (Epic 23 T3)", () => {
+  it.each([
+    ["draft or submitted", false, false],
+    ["paused", true, false],
+    ["active or migrated, scheduled", false, true],
+    ["paused and scheduled", true, true],
+  ])("%s: no Documents link", (_state, needsDocs, hasSchedule) => {
+    const items = buildPortalNav(needsDocs, hasSchedule);
+    expect(items.some((i) => i.href === "/documents" || /^documents$/i.test(i.label))).toBe(false);
+    expect(items.map((i) => i.href)).toContain("/help");
+  });
+
+  it("the paused case still reaches /respond through Missing Documents", () => {
+    const missing = buildPortalNav(true, false).find((i) => i.href === "/respond");
+    expect(missing?.highlight).toBe(true);
   });
 });

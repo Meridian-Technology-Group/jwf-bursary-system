@@ -53,6 +53,7 @@ import {
   ENTRY_YEAR_GROUP_OPTIONS,
 } from "@/lib/assessment/schooling-years";
 import { entryAcademicYearOptions } from "@/lib/schools/academic-year";
+import { SUBMIT_BY_FIELD, submitByMinValue } from "@/lib/invitations/submit-by";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -82,6 +83,8 @@ const schema = z.object({
     error: "Please select an entry school year",
   }),
   entryYear: z.string().min(1, "Please select an academic year"),
+  // Licence fix (14 Oct 2026) — optional per-family deadline (server-checked).
+  submitBy: z.string().optional(),
 });
 
 type FormValues = z.infer<typeof schema>;
@@ -120,6 +123,7 @@ export function InternalRequestDialog({ rounds }: InternalRequestDialogProps) {
       reason: "",
       entryYearGroup: undefined,
       entryYear: "",
+      submitBy: "",
     },
   });
 
@@ -144,6 +148,7 @@ export function InternalRequestDialog({ rounds }: InternalRequestDialogProps) {
     formData.set("roundId", values.roundId);
     formData.set("entryYearGroup", values.entryYearGroup);
     formData.set("entryYear", values.entryYear);
+    if (values.submitBy) formData.set(SUBMIT_BY_FIELD, values.submitBy);
     if (values.reason) {
       formData.set("reason", values.reason);
     }
@@ -354,6 +359,30 @@ export function InternalRequestDialog({ rounds }: InternalRequestDialogProps) {
                             ))}
                           </SelectContent>
                         </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  {/* Licence fix (14 Oct 2026) — optional per-family deadline. */}
+                  <FormField
+                    control={form.control}
+                    name="submitBy"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Submit by (optional)</FormLabel>
+                        <FormControl>
+                          <Input
+                            type="date"
+                            min={submitByMinValue(new Date())}
+                            {...field}
+                            disabled={isPending}
+                          />
+                        </FormControl>
+                        <p className="text-xs text-slate-500">
+                          Blank uses the round&apos;s deadline. Must be on or
+                          before the round&apos;s close date.
+                        </p>
                         <FormMessage />
                       </FormItem>
                     )}

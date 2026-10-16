@@ -44,6 +44,11 @@ import {
   ENTRY_YEAR_GROUP_CODES,
   ENTRY_YEAR_GROUP_OPTIONS,
 } from "@/lib/assessment/schooling-years";
+import {
+  SUBMIT_BY_FIELD,
+  submitByDisplay,
+  submitByMinValue,
+} from "@/lib/invitations/submit-by";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -94,6 +99,9 @@ const schema = z.object({
     .string()
     .uuid("An application round is required")
     .refine((v) => v !== "__none__", "An application round is required"),
+  // Licence fix (14 Oct 2026) — optional per-family "Submit by" date. The
+  // server checks it is not in the past and not after the round's close date.
+  submitBy: z.string().optional(),
 });
 
 type FormValues = z.infer<typeof schema>;
@@ -138,6 +146,7 @@ export function SendInvitationForm({
       situation: "NEW",
       entryYearGroup: undefined,
       roundId: defaultRoundId ?? "__none__",
+      submitBy: "",
     },
   });
 
@@ -166,6 +175,7 @@ export function SendInvitationForm({
     formData.set("situation", values.situation);
     formData.set("entryYearGroup", values.entryYearGroup);
     formData.set("roundId", values.roundId);
+    if (values.submitBy) formData.set(SUBMIT_BY_FIELD, values.submitBy);
     if (skipEmail) formData.set("skipEmail", "1");
     // CH-32 — the server ignores this when skipEmail is set, but not sending it
     // at all keeps the intent unambiguous in the request itself.
@@ -191,6 +201,7 @@ export function SendInvitationForm({
           situation: "NEW",
           entryYearGroup: undefined,
           roundId: defaultRoundId ?? "__none__",
+          submitBy: "",
         });
         router.refresh();
       } else {
@@ -515,6 +526,30 @@ export function SendInvitationForm({
                 </FormItem>
               )}
             />
+
+            {/* Licence fix (14 Oct 2026) — optional per-family deadline. */}
+            <FormField
+              control={form.control}
+              name="submitBy"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Submit by (optional)</FormLabel>
+                  <FormControl>
+                    <Input
+                      type="date"
+                      min={submitByMinValue(new Date())}
+                      {...field}
+                      disabled={isPending}
+                    />
+                  </FormControl>
+                  <p className="text-xs text-slate-500">
+                    The family&apos;s deadline. Blank uses the round&apos;s.
+                    Must be on or before the round&apos;s close date.
+                  </p>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
           </div>
 
           {/* Feedback */}
@@ -638,6 +673,14 @@ export function SendInvitationForm({
                   · School:{" "}
                   <span className="font-medium text-slate-700">
                     {confirmSchool}
+                  </span>
+                </p>
+                <p className="text-xs text-slate-500">
+                  Submit by:{" "}
+                  <span className="font-medium text-slate-700">
+                    {pendingValues?.submitBy
+                      ? submitByDisplay(pendingValues.submitBy)
+                      : "the round's deadline"}
                   </span>
                 </p>
                 <p className="pt-1 text-xs text-slate-400">

@@ -150,7 +150,7 @@ describe("normaliseHref", () => {
   });
 
   it("keeps the query string — two queries are two destinations", () => {
-    expect(normaliseHref("/documents?slot=P60")).toBe("/documents?slot=P60");
+    expect(normaliseHref("/respond?slot=P60")).toBe("/respond?slot=P60");
   });
 });
 

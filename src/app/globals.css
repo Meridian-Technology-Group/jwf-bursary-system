@@ -176,4 +176,21 @@
   .accent-underline {
     @apply relative after:absolute after:bottom-0 after:left-0 after:h-0.5 after:w-full after:bg-accent-600;
   }
+
+  /*
+   * Epic 21 R3 — a scroll hint for the admin sidebar nav (primary-800). On a
+   * short window the lower links (Exports and below) sit behind the user
+   * footer; macOS hides the scrollbar, so nothing said the nav scrolls. A soft
+   * light edge shows at the top/bottom only while there is more to scroll:
+   * the two `local` covers scroll with the content and hide the `scroll`
+   * shadows at either end. CSS only.
+   */
+  .scroll-hint-primary-800 {
+    background:
+      linear-gradient(theme("colors.primary.800") 30%, transparent) top / 100% 2.5rem no-repeat local,
+      linear-gradient(transparent, theme("colors.primary.800") 70%) bottom / 100% 2.5rem no-repeat local,
+      radial-gradient(farthest-side at 50% 0, rgb(255 255 255 / 0.18), transparent) top / 100% 0.75rem no-repeat scroll,
+      radial-gradient(farthest-side at 50% 100%, rgb(255 255 255 / 0.18), transparent) bottom / 100% 0.75rem no-repeat scroll;
+    background-color: theme("colors.primary.800");
+  }
 }

@@ -18,17 +18,13 @@ import type { CurrentUser } from "@/lib/auth/roles";
 import { withAdminContext, withUserContext, type RlsRole } from "@/lib/db/prisma";
 import { getScheduleHomeForUser } from "@/lib/db/queries/schedule";
 import { syncSignInTimes } from "@/lib/auth/sign-in-times";
-import { resolveOwningContributorId } from "@/lib/db/queries/contributors";
 import { buildScheduleHomeRows } from "@/lib/bursary-accounts/schedule-home";
 import { PORTAL_APPLICATION } from "@/lib/applications/migration-source";
 import { canCreateFirstYearApplication } from "@/lib/applications/create-from-invitation";
 import { parseAcademicYearStart } from "@/lib/assessment/fee-year";
-import { getSectionGapStatuses } from "@/lib/portal/section-gaps";
-import { buildSidebarSections } from "@/components/portal/portal-sidebar-sections";
-import { applicationCompletion } from "@/lib/portal/application-completion";
+import { draftCompletion } from "@/lib/portal/draft-completion";
 import {
   buildApplicationBlocks,
-  canSubmitFromSections,
   type ApplicationBlock,
   type DraftCompletion,
 } from "@/lib/portal/my-applications";
@@ -113,23 +109,7 @@ export async function loadMyApplications(
       const completions = new Map<string, DraftCompletion>();
       for (const app of apps) {
         if (app.formStatus === "SUBMITTED") continue;
-        const ownerContributorId = await resolveOwningContributorId(
-          tx,
-          app.id,
-          user.id
-        );
-        const gaps = await getSectionGapStatuses(
-          tx,
-          app.id,
-          ownerContributorId ?? undefined
-        );
-        const sections = buildSidebarSections(gaps, {
-          isReassessment: app.isReassessment,
-        });
-        completions.set(app.id, {
-          percent: applicationCompletion(sections),
-          canSubmit: canSubmitFromSections(sections),
-        });
+        completions.set(app.id, await draftCompletion(tx, app, user.id));
       }
       return { applications: apps, completions };
     }

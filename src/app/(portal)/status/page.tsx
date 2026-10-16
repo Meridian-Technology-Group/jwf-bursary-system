@@ -34,6 +34,7 @@ import { SubmissionCountdown } from "@/components/portal/submission-countdown";
 import { PortalPage } from "@/components/portal/portal-page";
 import { formatLondonDate } from "@/lib/datetime";
 import { PORTAL_APPLICATION } from "@/lib/applications/migration-source";
+import { DEADLINE_ROUND_SELECT } from "@/lib/rounds/submission-deadline";
 
 export const metadata = {
   title: "Application Status",
@@ -64,11 +65,9 @@ export default async function StatusPage() {
       select: {
         academicYear: true,
         decisionDate: true,
-        closeDate: true,
-        // Both typed round defaults (E1/D13-8) — the resolver picks the
-        // one matching this application's `applicationType`.
-        defaultSubmissionDeadlineNew: true,
-        defaultSubmissionDeadlineRolling: true,
+        // Every deadline tier (E1/D13-8, Epic 21 R2) — the resolver picks
+        // the one matching this application's `applicationType`.
+        ...DEADLINE_ROUND_SELECT,
       },
     },
     assessment: {

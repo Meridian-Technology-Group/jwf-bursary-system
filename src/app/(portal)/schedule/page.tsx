@@ -1,89 +1,132 @@
 /**
- * Gap F2 — parent-facing Year 6 → Year 13 bursary schedule calendar (§10).
+ * Epic 22 P5 (CR-002 Phase 5 #3) — My Application(s) Schedule.
  *
- * A STANDING, read-only reassurance view for ACTIVE families: the full
- * Year 6 → Year 13 assessment span as academic-year rows, out-of-award /
- * not-yet-opened years greyed, the current/next assessment year marked.
- * Informational only — no actions, no links into prior application data.
+ * One table per child (every ACTIVE account with a portal-visible year), the
+ * nine columns of Charlotte's sheet. Each section carries the anchor Home's
+ * child lines link to (`#account-{id}`). Read-only: P1's My Bursary
+ * Application(s) is where a family acts. No outcome is ever shown, and a year
+ * the bursary team has hidden (show-on-portal off) never leaves the database.
  *
- * Auth/data path copied from `(portal)/status/page.tsx`: getCurrentUser →
- * withUserContext(user) → a portal-scoped read. The schedule query is filtered
- * to `showOnPortal` rows for the signed-in family's own ACTIVE account (RLS +
- * the explicit filter both scope it), and the span/grey/current logic is the
- * pure `buildPortalScheduleRows` helper.
+ * Replaces gap F2's single-account Year 6 → Year 13 calendar.
  */
 
-import { finalEligibleSchoolYear } from "@/lib/schools";
 import { redirect } from "next/navigation";
-import { CalendarRange } from "lucide-react";
 import { getCurrentUser } from "@/lib/auth/roles";
-import { withUserContext, type RlsRole } from "@/lib/db/prisma";
-import { getPortalScheduleForUser } from "@/lib/db/queries/schedule";
-import { buildPortalScheduleRows } from "@/lib/bursary-accounts/portal-schedule";
-import { academicYearStartForDate } from "@/lib/assessment/schooling-years";
 import { PortalPage } from "@/components/portal/portal-page";
-import { ScheduleCalendar } from "@/components/portal/schedule-calendar";
+import { loadParentSchedule } from "@/lib/portal/parent-schedule-data";
+import type { ParentScheduleRow } from "@/lib/portal/parent-schedule";
+import { cn } from "@/lib/utils";
+import { formatLondonDate } from "@/lib/datetime";
 
 export const metadata = {
-  title: "Application Schedule",
+  title: "My Application(s) Schedule",
 };
+
+/** Short date in London, e.g. "15 Apr 2027" — nine columns have to fit. */
+function fmt(d: Date | null): string {
+  return d ? formatLondonDate(d) : "";
+}
+
+const STATUS_STYLE: Record<ParentScheduleRow["status"], string> = {
+  Scheduled: "bg-slate-50 text-slate-600 border-slate-200",
+  "Open, not started": "bg-accent-50 text-accent-800 border-accent-200",
+  "In progress": "bg-accent-50 text-accent-800 border-accent-200",
+  Submitted: "bg-green-50 text-green-800 border-green-200",
+  Rejected: "bg-rose-50 text-rose-800 border-rose-200",
+  "Not submitted": "bg-slate-50 text-slate-600 border-slate-200",
+};
+
+const COLUMNS = [
+  "Academic Year",
+  "School Year",
+  "School",
+  "Application Opening Date",
+  "Application Closing Date",
+  "To be submitted by",
+  "Completion Status",
+  "Submission Status",
+  "Submission Date",
+];
 
 export default async function SchedulePage() {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
 
-  const data = await withUserContext(user.id, user.role as RlsRole, (tx) =>
-    getPortalScheduleForUser(tx, user.id)
-  );
-
-  // No ACTIVE account / no portal-visible schedule → nothing to reassure about;
-  // send the family back to the dashboard (the nav item is gated the same way).
-  if (!data || data.visibleEntries.length === 0) redirect("/");
-
-  const rows = buildPortalScheduleRows({
-    entryYearGroup: data.entryYearGroup,
-    firstAssessmentYear: data.firstAssessmentYear,
-    visibleEntries: data.visibleEntries,
-    currentAcademicYearStart: academicYearStartForDate(),
-    school: data.school,
-  });
-  const finalYear = finalEligibleSchoolYear(data.school);
+  const sections = await loadParentSchedule(user, new Date());
+  // No ACTIVE account with a visible year: the nav item is gated the same way.
+  if (sections.length === 0) redirect("/");
 
   return (
-    <PortalPage className="space-y-8">
-      {/* Page header */}
-      <div>
-        <div className="mb-1 text-xs font-medium uppercase tracking-wider text-slate-400">
-          Your bursary
-        </div>
-        <h1 className="text-2xl font-semibold text-primary-900">
-          Application Schedule
-        </h1>
-        <p className="mt-2 max-w-prose text-sm text-slate-500">
-          Bursaries are reviewed every year. This is your application schedule for
-          your child&rsquo;s time at the school — from Year 6 through to Year {finalYear}.
-          We&rsquo;ll email you when each year&rsquo;s application opens; there is
-          nothing for you to do here.
-        </p>
-      </div>
+    // Wider than other portal pages: nine columns don't fit the 48rem cap.
+    <PortalPage className="max-w-6xl space-y-8">
+      <h1 className="text-2xl font-semibold text-primary-900">
+        My Application(s) Schedule
+      </h1>
 
-      {/* The calendar */}
-      <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
-        <h2 className="mb-4 flex items-center gap-2 text-sm font-semibold uppercase tracking-wider text-slate-400">
-          <CalendarRange className="h-4 w-4 text-slate-400" aria-hidden="true" />
-          Year 6 to Year {finalYear}
-        </h2>
-        <ScheduleCalendar rows={rows} finalYear={finalYear} />
-      </div>
-
-      {/* Legend — text labels so the meaning never depends on colour alone. */}
-      <p className="text-xs text-slate-400">
-        Years marked <span className="font-medium text-slate-600">Outside
-        your award</span> fall before your child started or after their final
-        eligible year, or are not yet open. The year marked{" "}
-        <span className="font-medium text-slate-600">This year&rsquo;s
-        application</span> is the one we&rsquo;ll contact you about next.
-      </p>
+      {sections.map((section) => (
+        <section
+          key={section.accountId}
+          id={`account-${section.accountId}`}
+          aria-labelledby={`account-${section.accountId}-heading`}
+          className="scroll-mt-6 rounded-xl border border-slate-200 bg-white shadow-sm"
+        >
+          <div className="border-b border-slate-100 px-5 py-4">
+            <h2
+              id={`account-${section.accountId}-heading`}
+              className="text-lg font-semibold text-primary-900"
+            >
+              {section.childName}
+            </h2>
+            <p className="text-sm text-slate-600">{section.yearLine}</p>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[760px] text-left text-sm">
+              <thead className="bg-slate-50 text-xs uppercase tracking-wider text-slate-500">
+                <tr>
+                  {COLUMNS.map((c) => (
+                    <th key={c} scope="col" className="px-3 py-2.5 align-bottom font-medium">
+                      {c}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {section.rows.map((row) => (
+                  <tr key={row.key} className="align-top">
+                    <th scope="row" className="whitespace-nowrap px-3 py-3 font-medium text-slate-800">
+                      {row.academicYear}
+                    </th>
+                    <td className="whitespace-nowrap px-3 py-3 text-slate-700">
+                      {row.schoolYear != null ? `Year ${row.schoolYear}` : ""}
+                    </td>
+                    <td className="px-3 py-3 text-slate-700">{section.school}</td>
+                    <td className="whitespace-nowrap px-3 py-3 text-slate-700">{fmt(row.opensOn)}</td>
+                    <td className="whitespace-nowrap px-3 py-3 text-slate-700">{fmt(row.closesOn)}</td>
+                    <td className="whitespace-nowrap px-3 py-3 text-slate-700">
+                      {fmt(row.submitBy)}
+                      {row.hasOwnDeadline && (
+                        <span className="block text-xs text-slate-500">Your own date</span>
+                      )}
+                    </td>
+                    <td className="whitespace-nowrap px-3 py-3 text-slate-700">{row.completion}</td>
+                    <td className="px-3 py-3">
+                      <span
+                        className={cn(
+                          "inline-block rounded-full border px-2 py-0.5 text-xs font-medium",
+                          STATUS_STYLE[row.status]
+                        )}
+                      >
+                        {row.status}
+                      </span>
+                    </td>
+                    <td className="whitespace-nowrap px-3 py-3 text-slate-700">{fmt(row.submissionDate)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      ))}
     </PortalPage>
   );
 }

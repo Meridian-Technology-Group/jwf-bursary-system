@@ -11,7 +11,19 @@
  *   effective deadline =
  *     application.submissionDeadlineAt                  (override)
  *       ?? round default FOR THE APPLICATION'S TYPE     (round default)
+ *       ?? the round's RA window submitBy               (ROLLING_OVER only)
  *       ?? round.closeDate                              (fallback)
+ *
+ * The RA-window tier (Epic 21 R2, 14 Oct 2026): a round's rolling-over window
+ * (`RoundWindow` scenario RA, edited on the Rounds page) used to fill only the
+ * invitation email's {{deadline}}, while the portal lockout, the submit guard
+ * and the queue fell through to `closeDate`. On prod's 2026/27 round that would
+ * have locked spring rolling-over families out on 30 Nov. The tier applies to
+ * ROLLING_OVER only: NEW keeps override → default → closeDate exactly, because
+ * an NA window's `submitBy` is not a deadline the queue or portal use (prod's
+ * 2026/27 NA_CURRENT window says 17 Sep; a type-blind tier would move every
+ * live NEW deadline from 30 Nov to 17 Sep). The query-side copy,
+ * `effectiveDeadlineRangeWhere` (src/lib/db/queries/applications.ts), matches.
  *
  * Precedence: a per-application override always wins; absent an override, the
  * round's default submission deadline applies; absent both, fall back to the
@@ -62,16 +74,49 @@ export interface SubmissionDeadlineApplication {
   applicationType: SubmissionDeadlineApplicationType;
 }
 
+/** A stored round window, as far as the deadline needs it. */
+export interface SubmissionDeadlineWindow {
+  /** `RoundScenario`; only `RA` is read. */
+  scenario: string;
+  submitBy: Date | null;
+}
+
 export interface SubmissionDeadlineRound {
   closeDate: Date;
   /** Round-level default submit-by for NEW applications; null = no default. */
   defaultSubmissionDeadlineNew: Date | null;
   /** Round-level default submit-by for ROLLING_OVER applications; null = none. */
   defaultSubmissionDeadlineRolling: Date | null;
+  /**
+   * The round's stored windows (Epic 21 R2). Required, like `applicationType`:
+   * a caller that forgot it would silently hand rolling-over families the
+   * close date. Select it with `DEADLINE_ROUND_SELECT` (RA only), or pass every
+   * window (`ROUND_WINDOWS_SELECT`); `[]` when the round has none.
+   */
+  windows: readonly SubmissionDeadlineWindow[];
 }
 
+/**
+ * The `select` every reader of a deadline round uses, so no path forgets a
+ * tier. The RA window is the only one the deadline reads.
+ */
+export const DEADLINE_ROUND_SELECT = {
+  closeDate: true,
+  defaultSubmissionDeadlineNew: true,
+  defaultSubmissionDeadlineRolling: true,
+  windows: {
+    where: { scenario: "RA" },
+    select: { scenario: true, submitBy: true },
+  },
+} as const;
+
 /** Where the effective deadline came from — for provenance labelling in the UI. */
-export type SubmissionDeadlineSource = "override" | "roundDefault" | "closeDate";
+export type SubmissionDeadlineSource = "override" | "roundDefault" | "roundWindow" | "closeDate";
+
+/** The round's stored rolling-over (RA) window close, or null. */
+export function rollingWindowSubmitBy(round: Pick<SubmissionDeadlineRound, "windows">): Date | null {
+  return round.windows.find((w) => w.scenario === "RA")?.submitBy ?? null;
+}
 
 export interface EffectiveSubmissionDeadline {
   /** The instant the form may be submitted up to (inclusive). */
@@ -81,7 +126,7 @@ export interface EffectiveSubmissionDeadline {
    * Kept for backwards compatibility — equivalent to `source === "override"`.
    */
   isOverride: boolean;
-  /** Which of the three tiers produced `deadline`. */
+  /** Which tier produced `deadline`. */
   source: SubmissionDeadlineSource;
 }
 
@@ -107,7 +152,8 @@ export function roundDefaultForType(
  *
  * @param application object carrying `submissionDeadlineAt` (override or null)
  *                    and `applicationType`
- * @param round       object carrying `closeDate` and both typed round defaults
+ * @param round       object carrying `closeDate`, both typed round defaults and
+ *                    the round's stored windows
  */
 export function effectiveSubmissionDeadline(
   application: SubmissionDeadlineApplication,
@@ -128,12 +174,19 @@ export function effectiveSubmissionDeadline(
       source: "roundDefault",
     };
   }
+  // Epic 21 R2 — rolling-over only (see the module docstring).
+  if (application.applicationType === "ROLLING_OVER") {
+    const windowSubmitBy = rollingWindowSubmitBy(round);
+    if (windowSubmitBy) {
+      return { deadline: endOfDay(windowSubmitBy), isOverride: false, source: "roundWindow" };
+    }
+  }
   return { deadline: endOfDay(round.closeDate), isOverride: false, source: "closeDate" };
 }
 
 /**
  * The deadline a round imposes on an application type when no per-application
- * override exists — i.e. tiers 2 and 3 only. Used where there is no application
+ * override exists — i.e. every tier but the override. Used where there is no application
  * row yet but the date still has to be communicated: the invitation emails
  * (E1), which previously injected the invitation TOKEN EXPIRY as `{{deadline}}`.
  */

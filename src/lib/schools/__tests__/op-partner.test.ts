@@ -20,7 +20,7 @@ import {
   remainingYearsForEntrySchoolYear,
 } from "@/lib/assessment/schooling-years";
 import { resolveScheduleHorizon } from "@/lib/bursary-accounts/schedule";
-import { buildPortalScheduleRows } from "@/lib/bursary-accounts/portal-schedule";
+import { currentSchoolYear } from "@/lib/portal/current-school-year";
 import { awardFundOptionsForSchool } from "@/lib/assessment/award-fund";
 import { resolveInvitationTemplate } from "@/lib/email/invitation-template";
 
@@ -93,15 +93,17 @@ describe("OP partnering school (S9)", () => {
       expect(resolveScheduleHorizon("Y10", undefined, "WHITGIFT")).toBe(4);
     });
 
-    it("the parent's schedule calendar stops at Year 11", () => {
-      const rows = buildPortalScheduleRows({
-        entryYearGroup: "Y9",
-        firstAssessmentYear: "2026/2027",
-        visibleEntries: [{ scheduleYear: 1, academicYear: "2026/2027" }],
-        currentAcademicYearStart: 2026,
-        school: "OP_PARTNER",
-      });
-      expect(rows.map((r) => r.schoolYear)).toEqual([9, 10, 11]);
+    it("the parent's \"Currently in Year X\" stops at Year 11", () => {
+      // Epic 22: the family's schedule shows only generated years (the
+      // horizon above), and the year line caps at the school's final year.
+      expect(
+        currentSchoolYear({
+          entryYearGroup: "Y9",
+          firstAssessmentYear: "2026/2027",
+          school: "OP_PARTNER",
+          today: new Date("2029-10-01T12:00:00Z"),
+        })
+      ).toEqual({ kind: "current", year: 11 });
     });
   });
 });

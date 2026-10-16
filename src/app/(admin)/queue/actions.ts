@@ -29,6 +29,11 @@ import { createSupabaseAdminClient } from "@/lib/auth/supabase-admin";
 import { createProfile } from "@/lib/auth/create-profile";
 import { getAppUrl } from "@/lib/app-url";
 import { createInvitation } from "@/lib/db/queries/invitations";
+import {
+  emailDeadlineOverride,
+  parseInvitationSubmitBy,
+  SUBMIT_BY_FIELD,
+} from "@/lib/invitations/submit-by";
 import { resolveInvitationTemplate } from "@/lib/email/invitation-template";
 import {
   invitationDeadlineFields,
@@ -55,6 +60,9 @@ const InternalRequestSchema = z.object({
   entryYearGroup: z.nativeEnum(EntryYearGroup, {
     error: () => ({ message: "Please select an entry school year" }),
   }),
+  // Licence fix (14 Oct 2026) — optional "Submit by" (`yyyy-MM-dd`), validated
+  // against the round inside the create transaction.
+  submitBy: z.string().optional(),
   entryYear: z.coerce
     .number()
     .int()
@@ -87,6 +95,7 @@ export async function createInternalRequestAction(
     reason: (formData.get("reason") as string | null) ?? undefined,
     entryYearGroup: (formData.get("entryYearGroup") as string | null) ?? "",
     entryYear: (formData.get("entryYear") as string | null) ?? "",
+    submitBy: (formData.get(SUBMIT_BY_FIELD) as string | null) ?? undefined,
   };
 
   const parsed = InternalRequestSchema.safeParse(raw);
@@ -106,6 +115,7 @@ export async function createInternalRequestAction(
     reason,
     entryYearGroup,
     entryYear,
+    submitBy: submitByRaw,
   } = parsed.data;
 
   const supabase = createSupabaseAdminClient();
@@ -219,8 +229,9 @@ export async function createInternalRequestAction(
           deadline: SubmissionDeadlineRound;
         };
         expiresAt: Date;
+        submitBy: Date | null;
       }
-    | { ok: false; error: string };
+    | { ok: false; error: string; fieldErrors?: Record<string, string[]> };
 
   try {
     result = await withAdminContext(async (tx: Tx) => {
@@ -238,6 +249,20 @@ export async function createInternalRequestAction(
         return { ok: false as const, error: "Selected round not found." };
       }
 
+      const checkedSubmitBy = parseInvitationSubmitBy(
+        submitByRaw,
+        round.closeDate,
+        new Date()
+      );
+      if (!checkedSubmitBy.ok) {
+        return {
+          ok: false as const,
+          error: checkedSubmitBy.error,
+          fieldErrors: { submitBy: [checkedSubmitBy.error] },
+        };
+      }
+      const submitBy = checkedSubmitBy.submitBy;
+
       const refPrefix = `INT-${round.academicYear.replace("/", "-")}-`;
       const existing = await tx.application.count({
         where: { reference: { startsWith: refPrefix } },
@@ -253,6 +278,9 @@ export async function createInternalRequestAction(
           childName,
           entryYear,
           entryYearGroup,
+          // The application exists from the start here, so the invitation's
+          // "Submit by" date is its override straight away.
+          submissionDeadlineAt: submitBy,
           isInternal: true,
           ...applicationCreateData("NEW"),
         },
@@ -279,6 +307,7 @@ export async function createInternalRequestAction(
         // B3 — the internal-request path IS Charlotte's "internal
         // application" situation; the template resolves per school.
         situation: InvitationSituation.INTERNAL,
+        submissionDeadlineAt: submitBy,
         createdBy: user.id,
         expiresAt,
       });
@@ -296,9 +325,11 @@ export async function createInternalRequestAction(
             defaultSubmissionDeadlineNew: round.defaultSubmissionDeadlineNew,
             defaultSubmissionDeadlineRolling:
               round.defaultSubmissionDeadlineRolling,
+            windows: round.windows,
           },
         },
         expiresAt,
+        submitBy,
       };
     });
   } catch (err) {
@@ -327,10 +358,15 @@ export async function createInternalRequestAction(
         );
       });
     }
-    return { success: false, error: result.error };
+    return {
+      success: false,
+      error: result.error,
+      ...(result.fieldErrors ? { fieldErrors: result.fieldErrors } : {}),
+    };
   }
 
-  const { application, invitationId, invitationToken, round, expiresAt } = result;
+  const { application, invitationId, invitationToken, round, expiresAt, submitBy } =
+    result;
 
   // 6. Send the invitation email
   const schoolLabel = schoolName(school);
@@ -347,7 +383,8 @@ export async function createInternalRequestAction(
       // E1/CF-11: the internal request creates a NEW application, so
       // {{deadline}} is that round's new-applicant submission deadline; the
       // token expiry moves to {{link_expiry}}.
-      ...invitationDeadlineFields(round.deadline, "NEW", expiresAt),
+      // Licence fix: the "Submit by" date, when set, wins.
+      ...invitationDeadlineFields(round.deadline, "NEW", expiresAt, emailDeadlineOverride(submitBy)),
     }
   );
 

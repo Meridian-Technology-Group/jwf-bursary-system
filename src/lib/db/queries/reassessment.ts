@@ -18,6 +18,7 @@ import {
   pickPreviousYear,
 } from "@/lib/assessment/previous-year";
 import { ensurePrimaryContributor } from "@/lib/db/queries/contributors";
+import { applicationDeadlineFromInvitation } from "@/lib/invitations/submit-by";
 import {
   selectPreviousWatchOutNotes,
   type WatchOutCandidate,
@@ -362,7 +363,11 @@ export async function createReassessmentApplicationFromInvitation(
   invitation: Pick<
     Invitation,
     "authUserId" | "bursaryAccountId" | "roundId" | "school" | "childName"
-  >
+  > &
+    // Licence fix (14 Oct 2026): the invitation's "Submit by" date. Optional
+    // so narrow callers (scripts, tests) still type-check; every app path
+    // passes the full invitation row.
+    Partial<Pick<Invitation, "submissionDeadlineAt">>
 ): Promise<{ id: string; created: boolean }> {
   const { authUserId, bursaryAccountId, roundId } = invitation;
   if (!authUserId || !bursaryAccountId || !roundId) {
@@ -446,6 +451,13 @@ export async function createReassessmentApplicationFromInvitation(
       childName,
       childDob: account?.childDob ?? null,
       entryYear: account?.entryYear ?? null,
+      // Licence fix (14 Oct 2026): the invitation's "Submit by" date becomes
+      // this new application's override. An existing draft (returned above)
+      // is never touched, so an override already set is never overwritten.
+      submissionDeadlineAt: applicationDeadlineFromInvitation(
+        null,
+        invitation.submissionDeadlineAt
+      ),
       isReassessment: true,
       ...applicationCreateData("ROLLING_OVER"),
     },

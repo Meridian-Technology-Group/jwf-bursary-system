@@ -358,6 +358,7 @@ export async function acceptApplicantInvitationAction(
           entryYear: invitation.entryYear,
           entryYearGroup: invitation.entryYearGroup,
           contactId: invitation.contactId,
+          submissionDeadlineAt: invitation.submissionDeadlineAt,
         });
       }
 
@@ -483,6 +484,7 @@ export async function acceptInvitationForExistingAccountAction(
           entryYear: invitation.entryYear,
           entryYearGroup: invitation.entryYearGroup,
           contactId: invitation.contactId,
+          submissionDeadlineAt: invitation.submissionDeadlineAt,
         });
       }
 

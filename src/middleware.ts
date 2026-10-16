@@ -39,7 +39,7 @@ import { isStaffMfaEnforced } from "@/lib/auth/mfa-flag";
 // ---------------------------------------------------------------------------
 
 const AUTH_ROUTES = /^\/(?:\(auth\)\/)?(?:login|register|reset-password|auth\/callback)/;
-const PORTAL_PREFIX = /^\/(?:\(portal\)\/)?(?:portal|my-application|documents)/;
+const PORTAL_PREFIX = /^\/(?:\(portal\)\/)?(?:portal|my-application)/;
 const ADMIN_PREFIX = /^\/(?:\(admin\)\/)?(?:admin|queue|rounds|invitations|reports|exports|audit|settings|users|applications)/;
 
 /** Paths that do not need any processing. */

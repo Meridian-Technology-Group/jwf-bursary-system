@@ -94,6 +94,7 @@ import {
   bulkMarkActiveAction,
 } from "@/app/(admin)/applications/[id]/actions";
 import { bulkReassessmentInviteFromApplicationsAction } from "@/app/(admin)/invitations/actions";
+import { SubmitByInput } from "@/components/admin/submit-by-input";
 import { BulkEmailWizardAction } from "@/components/admin/bulk-email-wizard";
 
 import type { ApplicationListItem } from "@/lib/db/queries/applications";
@@ -320,14 +321,19 @@ function ReassessmentBulkAction({
   onActionComplete: () => void;
 }) {
   const [open, setOpen] = React.useState(false);
+  // Licence fix (14 Oct 2026) — one optional deadline for the whole batch.
+  const [submitBy, setSubmitBy] = React.useState("");
   const count = selectedIds.length;
 
   const handleConfirm = () => {
     setOpen(false);
+    const batchSubmitBy = submitBy || null;
+    setSubmitBy("");
     run(async () => {
       const result = await bulkReassessmentInviteFromApplicationsAction(
         selectedIds,
-        targetRoundId
+        targetRoundId,
+        batchSubmitBy
       );
       if (result.sent > 0 || result.failed === 0) {
         onFeedback({
@@ -386,6 +392,14 @@ function ReassessmentBulkAction({
               </span>
             </DialogDescription>
           </DialogHeader>
+          {targetRound && (
+            <SubmitByInput
+              id="reassessment-invite-submit-by"
+              value={submitBy}
+              onChange={setSubmitBy}
+              batch
+            />
+          )}
           <DialogFooter>
             <Button variant="outline" onClick={() => setOpen(false)}>
               Cancel

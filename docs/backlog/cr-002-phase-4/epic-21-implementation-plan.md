@@ -544,6 +544,12 @@ Write the policies **in this migration**, using the patterns in `20260606210000_
 
 ---
 
+**R2 (14 Oct, `fix/schedule-dates-follow-round`) — supersedes the "Change from the plan" above.**
+- **One rolling-over deadline.** `effectiveSubmissionDeadline` is now override → per-type round default → **(ROLLING_OVER only) the round's stored RA window `submitBy`** → `closeDate`, source `"roundWindow"`. NEW is unchanged (prod's 2026/27 NA_CURRENT window, 17 Sep, must not move live NEW deadlines off 30 Nov). `SubmissionDeadlineRound.windows` is required; readers select `DEADLINE_ROUND_SELECT`. The queue's `effectiveDeadlineRangeWhere` has the matching fourth branch, and the parity test covers it. Email, portal countdown/lockout, submit guard and queue now agree.
+- **Later years follow their own round.** `scheduleDatesForYear` takes the stored RA window of the round **for that academic year** (`loadRollingWindowsByYear`, keyed by the round's start year), else the 15 Apr / 21 May placeholder. Year 1 keeps the award round's dates. Generation, Regenerate and Add-a-year all read it.
+- **Re-dating.** `saveRoundWindowsAction` re-dates rows matching `rollingRedateWhere(round.academicYear)`: `schedule_year ≥ 2`, `SCHEDULED`, `round_id IS NULL`, `academic_year` = that round's year. Never year 1, never RECEIVED/COMPLETE. The count goes in the UPDATE_ROUND audit metadata.
+- **For Epic 22 P5: `scheduleRowDates({ availableOn, requiredBy, application })`** in `src/lib/bursary-accounts/schedule-dates.ts` returns `{ opensOn, closesOn, submitBy, hasOwnDeadline }`. P5's "Application Closing Date" = `closesOn` (the stored window close); "To be submitted by" = `submitBy` (the application's `submissionDeadlineAt` override when set, else `closesOn`). `buildScheduleHomeRows`, the admin ScheduleGrid and the admin payable-fees table already use it. The admin views show "Family: <date>" when `hasOwnDeadline`.
+
 ### T8 · Toolkit changes (branch `chore/gt-migration-toolkit`, scripts only)
 
 **Status: BUILT 13 Oct** on `chore/gt-migration-toolkit` (staging merged in first):

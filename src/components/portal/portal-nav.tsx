@@ -3,8 +3,9 @@
 /**
  * PortalNav — the persistent left-rail navigation for the applicant portal.
  *
- * This is the lead-applicant nav (Home / My Bursary Application(s) / Documents /
- * Help),
+ * This is the lead-applicant nav (Home / My Bursary Application(s) / Contact us
+ * by email). The Documents page was removed by Epic 23 T3 (her 16 Oct decision:
+ * uploads follow the retention rules; there is no historical uploads page),
  * modelled on `admin-nav.tsx`. The History item was removed by Epic 13 D1
  * (D13-4): applicants keep status visibility, but no route back into what they
  * submitted. It is a DISTINCT component family from the
@@ -25,7 +26,6 @@ import { usePathname } from "next/navigation";
 import {
   Home,
   FileText,
-  Upload,
   Mail,
   AlertCircle,
   CalendarRange,
@@ -69,8 +69,7 @@ export interface PortalNavItem {
 }
 
 /**
- * Constant nav membership. Documents is first-class (Decision 2) — it points at
- * `/documents` and is never hidden or disabled. "My Bursary Application(s)"
+ * Constant nav membership. "My Bursary Application(s)"
  * (Epic 22 P1, D-8) points at the per-child list `/my-applications`, where each
  * child's options open the right form; it replaced the adaptive single
  * "My Application" link, so it stays active across `/apply/*`, `/status` and
@@ -83,8 +82,8 @@ export interface PortalNavItem {
  * is directed exactly where it needs to be without cluttering the interface.
  *
  * When `hasSchedule` is true (the family has an ACTIVE bursary account with ≥1
- * portal-visible schedule entry — gap F2) an "Application Schedule" item links to
- * the standing, read-only Year 6 → Year 13 calendar (`/schedule`). It is shown
+ * portal-visible schedule entry — gap F2) a "My Application(s) Schedule" item
+ * (Epic 22 P5, D-8) links to the per-child schedule tables (`/schedule`). It is shown
  * ONLY for active, scheduled families — the same conditional-visibility
  * mechanism as Missing Documents — so first-year applicants never see it.
  */
@@ -117,7 +116,7 @@ export function buildPortalNav(
     ...(hasSchedule
       ? [
           {
-            label: "Application Schedule",
+            label: "My Application(s) Schedule",
             href: "/schedule",
             icon: CalendarRange,
             match: "/schedule",
@@ -125,13 +124,6 @@ export function buildPortalNav(
           },
         ]
       : []),
-    {
-      label: "Documents",
-      href: "/documents",
-      icon: Upload,
-      match: "/documents",
-      matchMode: "prefix",
-    },
     {
       // Epic 22 P2 (D-8, D-17): Help became "Contact us by email"; the URL and
       // the guidance tabs (below the form) stay.
@@ -217,7 +209,7 @@ interface PortalNavProps {
   needsDocs?: boolean;
   /**
    * Whether the family has an ACTIVE account with a portal-visible schedule
-   * (gap F2). Gates the "Application Schedule" calendar item.
+   * (gap F2). Gates the "My Application(s) Schedule" item.
    */
   hasSchedule?: boolean;
 }
