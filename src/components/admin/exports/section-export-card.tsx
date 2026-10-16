@@ -54,6 +54,11 @@ const APPLICATION_TYPES = [
   { value: "ROLLING_OVER", label: "Rolling-Over Application" },
   { value: "NEW", label: "New Application" },
 ];
+const SUBMISSION_STATUSES = [
+  { value: "NOT_YET_STARTED", label: "Not yet started" },
+  { value: "STARTED", label: "Started" },
+  { value: "SUBMITTED", label: "Submitted" },
+];
 const ASSESSMENT_STATUSES = [
   { value: "NOT_STARTED", label: "Not started" },
   { value: "IN_PROGRESS", label: "In progress" },
@@ -187,6 +192,66 @@ export function SectionExportCard({ section, rounds }: Props) {
         return <SelectFilter key={key} id={id} label="School" value={val(key)} onChange={set(key)} options={SCHOOLS} />;
       case "schoolYear":
         return <SelectFilter key={key} id={id} label="School Year" value={val(key)} onChange={set(key)} options={SCHOOL_YEARS} />;
+      case "roundRequired":
+        return (
+          <SelectFilter
+            key={key}
+            id={id}
+            label="Round"
+            value={val("roundId")}
+            onChange={set("roundId")}
+            allLabel="Current open round"
+            options={rounds.map((r) => ({ value: r.id, label: `${r.academicYear} (${r.status.toLowerCase()})` }))}
+          />
+        );
+      case "submissionStatus":
+        return (
+          <SelectFilter key={key} id={id} label="Submission Status" value={val(key)} onChange={set(key)} options={SUBMISSION_STATUSES} />
+        );
+      case "completionBelow":
+        return (
+          <div key={key} className="space-y-1.5">
+            <Label htmlFor={id}>% Completion less than</Label>
+            <Input
+              id={id}
+              type="number"
+              min={0}
+              max={100}
+              step={1}
+              placeholder="e.g. 50"
+              value={filters.completionBelow ?? ""}
+              onChange={(e) => set("completionBelow")(e.target.value)}
+            />
+          </div>
+        );
+      case "dueRange":
+      case "submittedRange": {
+        const [label, from, to] =
+          key === "dueRange"
+            ? ["To be Submitted by", "dueFrom", "dueTo"]
+            : ["Submission Date", "submittedFrom", "submittedTo"];
+        return (
+          <div key={key} className="space-y-1.5 sm:col-span-2">
+            <Label htmlFor={`${id}-from`}>{label}</Label>
+            <div className="flex items-center gap-2">
+              <Input
+                id={`${id}-from`}
+                type="date"
+                aria-label={`${label} from`}
+                value={filters[from] ?? ""}
+                onChange={(e) => set(from)(e.target.value)}
+              />
+              <span className="text-sm text-slate-500">to</span>
+              <Input
+                type="date"
+                aria-label={`${label} to`}
+                value={filters[to] ?? ""}
+                onChange={(e) => set(to)(e.target.value)}
+              />
+            </div>
+          </div>
+        );
+      }
       case "completedRange":
         return (
           <div key={key} className="space-y-1.5 sm:col-span-2">

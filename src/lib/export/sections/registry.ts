@@ -7,8 +7,9 @@ import type { Tx } from "@/lib/db/prisma";
 import type { ExportRecord } from "@/lib/export/columns";
 import { AUDIT_ACTIONS, type AuditAction } from "@/lib/audit/actions";
 import { AssessmentFiltersSchema, parseWith, type ParseResult } from "./filters";
-import { STATISTICAL_SECTION, type SectionDescriptor, type SectionKey } from "./descriptors";
+import { STATISTICAL_SECTION, WORKLOAD_SECTION, type SectionDescriptor, type SectionKey } from "./descriptors";
 import { buildStatisticalRows } from "./statistical";
+import { buildWorkloadRows, parseWorkloadFilters, type WorkloadFilters } from "./workload";
 
 export interface ServerSection {
   descriptor: SectionDescriptor;
@@ -22,6 +23,16 @@ export interface ServerSection {
 }
 
 const SECTIONS: Partial<Record<SectionKey, ServerSection>> = {
+  workload: {
+    descriptor: WORKLOAD_SECTION,
+    sheetName: "Workload",
+    filenameStem: "assessment-workload",
+    auditAction: AUDIT_ACTIONS.EXPORT_WORKLOAD,
+    // % completion reads each unsubmitted form's sections and documents.
+    timeoutMs: 120_000,
+    parse: (p) => parseWorkloadFilters(p),
+    buildRows: (tx, f) => buildWorkloadRows(tx, f as WorkloadFilters),
+  },
   statistical: {
     descriptor: STATISTICAL_SECTION,
     sheetName: "Statistical",
