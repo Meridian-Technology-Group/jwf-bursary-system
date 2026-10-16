@@ -1,38 +1,29 @@
 // src/app/api/cron/purge-expired/route.ts
 //
-// Vercel Cron handler implementing the Epic 10 tiered data-retention policy
-// (Decision D6). It finds terminal-outcome applications whose retention window
-// has fully elapsed (per `lib/retention/policy.ts`) and erases each via the
-// SHARED cascade `lib/retention/purge.ts` — the exact same anonymising deletion
-// the manual GDPR button runs.
+// Weekly retention run (Epic 23 T10) — the DPO-signed rules of
+// `lib/retention/policy.ts`, one stage at a time, per application, via the
+// primitives of `lib/retention/stages.ts` (never the whole-family GDPR
+// cascade).
 //
 // ── DESTRUCTIVE-OPERATION SAFETY (read before changing anything) ─────────────
 //
-//  1. STRICTLY WINDOW-GATED. Only rows whose retention window has elapsed
-//     (computed from the decision/archive/close date) are ever touched. On
-//     recent data this is a NO-OP — nothing on a freshly-seeded nonprod is
-//     eligible. The cron never deletes anything inside its window.
+//  1. DRY-RUN BY DEFAULT. The destructive path runs ONLY when
+//     `RETENTION_PURGE_ENABLED` is exactly "true" — unset everywhere until
+//     Brian has reviewed the dry-run report. Otherwise the run reports what it
+//     WOULD do (counts per stage + the next 10 due) and changes nothing.
+//  2. DUE-GATED IN SQL, RE-CHECKED IN THE TRANSACTION. Candidates are selected
+//     by due date (`dueCandidatesWhere`) and paged through; each primitive
+//     re-reads the row and re-plans inside its own transaction, so a reopened
+//     account or an already-reached stage is skipped.
+//  3. AUDITED. Each applied stage writes its own audit row; a run that applied
+//     anything writes one RETENTION_PURGE_CRON summary. Audit rows are never
+//     deleted.
+//  4. BOUNDED. At most MAX_STAGES_PER_RUN stages per run; per-item failures are
+//     logged and skipped. Storage objects and auth users are removed after
+//     each stage's commit (non-fatal).
 //
-//  2. DRY-RUN BY DEFAULT. The destructive path runs ONLY when
-//     `RETENTION_PURGE_ENABLED` is exactly "true". With the flag unset/anything
-//     else, the cron LOGS what it WOULD purge (counts per tier + ids) and
-//     deletes NOTHING. This is the default posture so the job can be deployed
-//     and observed on shared nonprod / before DPO sign-off without data loss.
-//
-//  3. AUDITED. When it actually purges, it writes ONE summary RETENTION_PURGE_CRON
-//     audit row (only if something changed — no nightly no-op flood). It NEVER
-//     deletes audit rows (audit_logs is append-only; the cascade nulls userId).
-//
-//  4. BOUNDED. Caps the rows processed per run (`MAX_PER_RUN`) to limit blast
-//     radius and Storage API calls; per-item failures are logged and skipped,
-//     never aborting the batch.
-//
-// Schedule: registered in vercel.json under `crons`. Vercel invokes this route
-// with `Authorization: Bearer ${CRON_SECRET}` (reused from expire-invitations;
-// already set in Production AND Preview).
-//
-// Security: fail-closed — requests without a matching bearer token (or when
-// CRON_SECRET is unset) are rejected 401.
+// Schedule: vercel.json `crons`. Auth: `Authorization: Bearer ${CRON_SECRET}`,
+// fail-closed.
 
 import { NextRequest, NextResponse } from "next/server";
 import { withAdminContext } from "@/lib/db/prisma";
@@ -40,33 +31,23 @@ import { createAuditLog } from "@/lib/audit/log";
 import { AUDIT_ACTIONS, AUDIT_ENTITY_TYPES } from "@/lib/audit/actions";
 import { deleteDocument } from "@/lib/storage/documents";
 import { createSupabaseAdminClient } from "@/lib/auth/supabase-admin";
-import { isPurgeable, getRetentionPolicy } from "@/lib/retention/policy";
+import { isRetentionPurgeEnabled, planRetention, type RetentionPlan } from "@/lib/retention/policy";
 import {
-  purgeApplication,
-  buildPurgeAuditMetadata,
-  type PurgeableApplication,
-} from "@/lib/retention/purge";
-import type { AssessmentOutcome } from "@prisma/client";
+  deleteStorageObjectsPostCommit,
+  purgeAssessment,
+  purgeFormAndDocuments,
+  toRetentionRecord,
+} from "@/lib/retention/stages";
+import { countByAction, dueCandidatesWhere, retentionPage, retentionSchedule, PAGE_SIZE } from "@/lib/retention/schedule";
+import { deleteAuthUsersPostCommit } from "@/lib/retention/close-purge";
 
 export const dynamic = "force-dynamic";
+export const maxDuration = 300;
 
-/** Hard cap on rows processed per run (blast-radius / Storage-call ceiling). */
-const MAX_PER_RUN = 100;
-
-/** Destructive deletion runs ONLY when this is exactly "true". */
-function isPurgeEnabled(): boolean {
-  return process.env.RETENTION_PURGE_ENABLED === "true";
-}
-
-/** Terminal outcomes the policy can tier. Legacy QUALIFIES is excluded. */
-const TERMINAL_OUTCOMES: AssessmentOutcome[] = [
-  "DOES_NOT_QUALIFY",
-  "QUALIFIES_NOT_AWARDED",
-  "AWARDED",
-];
+/** Blast-radius ceiling per run; the rest wait for next week. */
+const MAX_STAGES_PER_RUN = 500;
 
 export async function GET(request: NextRequest): Promise<NextResponse> {
-  // ── Auth: require a matching bearer token (fail closed) ───────────────────
   const cronSecret = process.env.CRON_SECRET;
   const authHeader = request.headers.get("authorization");
   if (!cronSecret || authHeader !== `Bearer ${cronSecret}`) {
@@ -74,188 +55,100 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   }
 
   const now = new Date();
-  const enabled = isPurgeEnabled();
-  const policy = getRetentionPolicy();
+  const enabled = isRetentionPurgeEnabled();
 
   try {
-    // 1. Candidate set: terminal-outcome applications, not already anonymised,
-    //    capped. We over-fetch the small fields needed to evaluate the window
-    //    AND to drive the cascade, then filter in-process via `isPurgeable`.
-    const candidates = await withAdminContext((tx) =>
-      tx.application.findMany({
-        where: {
-          OR: [
-            { assessment: { outcome: { in: TERMINAL_OUTCOMES } } },
-            // Item 2: a unified close with no outcome is terminal too — it
-            // ages on the `closed` retention tier from applications.closed_at.
-            { closedAt: { not: null } },
-          ],
-          // Skip rows already anonymised by a prior purge.
-          childName: { not: "[Child Removed]" },
-        },
-        take: MAX_PER_RUN,
-        orderBy: { submittedAt: "asc" },
-        select: {
-          id: true,
-          reference: true,
-          leadApplicantId: true,
-          submittedAt: true,
-          archivedAt: true,
-          closedAt: true,
-          documents: { select: { id: true, storagePath: true } },
-          assessment: {
-            select: {
-              id: true,
-              outcome: true,
-              property: { select: { id: true } },
-              recommendation: { select: { id: true } },
-            },
-          },
-          bursaryAccount: { select: { status: true, closedAt: true } },
-        },
-      })
-    );
+    // 1. Every due stage, paged by id.
+    const due: { id: string; reference: string; plan: RetentionPlan }[] = [];
+    let cursor: string | null = null;
+    for (;;) {
+      const page = await withAdminContext((tx) => retentionPage(tx, dueCandidatesWhere(now), cursor));
+      for (const row of page) {
+        const plan = planRetention(toRetentionRecord(row), now);
+        if (plan.due && plan.action !== "keep") due.push({ id: row.id, reference: row.reference, plan });
+      }
+      if (page.length < PAGE_SIZE) break;
+      cursor = page[page.length - 1].id;
+    }
+    const stageCounts = countByAction(due.map((d) => d.plan));
+    const upcoming = (await withAdminContext((tx) => retentionSchedule(tx, now)))
+      .filter((s) => !s.plan.due)
+      .slice(0, 10)
+      .map((s) => ({ reference: s.reference, action: s.plan.action, rule: s.plan.rule, dueAt: s.plan.dueAt?.toISOString().slice(0, 10) }));
 
-    // 2. Window-gate: keep only those whose retention window has fully elapsed.
-    const eligible = candidates.filter(
-      (app) =>
-        isPurgeable(
-          {
-            outcome: app.assessment?.outcome ?? null,
-            archivedAt: app.archivedAt,
-            submittedAt: app.submittedAt,
-            closedAt: app.closedAt,
-          },
-          app.bursaryAccount
-            ? {
-                status: app.bursaryAccount.status,
-                closedAt: app.bursaryAccount.closedAt,
-              }
-            : null,
-          now,
-          policy
-        ).purgeable
-    );
-
-    // Per-tier counts for the report / audit metadata.
-    const tierCounts = eligible.reduce<Record<string, number>>((acc, app) => {
-      const tier = isPurgeable(
-        {
-          outcome: app.assessment?.outcome ?? null,
-          archivedAt: app.archivedAt,
-          submittedAt: app.submittedAt,
-          closedAt: app.closedAt,
-        },
-        app.bursaryAccount
-          ? { status: app.bursaryAccount.status, closedAt: app.bursaryAccount.closedAt }
-          : null,
-        now,
-        policy
-      ).tier;
-      if (tier) acc[tier] = (acc[tier] ?? 0) + 1;
-      return acc;
-    }, {});
-
-    // 3a. DRY-RUN (default): log what WOULD be purged, delete nothing.
+    // 2a. DRY-RUN (default): report, change nothing.
     if (!enabled) {
-      console.info(
-        `[cron/purge-expired] DRY-RUN (RETENTION_PURGE_ENABLED!=true): ` +
-          `${eligible.length}/${candidates.length} candidate(s) are eligible`,
-        {
-          tierCounts,
-          references: eligible.map((a) => a.reference),
-        }
-      );
+      console.info(`[cron/purge-expired] DRY-RUN (RETENTION_PURGE_ENABLED!=true): ${due.length} stage(s) due`, {
+        stageCounts,
+        references: due.map((d) => d.reference),
+      });
       return NextResponse.json({
         ok: true,
         mode: "dry-run",
-        candidates: candidates.length,
-        eligible: eligible.length,
-        tierCounts,
-        purged: 0,
+        due: due.length,
+        stageCounts,
+        nextDue: upcoming,
+        applied: 0,
         ranAt: now.toISOString(),
       });
     }
 
-    // 3b. ENABLED: erase each eligible application via the shared cascade.
-    //     Per-item failures are non-fatal (logged + skipped).
-    const purged: string[] = [];
+    // 2b. ENABLED: one stage per application per run, each in its own transaction.
+    const applied: { reference: string; action: string }[] = [];
     const failed: { id: string; error: string }[] = [];
-    for (const app of eligible) {
-      const purgeable: PurgeableApplication = {
-        id: app.id,
-        reference: app.reference,
-        leadApplicantId: app.leadApplicantId,
-        documents: app.documents,
-        assessment: app.assessment
-          ? {
-              id: app.assessment.id,
-              property: app.assessment.property,
-              recommendation: app.assessment.recommendation,
-            }
-          : null,
-      };
+    for (const item of due.slice(0, MAX_STAGES_PER_RUN)) {
       try {
-        const result = await purgeApplication(purgeable, {
-          withAdminContext,
-          deleteDocument,
-          deleteAuthUser: (uid) =>
-            createSupabaseAdminClient().auth.admin.deleteUser(uid),
-        });
-        // One per-application audit row keyed to the application, mirroring the
-        // manual GDPR_DELETION shape but with the automatic action key.
-        await withAdminContext((tx) =>
-          createAuditLog(tx, {
-            action: AUDIT_ACTIONS.RETENTION_PURGE_CRON,
-            entityType: AUDIT_ENTITY_TYPES.Application,
-            entityId: app.id,
-            context: `Automatic retention purge of application ${app.reference}`,
-            metadata: buildPurgeAuditMetadata(app, app.leadApplicantId, result),
-          })
+        const result = await withAdminContext((tx) =>
+          item.plan.action === "purge-form-docs"
+            ? purgeFormAndDocuments(tx, item.id, now)
+            : purgeAssessment(tx, item.id, now),
         );
-        purged.push(app.reference);
+        if (!result.applied) continue;
+        await deleteStorageObjectsPostCommit(result.storagePaths, deleteDocument);
+        if (result.authUsersToDelete.length) {
+          await deleteAuthUsersPostCommit(result.authUsersToDelete, {
+            deleteAuthUser: (uid) => createSupabaseAdminClient().auth.admin.deleteUser(uid),
+          });
+        }
+        applied.push({ reference: item.reference, action: item.plan.action });
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
-        failed.push({ id: app.id, error: msg });
-        console.error("[cron/purge-expired] purge failed for", app.id, msg);
+        failed.push({ id: item.id, error: msg });
+        console.error("[cron/purge-expired] stage failed for", item.id, msg);
       }
     }
 
-    // 4. One summary audit row — ONLY when something was actually purged, so a
-    //    no-op run never floods the trail.
-    if (purged.length > 0) {
+    if (applied.length > 0) {
       await withAdminContext((tx) =>
         createAuditLog(tx, {
           action: AUDIT_ACTIONS.RETENTION_PURGE_CRON,
           entityType: AUDIT_ENTITY_TYPES.Application,
-          context: `Retention purge run: ${purged.length} application(s) erased`,
+          context: `Retention run: ${applied.length} stage(s) applied`,
           metadata: {
-            purgedCount: purged.length,
-            failedCount: failed.length,
-            tierCounts,
-            references: purged,
-            failed: failed.length > 0 ? failed : undefined,
+            applied: applied.length,
+            failed: failed.length,
+            stageCounts: countByAction(applied.map((a) => ({ action: a.action }) as RetentionPlan)),
+            references: applied.map((a) => a.reference),
+            failures: failed.length > 0 ? failed : undefined,
+            deferred: Math.max(0, due.length - MAX_STAGES_PER_RUN),
             ranAt: now.toISOString(),
           },
-        })
+        }),
       );
     }
 
     return NextResponse.json({
       ok: true,
       mode: "enabled",
-      candidates: candidates.length,
-      eligible: eligible.length,
-      tierCounts,
-      purged: purged.length,
+      due: due.length,
+      stageCounts,
+      nextDue: upcoming,
+      applied: applied.length,
       failed: failed.length,
       ranAt: now.toISOString(),
     });
   } catch (err) {
     console.error("[cron/purge-expired] error:", err);
-    return NextResponse.json(
-      { ok: false, error: "Failed to run retention purge" },
-      { status: 500 }
-    );
+    return NextResponse.json({ ok: false, error: "Failed to run the retention purge" }, { status: 500 });
   }
 }

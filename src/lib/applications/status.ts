@@ -280,7 +280,13 @@ export async function setPostAssessmentState(
   }
   await tx.assessment.update({
     where: { id: assessmentId },
-    data: { status: to },
+    // Epic 23 T10 (D-20): an archive starts the unsuccessful-application
+    // retention clock; a reversal stops it (the record is live again).
+    data: {
+      status: to,
+      ...(to === "CLOSED_ARCHIVED" ? { archivedAt: new Date() } : {}),
+      ...(to === "COMPLETED" ? { archivedAt: null } : {}),
+    },
   });
 }
 

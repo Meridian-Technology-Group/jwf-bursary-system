@@ -42,6 +42,7 @@ import {
   ASSESSMENT_FREETEXT_SCRUB,
   BURSARY_ACCOUNT_CHILD_SCRUB,
   CONTACT_SCRUB,
+  REJECTION_SCRUB,
   RECOMMENDATION_FREETEXT_SCRUB,
   REDACTED_CHILD_NAME,
   profileScrubData,
@@ -113,7 +114,7 @@ export function isApplicationPurged(application: {
  * applications and no other bursary accounts. Otherwise the parent keeps
  * their portal access and the profile is retained.
  */
-async function decideLeadProfileErasure(
+export async function decideLeadProfileErasure(
   tx: Tx,
   leadApplicantId: string,
   applicationId: string,
@@ -126,6 +127,8 @@ async function decideLeadProfileErasure(
       // An already-purged sibling application is not a reason to keep the
       // profile — mirror the retention cron's purged-row detection.
       childName: { not: REDACTED_CHILD_NAME },
+      // Epic 23 T10: nor is one erased or purged by retention.
+      OR: [{ retentionStage: null }, { retentionStage: { notIn: ["ANONYMISED", "ASSESSMENT_PURGED"] } }],
     },
   });
   if (otherApplications > 0) {
@@ -241,6 +244,17 @@ export async function purgeClosedApplication(
       data: { ...CONTACT_SCRUB, archivedAt: new Date() },
     })
   ).count;
+
+  // Epic 23 T10 — this application's rejection records (name, reference, note).
+  await tx.applicationRejection.updateMany({
+    where: {
+      OR: [
+        { replacementApplicationId: applicationId },
+        ...(application.bursaryAccountId ? [{ bursaryAccountId: application.bursaryAccountId }] : []),
+      ],
+    },
+    data: { ...REJECTION_SCRUB },
+  });
 
   // Bursary account: child identity scrubbed; reference/figures retained.
   if (application.bursaryAccountId) {

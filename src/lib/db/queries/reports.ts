@@ -18,20 +18,6 @@ import { summariseGaps, type GapSummary } from "@/lib/reason-codes/gap-metrics";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-export interface DashboardCounts {
-  awaitingAssessment: number; // submitted form, assessment not yet started
-  inProgress: number;         // assessment IN_PROGRESS or PAUSED
-  awaitingRecommendation: number; // assessment COMPLETED but no recommendation
-  qualifies: number;
-  doesNotQualify: number;
-  round: {
-    id: string;
-    academicYear: string;
-    closeDate: Date;
-    status: RoundStatus;
-  } | null;
-}
-
 export interface DashboardFeedItem {
   id: string;
   action: string;
@@ -148,94 +134,6 @@ export async function listOpenRounds(tx: Tx) {
     orderBy: { openDate: "desc" },
     select: { id: true, academicYear: true, closeDate: true, status: true },
   });
-}
-
-// ─── getDashboardCounts ───────────────────────────────────────────────────────
-
-/**
- * Returns counts for all 6 dashboard tiles scoped to the given round.
- * Also includes the round's basic metadata for the Active Round tile.
- */
-export async function getDashboardCounts(
-  tx: Tx,
-  roundId: string
-): Promise<DashboardCounts> {
-  const round = await tx.round.findUnique({
-    where: { id: roundId },
-    select: { id: true, academicYear: true, closeDate: true, status: true },
-  });
-
-  // Fetch all application lifecycle statuses for the round in one query
-  // (PR-6a: lifecycle columns, not the deprecated fused applications.status).
-  const applications = await tx.application.findMany({
-    where: { roundId },
-    select: {
-      id: true,
-      formStatus: true,
-      assessment: {
-        select: {
-          id: true,
-          status: true,
-          outcome: true,
-          recommendation: { select: { id: true } },
-        },
-      },
-    },
-  });
-
-  let awaitingAssessment = 0;
-  let inProgress = 0;
-  let awaitingRecommendation = 0;
-  let qualifies = 0;
-  let doesNotQualify = 0;
-
-  for (const app of applications) {
-    // "In progress" reads the REAL assessment lifecycle (Epic 01): an assessment
-    // that is actively being worked (IN_PROGRESS) OR paused for documents
-    // (PAUSED). Previously this bucket was PAUSED-only and a genuinely
-    // in-progress assessment was mis-bucketed as "awaiting" — see plan 01.
-    const asmtStatus = app.assessment?.status ?? null;
-    const outcome = app.assessment?.outcome ?? null;
-
-    if (
-      asmtStatus === AssessmentStatus.IN_PROGRESS ||
-      asmtStatus === AssessmentStatus.PAUSED
-    ) {
-      inProgress++;
-    } else if (outcome === "AWARDED" || outcome === "QUALIFIES_NOT_AWARDED") {
-      qualifies++;
-    } else if (outcome === "DOES_NOT_QUALIFY") {
-      doesNotQualify++;
-    } else if (app.formStatus === "SUBMITTED") {
-      // Form submitted, review not yet meaningfully started (no assessment, or
-      // a freshly-created NOT_STARTED assessment) and not yet decided.
-      awaitingAssessment++;
-    }
-
-    // Awaiting recommendation: assessment COMPLETED but no recommendation row
-    if (
-      asmtStatus === AssessmentStatus.COMPLETED &&
-      !app.assessment?.recommendation
-    ) {
-      awaitingRecommendation++;
-    }
-  }
-
-  return {
-    awaitingAssessment,
-    inProgress,
-    awaitingRecommendation,
-    qualifies,
-    doesNotQualify,
-    round: round
-      ? {
-          id: round.id,
-          academicYear: round.academicYear,
-          closeDate: round.closeDate,
-          status: round.status,
-        }
-      : null,
-  };
 }
 
 // ─── getDashboardFeed ─────────────────────────────────────────────────────────

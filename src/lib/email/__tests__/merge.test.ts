@@ -155,7 +155,10 @@ const callSiteData: Record<string, EmailMergeData> = {
     reference: "TRI-2026-0001",
     custom_message:
       "The documents supplied were not valid; please upload current, legible copies.",
-    restart_link: "https://app.example.com/apply/child-details",
+    // Epic 23 T7: the form is returned; the link opens the first section
+    // without a green tick, and the email names the new Submit by.
+    restart_link: "https://app.example.com/apply/open/app-1?to=continue",
+    deadline: "05/06/2027",
   },
   // src/app/(admin)/applications/[id]/edit/actions.ts — finishEditingOnBehalf
   APPLICATION_EDITED_ON_BEHALF: {

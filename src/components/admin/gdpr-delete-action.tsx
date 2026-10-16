@@ -45,8 +45,8 @@ export function GdprDeleteAction({
             Delete applicant data
           </p>
           <p className="text-xs text-slate-500">
-            GDPR right-to-erasure removes personal data permanently. Subject to
-            a 7-year retention guard.
+            GDPR right-to-erasure removes personal data permanently. Allowed
+            once the retention rules permit full erasure.
           </p>
         </div>
       </div>

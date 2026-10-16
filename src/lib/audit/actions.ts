@@ -98,6 +98,9 @@ export const AUDIT_ACTIONS = {
 
   // Edit on behalf (CR-001)
   SECTION_SAVED_BY_ASSESSOR: "SECTION_SAVED_BY_ASSESSOR",
+  // Epic 23 T7 — on a form returned for correction, staff mark a section as
+  // needing correction (its green tick goes; the answers stay).
+  SECTION_MARKED_NEEDS_CORRECTION: "SECTION_MARKED_NEEDS_CORRECTION",
   /** An edit-on-behalf pass ended; the applicant was notified of the edited sections. */
   EDIT_ON_BEHALF_FINISHED: "EDIT_ON_BEHALF_FINISHED",
   /** Staff submitted the application on the applicant's behalf (typed-up paper form). */
@@ -114,6 +117,16 @@ export const AUDIT_ACTIONS = {
   ROUND_OPENED: "ROUND_OPENED",
   ROUND_CLOSED: "ROUND_CLOSED",
   RECOMMENDATION_EXPORT: "RECOMMENDATION_EXPORT",
+  // Epic 23 T10 — retention to the DPO-signed rules (one row per stage applied).
+  RETENTION_FORM_DOCS_PURGED: "RETENTION_FORM_DOCS_PURGED",
+  RETENTION_ASSESSMENT_PURGED: "RETENTION_ASSESSMENT_PURGED",
+  RETENTION_ERASURE_REQUEST: "RETENTION_ERASURE_REQUEST",
+  /** Flag off: what a retention step would have removed (nothing removed). */
+  RETENTION_PURGE_SKIPPED_DISABLED: "RETENTION_PURGE_SKIPPED_DISABLED",
+  // Epic 23 T4/T6/T8 — the three export sections (filters, format, counts in metadata).
+  EXPORT_WORKLOAD: "EXPORT_WORKLOAD",
+  EXPORT_SPEND_BILLING: "EXPORT_SPEND_BILLING",
+  EXPORT_STATISTICAL: "EXPORT_STATISTICAL",
   SET_SUBMISSION_DEADLINE: "SET_SUBMISSION_DEADLINE",
 
   // Bursary reference (item 11) — freely editable by ADMIN at any lifecycle stage.
@@ -156,6 +169,8 @@ export const AUDIT_ACTIONS = {
 
   // Settings (normalised from dotted keys in backlog #10)
   SETTINGS_FAMILY_TYPE_CONFIG_UPSERT: "SETTINGS_FAMILY_TYPE_CONFIG_UPSERT",
+  // Epic 23 T9 — Settings → Dashboard sample data (illustrative figures).
+  SETTINGS_DASHBOARD_SAMPLE_UPDATE: "SETTINGS_DASHBOARD_SAMPLE_UPDATE",
   SETTINGS_SCHOOL_FEES_UPSERT: "SETTINGS_SCHOOL_FEES_UPSERT",
   SETTINGS_COUNCIL_TAX_UPDATE: "SETTINGS_COUNCIL_TAX_UPDATE",
   SETTINGS_REASON_CODE_CREATE: "SETTINGS_REASON_CODE_CREATE",
@@ -267,6 +282,7 @@ export const AUDIT_ENTITY_TYPES = {
   ReasonCode: "ReasonCode",
   CloseReason: "CloseReason",
   EmailTemplate: "EmailTemplate",
+  DashboardSampleData: "DashboardSampleData",
   BursaryAccount: "BursaryAccount",
   BursaryScheduleEntry: "BursaryScheduleEntry",
 
@@ -367,10 +383,14 @@ const ACTION_COLOUR: Partial<Record<AuditAction, string>> = {
   [AUDIT_ACTIONS.APPLICATION_RESUMED]: "bg-blue-500",
   [AUDIT_ACTIONS.ASSESSMENT_BEGIN]: "bg-blue-500",
   [AUDIT_ACTIONS.RECOMMENDATION_EXPORT]: "bg-blue-500",
+  [AUDIT_ACTIONS.EXPORT_WORKLOAD]: "bg-blue-500",
+  [AUDIT_ACTIONS.EXPORT_SPEND_BILLING]: "bg-blue-500",
+  [AUDIT_ACTIONS.EXPORT_STATISTICAL]: "bg-blue-500",
   [AUDIT_ACTIONS.DOCUMENT_UPLOADED_BY_ASSESSOR]: "bg-purple-500",
   [AUDIT_ACTIONS.DOCUMENT_DELETED]: "bg-purple-500",
   [AUDIT_ACTIONS.DOCUMENT_URL_GRANTED]: "bg-purple-500",
   [AUDIT_ACTIONS.SECTION_SAVED_BY_ASSESSOR]: "bg-purple-500",
+  [AUDIT_ACTIONS.SECTION_MARKED_NEEDS_CORRECTION]: "bg-purple-500",
   [AUDIT_ACTIONS.EDIT_ON_BEHALF_FINISHED]: "bg-purple-500",
   [AUDIT_ACTIONS.DOCUMENT_VERIFIED]: "bg-orange-400",
   [AUDIT_ACTIONS.DOCUMENT_UNVERIFIED]: "bg-orange-400",

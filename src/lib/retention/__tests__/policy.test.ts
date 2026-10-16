@@ -1,287 +1,119 @@
-import { describe, it, expect, afterEach } from "vitest";
+/**
+ * Epic 23 T10 — the DPO-signed retention rules (16 Oct 2026), D-20.
+ */
+import { describe, expect, it } from "vitest";
 import {
+  addYears,
+  canRequestErasure,
   isPurgeable,
-  getRetentionPolicy,
-  DEFAULT_RETENTION_POLICY,
   notYetPurgeableMessage,
-  type RetentionApplication,
-  type RetentionAccount,
+  planRetention,
+  type RetentionRecord,
 } from "../policy";
 
-const NOW = new Date("2026-06-06T00:00:00.000Z");
+const NOW = new Date("2030-06-01T12:00:00Z");
+const d = (iso: string) => new Date(`${iso}T12:00:00Z`);
 
-function app(overrides: Partial<RetentionApplication> = {}): RetentionApplication {
-  return {
-    outcome: null,
-    archivedAt: null,
-    submittedAt: null,
-    closedAt: null,
-    ...overrides,
-  };
-}
+const rec = (over: Partial<RetentionRecord> = {}): RetentionRecord => ({
+  bursaryAccount: null,
+  closedAt: null,
+  assessment: null,
+  retentionStage: null,
+  retentionStageAt: null,
+  ...over,
+});
 
-function account(
-  overrides: Partial<RetentionAccount> = {}
-): RetentionAccount {
-  return { status: "ACTIVE", closedAt: null, ...overrides };
-}
-
-const yearsAgo = (n: number) => {
-  const d = new Date(NOW.getTime());
-  d.setFullYear(d.getFullYear() - n);
-  return d;
-};
-const daysAgo = (n: number) => {
-  const d = new Date(NOW.getTime());
-  d.setDate(d.getDate() - n);
-  return d;
-};
-
-describe("isPurgeable — in-flight / non-terminal", () => {
-  it("never purges an application with no outcome", () => {
-    const r = isPurgeable(app({ submittedAt: yearsAgo(20) }), null, NOW);
-    expect(r.purgeable).toBe(false);
-    expect(r.tier).toBeNull();
+describe("rule 1 — bursary account closed", () => {
+  it("an active account is kept, however old (no 30-day tier any more)", () => {
+    const p = planRetention(rec({ bursaryAccount: { closedAt: null }, assessment: { status: "ROLLED_OVER", archivedAt: null } }), NOW);
+    expect(p.action).toBe("keep");
+    expect(p.rule).toBe("account-closed");
   });
-
-  it("never purges a legacy QUALIFIES row (predates the 3-value split)", () => {
-    // QUALIFIES is not one of the three terminal outcomes the policy tiers.
-    const r = isPurgeable(
-      // QUALIFIES is a legacy outcome the 3-value policy does not tier.
-      app({ outcome: "QUALIFIES", submittedAt: yearsAgo(20) }),
-      account({ status: "CLOSED", closedAt: yearsAgo(20) }),
-      NOW
-    );
-    expect(r.purgeable).toBe(false);
-    expect(r.tier).toBeNull();
+  it("a reopened account (closedAt cleared by reopen / re-award / Add a year) is kept", () => {
+    expect(planRetention(rec({ bursaryAccount: { closedAt: null }, retentionStage: null }), NOW).action).toBe("keep");
+  });
+  it("an award closed via the staff close: form + documents 1 year after, then the assessment 6 years after", () => {
+    const closed = d("2029-03-15");
+    const first = planRetention(rec({ bursaryAccount: { closedAt: closed }, closedAt: closed }), NOW);
+    expect(first).toMatchObject({ action: "purge-form-docs", rule: "account-closed", anchor: closed, due: true });
+    expect(first.dueAt).toEqual(addYears(closed, 1));
+    const second = planRetention(rec({ bursaryAccount: { closedAt: closed }, retentionStage: "FORM_DOCS_PURGED" }), NOW);
+    expect(second).toMatchObject({ action: "purge-assessment", rule: "account-closed", due: false });
+    expect(second.dueAt).toEqual(addYears(closed, 6));
+  });
+  it("the 1-year step is not due the day before", () => {
+    const closed = d("2029-06-02");
+    expect(planRetention(rec({ bursaryAccount: { closedAt: closed } }), NOW).due).toBe(false);
+  });
+  it("never anchors on submittedAt: an old submission on an active account is kept", () => {
+    expect(planRetention(rec({ bursaryAccount: { closedAt: null }, closedAt: d("2010-01-01") }), NOW).action).toBe("keep");
   });
 });
 
-describe("isPurgeable — declined (grace days, archivedAt anchor)", () => {
-  it("retains a freshly-declined application (no-op on recent data)", () => {
-    const r = isPurgeable(
-      app({ outcome: "DOES_NOT_QUALIFY", archivedAt: daysAgo(5) }),
-      null,
-      NOW
-    );
-    expect(r.purgeable).toBe(false);
-    expect(r.tier).toBe("declined");
+describe("rule 2 — unsuccessful application (no account)", () => {
+  it("in flight (not closed, waiting list included) is kept", () => {
+    expect(planRetention(rec({ assessment: { status: "WAITING_LIST", archivedAt: null } }), NOW).action).toBe("keep");
   });
-
-  it("purges once the grace window has elapsed", () => {
-    const r = isPurgeable(
-      app({ outcome: "DOES_NOT_QUALIFY", archivedAt: daysAgo(40) }),
-      null,
-      NOW
-    );
-    expect(r.purgeable).toBe(true);
-    expect(r.tier).toBe("declined");
-    expect(r.anchorDate).toEqual(daysAgo(40));
+  it("the form and documents go AT the close; the named assessment 6 years after", () => {
+    const closed = d("2030-05-31");
+    const first = planRetention(rec({ closedAt: closed, assessment: { status: "COMPLETED", archivedAt: null } }), NOW);
+    expect(first).toMatchObject({ action: "purge-form-docs", rule: "unsuccessful", due: true, dueAt: closed });
+    const second = planRetention(rec({ closedAt: closed, retentionStage: "FORM_DOCS_PURGED" }), NOW);
+    expect(second).toMatchObject({ action: "purge-assessment", due: false });
+    expect(second.dueAt).toEqual(addYears(closed, 6));
   });
-
-  it("falls back to submittedAt when archivedAt is absent", () => {
-    const r = isPurgeable(
-      app({ outcome: "DOES_NOT_QUALIFY", submittedAt: daysAgo(40) }),
-      null,
-      NOW
-    );
-    expect(r.purgeable).toBe(true);
-    expect(r.anchorDate).toEqual(daysAgo(40));
+  it("an archived assessment anchors on its archive date (D-20); a reversal stops the clock", () => {
+    const archived = d("2024-01-10");
+    expect(planRetention(rec({ assessment: { status: "CLOSED_ARCHIVED", archivedAt: archived } }), NOW)).toMatchObject({
+      action: "purge-form-docs",
+      anchor: archived,
+    });
+    expect(planRetention(rec({ assessment: { status: "COMPLETED", archivedAt: null } }), NOW).action).toBe("keep");
   });
-
-  it("is exactly boundary-inclusive at the grace edge", () => {
-    const grace = DEFAULT_RETENTION_POLICY.declined.amount; // 30
-    const r = isPurgeable(
-      app({ outcome: "DOES_NOT_QUALIFY", archivedAt: daysAgo(grace) }),
-      null,
-      NOW
+  it("the staff close wins over the archive date when both exist", () => {
+    const closed = d("2025-02-02");
+    expect(planRetention(rec({ closedAt: closed, assessment: { status: "CLOSED_ARCHIVED", archivedAt: d("2020-01-01") } }), NOW).anchor).toEqual(
+      closed,
     );
-    expect(r.purgeable).toBe(true);
   });
 });
 
-describe("isPurgeable — qualifies-not-awarded (6yr, submittedAt anchor)", () => {
-  it("retains within 6 years", () => {
-    const r = isPurgeable(
-      app({ outcome: "QUALIFIES_NOT_AWARDED", submittedAt: yearsAgo(5) }),
-      null,
-      NOW
-    );
-    expect(r.purgeable).toBe(false);
-    expect(r.tier).toBe("qualifiesNotAwarded");
+describe("rule 3 — erasure request", () => {
+  it("the anonymous assessment goes 6 years after the request", () => {
+    const erased = d("2024-06-01");
+    const p = planRetention(rec({ retentionStage: "ANONYMISED", retentionStageAt: erased }), NOW);
+    expect(p).toMatchObject({ action: "purge-assessment", rule: "erasure-request", due: true });
+    expect(p.dueAt).toEqual(addYears(erased, 6));
   });
-
-  it("purges past 6 years", () => {
-    const r = isPurgeable(
-      app({ outcome: "QUALIFIES_NOT_AWARDED", submittedAt: yearsAgo(7) }),
-      null,
-      NOW
-    );
-    expect(r.purgeable).toBe(true);
-  });
-
-  it("retains when no submission date exists", () => {
-    const r = isPurgeable(
-      app({ outcome: "QUALIFIES_NOT_AWARDED" }),
-      null,
-      NOW
-    );
-    expect(r.purgeable).toBe(false);
-    expect(r.anchorDate).toBeNull();
+  it("can be requested at the new-application stage only", () => {
+    expect(canRequestErasure(rec())).toEqual({ ok: true });
+    expect(canRequestErasure(rec({ bursaryAccount: { closedAt: null } })).ok).toBe(false);
+    expect(canRequestErasure(rec({ retentionStage: "ANONYMISED" })).ok).toBe(false);
+    expect(canRequestErasure(rec({ retentionStage: "ASSESSMENT_PURGED" })).ok).toBe(false);
   });
 });
 
-describe("isPurgeable — awarded (7yr, closedAt anchor)", () => {
-  it("NEVER purges while the account is still ACTIVE (no closedAt anchor)", () => {
-    const r = isPurgeable(
-      app({ outcome: "AWARDED", submittedAt: yearsAgo(20) }),
-      account({ status: "ACTIVE", closedAt: null }),
-      NOW
-    );
-    expect(r.purgeable).toBe(false);
-    expect(r.tier).toBe("awarded");
-    expect(r.anchorDate).toBeNull();
-    expect(r.reason).toMatch(/still active/i);
+describe("stages already reached", () => {
+  it("a fully purged application has nothing left to do", () => {
+    expect(planRetention(rec({ retentionStage: "ASSESSMENT_PURGED", bursaryAccount: { closedAt: d("2000-01-01") } }), NOW).action).toBe("keep");
   });
-
-  it("retains within 7 years of close", () => {
-    const r = isPurgeable(
-      app({ outcome: "AWARDED", submittedAt: yearsAgo(20) }),
-      account({ status: "CLOSED", closedAt: yearsAgo(3) }),
-      NOW
-    );
-    expect(r.purgeable).toBe(false);
-  });
-
-  it("purges 7 years after close", () => {
-    const r = isPurgeable(
-      app({ outcome: "AWARDED", submittedAt: yearsAgo(20) }),
-      account({ status: "CLOSED", closedAt: yearsAgo(8) }),
-      NOW
-    );
-    expect(r.purgeable).toBe(true);
-    expect(r.anchorDate).toEqual(yearsAgo(8));
-  });
-
-  it("anchors from closedAt, NOT submittedAt", () => {
-    // Submitted 20y ago but closed recently → still retained.
-    const r = isPurgeable(
-      app({ outcome: "AWARDED", submittedAt: yearsAgo(20) }),
-      account({ status: "CLOSED", closedAt: daysAgo(10) }),
-      NOW
-    );
-    expect(r.purgeable).toBe(false);
+  it("an unknown stage value is treated as none (fail safe: re-plan from the anchor)", () => {
+    expect(planRetention(rec({ retentionStage: "BOGUS", closedAt: d("2030-01-01") }), NOW).action).toBe("purge-form-docs");
   });
 });
 
-describe("no-op-on-recent-data property", () => {
-  it("nothing submitted/decided in the last day is purgeable", () => {
-    const recent = daysAgo(1);
-    const cases: RetentionApplication[] = [
-      app({ outcome: "DOES_NOT_QUALIFY", archivedAt: recent }),
-      app({ outcome: "QUALIFIES_NOT_AWARDED", submittedAt: recent }),
-      app({ outcome: "AWARDED", submittedAt: recent }),
-    ];
-    for (const c of cases) {
-      const acc =
-        c.outcome === "AWARDED"
-          ? account({ status: "CLOSED", closedAt: recent })
-          : null;
-      expect(isPurgeable(c, acc, NOW).purgeable).toBe(false);
-    }
+describe("the manual GDPR button (whole-family erasure)", () => {
+  it("only once the assessment stage is due", () => {
+    const closed = d("2026-01-01");
+    const early = isPurgeable(rec({ closedAt: closed }), NOW);
+    expect(early.purgeable).toBe(false);
+    expect(early.eligibleFrom).toEqual(addYears(closed, 6));
+    expect(notYetPurgeableMessage(early)).toMatch(/must be kept until 1 January 2032/);
+    expect(isPurgeable(rec({ closedAt: d("2023-01-01") }), NOW).purgeable).toBe(true);
   });
-});
-
-describe("env overrides", () => {
-  afterEach(() => {
-    delete process.env.RETENTION_DECLINED_GRACE_DAYS;
-    delete process.env.RETENTION_QUALIFIES_NOT_AWARDED_YEARS;
-    delete process.env.RETENTION_AWARDED_YEARS;
-  });
-
-  it("reads overrides from env", () => {
-    process.env.RETENTION_AWARDED_YEARS = "10";
-    expect(getRetentionPolicy().awarded.amount).toBe(10);
-  });
-
-  it("falls back to the default on a malformed override", () => {
-    process.env.RETENTION_QUALIFIES_NOT_AWARDED_YEARS = "not-a-number";
-    expect(getRetentionPolicy().qualifiesNotAwarded.amount).toBe(6);
-  });
-
-  it("a longer override defers eligibility", () => {
-    const policy = { ...DEFAULT_RETENTION_POLICY, awarded: { amount: 10, unit: "years" as const, anchor: "closedAt" as const } };
-    const r = isPurgeable(
-      app({ outcome: "AWARDED" }),
-      account({ status: "CLOSED", closedAt: yearsAgo(8) }),
-      NOW,
-      policy
-    );
-    expect(r.purgeable).toBe(false); // 8 < 10
-  });
-});
-
-describe("notYetPurgeableMessage", () => {
-  it("gives a friendly date for a retained record", () => {
-    const r = isPurgeable(
-      app({ outcome: "QUALIFIES_NOT_AWARDED", submittedAt: yearsAgo(2) }),
-      null,
-      NOW
-    );
-    expect(notYetPurgeableMessage(r)).toMatch(/cannot be deleted yet/i);
-  });
-
-  it("explains a non-terminal application", () => {
-    const r = isPurgeable(app(), null, NOW);
-    expect(notYetPurgeableMessage(r)).toMatch(/no final outcome/i);
-  });
-});
-
-// ─── Item 2: closed-without-outcome tier ──────────────────────────────────────
-
-describe("isPurgeable — closed tier (item 2)", () => {
-  it("a closed application with no outcome ages on the closed tier from closedAt", () => {
-    const closedLongAgo = new Date(NOW.getTime());
-    closedLongAgo.setDate(closedLongAgo.getDate() - 31);
-    const evaluation = isPurgeable(
-      app({ closedAt: closedLongAgo }),
-      null,
-      NOW,
-      DEFAULT_RETENTION_POLICY
-    );
-    expect(evaluation.tier).toBe("closed");
-    expect(evaluation.purgeable).toBe(true);
-  });
-
-  it("a freshly-closed application is inside its grace window", () => {
-    const closedYesterday = new Date(NOW.getTime());
-    closedYesterday.setDate(closedYesterday.getDate() - 1);
-    const evaluation = isPurgeable(
-      app({ closedAt: closedYesterday }),
-      null,
-      NOW,
-      DEFAULT_RETENTION_POLICY
-    );
-    expect(evaluation.tier).toBe("closed");
-    expect(evaluation.purgeable).toBe(false);
-  });
-
-  it("a closed application WITH an outcome uses its outcome tier, not closed", () => {
-    const evaluation = isPurgeable(
-      app({
-        outcome: "AWARDED",
-        closedAt: new Date("2020-01-01T00:00:00Z"),
-      }),
-      account({ status: "CLOSED", closedAt: new Date("2018-01-01T00:00:00Z") }),
-      NOW,
-      DEFAULT_RETENTION_POLICY
-    );
-    expect(evaluation.tier).toBe("awarded");
-  });
-
-  it("in-flight (not closed, no outcome) remains never-purgeable", () => {
-    const evaluation = isPurgeable(app({}), null, NOW, DEFAULT_RETENTION_POLICY);
-    expect(evaluation.tier).toBeNull();
-    expect(evaluation.purgeable).toBe(false);
+  it("never while the account is active, nor for a live application", () => {
+    expect(isPurgeable(rec({ bursaryAccount: { closedAt: null } }), NOW).purgeable).toBe(false);
+    expect(isPurgeable(rec(), NOW).purgeable).toBe(false);
+    expect(notYetPurgeableMessage(isPurgeable(rec(), NOW))).toMatch(/cannot be deleted yet/);
   });
 });

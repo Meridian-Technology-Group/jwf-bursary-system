@@ -39,6 +39,7 @@ function makeTx({
       assessmentChecklist: { deleteMany: vi.fn(async () => ({ count: 3 })) },
       recommendation: { update: vi.fn() },
       contact: { updateMany: vi.fn(async () => ({ count: 1 })) },
+      applicationRejection: { updateMany: vi.fn(async () => ({ count: 0 })) },
       bursaryAccount: {
         update: vi.fn(),
         count: vi.fn(async () => otherAccounts),
