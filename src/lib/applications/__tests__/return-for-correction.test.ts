@@ -251,5 +251,9 @@ describe("the Application Rejection template (17 Oct 2026)", () => {
     expect(seed.body).toContain("we have had to reject your bursary application");
     expect(seed.body).toContain("especially:\n1-\n2-");
     expect(seed.body).not.toContain("still there");
+    // Her 17 Oct answers: title + surname, and the actual Submit-by date.
+    expect(seed.body.startsWith("Dear {{greeting}}")).toBe(true);
+    expect(seed.body).toContain("by {{deadline}}.");
+    expect(seed.mergeFields).toContain("greeting");
   });
 });

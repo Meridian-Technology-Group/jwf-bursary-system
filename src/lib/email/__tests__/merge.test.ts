@@ -151,6 +151,7 @@ const callSiteData: Record<string, EmailMergeData> = {
   // src/app/(admin)/applications/[id]/actions.ts — rejectAndRestartApplication
   // (getRejectionDraft fills these into the window; the send adds deadline)
   APPLICATION_RESTART_REQUIRED: {
+    greeting: "Mrs Parent",
     applicant_name: "Alex Parent",
     child_name: "Sam Parent",
     reference: "TRI-2026-0001",

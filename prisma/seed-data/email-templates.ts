@@ -432,7 +432,9 @@ John Whitgift Foundation`,
   },
   {
     // Application rejection (labelled "Application Rejection" in Settings).
-    // Charlotte's own wording, 17 Oct 2026: the rejection window opens with
+    // Charlotte's own wording, 17 Oct 2026, with her two answers the same day:
+    // {{greeting}} is Parent 1's title + surname, and "by the set deadline"
+    // names the new Submit by ({{deadline}}, filled at send time). the rejection window opens with
     // this text and the family's details filled in; staff type the specifics
     // into the numbered lines and what they send is the email. Kept in sync
     // with migration 20261017120000_application_rejection_template (which
@@ -441,13 +443,14 @@ John Whitgift Foundation`,
     type: "APPLICATION_RESTART_REQUIRED",
     subject: "JWF - We have had to reject your application ** PLEASE READ **",
     mergeFields: [
+      "greeting",
       "applicant_name",
       "child_name",
       "reference",
       "restart_link",
       "deadline",
     ],
-    body: `Dear {{applicant_name}}
+    body: `Dear {{greeting}}
 
 Thank you for submitting your application.
 
@@ -465,7 +468,7 @@ Please remember that, if we cannot financially assess you, we will not be able t
 
 We do keep a record of any occurrence of any application rejections and do take those seriously.
 
-We trust that you will be able to log back into your online bursary account and complete the form adequately by the set deadline. We are looking forward to receiving your new form shortly.
+We trust that you will be able to log back into your online bursary account and complete the form adequately by {{deadline}}. We are looking forward to receiving your new form shortly.
 
 Kind regards,
 

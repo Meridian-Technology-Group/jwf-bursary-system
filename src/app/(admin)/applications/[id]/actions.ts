@@ -26,6 +26,7 @@ import { withUserContext, withAdminContext, type RlsRole, type Tx } from "@/lib/
 import { createAuditLog } from "@/lib/audit/log";
 import { sendEmail } from "@/lib/email/send";
 import { replaceMergeFields } from "@/lib/email/merge";
+import { formalGreeting, parent1ContactOf } from "@/lib/email/formal-greeting";
 import { isMigrated } from "@/lib/applications/migration-source";
 import { humaniseSlot } from "@/lib/documents/slots";
 import { deleteDocument } from "@/lib/storage/documents";
@@ -345,14 +346,28 @@ export async function pauseApplication(
 
 // ─── rejectAndRestartApplication (Application rejection) ─────────────────────
 
+/**
+ * Parent 1's details from the lead applicant's PARENT_DETAILS section (the one
+ * the PRIMARY contributor owns), for the formal greeting.
+ */
+const LEAD_PARENT_DETAILS_SELECT = {
+  where: { section: "PARENT_DETAILS" as const, ownerContributor: { role: "PRIMARY" as const } },
+  select: { data: true },
+  take: 1,
+};
+
 /** The family's greeting and the email's merge values, from the application. */
 function rejectionMergeData(app: {
   id: string;
   reference: string;
   childName: string;
   leadApplicant: { firstName: string | null; lastName: string | null };
+  sections: { data: unknown }[];
 }) {
+  const parent = parent1ContactOf(app.sections[0]?.data);
   return {
+    // Charlotte, 17 Oct 2026: title + surname, JWF's style for bursary letters.
+    greeting: formalGreeting(parent ?? app.leadApplicant),
     applicant_name:
       `${app.leadApplicant.firstName ?? ""} ${app.leadApplicant.lastName ?? ""}`.trim() || "Applicant",
     child_name: app.childName,
@@ -417,6 +432,7 @@ export async function rejectAndRestartApplication(
           leadApplicant: {
             select: { email: true, firstName: true, lastName: true },
           },
+          sections: LEAD_PARENT_DETAILS_SELECT,
           assessment: { select: { status: true, outcome: true } },
         },
       });
@@ -543,6 +559,7 @@ export async function getRejectionDraft(
         applicationType: true,
         round: { select: DEADLINE_ROUND_SELECT },
         leadApplicant: { select: { firstName: true, lastName: true } },
+        sections: LEAD_PARENT_DETAILS_SELECT,
       },
     })
   );

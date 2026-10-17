@@ -10,7 +10,7 @@
 
 UPDATE public.email_templates
 SET subject = $subject$JWF - We have had to reject your application ** PLEASE READ **$subject$,
-    body = $body$Dear {{applicant_name}}
+    body = $body$Dear {{greeting}}
 
 Thank you for submitting your application.
 
@@ -28,12 +28,12 @@ Please remember that, if we cannot financially assess you, we will not be able t
 
 We do keep a record of any occurrence of any application rejections and do take those seriously.
 
-We trust that you will be able to log back into your online bursary account and complete the form adequately by the set deadline. We are looking forward to receiving your new form shortly.
+We trust that you will be able to log back into your online bursary account and complete the form adequately by {{deadline}}. We are looking forward to receiving your new form shortly.
 
 Kind regards,
 
 JWF Bursary team.$body$,
-    merge_fields = '["applicant_name","child_name","reference","restart_link","deadline"]'::jsonb,
+    merge_fields = '["greeting","applicant_name","child_name","reference","restart_link","deadline"]'::jsonb,
     updated_at = now()
 WHERE type = 'APPLICATION_RESTART_REQUIRED'
   AND subject = $old$Your bursary application has been returned for correction — {{child_name}}$old$
