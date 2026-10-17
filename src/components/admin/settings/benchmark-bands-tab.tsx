@@ -79,6 +79,23 @@ const LIFESTYLE_SQUEEZE_EXTRA: BandExtraFieldConfig[] = [
   { key: "statusLabel", label: "Status Label", type: "text" },
 ];
 
+
+/** Her two shortfall tables (17 Oct 2026), in her numbering and wording. */
+const SHORTFALL_TABLES = [
+  {
+    table: "NDI_NEGATIVE",
+    title: "Debt status — shortfall against yearly repayment (1)",
+    description:
+      "Used instead of the debt-over-NDI ratio when NDI after notional spend is below the yearly repayment (total debt / 5) AND NDI after notional spend is NEGATIVE. Keyed on the shortfall in £.",
+  },
+  {
+    table: "NDI_POSITIVE",
+    title: "Debt status — shortfall against yearly repayment (2)",
+    description:
+      "Used instead of the debt-over-NDI ratio when NDI after notional spend is below the yearly repayment (total debt / 5) AND yearly repayment is higher than £0.00 AND NDI after notional spend is POSITIVE (or exactly £0). Keyed on the shortfall in £.",
+  },
+] as const;
+
 export function BenchmarkBandsTab({
   affordabilityBands,
   incomeCategoryBands,
@@ -179,17 +196,22 @@ export function BenchmarkBandsTab({
           household cannot cover its yearly repayment out of disposable income.
           Its bounds are in £, and unlike the ratio ladders they are
           floor-inclusive and ceiling-exclusive, which is how she wrote them. */}
-      <BandVersionSection
-        title="Debt status — shortfall against yearly repayment"
-        description="Used instead of the debt-over-NDI ratio when NDI after notional spend is below the yearly repayment (total debt / 5). Keyed on the shortfall in £."
-        floorKey="floorGbp"
-        ceilingKey="ceilingGbp"
-        floorLabel="Shortfall from (£)"
-        ceilingLabel="Shortfall to (£)"
-        extraFields={DEBT_RATIO_EXTRA}
-        rows={debtShortfallBands}
-        createVersionAction={createDebtShortfallBandVersionAction}
-      />
+      {/* 17 Oct 2026: two tables, chosen by the sign of NDI after notional spend. */}
+      {SHORTFALL_TABLES.map((t) => (
+        <BandVersionSection
+          key={`shortfall-${t.table}`}
+          title={t.title}
+          description={t.description}
+          floorKey="floorGbp"
+          ceilingKey="ceilingGbp"
+          floorLabel="Shortfall from (£)"
+          ceilingLabel="Shortfall to (£)"
+          extraFields={DEBT_RATIO_EXTRA}
+          rows={debtShortfallBands.filter((b) => b.shortfallTable === t.table)}
+          shortfallTable={t.table}
+          createVersionAction={createDebtShortfallBandVersionAction}
+        />
+      ))}
     </div>
   );
 }

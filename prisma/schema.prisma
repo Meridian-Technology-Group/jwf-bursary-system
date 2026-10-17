@@ -976,19 +976,38 @@ model FinancialEquityBand {
 /// that is how she wrote it: floor-INCLUSIVE, ceiling-EXCLUSIVE
 /// ("£200 ≤ Value < £500"), where the ratio ladders are floor-exclusive and
 /// ceiling-inclusive. Both conventions are hers and both are deliberate.
+///
+/// 17 Oct 2026: split into two tables by the sign of NDI after notional spend
+/// (`shortfallTable`). Negative NDI reads her "undeclared debt / external
+/// support" wording; positive (or zero) NDI keeps the 11 Sep credit-risk
+/// wording. Each table is versioned on its own.
 model DebtShortfallBand {
-  id            String   @id @default(uuid()) @db.Uuid
+  id             String             @id @default(uuid()) @db.Uuid
   /// Inclusive lower bound in £; null on the bottom row (any shortfall under
   /// the first ceiling).
-  floorGbp      Decimal? @map("floor_gbp") @db.Decimal(10, 2)
+  floorGbp       Decimal?           @map("floor_gbp") @db.Decimal(10, 2)
   /// Exclusive upper bound in £; null on the open-ended top row.
-  ceilingGbp    Decimal? @map("ceiling_gbp") @db.Decimal(10, 2)
-  statusLabel   String   @map("status_label")
-  effectiveFrom DateTime @map("effective_from") @db.Date
-  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  ceilingGbp     Decimal?           @map("ceiling_gbp") @db.Decimal(10, 2)
+  statusLabel    String             @map("status_label")
+  /// Which of her two shortfall tables (17 Oct 2026). Existing rows are the
+  /// positive-NDI table.
+  shortfallTable DebtShortfallTable @default(NDI_POSITIVE) @map("shortfall_table")
+  effectiveFrom  DateTime           @map("effective_from") @db.Date
+  createdAt      DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
 
-  @@unique([ceilingGbp, effectiveFrom], map: "debt_shortfall_bands_ceiling_effective_from_key")
+  @@unique([ceilingGbp, effectiveFrom, shortfallTable], map: "debt_shortfall_bands_ceiling_effective_from_table_key")
   @@map("debt_shortfall_bands")
+}
+
+/// Charlotte, 17 Oct 2026 — which shortfall table applies, by the sign of NDI
+/// after notional spend (only consulted when NDI is below the yearly repayment).
+enum DebtShortfallTable {
+  /// NDI after notional spend is negative: the household is living beyond its
+  /// declared means, so the wording suspects undeclared debt or outside support.
+  NDI_NEGATIVE
+  /// NDI after notional spend is zero or positive, but below the yearly
+  /// repayment (so there is debt): the 11 Sep credit-risk wording.
+  NDI_POSITIVE
 }
 
 /// CALC-01 — Reference: debt-over-NDI ratio bands (Appendix C.4), normalised

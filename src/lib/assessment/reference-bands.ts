@@ -44,7 +44,7 @@
  * the CALC-06 award engine, not here).
  */
 
-import type { DebtSavingsContext } from '@prisma/client'
+import type { DebtSavingsContext, DebtShortfallTable } from '@prisma/client'
 
 /** The minimal shape a resolvable band row needs. */
 export interface BandRow {
@@ -339,6 +339,8 @@ export interface DebtShortfallBandRow {
   floorGbp: number | null
   ceilingGbp: number | null
   statusLabel: string
+  /** Which of her two tables (17 Oct 2026); absent = the positive-NDI table. */
+  shortfallTable?: DebtShortfallTable
 }
 
 /**
@@ -358,8 +360,9 @@ export interface DebtShortfallBandRow {
 export function resolveDebtShortfallBand(
   bands: readonly DebtShortfallBandRow[],
   shortfallGbp: number,
+  table: DebtShortfallTable = 'NDI_POSITIVE',
 ): DebtShortfallBandRow | null {
-  const ascending = [...bands].sort((a, b) => {
+  const ascending = bands.filter((b) => (b.shortfallTable ?? 'NDI_POSITIVE') === table).sort((a, b) => {
     if (a.ceilingGbp === null) return 1
     if (b.ceilingGbp === null) return -1
     return a.ceilingGbp - b.ceilingGbp
