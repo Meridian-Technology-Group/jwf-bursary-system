@@ -12,7 +12,7 @@
  *                           (Epic 21 R1: the account's Main synopsis for accounts
  *                            loaded before it existed; skips any account that has
  *                            one; ledgered under the run)
- *   npm run mig -- patch-dob --env <e> --run <id> [--only k1,k2] [--dry-run] [--undo] [--blank-list <csv>]
+ *   npm run mig -- patch-dob --env <e> --run <id> [--only k1,k2] [--dry-run] [--undo] [--blank-list <csv>] [--dob-file <csv>]
  *                           (Epic 23 T2: child DOB from GT's Recurring forms
  *                            where NULL; raw SQL, no updated_at moves; undo
  *                            log in runs/<id>/patch-dob.jsonl)
@@ -202,7 +202,7 @@ async function main() {
       const { patchDob } = await import('./load/patch-dob')
       const ctx = await openContext(requireWritable(config))
       try {
-        await patchDob(ctx, { runId, only: list(flag(args, 'only')), dryRun, undo: has(args, 'undo'), blankList: flag(args, 'blank-list') })
+        await patchDob(ctx, { runId, only: list(flag(args, 'only')), dryRun, undo: has(args, 'undo'), blankList: flag(args, 'blank-list'), dobFile: flag(args, 'dob-file') })
       } finally {
         await ctx.prisma.$disconnect()
       }

@@ -2,7 +2,7 @@
  * Epic 23 T2: `mig patch-dob` pure seams (D-3, D-4).
  */
 import { describe, expect, it } from 'vitest'
-import { blankReason, familyCodeOf, liveSets, type PatchLine } from '../load/patch-dob'
+import { blankReason, familyCodeOf, liveSets, parseDobFile, referenceKey, type PatchLine } from '../load/patch-dob'
 
 describe('familyCodeOf', () => {
   it('reads the code however the reference is spaced', () => {
@@ -50,3 +50,22 @@ describe('liveSets', () => {
     expect(liveSets(lines)).toHaveLength(1)
   })
 })
+
+describe('--dob-file (her dates for the blanks, 17 Oct 2026)', () => {
+  it('matches references however they are spaced or cased', () => {
+    expect(referenceKey('TS - NOWS01 - SURNAME, First')).toBe(referenceKey('ts-nows01-surname,first'))
+    expect(referenceKey(null)).toBe('')
+  })
+  it('reads reference,dob rows, quoted references included', () => {
+    const m = parseDobFile('reference,dob\n"TS - AB01 - SURNAME, First",2014-09-02\r\n24/25_Trinity School_Someone_098,2010-01-31\n')
+    expect(m.get(referenceKey('TS-AB01-SURNAME, First'))).toBe('2014-09-02')
+    expect(m.get(referenceKey('24/25_Trinity School_Someone_098'))).toBe('2010-01-31')
+    expect(m.size).toBe(2)
+  })
+  it('refuses a bad header, a bad date or a repeated reference', () => {
+    expect(() => parseDobFile('ref,date\nX,2014-01-01')).toThrow(/header/)
+    expect(() => parseDobFile('reference,dob\nX,02/09/2014')).toThrow(/bad row/)
+    expect(() => parseDobFile('reference,dob\nX,2014-01-01\n x ,2014-01-02')).toThrow(/twice/)
+  })
+})
+

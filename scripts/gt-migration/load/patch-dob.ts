@@ -17,6 +17,10 @@
  *   replays to set exactly those cells back to NULL.
  * - `--blank-list <csv>` writes the accounts left blank, by family code,
  *   school, current school year and reason (D-4). No names, no dates.
+ * - `--dob-file <csv>` (`reference,dob` as YYYY-MM-DD): the dates Charlotte
+ *   supplied for the accounts GT left blank (17 Oct 2026), matched on the
+ *   migrated application's reference. Used only where GT has no single
+ *   date; still only where NULL, still logged for `--undo`.
  */
 import { resolve } from 'node:path'
 import { closeSync, existsSync, fsyncSync, openSync, readFileSync, writeFileSync, writeSync } from 'node:fs'
@@ -35,6 +39,7 @@ export interface PatchDobOptions {
   dryRun?: boolean
   undo?: boolean
   blankList?: string
+  dobFile?: string
 }
 
 export const DOB_TABLES = ['contacts', 'bursary_accounts', 'applications', 'invitations'] as const
@@ -48,6 +53,8 @@ export interface PatchLine {
   id: string
   value: string
   at: string
+  /** Set from `--dob-file` rather than GT's forms. */
+  source?: 'file'
 }
 
 type Outcome = 'WRITTEN' | 'PLANNED' | 'ALREADY_SET' | 'BLANK_NO_FORM' | 'BLANK_CONFLICT' | 'BLANK_TWIN' | 'FAILED'
@@ -56,6 +63,32 @@ type Outcome = 'WRITTEN' | 'PLANNED' | 'ALREADY_SET' | 'BLANK_NO_FORM' | 'BLANK_
 export function familyCodeOf(reference: string | null | undefined): string | null {
   const m = (reference ?? '').match(/^\s*([A-Z]{2})\s*-\s*([A-Z]{2,4}\d{2})\b/)
   return m ? `${m[1]}-${m[2]}` : null
+}
+
+/** References compare ignoring case and whitespace ("TS - NOWS01 - X" = "TS-NOWS01-X"). */
+export function referenceKey(reference: string | null | undefined): string {
+  return (reference ?? '').replace(/\s+/g, '').toUpperCase()
+}
+
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/
+
+/** `reference,dob` CSV → reference key → ISO date. Throws on a malformed or repeated row. */
+export function parseDobFile(text: string): Map<string, string> {
+  const out = new Map<string, string>()
+  const lines = text.split(/\r?\n/).filter((l) => l.trim())
+  if (!/^reference,dob$/i.test(lines[0]?.trim() ?? '')) throw new Error('dob file: header must be "reference,dob"')
+  for (const line of lines.slice(1)) {
+    const m = line.match(/^(?:"((?:[^"]|"")*)"|([^,]*)),\s*(\S+)\s*$/)
+    const ref = m ? (m[1] != null ? m[1].replace(/""/g, '"') : m[2]) : null
+    const dob = m?.[3]
+    if (!ref || !dob || !ISO_DATE.test(dob) || Number.isNaN(dobAsDate(dob).getTime())) {
+      throw new Error(`dob file: bad row (${line.length} chars)`)
+    }
+    const key = referenceKey(ref)
+    if (out.has(key)) throw new Error('dob file: a reference appears twice')
+    out.set(key, dob)
+  }
+  return out
 }
 
 /** The blank-list reason for a verdict that set nothing (D-4). */
@@ -160,19 +193,32 @@ export async function patchDob(ctx: LoadContext, opts: PatchDobOptions) {
     select: { id: true, leadApplicantId: true, childName: true, school: true, entryYearGroup: true, reference: true, childDob: true },
   })
   const appOf = (k: string) => apps.find((a) => rows.get(k)!.applications.includes(a.id))
+  // Her dates for the accounts GT left blank (used only where GT has no single date).
+  const supplied = opts.dobFile ? parseDobFile(readFileSync(opts.dobFile, 'utf8')) : new Map<string, string>()
+  const suppliedOf = (k: string): string | null => {
+    const v = verdictOf(k)
+    if (v?.status === 'CONSISTENT') return null
+    return supplied.get(referenceKey(appOf(k)?.reference)) ?? null
+  }
+  const dobOf = (k: string): string | null => {
+    const v = verdictOf(k)
+    return v?.status === 'CONSISTENT' ? v.dob : suppliedOf(k)
+  }
   const twins = new Set(
     dobCollisions(
       keys.map((k) => {
-        const v = verdictOf(k)
         const a = appOf(k)
-        return { key: k, leadEmail: a?.leadApplicantId ?? k, childName: a?.childName ?? k, dob: v?.status === 'CONSISTENT' ? v.dob : null }
+        return { key: k, leadEmail: a?.leadApplicantId ?? k, childName: a?.childName ?? k, dob: dobOf(k) }
       }),
     ).flat(),
   )
+  const matched = new Set(keys.map((k) => (suppliedOf(k) ? referenceKey(appOf(k)?.reference) : null)).filter(Boolean))
+  const unmatched = Array.from(supplied.keys()).filter((r) => !matched.has(r)).length
 
   console.log(
     `patch-dob ${opts.dryRun ? 'DRY RUN ' : ''}| target: ${ctx.config.env} (${ctx.config.projectRef}) | canonical: ${hash} | run: ${opts.runId}` +
-      ` | ledgered accounts: ${keys.length}`,
+      ` | ledgered accounts: ${keys.length}` +
+      (opts.dobFile ? ` | supplied dates: ${supplied.size} (matched ${matched.size}, unmatched ${unmatched})` : ''),
   )
 
   const outcomes: { key: string; status: Outcome; cells?: number; reason?: string }[] = []
@@ -181,8 +227,10 @@ export async function patchDob(ctx: LoadContext, opts: PatchDobOptions) {
   for (const key of keys) {
     const v = verdictOf(key)
     const app = appOf(key)
-    const reason = blankReason(v, twins.has(key))
-    if (reason || v?.status !== 'CONSISTENT') {
+    const fromFile = suppliedOf(key)
+    const reason = fromFile && !twins.has(key) ? null : blankReason(v, twins.has(key))
+    const value = dobOf(key)
+    if (reason || !value) {
       outcomes.push({ key, status: twins.has(key) ? 'BLANK_TWIN' : v?.status === 'CONFLICT' ? 'BLANK_CONFLICT' : 'BLANK_NO_FORM' })
       const cy = currentSchoolYear({ entryYearGroup: app?.entryYearGroup, firstAssessmentYear: '2026-27', school: app?.school, today })
       blanks.push({
@@ -194,7 +242,6 @@ export async function patchDob(ctx: LoadContext, opts: PatchDobOptions) {
       continue
     }
     const r = rows.get(key)!
-    const value = v.dob
     const date = dobAsDate(value)
     if (opts.dryRun) {
       const pending = await ctx.prisma.$queryRawUnsafe<{ n: bigint }[]>(
@@ -216,7 +263,7 @@ export async function patchDob(ctx: LoadContext, opts: PatchDobOptions) {
         const at = new Date().toISOString()
         const set = async (table: DobTable, sql: string, ...params: unknown[]) => {
           const ids = await tx.$queryRawUnsafe<{ id: string }[]>(sql, date, ...params)
-          for (const { id } of ids) out.push({ op: 'set', runId: opts.runId, accountKey: key, table, id, value, at })
+          for (const { id } of ids) out.push({ op: 'set', runId: opts.runId, accountKey: key, table, id, value, at, ...(fromFile ? { source: 'file' as const } : {}) })
         }
         await set('contacts', `UPDATE contacts SET child_dob = $1 WHERE id = ANY($2::uuid[]) AND child_dob IS NULL RETURNING id::text`, r.contacts)
         await set('bursary_accounts', `UPDATE bursary_accounts SET child_dob = $1 WHERE id = ANY($2::uuid[]) AND child_dob IS NULL RETURNING id::text`, r.accounts)
