@@ -16,7 +16,9 @@ import {
   shapeBand1,
   shapeBand2,
   shapeBand3,
-  spendGroupOf,
+  fundOf,
+  fundSpend,
+  fundSpendFromSchoolTotals,
   taxYearForRound,
   visibleSchools,
   workloadBucket,
@@ -45,10 +47,13 @@ describe("D-19 cohorts", () => {
     expect(cohortOf({ school: "WHITGIFT", awardFundType: "WFA", migrationSource: "MANUAL_PB" })).toBe("WS_PB");
     expect(cohortOf({ school: "WHITGIFT", awardFundType: null, migrationSource: null })).toBe("WS");
   });
-  it("spend groups fold the funds back into ex-OP / TS / WS", () => {
-    expect(spendGroupOf("TS_TBF")).toBe("ts");
-    expect(spendGroupOf("WS_PB")).toBe("ws");
-    expect(spendGroupOf("EX_OP")).toBe("exOp");
+  it("her three funds: JWF (ex-OP, TS, WS), TBF, WFA (incl. pastoral boarders)", () => {
+    // Her three funds (17 Oct 2026).
+    expect(fundOf("TS_TBF")).toBe("TBF");
+    expect(fundOf("WS_PB")).toBe("WFA");
+    expect(fundOf("WS_WFA")).toBe("WFA");
+    expect(fundOf("EX_OP")).toBe("JWF");
+    expect(fundOf("WS")).toBe("JWF");
   });
 });
 
@@ -108,7 +113,15 @@ describe("band 1 — applications & assessments management", () => {
 });
 
 describe("band 2 — outcomes, new & internal", () => {
-  const base = { assessmentSchool: null, closedAt: null, closeReasonLabel: null, entryYear: 2026, bursarySpendBeforeVat: null };
+  const base = {
+    assessmentSchool: null,
+    closedAt: null,
+    closeReasonLabel: null,
+    entryYear: 2026,
+    bursarySpendBeforeVat: null,
+    awardFundType: null,
+    migrationSource: null,
+  };
   it("awards split by the award's year; closures and their top reasons", () => {
     const b = shapeBand2(
       [
@@ -122,13 +135,38 @@ describe("band 2 — outcomes, new & internal", () => {
       2026,
     );
     expect(b.newAwards).toEqual({ TRINITY: 2, WHITGIFT: 0, OP_PARTNER: 0 });
-    expect(b.spendCurrentYear.TRINITY).toEqual({ spend: 10000, awards: 1 });
-    expect(b.spendNextYear.TRINITY).toEqual({ spend: 5000.5, awards: 1 });
+    expect(b.spendCurrentYear.jwf.ts).toEqual({ spend: 10000, awards: 1 });
+    expect(b.spendCurrentYear.total).toEqual({ spend: 10000, awards: 1 });
+    expect(b.spendNextYear.jwf.ts).toEqual({ spend: 5000.5, awards: 1 });
     expect(b.closedNoAward.WHITGIFT).toBe(3);
     expect(b.closedReasons).toEqual([
       { label: "Family relocating", share: 2 / 3 },
       { label: "ID checks fail", share: 1 / 3 },
     ]);
+  });
+});
+
+describe("spend by fund (17 Oct 2026)", () => {
+  it("JWF by school with a subtotal, then TBF, WFA (with pastoral boarders) and the total", () => {
+    const f = fundSpend([
+      { cohort: "EX_OP", spend: 1000 },
+      { cohort: "TS", spend: 2000.25 },
+      { cohort: "WS", spend: 3000 },
+      { cohort: "TS_TBF", spend: 400 },
+      { cohort: "WS_WFA", spend: 50 },
+      { cohort: "WS_PB", spend: null },
+    ]);
+    expect(f.jwf.exOp).toEqual({ spend: 1000, awards: 1 });
+    expect(f.jwf.total).toEqual({ spend: 6000.25, awards: 3 });
+    expect(f.tbf).toEqual({ spend: 400, awards: 1 });
+    expect(f.wfa).toEqual({ spend: 50, awards: 2 });
+    expect(f.total).toEqual({ spend: 6450.25, awards: 6 });
+  });
+  it("her mock-up's illustrative committed spend (ex-OP / TS / WS) is all JWF", () => {
+    const f = fundSpendFromSchoolTotals({ exOp: 288954, ts: 1871000, ws: 2227000 });
+    expect(f.jwf.total.spend).toBe(4386954);
+    expect(f.tbf.spend).toBe(0);
+    expect(f.total.spend).toBe(4386954);
   });
 });
 
@@ -154,7 +192,9 @@ describe("band 3 — rolling-over", () => {
     expect(b.cohorts).toEqual({ EX_OP: 1, TS: 0, TS_TBF: 1, WS: 0, WS_WFA: 1, WS_PB: 0 });
     expect(b.scheduledTotal).toBe(3);
     expect(b.progress).toEqual({ sent: 2, received: 2, waiting: 0, paused: 1, closed: 1, completedWithAward: 1 });
-    expect(b.committedSpend).toEqual({ exOp: 0, ts: 12000, ws: 0 });
+    expect(b.committedSpend.tbf).toEqual({ spend: 12000, awards: 1 });
+    expect(b.committedSpend.jwf.total).toEqual({ spend: 0, awards: 0 });
+    expect(b.committedSpend.total.spend).toBe(12000);
     expect(b.yoyChanges).toEqual([{ label: "9 - Self-employed net profit decrease", count: 1 }]);
   });
 });

@@ -19,10 +19,12 @@ import {
   shapeBand1,
   shapeBand2,
   shapeBand3,
+  fundSpendFromSchoolTotals,
   taxYearForRound,
   type Band1,
   type Band2,
   type Band3,
+  type FundSpend,
 } from "@/lib/dashboard/shape";
 import {
   chooseRealOrSample,
@@ -53,7 +55,7 @@ export interface DashboardData {
     assessmentsDoneBy: Date | null;
   } | null;
   band3: Band3 | null;
-  committedSpend: RealOrSample<{ exOp: number; ts: number; ws: number }> | null;
+  committedSpend: RealOrSample<FundSpend> | null;
   yoyChanges: RealOrSample<{ label: string; count: number }[]> | null;
 }
 
@@ -86,11 +88,13 @@ export async function getDashboardData(tx: Tx): Promise<DashboardData> {
         closedAt: true,
         entryYear: true,
         bursaryAccountId: true,
+        migrationSource: true,
         closeReason: { select: { label: true } },
         assessment: {
           select: {
             status: true,
             assessmentSchool: true,
+            awardFundType: true,
             recommendation: { select: { bursarySpendBeforeVat: true } },
           },
         },
@@ -138,6 +142,8 @@ export async function getDashboardData(tx: Tx): Promise<DashboardData> {
       closeReasonLabel: a.closeReason?.label ?? null,
       entryYear: a.entryYear,
       bursarySpendBeforeVat: num(a.assessment?.recommendation?.bursarySpendBeforeVat),
+      awardFundType: a.assessment?.awardFundType ?? null,
+      migrationSource: a.migrationSource,
     })),
     start,
   );
@@ -244,7 +250,11 @@ export async function getDashboardData(tx: Tx): Promise<DashboardData> {
         }
       : null,
     band3,
-    committedSpend: chooseRealOrSample(band3.committedCount, band3.committedSpend, samples.rolling_committed_spend),
+    committedSpend: chooseRealOrSample(
+      band3.committedCount,
+      band3.committedSpend,
+      fundSpendFromSchoolTotals(samples.rolling_committed_spend),
+    ),
     yoyChanges: chooseRealOrSample(band3.yoyCount, band3.yoyChanges, samples.yoy_changes_top10.rows),
   };
 }
