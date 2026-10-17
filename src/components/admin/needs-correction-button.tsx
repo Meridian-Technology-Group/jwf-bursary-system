@@ -30,7 +30,7 @@ export function NeedsCorrectionButton({
   return (
     <div className="flex flex-wrap items-center gap-3 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
       <p className="min-w-0 flex-1">
-        This form was returned to the family for correction.{" "}
+        This application was rejected and is back with the family.{" "}
         {isComplete
           ? "Clear a wrong figure (then leave the page and choose to save), remove a wrong document, or mark the whole section as needing correction."
           : "This section has no green tick, so the family will see it needs correcting."}

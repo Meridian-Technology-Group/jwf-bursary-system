@@ -7,6 +7,7 @@
  * - Tabbed navigation: Applicant Data | Assessment | Recommendation | History
  */
 
+import { isMigrated } from "@/lib/applications/migration-source";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { requireRole, Role } from "@/lib/auth/roles";
@@ -325,6 +326,7 @@ export default async function ApplicationDetailLayout({
                 applicationId={application.id}
                 status={reviewPhase}
                 documents={application.documents}
+                migrated={isMigrated(application)}
               />
             </div>
           </ShowOnAssessmentRoute>
@@ -366,6 +368,7 @@ export default async function ApplicationDetailLayout({
         applicationId={application.id}
         status={reviewPhase}
         documents={application.documents}
+        migrated={isMigrated(application)}
       />
 
       {/* Secondary "Manage" affordances — demoted beneath the primary actions

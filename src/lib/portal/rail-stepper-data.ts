@@ -33,17 +33,10 @@ import {
   buildSidebarSections,
   type SidebarSection,
 } from "@/components/portal/portal-sidebar-sections";
-import {
-  getLatestReturn,
-  returnNotice,
-  type ReturnNotice,
-} from "@/lib/applications/return-for-correction";
 
 export interface RailStepperData {
   sections: SidebarSection[];
   roundName?: string;
-  /** Epic 23 T7: set while the form is back with the family for correction. */
-  returnNotice?: ReturnNotice | null;
 }
 
 /**
@@ -84,14 +77,13 @@ export async function loadRailStepper(): Promise<RailStepperData | null> {
       const gapStatuses = ownerContributorId
         ? await getSectionGapStatuses(tx, application.id, ownerContributorId)
         : await getSectionGapStatuses(tx, application.id);
-      const notice = returnNotice(application, await getLatestReturn(tx, application.id));
-      return { application, gapStatuses, notice };
+      return { application, gapStatuses };
     }
   );
 
   if (!resolved?.application) return null;
 
-  const { application, gapStatuses, notice } = resolved;
+  const { application, gapStatuses } = resolved;
 
   const sections = buildSidebarSections(gapStatuses, {
     isReassessment: application.isReassessment,
@@ -101,5 +93,5 @@ export async function loadRailStepper(): Promise<RailStepperData | null> {
     ? `${application.round.academicYear} Assessment Round`
     : undefined;
 
-  return { sections, roundName, returnNotice: notice };
+  return { sections, roundName };
 }
