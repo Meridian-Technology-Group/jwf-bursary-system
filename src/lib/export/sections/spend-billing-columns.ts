@@ -49,11 +49,13 @@ export const SPEND_BILLING_COLUMNS: ColumnDef[] = [
   { key: "familyCategoryDescription", header: "Family category description", group: P1, width: 40 },
   { key: "remainingYears", header: "Remaining years at the school", group: P1, kind: "number" },
   { key: "schoolAgeChildren", header: "Number of schooling age children", group: P1, kind: "number" },
-  { key: "postcode", header: "Postcode (first part)", group: P1, width: 14 },
+  { key: "postcode", header: "Postcode area", group: P1, width: 22 },
   { key: "annualFees", header: "Annual school fees", group: P1, kind: "money" },
 
   { key: "parent1Total", header: "Total parent 1", group: P2, kind: "money" },
   { key: "parent2Total", header: "Total parent 2", group: P2, kind: "money" },
+  // Charlotte, 17 Oct 2026: beside the parents' incomes, not in the award block.
+  { key: "householdNetIncome", header: "Household net income", group: P2, kind: "money" },
   { key: "totalBenefits", header: "Total Benefits", group: P2, kind: "money" },
   { key: "totalSelfEmployed", header: "Total Self-Employed Income", group: P2, kind: "money" },
   { key: "totalPaye", header: "Total PAYE Income", group: P2, kind: "money" },
@@ -87,7 +89,6 @@ export const SPEND_BILLING_COLUMNS: ColumnDef[] = [
   { key: "squeezeStatus", header: "LIFESTYLE SQUEEZE AFFORDABILITY STATUS", group: P45, width: 32 },
   ...siblingsPart45,
 
-  { key: "householdNetIncome", header: "Household net income", group: AW, kind: "money" },
   { key: "actualRemainingDi", header: "Actual remaining DI", group: AW, kind: "money" },
   { key: "theoreticalBenchmarkDi", header: "Theoretical benchmark DI", group: AW, kind: "money" },
   { key: "affordabilityAdjustedDi", header: "Affordability-adjusted DI", group: AW, kind: "money" },
@@ -102,5 +103,6 @@ export const SPEND_BILLING_COLUMNS: ColumnDef[] = [
   { key: "scholarshipAdjustedGap", header: "Scholarship adj. Gap", group: AW, kind: "money" },
   { key: "gapReasons", header: "Gap reason code(s)", group: AW, width: 48 },
   { key: "reasonCodes", header: "Reason codes (year-on-year)", group: AW, width: 48 },
+  { key: "synopsis", header: "This year's synopsis", group: AW, width: 60 },
   { key: "awardType", header: "Bursary Award Type", group: AW, width: 18 },
 ];

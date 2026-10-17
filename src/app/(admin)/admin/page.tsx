@@ -19,7 +19,7 @@ import type { School } from "@prisma/client";
 import { requireRole, Role } from "@/lib/auth/roles";
 import { withUserContext, type RlsRole } from "@/lib/db/prisma";
 import { getDashboardData } from "@/lib/db/queries/dashboard";
-import { COHORTS, COHORT_LABELS, percentOf } from "@/lib/dashboard/shape";
+import { COHORTS, COHORT_LABELS, percentOf, type FundSpend } from "@/lib/dashboard/shape";
 import {
   BandHeading,
   gbp,
@@ -114,22 +114,43 @@ function Band1({ data }: { data: Data }) {
   );
 }
 
-function SpendTable({ schools, cells }: { schools: School[]; cells: Record<School, { spend: number; awards: number }> }) {
+/**
+ * A spend table by fund (Charlotte, 17 Oct 2026): JWF broken down by school
+ * with its subtotal, then TBF and WFA, then the total. `awards` off for the
+ * committed-spend panel, which shows spend only.
+ */
+function FundSpendTable({ cells, awards = true }: { cells: FundSpend; awards?: boolean }) {
+  const rows: { label: string; cell: { spend: number; awards: number }; strong?: boolean; indent?: boolean }[] = [
+    { label: "ex-OP", cell: cells.jwf.exOp, indent: true },
+    { label: "TS", cell: cells.jwf.ts, indent: true },
+    { label: "WS", cell: cells.jwf.ws, indent: true },
+    { label: "JWF total", cell: cells.jwf.total, strong: true },
+    { label: "TBF", cell: cells.tbf, strong: true },
+    { label: "WFA (incl. Pastoral Boarders)", cell: cells.wfa, strong: true },
+    { label: "Total", cell: cells.total, strong: true },
+  ];
   return (
     <table className="w-full text-sm">
       <thead>
         <tr className="text-xs uppercase tracking-wide text-slate-500">
-          <th className="py-1 text-left font-medium" />
+          <th className="py-1 text-left font-medium">Fund</th>
           <th className="py-1 text-right font-medium">Total spend (before VAT)</th>
-          <th className="w-24 py-1 text-right font-medium">Number of awards</th>
+          {awards && <th className="w-24 py-1 text-right font-medium">Number of awards</th>}
         </tr>
       </thead>
       <tbody className="divide-y divide-slate-100">
-        {schools.map((s) => (
-          <tr key={s}>
-            <td className="py-1.5 text-slate-600">{s === "TRINITY" ? "TS" : s === "WHITGIFT" ? "WS" : "OP"}</td>
-            <td className="py-1.5 text-right tabular-nums">{gbp(cells[s].spend)}</td>
-            <td className="py-1.5 text-right tabular-nums">{cells[s].awards}</td>
+        <tr>
+          <td colSpan={awards ? 3 : 2} className="pt-1.5 text-xs font-medium uppercase tracking-wide text-slate-500">
+            JWF
+          </td>
+        </tr>
+        {rows.map((r) => (
+          <tr key={r.label} className={r.label === "Total" ? "border-t border-slate-300" : undefined}>
+            <td className={`py-1.5 ${r.indent ? "pl-3 text-slate-600" : ""} ${r.strong ? "font-medium text-slate-800" : ""}`}>
+              {r.label}
+            </td>
+            <td className={`py-1.5 text-right tabular-nums ${r.strong ? "font-medium" : ""}`}>{gbp(r.cell.spend)}</td>
+            {awards && <td className="py-1.5 text-right tabular-nums">{r.cell.awards}</td>}
           </tr>
         ))}
       </tbody>
@@ -161,11 +182,11 @@ function Band2({ data }: { data: Data }) {
         <Panel title="New bursary awarded spends">
           <div className="space-y-1">
             <p className="text-xs font-medium text-slate-500">For {yy(start)} (internal bursaries)</p>
-            <SpendTable schools={b.schools} cells={b.spendCurrentYear} />
+            <FundSpendTable cells={b.spendCurrentYear} />
           </div>
           <div className="space-y-1">
             <p className="text-xs font-medium text-slate-500">For {yy(start + 1)} (new applications)</p>
-            <SpendTable schools={b.schools} cells={b.spendNextYear} />
+            <FundSpendTable cells={b.spendNextYear} />
           </div>
         </Panel>
 
@@ -259,13 +280,7 @@ function Band3({ data }: { data: Data }) {
                 <span className="text-[11px] font-medium uppercase tracking-wide text-accent-700">Illustrative data</span>
               )}
             </div>
-            <KeyValues
-              rows={[
-                { label: "ex-OP", value: gbp(spend.data.exOp) },
-                { label: "TS", value: gbp(spend.data.ts) },
-                { label: "WS", value: gbp(spend.data.ws) },
-              ]}
-            />
+            <FundSpendTable cells={spend.data} awards={false} />
           </div>
         </Panel>
 

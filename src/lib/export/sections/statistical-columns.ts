@@ -25,7 +25,7 @@ export const STATISTICAL_COLUMNS: ColumnDef[] = [
   { key: "remainingYears", header: "Remaining years at the school", group: "Part 1", kind: "number" },
   { key: "schoolAgeChildren", header: "Number of schooling age children", group: "Part 1", kind: "number" },
   { key: "parents", header: "Number of parents", group: "Part 1", kind: "number" },
-  { key: "postcode", header: "Postcode (first part)", group: "Part 1", width: 14 },
+  { key: "postcode", header: "Postcode area", group: "Part 1", width: 22 },
 
   { key: "incomeCategory", header: "HOUSEHOLD'S INCOME CATEGORY IS:", group: "Categories and ratios", kind: "number" },
   { key: "propertyCategory", header: "HOUSEHOLD'S PROPERTY CATEGORY IS:", group: "Categories and ratios", kind: "number" },

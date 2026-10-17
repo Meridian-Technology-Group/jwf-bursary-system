@@ -1202,13 +1202,6 @@ export function ApplicationTable({
           </Button>
         )}
 
-        <Input
-          placeholder="Search name, email or reference…"
-          value={searchText}
-          onChange={(e) => setSearchText(e.target.value)}
-          className="h-9 w-[240px] border-neutral-200 bg-white text-sm placeholder:text-slate-400"
-        />
-
         {/* Received-date range (Item 7.1) — server-side, navigates on change */}
         <div className="flex flex-col gap-1">
           <div className="flex items-center gap-1.5">
@@ -1283,6 +1276,21 @@ export function ApplicationTable({
               {deadlineRangeError}
             </span>
           )}
+        </div>
+
+        {/* Search on its own labelled line, where Submission-by used to wrap
+            to (Charlotte, 17 Oct 2026: it was lost in the filter row). */}
+        <div className="flex basis-full items-center gap-2">
+          <label htmlFor="applications-search" className="text-sm font-medium text-slate-700">
+            Search:
+          </label>
+          <Input
+            id="applications-search"
+            placeholder="Name, email or reference…"
+            value={searchText}
+            onChange={(e) => setSearchText(e.target.value)}
+            className="h-9 w-full max-w-[360px] border-neutral-200 bg-white text-sm placeholder:text-slate-400"
+          />
         </div>
       </div>
 

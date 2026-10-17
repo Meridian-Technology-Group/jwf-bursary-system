@@ -40,11 +40,12 @@ import {
   inSystemOnly,
   money,
   num,
-  postcodeOutward,
+  postcodeAreaLabel,
   schoolLabel,
   schoolYearNumber,
   v2Only,
 } from "@/lib/export/fields";
+import type { PostcodeAreaRow } from "@/lib/assessment/postcode-area";
 import { assessmentWhere, type AssessmentFilters } from "./filters";
 
 export const SPEND_BILLING_SELECT = {
@@ -58,6 +59,7 @@ export const SPEND_BILLING_SELECT = {
   familyTypeCategory: true,
   schoolingYearsRemaining: true,
   postcode: true,
+  synopsis: true,
   annualFees: true,
   nextYearAnnualFees: true,
   rentAddBackType: true,
@@ -139,7 +141,11 @@ export function gapReasonsMainFirst(
 }
 
 /** One assessment → one Section 2 row. Pure; `ref` is null when the bundle is incomplete. */
-export function mapSpendBillingRow(a: SpendBillingSource, ref: ReferenceBundle | null): ExportRecord {
+export function mapSpendBillingRow(
+  a: SpendBillingSource,
+  ref: ReferenceBundle | null,
+  areas?: readonly PostcodeAreaRow[],
+): ExportRecord {
   const v = a.calculationVersion;
   const app = a.application;
   const rec = a.recommendation;
@@ -190,7 +196,7 @@ export function mapSpendBillingRow(a: SpendBillingSource, ref: ReferenceBundle |
     familyCategoryDescription: meta?.description ?? "",
     remainingYears: a.schoolingYearsRemaining,
     schoolAgeChildren: inSystemOnly(app.migrationSource, a.property?.schoolAgeChildrenCount ?? null),
-    postcode: postcodeOutward(a.postcode),
+    postcode: postcodeAreaLabel(a.postcode, areas),
     annualFees: num(a.annualFees),
 
     parent1Total: v2Only(v, p1 && incomeOf(p1) ? money(calculateEarnerIncome(incomeOf(p1)!)) : null),
@@ -249,6 +255,7 @@ export function mapSpendBillingRow(a: SpendBillingSource, ref: ReferenceBundle |
     ),
     gapReasons: gapReasonsMainFirst((rec?.gapReasons ?? []).map((g) => g.gapReason)),
     reasonCodes: codeLabels((rec?.reasonCodes ?? []).map((r) => r.reasonCode)),
+    synopsis: a.synopsis ?? "",
     awardType: awardFundLabel(a.awardFundType),
   };
 }
@@ -260,6 +267,7 @@ export async function buildSpendBillingRows(tx: Tx, filters: AssessmentFilters):
   const resolved = resolveReferenceBundle(await getReferenceBundleRows(tx));
   const ref = resolved.bundle;
   const where = assessmentWhere(filters);
+  const areas = await tx.postcodeArea.findMany({ select: { district: true, area: true } });
   const out: ExportRecord[] = [];
   for (let skip = 0; ; skip += PAGE) {
     const page = await tx.assessment.findMany({
@@ -269,7 +277,7 @@ export async function buildSpendBillingRows(tx: Tx, filters: AssessmentFilters):
       skip,
       take: PAGE,
     });
-    out.push(...page.map((a) => mapSpendBillingRow(a, ref)));
+    out.push(...page.map((a) => mapSpendBillingRow(a, ref, areas)));
     if (page.length < PAGE) break;
   }
   return out;
