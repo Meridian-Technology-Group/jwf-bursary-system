@@ -30,6 +30,8 @@ const siblingsPart45: ColumnDef[] = [1, 2, 3].flatMap((i) => [
 ]);
 
 export const SPEND_BILLING_COLUMNS: ColumnDef[] = [
+  // Charlotte, 17 Oct 2026: the reference, as Section 1 has it.
+  { key: "reference", header: "Bursary reference", group: ID, width: 36 },
   { key: "bursaryAccount", header: "Bursary account", group: ID, width: 16 },
   { key: "assessmentStatus", header: "Assessment status", group: ID, width: 18 },
   { key: "applicationType", header: "Application Type", group: ID, width: 24 },
@@ -60,6 +62,8 @@ export const SPEND_BILLING_COLUMNS: ColumnDef[] = [
 
   { key: "totalSavings", header: "DISPLAY ONLY - ENTER TOTAL SAVINGS", group: P3, kind: "money" },
   { key: "totalCash", header: "DISPLAY ONLY - ENTER TOTAL CASH HELD", group: P3, kind: "money" },
+  // Charlotte, 17 Oct 2026 ("Household Total Savings"): the assessment's own total line.
+  { key: "totalCashAndSavings", header: "DISPLAY ONLY - TOTAL CASH & SAVINGS", group: P3, kind: "money" },
   { key: "rentAddBack", header: "ADD BACK IN NOTIONAL RENT APPLIED", group: P3, kind: "money" },
   { key: "ndiAfterNotionalSpend", header: "HOUSEHOLD'S NET DISPOSABLE INCOME AFTER NOTIONAL SPEND", group: P3, kind: "money" },
   { key: "incomeCategory", header: "HOUSEHOLD'S INCOME CATEGORY IS:", group: P3, kind: "number" },
