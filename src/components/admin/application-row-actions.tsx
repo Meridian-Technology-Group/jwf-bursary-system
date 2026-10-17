@@ -7,8 +7,8 @@
  * (state-model §4/§5/§6, revised by item 2's unified close):
  *   • Move to active    → the school's OFFERED decision (AWARDED). Routes to the
  *                         recommendation page to capture the award £ figures.
- *   • Return for correction → the form goes back to the family with its answers
- *                          and documents (rejectAndRestartApplication)
+ *   • Application rejection → the form goes back to the family to complete
+ *                          again (rejectAndRestartApplication)
  *   • Close…            → item 2's SINGLE terminal state, ADMIN-only, driven by
  *                         an admin-configured close reason whose purgeOnClose
  *                         flag decides purge-vs-retain. REPLACES the old
@@ -20,7 +20,8 @@
  * Gating mirrors the server-side guards so disabled items explain themselves
  * rather than failing on click:
  *   - Reject          — only before a final outcome (form SUBMITTED, assessment
- *                       not yet COMPLETED, no outcome), and not closed.
+ *                       not yet COMPLETED, no outcome), not closed, and never
+ *                       on a Grant Tracker record.
  *   - Move to active  — only once the assessment is COMPLETED in full and no
  *                       outcome has been set yet, and not closed.
  *   - Close…          — ADMIN only (hidden otherwise); never offered on an
@@ -75,6 +76,8 @@ export interface ApplicationRowActionsProps {
   outcome: AssessmentOutcome | null;
   /** Unified close marker (item 2) — non-null hides every transition. */
   closedAt: Date | null;
+  /** A Grant Tracker record: no form, so Application rejection is disabled. */
+  migrated?: boolean;
   /** Close is ADMIN-only (Story 2.1); the item is hidden for other roles. */
   isAdmin: boolean;
   /** Active close reasons for the Close dialog (item 4.1). */
@@ -92,6 +95,7 @@ export function ApplicationRowActions({
   assessmentStatus,
   outcome,
   closedAt,
+  migrated = false,
   isAdmin,
   closeReasons,
 }: ApplicationRowActionsProps) {
@@ -104,8 +108,9 @@ export function ApplicationRowActions({
   const assessmentComplete = assessmentStatus === "COMPLETED";
   // Reject: only before a final outcome, while the form is still submitted and
   // the assessment is reversible (not yet completed), and not closed.
+  // Never on a Grant Tracker record: it has no form to give back.
   const canReject =
-    !isClosed && !hasOutcome && formStatus === "SUBMITTED" && !assessmentComplete;
+    !migrated && !isClosed && !hasOutcome && formStatus === "SUBMITTED" && !assessmentComplete;
   // Move to active: the assessment must be finished in full, and no outcome
   // recorded yet, and not closed.
   const canDecide = !isClosed && assessmentComplete && !hasOutcome;
@@ -150,17 +155,19 @@ export function ApplicationRowActions({
           />
           <DropdownMenuSeparator />
 
-          {/* Reject & restart. */}
+          {/* Application rejection. */}
           <GatedItem
             enabled={canReject}
             disabledReason={
-              isClosed
-                ? "This application is closed."
-                : "Only available before an outcome is set."
+              migrated
+                ? "A migrated Grant Tracker record has no form to reject."
+                : isClosed
+                  ? "This application is closed."
+                  : "Only available before an outcome is set."
             }
             onSelect={() => setActiveDialog("reject")}
             icon={<RotateCcw className="mr-2 h-4 w-4 text-rose-600" />}
-            label="Return for correction…"
+            label="Application rejection…"
           />
           {/* Unified close (item 2) — ADMIN only, hidden for other roles. */}
           {isAdmin && canClose && (

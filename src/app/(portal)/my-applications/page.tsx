@@ -8,7 +8,6 @@
  * children say so instead. Nothing staff-only is shown: no outcome, no notes.
  */
 
-import { ReturnedForCorrectionBanner } from "@/components/portal/returned-for-correction-banner";
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import { ArrowRight, CalendarClock, CheckCircle2 } from "lucide-react";
@@ -138,7 +137,7 @@ export default async function MyApplicationsPage() {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
 
-  const { blocks, previousSignInAt, returnNotices } = await loadMyApplications(user, new Date());
+  const { blocks, previousSignInAt } = await loadMyApplications(user, new Date());
   const lastLogin = formatLastLogin(previousSignInAt);
 
   return (
@@ -187,13 +186,6 @@ export default async function MyApplicationsPage() {
               {block.childName}
             </h2>
             {school && <p className="text-sm text-slate-500">{school}</p>}
-
-            {block.state.kind === "draft" && returnNotices.get(block.state.applicationId) && (
-              <ReturnedForCorrectionBanner
-                notice={returnNotices.get(block.state.applicationId)!}
-                className="mt-4"
-              />
-            )}
 
             <dl className="mt-4 grid gap-3 sm:grid-cols-2">
               <div className="rounded-lg bg-slate-50 px-4 py-3">

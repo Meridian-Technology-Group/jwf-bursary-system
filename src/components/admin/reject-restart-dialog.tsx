@@ -1,15 +1,16 @@
 "use client";
 
 /**
- * RejectRestartDialog — Return for correction (Epic 23 T7; Charlotte, 16 Oct
- * 2026). The component keeps its name; the action is no longer destructive.
+ * RejectRestartDialog — Application rejection (Epic 23 T7; renamed from
+ * Return for correction on Charlotte's 17 Oct 2026 testing). The component
+ * keeps its name.
  *
- * Sends a submitted application back to the family with every answer and
- * document kept, a note explaining what to correct, and a NEW Submit by
+ * Sends a submitted application back to the family with a NEW Submit by
  * (required; pre-filled with the later of the current deadline and today + 7
- * days). The family is emailed and sees a "returned for correction" banner.
- * Staff then remove the specific bad items through edit-on-behalf so the
- * gaps show. See `rejectAndRestartApplication`.
+ * days). The email box opens with the Application Rejection template from
+ * Settings, this family's details filled in; staff add the specifics and what
+ * they send is the email. Staff then remove the bad items through Edit on
+ * behalf so the gaps show. See `rejectAndRestartApplication`.
  *
  * Uncontrolled (own trigger) on the application and assessment pages; the
  * applications table row drives it controlled (`open` / `onOpenChange`).
@@ -32,7 +33,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import {
-  getReturnSubmitByDefault,
+  getRejectionDraft,
   rejectAndRestartApplication,
 } from "@/app/(admin)/applications/[id]/actions";
 
@@ -66,7 +67,8 @@ export function RejectRestartDialog({
   const [uncontrolledOpen, setUncontrolledOpen] = React.useState(false);
   const open = controlled ? controlledOpen : uncontrolledOpen;
   const [isPending, startTransition] = React.useTransition();
-  const [customMessage, setCustomMessage] = React.useState("");
+  const [emailBody, setEmailBody] = React.useState("");
+  const [loading, setLoading] = React.useState(false);
   const [submitBy, setSubmitBy] = React.useState("");
   const [error, setError] = React.useState<string | null>(null);
 
@@ -78,15 +80,21 @@ export function RejectRestartDialog({
   // Reset and pre-fill each time the dialog opens.
   React.useEffect(() => {
     if (!open) return;
-    setCustomMessage("");
+    setEmailBody("");
     setError(null);
     setSubmitBy("");
+    setLoading(true);
     let live = true;
-    getReturnSubmitByDefault(applicationId)
-      .then((d) => {
-        if (live) setSubmitBy((v) => v || d);
+    getRejectionDraft(applicationId)
+      .then((draft) => {
+        if (!live) return;
+        setSubmitBy((v) => v || draft.submitBy);
+        setEmailBody((v) => v || draft.body);
       })
-      .catch(() => {});
+      .catch(() => {})
+      .finally(() => {
+        if (live) setLoading(false);
+      });
     return () => {
       live = false;
     };
@@ -98,12 +106,12 @@ export function RejectRestartDialog({
       setError("Enter the new submit-by date.");
       return;
     }
+    if (!emailBody.trim()) {
+      setError("Write the email to the family.");
+      return;
+    }
     startTransition(async () => {
-      const result = await rejectAndRestartApplication(
-        applicationId,
-        customMessage.trim() || undefined,
-        submitBy
-      );
+      const result = await rejectAndRestartApplication(applicationId, emailBody, submitBy);
       if (result.success) {
         setOpen(false);
         if (onDone) onDone();
@@ -125,18 +133,18 @@ export function RejectRestartDialog({
               className="gap-2 border-rose-300 text-rose-700 hover:bg-rose-50 hover:border-rose-400"
             >
               <RotateCcw className="h-4 w-4" aria-hidden="true" />
-              Return for correction
+              Application rejection
             </Button>
           )}
         </DialogTrigger>
       )}
 
-      <DialogContent className="sm:max-w-lg">
+      <DialogContent className="sm:max-w-2xl">
         <DialogHeader>
-          <DialogTitle className="text-rose-700">Return application for correction</DialogTitle>
+          <DialogTitle className="text-rose-700">Application rejection</DialogTitle>
           <DialogDescription>
-            The family gets their answers and documents back with your note, and
-            must correct the form and resubmit by the new date.
+            The form goes back to the family, who must complete it again and
+            resubmit by the new date. The email below is the only one they get.
           </DialogDescription>
         </DialogHeader>
 
@@ -144,10 +152,11 @@ export function RejectRestartDialog({
           <div className="flex items-start gap-2 rounded-md border border-sky-200 bg-sky-50 px-3 py-2.5">
             <Info className="mt-0.5 h-4 w-4 shrink-0 text-sky-600" aria-hidden="true" />
             <p className="text-sm text-sky-800">
-              Nothing is deleted. To make a gap show, remove the wrong document or
-              clear the wrong figure on the family&apos;s behalf (Edit form), or mark
-              a section as needing correction. Any review in progress goes back to
-              Not started.
+              Next, open <strong>Edit on behalf</strong> on the application page to
+              remove the documents and clear the answers that are not acceptable, or
+              mark a section as needing correction. Those sections then show as
+              incomplete to the family. Any review in progress goes back to Not
+              started.
             </p>
           </div>
 
@@ -175,20 +184,25 @@ export function RejectRestartDialog({
               htmlFor="reject-message"
               className="text-xs font-semibold uppercase tracking-wide text-slate-500"
             >
-              Note to the family{" "}
+              Email to the family{" "}
               <span className="font-normal normal-case tracking-normal text-slate-400">
-                (in the email and on their application)
+                (from Settings &gt; Email templates &gt; Application Rejection)
               </span>
             </Label>
             <Textarea
               id="reject-message"
-              placeholder="Explain what needs correcting, e.g. the P60 is for the wrong year…"
-              value={customMessage}
-              onChange={(e) => setCustomMessage(e.target.value)}
-              disabled={isPending}
-              rows={4}
-              className="resize-none text-sm"
+              placeholder={loading ? "Loading the template…" : "Write the email to the family…"}
+              value={emailBody}
+              onChange={(e) => setEmailBody(e.target.value)}
+              disabled={isPending || loading}
+              rows={14}
+              className="text-sm"
             />
+            {emailBody.includes("{{deadline}}") && (
+              <p className="text-xs text-slate-500">
+                {"{{deadline}}"} becomes the new submit-by date when the email is sent.
+              </p>
+            )}
           </div>
 
           {error && (
@@ -206,18 +220,18 @@ export function RejectRestartDialog({
           <Button
             type="button"
             onClick={handleConfirm}
-            disabled={isPending || !submitBy}
+            disabled={isPending || loading || !submitBy || !emailBody.trim()}
             className="gap-2 bg-rose-600 hover:bg-rose-700 text-white"
           >
             {isPending ? (
               <>
                 <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
-                Returning…
+                Rejecting…
               </>
             ) : (
               <>
                 <RotateCcw className="h-4 w-4" aria-hidden="true" />
-                Return for correction
+                Reject and email the family
               </>
             )}
           </Button>

@@ -110,10 +110,64 @@ export function cohortOf(r: { school: School; awardFundType: AwardFundType | nul
   return r.awardFundType === "WFA" ? "WS_WFA" : "WS";
 }
 
-/** The committed-spend table's three groups (her sheet: ex-OP, TS, WS). */
-export function spendGroupOf(c: Cohort): "exOp" | "ts" | "ws" {
-  if (c === "EX_OP") return "exOp";
-  return c === "TS" || c === "TS_TBF" ? "ts" : "ws";
+/**
+ * Her three funds (17 Oct 2026): JWF = ex-OP + TS + WS (93% of the spend, so
+ * broken down by school); TBF = TS-TBF; WFA = WS-WFA + WS-Pastoral Boarders.
+ */
+export type Fund = "JWF" | "TBF" | "WFA";
+export function fundOf(c: Cohort): Fund {
+  if (c === "TS_TBF") return "TBF";
+  if (c === "WS_WFA" || c === "WS_PB") return "WFA";
+  return "JWF";
+}
+
+/** A spend table by fund: JWF by school with its subtotal, then TBF, WFA and the total. */
+export interface FundSpend {
+  jwf: { exOp: SpendCell; ts: SpendCell; ws: SpendCell; total: SpendCell };
+  tbf: SpendCell;
+  wfa: SpendCell;
+  total: SpendCell;
+}
+
+const cell = (): SpendCell => ({ spend: 0, awards: 0 });
+const round2 = (n: number) => Math.round(n * 100) / 100;
+
+export function fundSpend(rows: readonly { cohort: Cohort; spend: number | null }[]): FundSpend {
+  const out: FundSpend = {
+    jwf: { exOp: cell(), ts: cell(), ws: cell(), total: cell() },
+    tbf: cell(),
+    wfa: cell(),
+    total: cell(),
+  };
+  for (const r of rows) {
+    const fund = fundOf(r.cohort);
+    const cells =
+      fund === "TBF"
+        ? [out.tbf]
+        : fund === "WFA"
+          ? [out.wfa]
+          : [r.cohort === "EX_OP" ? out.jwf.exOp : r.cohort === "TS" ? out.jwf.ts : out.jwf.ws, out.jwf.total];
+    for (const c of [...cells, out.total]) {
+      c.spend += r.spend ?? 0;
+      c.awards += 1;
+    }
+  }
+  for (const c of [out.jwf.exOp, out.jwf.ts, out.jwf.ws, out.jwf.total, out.tbf, out.wfa, out.total]) {
+    c.spend = round2(c.spend);
+  }
+  return out;
+}
+
+/** The illustrative committed spend (her mock-up has ex-OP / TS / WS only) as a fund table. */
+export function fundSpendFromSchoolTotals(t: { exOp: number; ts: number; ws: number }): FundSpend {
+  const s = (spend: number): SpendCell => ({ spend, awards: 0 });
+  const jwf = round2(t.exOp + t.ts + t.ws);
+  return {
+    jwf: { exOp: s(t.exOp), ts: s(t.ts), ws: s(t.ws), total: s(jwf) },
+    tbf: s(0),
+    wfa: s(0),
+    total: s(jwf),
+  };
 }
 
 export function percentOf(n: number, total: number): number | null {
@@ -218,6 +272,8 @@ export interface Band2Application {
   closeReasonLabel: string | null;
   entryYear: number | null;
   bursarySpendBeforeVat: number | null;
+  awardFundType: AwardFundType | null;
+  migrationSource: string | null;
 }
 
 export interface SpendCell {
@@ -229,9 +285,9 @@ export interface Band2 {
   newAwards: PerSchool;
   closedNoAward: PerSchool;
   /** Awards whose bursary starts in the round's own academic year (internal bursaries). */
-  spendCurrentYear: Record<School, SpendCell>;
+  spendCurrentYear: FundSpend;
   /** Awards starting the following academic year (new applications). */
-  spendNextYear: Record<School, SpendCell>;
+  spendNextYear: FundSpend;
   closedReasons: { label: string; share: number }[];
   closedTotal: number;
   schools: School[];
@@ -249,15 +305,13 @@ export function shapeBand2(applications: readonly Band2Application[], roundStart
   const closed = newApps.filter(
     (a) => a.assessmentStatus !== "NEW_AWARD" && (a.closedAt != null || a.assessmentStatus === "CLOSED_ARCHIVED"),
   );
-  const cells = (rows: readonly Band2Application[]) => {
-    const out = { TRINITY: { spend: 0, awards: 0 }, WHITGIFT: { spend: 0, awards: 0 }, OP_PARTNER: { spend: 0, awards: 0 } };
-    for (const a of rows) {
-      out[school(a)].spend += a.bursarySpendBeforeVat ?? 0;
-      out[school(a)].awards += 1;
-    }
-    for (const s of DASHBOARD_SCHOOLS) out[s].spend = Math.round(out[s].spend * 100) / 100;
-    return out;
-  };
+  const cells = (rows: readonly Band2Application[]) =>
+    fundSpend(
+      rows.map((a) => ({
+        cohort: cohortOf({ school: school(a), awardFundType: a.awardFundType, migrationSource: a.migrationSource }),
+        spend: a.bursarySpendBeforeVat,
+      })),
+    );
   const current = awarded.filter((a) => a.entryYear == null || a.entryYear <= roundStartYear);
   const next = awarded.filter((a) => a.entryYear != null && a.entryYear > roundStartYear);
 
@@ -314,7 +368,7 @@ export interface Band3 {
     closed: number;
     completedWithAward: number;
   };
-  committedSpend: { exOp: number; ts: number; ws: number };
+  committedSpend: FundSpend;
   committedCount: number;
   yoyChanges: { label: string; count: number }[];
   yoyCount: number;
@@ -337,12 +391,12 @@ export function shapeBand3(
     rolling.filter((a) => workloadBucket({ formStatus: a.formStatus, assessmentStatus: a.assessmentStatus }) === b).length;
   const done = rolling.filter((a) => a.assessmentStatus === "ROLLED_OVER");
 
-  const committedSpend = { exOp: 0, ts: 0, ws: 0 };
-  for (const a of done) {
-    const c = a.accountId ? cohortByAccount.get(a.accountId) : undefined;
-    if (c) committedSpend[spendGroupOf(c)] += a.bursarySpendBeforeVat ?? 0;
-  }
-  for (const k of ["exOp", "ts", "ws"] as const) committedSpend[k] = Math.round(committedSpend[k] * 100) / 100;
+  const committedSpend = fundSpend(
+    done.flatMap((a) => {
+      const c = a.accountId ? cohortByAccount.get(a.accountId) : undefined;
+      return c ? [{ cohort: c, spend: a.bursarySpendBeforeVat }] : [];
+    }),
+  );
 
   const yoy = new Map<string, number>();
   for (const a of done) {

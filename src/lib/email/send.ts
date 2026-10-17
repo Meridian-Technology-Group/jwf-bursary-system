@@ -178,6 +178,14 @@ export async function sendEmail(
      * the bulk wizard.
      */
     bcc?: string;
+    /**
+     * Application rejection (Charlotte, 17 Oct 2026) — staff edit the
+     * template's text in the rejection window before sending; this is that
+     * edited body. It replaces the stored body but goes through the same
+     * merge, wrapper, enabled gate and email log. The subject stays the
+     * template's.
+     */
+    bodyOverride?: string;
   }
 ): Promise<SendEmailResult> {
   try {
@@ -217,7 +225,7 @@ export async function sendEmail(
 
     // 2. Apply merge field substitution to subject and body.
     const subject = replaceMergeFields(template.subject, mergeData);
-    const plainBody = replaceMergeFields(template.body, mergeData);
+    const plainBody = replaceMergeFields(options?.bodyOverride ?? template.body, mergeData);
 
     // 3. Convert plain-text body to HTML and wrap in branded template.
     const htmlFragment = plainTextToHtml(plainBody);

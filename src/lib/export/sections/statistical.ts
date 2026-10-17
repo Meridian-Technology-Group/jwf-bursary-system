@@ -7,6 +7,7 @@
 
 import type { Prisma } from "@prisma/client";
 import type { Tx } from "@/lib/db/prisma";
+import type { PostcodeAreaRow } from "@/lib/assessment/postcode-area";
 import type { ExportRecord } from "@/lib/export/columns";
 import { resolveNextYearFees } from "@/lib/assessment/recommendation-v2";
 import {
@@ -17,7 +18,7 @@ import {
   inSystemOnly,
   num,
   parentCount,
-  postcodeOutward,
+  postcodeAreaLabel,
   schoolLabel,
   schoolYearNumber,
   v2Only,
@@ -77,8 +78,8 @@ export const STATISTICAL_SELECT = {
 
 export type StatisticalSource = Prisma.AssessmentGetPayload<{ select: typeof STATISTICAL_SELECT }>;
 
-/** One assessment → one Section 3 row. Pure. */
-export function mapStatisticalRow(a: StatisticalSource): ExportRecord {
+/** One assessment → one Section 3 row. Pure. `areas`: Settings' postcode areas. */
+export function mapStatisticalRow(a: StatisticalSource, areas?: readonly PostcodeAreaRow[]): ExportRecord {
   const v = a.calculationVersion;
   const app = a.application;
   const rec = a.recommendation;
@@ -98,7 +99,7 @@ export function mapStatisticalRow(a: StatisticalSource): ExportRecord {
     remainingYears: a.schoolingYearsRemaining,
     schoolAgeChildren: inSystemOnly(app.migrationSource, a.property?.schoolAgeChildrenCount ?? null),
     parents: inSystemOnly(app.migrationSource, a.earners.length ? parentCount(a.earners) : null),
-    postcode: postcodeOutward(a.postcode),
+    postcode: postcodeAreaLabel(a.postcode, areas),
 
     incomeCategory: v2Only(v, a.incomeCategory),
     propertyCategory: v2Only(v, a.propertyCategoryDerived),
@@ -134,6 +135,7 @@ const PAGE = 500;
 /** Every assessment matching the filters, paged so a large round never loads in one query. */
 export async function buildStatisticalRows(tx: Tx, filters: AssessmentFilters): Promise<ExportRecord[]> {
   const where = assessmentWhere(filters);
+  const areas = await tx.postcodeArea.findMany({ select: { district: true, area: true } });
   const out: ExportRecord[] = [];
   for (let skip = 0; ; skip += PAGE) {
     const page = await tx.assessment.findMany({
@@ -143,7 +145,7 @@ export async function buildStatisticalRows(tx: Tx, filters: AssessmentFilters): 
       skip,
       take: PAGE,
     });
-    out.push(...page.map(mapStatisticalRow));
+    out.push(...page.map((a) => mapStatisticalRow(a, areas)));
     if (page.length < PAGE) break;
   }
   return out;

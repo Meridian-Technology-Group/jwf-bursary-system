@@ -30,6 +30,8 @@ const siblingsPart45: ColumnDef[] = [1, 2, 3].flatMap((i) => [
 ]);
 
 export const SPEND_BILLING_COLUMNS: ColumnDef[] = [
+  // Charlotte, 17 Oct 2026: the reference, as Section 1 has it.
+  { key: "reference", header: "Bursary reference", group: ID, width: 36 },
   { key: "bursaryAccount", header: "Bursary account", group: ID, width: 16 },
   { key: "assessmentStatus", header: "Assessment status", group: ID, width: 18 },
   { key: "applicationType", header: "Application Type", group: ID, width: 24 },
@@ -49,17 +51,21 @@ export const SPEND_BILLING_COLUMNS: ColumnDef[] = [
   { key: "familyCategoryDescription", header: "Family category description", group: P1, width: 40 },
   { key: "remainingYears", header: "Remaining years at the school", group: P1, kind: "number" },
   { key: "schoolAgeChildren", header: "Number of schooling age children", group: P1, kind: "number" },
-  { key: "postcode", header: "Postcode (first part)", group: P1, width: 14 },
+  { key: "postcode", header: "Postcode area", group: P1, width: 22 },
   { key: "annualFees", header: "Annual school fees", group: P1, kind: "money" },
 
   { key: "parent1Total", header: "Total parent 1", group: P2, kind: "money" },
   { key: "parent2Total", header: "Total parent 2", group: P2, kind: "money" },
+  // Charlotte, 17 Oct 2026: beside the parents' incomes, not in the award block.
+  { key: "householdNetIncome", header: "Household net income", group: P2, kind: "money" },
   { key: "totalBenefits", header: "Total Benefits", group: P2, kind: "money" },
   { key: "totalSelfEmployed", header: "Total Self-Employed Income", group: P2, kind: "money" },
   { key: "totalPaye", header: "Total PAYE Income", group: P2, kind: "money" },
 
   { key: "totalSavings", header: "DISPLAY ONLY - ENTER TOTAL SAVINGS", group: P3, kind: "money" },
   { key: "totalCash", header: "DISPLAY ONLY - ENTER TOTAL CASH HELD", group: P3, kind: "money" },
+  // Charlotte, 17 Oct 2026 ("Household Total Savings"): the assessment's own total line.
+  { key: "totalCashAndSavings", header: "DISPLAY ONLY - TOTAL CASH & SAVINGS", group: P3, kind: "money" },
   { key: "rentAddBack", header: "ADD BACK IN NOTIONAL RENT APPLIED", group: P3, kind: "money" },
   { key: "ndiAfterNotionalSpend", header: "HOUSEHOLD'S NET DISPOSABLE INCOME AFTER NOTIONAL SPEND", group: P3, kind: "money" },
   { key: "incomeCategory", header: "HOUSEHOLD'S INCOME CATEGORY IS:", group: P3, kind: "number" },
@@ -87,7 +93,6 @@ export const SPEND_BILLING_COLUMNS: ColumnDef[] = [
   { key: "squeezeStatus", header: "LIFESTYLE SQUEEZE AFFORDABILITY STATUS", group: P45, width: 32 },
   ...siblingsPart45,
 
-  { key: "householdNetIncome", header: "Household net income", group: AW, kind: "money" },
   { key: "actualRemainingDi", header: "Actual remaining DI", group: AW, kind: "money" },
   { key: "theoreticalBenchmarkDi", header: "Theoretical benchmark DI", group: AW, kind: "money" },
   { key: "affordabilityAdjustedDi", header: "Affordability-adjusted DI", group: AW, kind: "money" },
@@ -102,5 +107,6 @@ export const SPEND_BILLING_COLUMNS: ColumnDef[] = [
   { key: "scholarshipAdjustedGap", header: "Scholarship adj. Gap", group: AW, kind: "money" },
   { key: "gapReasons", header: "Gap reason code(s)", group: AW, width: 48 },
   { key: "reasonCodes", header: "Reason codes (year-on-year)", group: AW, width: 48 },
+  { key: "synopsis", header: "This year's synopsis", group: AW, width: 60 },
   { key: "awardType", header: "Bursary Award Type", group: AW, width: 18 },
 ];

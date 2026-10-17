@@ -25,6 +25,9 @@ import { requireRole, Role } from "@/lib/auth/roles";
 import { withUserContext, withAdminContext, type RlsRole, type Tx } from "@/lib/db/prisma";
 import { createAuditLog } from "@/lib/audit/log";
 import { sendEmail } from "@/lib/email/send";
+import { replaceMergeFields } from "@/lib/email/merge";
+import { formalGreeting, parent1ContactOf } from "@/lib/email/formal-greeting";
+import { isMigrated } from "@/lib/applications/migration-source";
 import { humaniseSlot } from "@/lib/documents/slots";
 import { deleteDocument } from "@/lib/storage/documents";
 import { createSupabaseAdminClient } from "@/lib/auth/supabase-admin";
@@ -341,29 +344,65 @@ export async function pauseApplication(
   }
 }
 
-// ─── rejectAndRestartApplication (Return for correction) ─────────────────────
+// ─── rejectAndRestartApplication (Application rejection) ─────────────────────
 
 /**
- * Return for correction (Epic 23 T7; Charlotte, 16 Oct 2026, decision 4). The
- * name is kept so the History tab's APPLICATION_REJECTED_RESTART rows and
- * every caller keep working; the behaviour is new.
+ * Parent 1's details from the lead applicant's PARENT_DETAILS section (the one
+ * the PRIMARY contributor owns), for the formal greeting.
+ */
+const LEAD_PARENT_DETAILS_SELECT = {
+  where: { section: "PARENT_DETAILS" as const, ownerContributor: { role: "PRIMARY" as const } },
+  select: { data: true },
+  take: 1,
+};
+
+/** The family's greeting and the email's merge values, from the application. */
+function rejectionMergeData(app: {
+  id: string;
+  reference: string;
+  childName: string;
+  leadApplicant: { firstName: string | null; lastName: string | null };
+  sections: { data: unknown }[];
+}) {
+  const parent = parent1ContactOf(app.sections[0]?.data);
+  return {
+    // Charlotte, 17 Oct 2026: title + surname, JWF's style for bursary letters.
+    greeting: formalGreeting(parent ?? app.leadApplicant),
+    applicant_name:
+      `${app.leadApplicant.firstName ?? ""} ${app.leadApplicant.lastName ?? ""}`.trim() || "Applicant",
+    child_name: app.childName,
+    reference: app.reference,
+    // Epic 22 P1's "keep working" target: the first section without a green tick.
+    restart_link: `${getAppUrl()}/apply/open/${app.id}?to=continue`,
+  };
+}
+
+/**
+ * Application rejection (Epic 23 T7; renamed and re-worded from Return for
+ * correction on Charlotte's 17 Oct 2026 testing). The name is kept so the
+ * History tab's APPLICATION_REJECTED_RESTART rows and every caller keep
+ * working.
  *
- * The submitted application goes BACK to the family with every answer and
- * document kept, a "returned for correction" message, and a NEW Submit by (the
- * original has usually passed). Staff then remove the specific bad items (a
- * wrong-year P60, a forged return, a blurry statement, wrong figures) through
- * edit-on-behalf so the gaps show. Nothing is deleted: see
- * `returnApplicationForCorrection` for exactly what changes.
+ * The submitted application goes BACK to the family with a NEW Submit by (the
+ * original has usually passed). Staff remove the bad items (a wrong-year P60,
+ * a blurry statement, wrong figures) through Edit on behalf so the gaps show:
+ * see `returnApplicationForCorrection` for exactly what changes.
  *
- * Allowed before a final outcome only (SUBMITTED / NOT_STARTED / PAUSED).
+ * The email is the APPLICATION_RESTART_REQUIRED template ("Application
+ * Rejection" in Settings), whose text staff edit in the rejection window:
+ * `emailBody` is that edited text, sent as the email and kept on the rejection
+ * record. It may still hold `{{deadline}}`, filled with the new Submit by.
  *
- * @param applicationId The application being returned.
- * @param customMessage The note to the family (email + portal banner).
+ * Allowed before a final outcome only (SUBMITTED / NOT_STARTED / PAUSED), and
+ * never on a Grant Tracker record (it has no form to give back).
+ *
+ * @param applicationId The application being rejected.
+ * @param emailBody     The email to the family, as edited in the window.
  * @param newSubmitBy   The new Submit by, `yyyy-MM-dd` (required, in the future).
  */
 export async function rejectAndRestartApplication(
   applicationId: string,
-  customMessage: string | undefined,
+  emailBody: string,
   newSubmitBy: string
 ): Promise<ActionResult> {
   try {
@@ -371,7 +410,8 @@ export async function rejectAndRestartApplication(
 
     const submitBy = parseReturnSubmitBy(newSubmitBy, new Date());
     if (!submitBy.ok) return { success: false, error: submitBy.error };
-    const note = customMessage?.trim() || null;
+    const body = emailBody?.trim() ?? "";
+    if (!body) return { success: false, error: "The email to the family is empty." };
 
     // Admin context: the rejection insert policy is service-role only.
     const result = await withAdminContext(async (tx) => {
@@ -387,16 +427,27 @@ export async function rejectAndRestartApplication(
           formStatus: true,
           closedAt: true,
           submittedAt: true,
+          migrationSource: true,
           round: { select: { academicYear: true } },
           leadApplicant: {
             select: { email: true, firstName: true, lastName: true },
           },
+          sections: LEAD_PARENT_DETAILS_SELECT,
           assessment: { select: { status: true, outcome: true } },
         },
       });
 
       if (!application) {
         return { success: false as const, error: "Application not found." };
+      }
+
+      // A Grant Tracker record has no form in this system: giving it "back"
+      // would show the family an empty form and break its schedule year.
+      if (isMigrated(application)) {
+        return {
+          success: false as const,
+          error: "A migrated Grant Tracker record has no form to reject.",
+        };
       }
 
       const phase = deriveReviewPhase({
@@ -406,12 +457,12 @@ export async function rejectAndRestartApplication(
         closedAt: application.closedAt,
       });
 
-      // Return only before a final outcome. A decided/completed application must
-      // go through the outcome flow.
+      // Reject only before a final outcome. A decided/completed application
+      // must go through the outcome flow.
       if (!canReturnForCorrection(phase)) {
         return {
           success: false as const,
-          error: `Cannot return an application for correction from status ${phase}.`,
+          error: `Cannot reject an application from status ${phase}.`,
         };
       }
 
@@ -429,7 +480,7 @@ export async function rejectAndRestartApplication(
         },
         phase,
         newSubmitBy: submitBy.submitBy,
-        message: note,
+        message: body,
         staffId: user.id,
       });
 
@@ -439,14 +490,14 @@ export async function rejectAndRestartApplication(
         action: AUDIT_ACTIONS.APPLICATION_REJECTED_RESTART,
         entityType: AUDIT_ENTITY_TYPES.Application,
         entityId: applicationId,
-        context: `Application ${application.reference} returned to the family for correction`,
+        context: `Application ${application.reference} rejected and returned to the family`,
         metadata: {
           mode: "returned",
           fromStatus: phase,
           reference: application.reference,
           newSubmitBy: submitBy.submitBy.toISOString(),
           rejectionRecordId: rejectionId,
-          customMessage: note,
+          customMessage: body,
           previousSubmittedAt: application.submittedAt?.toISOString() ?? null,
           assessmentReset,
         },
@@ -454,31 +505,19 @@ export async function rejectAndRestartApplication(
 
       return {
         success: true as const,
-        reference: application.reference,
-        childName: application.childName,
-        leadApplicant: application.leadApplicant,
+        email: application.leadApplicant.email,
+        mergeData: rejectionMergeData(application),
       };
     });
 
     if (!result.success) return result;
 
-    // Email the family — non-blocking. Fall back to a neutral sentence when the
-    // assessor left the note blank.
+    // Email the family — non-blocking.
     const emailResult = await sendEmail(
-      result.leadApplicant.email,
+      result.email,
       "APPLICATION_RESTART_REQUIRED",
-      {
-        applicant_name:
-          `${result.leadApplicant.firstName ?? ""} ${result.leadApplicant.lastName ?? ""}`.trim() ||
-          "Applicant",
-        child_name: result.childName,
-        reference: result.reference,
-        custom_message:
-          note ?? "Having reviewed your application, we need you to correct some of it before we can continue.",
-        // Epic 22 P1's "keep working" target: the first section without a green tick.
-        restart_link: `${getAppUrl()}/apply/open/${applicationId}?to=continue`,
-        deadline: formatEmailDate(submitBy.submitBy),
-      }
+      { ...result.mergeData, deadline: formatEmailDate(submitBy.submitBy) },
+      { bodyOverride: body }
     );
     if (!emailResult.success) {
       console.warn(
@@ -491,30 +530,53 @@ export async function rejectAndRestartApplication(
     return { success: true };
   } catch (err) {
     console.error("[rejectAndRestartApplication]", err);
-    return { success: false, error: "Failed to return the application for correction." };
+    return { success: false, error: "Failed to reject the application." };
   }
 }
 
 /**
- * The Return-for-correction dialog's pre-filled "New submit-by date": the
- * later of the form's current effective deadline and today + 7 days
- * (`yyyy-MM-dd`, Europe/London). Read-only.
+ * What the Application rejection window opens with (read-only):
+ *   - `submitBy`: the later of the form's current effective deadline and
+ *     today + 7 days (`yyyy-MM-dd`, Europe/London);
+ *   - `body`: the Application Rejection template's text with this family's
+ *     details filled in. `{{deadline}}` is left for the send, so it follows
+ *     whatever date staff settle on.
  */
-export async function getReturnSubmitByDefault(applicationId: string): Promise<string> {
-  const user = await requireRole([Role.ADMIN, Role.ASSESSOR]);
+export async function getRejectionDraft(
+  applicationId: string
+): Promise<{ submitBy: string; body: string }> {
+  await requireRole([Role.ADMIN, Role.ASSESSOR]);
   const now = new Date();
-  const current = await withUserContext(user.id, user.role as RlsRole, async (tx) => {
-    const app = await tx.application.findUnique({
+  // Service role, as the send does: the lead applicant's profile is under RLS.
+  const app = await withAdminContext((tx) =>
+    tx.application.findUnique({
       where: { id: applicationId },
       select: {
+        id: true,
+        reference: true,
+        childName: true,
         submissionDeadlineAt: true,
         applicationType: true,
         round: { select: DEADLINE_ROUND_SELECT },
+        leadApplicant: { select: { firstName: true, lastName: true } },
+        sections: LEAD_PARENT_DETAILS_SELECT,
       },
-    });
-    return app ? effectiveSubmissionDeadline(app, app.round).deadline : null;
-  });
-  return defaultReturnSubmitBy(current, now);
+    })
+  );
+  if (!app) return { submitBy: defaultReturnSubmitBy(null, now), body: "" };
+
+  // email_templates has no app_user read policy either.
+  const template = await withAdminContext((tx) =>
+    tx.emailTemplate.findUnique({
+      where: { type: "APPLICATION_RESTART_REQUIRED" },
+      select: { body: true },
+    })
+  );
+
+  return {
+    submitBy: defaultReturnSubmitBy(effectiveSubmissionDeadline(app, app.round).deadline, now),
+    body: template ? replaceMergeFields(template.body, rejectionMergeData(app)) : "",
+  };
 }
 
 // ─── reopenForMaterialChange (soft send-back, keep submission date) ───────────
