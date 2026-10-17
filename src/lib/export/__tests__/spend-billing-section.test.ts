@@ -15,6 +15,7 @@ const SIB = "SIBLINGS' FEES ALREADY AT A JWF SCHOOL";
 
 /** Her EXPORTS.xlsx Section 2 (rows 28–83); Part 1 expanded to the form's fields; siblings ×3. */
 const HER_HEADERS = [
+  "Bursary reference",
   "Bursary account",
   "Assessment status",
   "Application Type",
@@ -45,6 +46,7 @@ const HER_HEADERS = [
   "Total PAYE Income",
   "DISPLAY ONLY - ENTER TOTAL SAVINGS",
   "DISPLAY ONLY - ENTER TOTAL CASH HELD",
+  "DISPLAY ONLY - TOTAL CASH & SAVINGS",
   "ADD BACK IN NOTIONAL RENT APPLIED",
   "HOUSEHOLD'S NET DISPOSABLE INCOME AFTER NOTIONAL SPEND",
   "HOUSEHOLD'S INCOME CATEGORY IS:",
@@ -171,6 +173,7 @@ function source(over: Record<string, unknown> = {}, app: Record<string, unknown>
       school: "WHITGIFT",
       entryYearGroup: "Y9",
       migrationSource: null,
+      reference: "WS-ABCD01-SURNAME, Pupil",
       childName: "Pupil Surname",
       childFirstName: "Pupil",
       childLastName: "Surname",
@@ -203,6 +206,7 @@ describe("mapSpendBillingRow", () => {
   });
   it("a fully populated v2 assessment: every column filled, money as numbers", () => {
     const r = mapSpendBillingRow(source(), REF);
+    expect(r.reference).toBe("WS-ABCD01-SURNAME, Pupil");
     expect(r).toMatchObject({
       bursaryAccount: "Active",
       assessmentStatus: "Rolled over",
@@ -223,6 +227,7 @@ describe("mapSpendBillingRow", () => {
       totalPaye: 40000,
       totalSavings: 12000,
       totalCash: 3500,
+      totalCashAndSavings: 15500,
       rentAddBack: 3000, // a quarter of the category's 12,000 notional rent
       ndiAfterNotionalSpend: 24907,
       homeValue: 450000,

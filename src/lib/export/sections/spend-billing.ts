@@ -95,6 +95,7 @@ export const SPEND_BILLING_SELECT = {
       school: true,
       entryYearGroup: true,
       migrationSource: true,
+      reference: true,
       childName: true,
       childFirstName: true,
       childLastName: true,
@@ -175,6 +176,7 @@ export function mapSpendBillingRow(
   const gapAmount = num(rec?.gapAmount);
 
   return {
+    reference: app.reference,
     bursaryAccount: accountStateLabel(app.bursaryAccount?.status),
     assessmentStatus: assessmentStatusLabel(a.status),
     applicationType: applicationTypeLabel(app.applicationType),
@@ -207,6 +209,11 @@ export function mapSpendBillingRow(
 
     totalSavings: v2Only(v, num(a.property?.isasPepsShares)),
     totalCash: v2Only(v, num(a.property?.cashSavings)),
+    // As the assessment form shows it: cash held + total savings.
+    totalCashAndSavings: v2Only(
+      v,
+      a.property ? money((num(a.property.cashSavings) ?? 0) + (num(a.property.isasPepsShares) ?? 0)) : null,
+    ),
     rentAddBack,
     ndiAfterNotionalSpend: v2Only(v, num(a.ndiAfterNotionalSpend)),
     incomeCategory: v2Only(v, a.incomeCategory),
