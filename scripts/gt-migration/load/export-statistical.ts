@@ -28,7 +28,9 @@ export async function exportStatistical(ctx: LoadContext, opts: { out?: string }
     select: { ...STATISTICAL_SELECT, property: { select: { schoolAgeChildrenCount: true, debts: true } } },
     orderBy: [{ application: { reference: 'asc' } }, { id: 'asc' }],
   })
-  const rows = assessments.map(mapStatisticalRow)
+  // Postcode areas so the sheet shows SW19-WIMBLEDON, as /exports does (17 Oct 2026).
+  const areas = await ctx.prisma.postcodeArea.findMany({ select: { district: true, area: true } })
+  const rows = assessments.map((a) => mapStatisticalRow(a, areas))
 
   const date = new Date().toISOString().slice(0, 10)
   const dir = resolve(DATA_DIR, 'exports')

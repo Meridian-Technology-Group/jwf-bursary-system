@@ -16,6 +16,11 @@
  *                           (Epic 23 T2: child DOB from GT's Recurring forms
  *                            where NULL; raw SQL, no updated_at moves; undo
  *                            log in runs/<id>/patch-dob.jsonl)
+ *   npm run mig -- patch-labels --env <e> --run <id> [--dry-run] [--undo]
+ *                           (17 Oct 2026: debt-status / lifestyle-squeeze labels
+ *                            from a fresh `mig calc` after a reference change;
+ *                            refuses if any figure differs; undo log in
+ *                            runs/<id>/patch-labels.jsonl)
  *   npm run mig -- export-statistical --env <e> [--out <file.xlsx>]
  *                           (Epic 23 T5: Export Section 3 of the migrated
  *                            2026/27 assessments; read-only; 0600 file)
@@ -203,6 +208,24 @@ async function main() {
       const ctx = await openContext(requireWritable(config))
       try {
         await patchDob(ctx, { runId, only: list(flag(args, 'only')), dryRun, undo: has(args, 'undo'), blankList: flag(args, 'blank-list'), dobFile: flag(args, 'dob-file') })
+      } finally {
+        await ctx.prisma.$disconnect()
+      }
+      return
+    }
+    case 'patch-labels': {
+      const runId = flag(args, 'run')
+      if (!runId) throw new Error('--run <id> is required')
+      const dryRun = has(args, 'dry-run')
+      if (!dryRun) {
+        const { latestCanonical } = await import('./calc/run')
+        assertApproved(env, latestCanonical().hash, 'patch-labels')
+      }
+      const { openContext } = await import('./load/context')
+      const { patchLabels } = await import('./load/patch-labels')
+      const ctx = await openContext(requireWritable(config))
+      try {
+        await patchLabels(ctx, { runId, dryRun, undo: has(args, 'undo') })
       } finally {
         await ctx.prisma.$disconnect()
       }
