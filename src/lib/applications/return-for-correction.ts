@@ -75,8 +75,9 @@ export interface LatestRejection {
 }
 
 /**
- * Whether the family should see "returned to you for correction": the latest
- * rejection returned THIS application, and it has not been submitted since.
+ * Whether the form is rejected and back with the family: the latest rejection
+ * returned THIS application, and it has not been submitted since. Drives the
+ * Applications list's "Rejected" badge and Edit on behalf's draft saves.
  */
 export function isReturnedForCorrection(
   app: { id: string; formStatus: ApplicationFormStatus; submittedAt: Date | null },
@@ -85,25 +86,6 @@ export function isReturnedForCorrection(
   if (!latest || latest.replacementApplicationId !== app.id) return false;
   if (app.formStatus === "SUBMITTED") return false;
   return app.submittedAt == null || app.submittedAt < latest.rejectedAt;
-}
-
-export interface ReturnNotice {
-  returnedOn: Date;
-  submitBy: Date | null;
-  message: string | null;
-}
-
-/** The banner's content, or null when there is nothing to show. */
-export function returnNotice(
-  app: { id: string; formStatus: ApplicationFormStatus; submittedAt: Date | null; submissionDeadlineAt: Date | null },
-  latest: LatestRejection | null | undefined,
-): ReturnNotice | null {
-  if (!latest || !isReturnedForCorrection(app, latest)) return null;
-  return {
-    returnedOn: latest.rejectedAt,
-    submitBy: app.submissionDeadlineAt ?? latest.newSubmitBy,
-    message: latest.message?.trim() || null,
-  };
 }
 
 /** The latest rejection that returned this application (parent RLS reads its own rows). */
@@ -187,22 +169,4 @@ export async function returnApplicationForCorrection(
   });
 
   return { rejectionId, assessmentReset };
-}
-
-const LONG_DATE = new Intl.DateTimeFormat("en-GB", {
-  timeZone: "Europe/London",
-  day: "numeric",
-  month: "long",
-  year: "numeric",
-});
-
-/** The banner's words (her 16 Oct wording), then staff's note on its own. */
-export function returnNoticeText(notice: ReturnNotice): { headline: string; message: string | null } {
-  const by = notice.submitBy ? ` and resubmit by ${LONG_DATE.format(notice.submitBy)}` : " and resubmit";
-  return {
-    headline:
-      `This application was returned to you for correction on ${LONG_DATE.format(notice.returnedOn)}. ` +
-      `Please correct the sections without a green tick${by}.`,
-    message: notice.message,
-  };
 }

@@ -24,11 +24,6 @@ import { canCreateFirstYearApplication } from "@/lib/applications/create-from-in
 import { parseAcademicYearStart } from "@/lib/assessment/fee-year";
 import { draftCompletion } from "@/lib/portal/draft-completion";
 import {
-  getLatestReturn,
-  returnNotice,
-  type ReturnNotice,
-} from "@/lib/applications/return-for-correction";
-import {
   buildApplicationBlocks,
   type ApplicationBlock,
   type DraftCompletion,
@@ -37,8 +32,6 @@ import {
 export interface MyApplicationsData {
   blocks: ApplicationBlock[];
   previousSignInAt: Date | null;
-  /** Epic 23 T7: drafts back with the family for correction, by application id. */
-  returnNotices: ReadonlyMap<string, ReturnNotice>;
 }
 
 export async function loadMyApplications(
@@ -92,7 +85,7 @@ export async function loadMyApplications(
     }),
   ]);
 
-  const { applications, completions, returnNotices } = await withUserContext(
+  const { applications, completions } = await withUserContext(
     user.id,
     user.role as RlsRole,
     async (tx) => {
@@ -115,14 +108,11 @@ export async function loadMyApplications(
 
       // One gap analysis per draft: a family has one to four children.
       const completions = new Map<string, DraftCompletion>();
-      const returnNotices = new Map<string, ReturnNotice>();
       for (const app of apps) {
         if (app.formStatus === "SUBMITTED") continue;
         completions.set(app.id, await draftCompletion(tx, app, user.id));
-        const notice = returnNotice(app, await getLatestReturn(tx, app.id));
-        if (notice) returnNotices.set(app.id, notice);
       }
-      return { applications: apps, completions, returnNotices };
+      return { applications: apps, completions };
     }
   );
 
@@ -170,5 +160,5 @@ export async function loadMyApplications(
     today,
   });
 
-  return { blocks, previousSignInAt: adminFacts.previousSignInAt, returnNotices };
+  return { blocks, previousSignInAt: adminFacts.previousSignInAt };
 }

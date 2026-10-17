@@ -236,7 +236,16 @@ const REVIEW_PHASE_BADGE_STYLES: Record<ReviewPhase, string> = {
 };
 
 /** Status column badge (Item 1.1) — read-only; same wording as the detail page. */
-function ReviewPhaseBadge({ phase }: { phase: ReviewPhase }) {
+function ReviewPhaseBadge({ phase, rejected = false }: { phase: ReviewPhase; rejected?: boolean }) {
+  // A rejected form is back with the family (Pre-submission), but the list
+  // must tell it from one never received, as Grant Tracker did (17 Oct 2026).
+  if (rejected) {
+    return (
+      <span className="inline-flex items-center rounded-full bg-rose-50 px-2.5 py-0.5 text-xs font-medium text-rose-700">
+        Rejected
+      </span>
+    );
+  }
   return (
     <span
       className={cn(
@@ -938,7 +947,9 @@ export function ApplicationTable({
       }),
       columnHelper.accessor("reviewPhase", {
         header: "Status",
-        cell: (info) => <ReviewPhaseBadge phase={info.getValue()} />,
+        cell: (info) => (
+          <ReviewPhaseBadge phase={info.getValue()} rejected={info.row.original.rejected} />
+        ),
       }),
       columnHelper.display({
         id: "leadApplicant",
@@ -1031,6 +1042,7 @@ export function ApplicationTable({
                 assessmentStatus={row.assessmentStatus}
                 outcome={row.outcome}
                 closedAt={row.closedAt}
+                migrated={row.migrationSource != null}
                 isAdmin={userRole === "ADMIN"}
                 closeReasons={closeReasons}
               />
