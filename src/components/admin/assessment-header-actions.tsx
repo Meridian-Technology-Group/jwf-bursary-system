@@ -24,10 +24,13 @@ export function AssessmentHeaderActions({
   applicationId,
   status,
   documents,
+  migrated = false,
 }: {
   applicationId: string;
   status: ReviewPhase;
   documents: Document[];
+  /** A Grant Tracker record has no form, so it cannot be rejected. */
+  migrated?: boolean;
 }) {
   const reviewActive = status === "NOT_STARTED";
 
@@ -35,6 +38,7 @@ export function AssessmentHeaderActions({
     <div className="flex flex-wrap items-center gap-2">
       {reviewActive && (
         <>
+          {!migrated && (
           <RejectRestartDialog
             applicationId={applicationId}
             trigger={
@@ -43,10 +47,11 @@ export function AssessmentHeaderActions({
                 size="sm"
                 className="gap-2 border-rose-300 text-rose-700 hover:border-rose-400 hover:bg-rose-50"
               >
-                Return for correction
+                Application rejection
               </Button>
             }
           />
+          )}
           <MissingDocsDialog
             applicationId={applicationId}
             documents={documents}
