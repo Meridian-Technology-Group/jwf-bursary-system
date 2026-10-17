@@ -14,13 +14,15 @@ import {
   isReturnedForCorrection,
   parseReturnSubmitBy,
   returnApplicationForCorrection,
-  returnNotice,
-  returnNoticeText,
   type LatestRejection,
 } from "../return-for-correction";
 import { isSubmissionDeadlinePassed } from "@/lib/rounds/submission-deadline";
 import { scheduleRowsForParent } from "@/lib/portal/parent-schedule";
-import { emailTemplates, RESTART_REQUIRED_PREVIOUS_SEED } from "../../../../prisma/seed-data/email-templates";
+import {
+  emailTemplates,
+  RESTART_REQUIRED_PREVIOUS_SEED,
+  RESTART_REQUIRED_RETURN_SEED,
+} from "../../../../prisma/seed-data/email-templates";
 
 const NOW = new Date("2026-10-16T12:00:00Z");
 
@@ -60,17 +62,10 @@ const rejection = (over: Partial<LatestRejection> = {}): LatestRejection => ({
   ...over,
 });
 
-describe("the parent's banner", () => {
-  const app = { id: "app-1", formStatus: "IN_PROGRESS" as const, submittedAt: null, submissionDeadlineAt: new Date("2026-10-30T23:59:59Z") };
-  it("shows while the returned form has not been resubmitted", () => {
+describe("rejected and back with the family (the list's Rejected badge)", () => {
+  const app = { id: "app-1", formStatus: "IN_PROGRESS" as const, submittedAt: null };
+  it("holds while the returned form has not been resubmitted", () => {
     expect(isReturnedForCorrection(app, rejection())).toBe(true);
-    const n = returnNotice(app, rejection());
-    expect(n).toEqual({ returnedOn: rejection().rejectedAt, submitBy: app.submissionDeadlineAt, message: "The P60 is for the wrong year." });
-    expect(returnNoticeText(n!)).toEqual({
-      headline:
-        "This application was returned to you for correction on 16 October 2026. Please correct the sections without a green tick and resubmit by 30 October 2026.",
-      message: "The P60 is for the wrong year.",
-    });
   });
   it("goes once it is submitted again, or when the rejection was of another application", () => {
     expect(isReturnedForCorrection({ ...app, formStatus: "SUBMITTED", submittedAt: new Date("2026-10-20") }, rejection())).toBe(false);
@@ -78,9 +73,6 @@ describe("the parent's banner", () => {
     expect(isReturnedForCorrection(app, null)).toBe(false);
     // An old Reject-and-restart replacement draft submitted earlier and since re-opened elsewhere:
     expect(isReturnedForCorrection({ ...app, submittedAt: new Date("2026-10-17") }, rejection())).toBe(false);
-  });
-  it("no note → headline only", () => {
-    expect(returnNotice(app, rejection({ message: "  " }))?.message).toBe(null);
   });
 });
 
@@ -233,15 +225,35 @@ describe("the email (D-17)", () => {
     expect(sql).toContain(`replace(body, E'\\r', '') = $seed$${RESTART_REQUIRED_PREVIOUS_SEED.body}$seed$`);
     expect(sql).toContain("OR replace(body, E'\\r', '') = $aug$");
   });
-  it("writes the seed module's new wording, with the deadline", () => {
-    expect(sql).toContain(`SET subject = $subject$${seed.subject}$subject$`);
-    expect(sql).toContain(`body = $body$${seed.body}$body$`);
-    expect(seed.mergeFields).toContain("deadline");
-    expect(seed.body).toContain("{{deadline}}");
-    expect(seed.body).toContain("previous answers and documents are still there");
-    expect(seed.body).not.toContain("fresh application");
+  it("wrote the 16 Oct returned-for-correction wording", () => {
+    expect(sql).toContain(`SET subject = $subject$${RESTART_REQUIRED_RETURN_SEED.subject}$subject$`);
+    expect(sql).toContain(`body = $body$${RESTART_REQUIRED_RETURN_SEED.body}$body$`);
   });
   it("the write-once trigger lets a date be cleared but never rewritten", () => {
     expect(sql).toMatch(/OLD\.submitted_at IS NOT NULL\s+AND NEW\.submitted_at IS NOT NULL\s+AND NEW\.submitted_at IS DISTINCT FROM OLD\.submitted_at/);
+  });
+});
+
+describe("the Application Rejection template (17 Oct 2026)", () => {
+  const sql = readFileSync(
+    resolve(__dirname, "../../../../prisma/migrations/20261017120000_application_rejection_template/migration.sql"),
+    "utf8",
+  );
+  const seed = emailTemplates.find((t) => t.type === "APPLICATION_RESTART_REQUIRED")!;
+  it("replaces only the 16 Oct text, never an edit made in Settings", () => {
+    expect(sql).toContain(`AND subject = $old$${RESTART_REQUIRED_RETURN_SEED.subject}$old$`);
+    expect(sql).toContain(`replace(body, E'\\r', '') = $seed$${RESTART_REQUIRED_RETURN_SEED.body}$seed$`);
+  });
+  it("writes the seed module's wording: hers, with the numbered lines to fill in", () => {
+    expect(sql).toContain(`SET subject = $subject$${seed.subject}$subject$`);
+    expect(sql).toContain(`body = $body$${seed.body}$body$`);
+    expect(seed.subject).toBe("JWF - We have had to reject your application ** PLEASE READ **");
+    expect(seed.body).toContain("we have had to reject your bursary application");
+    expect(seed.body).toContain("especially:\n1-\n2-");
+    expect(seed.body).not.toContain("still there");
+    // Her 17 Oct answers: title + surname, and the actual Submit-by date.
+    expect(seed.body.startsWith("Dear {{greeting}}")).toBe(true);
+    expect(seed.body).toContain("by {{deadline}}.");
+    expect(seed.mergeFields).toContain("greeting");
   });
 });
