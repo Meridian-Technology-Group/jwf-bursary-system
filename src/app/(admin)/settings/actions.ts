@@ -1207,9 +1207,9 @@ interface DebtShortfallBandRowInput {
 }
 
 /**
- * Charlotte, 11 Sep 2026 — a new version of the shortfall table. Unlike the
- * ratio ladders this one has no household context: there is a single table,
- * consulted whenever NDI cannot cover the yearly repayment.
+ * Charlotte, 11 Sep 2026 — a new version of a shortfall table. There are two
+ * since 17 Oct (negative / positive NDI after notional spend), each versioned
+ * on its own, like the household-context ladders.
  */
 export async function createDebtShortfallBandVersionAction(
   formData: FormData
@@ -1222,6 +1222,11 @@ export async function createDebtShortfallBandVersionAction(
     if (!rows || rows.length === 0) return { success: false, error: "At least one band row is required." };
     if (!effectiveFrom) return { success: false, error: "A valid effective date is required." };
 
+    const shortfallTable = formData.get("shortfallTable");
+    if (shortfallTable !== "NDI_NEGATIVE" && shortfallTable !== "NDI_POSITIVE") {
+      return { success: false, error: "Unknown debt shortfall table." };
+    }
+
     const bandError = checkBandSet(rows.map((r) => ({ floor: r.floorGbp, ceiling: r.ceilingGbp })));
     if (bandError) return bandError;
     if (rows.some((r) => !r.statusLabel?.trim())) {
@@ -1229,7 +1234,8 @@ export async function createDebtShortfallBandVersionAction(
     }
 
     const result = await withUserContext(user.id, user.role as RlsRole, async (tx) => {
-      const existing = await tx.debtShortfallBand.findMany({ select: { effectiveFrom: true } });
+      // Scoped to THIS table, as the household-context ladders are.
+      const existing = await tx.debtShortfallBand.findMany({ where: { shortfallTable }, select: { effectiveFrom: true } });
       if (isDuplicateEffectiveFrom(effectiveFrom, existing.map((e) => e.effectiveFrom))) {
         return { success: false, error: "A debt shortfall band version already exists for that effective date." } as const;
       }
@@ -1239,6 +1245,7 @@ export async function createDebtShortfallBandVersionAction(
           floorGbp: r.floorGbp,
           ceilingGbp: r.ceilingGbp,
           statusLabel: r.statusLabel.trim(),
+          shortfallTable,
           effectiveFrom,
         })),
       });
@@ -1248,8 +1255,8 @@ export async function createDebtShortfallBandVersionAction(
         action: AUDIT_ACTIONS.SETTINGS_DEBT_RATIO_BAND_VERSION_CREATE,
         entityType: AUDIT_ENTITY_TYPES.DebtRatioBand,
         entityId: user.id,
-        context: `Created a new debt shortfall band version (${rows.length} rows) effective ${effectiveFrom.toISOString().slice(0, 10)}`,
-        metadata: { effectiveFrom: effectiveFrom.toISOString(), rowCount: rows.length },
+        context: `Created a new debt shortfall band version, table ${shortfallTable === "NDI_NEGATIVE" ? "(1) negative NDI" : "(2) positive NDI"} (${rows.length} rows) effective ${effectiveFrom.toISOString().slice(0, 10)}`,
+        metadata: { effectiveFrom: effectiveFrom.toISOString(), rowCount: rows.length, shortfallTable },
       });
 
       return { success: true } as const;

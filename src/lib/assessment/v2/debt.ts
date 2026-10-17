@@ -27,7 +27,7 @@ import {
   type DebtRatioBandRow,
   type DebtShortfallBandRow,
 } from '../reference-bands'
-import type { DebtSavingsContext } from '@prisma/client'
+import type { DebtSavingsContext, DebtShortfallTable } from '@prisma/client'
 import type { DebtsRecord } from '@/types/assessment-v2'
 
 function n(v: number | undefined): number {
@@ -222,6 +222,20 @@ export function debtRepaymentShortfall(
   return totalDebt / DEBT_REPAYMENT_YEARS - ndiAfterNotionalSpend
 }
 
+/**
+ * Which of her two shortfall tables applies (17 Oct 2026), by the sign of NDI
+ * after notional spend:
+ *   - negative → NDI_NEGATIVE, her "undeclared debt / external support"
+ *     wording (a household spending beyond its declared means, debt or not);
+ *   - zero or positive → NDI_POSITIVE, the 11 Sep credit-risk wording. With a
+ *     shortfall and NDI ≥ 0 the yearly repayment is necessarily above £0, which
+ *     is her second condition. Exactly £0 is not covered by her rule; it reads
+ *     the positive table (there is debt the household cannot service).
+ */
+export function shortfallTableFor(ndiAfterNotionalSpend: number): DebtShortfallTable {
+  return ndiAfterNotionalSpend < 0 ? 'NDI_NEGATIVE' : 'NDI_POSITIVE'
+}
+
 /** Whether the shortfall table decides this household's debt status. */
 export function usesShortfallStatus(
   totalDebt: number,
@@ -238,6 +252,10 @@ export function usesShortfallStatus(
  * as before. When it does not, *"the actual ratio number will be displayed but
  * will become irrelevant"* and the status comes from the cash shortfall
  * instead.
+ *
+ * 17 Oct 2026: the shortfall route reads one of two tables by the sign of NDI
+ * (`shortfallTableFor`), so a debt-free household spending beyond its means no
+ * longer reads "IN A DEBT SPIRAL".
  *
  * This is also what makes her "n/a" rows unreachable. A household with debt
  * and no disposable income used to divide by zero, floor to a ratio of 0, and
@@ -256,7 +274,7 @@ export function classifyDebtStatus(input: {
 
   if (usesShortfallStatus(totalDebt, ndiAfterNotionalSpend)) {
     const shortfall = debtRepaymentShortfall(totalDebt, ndiAfterNotionalSpend)
-    const band = resolveDebtShortfallBand(shortfallBands, shortfall)
+    const band = resolveDebtShortfallBand(shortfallBands, shortfall, shortfallTableFor(ndiAfterNotionalSpend))
     if (band) return { statusLabel: band.statusLabel }
     // No matching shortfall row means incomplete reference data, not a real
     // case: fall through to the ratio rather than reporting nothing.
