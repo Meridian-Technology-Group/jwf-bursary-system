@@ -267,7 +267,7 @@ export async function getRoundWatchlist(
     },
   );
 
-  // Round counts (mirror rounds.ts / getDashboardCounts conventions). PR-6a:
+  // Round counts (mirror rounds.ts conventions). PR-6a:
   // qualifies = AWARDED | QUALIFIES_NOT_AWARDED; dnq = DOES_NOT_QUALIFY — read
   // from the assessment outcome, not the deprecated fused status.
   const total = applications.length;

@@ -2,6 +2,7 @@
  * Application database queries for the admin queue and detail views.
  */
 
+import { isReturnedForCorrection, type LatestRejection } from "@/lib/applications/return-for-correction";
 import { withAdminContext, type Tx } from "@/lib/db/prisma";
 import { createAuditLog } from "@/lib/audit/log";
 import { AUDIT_ACTIONS, AUDIT_ENTITY_TYPES } from "@/lib/audit/actions";
@@ -104,6 +105,13 @@ export interface ApplicationListItem {
    * list.
    */
   closeReasonLabel: string | null;
+  /** Non-null for a Grant Tracker record (no form here, so never rejected). */
+  migrationSource: string | null;
+  /**
+   * Rejected and back with the family, not yet resubmitted (Charlotte, 17 Oct
+   * 2026: the list must tell a rejected form from one never received).
+   */
+  rejected: boolean;
 }
 
 export interface ListApplicationsFilters {
@@ -398,6 +406,7 @@ export async function listApplications(
       assignedToId: true,
       bursaryAccountId: true,
       closedAt: true,
+      migrationSource: true,
       // Item 4.4 — read through the FK so the originally-recorded label
       // survives the reason later being deprecated (soft-deactivated, never
       // hard-deleted — see the CloseReason model).
@@ -429,6 +438,23 @@ export async function listApplications(
     orderBy: { submittedAt: "desc" },
   });
 
+  // The latest rejection that returned each form (staff can read every row).
+  const returnedIds = applications.filter((a) => a.formStatus !== "SUBMITTED").map((a) => a.id);
+  const rejections =
+    returnedIds.length > 0
+      ? await tx.applicationRejection.findMany({
+          where: { replacementApplicationId: { in: returnedIds } },
+          orderBy: { rejectedAt: "desc" },
+          select: { rejectedAt: true, replacementApplicationId: true, newSubmitBy: true, message: true },
+        })
+      : [];
+  const latestReturn = new Map<string, LatestRejection>();
+  for (const r of rejections) {
+    if (r.replacementApplicationId && !latestReturn.has(r.replacementApplicationId)) {
+      latestReturn.set(r.replacementApplicationId, r);
+    }
+  }
+
   return applications.map((a) => {
     const { contributors, assessment, bursaryAccount, closeReason, ...rest } = a;
     const secondary = contributors[0];
@@ -449,6 +475,7 @@ export async function listApplications(
       secondParent,
       bursaryAccountStatus: bursaryAccount?.status ?? null,
       closeReasonLabel: closeReason?.label ?? null,
+      rejected: isReturnedForCorrection(a, latestReturn.get(a.id)),
     };
   });
 }

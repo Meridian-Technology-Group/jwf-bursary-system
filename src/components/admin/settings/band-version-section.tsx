@@ -73,6 +73,8 @@ export interface BandVersionSectionProps {
    * context rather than collapsing into the default one.
    */
   debtSavingsContext?: string;
+  /** Which of the two debt shortfall tables these rows belong to (17 Oct 2026). */
+  shortfallTable?: string;
   createVersionAction: (formData: FormData) => Promise<SettingsActionResult>;
 }
 
@@ -116,6 +118,7 @@ export function BandVersionSection({
   extraFields,
   rows,
   debtSavingsContext,
+  shortfallTable,
   createVersionAction,
 }: BandVersionSectionProps) {
   return (
@@ -134,6 +137,7 @@ export function BandVersionSection({
           extraFields={extraFields}
           rows={rows}
           debtSavingsContext={debtSavingsContext}
+          shortfallTable={shortfallTable}
           createVersionAction={createVersionAction}
         />
       </div>
@@ -204,6 +208,8 @@ interface BandVersionDialogProps {
    * context rather than collapsing into the default one.
    */
   debtSavingsContext?: string;
+  /** Which of the two debt shortfall tables these rows belong to (17 Oct 2026). */
+  shortfallTable?: string;
   createVersionAction: (formData: FormData) => Promise<SettingsActionResult>;
 }
 
@@ -216,6 +222,7 @@ function BandVersionDialog({
   extraFields,
   rows,
   debtSavingsContext,
+  shortfallTable,
   createVersionAction,
 }: BandVersionDialogProps) {
   const [open, setOpen] = React.useState(false);
@@ -302,6 +309,7 @@ function BandVersionDialog({
     fd.set("rows", JSON.stringify(payload));
     fd.set("effectiveFrom", effectiveFrom);
     if (debtSavingsContext) fd.set("debtSavingsContext", debtSavingsContext);
+    if (shortfallTable) fd.set("shortfallTable", shortfallTable);
 
     startTransition(async () => {
       const result = await createVersionAction(fd);

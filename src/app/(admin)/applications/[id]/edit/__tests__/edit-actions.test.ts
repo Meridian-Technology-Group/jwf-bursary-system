@@ -77,6 +77,8 @@ import {
   saveSectionOnBehalf,
   finishEditingOnBehalf,
   submitApplicationOnBehalf,
+  saveSectionDraftOnBehalf,
+  markSectionNeedsCorrection,
 } from "../actions";
 import { AUDIT_ACTIONS, AUDIT_ENTITY_TYPES } from "@/lib/audit/actions";
 
@@ -642,5 +644,92 @@ describe("submitApplicationOnBehalf", () => {
       success: false,
       error: "This application has already been submitted.",
     });
+  });
+});
+
+// ─── Epic 23 T7: returned for correction ─────────────────────────────────────
+
+function returnedTx(returned: boolean) {
+  return makeFakeTx({
+    application: {
+      findUnique: vi.fn(async () => ({
+        id: "app-1",
+        leadApplicantId: "lead-1",
+        reference: "APP-1",
+        // Back with the family: not submitted, its date cleared.
+        formStatus: returned ? "IN_PROGRESS" : "SUBMITTED",
+        submittedAt: returned ? null : new Date("2027-05-01"),
+      })),
+      findUniqueOrThrow: vi.fn(async () => ({ formStatus: "IN_PROGRESS", applicationType: "NEW" })),
+      update: vi.fn(async () => ({})),
+    },
+    applicationRejection: {
+      findFirst: vi.fn(async () => ({
+        rejectedAt: new Date("2027-05-10"),
+        replacementApplicationId: "app-1",
+        newSubmitBy: new Date("2027-06-05"),
+        message: null,
+      })),
+    },
+  });
+}
+
+describe("saveSectionDraftOnBehalf (Epic 23 T7)", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("on a returned form, saves the data as given and INCOMPLETE (the parent's draft semantics)", async () => {
+    fakeTx = returnedTx(true);
+    const partial = { additionalNarrative: "" };
+    const result = await saveSectionDraftOnBehalf("app-1", "ADDITIONAL_INFO", partial);
+    expect(result).toEqual({ success: true });
+    const upsert = fakeTx.applicationSection.upsert.mock.calls[0]?.[0] as {
+      create: { isComplete: boolean; data: unknown };
+      update: { isComplete: boolean; data: unknown };
+    };
+    expect(upsert.create.isComplete).toBe(false);
+    expect(upsert.update.isComplete).toBe(false);
+    expect(upsert.update.data).toEqual(partial);
+    expect(auditMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: AUDIT_ACTIONS.SECTION_SAVED_BY_ASSESSOR,
+        metadata: expect.objectContaining({ draft: true, returnedForCorrection: true }),
+      })
+    );
+  });
+
+  it("refuses on a form that is still submitted", async () => {
+    fakeTx = returnedTx(false);
+    const result = await saveSectionDraftOnBehalf("app-1", "ADDITIONAL_INFO", {});
+    expect(result.success).toBe(false);
+    expect(fakeTx.applicationSection.upsert).not.toHaveBeenCalled();
+  });
+});
+
+describe("markSectionNeedsCorrection (Epic 23 T7)", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("takes the green tick away without touching the answers", async () => {
+    fakeTx = returnedTx(true);
+    const updateMany = vi.fn(async () => ({ count: 1 }));
+    (fakeTx.applicationSection as Record<string, unknown>).updateMany = updateMany;
+    const result = await markSectionNeedsCorrection("app-1", "PARENTS_INCOME");
+    expect(result).toEqual({ success: true });
+    expect(updateMany).toHaveBeenCalledWith({
+      where: { applicationId: "app-1", section: "PARENTS_INCOME", ownerContributorId: "contrib-1", isComplete: true },
+      data: { isComplete: false },
+    });
+    expect(fakeTx.applicationSection.upsert).not.toHaveBeenCalled();
+    expect(auditMock).toHaveBeenCalledWith(
+      expect.objectContaining({ action: AUDIT_ACTIONS.SECTION_MARKED_NEEDS_CORRECTION })
+    );
+  });
+
+  it("refuses on a form that is still submitted", async () => {
+    fakeTx = returnedTx(false);
+    const updateMany = vi.fn(async () => ({ count: 1 }));
+    (fakeTx.applicationSection as Record<string, unknown>).updateMany = updateMany;
+    const result = await markSectionNeedsCorrection("app-1", "PARENTS_INCOME");
+    expect(result.success).toBe(false);
+    expect(updateMany).not.toHaveBeenCalled();
   });
 });

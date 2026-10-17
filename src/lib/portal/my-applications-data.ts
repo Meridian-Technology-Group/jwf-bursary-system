@@ -99,6 +99,7 @@ export async function loadMyApplications(
           roundId: true,
           formStatus: true,
           submittedAt: true,
+          submissionDeadlineAt: true,
           updatedAt: true,
           isReassessment: true,
           round: { select: { academicYear: true } },

@@ -1,310 +1,220 @@
 /**
- * Epic 10 — tiered data-retention policy (Decision D6).
+ * Data retention — the DPO-signed rules (16 Oct 2026; Charlotte's
+ * clarifications 7 Oct; Epic 23 T10, D-20).
  *
- * The SINGLE source of truth for "how long is this application's data kept,
- * and from when?". Both the manual GDPR delete button
- * (`gdprDeleteApplicantAction`) and the auto-purge cron read this module so the
- * two paths can never diverge on the horizon.
+ * The SINGLE source of truth for "what happens to this application's data,
+ * and when?". The weekly cron, the staff close, the erasure request, the
+ * manual GDPR button and the Retention panel all read `planRetention`, so they
+ * can never disagree. Pure date arithmetic; no DB.
  *
- * This file is intentionally DB-free and side-effect-free: it is pure date
- * arithmetic over a small, typed policy object plus a narrow read-model of the
- * application + its account. That makes the GDPR-critical eligibility decision
- * unit-testable to the day with no database.
+ * ── The rules ──────────────────────────────────────────────────────────────
  *
- * ── Policy (D6, defaults; DPO signs the final year values) ──────────────────
+ *  1. Bursary account closed (an application on an account):
+ *       closing date + 1 year  → the form + documents are purged;
+ *       closing date + 6 years → the named assessment is purged.
+ *  2. Unsuccessful application (no account: waiting list, not offered, offer
+ *     declined …), closed by staff whenever they choose — no fixed timer:
+ *       at the close           → the form + documents are purged;
+ *       close + 6 years        → the (still named) assessment is purged.
+ *     "The close" is the staff close (`applications.closed_at`) or, when the
+ *     assessment was archived instead, `assessments.archived_at`.
+ *  3. Parent erasure request at the new-application stage:
+ *       at once                → the form + documents go and the name and
+ *                                reference are anonymised ("XXXX");
+ *       request + 6 years      → the anonymous assessment is purged.
  *
- *   | Outcome                          | Horizon | Anchored from           |
- *   |----------------------------------|---------|-------------------------|
- *   | Declined (DOES_NOT_QUALIFY)      | grace   | archivedAt → submittedAt|
- *   | Qualifies-not-awarded            | 6 years | submittedAt             |
- *   | Awarded                          | 7 years | account.closedAt        |
- *   | Closed, no outcome (item 2)      | grace   | application.closedAt    |
- *   | In-flight (no terminal outcome)  | never   | —                       |
+ * The anchor is always a CLOSING date (or the erasure date) — never
+ * `submittedAt`, never a financial-year end, never a 30-day timer. An account
+ * reopened (closedAt cleared by reopen / re-award / "Add a year") is simply
+ * not closed any more → keep. Every primitive re-checks its plan inside its
+ * own transaction.
  *
- * The "closed" tier (item 2, unified close): an application closed via the
- * reason-driven close with NO assessment outcome is terminal — it must not sit
- * outside retention forever. It ages on a short grace window from its own
- * closedAt (default = the declined grace; DPO to confirm alongside D6). An
- * application that is closed AND has an outcome uses its outcome tier — the
- * outcome anchors are the legally-motivated ones.
- *
- * The horizons are CONFIGURABLE via environment variables (so the DPO can
- * re-cut them without a code deploy) and fall back to the table above. The env
- * names are read once, lazily, and validated; a malformed value falls back to
- * the default rather than throwing (fail-safe-LONG — never purge sooner than
- * the documented default because of a typo'd env var).
- *
- * NOTE: This is policy, not enforcement. `isPurgeable` returns WHETHER an
- * application's window has elapsed; the cron/manual action perform the actual
- * (anonymising) deletion via `lib/retention/purge.ts`.
+ * NOTE: policy, not enforcement. Nothing is deleted unless
+ * `RETENTION_PURGE_ENABLED === "true"` (Brian's decision, after the dry run).
  */
 
-import type { AssessmentOutcome, BursaryAccountStatus } from "@prisma/client";
+import type { AssessmentStatus } from "@prisma/client";
 
-/** Where a retention window is measured from. */
-export type RetentionAnchor =
-  | "archivedAt"
-  | "submittedAt"
-  | "closedAt"
-  | "applicationClosedAt";
+export const RETENTION_STAGES = ["FORM_DOCS_PURGED", "ANONYMISED", "ASSESSMENT_PURGED"] as const;
+export type RetentionStage = (typeof RETENTION_STAGES)[number];
 
-/** A single tier of the policy. */
-export interface RetentionTier {
-  /** Whole years (or, for declined, days — see `unit`) the data is kept. */
-  amount: number;
-  /** Granularity of `amount`. Declined uses a short DAY grace; others YEARS. */
-  unit: "years" | "days";
-  /** Which date the window is measured from. */
-  anchor: RetentionAnchor;
-}
+/** The next action the plan calls for. */
+export type RetentionAction = "keep" | "purge-form-docs" | "purge-assessment" | "anonymise-now";
 
-export interface RetentionPolicy {
-  /** Declined / does-not-qualify: short grace then purge. */
-  declined: RetentionTier;
-  /** Qualifies but not awarded this round. */
-  qualifiesNotAwarded: RetentionTier;
-  /** Awarded — anchored from account close, not first submission. */
-  awarded: RetentionTier;
-  /** Unified close with no outcome (item 2) — grace from application close. */
-  closed: RetentionTier;
-}
+export type RetentionRule = "account-closed" | "unsuccessful" | "erasure-request" | null;
 
-/**
- * Default policy (D6). Year values are the documented defaults; the DPO signs
- * the legal figures before `RETENTION_PURGE_ENABLED` is turned on in prod.
- */
-export const DEFAULT_RETENTION_POLICY: RetentionPolicy = {
-  // Declined: a short grace window (30 days) before purge, so a mis-decision
-  // can be reversed and the applicant has time to query the outcome.
-  declined: { amount: 30, unit: "days", anchor: "archivedAt" },
-  qualifiesNotAwarded: { amount: 6, unit: "years", anchor: "submittedAt" },
-  awarded: { amount: 7, unit: "years", anchor: "closedAt" },
-  // Item 2: closed-without-outcome mirrors the declined grace by default;
-  // DPO to confirm the figure alongside the D6 sign-off.
-  closed: { amount: 30, unit: "days", anchor: "applicationClosedAt" },
-};
+/** Years each rule keeps data (the signed figures). */
+export const RETENTION_YEARS = {
+  accountClosedFormDocs: 1,
+  accountClosedAssessment: 6,
+  unsuccessfulAssessment: 6,
+  erasureAssessment: 6,
+} as const;
 
-/** Parse a positive-integer env override, falling back to `fallback`. */
-function intFromEnv(name: string, fallback: number): number {
-  const raw = process.env[name];
-  if (raw == null || raw.trim() === "") return fallback;
-  const n = Number(raw);
-  if (!Number.isFinite(n) || !Number.isInteger(n) || n < 0) {
-    console.warn(
-      `[retention] ${name}="${raw}" is not a non-negative integer — using default ${fallback}`
-    );
-    return fallback;
-  }
-  return n;
-}
-
-/**
- * The active policy, with env overrides applied over the defaults. Read this
- * (not the constant) from runtime code so DPO-set env values take effect.
- *
- * Overrides:
- *   RETENTION_DECLINED_GRACE_DAYS        (default 30)
- *   RETENTION_QUALIFIES_NOT_AWARDED_YEARS (default 6)
- *   RETENTION_AWARDED_YEARS              (default 7)
- */
-export function getRetentionPolicy(): RetentionPolicy {
-  return {
-    declined: {
-      ...DEFAULT_RETENTION_POLICY.declined,
-      amount: intFromEnv(
-        "RETENTION_DECLINED_GRACE_DAYS",
-        DEFAULT_RETENTION_POLICY.declined.amount
-      ),
-    },
-    qualifiesNotAwarded: {
-      ...DEFAULT_RETENTION_POLICY.qualifiesNotAwarded,
-      amount: intFromEnv(
-        "RETENTION_QUALIFIES_NOT_AWARDED_YEARS",
-        DEFAULT_RETENTION_POLICY.qualifiesNotAwarded.amount
-      ),
-    },
-    awarded: {
-      ...DEFAULT_RETENTION_POLICY.awarded,
-      amount: intFromEnv(
-        "RETENTION_AWARDED_YEARS",
-        DEFAULT_RETENTION_POLICY.awarded.amount
-      ),
-    },
-    closed: {
-      ...DEFAULT_RETENTION_POLICY.closed,
-      amount: intFromEnv(
-        "RETENTION_CLOSED_GRACE_DAYS",
-        DEFAULT_RETENTION_POLICY.closed.amount
-      ),
-    },
-  };
-}
-
-/** The minimal application shape the policy reasons over. */
-export interface RetentionApplication {
-  outcome: AssessmentOutcome | null;
-  archivedAt: Date | null;
-  submittedAt: Date | null;
-  /** Unified close marker (item 2); anchors the `closed` tier. */
+/** What the planner reads about one application. */
+export interface RetentionRecord {
+  /** The application's bursary account, if it has one (rule 1). */
+  bursaryAccount: { closedAt: Date | null } | null;
+  /** The staff close (`applications.closed_at`). */
   closedAt: Date | null;
+  assessment: { status: AssessmentStatus; archivedAt: Date | null } | null;
+  retentionStage: string | null;
+  retentionStageAt: Date | null;
 }
 
-/** The minimal account shape the policy reasons over (null when none). */
-export interface RetentionAccount {
-  status: BursaryAccountStatus;
-  closedAt: Date | null;
-}
-
-export interface PurgeEvaluation {
-  /** True iff the retention window has fully elapsed and data may be purged. */
-  purgeable: boolean;
-  /** The matched tier, or null when the application is not yet terminal. */
-  tier: keyof RetentionPolicy | null;
-  /** The date the window is measured from (null when no anchor resolves). */
-  anchorDate: Date | null;
-  /** The date on/after which purge is permitted (null when not applicable). */
-  eligibleFrom: Date | null;
-  /** Human-readable reason — surfaced in the manual button's error/logs. */
+export interface RetentionPlan {
+  action: RetentionAction;
+  /** When the action is due (null for keep). */
+  dueAt: Date | null;
+  /** True once `now` is at or past `dueAt`. */
+  due: boolean;
+  rule: RetentionRule;
+  /** The closing (or erasure) date the plan is anchored on. */
+  anchor: Date | null;
   reason: string;
 }
 
-/** Adds whole years to a date (UTC-safe — month/day preserved). */
-function addYears(date: Date, years: number): Date {
+/** Whole years later, UTC calendar date preserved. */
+export function addYears(date: Date, years: number): Date {
   const d = new Date(date.getTime());
-  d.setFullYear(d.getFullYear() + years);
+  d.setUTCFullYear(d.getUTCFullYear() + years);
   return d;
 }
 
-/** Adds whole days to a date. */
-function addDays(date: Date, days: number): Date {
-  const d = new Date(date.getTime());
-  d.setDate(d.getDate() + days);
-  return d;
+function stageOf(r: RetentionRecord): RetentionStage | null {
+  return (RETENTION_STAGES as readonly string[]).includes(r.retentionStage ?? "") ? (r.retentionStage as RetentionStage) : null;
 }
 
-function resolveAnchorDate(
-  anchor: RetentionAnchor,
-  application: RetentionApplication,
-  account: RetentionAccount | null
-): Date | null {
-  switch (anchor) {
-    case "archivedAt":
-      // Declined: prefer the explicit archive date; fall back to submittedAt
-      // (legacy declined rows pre-Epic-01 may have no archivedAt).
-      return application.archivedAt ?? application.submittedAt ?? null;
-    case "submittedAt":
-      return application.submittedAt ?? null;
-    case "closedAt":
-      return account?.closedAt ?? null;
-    case "applicationClosedAt":
-      return application.closedAt ?? null;
+function plan(action: RetentionAction, rule: RetentionRule, anchor: Date | null, dueAt: Date | null, now: Date, reason: string): RetentionPlan {
+  return { action, rule, anchor, dueAt, due: dueAt != null && now.getTime() >= dueAt.getTime(), reason };
+}
+
+/** The unsuccessful-application anchor: the staff close, else the archive. */
+export function unsuccessfulAnchor(r: RetentionRecord): Date | null {
+  if (r.closedAt) return r.closedAt;
+  if (r.assessment?.status === "CLOSED_ARCHIVED") return r.assessment.archivedAt;
+  return null;
+}
+
+/** The plan for one application. Pure. */
+export function planRetention(r: RetentionRecord, now: Date): RetentionPlan {
+  const stage = stageOf(r);
+  if (stage === "ASSESSMENT_PURGED") {
+    return plan("keep", null, null, null, now, "Already purged — nothing left to remove.");
   }
-}
 
-function tierExpiry(tier: RetentionTier, anchorDate: Date): Date {
-  return tier.unit === "days"
-    ? addDays(anchorDate, tier.amount)
-    : addYears(anchorDate, tier.amount);
+  // Rule 3 — erased at the parent's request: the anonymous assessment goes 6 years on.
+  if (stage === "ANONYMISED") {
+    const anchor = r.retentionStageAt;
+    if (!anchor) return plan("keep", "erasure-request", null, null, now, "Erased, but the erasure date is missing — retained.");
+    return plan(
+      "purge-assessment",
+      "erasure-request",
+      anchor,
+      addYears(anchor, RETENTION_YEARS.erasureAssessment),
+      now,
+      "Erasure request: the anonymous assessment is kept 6 years from the request.",
+    );
+  }
+
+  // Rule 1 — an application on a bursary account follows the account's close.
+  if (r.bursaryAccount) {
+    const closed = r.bursaryAccount.closedAt;
+    if (!closed) return plan("keep", "account-closed", null, null, now, "The bursary account is active — kept until it closes.");
+    if (stage === "FORM_DOCS_PURGED") {
+      return plan(
+        "purge-assessment",
+        "account-closed",
+        closed,
+        addYears(closed, RETENTION_YEARS.accountClosedAssessment),
+        now,
+        "Account closed: the named assessment is kept 6 years from the closing date.",
+      );
+    }
+    return plan(
+      "purge-form-docs",
+      "account-closed",
+      closed,
+      addYears(closed, RETENTION_YEARS.accountClosedFormDocs),
+      now,
+      "Account closed: the form and documents are kept 1 year from the closing date.",
+    );
+  }
+
+  // Rule 2 — no account: unsuccessful once staff close (or archive) it.
+  const closed = unsuccessfulAnchor(r);
+  if (!closed) return plan("keep", null, null, null, now, "Not closed — kept while the application is live.");
+  if (stage === "FORM_DOCS_PURGED") {
+    return plan(
+      "purge-assessment",
+      "unsuccessful",
+      closed,
+      addYears(closed, RETENTION_YEARS.unsuccessfulAssessment),
+      now,
+      "Unsuccessful: the named assessment is kept 6 years from the close.",
+    );
+  }
+  return plan("purge-form-docs", "unsuccessful", closed, closed, now, "Unsuccessful: the form and documents go at the close.");
 }
 
 /**
- * The GDPR-critical decision. Pure: given an application, its account, the
- * current time and a policy, decide whether the retention window has fully
- * elapsed.
- *
- * Strictly window-gated — only returns `purgeable: true` when `now` is at or
- * past the computed expiry. In-flight applications (no terminal outcome) are
- * NEVER purgeable. An awarded application whose account is still ACTIVE is
- * NEVER purgeable (no `closedAt` anchor yet).
+ * Rule 3's gate: an erasure request is for an application at the
+ * new-application stage — no bursary account — that has not already been
+ * erased or purged.
  */
-export function isPurgeable(
-  application: RetentionApplication,
-  account: RetentionAccount | null,
-  now: Date = new Date(),
-  policy: RetentionPolicy = getRetentionPolicy()
-): PurgeEvaluation {
-  const notTerminal: PurgeEvaluation = {
-    purgeable: false,
-    tier: null,
-    anchorDate: null,
-    eligibleFrom: null,
-    reason: "Application has no terminal outcome — never auto-purged.",
-  };
+export function canRequestErasure(r: RetentionRecord): { ok: true } | { ok: false; reason: string } {
+  if (r.bursaryAccount) return { ok: false, reason: "This child has a bursary account: retention follows the account's close." };
+  const stage = stageOf(r);
+  if (stage === "ANONYMISED" || stage === "ASSESSMENT_PURGED") return { ok: false, reason: "This application has already been erased." };
+  return { ok: true };
+}
 
-  // Resolve which tier applies from the outcome.
-  let tierKey: keyof RetentionPolicy;
-  switch (application.outcome) {
-    case "DOES_NOT_QUALIFY":
-      tierKey = "declined";
-      break;
-    case "QUALIFIES_NOT_AWARDED":
-      tierKey = "qualifiesNotAwarded";
-      break;
-    case "AWARDED":
-      tierKey = "awarded";
-      break;
-    // Legacy pre-3-value rows ("QUALIFIES") and null are NOT terminal via the
-    // outcome — but a unified close (item 2) IS terminal: a closed application
-    // with no outcome ages on the `closed` tier from its own closedAt.
-    // Otherwise treat as in-flight → never purge.
-    default:
-      if (application.closedAt != null) {
-        tierKey = "closed";
-        break;
-      }
-      return notTerminal;
-  }
+// ─── The manual GDPR button (whole-family erasure) ───────────────────────────
 
-  const tier = policy[tierKey];
-  const anchorDate = resolveAnchorDate(tier.anchor, application, account);
-
-  if (!anchorDate) {
-    // Awarded but account not yet closed (or missing submit/archive date) →
-    // the window cannot start, so the data is retained.
-    return {
-      purgeable: false,
-      tier: tierKey,
-      anchorDate: null,
-      eligibleFrom: null,
-      reason:
-        tier.anchor === "closedAt"
-          ? "Awarded account is still active — retained until it closes."
-          : `No ${tier.anchor} date to anchor the retention window — retained.`,
-    };
-  }
-
-  const eligibleFrom = tierExpiry(tier, anchorDate);
-  const purgeable = now.getTime() >= eligibleFrom.getTime();
-
-  const horizonLabel =
-    tier.unit === "days" ? `${tier.amount} days` : `${tier.amount} years`;
-
-  return {
-    purgeable,
-    tier: tierKey,
-    anchorDate,
-    eligibleFrom,
-    reason: purgeable
-      ? `Retention window (${horizonLabel} from ${tier.anchor}) has elapsed.`
-      : `Retained until ${eligibleFrom.toISOString().slice(0, 10)} (${horizonLabel} from ${tier.anchor}).`,
-  };
+export interface PurgeEvaluation {
+  purgeable: boolean;
+  eligibleFrom: Date | null;
+  reason: string;
 }
 
 /**
- * A friendly error message for the manual GDPR button when a record is not yet
- * purgeable — keeps the existing UX while sourcing the horizon from the policy.
+ * Whether everything about the application may be erased now — the last
+ * stage of its plan (the assessment purge) is due. The manual GDPR button
+ * (staff-initiated, whole-family) reads this, so it can never run sooner than
+ * the signed rules allow. An unsuccessful application whose form has not yet
+ * been purged is judged on its 6-year assessment date.
  */
+export function isPurgeable(r: RetentionRecord, now: Date = new Date()): PurgeEvaluation {
+  let p = planRetention(r, now);
+  if (p.action === "purge-form-docs") {
+    p = planRetention({ ...r, retentionStage: "FORM_DOCS_PURGED" }, now);
+  }
+  if (p.action !== "purge-assessment") return { purgeable: false, eligibleFrom: null, reason: p.reason };
+  return { purgeable: p.due, eligibleFrom: p.dueAt, reason: p.reason };
+}
+
+/** The manual button's message when a record is not yet erasable. */
 export function notYetPurgeableMessage(evaluation: PurgeEvaluation): string {
-  if (evaluation.tier == null) {
-    return "This application has no final outcome yet and cannot be deleted.";
-  }
-  if (evaluation.eligibleFrom == null) {
-    return evaluation.reason;
-  }
-  const date = evaluation.eligibleFrom.toLocaleDateString("en-GB", {
-    day: "numeric",
-    month: "long",
-    year: "numeric",
-  });
-  return `This application cannot be deleted yet. Under the retention policy it must be kept until ${date}.`;
+  if (evaluation.eligibleFrom == null) return `This application cannot be deleted yet. ${evaluation.reason}`;
+  const date = evaluation.eligibleFrom.toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric", timeZone: "Europe/London" });
+  return `This application cannot be deleted yet. Under the retention rules it must be kept until ${date}.`;
 }
+
+/** Destructive retention runs ONLY when this is exactly "true". Stays unset until Brian decides. */
+export function isRetentionPurgeEnabled(): boolean {
+  return process.env.RETENTION_PURGE_ENABLED === "true";
+}
+
+/** What the Retention panel calls each step. */
+export const RETENTION_ACTION_LABELS: Record<RetentionAction, string> = {
+  keep: "Kept",
+  "purge-form-docs": "Form and documents deleted",
+  "purge-assessment": "Assessment deleted",
+  "anonymise-now": "Anonymised",
+};
+
+export const RETENTION_RULE_LABELS: Record<Exclude<RetentionRule, null>, string> = {
+  "account-closed": "Bursary account closed",
+  unsuccessful: "Unsuccessful application",
+  "erasure-request": "Erasure request",
+};

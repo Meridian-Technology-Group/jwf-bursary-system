@@ -1,401 +1,316 @@
 /**
- * Admin dashboard page — WP-18
+ * BURSARY ACTIVITY DASHBOARD — /admin (Epic 23 T9).
  *
- * Server component. Displays 6 live data tiles scoped to the active round,
- * an activity feed of recent workflow events, and a status distribution chart.
+ * Charlotte's 6 Sep 2026 layout (Dashboard.xlsx): "remove all the items on
+ * the current dashboard and replace the whole page with this suggestion".
+ * Three bands, her labels:
+ *   1. Applications & assessments management — the current open round;
+ *   2. Assessment outcomes, new & internal bursary applications;
+ *   3. Assessment outcomes, rolling-over bursary applications — the next round.
  *
- * Tiles:
- *   1. Awaiting Assessment   (amber)   — SUBMITTED + NOT_STARTED
- *   2. In Progress           (orange)  — PAUSED
- *   3. Awaiting Recommendation (blue)  — assessment COMPLETED, no recommendation
- *   4. Qualifies             (emerald) — QUALIFIES applications
- *   5. Does Not Qualify      (slate)   — DOES_NOT_QUALIFY applications
- *   6. Active Round          (navy)    — round name + close date
+ * Every number comes from `getDashboardData` → the pure shapers in
+ * `src/lib/dashboard/shape`. Panels whose real data does not exist yet show
+ * the figures stored in Settings → Dashboard sample data, badged
+ * "Illustrative data", until the first real one arrives (D-18).
  */
 
-import Link from "next/link";
-import {
-  ClipboardList,
-  Loader2,
-  FileCheck2,
-  CalendarRange,
-  ChevronRight,
-  ArrowRight,
-} from "lucide-react";
+import type { Metadata } from "next";
+import type { School } from "@prisma/client";
 import { requireRole, Role } from "@/lib/auth/roles";
 import { withUserContext, type RlsRole } from "@/lib/db/prisma";
+import { getDashboardData } from "@/lib/db/queries/dashboard";
+import { COHORTS, COHORT_LABELS, percentOf, type FundSpend } from "@/lib/dashboard/shape";
 import {
-  getActiveRound,
-  getDashboardCounts,
-  getDashboardFeed,
-} from "@/lib/db/queries/reports";
-import { ActivityFeed } from "@/components/admin/charts/activity-feed";
-import { RoundSelector } from "@/components/admin/charts/round-selector";
-import { StatTile, type TileConfig } from "@/components/admin/stat-tile";
-import { cn } from "@/lib/utils";
-import type { Metadata } from "next";
+  BandHeading,
+  gbp,
+  KeyValues,
+  longDate,
+  Panel,
+  PerSchoolTable,
+} from "@/components/admin/dashboard/panels";
 
 export const metadata: Metadata = {
   title: "Dashboard",
 };
 
-// ─── Round tile ───────────────────────────────────────────────────────────────
+export const dynamic = "force-dynamic";
 
-function RoundTile({
-  academicYear,
-  closeDate,
-  roundId,
-}: {
-  academicYear: string;
-  closeDate: Date;
-  roundId: string;
-}) {
-  const closeDateFormatted = new Intl.DateTimeFormat("en-GB", {
-    day: "numeric",
-    month: "long",
-    year: "numeric",
-  }).format(closeDate);
+const pct = (n: number | null) => (n == null ? "—" : `${n}%`);
 
-  return (
-    <Link
-      href={`/rounds/${roundId}`}
-      className="block focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-600 focus-visible:ring-offset-2 rounded-xl"
-    >
-      <div className="group flex items-start gap-4 rounded-xl border border-primary-900 bg-primary-900 p-6 shadow-sm transition-shadow hover:shadow-md cursor-pointer">
-        {/* Icon */}
-        <div
-          className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-primary-800"
-          aria-hidden="true"
-        >
-          <CalendarRange className="h-5 w-5 text-accent-400" />
-        </div>
-
-        {/* Text */}
-        <div className="min-w-0 flex-1">
-          <p className="text-sm font-medium text-primary-300">Active Round</p>
-          <p className="mt-1 text-xl font-semibold text-white">
-            {academicYear}
-          </p>
-          <p className="mt-1 text-xs text-primary-300">
-            Closes {closeDateFormatted}
-          </p>
-        </div>
-
-        <ChevronRight
-          className="h-4 w-4 shrink-0 self-center text-primary-500 transition-transform group-hover:translate-x-0.5 group-hover:text-primary-300"
-          aria-hidden="true"
-        />
-      </div>
-    </Link>
-  );
-}
-
-// ─── No round empty state ─────────────────────────────────────────────────────
-
-function NoRoundState() {
-  return (
-    <div className="rounded-xl border border-dashed border-slate-300 bg-white p-12 text-center">
-      <CalendarRange className="mx-auto h-10 w-10 text-slate-300" aria-hidden="true" />
-      <h2 className="mt-4 text-base font-semibold text-slate-700">
-        No assessment rounds yet
-      </h2>
-      <p className="mt-1 text-sm text-slate-500">
-        Create a round to start seeing dashboard data.
-      </p>
-      <Link
-        href="/rounds"
-        className="mt-4 inline-flex items-center gap-1.5 rounded-md bg-primary-900 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-primary-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-900"
-      >
-        Manage Rounds
-        <ChevronRight className="h-4 w-4" aria-hidden="true" />
-      </Link>
-    </div>
-  );
-}
-
-// ─── Page ─────────────────────────────────────────────────────────────────────
-
-export default async function AdminDashboardPage({
-  searchParams,
-}: {
-  searchParams?: Promise<{ roundId?: string }>;
-}) {
+export default async function DashboardPage() {
   const user = await requireRole([Role.ADMIN, Role.ASSESSOR, Role.VIEWER]);
-
-  const sp = (await searchParams) ?? {};
-  const roundIdParam =
-    typeof sp.roundId === "string" ? sp.roundId : undefined;
-
-  // Epic 03 (concurrent rounds): several rounds may be OPEN at once, so the
-  // dashboard no longer pins to a single "active round" — it lists all rounds
-  // and lets the admin choose via ?roundId, defaulting to the most-recent OPEN.
-  const { allRounds, defaultRound } = await withUserContext(
-    user.id,
-    user.role as RlsRole,
-    async (tx) => {
-      const [rounds, active] = await Promise.all([
-        tx.round.findMany({
-          select: { id: true, academicYear: true, closeDate: true },
-          orderBy: { openDate: "desc" },
-        }),
-        getActiveRound(tx),
-      ]);
-      return { allRounds: rounds, defaultRound: active };
-    }
-  );
-
-  const selectedRoundId =
-    roundIdParam && allRounds.some((r) => r.id === roundIdParam)
-      ? roundIdParam
-      : defaultRound?.id;
-
-  const activeRound = selectedRoundId
-    ? allRounds.find((r) => r.id === selectedRoundId) ?? defaultRound
-    : defaultRound;
-
-  // If no rounds exist, show empty state
-  if (!activeRound || !selectedRoundId) {
-    return (
-      <div className="space-y-8">
-        <div>
-          <h1 className="text-2xl font-semibold text-primary-900">Dashboard</h1>
-          <p className="mt-1 text-sm text-slate-500">
-            Overview of the current assessment round.
-          </p>
-        </div>
-        <NoRoundState />
-      </div>
-    );
-  }
-
-  const [counts, feed] = await withUserContext(
-    user.id,
-    user.role as RlsRole,
-    (tx) =>
-      Promise.all([
-        getDashboardCounts(tx, activeRound.id),
-        getDashboardFeed(tx, activeRound.id, 8),
-      ])
-  );
-
-  // Build queue filter URLs
-  const queueBase = "/queue";
-  const queueWithRound = `${queueBase}?roundId=${activeRound.id}`;
-
-  const TILES: Array<{ config: TileConfig; count: number }> = [
-    {
-      config: {
-        label: "Awaiting Assessment",
-        subLabel: "Submitted, not yet started",
-        icon: ClipboardList,
-        iconBg: "bg-amber-50",
-        iconColor: "text-amber-600",
-        borderAccent: "border-amber-200",
-        href: `${queueWithRound}&status=SUBMITTED`,
-      },
-      count: counts.awaitingAssessment,
-    },
-    {
-      config: {
-        label: "In Progress",
-        subLabel: "Assessment in progress or paused",
-        icon: Loader2,
-        iconBg: "bg-orange-50",
-        iconColor: "text-orange-600",
-        borderAccent: "border-orange-200",
-        href: `${queueWithRound}&status=PAUSED`,
-      },
-      count: counts.inProgress,
-    },
-    {
-      config: {
-        label: "Awaiting Recommendation",
-        subLabel: "Assessment complete, no recommendation",
-        icon: FileCheck2,
-        iconBg: "bg-blue-50",
-        iconColor: "text-blue-600",
-        borderAccent: "border-blue-200",
-        href: `${queueWithRound}&status=COMPLETED`,
-      },
-      count: counts.awaitingRecommendation,
-    },
-    // CH-46 — the "Qualifies / Award recommended" and "Does Not Qualify /
-    // Ineligible for bursary" tiles are gone. Charlotte: "Could you remove
-    // these banners as we don't use that logic."
-    //
-    // She is right, and the "Qualifies" one was actively misleading: its count
-    // is AWARDED + QUALIFIES_NOT_AWARDED (see round-cockpit.ts), so a family
-    // that qualifies but is NOT awarded was being reported as "award
-    // recommended". JWF's real outcomes are AWARDED, QUALIFIES_NOT_AWARDED and
-    // DOES_NOT_QUALIFY; "Qualifies" as a standalone state was dropped in the
-    // Epic 01 status-model cutover and left vestigial.
-    //
-    // DISPLAY ONLY. `counts.qualifies` / `counts.doesNotQualify` still feed the
-    // totals below and the Round Cockpit's watchlist rules, so the underlying
-    // derivation is deliberately untouched.
-  ];
-
-  const totalAssessed =
-    counts.qualifies + counts.doesNotQualify;
-  const totalInRound =
-    counts.awaitingAssessment +
-    counts.inProgress +
-    counts.awaitingRecommendation +
-    counts.qualifies +
-    counts.doesNotQualify;
+  const data = await withUserContext(user.id, user.role as RlsRole, (tx) => getDashboardData(tx), {
+    timeoutMs: 30_000,
+  });
 
   return (
     <div className="space-y-8">
-      {/* Page header — with a prominent CTA into the active round's cockpit. */}
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-semibold text-primary-900">Dashboard</h1>
-          <p className="mt-1 text-sm text-slate-500">
-            Overview of the {activeRound.academicYear} assessment round.
-          </p>
-        </div>
-        <div className="flex flex-wrap items-center gap-3">
-          {/* Round selector — Epic 03: switch between concurrently-open rounds.
-              Only shown when more than one round exists. */}
-          {allRounds.length > 1 && (
-            <RoundSelector
-              rounds={allRounds.map((r) => ({
-                id: r.id,
-                academicYear: r.academicYear,
-              }))}
-              selectedRoundId={selectedRoundId}
-            />
-          )}
-          <Link
-            href={`/rounds/${activeRound.id}`}
-            className="inline-flex items-center gap-2 rounded-lg bg-primary-900 px-4 py-2 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-primary-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-500 focus-visible:ring-offset-2"
-          >
-            Open round
-            <ArrowRight className="h-4 w-4" aria-hidden="true" />
-          </Link>
-        </div>
-      </div>
+      <h1 className="text-center font-serif text-2xl font-semibold tracking-wide text-primary-900">
+        BURSARY ACTIVITY DASHBOARD
+      </h1>
 
-      {/* Summary tiles — 3x2 grid */}
-      <section aria-label="Round summary statistics">
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {TILES.map((tile) => (
-            <StatTile
-              key={tile.config.label}
-              config={tile.config}
-              count={tile.count}
-            />
-          ))}
-
-          {/* Active Round tile — navy, always last */}
-          <RoundTile
-            academicYear={activeRound.academicYear}
-            closeDate={activeRound.closeDate}
-            roundId={activeRound.id}
-          />
-        </div>
-      </section>
-
-      {/* Status distribution bar chart */}
-      <section aria-label="Status distribution">
-        <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
-          <div className="mb-4 flex items-center justify-between">
-            <h2 className="text-sm font-semibold text-slate-700">
-              Status Distribution
-            </h2>
-            <span className="text-xs text-slate-400">
-              {totalInRound} application{totalInRound !== 1 ? "s" : ""} in round
-            </span>
-          </div>
-
-          {totalInRound === 0 ? (
-            <div className="flex h-32 items-center justify-center rounded-lg border border-dashed border-slate-200 bg-slate-50">
-              <p className="text-sm text-slate-400">No applications yet</p>
-            </div>
-          ) : (
-            <div className="space-y-2" role="list" aria-label="Application status counts">
-              {[
-                {
-                  label: "Awaiting Assessment",
-                  count: counts.awaitingAssessment,
-                  colour: "bg-amber-400",
-                  href: `${queueWithRound}&status=SUBMITTED`,
-                },
-                {
-                  label: "In Progress",
-                  count: counts.inProgress,
-                  colour: "bg-orange-400",
-                  href: `${queueWithRound}&status=PAUSED`,
-                },
-                {
-                  label: "Awaiting Recommendation",
-                  count: counts.awaitingRecommendation,
-                  colour: "bg-blue-400",
-                  href: `${queueWithRound}&status=COMPLETED`,
-                },
-                {
-                  label: "Qualifies",
-                  count: counts.qualifies,
-                  colour: "bg-emerald-500",
-                  href: `${queueWithRound}&status=QUALIFIES`,
-                },
-                {
-                  label: "Does Not Qualify",
-                  count: counts.doesNotQualify,
-                  colour: "bg-slate-400",
-                  href: `${queueWithRound}&status=DOES_NOT_QUALIFY`,
-                },
-              ].map((row) => {
-                const pct =
-                  totalInRound > 0
-                    ? Math.round((row.count / totalInRound) * 100)
-                    : 0;
-                return (
-                  <div key={row.label} role="listitem">
-                    <Link
-                      href={row.href}
-                      className="group block rounded-lg px-1 py-0.5 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-600"
-                    >
-                      <div className="flex items-center justify-between text-xs mb-1">
-                        <span className="font-medium text-slate-600 group-hover:text-slate-800">
-                          {row.label}
-                        </span>
-                        <span className="tabular-nums text-slate-500">
-                          {row.count} ({pct}%)
-                        </span>
-                      </div>
-                      <div className="h-2 w-full overflow-hidden rounded-full bg-slate-100">
-                        <div
-                          className={cn("h-full rounded-full transition-all", row.colour)}
-                          style={{ width: `${pct}%` }}
-                          aria-label={`${pct}%`}
-                        />
-                      </div>
-                    </Link>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-
-          {totalAssessed > 0 && (
-            <p className="mt-4 text-xs text-slate-400">
-              {totalAssessed} application{totalAssessed !== 1 ? "s" : ""} with
-              final outcome
-            </p>
-          )}
-        </div>
-      </section>
-
-      {/* Activity feed */}
-      <section aria-label="Recent activity">
-        <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
-          <h2 className="mb-4 text-sm font-semibold text-slate-700">
-            Recent Activity
-          </h2>
-          <ActivityFeed items={feed} />
-        </div>
-      </section>
+      {!data.current ? (
+        <p className="rounded-lg border border-slate-200 bg-white p-6 text-center text-sm text-slate-500">
+          No assessment round yet. Create one on the Rounds page.
+        </p>
+      ) : (
+        <>
+          <Band1 data={data} />
+          <Band2 data={data} />
+          <Band3 data={data} />
+        </>
+      )}
     </div>
   );
 }
+
+type Data = Awaited<ReturnType<typeof getDashboardData>>;
+
+function Band1({ data }: { data: Data }) {
+  const cur = data.current!;
+  const b = data.band1!;
+  const queue = (status: string) => (s: School) => `/queue?roundId=${cur.roundId}&status=${status}&school=${s}`;
+  return (
+    <section className="space-y-4" aria-labelledby="band-1">
+      <BandHeading>
+        <span id="band-1">Applications &amp; assessments management</span>
+      </BandHeading>
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+        <Panel title="Current open round">
+          <KeyValues
+            rows={[
+              { label: "The current round relates to this academic year:", value: cur.academicYearLabel },
+              { label: "The assessments look at this tax year:", value: cur.taxYear },
+              { label: "Number of New Application Invitations sent out for this round", value: b.totals.newInvitesSent },
+              { label: "Number of New Applications received for this round", value: b.totals.newReceived },
+            ]}
+          />
+        </Panel>
+
+        <Panel title="Bursary applications — current round">
+          <PerSchoolTable
+            schools={b.schools}
+            rows={[
+              { label: "Number of New Application Invitations sent", values: b.newInvitesSent },
+              { label: "Number of New Applications received", values: b.newReceived },
+              { label: "Number of Rolling-over Applications due", values: b.rollingDue },
+              { label: "Total applications", values: b.total, emphasis: true },
+            ]}
+          />
+        </Panel>
+
+        <Panel title="Bursary assessments — current round">
+          <PerSchoolTable
+            schools={b.schools}
+            rows={[
+              { label: "Number of Assessments waiting to be started", values: b.waiting, href: queue("SUBMITTED") },
+              { label: "Number of Assessments Paused", values: b.paused, href: queue("PAUSED") },
+              { label: "Number of Assessments Completed", values: b.completed },
+            ]}
+          />
+        </Panel>
+      </div>
+    </section>
+  );
+}
+
+/**
+ * A spend table by fund (Charlotte, 17 Oct 2026): JWF broken down by school
+ * with its subtotal, then TBF and WFA, then the total. `awards` off for the
+ * committed-spend panel, which shows spend only.
+ */
+function FundSpendTable({ cells, awards = true }: { cells: FundSpend; awards?: boolean }) {
+  const rows: { label: string; cell: { spend: number; awards: number }; strong?: boolean; indent?: boolean }[] = [
+    { label: "ex-OP", cell: cells.jwf.exOp, indent: true },
+    { label: "TS", cell: cells.jwf.ts, indent: true },
+    { label: "WS", cell: cells.jwf.ws, indent: true },
+    { label: "JWF total", cell: cells.jwf.total, strong: true },
+    { label: "TBF", cell: cells.tbf, strong: true },
+    { label: "WFA (incl. Pastoral Boarders)", cell: cells.wfa, strong: true },
+    { label: "Total", cell: cells.total, strong: true },
+  ];
+  return (
+    <table className="w-full text-sm">
+      <thead>
+        <tr className="text-xs uppercase tracking-wide text-slate-500">
+          <th className="py-1 text-left font-medium">Fund</th>
+          <th className="py-1 text-right font-medium">Total spend (before VAT)</th>
+          {awards && <th className="w-24 py-1 text-right font-medium">Number of awards</th>}
+        </tr>
+      </thead>
+      <tbody className="divide-y divide-slate-100">
+        <tr>
+          <td colSpan={awards ? 3 : 2} className="pt-1.5 text-xs font-medium uppercase tracking-wide text-slate-500">
+            JWF
+          </td>
+        </tr>
+        {rows.map((r) => (
+          <tr key={r.label} className={r.label === "Total" ? "border-t border-slate-300" : undefined}>
+            <td className={`py-1.5 ${r.indent ? "pl-3 text-slate-600" : ""} ${r.strong ? "font-medium text-slate-800" : ""}`}>
+              {r.label}
+            </td>
+            <td className={`py-1.5 text-right tabular-nums ${r.strong ? "font-medium" : ""}`}>{gbp(r.cell.spend)}</td>
+            {awards && <td className="py-1.5 text-right tabular-nums">{r.cell.awards}</td>}
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
+function Band2({ data }: { data: Data }) {
+  const b = data.band2!;
+  const reasons = data.closedReasons!;
+  const start = Number(data.current!.academicYear.slice(0, 4));
+  const yy = (y: number) => `${y}-${String((y + 1) % 100).padStart(2, "0")}`;
+  return (
+    <section className="space-y-4" aria-labelledby="band-2">
+      <BandHeading>
+        <span id="band-2">Assessment outcomes — new &amp; internal bursary applications</span>
+      </BandHeading>
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+        <Panel title="New bursary awards and closures — current round">
+          <PerSchoolTable
+            schools={b.schools}
+            rows={[
+              { label: "Number of Assessments with a new Bursary Award in this current round", values: b.newAwards },
+              { label: "Number of Assessments closed - no bursary awarded in this current round", values: b.closedNoAward },
+            ]}
+          />
+        </Panel>
+
+        <Panel title="New bursary awarded spends">
+          <div className="space-y-1">
+            <p className="text-xs font-medium text-slate-500">For {yy(start)} (internal bursaries)</p>
+            <FundSpendTable cells={b.spendCurrentYear} />
+          </div>
+          <div className="space-y-1">
+            <p className="text-xs font-medium text-slate-500">For {yy(start + 1)} (new applications)</p>
+            <FundSpendTable cells={b.spendNextYear} />
+          </div>
+        </Panel>
+
+        <Panel
+          title="Current round — new applications — top 5 of closed applications' reasons"
+          subtitle="TS & WS"
+          illustrative={reasons.illustrative}
+        >
+          <ol className="space-y-1.5">
+            {reasons.data.map((r, i) => (
+              <li key={r.label} className="flex items-baseline gap-3">
+                <span className="w-4 shrink-0 text-right text-xs text-slate-400">{i + 1}</span>
+                <span className="min-w-0 flex-1 text-slate-700">{r.label}</span>
+                <span className="shrink-0 font-semibold tabular-nums text-primary-900">{pct(Math.round(r.share * 1000) / 10)}</span>
+              </li>
+            ))}
+          </ol>
+        </Panel>
+      </div>
+    </section>
+  );
+}
+
+function Band3({ data }: { data: Data }) {
+  const next = data.next;
+  const b = data.band3!;
+  const spend = data.committedSpend!;
+  const yoy = data.yoyChanges!;
+  const t = b.scheduledTotal;
+  const progress: { label: string; n: number; by?: Date | null }[] = [
+    { label: "Rolling-over Applications sent", n: b.progress.sent, by: next?.opensOn },
+    { label: "Number of Assessments Received", n: b.progress.received, by: next?.submitBy },
+    { label: "Number of Assessments waiting to be started", n: b.progress.waiting },
+    { label: "Number of Assessments paused", n: b.progress.paused },
+    { label: "Number of Assessments/accounts closed", n: b.progress.closed },
+    { label: "Number of Assessments completed with award", n: b.progress.completedWithAward, by: next?.assessmentsDoneBy },
+  ];
+  return (
+    <section className="space-y-4" aria-labelledby="band-3">
+      <BandHeading>
+        <span id="band-3">Assessment outcomes — rolling-over bursary applications</span>
+      </BandHeading>
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+        <Panel title="Next round details">
+          <KeyValues
+            rows={[
+              { label: "Future round academic year", value: next?.academicYearLabel ?? "—" },
+              { label: "Future round tax year", value: next?.taxYear ?? "—" },
+              { label: "Submission date by", value: longDate(next?.submitBy) },
+            ]}
+          />
+          <div className="space-y-1">
+            <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Number of Scheduled Rolling-Over Assessments</p>
+            <KeyValues
+              rows={[
+                ...COHORTS.map((c) => ({ label: COHORT_LABELS[c], value: b.cohorts[c] })),
+                { label: "Total", value: t },
+              ]}
+            />
+          </div>
+        </Panel>
+
+        <Panel title="Assessment progress snapshot">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-xs uppercase tracking-wide text-slate-500">
+                <th className="py-1 text-left font-medium">To be done by</th>
+                <th className="py-1 text-left font-medium">Progress stats</th>
+                <th className="py-1 text-right font-medium">Completion</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {progress.map((p) => (
+                <tr key={p.label}>
+                  <td className="whitespace-nowrap py-1.5 pr-2 text-xs text-slate-500">{p.by ? longDate(p.by) : ""}</td>
+                  <td className="py-1.5 pr-2 text-slate-600">{p.label}</td>
+                  <td className="whitespace-nowrap py-1.5 text-right tabular-nums">
+                    <span className="font-semibold text-primary-900">{p.n}</span>
+                    <span className="ml-1 text-xs text-slate-500">({pct(percentOf(p.n, t))})</span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <div className="space-y-1 border-t border-slate-100 pt-3">
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
+                Rolling-over new committed spend (complete assessments)
+              </p>
+              {spend.illustrative && (
+                <span className="text-[11px] font-medium uppercase tracking-wide text-accent-700">Illustrative data</span>
+              )}
+            </div>
+            <FundSpendTable cells={spend.data} awards={false} />
+          </div>
+        </Panel>
+
+        <Panel
+          title="Next round — assessments — top 10 of year-to-year changes selected"
+          subtitle="in completed assessments"
+          illustrative={yoy.illustrative}
+        >
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-xs uppercase tracking-wide text-slate-500">
+                <th className="py-1 text-left font-medium">Reasons</th>
+                <th className="w-24 py-1 text-right font-medium">Number of recurrences</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {yoy.data.map((r, i) => (
+                <tr key={r.label}>
+                  <td className="py-1.5 pr-2 text-slate-700">
+                    <span className="mr-2 text-xs text-slate-400">{i + 1}</span>
+                    {r.label}
+                  </td>
+                  <td className="py-1.5 text-right font-semibold tabular-nums text-primary-900">{r.count}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </Panel>
+      </div>
+    </section>
+  );
+}
+

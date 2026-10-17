@@ -23,7 +23,7 @@ const HER_HEADERS = [
   "Remaining years at the school",
   "Number of schooling age children",
   "Number of parents",
-  "Postcode (first part)",
+  "Postcode area",
   "HOUSEHOLD'S INCOME CATEGORY IS:",
   "HOUSEHOLD'S PROPERTY CATEGORY IS:",
   "HOUSEHOLD'S PROPERTY EQUITY CATEGORY IS:",
@@ -115,6 +115,9 @@ function source(over: Record<string, unknown> = {}, app: Record<string, unknown>
 }
 
 describe("mapStatisticalRow", () => {
+  it("postcode with its area name (17 Oct 2026)", () => {
+    expect(mapStatisticalRow(source(), [{ district: "CR0", area: "CROYDON" }]).postcode).toBe("CR0-CROYDON");
+  });
   it("an in-system v2 assessment: every column filled, money as numbers", () => {
     const r = mapStatisticalRow(source());
     expect(r).toMatchObject({

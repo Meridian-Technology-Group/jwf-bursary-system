@@ -17,7 +17,11 @@ import type {
   BursaryAccountStatus,
 } from "@prisma/client";
 import { AWARD_FUND_LABELS } from "@/lib/assessment/award-fund";
-import { normalisePostcodeDistrict } from "@/lib/assessment/postcode-area";
+import {
+  formatPostcodeAreaLabel,
+  normalisePostcodeDistrict,
+  type PostcodeAreaRow,
+} from "@/lib/assessment/postcode-area";
 import { schoolYearForEntryYearGroup } from "@/lib/assessment/schooling-years";
 import { schoolName } from "@/lib/schools";
 
@@ -103,6 +107,20 @@ export function schoolYearNumber(group: string | null | undefined): number | nul
 /** "SM4 5AB" / "sm4" → "SM4"; blank → "". */
 export function postcodeOutward(postcode: string | null | undefined): string {
   return normalisePostcodeDistrict(postcode);
+}
+
+/**
+ * The postcode as the assessment page shows it, with the neighbourhood name
+ * from Settings' postcode areas: "SW19" → "SW19-WIMBLEDON" (Charlotte, 17 Oct
+ * 2026). Without the area list (a caller that hasn't loaded it) it falls back
+ * to the outward code rather than inventing "-OTHER". Blank → "".
+ */
+export function postcodeAreaLabel(
+  postcode: string | null | undefined,
+  areas?: readonly PostcodeAreaRow[],
+): string {
+  if (!areas) return postcodeOutward(postcode);
+  return formatPostcodeAreaLabel(postcode, areas) ?? "";
 }
 
 /** "code – label" joined, in the order given (callers sort by the code list's order). */

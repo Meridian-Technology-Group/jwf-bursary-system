@@ -103,6 +103,18 @@ export const BURSARY_ACCOUNT_CHILD_SCRUB = {
 } as const;
 
 /**
+ * ApplicationRejection (Epic 22 P3; Epic 23 T7 added the note) — the child's
+ * name, the reference and the free-text note to the family. The row itself
+ * (dates, phase) stays: it is the family's schedule history. Epic 23 T10:
+ * previously scrubbed by neither routine.
+ */
+export const REJECTION_SCRUB = {
+  childName: REDACTED_CHILD_NAME,
+  reference: REDACTED_TEXT,
+  message: null,
+} as const;
+
+/**
  * Assessment — close purge only (the GDPR cascade deletes the whole row).
  * Free-text OTHER THAN the synopsis is treated as PII (Story 10.2: prose may
  * embed names/addresses). The synopsis is retained verbatim per D-2. All

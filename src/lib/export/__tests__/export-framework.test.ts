@@ -13,6 +13,7 @@ import {
   inSystemOnly,
   num,
   parentCount,
+  postcodeAreaLabel,
   postcodeOutward,
   submissionStatus,
   v2Only,
@@ -108,6 +109,14 @@ describe("shared value rules", () => {
     expect(s[1]).toEqual({ name: "", school: "", payableFees: null });
     expect(s[2]).toEqual({ name: "", school: "", payableFees: null });
     expect(flattenSiblings({ not: "an array" })[0].name).toBe("");
+  });
+  it("postcode area: the neighbourhood name from Settings, as the assessment page shows it", () => {
+    const areas = [{ district: "SW19", area: "WIMBLEDON" }];
+    expect(postcodeAreaLabel("sw19 1ab", areas)).toBe("SW19-WIMBLEDON");
+    expect(postcodeAreaLabel("XX9", areas)).toBe("XX9-OTHER");
+    expect(postcodeAreaLabel(null, areas)).toBe("");
+    // A caller without the list keeps the outward code, never a made-up "-OTHER".
+    expect(postcodeAreaLabel("SW19 1AB")).toBe("SW19");
   });
   it("postcode first part", () => {
     expect(postcodeOutward("sm4 5ab")).toBe("SM4");

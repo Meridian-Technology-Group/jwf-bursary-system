@@ -83,6 +83,9 @@ describe("recordRejection (Epic 22 P3)", () => {
       rejectedById: "staff-1",
       replacementApplicationId: "new-app",
       fromPhase: "SUBMITTED",
+      // Epic 23 T7: absent on a call that gives none.
+      message: null,
+      newSubmitBy: null,
     });
   });
 

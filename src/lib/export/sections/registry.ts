@@ -7,8 +7,16 @@ import type { Tx } from "@/lib/db/prisma";
 import type { ExportRecord } from "@/lib/export/columns";
 import { AUDIT_ACTIONS, type AuditAction } from "@/lib/audit/actions";
 import { AssessmentFiltersSchema, parseWith, type ParseResult } from "./filters";
-import { STATISTICAL_SECTION, type SectionDescriptor, type SectionKey } from "./descriptors";
+import {
+  SPEND_BILLING_SECTION,
+  STATISTICAL_SECTION,
+  WORKLOAD_SECTION,
+  type SectionDescriptor,
+  type SectionKey,
+} from "./descriptors";
+import { buildSpendBillingRows } from "./spend-billing";
 import { buildStatisticalRows } from "./statistical";
+import { buildWorkloadRows, parseWorkloadFilters, type WorkloadFilters } from "./workload";
 
 export interface ServerSection {
   descriptor: SectionDescriptor;
@@ -22,6 +30,25 @@ export interface ServerSection {
 }
 
 const SECTIONS: Partial<Record<SectionKey, ServerSection>> = {
+  workload: {
+    descriptor: WORKLOAD_SECTION,
+    sheetName: "Workload",
+    filenameStem: "assessment-workload",
+    auditAction: AUDIT_ACTIONS.EXPORT_WORKLOAD,
+    // % completion reads each unsubmitted form's sections and documents.
+    timeoutMs: 120_000,
+    parse: (p) => parseWorkloadFilters(p),
+    buildRows: (tx, f) => buildWorkloadRows(tx, f as WorkloadFilters),
+  },
+  "spend-billing": {
+    descriptor: SPEND_BILLING_SECTION,
+    sheetName: "Spend and billing",
+    filenameStem: "assessments-spend-billing",
+    auditAction: AUDIT_ACTIONS.EXPORT_SPEND_BILLING,
+    timeoutMs: 60_000,
+    parse: (p) => parseWith(AssessmentFiltersSchema, p),
+    buildRows: (tx, f) => buildSpendBillingRows(tx, f as Parameters<typeof buildSpendBillingRows>[1]),
+  },
   statistical: {
     descriptor: STATISTICAL_SECTION,
     sheetName: "Statistical",

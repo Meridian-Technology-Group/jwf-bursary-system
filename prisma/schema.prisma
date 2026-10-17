@@ -312,6 +312,11 @@ model Application {
   /// sections, so the admin UI shows a "migrated" card instead of the form and
   /// the portal never treats it as the parent's current application.
   migrationSource           String?                  @map("migration_source")
+  /// Epic 23 T10 — the retention stage this application has reached
+  /// (`FORM_DOCS_PURGED` / `ANONYMISED` / `ASSESSMENT_PURGED`; NULL = none),
+  /// and when. The cron never repeats a stage. See src/lib/retention/policy.ts.
+  retentionStage            String?                  @map("retention_stage")
+  retentionStageAt          DateTime?                @map("retention_stage_at") @db.Timestamptz(6)
   createdAt                 DateTime                 @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt                 DateTime                 @updatedAt @map("updated_at") @db.Timestamptz(6)
   assignedToId              String?                  @map("assigned_to_id") @db.Uuid
@@ -507,6 +512,10 @@ model Assessment {
   /// illustration's "prompt asking for close reasons"). Cleared on reopen? No
   /// — kept as history; a re-archive overwrites it.
   archiveCloseReasonId          String?               @map("archive_close_reason_id") @db.Uuid
+  /// Epic 23 T10 — when the assessment was moved to CLOSED_ARCHIVED (cleared
+  /// on reversal). The retention anchor for an unsuccessful application that
+  /// was archived rather than closed (D-20).
+  archivedAt                    DateTime?             @map("archived_at") @db.Timestamptz(6)
   archiveCloseReason            CloseReason?          @relation("AssessmentArchiveCloseReason", fields: [archiveCloseReasonId], references: [id], onDelete: Restrict)
   multiPropertyRentAddBack      Boolean?              @map("multi_property_rent_add_back")
   councilTaxSupport             Boolean?              @map("council_tax_support")
@@ -967,19 +976,38 @@ model FinancialEquityBand {
 /// that is how she wrote it: floor-INCLUSIVE, ceiling-EXCLUSIVE
 /// ("£200 ≤ Value < £500"), where the ratio ladders are floor-exclusive and
 /// ceiling-inclusive. Both conventions are hers and both are deliberate.
+///
+/// 17 Oct 2026: split into two tables by the sign of NDI after notional spend
+/// (`shortfallTable`). Negative NDI reads her "undeclared debt / external
+/// support" wording; positive (or zero) NDI keeps the 11 Sep credit-risk
+/// wording. Each table is versioned on its own.
 model DebtShortfallBand {
-  id            String   @id @default(uuid()) @db.Uuid
+  id             String             @id @default(uuid()) @db.Uuid
   /// Inclusive lower bound in £; null on the bottom row (any shortfall under
   /// the first ceiling).
-  floorGbp      Decimal? @map("floor_gbp") @db.Decimal(10, 2)
+  floorGbp       Decimal?           @map("floor_gbp") @db.Decimal(10, 2)
   /// Exclusive upper bound in £; null on the open-ended top row.
-  ceilingGbp    Decimal? @map("ceiling_gbp") @db.Decimal(10, 2)
-  statusLabel   String   @map("status_label")
-  effectiveFrom DateTime @map("effective_from") @db.Date
-  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  ceilingGbp     Decimal?           @map("ceiling_gbp") @db.Decimal(10, 2)
+  statusLabel    String             @map("status_label")
+  /// Which of her two shortfall tables (17 Oct 2026). Existing rows are the
+  /// positive-NDI table.
+  shortfallTable DebtShortfallTable @default(NDI_POSITIVE) @map("shortfall_table")
+  effectiveFrom  DateTime           @map("effective_from") @db.Date
+  createdAt      DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
 
-  @@unique([ceilingGbp, effectiveFrom], map: "debt_shortfall_bands_ceiling_effective_from_key")
+  @@unique([ceilingGbp, effectiveFrom, shortfallTable], map: "debt_shortfall_bands_ceiling_effective_from_table_key")
   @@map("debt_shortfall_bands")
+}
+
+/// Charlotte, 17 Oct 2026 — which shortfall table applies, by the sign of NDI
+/// after notional spend (only consulted when NDI is below the yearly repayment).
+enum DebtShortfallTable {
+  /// NDI after notional spend is negative: the household is living beyond its
+  /// declared means, so the wording suspects undeclared debt or outside support.
+  NDI_NEGATIVE
+  /// NDI after notional spend is zero or positive, but below the yearly
+  /// repayment (so there is debt): the 11 Sep credit-risk wording.
+  NDI_POSITIVE
 }
 
 /// CALC-01 — Reference: debt-over-NDI ratio bands (Appendix C.4), normalised
@@ -1667,6 +1695,13 @@ model ApplicationRejection {
   replacementApplicationId String?         @map("replacement_application_id") @db.Uuid
   /// The review phase it was rejected from (SUBMITTED / NOT_STARTED / PAUSED).
   fromPhase                String          @map("from_phase")
+  /// Epic 23 T7: the note staff wrote to the family (shown on the portal's
+  /// returned-for-correction banner and in the email). Free text: scrubbed by
+  /// retention.
+  message                  String?
+  /// Epic 23 T7: the new Submit by set when the form was returned (also
+  /// written to the application's `submissionDeadlineAt`).
+  newSubmitBy              DateTime?       @map("new_submit_by") @db.Timestamptz(6)
   round                    Round           @relation(fields: [roundId], references: [id], onDelete: Cascade)
   leadApplicant            Profile         @relation("ApplicationRejectionLead", fields: [leadApplicantId], references: [id], onDelete: Cascade)
   bursaryAccount           BursaryAccount? @relation(fields: [bursaryAccountId], references: [id], onDelete: Cascade)
@@ -1675,4 +1710,18 @@ model ApplicationRejection {
   @@index([bursaryAccountId, academicYear])
   @@index([leadApplicantId])
   @@map("application_rejections")
+}
+
+/// Epic 23 T9 — illustrative figures for dashboard panels whose real data does
+/// not exist yet (Charlotte, 6 Sep 2026: "a tab where we could store some
+/// 'fictive data'"). One row per panel; edited in Settings → Dashboard sample
+/// data (ADMIN). A panel shows these, badged "Illustrative data", only while
+/// its real count is zero (`chooseRealOrSample`).
+model DashboardSampleData {
+  key       String   @id
+  payload   Json
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  updatedBy String?  @map("updated_by") @db.Uuid
+
+  @@map("dashboard_sample_data")
 }

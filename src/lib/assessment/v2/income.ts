@@ -54,17 +54,29 @@ export function calculateEarnerBenefits(detail: AssessorIncomeRecord): number {
   )
 }
 
+/**
+ * Self-employed income for one earner: the self-employed block's salary,
+ * property income, dividends and other investment income — the same four
+ * lines `calculateEarnerIncome` adds. Export Section 2's "Total Self-Employed
+ * Income" (Epic 23 T8). Reads the v2 `incomeDetail` JSON, never the legacy
+ * `AssessmentEarner.totalIncome` column (unreliable on v2).
+ */
+export function calculateEarnerSelfEmployedIncome(detail: AssessorIncomeRecord): number {
+  if (!detail.selfEmployed) return 0
+  const s = detail.selfEmployed
+  return n(s.grossSalaried) + n(s.propertyIncome) + n(s.dividends) + n(s.otherInvestmentIncome)
+}
+
+/** PAYE income for one earner (the employed block's annual salary). Export Section 2's "Total PAYE Income". */
+export function calculateEarnerPayeIncome(detail: AssessorIncomeRecord): number {
+  return detail.employed ? n(detail.employed.annualSalaryPaye) : 0
+}
+
 export function calculateEarnerIncome(detail: AssessorIncomeRecord): number {
   let total = 0
 
-  if (detail.employed) {
-    total += n(detail.employed.annualSalaryPaye)
-  }
-
-  if (detail.selfEmployed) {
-    const s = detail.selfEmployed
-    total += n(s.grossSalaried) + n(s.propertyIncome) + n(s.dividends) + n(s.otherInvestmentIncome)
-  }
+  total += calculateEarnerPayeIncome(detail)
+  total += calculateEarnerSelfEmployedIncome(detail)
 
   total += calculateEarnerBenefits(detail)
 

@@ -2,6 +2,8 @@ import { describe, it, expect } from 'vitest'
 import {
   calculateEarnerAggregateIncome,
   calculateEarnerIncome,
+  calculateEarnerPayeIncome,
+  calculateEarnerSelfEmployedIncome,
   calculateHouseholdNetIncome,
 } from '../income'
 import type { AssessorIncomeRecord } from '@/types/assessment-v2'
@@ -258,5 +260,25 @@ describe('CH-58 — DLA and PIP are summed separately', () => {
 
   it('counts PIP alone when there is no DLA', () => {
     expect(calculateEarnerIncome(withBenefits(0, 2_412))).toBe(2_412)
+  })
+})
+
+describe('PAYE and self-employed totals (Epic 23 T8)', () => {
+  const rec: AssessorIncomeRecord = {
+    employed: { annualSalaryPaye: 30_000 },
+    selfEmployed: { grossSalaried: 10_000, propertyIncome: 2_000, dividends: 1_500, otherInvestmentIncome: 500 },
+    benefits: { childBenefit: 1_300 },
+    total: 0,
+    documentsConfirmed: true,
+  } as AssessorIncomeRecord
+  it('split the earner total, which still adds them (plus benefits)', () => {
+    expect(calculateEarnerPayeIncome(rec)).toBe(30_000)
+    expect(calculateEarnerSelfEmployedIncome(rec)).toBe(14_000)
+    expect(calculateEarnerIncome(rec)).toBe(30_000 + 14_000 + 1_300)
+  })
+  it('are 0 when the block is absent', () => {
+    const none = { total: 0, documentsConfirmed: true } as AssessorIncomeRecord
+    expect(calculateEarnerPayeIncome(none)).toBe(0)
+    expect(calculateEarnerSelfEmployedIncome(none)).toBe(0)
   })
 })

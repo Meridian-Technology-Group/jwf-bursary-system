@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 const secondaryMock = vi.fn();
 const decisionMock = vi.fn();
@@ -51,9 +51,10 @@ function makeTx({
     },
     closeReason: { findUnique: vi.fn(async () => reason) },
     bursaryAccount: { update: vi.fn(), count: vi.fn(async () => 0) },
-    document: { deleteMany: vi.fn(async () => ({ count: 0 })) },
-    applicationSection: { deleteMany: vi.fn(async () => ({ count: 0 })) },
+    document: { deleteMany: vi.fn(async () => ({ count: 0 })), count: vi.fn(async () => 0) },
+    applicationSection: { deleteMany: vi.fn(async () => ({ count: 0 })), count: vi.fn(async () => 0) },
     contact: { updateMany: vi.fn(async () => ({ count: 0 })) },
+    applicationRejection: { updateMany: vi.fn(async () => ({ count: 0 })) },
     invitation: { deleteMany: vi.fn(async () => ({ count: 0 })) },
     applicationContributor: { deleteMany: vi.fn(async () => ({ count: 0 })) },
     profile: {
@@ -221,5 +222,68 @@ describe("closeApplicationCore — purge close (Story 2.2, toggle on)", () => {
     if (!result.success) return;
     expect(result.purgeRan).toBe(false);
     expect(tx.applicationSection.deleteMany).not.toHaveBeenCalled();
+  });
+});
+
+describe("closeApplicationCore — retention rule 2 (Epic 23 T10)", () => {
+  const prev = process.env.RETENTION_PURGE_ENABLED;
+  afterEach(() => {
+    if (prev === undefined) delete process.env.RETENTION_PURGE_ENABLED;
+    else process.env.RETENTION_PURGE_ENABLED = prev;
+  });
+
+  it("flag OFF: an unsuccessful close keeps the form and documents and records what it would remove", async () => {
+    delete process.env.RETENTION_PURGE_ENABLED;
+    const tx = makeTx({ accountStatus: null });
+    const result = await closeApplicationCore(tx as never, input, deps);
+    expect(result).toMatchObject({ success: true, storagePathsToDelete: [] });
+    expect(tx.document.deleteMany).not.toHaveBeenCalled();
+    expect(tx.applicationSection.deleteMany).not.toHaveBeenCalled();
+    const actions = auditMock.mock.calls.map((c) => (c[1] as { action: string }).action);
+    expect(actions).toContain("RETENTION_PURGE_SKIPPED_DISABLED");
+  });
+
+  it("flag ON: an unsuccessful close purges the form and documents at the close; the assessment stays", async () => {
+    process.env.RETENTION_PURGE_ENABLED = "true";
+    const tx = makeTx({ accountStatus: null });
+    // The primitive re-reads the row after the close stamped closedAt.
+    (tx.application.findUnique as ReturnType<typeof vi.fn>)
+      .mockResolvedValueOnce({
+        id: "app-1",
+        reference: "WS-202627-0001",
+        childName: "Jane Doe",
+        closedAt: null,
+        purgedAt: null,
+        leadApplicantId: "lead-1",
+        bursaryAccountId: null,
+        bursaryAccount: null,
+        documents: [],
+        assessment: null,
+      })
+      .mockResolvedValueOnce({
+        id: "app-1",
+        reference: "WS-202627-0001",
+        childName: "Jane Doe",
+        leadApplicantId: "lead-1",
+        bursaryAccountId: null,
+        closedAt: new Date(Date.now() - 1000),
+        retentionStage: null,
+        retentionStageAt: null,
+        bursaryAccount: null,
+        assessment: { id: "as-1", status: "COMPLETED", archivedAt: null },
+      });
+    (tx as unknown as { document: { findMany: unknown } }).document.findMany = vi.fn(async () => [{ storagePath: "x/doc.pdf" }]);
+    const result = await closeApplicationCore(tx as never, input, deps);
+    expect(result).toMatchObject({ success: true, storagePathsToDelete: ["x/doc.pdf"] });
+    expect(tx.document.deleteMany).toHaveBeenCalled();
+    expect(tx.applicationSection.deleteMany).toHaveBeenCalled();
+  });
+
+  it("an award (account) is never form-purged at the close: rule 1 waits a year", async () => {
+    process.env.RETENTION_PURGE_ENABLED = "true";
+    const tx = makeTx({ accountStatus: "ACTIVE" });
+    const result = await closeApplicationCore(tx as never, input, deps);
+    expect(result).toMatchObject({ success: true, storagePathsToDelete: [] });
+    expect(tx.document.deleteMany).not.toHaveBeenCalled();
   });
 });

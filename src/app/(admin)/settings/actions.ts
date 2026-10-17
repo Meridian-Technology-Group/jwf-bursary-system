@@ -21,6 +21,7 @@ import { DEFAULT_CUSTOM_TEMPLATE_MERGE_FIELDS } from "@/lib/email/template-defau
 import { validateBandSet, type ValidatableBand } from "@/lib/settings/band-set-validation";
 import { isDuplicateEffectiveFrom } from "@/lib/settings/reference-versioning";
 import { planGapRanks } from "@/lib/reason-codes/gap-rank";
+import { SAMPLE_KEYS, SAMPLE_SCHEMAS, type SampleKey } from "@/lib/dashboard/sample-data";
 import type { School, EmailTemplateType, NotionalCostType, DebtSavingsContext } from "@prisma/client";
 import { NotionalCostType as NotionalCostTypeEnum } from "@prisma/client";
 
@@ -1206,9 +1207,9 @@ interface DebtShortfallBandRowInput {
 }
 
 /**
- * Charlotte, 11 Sep 2026 — a new version of the shortfall table. Unlike the
- * ratio ladders this one has no household context: there is a single table,
- * consulted whenever NDI cannot cover the yearly repayment.
+ * Charlotte, 11 Sep 2026 — a new version of a shortfall table. There are two
+ * since 17 Oct (negative / positive NDI after notional spend), each versioned
+ * on its own, like the household-context ladders.
  */
 export async function createDebtShortfallBandVersionAction(
   formData: FormData
@@ -1221,6 +1222,11 @@ export async function createDebtShortfallBandVersionAction(
     if (!rows || rows.length === 0) return { success: false, error: "At least one band row is required." };
     if (!effectiveFrom) return { success: false, error: "A valid effective date is required." };
 
+    const shortfallTable = formData.get("shortfallTable");
+    if (shortfallTable !== "NDI_NEGATIVE" && shortfallTable !== "NDI_POSITIVE") {
+      return { success: false, error: "Unknown debt shortfall table." };
+    }
+
     const bandError = checkBandSet(rows.map((r) => ({ floor: r.floorGbp, ceiling: r.ceilingGbp })));
     if (bandError) return bandError;
     if (rows.some((r) => !r.statusLabel?.trim())) {
@@ -1228,7 +1234,8 @@ export async function createDebtShortfallBandVersionAction(
     }
 
     const result = await withUserContext(user.id, user.role as RlsRole, async (tx) => {
-      const existing = await tx.debtShortfallBand.findMany({ select: { effectiveFrom: true } });
+      // Scoped to THIS table, as the household-context ladders are.
+      const existing = await tx.debtShortfallBand.findMany({ where: { shortfallTable }, select: { effectiveFrom: true } });
       if (isDuplicateEffectiveFrom(effectiveFrom, existing.map((e) => e.effectiveFrom))) {
         return { success: false, error: "A debt shortfall band version already exists for that effective date." } as const;
       }
@@ -1238,6 +1245,7 @@ export async function createDebtShortfallBandVersionAction(
           floorGbp: r.floorGbp,
           ceilingGbp: r.ceilingGbp,
           statusLabel: r.statusLabel.trim(),
+          shortfallTable,
           effectiveFrom,
         })),
       });
@@ -1247,8 +1255,8 @@ export async function createDebtShortfallBandVersionAction(
         action: AUDIT_ACTIONS.SETTINGS_DEBT_RATIO_BAND_VERSION_CREATE,
         entityType: AUDIT_ENTITY_TYPES.DebtRatioBand,
         entityId: user.id,
-        context: `Created a new debt shortfall band version (${rows.length} rows) effective ${effectiveFrom.toISOString().slice(0, 10)}`,
-        metadata: { effectiveFrom: effectiveFrom.toISOString(), rowCount: rows.length },
+        context: `Created a new debt shortfall band version, table ${shortfallTable === "NDI_NEGATIVE" ? "(1) negative NDI" : "(2) positive NDI"} (${rows.length} rows) effective ${effectiveFrom.toISOString().slice(0, 10)}`,
+        metadata: { effectiveFrom: effectiveFrom.toISOString(), rowCount: rows.length, shortfallTable },
       });
 
       return { success: true } as const;
@@ -1445,5 +1453,48 @@ export async function upsertGapReasonAction(
       return { success: false, error: "A gap reason with that number already exists." };
     }
     return { success: false, error: "Failed to save gap reason." };
+  }
+}
+
+// ─── Dashboard sample data (Epic 23 T9, D-18) ─────────────────────────────────
+
+/**
+ * Saves one illustrative dashboard panel's figures. ADMIN only (the table's
+ * RLS also requires it). Validated with the same schema the dashboard reads
+ * it with, so a stored payload always renders.
+ */
+export async function saveDashboardSampleAction(
+  key: SampleKey,
+  payload: unknown
+): Promise<SettingsActionResult> {
+  try {
+    const user = await requireRole([Role.ADMIN]);
+    if (!(SAMPLE_KEYS as readonly string[]).includes(key)) {
+      return { success: false, error: "Unknown dashboard panel." };
+    }
+    const parsed = SAMPLE_SCHEMAS[key].safeParse(payload);
+    if (!parsed.success) {
+      return { success: false, error: parsed.error.issues[0]?.message ?? "Check the figures." };
+    }
+    await withUserContext(user.id, user.role as RlsRole, async (tx) => {
+      await tx.dashboardSampleData.upsert({
+        where: { key },
+        create: { key, payload: parsed.data, updatedBy: user.id },
+        update: { payload: parsed.data, updatedBy: user.id },
+      });
+      await createAuditLog(tx, {
+        userId: user.id,
+        action: AUDIT_ACTIONS.SETTINGS_DASHBOARD_SAMPLE_UPDATE,
+        entityType: AUDIT_ENTITY_TYPES.DashboardSampleData,
+        context: `Updated dashboard sample data: ${key}`,
+        metadata: { key, payload: parsed.data },
+      });
+    });
+    revalidatePath("/settings");
+    revalidatePath("/admin");
+    return { success: true };
+  } catch (err) {
+    console.error("[saveDashboardSampleAction]", err);
+    return { success: false, error: "Failed to save the sample figures." };
   }
 }

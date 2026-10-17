@@ -533,4 +533,44 @@ export const debtShortfallBands = [
   { floorGbp: 2000, ceilingGbp: 5000, statusLabel: "VERY HEAVILY IN DEBT, VERY HIGH CREDIT RISK" },
   { floorGbp: 5000, ceilingGbp: 8000, statusLabel: "DEBT GETTING OUT OF CONTROL, NO SAFETY NET" },
   { floorGbp: 8000, ceilingGbp: null, statusLabel: "IN A DEBT SPIRAL, AT RISK OF BANKRUPTCY" },
-].map((row) => ({ ...row, effectiveFrom: DEBT_SHORTFALL_EFFECTIVE_FROM }));
+].map((row) => ({ ...row, shortfallTable: "NDI_POSITIVE" as const, effectiveFrom: DEBT_SHORTFALL_EFFECTIVE_FROM }));
+
+// ─── 17 Oct 2026: her table (1), negative NDI after notional spend ─────────
+//
+// The shortfall route splits by the sign of NDI after notional spend. The 11 Sep
+// table above is her table (2) (NDI positive, wording unchanged); this is
+// table (1), for a household spending beyond its declared means, debt or not.
+// Same £ bounds and boundary convention. Kept in sync with migration
+// 20261017150000_debt_shortfall_ndi_split.
+
+export const DEBT_SPLIT_EFFECTIVE_FROM = new Date("2026-10-17");
+
+export const debtShortfallBandsNdiNegative = [
+  { floorGbp: null, ceilingGbp: 200, statusLabel: "SMALL DEBT POSITION SUSPECTED OR MAY GET EXTERNAL FINANCIAL SUPPORT" },
+  { floorGbp: 200, ceilingGbp: 500, statusLabel: "SMALL DEBT POSITION SUSPECTED OR MAY GET EXTERNAL FINANCIAL SUPPORT" },
+  { floorGbp: 500, ceilingGbp: 1000, statusLabel: "SOME DEBT POSITION SUSPECTED OR MAY HAVE AN EXTERNAL INCOME SOURCE" },
+  { floorGbp: 1000, ceilingGbp: 2000, statusLabel: "DEBT POSITION UNDECLARED OR FREE EXTERNAL INCOME MAY BE GRANTED" },
+  { floorGbp: 2000, ceilingGbp: 5000, statusLabel: "DEBT POSITION UNDECLARED OR FREE EXTERNAL INCOME MAY BE GRANTED" },
+  { floorGbp: 5000, ceilingGbp: 8000, statusLabel: "DEBT POSITION TO BE SCRUTINISED OR SOME EXTERNAL INCOME SOURCE SUSPECTED" },
+  { floorGbp: 8000, ceilingGbp: null, statusLabel: "DEBT POSITION TO BE SCRUTINISED OR MATERIAL EXTERNAL INCOME SOURCE SUSPECTED" },
+].map((row) => ({ ...row, shortfallTable: "NDI_NEGATIVE" as const, effectiveFrom: DEBT_SPLIT_EFFECTIVE_FROM }));
+
+/**
+ * 17 Oct 2026: a new version of the two no-debt lifestyle-squeeze tables whose
+ * bottom row (ratio below 0%) reads her label instead of "n/a". Every other row
+ * is the 11 Sep version's. The other three contexts keep their 11 Sep version.
+ */
+export const LIFESTYLE_BELOW_ZERO_LABELS = {
+  NO_DEBT_NO_SAVINGS: "LIFESTYLE ONLY MAINTAINED BY STARTING TO BORROW OR FREE EXTERNAL FINANCIAL SUPPORT",
+  NO_DEBT_WITH_SAVINGS: "LIFESTYLE ONLY MAINTAINED BY DIPPING INTO SAVINGS",
+} as const;
+
+export const lifestyleSqueezeBandsOct17 = (["NO_DEBT_NO_SAVINGS", "NO_DEBT_WITH_SAVINGS"] as const).flatMap((context) =>
+  LIFESTYLE_FLOORS.map(([ratioFloor, ratioCeiling], i) => ({
+    ratioFloor,
+    ratioCeiling,
+    statusLabel: i === 0 ? LIFESTYLE_BELOW_ZERO_LABELS[context] : LIFESTYLE_LABELS[context][i],
+    debtSavingsContext: context,
+    effectiveFrom: DEBT_SPLIT_EFFECTIVE_FROM,
+  }))
+);

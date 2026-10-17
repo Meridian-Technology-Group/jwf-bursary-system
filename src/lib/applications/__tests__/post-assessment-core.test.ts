@@ -247,7 +247,8 @@ describe("setPostAssessmentFinalState — WAITING_LIST / CLOSED_ARCHIVED", () =>
       expect(mirrorMock).not.toHaveBeenCalled();
       expect(fakeTx.assessment.update).toHaveBeenCalledWith({
         where: { id: "assess-1" },
-        data: { status: target },
+        // Epic 23 T10 (D-20): archiving starts the retention clock.
+        data: target === "CLOSED_ARCHIVED" ? { status: target, archivedAt: expect.any(Date) } : { status: target },
       });
     }
   );
@@ -292,7 +293,7 @@ describe("revertPostAssessmentState", () => {
       expect(result).toEqual({ success: true });
       expect(fakeTx.assessment.update).toHaveBeenCalledWith({
         where: { id: "assess-1" },
-        data: { status: "COMPLETED" },
+        data: { status: "COMPLETED", archivedAt: null }, // a reversal stops the clock
       });
       const audit = fakeTx.auditLog.create.mock.calls[0][0];
       expect(audit.data.action).toBe("ASSESSMENT_LIFECYCLE_REVERTED");
@@ -384,7 +385,7 @@ describe("Epic 18b — ROLLED_OVER lock", () => {
     expect(result).toEqual({ success: true });
     expect(fakeTx.assessment.update).toHaveBeenCalledWith({
       where: { id: "assess-1" },
-      data: { status: "COMPLETED" },
+      data: { status: "COMPLETED", archivedAt: null }, // a reversal stops the clock
     });
   });
 });
