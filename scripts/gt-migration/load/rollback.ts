@@ -45,6 +45,12 @@ export interface RollbackOptions {
   phase?: Phase
   only?: string[]
   dryRun?: boolean
+  /**
+   * Keys whose staff edits are knowingly discarded (a test that moved a
+   * migrated record on and must be put back as loaded). Every key must also be
+   * in `only`; never on prod. The run log says so per account.
+   */
+  acceptTouched?: string[]
 }
 
 /** Reverse of creation (06 §4). */
@@ -100,6 +106,13 @@ export async function rollback(ctx: LoadContext, opts: RollbackOptions) {
   if (objectIntents.length) console.log(`  open storage intents (a crashed upload): ${objectIntents.length}`)
   if (opts.dryRun || (rows.length === 0 && objectIntents.length === 0)) return { counts, removed: 0 }
 
+  const accepted = new Set(opts.acceptTouched ?? [])
+  if (accepted.size) {
+    if (ctx.config.env === 'prod') throw new Error('Refusing: --accept-touched is never used on prod')
+    const outside = Array.from(accepted).filter((k) => !opts.only?.includes(k))
+    if (outside.length) throw new Error(`--accept-touched keys must also be in --only: ${outside.join(', ')}`)
+  }
+
   const ledger = new Ledger(ctx.prisma, opts.runId, resolve(runDir(opts.runId), 'ledger.jsonl'))
   const byAccount = new Map<string, Row[]>()
   for (const r of rows) byAccount.set(r.accountKey, [...(byAccount.get(r.accountKey) ?? []), r])
@@ -108,7 +121,7 @@ export async function rollback(ctx: LoadContext, opts: RollbackOptions) {
   // Accounts first (assessments + accounts phases), then identities.
   const accountKeys = Array.from(byAccount.keys()).filter((k) => !k.startsWith('LEAD:') && k !== 'SYSTEM')
   for (const key of accountKeys) {
-    removed += await rollbackAccount(ctx, ledger, key, byAccount.get(key)!)
+    removed += await rollbackAccount(ctx, ledger, key, byAccount.get(key)!, accepted.has(key))
   }
   for (const key of Array.from(byAccount.keys()).filter((k) => k.startsWith('LEAD:') || k === 'SYSTEM')) {
     removed += await rollbackIdentity(ctx, ledger, key, byAccount.get(key)!)
@@ -160,12 +173,13 @@ async function assertUntouched(tx: Tx, rows: Row[]) {
   }
 }
 
-async function rollbackAccount(ctx: LoadContext, ledger: Ledger, key: string, rows: Row[]): Promise<number> {
+async function rollbackAccount(ctx: LoadContext, ledger: Ledger, key: string, rows: Row[], acceptTouched = false): Promise<number> {
   const objects = rows.filter((r) => r.entityType === 'StorageObject')
   const dbRows = rows.filter((r) => r.entityType !== 'StorageObject')
   try {
     await ctx.prisma.$transaction(async (tx) => {
-      await assertUntouched(tx, rows)
+      if (acceptTouched) console.log(`  ${key}: staff edits since the load are discarded (--accept-touched)`)
+      else await assertUntouched(tx, rows)
       if (ids(rows, 'Application').length) {
         const listed = new Set(ids(rows, 'Document'))
         const others = await tx.dataMigrationLedger.count({
@@ -218,7 +232,7 @@ async function rollbackAccount(ctx: LoadContext, ledger: Ledger, key: string, ro
                 entityType: AUDIT_ENTITY_TYPES.BursaryAccount,
                 entityId: id,
                 context: 'Migrated account rolled back',
-                metadata: { runId: ledger.runId },
+                metadata: { runId: ledger.runId, ...(acceptTouched ? { acceptTouched: true } : {}) },
               })
             }
             await tx.bursaryAccount.deleteMany({ where: { id: { in: list } } })

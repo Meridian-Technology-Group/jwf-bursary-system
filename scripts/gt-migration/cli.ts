@@ -7,7 +7,7 @@
  *                           [--only k1,k2] [--limit n] [--dry-run]
  *   npm run mig -- plan     --env <e> [--only k1,k2] [--out plans.json]  (read-only preview)
  *   npm run mig -- verify   --env <e> --run <id>
- *   npm run mig -- rollback --env <e> --run <id> [--phase <p>] [--only k1,k2] [--dry-run]
+ *   npm run mig -- rollback --env <e> --run <id> [--phase <p>] [--only k1,k2] [--accept-touched k1,k2] [--dry-run]
  *   npm run mig -- backfill-synopsis --env <e> --run <id> [--only k1,k2] [--dry-run]
  *                           (Epic 21 R1: the account's Main synopsis for accounts
  *                            loaded before it existed; skips any account that has
@@ -171,7 +171,7 @@ async function main() {
       const { rollback } = await import('./load/rollback')
       const ctx = await openContext(requireWritable(config))
       try {
-        await rollback(ctx, { runId, phase, only: list(flag(args, 'only')), dryRun })
+        await rollback(ctx, { runId, phase, only: list(flag(args, 'only')), dryRun, acceptTouched: list(flag(args, 'accept-touched')) })
       } finally {
         await ctx.prisma.$disconnect()
       }
