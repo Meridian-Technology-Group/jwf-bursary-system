@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import {
   groupDocumentsBySection,
   sectionForDocumentSlot,
+  rejectionGroupForSlot,
 } from "../section-grouping";
 
 describe("sectionForDocumentSlot", () => {
@@ -51,5 +52,25 @@ describe("groupDocumentsBySection", () => {
     expect(bySection.get("PARENTS_INCOME")?.map((d) => d.id)).toEqual(["1"]);
     expect(bySection.get("ASSETS_LIABILITIES")?.map((d) => d.id)).toEqual(["2"]);
     expect(other.map((d) => d.id)).toEqual(["3"]);
+  });
+});
+
+describe("rejectionGroupForSlot (17 Oct 2026)", () => {
+  it.each([
+    ["P60_PARENT1", "INCOME"],
+    ["MARCH_PAYSLIP_PARENT2", "INCOME"],
+    ["HOUSING_BENEFIT_PARENT1", "INCOME"],
+    ["HOUSING_BENEFIT_LETTER", "PROPERTY"],
+    ["COUNCIL_TAX", "PROPERTY"],
+    ["TENANCY_AGREEMENT", "PROPERTY"],
+    ["OTHER_PROPERTY_MORTGAGE_0", "PROPERTY"],
+    ["BANK_STATEMENT_PARENT1", "BANK_STATEMENTS"],
+    ["CREDIT_CARD_STATEMENT", "OTHER_ASSETS"],
+    ["BIRTH_CERTIFICATE", "IDENTITY"],
+    ["PASSPORT_PARENT1", "IDENTITY"],
+    ["ADDITIONAL_DOCUMENT_1", "OTHER"],
+    ["SOMETHING_ELSE", "OTHER"],
+  ] as const)("%s → %s", (slot, group) => {
+    expect(rejectionGroupForSlot(slot)).toBe(group);
   });
 });

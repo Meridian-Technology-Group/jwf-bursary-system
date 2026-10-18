@@ -79,3 +79,49 @@ export function groupDocumentsBySection<T extends GroupableDocument>(
   }
   return { bySection, other };
 }
+
+// ─── Application rejection: documents to remove, by group (17 Oct 2026) ──────
+
+/**
+ * Charlotte, 17 Oct: "the system could suggest to clear the documents per
+ * section (income, property, bank statements), or give me the option to do it
+ * manually". The groups split Assets & liabilities, where most rejected
+ * documents sit, into property and bank statements.
+ */
+export const REJECTION_DOCUMENT_GROUPS = [
+  { key: "INCOME", label: "Income" },
+  { key: "PROPERTY", label: "Property & housing" },
+  { key: "BANK_STATEMENTS", label: "Bank statements" },
+  { key: "OTHER_ASSETS", label: "Savings, investments & debts" },
+  { key: "IDENTITY", label: "Identity & family" },
+  { key: "OTHER", label: "Other documents" },
+] as const;
+
+export type RejectionDocumentGroup = (typeof REJECTION_DOCUMENT_GROUPS)[number]["key"];
+
+export function rejectionGroupForSlot(slot: string): RejectionDocumentGroup {
+  if (/^BANK_STATEMENT/.test(slot)) return "BANK_STATEMENTS";
+  if (/^(COUNCIL_TAX|MAIN_MORTGAGE|OTHER_PROPERTY_MORTGAGE|TENANCY|HOUSING_BENEFIT_LETTER|RELATIVE_LETTER)/.test(slot)) {
+    return "PROPERTY";
+  }
+  switch (sectionForDocumentSlot(slot)) {
+    case "PARENTS_INCOME":
+      return "INCOME";
+    case "ASSETS_LIABILITIES":
+      return "OTHER_ASSETS";
+    case "CHILD_DETAILS":
+    case "FAMILY_ID":
+    case "PARENT_DETAILS":
+      return "IDENTITY";
+    default:
+      return "OTHER";
+  }
+}
+
+/** One document offered for removal in the rejection window. */
+export interface RejectionDocument {
+  id: string;
+  slot: string;
+  filename: string;
+  group: RejectionDocumentGroup;
+}

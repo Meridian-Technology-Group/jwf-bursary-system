@@ -260,12 +260,12 @@ describe("scheduleRowsForParent (Epic 22 P5)", () => {
     expect(row.status).toBe("Submitted");
   });
 
-  it("a past year with nothing submitted reads Not submitted", () => {
+  it("a past year with nothing submitted reads Overdue", () => {
     const [row] = scheduleRowsForParent(
       account({ entries: [entry({ academicYear: "2025-26", availableOn: d("2025-04-15"), requiredBy: d("2025-05-21") })] }),
       TODAY
     );
-    expect(row.status).toBe("Not submitted");
+    expect(row.status).toBe("Overdue");
   });
 });
 
@@ -286,5 +286,17 @@ describe("parentScheduleStatus (D-12)", () => {
         application: app({ formStatus: "CREATED" }),
       }).status
     ).toBe("Open, not started");
+  });
+
+  it("a draft still open after its Submit by is Overdue, keeping its completion", () => {
+    expect(
+      parentScheduleStatus({
+        ...base,
+        submitBy: d("2026-09-30"),
+        completion: 40,
+        entry: { status: "SCHEDULED", receivedOn: null },
+        application: app({ formStatus: "IN_PROGRESS" }),
+      })
+    ).toMatchObject({ status: "Overdue", completion: "40%" });
   });
 });

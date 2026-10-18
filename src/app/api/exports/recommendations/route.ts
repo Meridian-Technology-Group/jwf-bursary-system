@@ -104,7 +104,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   // ── Build response ───────────────────────────────────────────────────────────
   if (format === "csv") {
     const csv = buildCsvString(rows);
-    const filename = `recommendations-${safeName}-${dateStr}.csv`;
+    const filename = `model-variance-audit-${safeName}-${dateStr}.csv`;
     return new NextResponse(csv, {
       status: 200,
       headers: {
@@ -117,7 +117,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
 
   // Default: xlsx
   const buffer = await buildXlsxBuffer(rows);
-  const filename = `recommendations-${safeName}-${dateStr}.xlsx`;
+  const filename = `model-variance-audit-${safeName}-${dateStr}.xlsx`;
 
   // Slice the underlying ArrayBuffer to the exact bounds of the Buffer view
   // so NextResponse receives an unambiguous ArrayBuffer (accepted as BodyInit).

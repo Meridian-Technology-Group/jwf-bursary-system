@@ -49,6 +49,7 @@ import { seedMainSynopsisAtLock } from "@/lib/bursary-accounts/standing-synopsis
 import { validateReferenceInput } from "@/lib/applications/reference";
 import { isAwardFundValidForSchool, AWARD_FUND_LABELS } from "@/lib/assessment/award-fund";
 import type { AwardFundType } from "@prisma/client";
+import { isMigrated, MIGRATED_LOCKED_MESSAGE } from "@/lib/applications/migration-source";
 
 export type PostAssessmentResult =
   | { success: true }
@@ -348,11 +349,15 @@ export async function revertPostAssessmentState(
         where: { id: applicationId },
         select: {
           id: true,
+          migrationSource: true,
           assessment: { select: { id: true, status: true } },
         },
       });
       if (!application?.assessment) {
         return { success: false as const, error: "Application not found." };
+      }
+      if (isMigrated(application)) {
+        return { success: false as const, error: MIGRATED_LOCKED_MESSAGE };
       }
       const assessment = application.assessment;
 

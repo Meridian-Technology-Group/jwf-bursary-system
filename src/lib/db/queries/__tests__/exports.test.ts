@@ -168,3 +168,43 @@ describe("mapExportRow", () => {
     expect(row.outcome).toBe("");
   });
 });
+
+describe("mapExportRow — flags and accommodation (17 Oct 2026)", () => {
+  it("lists her six flags in her order, Large family from the family type", () => {
+    const source = baseSource();
+    source.assessment!.familyTypeCategory = 5;
+    source.assessment!.recommendation = {
+      ...source.assessment!.recommendation!,
+      dishonestyFlag: true,
+      acuteCrisisFlag: true,
+      pastoralFlag: true,
+    };
+    expect(mapExportRow(source).flags).toBe("Dishonesty, Large family, Pastoral, Acute Crisis");
+  });
+
+  it("three children is not a large family", () => {
+    const source = baseSource();
+    source.assessment!.familyTypeCategory = 4;
+    expect(mapExportRow(source).flags).toBe("");
+  });
+
+  it("takes Accommodation from the family's own/rent answer first", () => {
+    const source = baseSource();
+    source.sections = [{ data: { propertyOwnership: "RENT", rentAgreementType: "COUNCIL" } }];
+    source.assessment!.property = { propertyAssets: { portfolioType: "SINGLE" } };
+    expect(mapExportRow(source).accommodationType).toBe("Rents (council)");
+  });
+
+  it("falls back to the assessment for a record with no form", () => {
+    const source = baseSource();
+    source.assessment!.property = { propertyAssets: { portfolioType: "SINGLE" } };
+    source.assessment!.rentAddBackType = "NONE";
+    expect(mapExportRow(source).accommodationType).toBe("Owns home");
+    source.assessment!.rentAddBackType = "FULL_RENT_FREE";
+    expect(mapExportRow(source).accommodationType).toBe("Rent-free");
+  });
+
+  it("keeps a legacy stored value when nothing else says", () => {
+    expect(mapExportRow(baseSource()).accommodationType).toBe("Renting");
+  });
+});

@@ -82,7 +82,8 @@ export type ParentScheduleStatus =
   | "In progress"
   | "Submitted"
   | "Rejected"
-  | "Not submitted";
+  /** 17 Oct 2026: past its Submit by with nothing submitted, in red (was "Not submitted"). */
+  | "Overdue";
 
 export interface ParentScheduleRow {
   key: string;
@@ -217,12 +218,14 @@ export function parentScheduleStatus(params: {
     return { status: "Submitted", completion: COMPLETED, submissionDate: app.submittedAt };
   }
 
+  const overdue = submitBy != null && today.getTime() > endOfDay(submitBy);
+
   // A draft in progress (including a form restarted after a rejection).
   if (app) {
     const pct = completion ?? 0;
     const started = pct > 0 || app.formStatus === "IN_PROGRESS" || app.formStatus === "FILLED_IN";
     return {
-      status: started ? "In progress" : "Open, not started",
+      status: overdue ? "Overdue" : started ? "In progress" : "Open, not started",
       completion: formatCompletion(pct),
       submissionDate: null,
     };
@@ -250,8 +253,8 @@ export function parentScheduleStatus(params: {
   if (opensOn && now < opensOn.getTime()) {
     return { status: "Scheduled", completion: NONE, submissionDate: null };
   }
-  if (submitBy && now > endOfDay(submitBy)) {
-    return { status: "Not submitted", completion: NONE, submissionDate: null };
+  if (overdue) {
+    return { status: "Overdue", completion: NONE, submissionDate: null };
   }
   return { status: "Open, not started", completion: formatCompletion(0), submissionDate: null };
 }

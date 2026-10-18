@@ -11,7 +11,7 @@
  */
 
 import { revalidatePath } from "next/cache";
-import { requireRole, Role } from "@/lib/auth/roles";
+import { requireRole, requireApplicationAccess, Role } from "@/lib/auth/roles";
 import { withUserContext, type RlsRole } from "@/lib/db/prisma";
 import { upsertRecommendation } from "@/lib/db/queries/recommendations";
 import type { UpsertRecommendationInput } from "@/lib/db/queries/recommendations";
@@ -28,6 +28,7 @@ import {
 } from "@/lib/applications/post-assessment-core";
 import type { PostAssessmentFinalState } from "@/lib/applications/status";
 import type { AwardFigures } from "@/lib/applications/account-promotion";
+import type { StoredRecommendationFlags } from "@/lib/assessment/recommendation-flags";
 import {
   computeGapAmount,
   gapReasonSelectionValid,
@@ -183,6 +184,57 @@ export async function saveRecommendationAction(
   } catch (err) {
     console.error("[saveRecommendationAction]", err);
     return { success: false, error: "Failed to save recommendation." };
+  }
+}
+
+// ─── Recommendation flags (17 Oct 2026) ───────────────────────────────────────
+
+/**
+ * Saves the five stored recommendation flags on their own. Flags are notes for
+ * the bursary team, not figures, so they can be set on a locked award —
+ * including a migrated one — without reopening anything. "Large family" is
+ * derived from the family type and never saved.
+ */
+export async function saveRecommendationFlagsAction(
+  applicationId: string,
+  flags: StoredRecommendationFlags
+): Promise<{ success: true } | { success: false; error: string }> {
+  try {
+    const user = await requireRole([Role.ADMIN, Role.ASSESSOR]);
+    await requireApplicationAccess(user, applicationId);
+    const data: StoredRecommendationFlags = {
+      dishonestyFlag: flags.dishonestyFlag === true,
+      creditRiskFlag: flags.creditRiskFlag === true,
+      inconsistencyFlag: flags.inconsistencyFlag === true,
+      pastoralFlag: flags.pastoralFlag === true,
+      acuteCrisisFlag: flags.acuteCrisisFlag === true,
+    };
+
+    const result = await withUserContext(user.id, user.role as RlsRole, async (tx) => {
+      const assessment = await tx.assessment.findUnique({
+        where: { applicationId },
+        select: { id: true, recommendation: { select: { id: true } } },
+      });
+      if (!assessment?.recommendation) {
+        return { success: false as const, error: "Save the recommendation first, then set its flags." };
+      }
+      await tx.recommendation.update({ where: { assessmentId: assessment.id }, data });
+      await createAuditLog(tx, {
+        userId: user.id,
+        action: AUDIT_ACTIONS.RECOMMENDATION_FLAGS_SAVED,
+        entityType: AUDIT_ENTITY_TYPES.Recommendation,
+        entityId: assessment.id,
+        context: `Recommendation flags saved for application ${applicationId}`,
+        metadata: { applicationId, assessmentId: assessment.id, ...data },
+      });
+      return { success: true as const };
+    });
+
+    if (result.success) revalidatePath(`/applications/${applicationId}/recommendation`);
+    return result;
+  } catch (err) {
+    console.error("[saveRecommendationFlagsAction]", err);
+    return { success: false, error: "Failed to save the flags." };
   }
 }
 

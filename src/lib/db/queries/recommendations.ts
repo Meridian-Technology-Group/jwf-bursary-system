@@ -28,6 +28,9 @@ export interface UpsertRecommendationInput {
   monthlyPayableFees?: number | null;
   dishonestyFlag?: boolean;
   creditRiskFlag?: boolean;
+  inconsistencyFlag?: boolean;
+  pastoralFlag?: boolean;
+  acuteCrisisFlag?: boolean;
   summary?: string | null;
   reasonCodeIds?: string[];
 
@@ -113,6 +116,9 @@ export async function upsertRecommendation(
       monthlyPayableFees: fields.monthlyPayableFees ?? null,
       dishonestyFlag: fields.dishonestyFlag ?? false,
       creditRiskFlag: fields.creditRiskFlag ?? false,
+      inconsistencyFlag: fields.inconsistencyFlag ?? false,
+      pastoralFlag: fields.pastoralFlag ?? false,
+      acuteCrisisFlag: fields.acuteCrisisFlag ?? false,
       summary: fields.summary ?? null,
       ...v2Fields,
     },
@@ -127,6 +133,9 @@ export async function upsertRecommendation(
       monthlyPayableFees: fields.monthlyPayableFees ?? null,
       dishonestyFlag: fields.dishonestyFlag ?? false,
       creditRiskFlag: fields.creditRiskFlag ?? false,
+      inconsistencyFlag: fields.inconsistencyFlag ?? false,
+      pastoralFlag: fields.pastoralFlag ?? false,
+      acuteCrisisFlag: fields.acuteCrisisFlag ?? false,
       summary: fields.summary ?? null,
       ...v2Fields,
     },

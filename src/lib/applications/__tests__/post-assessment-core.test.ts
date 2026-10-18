@@ -50,6 +50,7 @@ import {
   revertPostAssessmentState,
 } from "../post-assessment-core";
 import { RECOMMENDATION_NOT_RECONFIRMED_MESSAGE } from "../recommendation-gate";
+import { MIGRATED_LOCKED_MESSAGE } from "../migration-source";
 
 // ─── Fake Prisma transaction client ───────────────────────────────────────────
 
@@ -298,6 +299,18 @@ describe("revertPostAssessmentState", () => {
       const audit = fakeTx.auditLog.create.mock.calls[0][0];
       expect(audit.data.action).toBe("ASSESSMENT_LIFECYCLE_REVERTED");
       expect(audit.data.metadata.fromState).toBe(from);
+    }
+  );
+
+  it.each(["ROLLED_OVER", "NEW_AWARD"] as const)(
+    "a migrated Grant Tracker %s cannot be reversed",
+    async (from) => {
+      fakeTx = makeFakeTx({ ...withAssessment({ status: from }), migrationSource: "GRANT_TRACKER" });
+      const result = await revertPostAssessmentState("app-1");
+
+      expect(result).toEqual({ success: false, error: MIGRATED_LOCKED_MESSAGE });
+      expect(fakeTx.assessment.update).not.toHaveBeenCalled();
+      expect(fakeTx.auditLog.create).not.toHaveBeenCalled();
     }
   );
 
