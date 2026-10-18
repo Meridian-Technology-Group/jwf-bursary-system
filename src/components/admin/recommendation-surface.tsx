@@ -51,6 +51,7 @@ import {
 import type { OptionScenario } from "@/lib/assessment/recommendation-options";
 import type { ReasonCodeOption } from "@/components/admin/reason-code-selector";
 import { formatPostcodeAreaLabel } from "@/lib/assessment/postcode-area";
+import { isMigrated } from "@/lib/applications/migration-source";
 
 function toNumber(
   value: Decimal | string | number | null | undefined
@@ -336,6 +337,7 @@ export async function RecommendationSurface({
           lastPayableFees={lastPayableFees}
           siblingContext={siblingContext}
           outcomeLocked={outcomeLocked}
+          migrated={isMigrated(application)}
         />
       </div>
     );
