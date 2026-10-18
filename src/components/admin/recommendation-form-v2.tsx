@@ -48,6 +48,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { MIGRATED_LOCKED_MESSAGE } from "@/lib/applications/migration-source";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -182,6 +183,8 @@ export interface RecommendationFormV2Props {
    * server's set-outcome-core enforces the same rule).
    */
   outcomeLocked?: boolean;
+  /** A migrated Grant Tracker award: locked for good, no way back (17 Oct). */
+  migrated?: boolean;
 }
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
@@ -470,6 +473,7 @@ export function RecommendationFormV2({
   lastPayableFees,
   siblingContext,
   outcomeLocked = false,
+  migrated = false,
 }: RecommendationFormV2Props) {
   const router = useRouter();
   // Epic 18 — a post-assessment final state locks the form; so does a legacy
@@ -708,18 +712,22 @@ export function RecommendationFormV2({
                   </Button>
                 </>
               )}
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                onClick={handleRevertState}
-                disabled={isReverting}
-              >
-                <Undo2 className="mr-1.5 h-3.5 w-3.5" aria-hidden="true" />
-                {isReverting
-                  ? "Reverting…"
-                  : POST_ASSESSMENT_META[finalState].revertLabel}
-              </Button>
+              {migrated ? (
+                <p className="text-xs text-muted-foreground">{MIGRATED_LOCKED_MESSAGE}</p>
+              ) : (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={handleRevertState}
+                  disabled={isReverting}
+                >
+                  <Undo2 className="mr-1.5 h-3.5 w-3.5" aria-hidden="true" />
+                  {isReverting
+                    ? "Reverting…"
+                    : POST_ASSESSMENT_META[finalState].revertLabel}
+                </Button>
+              )}
             </div>
           </div>
         </div>
