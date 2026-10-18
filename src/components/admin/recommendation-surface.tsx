@@ -52,6 +52,7 @@ import type { OptionScenario } from "@/lib/assessment/recommendation-options";
 import type { ReasonCodeOption } from "@/components/admin/reason-code-selector";
 import { formatPostcodeAreaLabel } from "@/lib/assessment/postcode-area";
 import { isMigrated } from "@/lib/applications/migration-source";
+import { NO_FLAGS } from "@/lib/assessment/recommendation-flags";
 
 function toNumber(
   value: Decimal | string | number | null | undefined
@@ -338,6 +339,23 @@ export async function RecommendationSurface({
           siblingContext={siblingContext}
           outcomeLocked={outcomeLocked}
           migrated={isMigrated(application)}
+          initialFlags={
+            recommendation
+              ? {
+                  dishonestyFlag: recommendation.dishonestyFlag,
+                  creditRiskFlag: recommendation.creditRiskFlag,
+                  inconsistencyFlag: recommendation.inconsistencyFlag,
+                  pastoralFlag: recommendation.pastoralFlag,
+                  acuteCrisisFlag: recommendation.acuteCrisisFlag,
+                }
+              : {
+                  ...NO_FLAGS,
+                  // Values saved on the assessment before 20 Aug carry over.
+                  dishonestyFlag: assessment.dishonestyFlag,
+                  creditRiskFlag: assessment.creditRiskFlag,
+                }
+          }
+          hasRecommendation={recommendation != null}
         />
       </div>
     );

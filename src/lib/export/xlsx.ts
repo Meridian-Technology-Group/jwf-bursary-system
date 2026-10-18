@@ -119,7 +119,7 @@ const rows_ = (rows: ExportRow[]) => rows as unknown as Record<string, CellValue
  * explicit widths) and returns it as a Buffer.
  */
 export async function buildXlsxBuffer(rows: ExportRow[]): Promise<Buffer> {
-  return buildSheetXlsx(COLUMNS, rows_(rows), "Recommendations");
+  return buildSheetXlsx(COLUMNS, rows_(rows), "Model Variance Audit");
 }
 
 /**
