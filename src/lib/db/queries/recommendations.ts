@@ -31,6 +31,7 @@ export interface UpsertRecommendationInput {
   inconsistencyFlag?: boolean;
   pastoralFlag?: boolean;
   acuteCrisisFlag?: boolean;
+  highFrugalityFlag?: boolean;
   summary?: string | null;
   reasonCodeIds?: string[];
 
@@ -119,6 +120,7 @@ export async function upsertRecommendation(
       inconsistencyFlag: fields.inconsistencyFlag ?? false,
       pastoralFlag: fields.pastoralFlag ?? false,
       acuteCrisisFlag: fields.acuteCrisisFlag ?? false,
+      highFrugalityFlag: fields.highFrugalityFlag ?? false,
       summary: fields.summary ?? null,
       ...v2Fields,
     },
@@ -136,6 +138,7 @@ export async function upsertRecommendation(
       inconsistencyFlag: fields.inconsistencyFlag ?? false,
       pastoralFlag: fields.pastoralFlag ?? false,
       acuteCrisisFlag: fields.acuteCrisisFlag ?? false,
+      highFrugalityFlag: fields.highFrugalityFlag ?? false,
       summary: fields.summary ?? null,
       ...v2Fields,
     },

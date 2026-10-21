@@ -134,6 +134,7 @@ export async function getExportRows(
               inconsistencyFlag: true,
               pastoralFlag: true,
               acuteCrisisFlag: true,
+              highFrugalityFlag: true,
               // CALC-12: v2 min-of-three / gap-tracking fields (CALC-06/08),
               // null for v1 recommendations.
               recommendedPayableFees: true,
@@ -217,6 +218,7 @@ export interface ExportRowSource {
       inconsistencyFlag?: boolean;
       pastoralFlag?: boolean;
       acuteCrisisFlag?: boolean;
+      highFrugalityFlag?: boolean;
       recommendedPayableFees: unknown;
       confirmedPayableFees: unknown;
       gapAmount: unknown;
@@ -269,7 +271,7 @@ export function mapExportRow(app: ExportRowSource): ExportRow {
   const main = mainGapReason((rec?.gapReasons ?? []).map((g) => g.gapReason));
   const mainGapReasonLabel = main ? `${main.code} – ${main.label}` : "";
 
-  // Flags — her six, in her order (17 Oct); Large family from the family type.
+  // Flags — her seven, in her order (17 + 21 Oct); Large family from the family type.
   const flags = raisedFlagLabels(rec, app.assessment?.familyTypeCategory).join(", ");
 
   // Accommodation (17 Oct) — the form's own/rent answer, else the assessment.

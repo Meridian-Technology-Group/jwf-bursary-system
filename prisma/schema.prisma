@@ -719,6 +719,9 @@ model Recommendation {
   inconsistencyFlag         Boolean                    @default(false) @map("inconsistency_flag")
   pastoralFlag              Boolean                    @default(false) @map("pastoral_flag")
   acuteCrisisFlag           Boolean                    @default(false) @map("acute_crisis_flag")
+  /// 21 Oct 2026 (Charlotte) — 7th flag: a family living below the bare
+  /// essentials rather than claiming the support it could get.
+  highFrugalityFlag         Boolean                    @default(false) @map("high_frugality_flag")
   summary                   String?
   /// CALC-02 — v2 min-of-three award + gap tracking (CALC-06, CALC-08). All
   /// nullable/additive; null for every v1 recommendation.
