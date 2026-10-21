@@ -42,7 +42,7 @@ export function isApplyRoute(pathname: string | null): boolean {
 
 export function RailStepper() {
   const pathname = usePathname();
-  const { sections, roundName } = useStepperData();
+  const { sections, roundName, applicationName } = useStepperData();
 
   // Route gate (#4): never show the stepper off the wizard, regardless of any
   // stale store value left over from a prior `/apply` visit.
@@ -56,6 +56,7 @@ export function RailStepper() {
     <PortalSidebarContent
       sections={sections}
       roundName={roundName}
+      applicationName={applicationName}
       basePath="/apply"
       countSynthetic={false}
       chrome="bare"

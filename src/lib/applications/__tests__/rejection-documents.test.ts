@@ -3,16 +3,23 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 vi.mock("@/lib/audit/log", () => ({ createAuditLog: vi.fn(async () => undefined) }));
 
 import { createAuditLog } from "@/lib/audit/log";
-import { removeDocumentsWithRejection } from "../rejection-documents";
+import { removeDocumentsWithRejection, withoutDocumentIds } from "../rejection-documents";
 import type { Tx } from "@/lib/db/prisma";
 
-function fakeTx(found: { id: string; slot: string; filename: string; storagePath: string }[]) {
+function fakeTx(
+  found: { id: string; slot: string; filename: string; storagePath: string }[],
+  sectionRows: { id: string; data: unknown }[] = []
+) {
   return {
     document: {
       findMany: vi.fn(async () => found),
       deleteMany: vi.fn(async () => ({ count: found.length })),
     },
-    applicationSection: { updateMany: vi.fn(async () => ({ count: 1 })) },
+    applicationSection: {
+      updateMany: vi.fn(async () => ({ count: 1 })),
+      findMany: vi.fn(async () => sectionRows),
+      update: vi.fn(async () => ({})),
+    },
   };
 }
 
@@ -51,5 +58,54 @@ describe("removeDocumentsWithRejection (17 Oct 2026)", () => {
       data: { isComplete: false },
     });
     expect(createAuditLog).toHaveBeenCalledTimes(3);
+  });
+
+  it("takes the removed ids out of the section blobs, so completion drops (21 Oct 2026)", async () => {
+    const tx = fakeTx(
+      [{ id: "d3", slot: "COUNCIL_TAX", filename: "ct.pdf", storagePath: "a/ct.pdf" }],
+      [
+        { id: "s-assets", data: { councilTaxDocumentId: "d3", propertyOwnership: "RENT" } },
+        { id: "s-child", data: { firstName: "Testchild" } },
+      ]
+    );
+    await removeDocumentsWithRejection(tx as unknown as Tx, { ...base, documentIds: ["d3"] });
+
+    expect(tx.applicationSection.findMany).toHaveBeenCalledWith({
+      where: { applicationId: "app-1" },
+      select: { id: true, data: true },
+    });
+    expect(tx.applicationSection.update).toHaveBeenCalledTimes(1);
+    expect(tx.applicationSection.update).toHaveBeenCalledWith({
+      where: { id: "s-assets" },
+      data: { data: { propertyOwnership: "RENT" }, isComplete: false },
+    });
+  });
+});
+
+describe("withoutDocumentIds", () => {
+  const ids = new Set(["d1", "d2"]);
+
+  it("drops keys holding a removed id and filters arrays, at any depth", () => {
+    const blob = {
+      councilTaxDocumentId: "d1",
+      parent1Income: { employed: { p60DocumentId: "d2", annualSalaryPaye: 30000 } },
+      bankStatementDocumentIds: ["d1", "d9"],
+      savings: [{ statementDocumentId: "d2", amount: 5 }],
+    };
+    expect(withoutDocumentIds(blob, ids)).toEqual({
+      changed: true,
+      value: {
+        parent1Income: { employed: { annualSalaryPaye: 30000 } },
+        bankStatementDocumentIds: ["d9"],
+        savings: [{ amount: 5 }],
+      },
+    });
+  });
+
+  it("returns the same value, unchanged, when no removed id is referenced", () => {
+    const blob = { councilTaxDocumentId: "d9", notes: "d1 is mentioned in text" };
+    const result = withoutDocumentIds(blob, ids);
+    expect(result.changed).toBe(false);
+    expect(result.value).toBe(blob);
   });
 });

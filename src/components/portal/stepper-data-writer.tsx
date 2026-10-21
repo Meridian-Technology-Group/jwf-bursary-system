@@ -24,6 +24,7 @@ import type { SidebarSection } from "./portal-sidebar-sections";
 interface StepperDataWriterProps {
   sections: SidebarSection[] | null;
   roundName?: string;
+  applicationName?: string;
 }
 
 /**
@@ -44,17 +45,19 @@ function sectionsSignature(sections: SidebarSection[] | null): string {
 export function StepperDataWriter({
   sections,
   roundName,
+  applicationName,
 }: StepperDataWriterProps) {
   const setStepperData = useSetStepperData();
   const signature = sectionsSignature(sections);
 
   useEffect(() => {
-    setStepperData({ sections, roundName });
-    // `signature` captures the meaningful section state; `roundName` is a scalar.
+    setStepperData({ sections, roundName, applicationName });
+    // `signature` captures the meaningful section state; `roundName` and
+    // `applicationName` are scalars.
     // `sections`/`setStepperData` are intentionally not deps — the signature is
     // the change trigger and the setter identity is stable.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [signature, roundName]);
+  }, [signature, roundName, applicationName]);
 
   return null;
 }

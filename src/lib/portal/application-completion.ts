@@ -2,7 +2,7 @@
  * Epic 22 D-4 — ONE "% complete" for an application, wherever it is shown.
  *
  * The measure is the wizard rail's item-level one: across the counted
- * sections, Σ satisfied items ÷ Σ items (a saved form counts as one item, each
+ * sections, Σ satisfied items ÷ Σ items (a form with its green tick counts as one item, each
  * applicable document/structure rule as another — see `getSectionGapStatuses`).
  * The rail, My Bursary Application(s) and (later) the home page and schedule
  * all read this function, so the number never disagrees between pages.
