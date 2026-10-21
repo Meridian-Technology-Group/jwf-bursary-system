@@ -34,9 +34,23 @@ import {
   type SidebarSection,
 } from "@/components/portal/portal-sidebar-sections";
 
+/**
+ * The rail's heading for the form: the child's first name, so a parent filling
+ * in a form per child can see which one they are in.
+ */
+export function childApplicationName(application: {
+  childFirstName: string | null;
+  childName: string;
+}): string {
+  const name = application.childFirstName?.trim() || application.childName.trim();
+  return `${name}'s application`;
+}
+
 export interface RailStepperData {
   sections: SidebarSection[];
   roundName?: string;
+  /** "Testchild's application" — which child's form this is (21 Oct 2026). */
+  applicationName?: string;
 }
 
 /**
@@ -93,5 +107,7 @@ export async function loadRailStepper(): Promise<RailStepperData | null> {
     ? `${application.round.academicYear} Assessment Round`
     : undefined;
 
-  return { sections, roundName };
+  const applicationName = childApplicationName(application);
+
+  return { sections, roundName, applicationName };
 }
