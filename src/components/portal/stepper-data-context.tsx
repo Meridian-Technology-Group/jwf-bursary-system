@@ -50,6 +50,7 @@ import type { SidebarSection } from "./portal-sidebar-sections";
 export interface StepperData {
   sections: SidebarSection[] | null;
   roundName?: string;
+  applicationName?: string;
 }
 
 /** Read shape: the current stepper payload (null sections = nothing to show). */
@@ -77,8 +78,12 @@ export function StepperDataProvider({ children }: { children: ReactNode }) {
 
   // Memoise the read value so consumers only re-render when the payload changes.
   const value = useMemo<StepperData>(
-    () => ({ sections: data.sections, roundName: data.roundName }),
-    [data.sections, data.roundName]
+    () => ({
+      sections: data.sections,
+      roundName: data.roundName,
+      applicationName: data.applicationName,
+    }),
+    [data.sections, data.roundName, data.applicationName]
   );
 
   return (

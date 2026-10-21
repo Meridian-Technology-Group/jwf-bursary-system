@@ -152,8 +152,14 @@ export async function getSectionGapStatuses(
     const errorGaps = gaps.filter((g) => g.severity === "error");
     const isFullyValid = isDbComplete && errorGaps.length === 0;
 
+    // The form itself is one item, satisfied only once the section has its
+    // green tick: a section saved without it, or untick'd by staff ("Needs
+    // correction", a rejection), must pull the completion figure below 100%.
     const total = sectionItemTotal(rules, blob);
-    const satisfied = isStarted ? Math.max(0, total - errorGaps.length) : 0;
+    const formItemOpen = isDbComplete ? 0 : 1;
+    const satisfied = isStarted
+      ? Math.max(0, total - errorGaps.length - formItemOpen)
+      : 0;
 
     return {
       sectionType,
