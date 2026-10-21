@@ -450,6 +450,32 @@ describe("rule 6 — recommendation awaiting outcome >3d", () => {
     const res = evaluateWatchlist(input, NOW);
     expect(ruleById(res, "RECOMMENDATION_AWAITING_OUTCOME")).toBeUndefined();
   });
+
+  // A migrated award is locked with no outcome written (Charlotte, 21 Oct
+  // 2026: 267 "awaiting an outcome" on migration staging).
+  it.each([
+    AssessmentStatus.NEW_AWARD,
+    AssessmentStatus.ROLLED_OVER,
+    AssessmentStatus.WAITING_LIST,
+    AssessmentStatus.CLOSED_ARCHIVED,
+  ])("does NOT fire, nor flag stalled, for a %s lock with no outcome", (lock) => {
+    const input = makeInput({
+      applications: [
+        makeApp({
+          status: "COMPLETED",
+          outcome: null,
+          assessmentId: "ass-1",
+          assessmentStatus: lock,
+          recommendationCreatedAt: ago(T.awaitingOutcome + 1000),
+          latestAnyAuditAt: ago(T.stalled + 1000),
+        }),
+      ],
+    });
+    const res = evaluateWatchlist(input, NOW);
+    expect(ruleById(res, "RECOMMENDATION_AWAITING_OUTCOME")).toBeUndefined();
+    expect(ruleById(res, "ASSESSMENT_STALLED")).toBeUndefined();
+    expect(ruleById(res, "READY_NOT_EXPORTED")).toBeUndefined();
+  });
 });
 
 // ─── Rule 7 — ready but not exported ─────────────────────────────────────────

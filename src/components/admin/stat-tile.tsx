@@ -13,7 +13,7 @@ import { cn } from "@/lib/utils";
 
 export interface TileConfig {
   label: string;
-  subLabel: string;
+  subLabel?: string;
   icon: React.ElementType;
   iconBg: string;
   iconColor: string;
@@ -129,7 +129,9 @@ export function StatTile({
             ))}
           </p>
         )}
-        <p className="mt-1 text-xs text-slate-400">{config.subLabel}</p>
+        {config.subLabel && (
+          <p className="mt-1 text-xs text-slate-400">{config.subLabel}</p>
+        )}
       </div>
 
       {/* Arrow for clickable tiles */}
