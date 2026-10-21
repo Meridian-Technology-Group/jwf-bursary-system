@@ -208,6 +208,7 @@ export async function saveRecommendationFlagsAction(
       inconsistencyFlag: flags.inconsistencyFlag === true,
       pastoralFlag: flags.pastoralFlag === true,
       acuteCrisisFlag: flags.acuteCrisisFlag === true,
+      highFrugalityFlag: flags.highFrugalityFlag === true,
     };
 
     const result = await withUserContext(user.id, user.role as RlsRole, async (tx) => {

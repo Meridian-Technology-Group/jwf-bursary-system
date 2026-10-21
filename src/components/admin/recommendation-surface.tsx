@@ -347,6 +347,7 @@ export async function RecommendationSurface({
                   inconsistencyFlag: recommendation.inconsistencyFlag,
                   pastoralFlag: recommendation.pastoralFlag,
                   acuteCrisisFlag: recommendation.acuteCrisisFlag,
+                  highFrugalityFlag: recommendation.highFrugalityFlag,
                 }
               : {
                   ...NO_FLAGS,
