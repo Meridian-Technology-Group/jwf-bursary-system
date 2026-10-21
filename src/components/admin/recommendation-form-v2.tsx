@@ -599,7 +599,7 @@ export function RecommendationFormV2({
   );
   const [selectedCloseReasonId, setSelectedCloseReasonId] = React.useState<string>("");
 
-  // ── Flags (17 Oct 2026) — her six; Large family is derived ───────────────
+  // ── Flags (17 + 21 Oct 2026) — her seven; Large family is derived ───────
   const [flags, setFlags] = React.useState<StoredRecommendationFlags>(initialFlags);
   const [isSavingFlags, setIsSavingFlags] = React.useState(false);
   const [flagsMessage, setFlagsMessage] = React.useState<{

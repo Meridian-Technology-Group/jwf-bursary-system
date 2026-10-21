@@ -51,6 +51,14 @@ export const WATCHLIST_THRESHOLDS = {
 
 export type WatchlistThresholds = typeof WATCHLIST_THRESHOLDS;
 
+/** Epic 18 locks: decided, though they carry no `outcome`. */
+const DECIDED_ASSESSMENT_STATUSES: readonly AssessmentStatus[] = [
+  AssessmentStatus.NEW_AWARD,
+  AssessmentStatus.ROLLED_OVER,
+  AssessmentStatus.WAITING_LIST,
+  AssessmentStatus.CLOSED_ARCHIVED,
+];
+
 // ─── Rule identifiers ───────────────────────────────────────────────────────────
 
 export type WatchlistRuleId =
@@ -224,7 +232,13 @@ export function evaluateWatchlist(
 
   // PR-6a: "decided" is the presence of an assessment outcome (any of AWARDED /
   // QUALIFIES_NOT_AWARDED / DOES_NOT_QUALIFY), not the fused QUALIFIES/DNQ status.
-  const isDecided = (app: WatchlistInputApplication) => app.outcome != null;
+  // Epic 18: a locked assessment is decided too, though the locks never write
+  // `outcome` — as in `deriveReviewPhase`. Without this every migrated award
+  // showed as "awaiting an outcome" (Charlotte, 21 Oct 2026).
+  const isDecided = (app: WatchlistInputApplication) =>
+    app.outcome != null ||
+    (app.assessmentStatus !== null &&
+      DECIDED_ASSESSMENT_STATUSES.includes(app.assessmentStatus));
 
   // Rule 3 — submitted (awaiting review), missing required docs (blocker).
   // "Submitted, awaiting review" = form SUBMITTED, not decided, no assessment
@@ -252,14 +266,15 @@ export function evaluateWatchlist(
     })
     .map((app) => app.id);
 
-  // Rule 5 — assessment stalled (warning): assessment exists, not COMPLETED,
-  // no audit event in >5d. Apps with no audit activity at all (latestAnyAuditAt
+  // Rule 5 — assessment stalled (warning): assessment exists, not COMPLETED or
+  // decided, no audit event in >5d. Apps with no audit activity at all (latestAnyAuditAt
   // null) DO trip — an assessment that has produced zero events is the worst
   // case of stalled.
   const rule5Candidates = input.applications
     .filter((app) => {
       if (app.assessmentId === null) return false;
       if (app.assessmentStatus === AssessmentStatus.COMPLETED) return false;
+      if (isDecided(app)) return false;
       const latest = app.latestAnyAuditAt;
       return latest === null || latest.getTime() < nowMs - thresholds.stalled;
     })
@@ -301,9 +316,11 @@ export function evaluateWatchlist(
   // round (with metadata.school === that school OR "ALL") whose createdAt is
   // strictly AFTER that latest decision. An export taken before the most-recent
   // decision does not "cover" the newer decision, so the school re-flags.
+  // Only an outcome counts here: a locked migrated award was never a decision
+  // waiting to be exported.
   const latestDecisionPerSchool = new Map<School, number>();
   for (const app of input.applications) {
-    if (!isDecided(app)) continue;
+    if (app.outcome == null) continue;
     if (app.recommendationCreatedAt === null) continue;
     const t = app.recommendationCreatedAt.getTime();
     const prev = latestDecisionPerSchool.get(app.school);

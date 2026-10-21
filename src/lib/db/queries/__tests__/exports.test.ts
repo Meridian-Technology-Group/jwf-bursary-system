@@ -170,7 +170,7 @@ describe("mapExportRow", () => {
 });
 
 describe("mapExportRow — flags and accommodation (17 Oct 2026)", () => {
-  it("lists her six flags in her order, Large family from the family type", () => {
+  it("lists her flags in her order, Large family from the family type", () => {
     const source = baseSource();
     source.assessment!.familyTypeCategory = 5;
     source.assessment!.recommendation = {
@@ -178,8 +178,11 @@ describe("mapExportRow — flags and accommodation (17 Oct 2026)", () => {
       dishonestyFlag: true,
       acuteCrisisFlag: true,
       pastoralFlag: true,
+      highFrugalityFlag: true,
     };
-    expect(mapExportRow(source).flags).toBe("Dishonesty, Large family, Pastoral, Acute Crisis");
+    expect(mapExportRow(source).flags).toBe(
+      "Dishonesty, Large family, Pastoral, Acute Crisis, High Frugality"
+    );
   });
 
   it("three children is not a large family", () => {

@@ -4,9 +4,10 @@
  * Server component — requires ADMIN, ASSESSOR or VIEWER role.
  *
  * Gives admins a CRM-like situational read of a single round:
- *   header + stage strip · Needs-Attention lane · 4 pipeline tiles ·
- *   time/progress gauge · outcomes split · school breakdown ·
- *   export readiness · activity feed.
+ *   header + stage strip · round scenarios · Needs-Attention lane ·
+ *   4 pipeline tiles · time/progress gauge · school breakdown · activity feed.
+ * The outcomes split and export readiness panels were taken off, and the
+ * scenarios moved up under the header (Charlotte, 21 Oct 2026).
  *
  * All data comes from ONE `getRoundCockpit(tx, id)` bundle (which itself wraps
  * `getRound` + `getRoundWatchlist`, so neither is called again here) plus the
@@ -37,8 +38,6 @@ import { ActivityFeed } from "@/components/admin/charts/activity-feed";
 import { NeedsAttentionLane } from "@/components/rounds/needs-attention-lane";
 import { RoundStageStrip } from "@/components/rounds/round-stage-strip";
 import { RoundProgressGauge } from "@/components/rounds/round-progress-gauge";
-import { RoundOutcomesBar } from "@/components/rounds/round-outcomes-bar";
-import { ExportReadinessPanel } from "@/components/rounds/export-readiness-panel";
 import {
   RoundWindowsEditor,
   type RoundWindowRowDefaults,
@@ -101,9 +100,6 @@ export default async function RoundDetailPage({
     watchlist,
     pipeline,
     timeProgress,
-    outcomes,
-    outcomesDelta,
-    exportReadiness,
     stageStrip,
   } = cockpit;
 
@@ -192,8 +188,7 @@ export default async function RoundDetailPage({
     {
       count: pipeline.decided.count,
       config: {
-        label: "Decided",
-        subLabel: "Qualifies + does not qualify",
+        label: "Finalised Recommendations",
         icon: Gavel,
         iconBg: "bg-green-50",
         iconColor: "text-green-600",
@@ -314,6 +309,14 @@ export default async function RoundDetailPage({
         </div>
       </header>
 
+      {/* ── Round scenarios (Epic 14 D1, CG-01) ─────────────────────────── */}
+      <RoundWindowsEditor
+        roundId={round.id}
+        initial={windowValues}
+        defaults={windowDefaults}
+        readOnly={user.role !== Role.ADMIN}
+      />
+
       {/* ── Top grid: Needs-Attention (left) · Pipeline tiles (right) ─────── */}
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         <NeedsAttentionLane rules={watchlist.rules} />
@@ -332,14 +335,10 @@ export default async function RoundDetailPage({
         </section>
       </div>
 
-      {/* ── Mid grid: Progress gauge · Outcomes ──────────────────────────── */}
+      {/* ── Progress gauge · School split ────────────────────────────────── */}
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         <RoundProgressGauge timeProgress={timeProgress} />
-        <RoundOutcomesBar outcomes={outcomes} delta={outcomesDelta} />
-      </div>
 
-      {/* ── School split · Export readiness ──────────────────────────────── */}
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         <section
           aria-labelledby="school-split-heading"
           className="flex flex-col rounded-xl border border-slate-200 bg-white p-5 shadow-sm"
@@ -375,20 +374,7 @@ export default async function RoundDetailPage({
             </ul>
           )}
         </section>
-
-        <ExportReadinessPanel
-          exportReadiness={exportReadiness}
-          roundId={round.id}
-        />
       </div>
-
-      {/* ── Round scenarios (Epic 14 D1, CG-01) ─────────────────────────── */}
-      <RoundWindowsEditor
-        roundId={round.id}
-        initial={windowValues}
-        defaults={windowDefaults}
-        readOnly={user.role !== Role.ADMIN}
-      />
 
       {/* ── Activity feed ────────────────────────────────────────────────── */}
       <section
