@@ -34,6 +34,13 @@ export function defaultSchoolAgeChildren(familyTypeCategory: number): number {
 export interface LoadAccount extends CanonicalAccount {
   reference: string
   referenceCorrected?: string | null
+  /**
+   * Her ruling of 21 Oct 2026 ("no more new awards"): every migrated account
+   * loads as a rolling-over bursary. A GT new award keeps its first-assessment
+   * reason code; only the application type, the lock and the contact's
+   * situation change.
+   */
+  rollOver?: boolean | null
   email: string
   surname: string | null
   forenames: string | null
@@ -201,6 +208,7 @@ export function planAccount(
 
   const isNew = a.type === 'New award'
   if (!isNew && a.type !== 'Rolling-over') throw new PlanError(`unexpected bursary type ${a.type}`)
+  const rolling = !isNew || a.rollOver === true
   const school = a.school
   const entryYearGroup = `Y${a.sheetYear}` as EntryYearGroup
   const childFirstName = a.forenames || null
@@ -327,7 +335,7 @@ export function planAccount(
       childName,
       childDob: dob ? dobAsDate(dob) : null,
       school,
-      situation: isNew ? 'NEW' : 'ROLLING_OVER',
+      situation: rolling ? 'ROLLING_OVER' : 'NEW',
       entryYear: ENTRY_YEAR,
       entryYearGroup,
       notes: `Migrated from Grant Tracker ${today}`,
@@ -341,15 +349,15 @@ export function planAccount(
       childLastName,
       entryYear: ENTRY_YEAR,
       entryYearGroup,
-      applicationType: isNew ? 'NEW' : 'ROLLING_OVER',
-      isReassessment: !isNew,
+      applicationType: rolling ? 'ROLLING_OVER' : 'NEW',
+      isReassessment: rolling,
       formStatus: 'SUBMITTED',
       submittedAt: completedAt,
       migrationSource: MIGRATION_SOURCE,
     },
     assessmentSave,
     assessmentLock: {
-      status: isNew ? 'NEW_AWARD' : 'ROLLED_OVER',
+      status: rolling ? 'ROLLED_OVER' : 'NEW_AWARD',
       awardFundType: a.fund as AwardFundType,
       completedAt,
       synopsis: composeSynopsis(a.synopsis, a.latest?.completed, today, a.latest?.received, referenceLeg),

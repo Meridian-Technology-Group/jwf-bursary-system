@@ -222,6 +222,14 @@ describe('planAccount (02-target-model Part 1)', () => {
     expect(p.reasonLabels).toEqual([FIRST_ASSESSMENT])
   })
 
+  it('her 21 Oct ruling: a new award loads as rolling-over, keeping its first-assessment code', () => {
+    const p = planAccount(account({ type: 'New award', yoyCodes: 'n/a', rollOver: true }), input(), output(), '2026-09-29')
+    expect(p.application).toMatchObject({ applicationType: 'ROLLING_OVER', isReassessment: true })
+    expect(p.contact.situation).toBe('ROLLING_OVER')
+    expect(p.assessmentLock.status).toBe('ROLLED_OVER')
+    expect(p.reasonLabels).toEqual([FIRST_ASSESSMENT])
+  })
+
   it('an OP account: 0% VAT and its own fee on the account', () => {
     const p = planAccount(account({ school: 'OP_PARTNER', fees: 17000 }), input(0), output(), '2026-09-29')
     expect(p.assessmentLock.vatRate).toBe(0)
