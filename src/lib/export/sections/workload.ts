@@ -46,6 +46,7 @@ import {
   type AccountState,
   type SubmissionStatus,
 } from "@/lib/export/fields";
+import { ERASED_ON_REQUEST_LABEL } from "@/lib/retention/policy";
 import { ACCOUNT_VALUES, APPLICATION_TYPE_VALUES, parseWith, type ParseResult } from "./filters";
 
 // ─── Filters ──────────────────────────────────────────────────────────────────
@@ -118,8 +119,23 @@ export interface WorkloadApplicationSource {
   leadApplicantId: string;
   leadApplicant: { firstName: string | null; lastName: string | null; email: string; phone: string | null };
   contact: { phone: string | null } | null;
-  bursaryAccount: { status: BursaryAccountStatus } | null;
-  assessment: { status: AssessmentStatus; completedAt: Date | null } | null;
+  bursaryAccount: {
+    status: BursaryAccountStatus;
+    closedAt?: Date | null;
+    closeReason?: { label: string } | null;
+  } | null;
+  assessment: {
+    status: AssessmentStatus;
+    completedAt: Date | null;
+    archivedAt?: Date | null;
+    archiveCloseReason?: { label: string } | null;
+  } | null;
+  /** The staff close (Manage → Close application). */
+  closedAt?: Date | null;
+  closeReason?: { label: string } | null;
+  /** Set by an erasure or a retention purge. */
+  retentionStage?: string | null;
+  retentionStageAt?: Date | null;
 }
 
 export interface WorkloadInvitationSource {
@@ -147,6 +163,25 @@ const childFullName = (s: { childName: string | null; childFirstName?: string | 
   return fullName(p.firstName, p.lastName);
 };
 
+/**
+ * When and why the case closed (Charlotte, 22 Oct 2026). The final staff close
+ * wins; then the bursary account's close; then an archived assessment; then an
+ * erasure on request, which records no reason of its own ("EOR").
+ */
+export function workloadClosing(app: WorkloadApplicationSource): { closedAt: Date | null; closeReason: string } {
+  if (app.closedAt) return { closedAt: app.closedAt, closeReason: app.closeReason?.label ?? "" };
+  if (app.bursaryAccount?.closedAt) {
+    return { closedAt: app.bursaryAccount.closedAt, closeReason: app.bursaryAccount.closeReason?.label ?? "" };
+  }
+  if (app.assessment?.archivedAt) {
+    return { closedAt: app.assessment.archivedAt, closeReason: app.assessment.archiveCloseReason?.label ?? "" };
+  }
+  if (app.retentionStage === "ANONYMISED") {
+    return { closedAt: app.retentionStageAt ?? null, closeReason: ERASED_ON_REQUEST_LABEL };
+  }
+  return { closedAt: null, closeReason: "" };
+}
+
 /** An application → its Section 1 row. `completion` is the parent's figure (unused once submitted). */
 export function mapWorkloadApplication(app: WorkloadApplicationSource, round: WorkloadRound, completion: number): WorkloadRow {
   const status = submissionStatus(app.formStatus);
@@ -156,6 +191,7 @@ export function mapWorkloadApplication(app: WorkloadApplicationSource, round: Wo
     round,
   ).deadline;
   const account = accountState(app.bursaryAccount?.status);
+  const closing = workloadClosing(app);
   return {
     account,
     applicationType: app.applicationType,
@@ -181,6 +217,8 @@ export function mapWorkloadApplication(app: WorkloadApplicationSource, round: Wo
       assessmentStatus: app.assessment ? assessmentStatusLabel(app.assessment.status) : "",
       bursaryAccount: accountStateLabel(app.bursaryAccount?.status),
       assessmentCompletedAt: app.assessment?.completedAt ?? null,
+      closedAt: closing.closedAt,
+      closeReason: closing.closeReason,
     },
   };
 }
@@ -219,6 +257,8 @@ export function mapWorkloadInvitation(inv: WorkloadInvitationSource, round: Work
       assessmentStatus: "",
       bursaryAccount: accountStateLabel(inv.bursaryAccount?.status),
       assessmentCompletedAt: null,
+      closedAt: null,
+      closeReason: "",
     },
   };
 }
@@ -295,8 +335,14 @@ export async function buildWorkloadRows(tx: Tx, filters: WorkloadFilters): Promi
       leadApplicantId: true,
       leadApplicant: { select: { firstName: true, lastName: true, email: true, phone: true } },
       contact: { select: { phone: true } },
-      bursaryAccount: { select: { status: true } },
-      assessment: { select: { status: true, completedAt: true } },
+      bursaryAccount: { select: { status: true, closedAt: true, closeReason: { select: { label: true } } } },
+      assessment: {
+        select: { status: true, completedAt: true, archivedAt: true, archiveCloseReason: { select: { label: true } } },
+      },
+      closedAt: true,
+      closeReason: { select: { label: true } },
+      retentionStage: true,
+      retentionStageAt: true,
     },
     orderBy: [{ reference: "asc" }, { id: "asc" }],
   });

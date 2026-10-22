@@ -50,6 +50,7 @@ import { validateReferenceInput } from "@/lib/applications/reference";
 import { isAwardFundValidForSchool, AWARD_FUND_LABELS } from "@/lib/assessment/award-fund";
 import type { AwardFundType } from "@prisma/client";
 import { isMigrated, MIGRATED_LOCKED_MESSAGE } from "@/lib/applications/migration-source";
+import { ACCOUNT_CLOSED_REVERT_MESSAGE, isClosedByStaff } from "@/lib/bursary-accounts/closed-by-staff";
 
 export type PostAssessmentResult =
   | { success: true }
@@ -351,6 +352,7 @@ export async function revertPostAssessmentState(
           id: true,
           migrationSource: true,
           assessment: { select: { id: true, status: true } },
+          bursaryAccount: { select: { status: true, closeReasonId: true } },
         },
       });
       if (!application?.assessment) {
@@ -358,6 +360,9 @@ export async function revertPostAssessmentState(
       }
       if (isMigrated(application)) {
         return { success: false as const, error: MIGRATED_LOCKED_MESSAGE };
+      }
+      if (isClosedByStaff(application.bursaryAccount)) {
+        return { success: false as const, error: ACCOUNT_CLOSED_REVERT_MESSAGE };
       }
       const assessment = application.assessment;
 

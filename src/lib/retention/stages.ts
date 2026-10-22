@@ -16,6 +16,10 @@
  *                          reference become "XXXX", the assessment is kept
  *                          anonymous (its prose scrubbed).
  *
+ * The two that anonymise also blank the child's name and reference (and the
+ * parent's, when their profile goes) in the family's history trail — see
+ * `audit-scrub.ts`.
+ *
  * Each one re-reads the application and re-runs the planner INSIDE its
  * transaction and refuses when the stage is not due (an account reopened since
  * the cron listed it, a stage already done) — so each is idempotent. Storage
@@ -31,6 +35,7 @@ import { createAuditLog } from "@/lib/audit/log";
 import { AUDIT_ACTIONS, AUDIT_ENTITY_TYPES } from "@/lib/audit/actions";
 import { CONTACT_SCRUB, RECOMMENDATION_FREETEXT_SCRUB, ASSESSMENT_FREETEXT_SCRUB, profileScrubData } from "@/lib/retention/scrub-map";
 import { decideLeadProfileErasure } from "@/lib/retention/close-purge";
+import { auditNeedles, scrubAuditMentions, type AuditScope } from "@/lib/retention/audit-scrub";
 import { canRequestErasure, planRetention, type RetentionPlan, type RetentionRecord, type RetentionStage } from "@/lib/retention/policy";
 
 /** What an anonymised identity reads as (her rule 3: "XXXX"). */
@@ -104,8 +109,46 @@ async function setStage(tx: Tx, applicationId: string, stage: RetentionStage, no
   await tx.application.update({ where: { id: applicationId }, data: { retentionStage: stage, retentionStageAt: now } });
 }
 
-/** The child's identity on the application, its rejection rows and its contact-register row. */
-async function anonymiseIdentity(tx: Tx, row: RetentionRow) {
+/**
+ * Everything of this child's that names them, read BEFORE anything is
+ * scrubbed: the contact-register rows, the invitations (an accepted invitation
+ * is not linked to the application, so it is found through its contact row),
+ * and the parent's own identifiers for the history-trail scrub.
+ */
+async function loadFamily(tx: Tx, row: RetentionRow) {
+  const contacts = await tx.contact.findMany({
+    where: {
+      OR: [
+        { profileId: row.leadApplicantId, childName: row.childName },
+        ...(row.bursaryAccountId ? [{ bursaryAccountId: row.bursaryAccountId }] : []),
+      ],
+    },
+    select: { id: true },
+  });
+  const contactIds = contacts.map((c) => c.id);
+  const invitations = await tx.invitation.findMany({
+    where: { OR: [{ applicationId: row.id }, ...(contactIds.length > 0 ? [{ contactId: { in: contactIds } }] : [])] },
+    select: { id: true },
+  });
+  const lead = await tx.profile.findUnique({
+    where: { id: row.leadApplicantId },
+    select: { email: true, firstName: true, lastName: true },
+  });
+  const scope: AuditScope = {
+    applicationId: row.id,
+    assessmentId: row.assessment?.id ?? null,
+    bursaryAccountId: row.bursaryAccountId,
+    leadApplicantId: row.leadApplicantId,
+    contactIds,
+    invitationIds: invitations.map((i) => i.id),
+  };
+  return { scope, lead };
+}
+
+type Family = Awaited<ReturnType<typeof loadFamily>>;
+
+/** The child's identity on the application, its rejection rows, contact-register rows and invitations. */
+async function anonymiseIdentity(tx: Tx, row: RetentionRow, family: Family) {
   await tx.application.update({
     where: { id: row.id },
     data: { childName: ANONYMISED, childFirstName: null, childLastName: null, childDob: null, reference: ANONYMISED },
@@ -116,19 +159,29 @@ async function anonymiseIdentity(tx: Tx, row: RetentionRow) {
       data: { childName: ANONYMISED, reference: ANONYMISED, message: null },
     })
   ).count;
-  const contacts = (
-    await tx.contact.updateMany({
-      where: {
-        OR: [
-          { profileId: row.leadApplicantId, childName: row.childName },
-          ...(row.bursaryAccountId ? [{ bursaryAccountId: row.bursaryAccountId }] : []),
-        ],
-      },
-      data: { ...CONTACT_SCRUB, archivedAt: new Date() },
-    })
-  ).count;
-  const invitations = (await tx.invitation.deleteMany({ where: { applicationId: row.id } })).count;
+  const { contactIds, invitationIds } = family.scope;
+  const contacts =
+    contactIds.length > 0
+      ? (await tx.contact.updateMany({ where: { id: { in: contactIds } }, data: { ...CONTACT_SCRUB, archivedAt: new Date() } })).count
+      : 0;
+  const invitations =
+    invitationIds.length > 0 ? (await tx.invitation.deleteMany({ where: { id: { in: invitationIds } } })).count : 0;
   return { rejections, contacts, invitations };
+}
+
+/**
+ * The history trail last, once the parent's fate is known: the child's
+ * reference and name always; the parent's name and email only when their
+ * profile went too (a parent with another live child is still on record).
+ */
+async function scrubHistory(tx: Tx, row: RetentionRow, family: Family, leadErased: boolean): Promise<number> {
+  const lead = family.lead;
+  const needles = auditNeedles([
+    row.reference,
+    row.childName,
+    ...(leadErased && lead ? [lead.email, [lead.firstName, lead.lastName].filter(Boolean).join(" ")] : []),
+  ]);
+  return scrubAuditMentions(tx, family.scope, needles);
 }
 
 /** The parent's profile goes only when nothing else of theirs is live. */
@@ -181,14 +234,17 @@ export async function purgeAssessment(tx: Tx, applicationId: string, now: Date):
     synopsisEntries = (await tx.accountSynopsisEntry.deleteMany({ where: { bursaryAccountId: row.bursaryAccountId } })).count;
     await tx.bursaryAccount.update({ where: { id: row.bursaryAccountId }, data: { childName: ANONYMISED, childDob: null } });
   }
-  const identity = await anonymiseIdentity(tx, row);
+  const family = await loadFamily(tx, row);
+  const identity = await anonymiseIdentity(tx, row, family);
   await setStage(tx, applicationId, "ASSESSMENT_PURGED", now);
   const lead = await maybeEraseLead(tx, row);
+  const historyRows = await scrubHistory(tx, row, family, lead.erased);
   await createAuditLog(tx, {
     action: AUDIT_ACTIONS.RETENTION_ASSESSMENT_PURGED,
     entityType: AUDIT_ENTITY_TYPES.Application,
     entityId: applicationId,
-    context: `Retention (${plan.rule}): assessment purged — ${row.reference}`,
+    // No reference: the name was just scrubbed from the history trail.
+    context: `Retention (${plan.rule}): assessment purged`,
     metadata: {
       rule: plan.rule,
       anchor: plan.anchor?.toISOString() ?? null,
@@ -197,6 +253,7 @@ export async function purgeAssessment(tx: Tx, applicationId: string, now: Date):
       sectionsDeleted: removed.sectionsDeleted,
       synopsisEntries,
       ...identity,
+      historyRows,
       leadProfile: lead.erased ? "erased" : "retained",
     },
   });
@@ -222,9 +279,11 @@ export async function anonymiseForErasure(tx: Tx, applicationId: string, now: Da
     await tx.assessmentChecklist.deleteMany({ where: { assessmentId: row.assessment.id } });
     await tx.recommendation.updateMany({ where: { assessmentId: row.assessment.id }, data: { ...RECOMMENDATION_FREETEXT_SCRUB } });
   }
-  const identity = await anonymiseIdentity(tx, row);
+  const family = await loadFamily(tx, row);
+  const identity = await anonymiseIdentity(tx, row, family);
   await setStage(tx, applicationId, "ANONYMISED", now);
   const lead = await maybeEraseLead(tx, row);
+  const historyRows = await scrubHistory(tx, row, family, lead.erased);
   await createAuditLog(tx, {
     userId: requestedBy,
     action: AUDIT_ACTIONS.RETENTION_ERASURE_REQUEST,
@@ -235,6 +294,7 @@ export async function anonymiseForErasure(tx: Tx, applicationId: string, now: Da
       documentsDeleted: removed.documentsDeleted,
       sectionsDeleted: removed.sectionsDeleted,
       ...identity,
+      historyRows,
       leadProfile: lead.erased ? "erased" : "retained",
       assessmentKept: row.assessment != null,
     },

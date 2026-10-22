@@ -52,6 +52,7 @@ import type { OptionScenario } from "@/lib/assessment/recommendation-options";
 import type { ReasonCodeOption } from "@/components/admin/reason-code-selector";
 import { formatPostcodeAreaLabel } from "@/lib/assessment/postcode-area";
 import { isMigrated } from "@/lib/applications/migration-source";
+import { isClosedByStaff } from "@/lib/bursary-accounts/closed-by-staff";
 import { NO_FLAGS } from "@/lib/assessment/recommendation-flags";
 
 function toNumber(
@@ -193,6 +194,7 @@ export async function RecommendationSurface({
     siblingLinks,
     gapReasonRows,
     lastRecPayable,
+    account,
   ] = await withUserContext(user.id, user.role as RlsRole, (tx) =>
     Promise.all([
       getRecommendation(tx, assessment.id),
@@ -207,6 +209,12 @@ export async function RecommendationSurface({
             application.bursaryAccountId,
             application.roundId
           )
+        : Promise.resolve(null),
+      application.bursaryAccountId
+        ? tx.bursaryAccount.findUnique({
+            where: { id: application.bursaryAccountId },
+            select: { status: true, closeReasonId: true },
+          })
         : Promise.resolve(null),
     ])
   );
@@ -339,6 +347,7 @@ export async function RecommendationSurface({
           siblingContext={siblingContext}
           outcomeLocked={outcomeLocked}
           migrated={isMigrated(application)}
+          accountClosedByStaff={isClosedByStaff(account)}
           initialFlags={
             recommendation
               ? {

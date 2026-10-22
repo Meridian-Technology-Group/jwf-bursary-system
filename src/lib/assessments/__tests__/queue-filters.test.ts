@@ -49,7 +49,7 @@ const noAccount = row({
   applicationId: "app-4",
   reference: "REF-4",
   status: "IN_PROGRESS",
-  bursaryStatus: null,
+  bursaryStatus: "PRE_OPEN",
 });
 const all = [kaluba, levi, trinityRow, noAccount];
 
@@ -178,10 +178,10 @@ describe("bursaryStatus on a queue row", () => {
     const archivedNoAccount = row({
       childName: "Levi Amoah",
       status: "LOCKED",
-      bursaryStatus: null,
+      bursaryStatus: "PRE_CLOSED",
     });
-    expect(archivedNoAccount.bursaryStatus).toBeNull();
-    // and it must not be picked up by either bursary-status filter
+    // it must not be picked up by either account filter, only pre-bursary closed
+    expect(filterAssessmentQueueRows([archivedNoAccount], { bursaryStatus: "PRE_CLOSED" })).toHaveLength(1);
     expect(filterAssessmentQueueRows([archivedNoAccount], { bursaryStatus: "CLOSED" })).toHaveLength(0);
     expect(filterAssessmentQueueRows([archivedNoAccount], { bursaryStatus: "ACTIVE" })).toHaveLength(0);
   });
