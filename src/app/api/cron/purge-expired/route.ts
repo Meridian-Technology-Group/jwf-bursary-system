@@ -80,7 +80,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     if (!enabled) {
       console.info(`[cron/purge-expired] DRY-RUN (RETENTION_PURGE_ENABLED!=true): ${due.length} stage(s) due`, {
         stageCounts,
-        references: due.map((d) => d.reference),
+        applicationIds: due.map((d) => d.id),
       });
       return NextResponse.json({
         ok: true,
@@ -94,7 +94,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     }
 
     // 2b. ENABLED: one stage per application per run, each in its own transaction.
-    const applied: { reference: string; action: string }[] = [];
+    const applied: { applicationId: string; action: string }[] = [];
     const failed: { id: string; error: string }[] = [];
     for (const item of due.slice(0, MAX_STAGES_PER_RUN)) {
       try {
@@ -110,7 +110,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
             deleteAuthUser: (uid) => createSupabaseAdminClient().auth.admin.deleteUser(uid),
           });
         }
-        applied.push({ reference: item.reference, action: item.plan.action });
+        applied.push({ applicationId: item.id, action: item.plan.action });
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         failed.push({ id: item.id, error: msg });
@@ -128,7 +128,11 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
             applied: applied.length,
             failed: failed.length,
             stageCounts: countByAction(applied.map((a) => ({ action: a.action }) as RetentionPlan)),
-            references: applied.map((a) => a.reference),
+            // Ids, never references: the run's own row outlives the purge, and a
+            // reference read before it would put the child's name back in the
+            // history trail (retention trial, 22 Oct 2026). Each stage's own
+            // row, on the application, says what happened to it.
+            applicationIds: applied.map((a) => a.applicationId),
             failures: failed.length > 0 ? failed : undefined,
             deferred: Math.max(0, due.length - MAX_STAGES_PER_RUN),
             ranAt: now.toISOString(),
