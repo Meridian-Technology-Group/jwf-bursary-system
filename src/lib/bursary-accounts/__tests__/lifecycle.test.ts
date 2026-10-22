@@ -139,7 +139,8 @@ describe("mirrorApplicationToSchedule", () => {
 
 function makeReopenTx(
   entry: { id: string; status: string } | null,
-  accountStatus: string
+  accountStatus: string,
+  closeReasonId: string | null = null
 ) {
   return {
     bursaryScheduleEntry: {
@@ -147,7 +148,7 @@ function makeReopenTx(
       update: vi.fn(async () => ({})),
     },
     bursaryAccount: {
-      findUnique: vi.fn(async () => ({ status: accountStatus })),
+      findUnique: vi.fn(async () => ({ status: accountStatus, closeReasonId })),
       update: vi.fn(async () => ({})),
     },
   };
@@ -155,6 +156,14 @@ function makeReopenTx(
 
 describe("reopenAccountForAssessmentYear", () => {
   const PARAMS = { bursaryAccountId: "acc-1", academicYear: "2026-27" };
+
+  // Retention trial, 22 Oct 2026: a close staff chose is never undone here.
+  it("leaves an account staff closed (with a close reason) closed", async () => {
+    const tx = makeReopenTx({ id: "e1", status: "COMPLETE" }, "CLOSED", "reason-1");
+    const res = await reopenAccountForAssessmentYear(tx as never, PARAMS);
+    expect(res).toEqual({ scheduleEntryReopened: true, accountReopened: false });
+    expect(tx.bursaryAccount.update).not.toHaveBeenCalled();
+  });
 
   it("moves the year's COMPLETE entry back to RECEIVED", async () => {
     const tx = makeReopenTx({ id: "e1", status: "COMPLETE" }, "ACTIVE");

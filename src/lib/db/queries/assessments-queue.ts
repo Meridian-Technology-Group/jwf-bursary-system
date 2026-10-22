@@ -10,8 +10,9 @@
  * guard in `applications/[id]/layout.tsx`); ADMIN/VIEWER see all.
  */
 
-import type { School, BursaryAccountStatus } from "@prisma/client";
+import type { School } from "@prisma/client";
 import type { Tx } from "@/lib/db/prisma";
+import { deriveAccountStage, type AccountStage } from "@/lib/assessments/account-stage";
 import {
   deriveAssessmentQueueStatus,
   type AssessmentQueueStatus,
@@ -35,22 +36,27 @@ export interface AssessmentQueueRow {
    * have assessment statuses which evolve."* The account's own status, distinct
    * from the derived assessment status above.
    *
-   * The bursary ACCOUNT's own status, or `null` when the application has no
-   * account.
+   * The bursary ACCOUNT's own status, or a pre-bursary stage when the
+   * application has no account.
    *
    * Charlotte, 10 Sep 2026, correcting her own earlier Levi Amoah example:
    * *"if closed before becoming a bursary account, it will never have a closed
    * bursary account status, but a closed and archived status with no
    * corresponding account, I agree."* So an archived assessment with no account
-   * reads "No account" here, and the closed-and-archived meaning is carried by
+   * is never CLOSED here, and the closed-and-archived meaning is carried by
    * the assessment status column beside it.
    *
    * An earlier version of this derived CLOSED from a CLOSED_ARCHIVED
    * assessment, to match her first description of Levi. She has since
    * confirmed that was her thinking of the real family, who does have an
    * account, rather than the test record, which never had one.
+   *
+   * Charlotte, 22 Oct 2026: *"Maybe we could have 'Pre-bursary Open' &
+   * 'Pre-Bursary Closed' and then Active and Closed."* A row with no account
+   * now says which: PRE_CLOSED once staff closed or archived it, or it was
+   * erased on request; PRE_OPEN while it is still being worked.
    */
-  bursaryStatus: BursaryAccountStatus | null;
+  bursaryStatus: AccountStage;
   /**
    * For the search box only (Charlotte, 10 Oct 2026). Never rendered by the
    * list: the page matches on them server-side and audits the search.
@@ -78,6 +84,8 @@ export async function listAssessmentQueueRows(
       school: true,
       submittedAt: true,
       closedAt: true,
+      archivedAt: true,
+      retentionStage: true,
       assignedToId: true,
       assignedTo: { select: { firstName: true, lastName: true, email: true } },
       leadApplicant: { select: { firstName: true, lastName: true, email: true } },
@@ -109,7 +117,13 @@ export async function listAssessmentQueueRows(
       : null,
     submittedAt: app.submittedAt,
     updatedAt: app.assessment?.updatedAt ?? null,
-    bursaryStatus: app.bursaryAccount?.status ?? null,
+    bursaryStatus: deriveAccountStage({
+      accountStatus: app.bursaryAccount?.status ?? null,
+      closedAt: app.closedAt,
+      archivedAt: app.archivedAt,
+      assessmentStatus: app.assessment?.status ?? null,
+      retentionStage: app.retentionStage,
+    }),
     leadApplicantName: app.leadApplicant
       ? [app.leadApplicant.firstName, app.leadApplicant.lastName].filter(Boolean).join(" ") || null
       : null,

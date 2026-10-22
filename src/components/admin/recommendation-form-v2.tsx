@@ -49,6 +49,7 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { MIGRATED_LOCKED_MESSAGE } from "@/lib/applications/migration-source";
+import { ACCOUNT_CLOSED_REVERT_MESSAGE } from "@/lib/bursary-accounts/closed-by-staff";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   RECOMMENDATION_FLAGS,
@@ -193,6 +194,8 @@ export interface RecommendationFormV2Props {
   outcomeLocked?: boolean;
   /** A migrated Grant Tracker award: locked for good, no way back (17 Oct). */
   migrated?: boolean;
+  /** Staff closed the bursary account: the award can't be reversed (22 Oct 2026). */
+  accountClosedByStaff?: boolean;
   /** The five stored flags: the saved recommendation's, else the assessment's old ticks. */
   initialFlags: StoredRecommendationFlags;
   /** Flags save on their own once a recommendation exists (locked awards too). */
@@ -486,6 +489,7 @@ export function RecommendationFormV2({
   siblingContext,
   outcomeLocked = false,
   migrated = false,
+  accountClosedByStaff = false,
   initialFlags,
   hasRecommendation,
 }: RecommendationFormV2Props) {
@@ -751,6 +755,8 @@ export function RecommendationFormV2({
               )}
               {migrated ? (
                 <p className="text-xs text-muted-foreground">{MIGRATED_LOCKED_MESSAGE}</p>
+              ) : accountClosedByStaff ? (
+                <p className="text-xs text-muted-foreground">{ACCOUNT_CLOSED_REVERT_MESSAGE}</p>
               ) : (
                 <Button
                   type="button"
@@ -1184,7 +1190,10 @@ export function RecommendationFormV2({
           if (!open) setPendingState(null);
         }}
       >
-        <DialogContent>
+        {/* Charlotte, 22 Oct 2026: the close reasons are long, and the window
+            was too narrow for them — it scrolled sideways. Wider, and the
+            chosen reason truncates rather than pushing the window out. */}
+        <DialogContent className="sm:max-w-2xl">
           {pendingState && (
             <>
               <DialogHeader>
@@ -1234,7 +1243,7 @@ export function RecommendationFormV2({
                 </div>
               )}
               {pendingState === "CLOSED_ARCHIVED" && (
-                <div className="space-y-1.5">
+                <div className="min-w-0 space-y-1.5">
                   {/* Epic 18b — her illustration's "prompt asking for close
                       reasons". Required. */}
                   <Label htmlFor="archive-close-reason">Close reason</Label>
@@ -1242,7 +1251,7 @@ export function RecommendationFormV2({
                     value={selectedCloseReasonId}
                     onValueChange={setSelectedCloseReasonId}
                   >
-                    <SelectTrigger id="archive-close-reason">
+                    <SelectTrigger id="archive-close-reason" className="text-left [&>span]:truncate">
                       <SelectValue placeholder="Select a reason…" />
                     </SelectTrigger>
                     <SelectContent>

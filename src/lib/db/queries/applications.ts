@@ -34,6 +34,7 @@ import type {
 } from "@prisma/client";
 import { PORTAL_APPLICATION } from "@/lib/applications/migration-source";
 import { DEADLINE_ROUND_SELECT } from "@/lib/rounds/submission-deadline";
+import { ERASED_ON_REQUEST_LABEL } from "@/lib/retention/policy";
 
 // ─── List Applications ────────────────────────────────────────────────────────
 
@@ -102,7 +103,7 @@ export interface ApplicationListItem {
    * The close reason label recorded at close time (item 4.4), or null when
    * the application is not closed. Read through the FK, so it survives the
    * reason later being deprecated — not re-looked-up from the live reason
-   * list.
+   * list. An application erased on request reads "EOR – Erased on request".
    */
   closeReasonLabel: string | null;
   /** Non-null for a Grant Tracker record (no form here, so never rejected). */
@@ -411,6 +412,7 @@ export async function listApplications(
       // survives the reason later being deprecated (soft-deactivated, never
       // hard-deleted — see the CloseReason model).
       closeReason: { select: { label: true } },
+      retentionStage: true,
       round: {
         select: {
           id: true,
@@ -456,7 +458,7 @@ export async function listApplications(
   }
 
   return applications.map((a) => {
-    const { contributors, assessment, bursaryAccount, closeReason, ...rest } = a;
+    const { contributors, assessment, bursaryAccount, closeReason, retentionStage, ...rest } = a;
     const secondary = contributors[0];
     let secondParent: SecondParentIndicator = "NONE";
     if (secondary) {
@@ -474,7 +476,8 @@ export async function listApplications(
       outcome: assessment?.outcome ?? null,
       secondParent,
       bursaryAccountStatus: bursaryAccount?.status ?? null,
-      closeReasonLabel: closeReason?.label ?? null,
+      closeReasonLabel:
+        closeReason?.label ?? (retentionStage === "ANONYMISED" ? ERASED_ON_REQUEST_LABEL : null),
       rejected: isReturnedForCorrection(a, latestReturn.get(a.id)),
     };
   });

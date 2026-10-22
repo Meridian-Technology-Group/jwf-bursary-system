@@ -213,6 +213,13 @@ export const RETENTION_ACTION_LABELS: Record<RetentionAction, string> = {
   "anonymise-now": "Anonymised",
 };
 
+/**
+ * The close reason an erased application shows (Charlotte, 22 Oct 2026):
+ * *"Should the close reason not show by default as 'EOR' = Erased on Request
+ * rather than a blank."* Erasure records no close reason of its own.
+ */
+export const ERASED_ON_REQUEST_LABEL = "EOR – Erased on request";
+
 export const RETENTION_RULE_LABELS: Record<Exclude<RetentionRule, null>, string> = {
   "account-closed": "Bursary account closed",
   unsuccessful: "Unsuccessful application",

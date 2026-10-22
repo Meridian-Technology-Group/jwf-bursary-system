@@ -38,7 +38,13 @@ import {
 } from "@/lib/assessments/queue-filters";
 import { createAuditLog } from "@/lib/audit/log";
 import { AUDIT_ACTIONS, AUDIT_ENTITY_TYPES } from "@/lib/audit/actions";
-import type { School, BursaryAccountStatus } from "@prisma/client";
+import type { School } from "@prisma/client";
+import {
+  ACCOUNT_STAGES,
+  ACCOUNT_STAGE_LABELS,
+  isAccountStage,
+  type AccountStage,
+} from "@/lib/assessments/account-stage";
 import { listStaffUsers } from "@/lib/db/queries/profiles";
 import { formatLondonDate } from "@/lib/datetime";
 import { cn } from "@/lib/utils";
@@ -96,9 +102,9 @@ function parseStatus(
 
 function parseBursaryStatus(
   value: string | string[] | undefined
-): BursaryAccountStatus | undefined {
+): AccountStage | undefined {
   const raw = firstValue(value);
-  return raw === "ACTIVE" || raw === "CLOSED" ? raw : undefined;
+  return isAccountStage(raw) ? raw : undefined;
 }
 
 function parseSchool(value: string | string[] | undefined): School | undefined {
@@ -117,9 +123,10 @@ function parseDateParam(value: string | string[] | undefined): string | undefine
  * locked-decided outcome, and Langazye Kaluba would show as an active account
  * with a locked-decided outcome for the round 2026-27."*
  */
-function BursaryStatusBadge({ status }: { status: BursaryAccountStatus | null }) {
-  if (!status) {
-    return <span className="text-slate-400">No account</span>;
+function BursaryStatusBadge({ status }: { status: AccountStage }) {
+  // Charlotte, 22 Oct 2026: no account reads as pre-bursary open or closed.
+  if (status === "PRE_OPEN" || status === "PRE_CLOSED") {
+    return <span className="text-slate-400">{ACCOUNT_STAGE_LABELS[status]}</span>;
   }
   return (
     <span
@@ -394,8 +401,11 @@ export default async function AssessmentsPage({
             className="h-8 rounded-md border border-slate-300 bg-white px-2 text-xs text-slate-700"
           >
             <option value="">Any</option>
-            <option value="ACTIVE">Active</option>
-            <option value="CLOSED">Closed</option>
+            {ACCOUNT_STAGES.map((stage) => (
+              <option key={stage} value={stage}>
+                {ACCOUNT_STAGE_LABELS[stage]}
+              </option>
+            ))}
           </select>
         </div>
 

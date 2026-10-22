@@ -23,6 +23,9 @@ export const WORKLOAD_COLUMNS: ColumnDef[] = [
   { key: "assessmentStatus", header: "Assessment status", group: "Assessment", width: 18 },
   { key: "bursaryAccount", header: "Bursary account", group: "Assessment", width: 16 },
   { key: "assessmentCompletedAt", header: "Assessment Completion Date", group: "Assessment", kind: "date" },
+  // Charlotte, 22 Oct 2026: "could you add: closing date & close reason in that view please?"
+  { key: "closedAt", header: "Closing date", group: "Assessment", kind: "date" },
+  { key: "closeReason", header: "Close reason", group: "Assessment", width: 40 },
 ];
 
 /** Her Section 1 "Search Selection", in her order (the round is always one round). */
