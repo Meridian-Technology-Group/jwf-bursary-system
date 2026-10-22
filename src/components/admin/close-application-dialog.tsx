@@ -127,7 +127,7 @@ export function CloseApplicationDialog({
           </DialogTrigger>
         ))}
 
-      <DialogContent className="sm:max-w-lg">
+      <DialogContent className="sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle className="text-rose-700">
             Close application {reference}
@@ -156,7 +156,7 @@ export function CloseApplicationDialog({
               onValueChange={setReasonId}
               disabled={isPending || reasons.length === 0}
             >
-              <SelectTrigger id="close-reason" className="w-full">
+              <SelectTrigger id="close-reason" className="w-full text-left [&>span]:truncate">
                 <SelectValue
                   placeholder={
                     reasons.length === 0

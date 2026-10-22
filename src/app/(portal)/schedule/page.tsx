@@ -17,6 +17,7 @@ import { loadParentSchedule } from "@/lib/portal/parent-schedule-data";
 import type { ParentScheduleRow } from "@/lib/portal/parent-schedule";
 import { cn } from "@/lib/utils";
 import { formatLondonDate } from "@/lib/datetime";
+import { OVERDUE_BADGE_CLASS } from "@/lib/schedule/overdue";
 
 export const metadata = {
   title: "My Application(s) Schedule",
@@ -33,7 +34,7 @@ const STATUS_STYLE: Record<ParentScheduleRow["status"], string> = {
   "In progress": "bg-accent-50 text-accent-800 border-accent-200",
   Submitted: "bg-green-50 text-green-800 border-green-200",
   Rejected: "bg-rose-50 text-rose-800 border-rose-200",
-  "Not submitted": "bg-slate-50 text-slate-600 border-slate-200",
+  Overdue: OVERDUE_BADGE_CLASS,
 };
 
 const COLUMNS = [

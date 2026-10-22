@@ -467,7 +467,12 @@ export default async function PortalDashboardPage() {
                   <p className="text-xs font-medium uppercase tracking-wider text-slate-400">
                     Continue where you left off
                   </p>
+                  {/* Which child's form: the bursary reference (Charlotte,
+                      21 Oct 2026). */}
                   <p className="mt-1 text-lg font-semibold text-primary-900">
+                    {application.reference}
+                  </p>
+                  <p className="mt-1 text-sm font-medium text-slate-700">
                     {completedSections} of {totalSections} sections complete
                   </p>
                   {nextSectionTitle && (

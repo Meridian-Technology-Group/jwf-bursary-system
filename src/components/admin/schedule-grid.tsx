@@ -45,6 +45,7 @@ import {
 import { formatLondonDate } from "@/lib/datetime";
 import type { ScheduleEntryRow } from "@/lib/db/queries/schedule";
 import { scheduleRowLink } from "@/lib/assessment/previous-year";
+import { OVERDUE_BADGE_CLASS, dueAt, isOverdue } from "@/lib/schedule/overdue";
 import type { BursaryAccountStatus } from "@prisma/client";
 import {
   regenerateScheduleAction,
@@ -120,6 +121,8 @@ export function ScheduleGrid({
   accountStatus,
 }: ScheduleGridProps) {
   const router = useRouter();
+  // 17 Oct — a scheduled year past its Submit by shows Overdue, in red.
+  const now = new Date();
   const [pendingId, setPendingId] = React.useState<string | null>(null);
   const [regenerating, setRegenerating] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
@@ -252,9 +255,22 @@ export function ScheduleGrid({
                     </TableCell>
                     <TableCell className="hidden text-slate-500 xl:table-cell">{e.type}</TableCell>
                     <TableCell>
-                      <Badge variant={STATUS_VARIANT[e.status]}>
-                        {STATUS_LABEL[e.status]}
-                      </Badge>
+                      {e.status === "SCHEDULED" &&
+                      isOverdue(
+                        dueAt(
+                          e.familyDeadline ? new Date(e.familyDeadline) : null,
+                          e.requiredBy ? new Date(e.requiredBy) : null
+                        ),
+                        now
+                      ) ? (
+                        <Badge variant="outline" className={OVERDUE_BADGE_CLASS}>
+                          Overdue
+                        </Badge>
+                      ) : (
+                        <Badge variant={STATUS_VARIANT[e.status]}>
+                          {STATUS_LABEL[e.status]}
+                        </Badge>
+                      )}
                       {/* R3: the received date sits under the status below xl. */}
                       {e.receivedOn && (
                         <span className="mt-0.5 block whitespace-nowrap text-xs text-slate-500 xl:hidden">

@@ -84,6 +84,8 @@ function SectionIcon({
 
 interface PortalSidebarContentProps {
   roundName?: string;
+  /** Which child's form this is, shown above the round (the /apply rail). */
+  applicationName?: string;
   lastSaved?: string;
   /** Section data — if not provided, uses defaults */
   sections?: SidebarSection[];
@@ -111,6 +113,7 @@ interface PortalSidebarContentProps {
 
 export function PortalSidebarContent({
   roundName,
+  applicationName,
   lastSaved,
   sections,
   basePath = "/apply",
@@ -164,9 +167,16 @@ export function PortalSidebarContent({
         </div>
       ) : null}
 
-      {/* Round name — hidden when the user has no invitation/application yet */}
+      {/* Round name — hidden when the user has no invitation/application yet.
+          The child's name heads it, so a parent with a form per child can see
+          which one they are in (Charlotte, 21 Oct 2026). */}
       {roundName ? (
         <div className="border-b border-slate-200 px-6 py-3">
+          {applicationName ? (
+            <p className="mb-1.5 text-sm font-semibold text-primary-900">
+              {applicationName}
+            </p>
+          ) : null}
           <p className="text-xs font-medium uppercase tracking-wider text-slate-400">
             Round
           </p>

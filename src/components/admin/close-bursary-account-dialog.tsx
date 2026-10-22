@@ -82,7 +82,7 @@ export function CloseBursaryAccountDialog({
       </Button>
 
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent>
+        <DialogContent className="sm:max-w-2xl">
           <DialogHeader>
             <DialogTitle>Close this bursary account?</DialogTitle>
             <DialogDescription>
@@ -92,10 +92,10 @@ export function CloseBursaryAccountDialog({
             </DialogDescription>
           </DialogHeader>
 
-          <div className="space-y-1.5">
+          <div className="min-w-0 space-y-1.5">
             <Label htmlFor="account-close-reason">Close reason</Label>
             <Select value={reasonId} onValueChange={setReasonId}>
-              <SelectTrigger id="account-close-reason">
+              <SelectTrigger id="account-close-reason" className="text-left [&>span]:truncate">
                 <SelectValue placeholder="Select a reason…" />
               </SelectTrigger>
               <SelectContent>

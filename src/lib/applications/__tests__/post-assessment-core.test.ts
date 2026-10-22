@@ -50,6 +50,8 @@ import {
   revertPostAssessmentState,
 } from "../post-assessment-core";
 import { RECOMMENDATION_NOT_RECONFIRMED_MESSAGE } from "../recommendation-gate";
+import { MIGRATED_LOCKED_MESSAGE } from "../migration-source";
+import { ACCOUNT_CLOSED_REVERT_MESSAGE } from "@/lib/bursary-accounts/closed-by-staff";
 
 // ─── Fake Prisma transaction client ───────────────────────────────────────────
 
@@ -300,6 +302,39 @@ describe("revertPostAssessmentState", () => {
       expect(audit.data.metadata.fromState).toBe(from);
     }
   );
+
+  it.each(["ROLLED_OVER", "NEW_AWARD"] as const)(
+    "a migrated Grant Tracker %s cannot be reversed",
+    async (from) => {
+      fakeTx = makeFakeTx({ ...withAssessment({ status: from }), migrationSource: "GRANT_TRACKER" });
+      const result = await revertPostAssessmentState("app-1");
+
+      expect(result).toEqual({ success: false, error: MIGRATED_LOCKED_MESSAGE });
+      expect(fakeTx.assessment.update).not.toHaveBeenCalled();
+      expect(fakeTx.auditLog.create).not.toHaveBeenCalled();
+    }
+  );
+
+  // Retention trial, 22 Oct 2026: she reversed the award on an account she had
+  // closed, and the reopen after it made the account active again.
+  it("an award whose account staff closed cannot be reversed", async () => {
+    fakeTx = makeFakeTx({
+      ...withAssessment({ status: "NEW_AWARD" }),
+      bursaryAccount: { status: "CLOSED", closeReasonId: "reason-1" },
+    });
+    const result = await revertPostAssessmentState("app-1");
+
+    expect(result).toEqual({ success: false, error: ACCOUNT_CLOSED_REVERT_MESSAGE });
+    expect(fakeTx.assessment.update).not.toHaveBeenCalled();
+  });
+
+  it("an account the schedule closed itself (no reason) does not block a reversal", async () => {
+    fakeTx = makeFakeTx({
+      ...withAssessment({ status: "NEW_AWARD" }),
+      bursaryAccount: { status: "CLOSED", closeReasonId: null },
+    });
+    expect(await revertPostAssessmentState("app-1")).toEqual({ success: true });
+  });
 
   it("Q16 — a reversed NEW_AWARD leaves the bursary account untouched", async () => {
     fakeTx = makeFakeTx(

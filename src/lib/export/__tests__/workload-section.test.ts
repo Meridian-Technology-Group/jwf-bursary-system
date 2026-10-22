@@ -16,6 +16,7 @@ import {
   latestOpenInvitations,
   mapWorkloadApplication,
   mapWorkloadInvitation,
+  workloadClosing,
   parseWorkloadFilters,
   type WorkloadApplicationSource,
   type WorkloadInvitationSource,
@@ -40,6 +41,8 @@ const HER_HEADERS = [
   "Assessment status",
   "Bursary account",
   "Assessment Completion Date",
+  "Closing date",
+  "Close reason",
 ];
 
 const round: WorkloadRound = {
@@ -100,6 +103,42 @@ describe("Section 1 registry", () => {
   it("keys are unique", () => {
     const keys = WORKLOAD_COLUMNS.map((c) => c.key);
     expect(new Set(keys).size).toBe(keys.length);
+  });
+});
+
+describe("workloadClosing (Charlotte, 22 Oct 2026)", () => {
+  const at = (iso: string) => new Date(iso);
+  it("the staff close wins, with its reason", () => {
+    expect(
+      workloadClosing(
+        app({
+          closedAt: at("2026-10-22T13:44:58Z"),
+          closeReason: { label: "Applicant missed deadline(s) & gave up" },
+          assessment: { status: "CLOSED_ARCHIVED", completedAt: null, archivedAt: at("2026-10-22T13:14:52Z"), archiveCloseReason: { label: "Archived" } },
+        }),
+      ),
+    ).toEqual({ closedAt: at("2026-10-22T13:44:58Z"), closeReason: "Applicant missed deadline(s) & gave up" });
+  });
+  it("then the bursary account's close", () => {
+    expect(
+      workloadClosing(app({ bursaryAccount: { status: "CLOSED", closedAt: at("2026-10-01T00:00:00Z"), closeReason: { label: "End of cycle" } } })),
+    ).toEqual({ closedAt: at("2026-10-01T00:00:00Z"), closeReason: "End of cycle" });
+  });
+  it("then an archived assessment", () => {
+    expect(
+      workloadClosing(
+        app({ bursaryAccount: null, assessment: { status: "CLOSED_ARCHIVED", completedAt: null, archivedAt: at("2026-10-02T00:00:00Z"), archiveCloseReason: { label: "Archived" } } }),
+      ),
+    ).toEqual({ closedAt: at("2026-10-02T00:00:00Z"), closeReason: "Archived" });
+  });
+  it("an erasure on request reads EOR, dated the erasure", () => {
+    expect(
+      workloadClosing(app({ bursaryAccount: null, retentionStage: "ANONYMISED", retentionStageAt: at("2026-10-22T13:30:48Z") })),
+    ).toEqual({ closedAt: at("2026-10-22T13:30:48Z"), closeReason: "EOR – Erased on request" });
+  });
+  it("an open case has neither", () => {
+    expect(workloadClosing(app())).toEqual({ closedAt: null, closeReason: "" });
+    expect(mapWorkloadInvitation(inv(), round).record).toMatchObject({ closedAt: null, closeReason: "" });
   });
 });
 

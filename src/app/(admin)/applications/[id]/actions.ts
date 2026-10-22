@@ -61,6 +61,8 @@ import {
   reopenAssessmentForMaterialChange,
 } from "@/lib/applications/status";
 import { validateReferenceInput } from "@/lib/applications/reference";
+import { rejectionGroupForSlot, type RejectionDocument } from "@/lib/documents/section-grouping";
+import { removeDocumentsWithRejection } from "@/lib/applications/rejection-documents";
 
 import { AUDIT_ACTIONS, AUDIT_ENTITY_TYPES } from "@/lib/audit/actions";
 
@@ -396,14 +398,21 @@ function rejectionMergeData(app: {
  * Allowed before a final outcome only (SUBMITTED / NOT_STARTED / PAUSED), and
  * never on a Grant Tracker record (it has no form to give back).
  *
- * @param applicationId The application being rejected.
- * @param emailBody     The email to the family, as edited in the window.
- * @param newSubmitBy   The new Submit by, `yyyy-MM-dd` (required, in the future).
+ * Documents ticked in the window (17 Oct 2026: "clear the documents per
+ * section") are deleted with the rejection, in the same transaction, and their
+ * sections marked incomplete so the family sees the gaps; the stored files go
+ * once it commits.
+ *
+ * @param applicationId     The application being rejected.
+ * @param emailBody         The email to the family, as edited in the window.
+ * @param newSubmitBy       The new Submit by, `yyyy-MM-dd` (required, in the future).
+ * @param removeDocumentIds Documents of this application to delete with it.
  */
 export async function rejectAndRestartApplication(
   applicationId: string,
   emailBody: string,
-  newSubmitBy: string
+  newSubmitBy: string,
+  removeDocumentIds: string[] = []
 ): Promise<ActionResult> {
   try {
     const user = await requireRole([Role.ADMIN, Role.ASSESSOR]);
@@ -484,6 +493,16 @@ export async function rejectAndRestartApplication(
         staffId: user.id,
       });
 
+      // The documents ticked in the window — only this application's.
+      const removed = await removeDocumentsWithRejection(tx, {
+        applicationId,
+        reference: application.reference,
+        documentIds: removeDocumentIds,
+        staffId: user.id,
+        staffRole: user.role,
+        rejectionId,
+      });
+
       // Same action key as before, so the History tab keeps working.
       await createAuditLog(tx, {
         userId: user.id,
@@ -500,6 +519,7 @@ export async function rejectAndRestartApplication(
           customMessage: body,
           previousSubmittedAt: application.submittedAt?.toISOString() ?? null,
           assessmentReset,
+          documentsRemoved: removed.removed,
         },
       });
 
@@ -507,10 +527,22 @@ export async function rejectAndRestartApplication(
         success: true as const,
         email: application.leadApplicant.email,
         mergeData: rejectionMergeData(application),
+        storagePaths: removed.storagePaths,
       };
     });
 
     if (!result.success) return result;
+
+    // The removed documents' files, now their rows are gone. An object left
+    // behind is less harmful than a row pointing at nothing (as the staff
+    // delete route does it, the other way round).
+    for (const path of result.storagePaths) {
+      try {
+        await deleteDocument(path);
+      } catch (err) {
+        console.error("[rejectAndRestartApplication] storage delete failed", path, err);
+      }
+    }
 
     // Email the family — non-blocking.
     const emailResult = await sendEmail(
@@ -544,7 +576,7 @@ export async function rejectAndRestartApplication(
  */
 export async function getRejectionDraft(
   applicationId: string
-): Promise<{ submitBy: string; body: string }> {
+): Promise<{ submitBy: string; body: string; documents: RejectionDocument[] }> {
   await requireRole([Role.ADMIN, Role.ASSESSOR]);
   const now = new Date();
   // Service role, as the send does: the lead applicant's profile is under RLS.
@@ -563,7 +595,16 @@ export async function getRejectionDraft(
       },
     })
   );
-  if (!app) return { submitBy: defaultReturnSubmitBy(null, now), body: "" };
+  if (!app) return { submitBy: defaultReturnSubmitBy(null, now), body: "", documents: [] };
+
+  // The uploaded documents, grouped for "remove with the rejection".
+  const documents = await withAdminContext((tx) =>
+    tx.document.findMany({
+      where: { applicationId },
+      select: { id: true, slot: true, filename: true },
+      orderBy: [{ slot: "asc" }, { uploadedAt: "asc" }],
+    })
+  );
 
   // email_templates has no app_user read policy either.
   const template = await withAdminContext((tx) =>
@@ -576,6 +617,7 @@ export async function getRejectionDraft(
   return {
     submitBy: defaultReturnSubmitBy(effectiveSubmissionDeadline(app, app.round).deadline, now),
     body: template ? replaceMergeFields(template.body, rejectionMergeData(app)) : "",
+    documents: documents.map((d) => ({ ...d, group: rejectionGroupForSlot(d.slot) })),
   };
 }
 

@@ -19,6 +19,13 @@ export function isMigrated(app: { migrationSource: string | null }): boolean {
   return app.migrationSource != null;
 }
 
+/**
+ * Why a migrated award can't be reversed or reopened: its figures were
+ * confirmed in Grant Tracker, and reversing it clears them (17 Oct, rehearsal).
+ */
+export const MIGRATED_LOCKED_MESSAGE =
+  "This award was migrated from Grant Tracker and stays locked: it can't be reversed or reopened.";
+
 /** Shown in place of the application form on a migrated application. */
 export const MIGRATED_NOTICE =
   "Migrated from Grant Tracker: there is no application form. Documents are under Assessment → Uploaded documents.";

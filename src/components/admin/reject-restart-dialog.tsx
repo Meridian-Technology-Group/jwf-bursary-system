@@ -9,8 +9,10 @@
  * (required; pre-filled with the later of the current deadline and today + 7
  * days). The email box opens with the Application Rejection template from
  * Settings, this family's details filled in; staff add the specifics and what
- * they send is the email. Staff then remove the bad items through Edit on
- * behalf so the gaps show. See `rejectAndRestartApplication`.
+ * they send is the email. The uploaded documents are listed by group (17 Oct
+ * 2026): staff tick a whole group or single files to remove with the
+ * rejection, and clear wrong answers afterwards through Edit on behalf. See
+ * `rejectAndRestartApplication`.
  *
  * Uncontrolled (own trigger) on the application and assessment pages; the
  * applications table row drives it controlled (`open` / `onOpenChange`).
@@ -32,10 +34,15 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   getRejectionDraft,
   rejectAndRestartApplication,
 } from "@/app/(admin)/applications/[id]/actions";
+import {
+  REJECTION_DOCUMENT_GROUPS,
+  type RejectionDocument,
+} from "@/lib/documents/section-grouping";
 
 interface RejectRestartDialogProps {
   applicationId: string;
@@ -70,7 +77,15 @@ export function RejectRestartDialog({
   const [emailBody, setEmailBody] = React.useState("");
   const [loading, setLoading] = React.useState(false);
   const [submitBy, setSubmitBy] = React.useState("");
+  const [documents, setDocuments] = React.useState<RejectionDocument[]>([]);
+  const [removeIds, setRemoveIds] = React.useState<string[]>([]);
   const [error, setError] = React.useState<string | null>(null);
+
+  function toggleDocs(ids: string[], on: boolean) {
+    setRemoveIds((prev) =>
+      on ? Array.from(new Set(prev.concat(ids))) : prev.filter((id) => !ids.includes(id))
+    );
+  }
 
   function setOpen(next: boolean) {
     if (controlled) onOpenChange?.(next);
@@ -83,6 +98,8 @@ export function RejectRestartDialog({
     setEmailBody("");
     setError(null);
     setSubmitBy("");
+    setDocuments([]);
+    setRemoveIds([]);
     setLoading(true);
     let live = true;
     getRejectionDraft(applicationId)
@@ -90,6 +107,7 @@ export function RejectRestartDialog({
         if (!live) return;
         setSubmitBy((v) => v || draft.submitBy);
         setEmailBody((v) => v || draft.body);
+        setDocuments(draft.documents);
       })
       .catch(() => {})
       .finally(() => {
@@ -111,7 +129,7 @@ export function RejectRestartDialog({
       return;
     }
     startTransition(async () => {
-      const result = await rejectAndRestartApplication(applicationId, emailBody, submitBy);
+      const result = await rejectAndRestartApplication(applicationId, emailBody, submitBy, removeIds);
       if (result.success) {
         setOpen(false);
         if (onDone) onDone();
@@ -152,13 +170,66 @@ export function RejectRestartDialog({
           <div className="flex items-start gap-2 rounded-md border border-sky-200 bg-sky-50 px-3 py-2.5">
             <Info className="mt-0.5 h-4 w-4 shrink-0 text-sky-600" aria-hidden="true" />
             <p className="text-sm text-sky-800">
-              Next, open <strong>Edit on behalf</strong> on the application page to
-              remove the documents and clear the answers that are not acceptable, or
-              mark a section as needing correction. Those sections then show as
+              Tick below the documents to remove with the rejection. To clear
+              answers that are not acceptable, open <strong>Edit on behalf</strong>{" "}
+              on the application page afterwards. Those sections then show as
               incomplete to the family. Any review in progress goes back to Not
               started.
             </p>
           </div>
+
+          {documents.length > 0 && (
+            <div className="space-y-2">
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                Documents to remove{" "}
+                <span className="font-normal normal-case tracking-normal text-slate-400">
+                  ({removeIds.length} of {documents.length} ticked; deleted when you reject)
+                </span>
+              </p>
+              <div className="max-h-56 space-y-3 overflow-y-auto rounded-md border border-slate-200 p-3">
+                {REJECTION_DOCUMENT_GROUPS.map((g) => {
+                  const inGroup = documents.filter((d) => d.group === g.key);
+                  if (inGroup.length === 0) return null;
+                  const ids = inGroup.map((d) => d.id);
+                  const ticked = ids.filter((id) => removeIds.includes(id)).length;
+                  const groupId = `reject-group-${g.key}`;
+                  return (
+                    <div key={g.key} className="space-y-1.5">
+                      <div className="flex items-center gap-2">
+                        <Checkbox
+                          id={groupId}
+                          checked={ticked === ids.length ? true : ticked > 0 ? "indeterminate" : false}
+                          onCheckedChange={(v) => toggleDocs(ids, v === true)}
+                          disabled={isPending}
+                        />
+                        <Label htmlFor={groupId} className="text-sm font-medium">
+                          {g.label} ({ids.length})
+                        </Label>
+                      </div>
+                      <ul className="ml-6 space-y-1">
+                        {inGroup.map((d) => {
+                          const docId = `reject-doc-${d.id}`;
+                          return (
+                            <li key={d.id} className="flex items-center gap-2">
+                              <Checkbox
+                                id={docId}
+                                checked={removeIds.includes(d.id)}
+                                onCheckedChange={(v) => toggleDocs([d.id], v === true)}
+                                disabled={isPending}
+                              />
+                              <Label htmlFor={docId} className="truncate text-xs font-normal text-slate-700">
+                                {d.filename}
+                              </Label>
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
 
           <div className="space-y-1.5">
             <Label

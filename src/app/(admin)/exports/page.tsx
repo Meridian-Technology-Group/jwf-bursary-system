@@ -59,12 +59,13 @@ export default async function ExportsPage({
         />
       ))}
 
-      {/* Export Recommendations (WP-17): unchanged */}
+      {/* Model Variance Audit (WP-17's Export Recommendations, renamed 17 Oct) */}
       <div className="space-y-2">
-        <h2 className="text-lg font-semibold text-primary-900">Export Recommendations</h2>
+        <h2 className="text-lg font-semibold text-primary-900">Model Variance Audit</h2>
         <p className="text-sm text-slate-500">
-          A spreadsheet of recommendation data for a selected assessment round.
-          Only applications with a completed recommendation are included.
+          The recommendations for a selected round, with the gaps and variances
+          between the model's figure and the confirmed one. Only applications
+          with a recommendation are included.
         </p>
         <ExportFilterForm rounds={rounds} defaultRoundId={searchParams.roundId} />
       </div>

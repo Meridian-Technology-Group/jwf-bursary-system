@@ -155,11 +155,13 @@ export async function reopenAccountForAssessmentYear(
   // somewhere else (a manual admin close, another year) — leave it alone.
   if (!result.scheduleEntryReopened) return result;
 
+  // A close staff chose (it carries a close reason) is never undone here
+  // (retention trial, 22 Oct 2026) — only the schedule's own close.
   const account = await tx.bursaryAccount.findUnique({
     where: { id: params.bursaryAccountId },
-    select: { status: true },
+    select: { status: true, closeReasonId: true },
   });
-  if (account?.status === "CLOSED") {
+  if (account?.status === "CLOSED" && account.closeReasonId == null) {
     await tx.bursaryAccount.update({
       where: { id: params.bursaryAccountId },
       data: { status: "ACTIVE", closedAt: null },

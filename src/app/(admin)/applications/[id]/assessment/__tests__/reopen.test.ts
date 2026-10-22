@@ -82,6 +82,7 @@ import {
 } from "../gate";
 import { AUDIT_ACTIONS } from "@/lib/audit/actions";
 import { saveAssessment } from "@/lib/db/queries/assessments";
+import { MIGRATED_LOCKED_MESSAGE } from "@/lib/applications/migration-source";
 
 // ─── Fixtures ─────────────────────────────────────────────────────────────────
 
@@ -93,6 +94,7 @@ interface AssessmentRow {
   assignedToId: string | null;
   closedAt: Date | null;
   bursaryAccountId: string | null;
+  migrationSource?: string | null;
 }
 
 const COMPLETED_UNDECIDED: AssessmentRow = {
@@ -103,6 +105,7 @@ const COMPLETED_UNDECIDED: AssessmentRow = {
   assignedToId: "assessor-1",
   closedAt: null,
   bursaryAccountId: "acct-1",
+  migrationSource: null,
 };
 
 function makeFakeTx(row: AssessmentRow | null = COMPLETED_UNDECIDED) {
@@ -119,6 +122,7 @@ function makeFakeTx(row: AssessmentRow | null = COMPLETED_UNDECIDED) {
                 assignedToId: row.assignedToId,
                 closedAt: row.closedAt,
                 bursaryAccountId: row.bursaryAccountId,
+                migrationSource: row.migrationSource ?? null,
                 round: { academicYear: "2026/27" },
               },
             }
@@ -214,6 +218,14 @@ describe("reopenAssessmentAction — the no-outcome gate (D13-2)", () => {
       expect(auditMock).not.toHaveBeenCalled();
     }
   );
+
+  it("refuses a migrated Grant Tracker record, and writes nothing", async () => {
+    fakeTx = makeFakeTx({ ...COMPLETED_UNDECIDED, migrationSource: "GRANT_TRACKER" });
+    const res = await reopenAssessmentAction("asmt-1", "app-1");
+    expect(res).toEqual({ success: false, error: MIGRATED_LOCKED_MESSAGE });
+    expect(fakeTx.assessment.update).not.toHaveBeenCalled();
+    expect(fakeTx.recommendation.updateMany).not.toHaveBeenCalled();
+  });
 
   it("refuses on a closed application", async () => {
     fakeTx = makeFakeTx({ ...COMPLETED_UNDECIDED, closedAt: new Date() });

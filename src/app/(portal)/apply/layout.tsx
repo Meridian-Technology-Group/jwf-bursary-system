@@ -53,6 +53,7 @@ export default async function ApplyContentLayout({
       <StepperDataWriter
         sections={stepperData?.sections ?? null}
         roundName={stepperData?.roundName}
+        applicationName={stepperData?.applicationName}
       />
       {/* Fill the available height (flex-1) so the sticky footer is pushed to
           the bottom of the viewport on short forms instead of floating mid-page.

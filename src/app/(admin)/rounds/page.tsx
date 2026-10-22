@@ -93,8 +93,6 @@ export default async function RoundsPage() {
                 inAssessment: openCockpit.pipeline.inAssessment.count,
                 decided: openCockpit.pipeline.decided.count,
               }}
-              outcomes={openCockpit.outcomes}
-              delta={openCockpit.outcomesDelta}
             />
           ) : (
             <section

@@ -32,7 +32,16 @@ function row(over: Record<string, unknown> = {}) {
   };
 }
 
-function fakeTx(r: Record<string, unknown> | null, opts: { otherApps?: number; otherAccounts?: number } = {}) {
+interface FakeAuditRow {
+  id: string;
+  context: string | null;
+  metadata: unknown;
+}
+
+function fakeTx(
+  r: Record<string, unknown> | null,
+  opts: { otherApps?: number; otherAccounts?: number; auditRows?: FakeAuditRow[] } = {},
+) {
   const calls: { op: string; args: unknown }[] = [];
   const fn = (op: string, ret: unknown = { count: 1 }) =>
     vi.fn(async (args: unknown) => {
@@ -53,10 +62,17 @@ function fakeTx(r: Record<string, unknown> | null, opts: { otherApps?: number; o
     assessmentChecklist: { deleteMany: fn("assessmentChecklist.deleteMany") },
     recommendation: { updateMany: fn("recommendation.updateMany") },
     accountSynopsisEntry: { deleteMany: fn("accountSynopsisEntry.deleteMany") },
-    contact: { updateMany: fn("contact.updateMany") },
-    invitation: { deleteMany: fn("invitation.deleteMany") },
-    auditLog: { updateMany: fn("auditLog.updateMany") },
-    profile: { update: fn("profile.update", {}) },
+    contact: { findMany: fn("contact.findMany", [{ id: "contact-1" }]), updateMany: fn("contact.updateMany") },
+    invitation: { findMany: fn("invitation.findMany", [{ id: "inv-1" }]), deleteMany: fn("invitation.deleteMany") },
+    auditLog: {
+      updateMany: fn("auditLog.updateMany"),
+      findMany: fn("auditLog.findMany", opts.auditRows ?? []),
+      update: fn("auditLog.update", {}),
+    },
+    profile: {
+      update: fn("profile.update", {}),
+      findUnique: fn("profile.findUnique", { email: "pat.parent@example.test", firstName: "Pat", lastName: "Parent" }),
+    },
   };
   return { tx, calls, ops: () => calls.map((c) => c.op) };
 }
@@ -141,6 +157,54 @@ describe("anonymiseForErasure (rule 3)", () => {
     const stage = calls.filter((c) => c.op === "application.update").map((c) => (c.args as { data: Record<string, unknown> }).data);
     expect(stage).toContainEqual({ retentionStage: "ANONYMISED", retentionStageAt: NOW });
   });
+  it("the contact-linked invitation goes too (an accepted one has no applicationId)", async () => {
+    const { tx, calls } = fakeTx(row({ closedAt: null }));
+    await anonymiseForErasure(tx as never, "app-1", NOW, "admin-1");
+    const found = calls.find((c) => c.op === "invitation.findMany")!.args as { where: unknown };
+    expect(JSON.stringify(found.where)).toContain('"contactId":{"in":["contact-1"]}');
+    const deleted = calls.find((c) => c.op === "invitation.deleteMany")!.args as { where: unknown };
+    expect(deleted.where).toEqual({ id: { in: ["inv-1"] } });
+  });
+
+  // Charlotte, 22 Oct 2026: "if I am nosey and keep going down the history
+  // trail, I can find the original name of the file still".
+  it("blanks the child's reference and name, and the erased parent's email, in the family's history", async () => {
+    const auditRows = [
+      {
+        id: "a1",
+        context: "Reference: TS-TEST01",
+        metadata: { reference: "TS-TEST01", submittedAt: "2030-01-01" },
+      },
+      {
+        id: "a2",
+        context: "Invited pat.parent@example.test from contact (Pupil Surname)",
+        metadata: { email: "pat.parent@example.test", contactId: "contact-1" },
+      },
+      { id: "a3", context: "Assessor began review", metadata: { toStatus: "NOT_STARTED" } },
+    ];
+    const { tx, calls } = fakeTx(row({ closedAt: null }), { auditRows });
+    await anonymiseForErasure(tx as never, "app-1", NOW, "admin-1");
+    const updates = calls.filter((c) => c.op === "auditLog.update").map((c) => c.args as { where: { id: string }; data: Record<string, unknown> });
+    expect(updates.map((u) => u.where.id)).toEqual(["a1", "a2"]); // a3 names nobody
+    expect(updates[0].data).toEqual({ context: "Reference: XXXX", metadata: { reference: "XXXX", submittedAt: "2030-01-01" } });
+    expect(updates[1].data).toEqual({
+      context: "Invited XXXX from contact (XXXX)",
+      metadata: { email: "XXXX", contactId: "contact-1" },
+    });
+    // the scope is this family's rows only
+    const where = JSON.stringify((calls.find((c) => c.op === "auditLog.findMany")!.args as { where: unknown }).where);
+    expect(where).toContain('"entityId":{"in":["app-1","as-1","contact-1","inv-1"]}');
+    expect(where).toContain('"userId":"lead-1"');
+  });
+
+  it("keeps the parent's email in the history while a sibling is live", async () => {
+    const auditRows = [{ id: "a2", context: "Invited pat.parent@example.test from contact (Pupil Surname)", metadata: {} }];
+    const { tx, calls } = fakeTx(row({ closedAt: null }), { auditRows, otherApps: 1 });
+    await anonymiseForErasure(tx as never, "app-1", NOW, "admin-1");
+    const update = calls.find((c) => c.op === "auditLog.update")!.args as { data: { context: string } };
+    expect(update.data.context).toBe("Invited pat.parent@example.test from contact (XXXX)");
+  });
+
   it("refused once the child has a bursary account", async () => {
     const { tx } = fakeTx(row({ bursaryAccountId: "acc", bursaryAccount: { closedAt: null } }));
     expect((await anonymiseForErasure(tx as never, "app-1", NOW, "admin-1")).applied).toBe(false);
