@@ -38,7 +38,8 @@ export interface AwardBand {
 export interface SchoolComparisonRow {
   school: string;
   count: number;
-  avgBursaryAwardPct: number;
+  /** Average bursary award per assessed application, in £ (not a percentage). */
+  avgBursaryAward: number;
   avgMonthlyFees: number;
 }
 
@@ -79,13 +80,17 @@ export interface SiblingSummaryChild {
   bursaryAccountId: string;
   childName: string;
   school: School;
+  /** Position within the family: sibling-link priority first, then oldest. */
   priorityOrder: number;
   yearlyPayableFees: number | null;
   bursaryAward: number | null;
 }
 
 export interface SiblingSummaryRow {
-  familyGroupId: string;
+  /** Stable key for the family: its first child's bursary account id. */
+  familyKey: string;
+  /** Lead parent of the family's first child. */
+  leadParentName: string | null;
   childrenCount: number;
   combinedYearlyPayableFees: number;
   combinedBursaryAward: number;
@@ -356,7 +361,7 @@ export async function getSchoolComparison(
   return Array.from(schoolMap.entries()).map(([school, data]) => ({
     school,
     count: data.count,
-    avgBursaryAwardPct:
+    avgBursaryAward:
       data.assessed > 0
         ? Math.round(data.totalAward / data.assessed)
         : 0,
@@ -649,69 +654,119 @@ export async function getFinalYearBursaries(
 // ─── getSiblingBursarySummary ──────────────────────────────────────────────────
 
 /**
- * Returns families (FamilyGroups) with two or more linked bursary accounts,
- * with combined totals across the linked siblings.
+ * Returns families with two or more active bursary accounts, with combined
+ * totals across the siblings.
+ *
+ * A family is the accounts joined by a sibling link (same FamilyGroup) or by
+ * a shared lead parent. The lead-parent join covers families whose siblings
+ * were never linked: the Grant Tracker migration creates no SiblingLink rows
+ * (S22 — sibling fees are entered by hand on each assessment), so without it
+ * the report is empty for every migrated family. Grouping here is display
+ * only; it never feeds a calculation.
  *
  * Per-child yearly payable fees and bursary award are taken from the most
  * recent recommendation linked to each account. Accounts span rounds, so this
- * report is not round-scoped. Single-child family groups are excluded — the
- * report is about families with siblings.
+ * report is not round-scoped. Closed accounts are left out.
  */
 export async function getSiblingBursarySummary(
   tx: Tx
 ): Promise<SiblingSummaryRow[]> {
-  const links = await tx.siblingLink.findMany({
+  const accounts = await tx.bursaryAccount.findMany({
+    where: { status: BursaryAccountStatus.ACTIVE },
     select: {
-      familyGroupId: true,
-      priorityOrder: true,
-      bursaryAccount: {
-        select: {
-          id: true,
-          childName: true,
-          school: true,
-          recommendations: {
-            select: { yearlyPayableFees: true, bursaryAward: true, createdAt: true },
-            orderBy: { createdAt: "desc" },
-            take: 1,
-          },
-        },
+      id: true,
+      childName: true,
+      childDob: true,
+      entryYear: true,
+      school: true,
+      leadApplicantId: true,
+      leadApplicant: { select: { firstName: true, lastName: true } },
+      siblingLinks: { select: { familyGroupId: true, priorityOrder: true } },
+      recommendations: {
+        select: { yearlyPayableFees: true, bursaryAward: true, createdAt: true },
+        orderBy: { createdAt: "desc" },
+        take: 1,
       },
     },
-    orderBy: [{ familyGroupId: "asc" }, { priorityOrder: "asc" }],
   });
 
-  const groups = new Map<string, SiblingSummaryChild[]>();
+  // Union-find over accounts: one family per connected set of links and
+  // shared lead parents.
+  const parent = new Map<string, string>();
+  const find = (id: string): string => {
+    let root = id;
+    while (parent.get(root) !== root) root = parent.get(root)!;
+    parent.set(id, root);
+    return root;
+  };
+  const union = (a: string, b: string) => {
+    const ra = find(a);
+    const rb = find(b);
+    if (ra !== rb) parent.set(rb, ra);
+  };
 
-  for (const link of links) {
-    const account = link.bursaryAccount;
-    const latestRec = account.recommendations[0];
-
-    const child: SiblingSummaryChild = {
-      bursaryAccountId: account.id,
-      childName: account.childName,
-      school: account.school,
-      priorityOrder: link.priorityOrder,
-      yearlyPayableFees:
-        latestRec && latestRec.yearlyPayableFees !== null
-          ? Number(latestRec.yearlyPayableFees)
-          : null,
-      bursaryAward:
-        latestRec && latestRec.bursaryAward !== null
-          ? Number(latestRec.bursaryAward)
-          : null,
-    };
-
-    if (!groups.has(link.familyGroupId)) {
-      groups.set(link.familyGroupId, []);
-    }
-    groups.get(link.familyGroupId)!.push(child);
+  const firstBy = new Map<string, string>();
+  for (const account of accounts) {
+    parent.set(account.id, account.id);
   }
+  for (const account of accounts) {
+    const keys = [
+      `lead:${account.leadApplicantId}`,
+      ...account.siblingLinks.map((l) => `group:${l.familyGroupId}`),
+    ];
+    for (const key of keys) {
+      const first = firstBy.get(key);
+      if (first) union(first, account.id);
+      else firstBy.set(key, account.id);
+    }
+  }
+
+  const families = new Map<string, typeof accounts>();
+  for (const account of accounts) {
+    const root = find(account.id);
+    if (!families.has(root)) families.set(root, []);
+    families.get(root)!.push(account);
+  }
+
+  // Sibling-link priority first (unlinked after), then oldest child first.
+  const linkPriority = (a: (typeof accounts)[number]) =>
+    a.siblingLinks.length > 0
+      ? Math.min(...a.siblingLinks.map((l) => l.priorityOrder))
+      : Number.MAX_SAFE_INTEGER;
+  const dobTime = (a: (typeof accounts)[number]) =>
+    a.childDob ? a.childDob.getTime() : Number.MAX_SAFE_INTEGER;
 
   const rows: SiblingSummaryRow[] = [];
 
-  for (const [familyGroupId, children] of Array.from(groups.entries())) {
-    // Families with siblings: two or more linked accounts.
-    if (children.length < 2) continue;
+  for (const members of Array.from(families.values())) {
+    // Families with siblings: two or more accounts.
+    if (members.length < 2) continue;
+
+    members.sort(
+      (a, b) =>
+        linkPriority(a) - linkPriority(b) ||
+        dobTime(a) - dobTime(b) ||
+        a.entryYear - b.entryYear ||
+        a.childName.localeCompare(b.childName)
+    );
+
+    const children: SiblingSummaryChild[] = members.map((account, i) => {
+      const latestRec = account.recommendations[0];
+      return {
+        bursaryAccountId: account.id,
+        childName: account.childName,
+        school: account.school,
+        priorityOrder: i + 1,
+        yearlyPayableFees:
+          latestRec && latestRec.yearlyPayableFees !== null
+            ? Number(latestRec.yearlyPayableFees)
+            : null,
+        bursaryAward:
+          latestRec && latestRec.bursaryAward !== null
+            ? Number(latestRec.bursaryAward)
+            : null,
+      };
+    });
 
     const combinedYearlyPayableFees = children.reduce(
       (sum: number, c: SiblingSummaryChild) => sum + (c.yearlyPayableFees ?? 0),
@@ -722,8 +777,13 @@ export async function getSiblingBursarySummary(
       0
     );
 
+    const lead = members[0].leadApplicant;
+    const leadParentName =
+      [lead?.firstName, lead?.lastName].filter(Boolean).join(" ") || null;
+
     rows.push({
-      familyGroupId,
+      familyKey: members[0].id,
+      leadParentName,
       childrenCount: children.length,
       combinedYearlyPayableFees,
       combinedBursaryAward,

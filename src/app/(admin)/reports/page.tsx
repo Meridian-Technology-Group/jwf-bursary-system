@@ -111,12 +111,12 @@ function ReportSection({
 function SchoolCard({
   school,
   count,
-  avgBursaryAwardPct,
+  avgBursaryAward,
   avgMonthlyFees,
 }: {
   school: string;
   count: number;
-  avgBursaryAwardPct: number;
+  avgBursaryAward: number;
   avgMonthlyFees: number;
 }) {
   return (
@@ -134,7 +134,7 @@ function SchoolCard({
         <div>
           <dt className="text-xs text-slate-500">Avg bursary award</dt>
           <dd className="mt-0.5 text-lg font-semibold tabular-nums text-primary-900">
-            {avgBursaryAwardPct}%
+            {avgBursaryAward > 0 ? formatGBP(avgBursaryAward) : "—"}
           </dd>
         </div>
         <div>
@@ -400,7 +400,7 @@ function SiblingSummaryTable({ rows }: { rows: SiblingSummaryRow[] }) {
     return (
       <div className="rounded-lg border border-dashed border-slate-200 py-8 text-center">
         <p className="text-sm text-slate-400">
-          No families with two or more linked bursary accounts.
+          No families with two or more active bursary accounts.
         </p>
       </div>
     );
@@ -410,16 +410,16 @@ function SiblingSummaryTable({ rows }: { rows: SiblingSummaryRow[] }) {
     <div className="space-y-4">
       {rows.map((family) => (
         <div
-          key={family.familyGroupId}
+          key={family.familyKey}
           className="overflow-hidden rounded-lg border border-slate-200"
         >
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 bg-slate-50 px-4 py-3">
             <div>
               <p className="text-xs uppercase tracking-wide text-slate-500">
-                Family group
+                Lead parent
               </p>
-              <p className="font-mono text-xs font-semibold text-primary-900">
-                {family.familyGroupId}
+              <p className="text-sm font-semibold text-primary-900">
+                {family.leadParentName ?? "—"}
               </p>
             </div>
             <dl className="flex flex-wrap items-center gap-x-6 gap-y-1 text-sm">
@@ -642,7 +642,7 @@ export default async function ReportsPage({ searchParams }: PageProps) {
                 key={school.school}
                 school={school.school}
                 count={school.count}
-                avgBursaryAwardPct={school.avgBursaryAwardPct}
+                avgBursaryAward={school.avgBursaryAward}
                 avgMonthlyFees={school.avgMonthlyFees}
               />
             ))}
@@ -747,9 +747,10 @@ export default async function ReportsPage({ searchParams }: PageProps) {
       {/* ── Section 8: Sibling bursary summary ──────────────────────────────── */}
       <ReportSection id="sibling-summary" title="Sibling bursary summary">
         <p className="mb-4 text-sm text-slate-500">
-          Families with two or more linked bursary accounts, with combined
-          yearly payable fees and bursary award, sorted by combined award. Spans
-          all rounds — not filtered by the selected round.
+          Families with two or more active bursary accounts — linked as
+          siblings, or sharing a lead parent — with combined yearly payable fees
+          and bursary award, sorted by combined award. Spans all rounds — not
+          filtered by the selected round.
         </p>
         <SiblingSummaryTable rows={siblingSummary} />
       </ReportSection>
