@@ -552,6 +552,19 @@ Write the policies **in this migration**, using the patterns in `20260606210000_
 
 ### T8 · Toolkit changes (branch `chore/gt-migration-toolkit`, scripts only)
 
+**Status: BUILT 13 Oct** on `chore/gt-migration-toolkit` (staging merged in first):
+- **Footer:** `formatLongDate` (en-GB, Europe/London) for the load date and the GT completed/received dates; unparseable GT text is kept as given.
+- **A9:** counts rows against `effectiveHorizon(natural, scheduleEndYear)`.
+- **Standing synopsis:** `loadAssessment` writes the YEAR entry through the app's `upsertYearSynopsisEntry` (no author) and ledgers it as `AccountSynopsisEntry`. Its new invariant **A12** checks one YEAR entry per assessment, on its account, agreeing with the synopsis.
+- **Rollback:** the entry comes before `Assessment` in ORDER, not just before `BursaryAccount`: the FK is SET NULL, so an assessments-only rollback would otherwise leave an orphan that a reload duplicates.
+- **Rollback guards:** an entry is judged by its own ledger time, so a later backfill doesn't move the "loaded at" mark for the other rows. An accounts rollback stops on any entry no run ledgered (a staff note, or a re-lock).
+- **Verify B11:** counts migrated assessments without an entry.
+- **`mig backfill-synopsis --env <e> --run <id> [--only] [--dry-run]`:** writes the entry from the current `Assessment.synopsis`, ledgered under the run's `assessments` phase. Idempotent. Prod needs a STATE.json approval for phase `backfill-synopsis`.
+- **Re-plan (rehearsal, canonical `e3391ced7065`):** `mig plan --out` before vs after. 271 plannable, 0 held. The only field that differs is the synopsis footer dates (271 of 271).
+- **Schedule check:** a fresh `planSchedule` for each migrated account matches all 660 later-year rows on rehearsal after the T5/T7 SQL (dates, academic year, `showOnPortal`), so a new load and the backfilled rehearsal agree.
+- **Rehearsal dry run:** 271 entries planned. Verify fails only A12/B11 until the backfill runs.
+- **Known gap:** verify checks 268 of 271. TS-NOWS01's three accounts are skipped since the test-family login took a new email (11 Oct). Restore at M9.
+
 1. **Footer dates (promised 11 Oct).** In `composeSynopsis` (`scripts/gt-migration/load/plan.ts:140-155`), format `today` and the GT completed/received dates as "10 October 2026" (en-GB, Europe/London). Update `load-plan.test.ts:92-95`.
 2. **A9 invariant** (`phases.ts:423-427`) uses the effective horizon with `scheduleEndYear` (from T4).
 3. **Standing synopsis seeding** (from T6): add an entry in `loadAssessment`, a ledger entity type, a rollback ORDER entry, a verify check (one YEAR entry per migrated account) and the `backfill-synopsis` command for rehearsal.
