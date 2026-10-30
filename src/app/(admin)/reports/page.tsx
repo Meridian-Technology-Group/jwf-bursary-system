@@ -26,9 +26,12 @@ import {
   getGapSummary,
   getFinalYearBursaries,
   getSiblingBursarySummary,
+  summariseHouseholdCombinations,
   type FinalYearBursaryRow,
-  type SiblingSummaryRow,
+  type HouseholdCombinations,
+  type SchoolComparisonRow,
 } from "@/lib/db/queries/reports";
+import { AWARD_FUND_LABELS } from "@/lib/assessment/award-fund";
 import { withUserContext, type RlsRole } from "@/lib/db/prisma";
 import { HorizontalBarChart } from "@/components/admin/charts/horizontal-bar-chart";
 import { RoundSelector } from "@/components/admin/charts/round-selector";
@@ -108,48 +111,74 @@ function ReportSection({
 
 // ─── School comparison cards ──────────────────────────────────────────────────
 
-function SchoolCard({
-  school,
-  count,
-  avgBursaryAwardPct,
-  avgMonthlyFees,
-}: {
-  school: string;
-  count: number;
-  avgBursaryAwardPct: number;
-  avgMonthlyFees: number;
-}) {
+function formatPct(value: number | null): string {
+  return value === null ? "—" : `${value.toFixed(1)}%`;
+}
+
+function SchoolCard({ row }: { row: SchoolComparisonRow }) {
   return (
     <div className="rounded-lg border border-slate-200 bg-slate-50 p-5">
       <h3 className="text-sm font-semibold text-primary-900 uppercase tracking-wide">
-        {school}
+        {schoolName(row.school, "short") || row.school}
       </h3>
       <dl className="mt-4 space-y-3">
         <div>
           <dt className="text-xs text-slate-500">Total applications</dt>
           <dd className="mt-0.5 text-2xl font-semibold tabular-nums text-slate-900">
-            {count}
+            {row.count}
           </dd>
         </div>
-        <div>
-          <dt className="text-xs text-slate-500">Avg bursary award</dt>
-          <dd className="mt-0.5 text-lg font-semibold tabular-nums text-primary-900">
-            {avgBursaryAwardPct}%
-          </dd>
+        <div className="flex flex-wrap gap-x-8 gap-y-3">
+          <div>
+            <dt className="text-xs text-slate-500">Avg bursary award (£)</dt>
+            <dd className="mt-0.5 text-lg font-semibold tabular-nums text-primary-900">
+              {row.avgBursaryAward > 0 ? formatGBP(row.avgBursaryAward) : "—"}
+            </dd>
+          </div>
+          <div>
+            <dt className="text-xs text-slate-500">Avg bursary award (%)</dt>
+            <dd className="mt-0.5 text-lg font-semibold tabular-nums text-primary-900">
+              {formatPct(row.avgBursaryAwardPct)}
+            </dd>
+          </div>
         </div>
         <div>
           <dt className="text-xs text-slate-500">Avg monthly payable fees</dt>
           <dd className="mt-0.5 text-lg font-semibold tabular-nums text-primary-900">
-            {avgMonthlyFees > 0
-              ? new Intl.NumberFormat("en-GB", {
-                  style: "currency",
-                  currency: "GBP",
-                  maximumFractionDigits: 0,
-                }).format(avgMonthlyFees)
-              : "—"}
+            {row.avgMonthlyFees > 0 ? formatGBP(row.avgMonthlyFees) : "—"}
           </dd>
         </div>
       </dl>
+      {row.funds.length > 0 && (
+        <table className="mt-4 w-full text-sm">
+          <thead>
+            <tr className="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-500">
+              <th className="py-2 text-left font-semibold">By award type</th>
+              <th className="py-2 text-right font-semibold">Awards</th>
+              <th className="py-2 text-right font-semibold">Avg (£)</th>
+              <th className="py-2 text-right font-semibold">Avg (%)</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100">
+            {row.funds.map((f) => (
+              <tr key={f.fund ?? "none"}>
+                <td className="py-2 text-slate-700">
+                  {f.fund ? AWARD_FUND_LABELS[f.fund] : "No award type"}
+                </td>
+                <td className="py-2 text-right tabular-nums text-slate-700">
+                  {f.assessed}
+                </td>
+                <td className="py-2 text-right tabular-nums text-slate-800">
+                  {f.avgBursaryAward > 0 ? formatGBP(f.avgBursaryAward) : "—"}
+                </td>
+                <td className="py-2 text-right tabular-nums text-slate-800">
+                  {formatPct(f.avgBursaryAwardPct)}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
     </div>
   );
 }
@@ -393,95 +422,83 @@ function FinalYearTable({ rows }: { rows: FinalYearBursaryRow[] }) {
   );
 }
 
-// ─── Sibling summary table ────────────────────────────────────────────────────
+// ─── Household award combinations ─────────────────────────────────────────────
 
-function SiblingSummaryTable({ rows }: { rows: SiblingSummaryRow[] }) {
-  if (rows.length === 0) {
+function HouseholdCombinationTable({
+  summary,
+}: {
+  summary: HouseholdCombinations;
+}) {
+  if (summary.total.households === 0) {
     return (
       <div className="rounded-lg border border-dashed border-slate-200 py-8 text-center">
         <p className="text-sm text-slate-400">
-          No families with two or more linked bursary accounts.
+          No households with two or more active bursary accounts.
         </p>
       </div>
     );
   }
 
+  const th =
+    "px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500";
+  const td = "px-4 py-3 tabular-nums";
+  // Blank, not 0, for combinations no household has — as in her table.
+  const blankIfNone = (households: number, text: string) =>
+    households > 0 ? text : "";
+
   return (
-    <div className="space-y-4">
-      {rows.map((family) => (
-        <div
-          key={family.familyGroupId}
-          className="overflow-hidden rounded-lg border border-slate-200"
-        >
-          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 bg-slate-50 px-4 py-3">
-            <div>
-              <p className="text-xs uppercase tracking-wide text-slate-500">
-                Family group
-              </p>
-              <p className="font-mono text-xs font-semibold text-primary-900">
-                {family.familyGroupId}
-              </p>
-            </div>
-            <dl className="flex flex-wrap items-center gap-x-6 gap-y-1 text-sm">
-              <div className="flex items-baseline gap-1.5">
-                <dt className="text-xs text-slate-500">Children</dt>
-                <dd className="font-semibold tabular-nums text-slate-900">
-                  {family.childrenCount}
-                </dd>
-              </div>
-              <div className="flex items-baseline gap-1.5">
-                <dt className="text-xs text-slate-500">Combined fees</dt>
-                <dd className="font-semibold tabular-nums text-slate-900">
-                  {formatGBP(family.combinedYearlyPayableFees)}
-                </dd>
-              </div>
-              <div className="flex items-baseline gap-1.5">
-                <dt className="text-xs text-slate-500">Combined award</dt>
-                <dd className="font-semibold tabular-nums text-primary-900">
-                  {formatGBP(family.combinedBursaryAward)}
-                </dd>
-              </div>
-            </dl>
-          </div>
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-slate-100 text-xs uppercase tracking-wide text-slate-500">
-                <th className="px-4 py-2 text-left font-semibold w-12">#</th>
-                {/* D13-1a: no account reference column. */}
-                <th className="px-4 py-2 text-left font-semibold">Child</th>
-                <th className="px-4 py-2 text-left font-semibold">School</th>
-                <th className="px-4 py-2 text-right font-semibold">
-                  Yearly payable fees
-                </th>
-                <th className="px-4 py-2 text-right font-semibold">
-                  Bursary award
-                </th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {family.children.map((child) => (
-                <tr key={child.bursaryAccountId} className="hover:bg-slate-50">
-                  <td className="px-4 py-2 tabular-nums text-slate-400">
-                    {child.priorityOrder}
-                  </td>
-                  <td className="px-4 py-2 font-semibold text-primary-900">
-                    {child.childName}
-                  </td>
-                  <td className="px-4 py-2 text-slate-700">
-                    {schoolName(child.school, "short") || child.school}
-                  </td>
-                  <td className="px-4 py-2 text-right tabular-nums text-slate-800">
-                    {formatGBP(child.yearlyPayableFees)}
-                  </td>
-                  <td className="px-4 py-2 text-right tabular-nums text-slate-800">
-                    {formatGBP(child.bursaryAward)}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      ))}
+    <div className="overflow-x-auto rounded-lg border border-slate-200">
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="border-b border-slate-200 bg-slate-50">
+            <th className={`${th} text-left`}>
+              Multiple award combinations within same household
+            </th>
+            <th className={`${th} text-right`}>Number of households</th>
+            <th className={`${th} text-right`}>Number of awards</th>
+            <th className={`${th} text-right`}>Total bursary support (£)</th>
+            <th className={`${th} text-right`}>
+              Equivalent in fee support (£)
+            </th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-slate-100">
+          {summary.rows.map((row) => (
+            <tr key={row.label} className="hover:bg-slate-50">
+              <td className="px-4 py-3 text-slate-700">{row.label}</td>
+              <td className={`${td} text-right text-slate-800`}>
+                {blankIfNone(row.households, String(row.households))}
+              </td>
+              <td className={`${td} text-right text-slate-800`}>
+                {blankIfNone(row.households, String(row.awards))}
+              </td>
+              <td className={`${td} text-right text-slate-800`}>
+                {blankIfNone(row.households, formatGBP(row.totalBursarySupport))}
+              </td>
+              <td className={`${td} text-right text-slate-800`}>
+                {blankIfNone(row.households, formatGBP(row.feeSupportEquivalent))}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+        <tfoot>
+          <tr className="border-t border-slate-200 bg-slate-50 font-semibold">
+            <td className="px-4 py-3 text-primary-900">Total</td>
+            <td className={`${td} text-right text-primary-900`}>
+              {summary.total.households}
+            </td>
+            <td className={`${td} text-right text-primary-900`}>
+              {summary.total.awards}
+            </td>
+            <td className={`${td} text-right text-primary-900`}>
+              {formatGBP(summary.total.totalBursarySupport)}
+            </td>
+            <td className={`${td} text-right text-primary-900`}>
+              {formatGBP(summary.total.feeSupportEquivalent)}
+            </td>
+          </tr>
+        </tfoot>
+      </table>
     </div>
   );
 }
@@ -632,19 +649,15 @@ export default async function ReportsPage({ searchParams }: PageProps) {
       {/* ── Section 2: School Comparison ───────────────────────────────────── */}
       <ReportSection id="school-comparison" title="School Comparison">
         <p className="mb-4 text-sm text-slate-500">
-          Side-by-side comparison of Trinity and Whitgift applications for this
-          round.
+          Side-by-side comparison of each school's applications for this
+          round. The % is the bursary award as a share of the annual fees
+          before VAT for the round's year (each account's own fees at the OP
+          partnering school), overall and by award type.
         </p>
         {schoolComparison.length > 0 ? (
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            {schoolComparison.map((school) => (
-              <SchoolCard
-                key={school.school}
-                school={school.school}
-                count={school.count}
-                avgBursaryAwardPct={school.avgBursaryAwardPct}
-                avgMonthlyFees={school.avgMonthlyFees}
-              />
+            {schoolComparison.map((row) => (
+              <SchoolCard key={row.school} row={row} />
             ))}
           </div>
         ) : (
@@ -747,11 +760,16 @@ export default async function ReportsPage({ searchParams }: PageProps) {
       {/* ── Section 8: Sibling bursary summary ──────────────────────────────── */}
       <ReportSection id="sibling-summary" title="Sibling bursary summary">
         <p className="mb-4 text-sm text-slate-500">
-          Families with two or more linked bursary accounts, with combined
-          yearly payable fees and bursary award, sorted by combined award. Spans
-          all rounds — not filtered by the selected round.
+          Households with two or more active bursary accounts — linked as
+          siblings, or sharing a lead parent — by number of awards and school.
+          Total bursary support is the combined yearly award before VAT; the
+          fee support adds VAT back (20% at Trinity and Whitgift, none at the
+          OP partnering school). Spans all rounds — not filtered by the
+          selected round.
         </p>
-        <SiblingSummaryTable rows={siblingSummary} />
+        <HouseholdCombinationTable
+          summary={summariseHouseholdCombinations(siblingSummary)}
+        />
       </ReportSection>
     </div>
   );
