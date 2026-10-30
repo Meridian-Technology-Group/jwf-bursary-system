@@ -1,0 +1,400 @@
+/**
+ * One migrated account, planned row by row (02-target-model.md Part 1).
+ *
+ * Pure: canonical account + mapped engine input + engine output → the values
+ * every row will carry. The phases add ids and write; nothing here touches a
+ * database. Names, emails and figures stay inside the returned plan and are
+ * never logged.
+ */
+import type { AssessmentV2Input, AssessmentV2Output } from '../../../src/lib/assessment/v2/orchestrator'
+import type { AssessmentSaveInput } from '../../../src/lib/db/queries/assessments'
+import type { UpsertRecommendationInput } from '../../../src/lib/db/queries/recommendations'
+import { computeGapAmount } from '../../../src/lib/assessment/recommendation-v2'
+import { dominantEmploymentStatus } from '../../../src/lib/assessment/v2/employment-status'
+import { calculateEarnerIncome } from '../../../src/lib/assessment/v2/income'
+import { schoolVatRate } from '../../../src/lib/schools'
+import type { AwardFundType, EntryYearGroup, School } from '@prisma/client'
+import type { CanonicalAccount } from '../build/map-assessment'
+import { crosswalkReasonCodes, gapReasonLabels } from './reason-codes'
+import { LEG_NAME, recommendedFromLeg, type ReferenceLeg } from '../build/reference-leg'
+import { familyCategoryMetas } from '../../../prisma/seed-data/profiling-reference'
+import { dobAsDate } from '../build/gt-dob'
+
+/**
+ * "Number of schooling age children" — display only (the v2 savings test
+ * divides by schooling years alone since her 5 Sep respec). GT holds no
+ * children count, so the field takes the family category's default, exactly
+ * as a new assessment does (her 15 Oct check: it read 0).
+ */
+export function defaultSchoolAgeChildren(familyTypeCategory: number): number {
+  return familyCategoryMetas.find((m) => m.category === familyTypeCategory)?.schoolAgeChildren ?? 1
+}
+
+/** The canonical fields the loader reads beyond what the mapper needs. */
+export interface LoadAccount extends CanonicalAccount {
+  reference: string
+  referenceCorrected?: string | null
+  /**
+   * Her ruling of 21 Oct 2026 ("no more new awards"): every migrated account
+   * loads as a rolling-over bursary. A GT new award keeps its first-assessment
+   * reason code; only the application type, the lock and the contact's
+   * situation change.
+   */
+  rollOver?: boolean | null
+  email: string
+  surname: string | null
+  forenames: string | null
+  parent?: { title: string | null; firstName: string | null; lastName: string; source: string } | null
+  monthly: number
+  fund: string
+  majorIncome?: string | null
+  majorAssets?: string | null
+  yoyCodes?: string | null
+  addReasonCodes?: string[]
+  synopsis?: string | null
+  /** Outward code taken from her synopsis (10 Oct, her item 2); null when it names none. */
+  postcode?: string | null
+  siblings?: { name: string; gtFees: number }[]
+  latest?: { completed?: string; received?: string; eid?: string; formEid?: string } | null
+  gt?: { id: string } | null
+  /** Her pick from the returned reconciliation report (S19), when ingested. */
+  gapCode?: string | null
+  /**
+   * Phase 2: her final reason and gap codes from the returned M5 report
+   * (labels without display numbers). When present they replace the GT
+   * crosswalk and the gap-code fallback.
+   */
+  m5?: { reasonLabels: string[]; gapLabels: string[]; batch: string } | null
+  held?: string | null
+  /** Flags her rulings settled, flag → decision id. */
+  resolved?: Record<string, string>
+}
+
+export const MIGRATION_SOURCE = 'GRANT_TRACKER'
+export const ENTRY_YEAR = 2026
+
+export type LockStatus = 'ROLLED_OVER' | 'NEW_AWARD'
+
+export interface AccountPlan {
+  key: string
+  gtGrantId: string | null
+  /** The lead's email as matched (lower-cased); one login + profile per email. */
+  leadEmail: string
+  parent: { title: string | null; firstName: string | null; lastName: string }
+  /** dob: "YYYY-MM-DD" from GT's Recurring forms when consistent (Epic 23 T2), else null. */
+  child: { firstName: string | null; lastName: string | null; name: string; dob: string | null }
+  school: School
+  entryYearGroup: EntryYearGroup
+  isNew: boolean
+  reference: string
+  submittedAt: Date
+  contact: {
+    title: string | null
+    firstName: string | null
+    lastName: string
+    email: string
+    childFirstName: string | null
+    childLastName: string | null
+    childName: string
+    childDob: Date | null
+    school: School
+    situation: 'NEW' | 'ROLLING_OVER'
+    entryYear: number
+    entryYearGroup: EntryYearGroup
+    notes: string
+  }
+  application: {
+    reference: string
+    school: School
+    childName: string
+    childDob: Date | null
+    childFirstName: string | null
+    childLastName: string | null
+    entryYear: number
+    entryYearGroup: EntryYearGroup
+    applicationType: 'NEW' | 'ROLLING_OVER'
+    isReassessment: boolean
+    formStatus: 'SUBMITTED'
+    submittedAt: Date
+    migrationSource: string
+  }
+  assessmentSave: AssessmentSaveInput
+  assessmentLock: {
+    status: LockStatus
+    awardFundType: AwardFundType
+    completedAt: Date
+    synopsis: string
+    vatRate: number
+  }
+  recommendation: Omit<UpsertRecommendationInput, 'roundId' | 'bursaryAccountId'>
+  reasonLabels: string[]
+  gapLabels: string[]
+  /** Where the reason and gap codes came from: her returned report, or the GT crosswalk and fallback. */
+  reasonsFrom: 'M5' | 'GT'
+  unmappedReasons: string[]
+  account: { benchmarkPayableFees: number; annualFeesOverride: number | null }
+  /** R3 / A7: her sheet's arithmetic was off and she ruled on it. */
+  sheetArithResolved: boolean
+  /** Figures the in-transaction checks compare against (06 §1 group A). */
+  expect: {
+    recommendedPayableFees: number
+    confirmedPayableFees: number
+    bursaryAward: number
+    annualFees: number
+    vatRate: number
+    gapAmount: number | null
+    /** A4: the leg the recommendation must equal. */
+    referenceLeg: ReferenceLeg
+  }
+}
+
+const round2 = (n: number) => Math.round(n * 100) / 100
+
+/** "16 May 2026" or "2026-04-15" → Date at noon UTC (a date, not a moment). */
+export function parseGtDate(s: string | null | undefined): Date | null {
+  const t = (s ?? '').trim()
+  if (!t) return null
+  const iso = t.match(/^(\d{4})-(\d{2})-(\d{2})$/)
+  const d = iso ? new Date(Date.UTC(+iso[1], +iso[2] - 1, +iso[3], 12)) : new Date(`${t} 12:00:00 UTC`)
+  return Number.isNaN(d.getTime()) ? null : d
+}
+
+const LONG_DATE = new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Europe/London' })
+
+/** "2026-10-10" or "10 Oct 2026" → "10 October 2026" (promised 11 Oct); unparseable text is kept as given. */
+export function formatLongDate(s: string): string {
+  const d = parseGtDate(s)
+  return d ? LONG_DATE.format(d) : s.trim()
+}
+
+export function composeSynopsis(
+  gtText: string | null | undefined,
+  completed: string | null | undefined,
+  today: string,
+  received?: string | null,
+  referenceLeg: ReferenceLeg = 'ACTUAL',
+): string {
+  const footer =
+    `Migrated from Grant Tracker on ${formatLongDate(today)}.` +
+    (completed
+      ? ` GT assessment completed ${formatLongDate(completed)}.`
+      : received
+        ? ` GT holds no completion date; the review was received ${formatLongDate(received)}.`
+        : '') +
+    ' Figures recalculated by the current model from GT inputs; award and payable fees as confirmed by the Head of Fees & Bursaries.' +
+    (referenceLeg === 'ACTUAL'
+      ? ''
+      : ` Recommended payable fees taken from the ${LEG_NAME[referenceLeg]} leg, as instructed by the Head of Fees & Bursaries; re-saving the assessment recalculates them from the actual leg.`)
+  const body = (gtText ?? '').trim()
+  return body ? `${body}\n\n— ${footer}` : `— ${footer}`
+}
+
+export class PlanError extends Error {}
+
+export function planAccount(
+  a: LoadAccount,
+  input: AssessmentV2Input,
+  out: AssessmentV2Output,
+  today: string,
+  /** The recipient's DOB (ISO) when GT's Recurring forms agree; null otherwise (D-2). */
+  dob: string | null = null,
+): AccountPlan {
+  if (a.excluded) throw new PlanError('excluded by ruling')
+  if (a.held) throw new PlanError('held: ruling unclear')
+  if (!a.parent?.lastName) throw new PlanError('no parent surname')
+  if (!a.surname) throw new PlanError('no pupil name')
+  if (a.sheetYear < 6 || a.sheetYear > 13) throw new PlanError(`school year ${a.sheetYear} out of range`)
+  if (a.fund === 'PB') throw new PlanError('pastoral boarder: not migrated (C3)')
+
+  const isNew = a.type === 'New award'
+  if (!isNew && a.type !== 'Rolling-over') throw new PlanError(`unexpected bursary type ${a.type}`)
+  const rolling = !isNew || a.rollOver === true
+  const school = a.school
+  const entryYearGroup = `Y${a.sheetYear}` as EntryYearGroup
+  const childFirstName = a.forenames || null
+  const childLastName = a.surname
+  const childName = [childFirstName, childLastName].filter(Boolean).join(' ')
+  const reference = a.referenceCorrected ?? a.reference
+  // NO_COMPLETION_DATE: GT left it blank; the review's received date stands in.
+  const completedAt = parseGtDate(a.latest?.completed) ?? parseGtDate(a.latest?.received)
+  if (!completedAt) throw new PlanError('no GT completion or received date')
+  const vatRate = schoolVatRate(school)
+  if (input.vatRate !== vatRate) throw new PlanError(`mapper VAT ${input.vatRate} ≠ school VAT ${vatRate}`)
+
+  const summary = out.awardSummary
+  if (!summary) throw new PlanError('engine produced no award summary')
+  const referenceLeg: ReferenceLeg = a.overrides?.referenceLeg ?? 'ACTUAL'
+  const recommended = recommendedFromLeg(out, referenceLeg)
+  const gapAmount = computeGapAmount(a.payable, recommended)
+  const crosswalk = crosswalkReasonCodes({
+    yoyCodes: a.yoyCodes,
+    majorIncome: a.majorIncome,
+    majorAssets: a.majorAssets,
+    isNew,
+    addLabels: a.addReasonCodes,
+  })
+  // Her returned report is final for the accounts it covers.
+  const fromM5 = Boolean(a.m5?.reasonLabels.length)
+  const reasonLabels = fromM5 ? a.m5!.reasonLabels : crosswalk.labels
+  const unmapped = fromM5 ? [] : crosswalk.unmapped
+  const gapLabels = gapReasonLabels(gapAmount, a.m5?.gapLabels ?? (a.gapCode ? [a.gapCode] : []))
+
+  const siblingNames = (a.siblings ?? []).map((s) => s.name).filter(Boolean)
+  const suppliedFees = a.overrides?.siblings ?? []
+  const siblingDetails = siblingNames.length || suppliedFees.length
+    ? Array.from({ length: Math.max(siblingNames.length, suppliedFees.length) }, (_, i) => ({
+        name: suppliedFees[i]?.name ?? siblingNames[i] ?? '',
+        school: null,
+        netPayableFees: suppliedFees[i]?.payableFees ?? null,
+      }))
+    : null
+
+  const assessmentSave: AssessmentSaveInput = {
+    familyTypeCategory: input.familyTypeCategory,
+    annualFees: a.fees,
+    // 02 §5: no 2027/28 fee row exists; the award summary falls back to the current-year fee.
+    nextYearAnnualFees: null,
+    assessmentSchool: school,
+    entrySchoolYear: a.sheetYear,
+    scholarshipPct: a.scholPct,
+    schoolingYearsRemaining: input.schoolingYearsRemaining,
+    vatRate,
+    rentAddBackType: input.rentAddBackType,
+    rentAddBackOverride: input.rentAddBackOverride ?? null,
+    multiPropertyRentAddBack: input.multiPropertyRentAddBack,
+    councilTaxSupport: input.councilTaxSupport,
+    councilTaxOverride: null,
+    postcode: a.postcode ?? null,
+    usesCar: input.usesCar,
+    usesPublicTransport: input.usesPublicTransport,
+    feeInsuranceAnnual: input.feeInsuranceAnnual,
+    behindOnFees: false,
+    manualAdjustment: input.manualAdjustment,
+    manualAdjustmentReason: null,
+    dishonestyFlag: false,
+    siblingDetails,
+    // the snapshot, 1:1 as the v2 form saves it
+    totalHouseholdNetIncome: out.householdNetIncome,
+    notionalEssentials: out.notionalEssentials,
+    notionalCar: out.notionalCar,
+    notionalPublicTransport: out.notionalPublicTransport,
+    notionalJwfAllowance: out.notionalJwfAllowance,
+    notionalSavingsBenchmark: out.notionalSavingsBenchmark,
+    savingsTestNumber: out.savingsTestNumber,
+    totalNotionalSpend: out.totalNotionalSpend,
+    ndiAfterNotionalSpend: out.ndiAfterNotionalSpend,
+    derivedYearlyDebtRepayments: out.derivedYearlyDebtRepayments,
+    yearlyDebtExposure: out.yearlyDebtExposure,
+    debtOverNdiRatio: out.debtOverNdiRatio,
+    debtStatusLabel: out.debtStatusLabel,
+    incomeCategory: out.incomeCategory,
+    propertyCategoryDerived: out.propertyCategoryDerived,
+    propertyEquityCategory: out.propertyEquityCategory,
+    financialEquityLabel: out.financialEquityLabel,
+    lifestyleSqueezeRatio: out.lifestyleSqueezeRatio,
+    lifestyleSqueezeLabel: out.lifestyleSqueezeLabel,
+    actualRemainingDi: out.actualRemainingDi,
+    theoreticalBenchmarkDi: out.theoreticalBenchmarkDi,
+    affordabilityAdjustedDi: out.affordabilityAdjustedDi,
+    recommendedPayableFees: recommended,
+    earnersV2: input.earners.map((rec, i) => ({
+      earnerLabel: i === 0 ? 'PARENT_1' : 'PARENT_2',
+      employmentStatus: dominantEmploymentStatus(rec),
+      // `total` is the stored back-compat figure (assessment_earners.total_income);
+      // the engine sums the sub-tables itself, so this is display only.
+      incomeDetail: { ...rec, total: calculateEarnerIncome(rec) },
+    })),
+    propertyV2: {
+      propertyAssets: { ...input.propertyAssets, portfolioType: input.portfolioType },
+      debts: input.debts,
+      cashSavings: input.cashSavings,
+      isasPepsShares: input.isasPepsShares,
+      schoolAgeChildrenCount: defaultSchoolAgeChildren(input.familyTypeCategory),
+      derivedSavingsAnnualTotal: out.adjustedSavings,
+    },
+  }
+
+  return {
+    key: a.key,
+    gtGrantId: a.gt?.id ?? null,
+    leadEmail: a.email.trim().toLowerCase(),
+    parent: { title: a.parent.title, firstName: a.parent.firstName, lastName: a.parent.lastName },
+    child: { firstName: childFirstName, lastName: childLastName, name: childName, dob },
+    school,
+    entryYearGroup,
+    isNew,
+    reference,
+    submittedAt: completedAt,
+    contact: {
+      title: a.parent.title,
+      firstName: a.parent.firstName,
+      lastName: a.parent.lastName,
+      email: a.email.trim(),
+      childFirstName,
+      childLastName,
+      childName,
+      childDob: dob ? dobAsDate(dob) : null,
+      school,
+      situation: rolling ? 'ROLLING_OVER' : 'NEW',
+      entryYear: ENTRY_YEAR,
+      entryYearGroup,
+      notes: `Migrated from Grant Tracker ${today}`,
+    },
+    application: {
+      reference,
+      school,
+      childName,
+      childDob: dob ? dobAsDate(dob) : null,
+      childFirstName,
+      childLastName,
+      entryYear: ENTRY_YEAR,
+      entryYearGroup,
+      applicationType: rolling ? 'ROLLING_OVER' : 'NEW',
+      isReassessment: rolling,
+      formStatus: 'SUBMITTED',
+      submittedAt: completedAt,
+      migrationSource: MIGRATION_SOURCE,
+    },
+    assessmentSave,
+    assessmentLock: {
+      status: rolling ? 'ROLLED_OVER' : 'NEW_AWARD',
+      awardFundType: a.fund as AwardFundType,
+      completedAt,
+      synopsis: composeSynopsis(a.synopsis, a.latest?.completed, today, a.latest?.received, referenceLeg),
+      vatRate,
+    },
+    recommendation: {
+      bursaryAward: a.award,
+      bursarySpendBeforeVat: a.award,
+      scholarshipSpendBeforeVat: round2(summary.scholarshipSpendBeforeVat),
+      netFeesBeforeVat: round2(summary.netFeesBeforeVat),
+      yearlyPayableFees: a.payable,
+      confirmedPayableFees: a.payable,
+      monthlyPayableFees: a.monthly,
+      recommendedPayableFees: recommended,
+      gapAmount,
+      lastPayableFees: null,
+      incomeCategory: out.incomeCategory == null ? null : String(out.incomeCategory),
+      propertyCategory: out.propertyCategoryDerived ?? null,
+      familySynopsis: null,
+    },
+    reasonLabels,
+    gapLabels,
+    reasonsFrom: fromM5 ? 'M5' : 'GT',
+    unmappedReasons: unmapped,
+    account: {
+      benchmarkPayableFees: a.payable,
+      annualFeesOverride: school === 'OP_PARTNER' ? a.fees : null,
+    },
+    sheetArithResolved: Boolean(a.resolved?.SHEET_ARITH),
+    expect: {
+      recommendedPayableFees: recommended,
+      confirmedPayableFees: a.payable,
+      bursaryAward: a.award,
+      annualFees: a.fees,
+      vatRate,
+      gapAmount,
+      referenceLeg,
+    },
+  }
+}
