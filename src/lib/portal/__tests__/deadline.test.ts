@@ -12,6 +12,7 @@ const round = {
   // override and close-date tiers, which are type-blind.
   defaultSubmissionDeadlineNew: null,
   defaultSubmissionDeadlineRolling: null,
+  windows: [],
 };
 
 describe("getDeadlineStatus (Epic 05 §3.2)", () => {

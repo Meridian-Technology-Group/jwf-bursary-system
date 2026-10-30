@@ -149,13 +149,16 @@ const callSiteData: Record<string, EmailMergeData> = {
     deadline: "01/06/2026",
   },
   // src/app/(admin)/applications/[id]/actions.ts — rejectAndRestartApplication
+  // (getRejectionDraft fills these into the window; the send adds deadline)
   APPLICATION_RESTART_REQUIRED: {
+    greeting: "Mrs Parent",
     applicant_name: "Alex Parent",
     child_name: "Sam Parent",
     reference: "TRI-2026-0001",
-    custom_message:
-      "The documents supplied were not valid; please upload current, legible copies.",
-    restart_link: "https://app.example.com/apply/child-details",
+    // The link opens the first section without a green tick; the deadline is
+    // the new Submit by.
+    restart_link: "https://app.example.com/apply/open/app-1?to=continue",
+    deadline: "05/06/2027",
   },
   // src/app/(admin)/applications/[id]/edit/actions.ts — finishEditingOnBehalf
   APPLICATION_EDITED_ON_BEHALF: {

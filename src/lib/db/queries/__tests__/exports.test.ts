@@ -23,6 +23,7 @@ function baseSource(): ExportRowSource {
       totalHouseholdNetIncome: 50000,
       manualAdjustment: 0,
       manualAdjustmentReason: null,
+      vatRate: 20,
       recommendation: {
         familySynopsis: "A family synopsis.",
         accommodationStatus: "Renting",
@@ -36,6 +37,7 @@ function baseSource(): ExportRowSource {
         recommendedPayableFees: null,
         confirmedPayableFees: null,
         gapAmount: null,
+        scholarshipSpendBeforeVat: null,
         reasonCodes: [{ reasonCode: { code: 1, label: "Redundancy" } }],
         gapReasons: [],
       },
@@ -63,6 +65,8 @@ describe("mapExportRow", () => {
     expect(row.confirmedPayableFees).toBeNull();
     expect(row.gapAmount).toBeNull();
     expect(row.gapReasons).toBe("");
+    expect(row.mainGapReason).toBe("");
+    expect(row.scholarshipAdjustedGap).toBeNull();
     expect(row.debtStatus).toBe("");
     expect(row.lifestyleSqueezeLabel).toBe("");
 
@@ -85,6 +89,7 @@ describe("mapExportRow", () => {
         totalHouseholdNetIncome: 72500,
         manualAdjustment: 12500,
         manualAdjustmentReason: "Second parent's income added (separated household)",
+        vatRate: 20,
         recommendation: {
           familySynopsis: null,
           accommodationStatus: null,
@@ -97,11 +102,13 @@ describe("mapExportRow", () => {
           creditRiskFlag: false,
           recommendedPayableFees: 12000,
           confirmedPayableFees: 15676,
-          gapAmount: 3676,
+          gapAmount: -3676,
+          scholarshipSpendBeforeVat: 2000,
           reasonCodes: [],
+          // Display order (sortOrder) puts 104 first; rank puts 110 first.
           gapReasons: [
-            { gapReason: { code: 101, label: "Sibling absorption" } },
-            { gapReason: { code: 104, label: "Committee discretion" } },
+            { gapReason: { code: 104, label: "Committee discretion", rank: 8, sortOrder: 4 } },
+            { gapReason: { code: 110, label: "Affordability view", rank: 4, sortOrder: 13 } },
           ],
         },
       },
@@ -117,10 +124,14 @@ describe("mapExportRow", () => {
     expect(row.propertyCategory).toBe("7");
     expect(row.recommendedPayableFees).toBe(12000);
     expect(row.confirmedPayableFees).toBe(15676);
-    expect(row.gapAmount).toBe(3676);
+    expect(row.gapAmount).toBe(-3676);
     expect(row.gapReasons).toBe(
-      "101 – Sibling absorption, 104 – Committee discretion"
+      "104 – Committee discretion, 110 – Affordability view"
     );
+    // Epic 21 #2 — the highest-ranked code, not the first listed.
+    expect(row.mainGapReason).toBe("110 – Affordability view");
+    // Epic 21 #1 — −3,676 + 2,000 × 1.2 = −1,276.
+    expect(row.scholarshipAdjustedGap).toBe(-1276);
     expect(row.debtStatus).toBe("Manageable");
     expect(row.lifestyleSqueezeLabel).toBe("Squeezed");
 
@@ -151,7 +162,52 @@ describe("mapExportRow", () => {
     expect(row.familySynopsis).toBe("");
     expect(row.recommendedPayableFees).toBeNull();
     expect(row.gapReasons).toBe("");
+    expect(row.mainGapReason).toBe("");
+    expect(row.scholarshipAdjustedGap).toBeNull();
     expect(row.debtStatus).toBe("");
     expect(row.outcome).toBe("");
+  });
+});
+
+describe("mapExportRow — flags and accommodation (17 Oct 2026)", () => {
+  it("lists her flags in her order, Large family from the family type", () => {
+    const source = baseSource();
+    source.assessment!.familyTypeCategory = 5;
+    source.assessment!.recommendation = {
+      ...source.assessment!.recommendation!,
+      dishonestyFlag: true,
+      acuteCrisisFlag: true,
+      pastoralFlag: true,
+      highFrugalityFlag: true,
+    };
+    expect(mapExportRow(source).flags).toBe(
+      "Dishonesty, Large family, Pastoral, Acute Crisis, High Frugality"
+    );
+  });
+
+  it("three children is not a large family", () => {
+    const source = baseSource();
+    source.assessment!.familyTypeCategory = 4;
+    expect(mapExportRow(source).flags).toBe("");
+  });
+
+  it("takes Accommodation from the family's own/rent answer first", () => {
+    const source = baseSource();
+    source.sections = [{ data: { propertyOwnership: "RENT", rentAgreementType: "COUNCIL" } }];
+    source.assessment!.property = { propertyAssets: { portfolioType: "SINGLE" } };
+    expect(mapExportRow(source).accommodationType).toBe("Rents (council)");
+  });
+
+  it("falls back to the assessment for a record with no form", () => {
+    const source = baseSource();
+    source.assessment!.property = { propertyAssets: { portfolioType: "SINGLE" } };
+    source.assessment!.rentAddBackType = "NONE";
+    expect(mapExportRow(source).accommodationType).toBe("Owns home");
+    source.assessment!.rentAddBackType = "FULL_RENT_FREE";
+    expect(mapExportRow(source).accommodationType).toBe("Rent-free");
+  });
+
+  it("keeps a legacy stored value when nothing else says", () => {
+    expect(mapExportRow(baseSource()).accommodationType).toBe("Renting");
   });
 });

@@ -23,6 +23,7 @@ import {
 import { cn } from "@/lib/utils";
 import { JwfLogo } from "@/components/brand/jwf-logo";
 import { GuardedLink } from "./guarded-link";
+import { applicationCompletion } from "@/lib/portal/application-completion";
 import {
   DEFAULT_SIDEBAR_SECTIONS,
   type SectionStatus,
@@ -83,6 +84,8 @@ function SectionIcon({
 
 interface PortalSidebarContentProps {
   roundName?: string;
+  /** Which child's form this is, shown above the round (the /apply rail). */
+  applicationName?: string;
   lastSaved?: string;
   /** Section data — if not provided, uses defaults */
   sections?: SidebarSection[];
@@ -110,6 +113,7 @@ interface PortalSidebarContentProps {
 
 export function PortalSidebarContent({
   roundName,
+  applicationName,
   lastSaved,
   sections,
   basePath = "/apply",
@@ -134,18 +138,9 @@ export function PortalSidebarContent({
   const countedSections = countSynthetic
     ? sectionList
     : sectionList.filter((s) => !s.isSynthetic);
-  const totalSatisfied = countedSections.reduce(
-    (acc, s) => acc + s.progressSatisfied,
-    0
-  );
-  const totalItems = countedSections.reduce(
-    (acc, s) => acc + s.progressTotal,
-    0
-  );
-  const progressPct =
-    totalItems > 0
-      ? Math.min(100, parseFloat(((totalSatisfied / totalItems) * 100).toFixed(1)))
-      : 0;
+  // Epic 22 D-4: the one shared measure (My Bursary Application(s) shows the
+  // same number). `countedSections` is already filtered, hence `true`.
+  const progressPct = applicationCompletion(countedSections, true);
 
   // Human-readable label: show satisfied / total at the item level.
   const completedSections = countedSections.filter(
@@ -172,9 +167,16 @@ export function PortalSidebarContent({
         </div>
       ) : null}
 
-      {/* Round name — hidden when the user has no invitation/application yet */}
+      {/* Round name — hidden when the user has no invitation/application yet.
+          The child's name heads it, so a parent with a form per child can see
+          which one they are in (Charlotte, 21 Oct 2026). */}
       {roundName ? (
         <div className="border-b border-slate-200 px-6 py-3">
+          {applicationName ? (
+            <p className="mb-1.5 text-sm font-semibold text-primary-900">
+              {applicationName}
+            </p>
+          ) : null}
           <p className="text-xs font-medium uppercase tracking-wider text-slate-400">
             Round
           </p>

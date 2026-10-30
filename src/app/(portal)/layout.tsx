@@ -25,10 +25,8 @@ import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth/roles";
 import { withUserContext, type RlsRole } from "@/lib/db/prisma";
 import { loadPortalAccessState } from "@/lib/bursary-accounts/access";
-import {
-  getPortalNavState,
-  getApplicationPausedStateForUser,
-} from "@/lib/db/queries/applications";
+import { getApplicationPausedStateForUser } from "@/lib/db/queries/applications";
+import { syncSignInTimes } from "@/lib/auth/sign-in-times";
 import { hasPortalSchedule } from "@/lib/db/queries/schedule";
 import { getActiveApplicationId } from "@/lib/portal/active-application";
 import { PortalNav } from "@/components/portal/portal-nav";
@@ -58,35 +56,34 @@ export default async function PortalLayout({
   // bursary relationship has concluded and they are sent to a read-only closed
   // page. This is an access guard, NOT erasure (role stays APPLICANT). The DB
   // read runs under the user's RLS context.
-  // PR-9 — nav badging + adaptive "My Application" target. We fold ONE narrow
-  // read (formStatus + paused) into the SAME RLS context as the access guard, so
-  // there is no extra context hop and no full-application fetch on every page.
-  // Decision 5: NO round read is added here — the round label stays out of the
-  // global nav (it lives in the stepper + dashboard only).
-  // gap F2 — the "Assessment Schedule" calendar item is shown ONLY for an ACTIVE
+  // gap F2 — the "Application Schedule" calendar item is shown ONLY for an ACTIVE
   // family with ≥1 portal-visible schedule entry. We fold that cheap count into
   // the SAME RLS context as the access guard + nav state, so the nav decision
   // costs no extra context hop.
-  let navState: Awaited<ReturnType<typeof getPortalNavState>> = null;
   let hasSchedule = false;
   // E2: the nav describes the ACTIVE application (cookie preference; falls
   // back to most-recent when unset/stale, i.e. pre-E2 behaviour).
   const activeApplicationId = user ? await getActiveApplicationId() : null;
   if (user) {
-    const { hasAccess, nav, scheduled } = await withUserContext(
+    const { hasAccess, scheduled } = await withUserContext(
       user.id,
       user.role as RlsRole,
       async (tx) => ({
         hasAccess: (await loadPortalAccessState(tx, user.id)).hasAccess,
-        nav: await getPortalNavState(tx, user.id, activeApplicationId),
         scheduled: await hasPortalSchedule(tx, user.id),
       })
     );
     if (!hasAccess) {
       redirect("/portal-closed");
     }
-    navState = nav;
     hasSchedule = scheduled;
+
+    // Epic 22 P1 (D-5) — remember the family's sign-ins for "Last login" on My
+    // Bursary Application(s). Usually one read that changes nothing; on the
+    // first page after a new sign-in it shifts last → previous.
+    if (user.role === "APPLICANT") {
+      await syncSignInTimes(user.id, user.authLastSignInAt);
+    }
   }
 
   // The paused signal lives on the assessment, which the applicant CANNOT read
@@ -102,14 +99,6 @@ export default async function PortalLayout({
   const displayName = user
     ? `${user.firstName ?? ""} ${user.lastName ?? ""}`.trim() || user.email
     : "Applicant";
-
-  // Decision 4 — "My Application": the LABEL is always stable; only the TARGET
-  // adapts. Post-submit → /status (never the wizard, which would redirect to the
-  // dead /submitted page). Pre-submit / no application → the wizard's first
-  // section; the wizard's own redirect lands the user on the right section, so
-  // we keep the layout read minimal and skip a second gap fetch here.
-  const applicationHref =
-    navState?.formStatus === "SUBMITTED" ? "/status" : "/apply/child-details";
 
   return (
     // flex-col on mobile so the md:hidden mobile header stacks ABOVE the content
@@ -138,14 +127,13 @@ export default async function PortalLayout({
           bridge them. The store is the only data path from content → rail. */}
       <StepperDataProvider>
         {/* ── Desktop persistent rail (hidden on mobile) ─────────────────────
-            The ONE rail: PortalNav (Home / My Application / Documents / History
-            / Help + account/sign-out footer). PortalNav renders the RailStepper
-            internally under "My Application"; the stepper reads the bridge store
+            The ONE rail: PortalNav (Home / My Bursary Application(s) / Schedule
+            / Contact us + account/sign-out footer). PortalNav renders the RailStepper
+            internally under that item; the stepper reads the bridge store
             and is pathname-gated to /apply/*. */}
         <aside className="hidden md:flex md:flex-col md:w-[280px] md:shrink-0 md:fixed md:inset-y-0 md:left-0 md:z-30 bg-white border-r border-slate-200 shadow-xs">
           <PortalNav
             userName={displayName}
-            applicationHref={applicationHref}
             needsDocs={needsDocs}
             hasSchedule={hasSchedule}
           />
@@ -155,7 +143,6 @@ export default async function PortalLayout({
         <div className="md:hidden sticky top-0 z-30 w-full bg-white border-b border-slate-200 shadow-xs">
           <PortalNavMobileHeader
             userName={displayName}
-            applicationHref={applicationHref}
             needsDocs={needsDocs}
             hasSchedule={hasSchedule}
           />
@@ -179,7 +166,7 @@ export default async function PortalLayout({
               span the full work area as an anchored action bar instead of being
               trapped at max-w-4xl and rendering as a narrow floating island on
               wide monitors. Readable width is re-established below:
-                • non-apply pages (Home / Status / History / Help / Documents /
+                • non-apply pages (Home / Status / Help / Schedule /
                   Submitted / Respond) wrap content in <PortalPage> (max-w-3xl);
                 • the apply section CARD re-caps itself — Income to the full
                   max-w-4xl, every other section back to max-w-3xl;

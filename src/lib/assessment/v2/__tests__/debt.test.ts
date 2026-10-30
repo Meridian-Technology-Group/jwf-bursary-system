@@ -9,12 +9,14 @@ import {
   debtRepaymentShortfall,
   usesShortfallStatus,
   classifyDebtStatus,
+  shortfallTableFor,
 } from '../debt'
 import type { DebtsRecord } from '@/types/assessment-v2'
 import {
   debtRatioBandsRespec,
   debtRatioBandsPart5,
   debtShortfallBands,
+  debtShortfallBandsNdiNegative,
 } from '../../../../../prisma/seed-data/profiling-reference'
 
 // ─── calculateDerivedYearlyDebtRepayments (C123) ───────────────────────────
@@ -400,7 +402,7 @@ describe('debtRepaymentShortfall / usesShortfallStatus', () => {
 describe('classifyDebtStatus — choosing between her two routes', () => {
   const common = {
     ratioBands: debtRatioBandsPart5,
-    shortfallBands: debtShortfallBands,
+    shortfallBands: [...debtShortfallBands, ...debtShortfallBandsNdiNegative],
   }
 
   it('her DW worked example: 2,915 short reads VERY HEAVILY IN DEBT, VERY HIGH CREDIT RISK', () => {
@@ -440,7 +442,41 @@ describe('classifyDebtStatus — choosing between her two routes', () => {
       context: 'DEBT_NO_SAVINGS',
     })
     expect(result.statusLabel).not.toBe('n/a')
-    expect(result.statusLabel).toBe('IN A DEBT SPIRAL, AT RISK OF BANKRUPTCY')
+    // 17 Oct 2026: negative NDI reads her table (1). Shortfall 8,600 + 2,915.
+    expect(result.statusLabel).toBe('DEBT POSITION TO BE SCRUTINISED OR MATERIAL EXTERNAL INCOME SOURCE SUSPECTED')
+  })
+
+  // ─── 17 Oct 2026: two shortfall tables by the sign of NDI ─────────────────
+  it('picks the table by the sign of NDI after notional spend; exactly £0 reads table (2)', () => {
+    expect(shortfallTableFor(-0.01)).toBe('NDI_NEGATIVE')
+    expect(shortfallTableFor(0)).toBe('NDI_POSITIVE')
+    expect(shortfallTableFor(5_685)).toBe('NDI_POSITIVE')
+  })
+
+  it('no debt but spending beyond its means: her table (1), never "IN A DEBT SPIRAL"', () => {
+    // The 56-of-111 case on the 271: zero debt, negative NDI.
+    const r = classifyDebtStatus({ ...common, ratio: 0, totalDebt: 0, ndiAfterNotionalSpend: -12_000, context: 'NO_DEBT_NO_SAVINGS' })
+    expect(r.statusLabel).toBe('DEBT POSITION TO BE SCRUTINISED OR MATERIAL EXTERNAL INCOME SOURCE SUSPECTED')
+    const small = classifyDebtStatus({ ...common, ratio: 0, totalDebt: 0, ndiAfterNotionalSpend: -150, context: 'NO_DEBT_NO_SAVINGS' })
+    expect(small.statusLabel).toBe('SMALL DEBT POSITION SUSPECTED OR MAY GET EXTERNAL FINANCIAL SUPPORT')
+  })
+
+  it.each([
+    [-199, 'SMALL DEBT POSITION SUSPECTED OR MAY GET EXTERNAL FINANCIAL SUPPORT'],
+    [-200, 'SMALL DEBT POSITION SUSPECTED OR MAY GET EXTERNAL FINANCIAL SUPPORT'],
+    [-500, 'SOME DEBT POSITION SUSPECTED OR MAY HAVE AN EXTERNAL INCOME SOURCE'],
+    [-1_000, 'DEBT POSITION UNDECLARED OR FREE EXTERNAL INCOME MAY BE GRANTED'],
+    [-4_999, 'DEBT POSITION UNDECLARED OR FREE EXTERNAL INCOME MAY BE GRANTED'],
+    [-5_000, 'DEBT POSITION TO BE SCRUTINISED OR SOME EXTERNAL INCOME SOURCE SUSPECTED'],
+    [-8_000, 'DEBT POSITION TO BE SCRUTINISED OR MATERIAL EXTERNAL INCOME SOURCE SUSPECTED'],
+  ])('table (1) bounds, zero debt and NDI %d', (ndi, label) => {
+    expect(classifyDebtStatus({ ...common, ratio: 0, totalDebt: 0, ndiAfterNotionalSpend: ndi, context: 'NO_DEBT_NO_SAVINGS' }).statusLabel).toBe(label)
+  })
+
+  it('positive NDI below the repayment keeps the 11 Sep wording (table 2)', () => {
+    // DW: 8,600 a year against 5,685 → 2,915 short.
+    const r = classifyDebtStatus({ ...common, ratio: 1.5127, totalDebt: 43_000, ndiAfterNotionalSpend: 5_685, context: 'DEBT_NO_SAVINGS' })
+    expect(r.statusLabel).toBe('VERY HEAVILY IN DEBT, VERY HIGH CREDIT RISK')
   })
 
   it.each([

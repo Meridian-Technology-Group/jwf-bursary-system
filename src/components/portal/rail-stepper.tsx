@@ -2,7 +2,7 @@
 
 /**
  * RailStepper — the section progress stepper as it appears nested inside the
- * persistent portal rail, under the "My Application" nav item.
+ * persistent portal rail, under the "My Bursary Application(s)" nav item.
  *
  * It is a thin wrapper over the existing `PortalSidebarContent` (the leaf
  * stepper component shared with `/contribute`), pinned to the lead-applicant
@@ -42,7 +42,7 @@ export function isApplyRoute(pathname: string | null): boolean {
 
 export function RailStepper() {
   const pathname = usePathname();
-  const { sections, roundName } = useStepperData();
+  const { sections, roundName, applicationName } = useStepperData();
 
   // Route gate (#4): never show the stepper off the wizard, regardless of any
   // stale store value left over from a prior `/apply` visit.
@@ -56,6 +56,7 @@ export function RailStepper() {
     <PortalSidebarContent
       sections={sections}
       roundName={roundName}
+      applicationName={applicationName}
       basePath="/apply"
       countSynthetic={false}
       chrome="bare"

@@ -50,6 +50,8 @@ import {
   revertPostAssessmentState,
 } from "../post-assessment-core";
 import { RECOMMENDATION_NOT_RECONFIRMED_MESSAGE } from "../recommendation-gate";
+import { MIGRATED_LOCKED_MESSAGE } from "../migration-source";
+import { ACCOUNT_CLOSED_REVERT_MESSAGE } from "@/lib/bursary-accounts/closed-by-staff";
 
 // ─── Fake Prisma transaction client ───────────────────────────────────────────
 
@@ -80,15 +82,26 @@ function makeFakeTx(application: Record<string, unknown>) {
       })),
       update: vi.fn(async () => ({})),
     },
+    // Epic 21 R2 — later schedule years read each round's stored RA window.
+    roundWindow: { findMany: vi.fn(async () => [] as unknown[]) },
     bursaryScheduleEntry: {
       findMany: vi.fn(async () => []),
       create: vi.fn(async () => ({})),
+    },
+    // Epic 21 #4: a re-award anchors the schedule on the account's first round.
+    round: {
+      findUnique: vi.fn(async () => ({ openDate: null, closeDate: null })),
     },
     assessment: {
       update: vi.fn(async () => ({})),
     },
     closeReason: {
       findUnique: vi.fn(async () => ({ id: "close-reason-1", isDeprecated: false })),
+    },
+    // Epic 21 #6 — the account's main synopsis, seeded at the first lock.
+    accountSynopsisEntry: {
+      findFirst: vi.fn(async (): Promise<{ id: string } | null> => null),
+      createMany: vi.fn(async () => ({ count: 1 })),
     },
     auditLog: {
       create: vi.fn(
@@ -236,7 +249,8 @@ describe("setPostAssessmentFinalState — WAITING_LIST / CLOSED_ARCHIVED", () =>
       expect(mirrorMock).not.toHaveBeenCalled();
       expect(fakeTx.assessment.update).toHaveBeenCalledWith({
         where: { id: "assess-1" },
-        data: { status: target },
+        // Epic 23 T10 (D-20): archiving starts the retention clock.
+        data: target === "CLOSED_ARCHIVED" ? { status: target, archivedAt: expect.any(Date) } : { status: target },
       });
     }
   );
@@ -281,13 +295,46 @@ describe("revertPostAssessmentState", () => {
       expect(result).toEqual({ success: true });
       expect(fakeTx.assessment.update).toHaveBeenCalledWith({
         where: { id: "assess-1" },
-        data: { status: "COMPLETED" },
+        data: { status: "COMPLETED", archivedAt: null }, // a reversal stops the clock
       });
       const audit = fakeTx.auditLog.create.mock.calls[0][0];
       expect(audit.data.action).toBe("ASSESSMENT_LIFECYCLE_REVERTED");
       expect(audit.data.metadata.fromState).toBe(from);
     }
   );
+
+  it.each(["ROLLED_OVER", "NEW_AWARD"] as const)(
+    "a migrated Grant Tracker %s cannot be reversed",
+    async (from) => {
+      fakeTx = makeFakeTx({ ...withAssessment({ status: from }), migrationSource: "GRANT_TRACKER" });
+      const result = await revertPostAssessmentState("app-1");
+
+      expect(result).toEqual({ success: false, error: MIGRATED_LOCKED_MESSAGE });
+      expect(fakeTx.assessment.update).not.toHaveBeenCalled();
+      expect(fakeTx.auditLog.create).not.toHaveBeenCalled();
+    }
+  );
+
+  // Retention trial, 22 Oct 2026: she reversed the award on an account she had
+  // closed, and the reopen after it made the account active again.
+  it("an award whose account staff closed cannot be reversed", async () => {
+    fakeTx = makeFakeTx({
+      ...withAssessment({ status: "NEW_AWARD" }),
+      bursaryAccount: { status: "CLOSED", closeReasonId: "reason-1" },
+    });
+    const result = await revertPostAssessmentState("app-1");
+
+    expect(result).toEqual({ success: false, error: ACCOUNT_CLOSED_REVERT_MESSAGE });
+    expect(fakeTx.assessment.update).not.toHaveBeenCalled();
+  });
+
+  it("an account the schedule closed itself (no reason) does not block a reversal", async () => {
+    fakeTx = makeFakeTx({
+      ...withAssessment({ status: "NEW_AWARD" }),
+      bursaryAccount: { status: "CLOSED", closeReasonId: null },
+    });
+    expect(await revertPostAssessmentState("app-1")).toEqual({ success: true });
+  });
 
   it("Q16 — a reversed NEW_AWARD leaves the bursary account untouched", async () => {
     fakeTx = makeFakeTx(
@@ -373,7 +420,7 @@ describe("Epic 18b — ROLLED_OVER lock", () => {
     expect(result).toEqual({ success: true });
     expect(fakeTx.assessment.update).toHaveBeenCalledWith({
       where: { id: "assess-1" },
-      data: { status: "COMPLETED" },
+      data: { status: "COMPLETED", archivedAt: null }, // a reversal stops the clock
     });
   });
 });
@@ -454,5 +501,66 @@ describe("Epic 18b — the archive close reason", () => {
       where: { id: "assess-1" },
       data: { archiveCloseReasonId: "close-reason-1" },
     });
+  });
+});
+
+// ─── Epic 21 #6 — the account's standing synopsis ───────────────────────────
+
+describe("Epic 21 #6 — the main synopsis seeded at the award lock (rework 14 Oct)", () => {
+  function createArg() {
+    return (fakeTx.accountSynopsisEntry.createMany.mock.calls as unknown as unknown[][])[0][0] as {
+      data: Record<string, unknown>[];
+      skipDuplicates: boolean;
+    };
+  }
+
+  it("a NEW_AWARD lock seeds the new account's main synopsis from this year's", async () => {
+    fakeTx = makeFakeTx(withAssessment({ synopsis: "  Two earners; modest savings.  " }));
+    await setPostAssessmentFinalState("app-1", "NEW_AWARD", { awardFundType: "JWF" });
+
+    expect(fakeTx.accountSynopsisEntry.findFirst).toHaveBeenCalledWith({
+      where: { bursaryAccountId: "account-1", kind: "MAIN" },
+      select: { id: true },
+    });
+    expect(createArg()).toEqual({
+      data: [
+        {
+          bursaryAccountId: "account-1",
+          kind: "MAIN",
+          body: "Two earners; modest savings.",
+          createdById: "assessor-1",
+        },
+      ],
+      skipDuplicates: true,
+    });
+  });
+
+  it("never overwrites an existing main synopsis (a re-lock, or a later year)", async () => {
+    fakeTx = makeFakeTx(withAssessment({ synopsis: "Revised after the revert." }));
+    fakeTx.accountSynopsisEntry.findFirst.mockResolvedValueOnce({ id: "main-1" });
+    await setPostAssessmentFinalState("app-1", "NEW_AWARD", { awardFundType: "JWF" });
+    expect(fakeTx.accountSynopsisEntry.createMany).not.toHaveBeenCalled();
+  });
+
+  it("a blank synopsis seeds nothing", async () => {
+    fakeTx = makeFakeTx(withAssessment({ synopsis: "   " }));
+    await setPostAssessmentFinalState("app-1", "NEW_AWARD", { awardFundType: "JWF" });
+    expect(fakeTx.accountSynopsisEntry.createMany).not.toHaveBeenCalled();
+  });
+
+  it("a ROLLED_OVER lock seeds a continued account that has none", async () => {
+    const app = rollingApplication();
+    fakeTx = makeFakeTx({
+      ...app,
+      assessment: { ...(app.assessment as Record<string, unknown>), synopsis: "Year two." },
+    });
+    await setPostAssessmentFinalState("app-1", "ROLLED_OVER", { awardFundType: "JWF" });
+    expect(createArg().data[0]).toMatchObject({ bursaryAccountId: app.bursaryAccountId, body: "Year two." });
+  });
+
+  it("parking or archiving seeds nothing (only award locks do)", async () => {
+    fakeTx = makeFakeTx(withAssessment({ synopsis: "Anything." }));
+    await setPostAssessmentFinalState("app-1", "WAITING_LIST");
+    expect(fakeTx.accountSynopsisEntry.createMany).not.toHaveBeenCalled();
   });
 });

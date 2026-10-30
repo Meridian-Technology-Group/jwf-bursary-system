@@ -45,9 +45,12 @@ import {
 } from "@/lib/applications/recommendation-gate";
 import { promoteToActiveAccount } from "@/lib/applications/account-promotion";
 import { mirrorApplicationToSchedule } from "@/lib/bursary-accounts/lifecycle";
+import { seedMainSynopsisAtLock } from "@/lib/bursary-accounts/standing-synopsis";
 import { validateReferenceInput } from "@/lib/applications/reference";
 import { isAwardFundValidForSchool, AWARD_FUND_LABELS } from "@/lib/assessment/award-fund";
 import type { AwardFundType } from "@prisma/client";
+import { isMigrated, MIGRATED_LOCKED_MESSAGE } from "@/lib/applications/migration-source";
+import { ACCOUNT_CLOSED_REVERT_MESSAGE, isClosedByStaff } from "@/lib/bursary-accounts/closed-by-staff";
 
 export type PostAssessmentResult =
   | { success: true }
@@ -106,6 +109,8 @@ async function fetchApplicationForLifecycle(
           // Epic 18b — the fund options are the ASSESSED school's (CH-11: the
           // assessor picks it and it can differ from the application's).
           assessmentSchool: true,
+          // Epic 21 #6 — seeds the account's main synopsis at the first lock.
+          synopsis: true,
           yearlyPayableFees: true,
           recommendedPayableFees: true,
           recommendation: { select: { confirmedPayableFees: true } },
@@ -218,9 +223,17 @@ export async function setPostAssessmentFinalState(
         // activates the admin page. Idempotent: a rolling account is
         // continued (ROLLED_OVER never creates — the account exists), and one
         // left behind by a reversal is reused.
-        await promoteToActiveAccount(tx, application, {
+        const promotion = await promoteToActiveAccount(tx, application, {
           bursaryAward: null,
           scholarshipAward: null,
+        });
+
+        // Epic 21 #6 (rework 14 Oct) — an account with no main synopsis yet
+        // takes this year's as its starting text. Never overwrites one.
+        await seedMainSynopsisAtLock(tx, {
+          bursaryAccountId: promotion.bursaryAccountId,
+          synopsis: assessment.synopsis,
+          userId: user.id,
         });
 
         await tx.assessment.update({
@@ -337,11 +350,19 @@ export async function revertPostAssessmentState(
         where: { id: applicationId },
         select: {
           id: true,
+          migrationSource: true,
           assessment: { select: { id: true, status: true } },
+          bursaryAccount: { select: { status: true, closeReasonId: true } },
         },
       });
       if (!application?.assessment) {
         return { success: false as const, error: "Application not found." };
+      }
+      if (isMigrated(application)) {
+        return { success: false as const, error: MIGRATED_LOCKED_MESSAGE };
+      }
+      if (isClosedByStaff(application.bursaryAccount)) {
+        return { success: false as const, error: ACCOUNT_CLOSED_REVERT_MESSAGE };
       }
       const assessment = application.assessment;
 

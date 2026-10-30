@@ -39,6 +39,7 @@ function makeTx({
       assessmentChecklist: { deleteMany: vi.fn(async () => ({ count: 3 })) },
       recommendation: { update: vi.fn() },
       contact: { updateMany: vi.fn(async () => ({ count: 1 })) },
+      applicationRejection: { updateMany: vi.fn(async () => ({ count: 0 })) },
       bursaryAccount: {
         update: vi.fn(),
         count: vi.fn(async () => otherAccounts),
@@ -374,5 +375,13 @@ describe("append-only audit + scrub-map invariants (source-level)", () => {
   it("the human-readable summary names the D-2 synopsis caveat", () => {
     expect(CLOSE_PURGE_SUMMARY.retained.join(" ")).toContain("synopsis");
     expect(CLOSE_PURGE_SUMMARY.retained.join(" ")).toContain("D-2");
+  });
+
+  // Epic 21 #6 (D-7, kept by the 14 Oct rework): the account's main synopsis
+  // takes Assessment.synopsis's verdict on this route — retained verbatim. The
+  // close purge must never touch the table, and the summary must say so.
+  it("retains the account's main synopsis (never touches account_synopsis_entries)", () => {
+    expect(src).not.toMatch(/accountSynopsisEntry/);
+    expect(CLOSE_PURGE_SUMMARY.retained.join(" ")).toContain("main synopsis");
   });
 });

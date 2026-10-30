@@ -4,8 +4,8 @@
  *
  * Pure presentational Server Component — no hooks, no `"use client"`. Surfaces
  * the academic year (linking into `/rounds/{id}`), the open→close date range,
- * total applications, decided count, and the qualification rate (guarded
- * against divide-by-zero), with a muted status badge.
+ * total applications and finalised recommendations, with a muted status
+ * badge. No qualification rate (Charlotte, 21 Oct 2026): it always read 100%.
  */
 
 import Link from "next/link";
@@ -41,7 +41,6 @@ export function RoundLedgerRow({
   doesNotQualify,
 }: RoundLedgerRowProps) {
   const decided = qualifies + doesNotQualify;
-  const qualifyPct = decided > 0 ? Math.round((qualifies / decided) * 100) : null;
 
   return (
     <li className="flex flex-wrap items-center gap-x-6 gap-y-2 px-4 py-3 transition-colors hover:bg-slate-50">
@@ -73,19 +72,7 @@ export function RoundLedgerRow({
           <span className="font-semibold tabular-nums text-primary-900">
             {decided}
           </span>{" "}
-          decided
-        </span>
-        <span className="text-slate-500">
-          {qualifyPct !== null ? (
-            <>
-              <span className="font-semibold tabular-nums text-primary-900">
-                {qualifyPct}%
-              </span>{" "}
-              qualified
-            </>
-          ) : (
-            <span className="text-slate-400">No decisions</span>
-          )}
+          finalised
         </span>
       </div>
     </li>

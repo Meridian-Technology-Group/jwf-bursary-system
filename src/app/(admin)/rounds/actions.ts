@@ -13,6 +13,9 @@ import { withUserContext, type RlsRole } from "@/lib/db/prisma";
 import { createAuditLog } from "@/lib/audit/log";
 
 import { AUDIT_ACTIONS, AUDIT_ENTITY_TYPES } from "@/lib/audit/actions";
+import { rollingRedateWhere } from "@/lib/bursary-accounts/schedule";
+import { rollingOverWindowFor } from "@/lib/bursary-accounts/schedule-dates";
+import { parseAcademicYearStart } from "@/lib/assessment/fee-year";
 
 // ---------------------------------------------------------------------------
 // Config
@@ -477,13 +480,40 @@ export async function saveRoundWindowsAction(
         });
       }
 
+      // Epic 21 R2 — that academic year's still-planned rolling-over rows
+      // follow the round's RA window (or the placeholder once it is cleared).
+      // Year 1, round-linked and RECEIVED/COMPLETE rows are never touched.
+      let redatedScheduleRows = 0;
+      const redateWhere = rollingRedateWhere(round.academicYear);
+      const start = parseAcademicYearStart(round.academicYear);
+      if (redateWhere && start != null) {
+        const ra = await tx.roundWindow.findUnique({
+          where: { roundId_scenario: { roundId, scenario: "RA" } },
+          select: { opensOn: true, submitBy: true },
+        });
+        const dates = rollingOverWindowFor(start, ra);
+        const { count } = await tx.bursaryScheduleEntry.updateMany({
+          where: {
+            ...redateWhere,
+            OR: [
+              { availableOn: null },
+              { availableOn: { not: dates.opensOn } },
+              { requiredBy: null },
+              { requiredBy: { not: dates.submitBy } },
+            ],
+          },
+          data: { availableOn: dates.opensOn, requiredBy: dates.submitBy },
+        });
+        redatedScheduleRows = count;
+      }
+
       await createAuditLog(tx, {
         userId: user.id,
         action: AUDIT_ACTIONS.UPDATE_ROUND,
         entityType: AUDIT_ENTITY_TYPES.Round,
         entityId: roundId,
         context: `Round scenario windows updated (${round.academicYear})`,
-        metadata: { windows: parsed.data },
+        metadata: { windows: parsed.data, redatedScheduleRows },
       });
     });
   } catch (err) {

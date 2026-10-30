@@ -48,6 +48,7 @@ import {
   APPLICATION_CHILD_SCRUB,
   BURSARY_ACCOUNT_CHILD_SCRUB,
   CONTACT_SCRUB,
+  REJECTION_SCRUB,
   profileScrubData,
 } from "@/lib/retention/scrub-map";
 
@@ -177,6 +178,19 @@ export async function purgeApplication(
     await tx.bursaryAccount.updateMany({
       where: { leadApplicantId },
       data: { ...BURSARY_ACCOUNT_CHILD_SCRUB },
+    });
+    // f3. Epic 21 #6 — the account's main synopsis is synopsis prose (it
+    //     can name the family), and the accounts above are scrubbed, not
+    //     deleted, so their entries would otherwise outlive the erasure.
+    //     Same verdict as Assessment.synopsis on this route: deleted.
+    await tx.accountSynopsisEntry.deleteMany({
+      where: { bursaryAccount: { leadApplicantId } },
+    });
+    // f4. Epic 23 T10 — rejection records carry the child's name, the
+    //     reference and staff's note to the family.
+    await tx.applicationRejection.updateMany({
+      where: { leadApplicantId },
+      data: { ...REJECTION_SCRUB },
     });
 
     // g. Delete Invitation records linked to this lead applicant

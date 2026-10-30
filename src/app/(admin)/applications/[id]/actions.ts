@@ -25,18 +25,32 @@ import { requireRole, Role } from "@/lib/auth/roles";
 import { withUserContext, withAdminContext, type RlsRole, type Tx } from "@/lib/db/prisma";
 import { createAuditLog } from "@/lib/audit/log";
 import { sendEmail } from "@/lib/email/send";
+import { replaceMergeFields } from "@/lib/email/merge";
+import { formalGreeting, parent1ContactOf } from "@/lib/email/formal-greeting";
+import { isMigrated } from "@/lib/applications/migration-source";
 import { humaniseSlot } from "@/lib/documents/slots";
 import { deleteDocument } from "@/lib/storage/documents";
 import { createSupabaseAdminClient } from "@/lib/auth/supabase-admin";
-import { restartApplicationFromRejection } from "@/lib/applications/create-from-invitation";
+import {
+  canReturnForCorrection,
+  defaultReturnSubmitBy,
+  parseReturnSubmitBy,
+  returnApplicationForCorrection,
+} from "@/lib/applications/return-for-correction";
+import {
+  DEADLINE_ROUND_SELECT,
+  effectiveSubmissionDeadline,
+} from "@/lib/rounds/submission-deadline";
+import { formatEmailDate } from "@/lib/email/invitation-deadline";
 import { getAppUrl } from "@/lib/app-url";
-import { isPurgeable, notYetPurgeableMessage } from "@/lib/retention/policy";
+import { isPurgeable, isRetentionPurgeEnabled, notYetPurgeableMessage } from "@/lib/retention/policy";
 import {
   purgeApplication,
   buildPurgeAuditMetadata,
 } from "@/lib/retention/purge";
 import { deleteAuthUsersPostCommit } from "@/lib/retention/close-purge";
 import { closeApplicationCore } from "@/lib/applications/close";
+import { anonymiseForErasure, deleteStorageObjectsPostCommit } from "@/lib/retention/stages";
 import { promoteToActiveAccount } from "@/lib/applications/account-promotion";
 import {
   beginReview,
@@ -47,6 +61,8 @@ import {
   reopenAssessmentForMaterialChange,
 } from "@/lib/applications/status";
 import { validateReferenceInput } from "@/lib/applications/reference";
+import { rejectionGroupForSlot, type RejectionDocument } from "@/lib/documents/section-grouping";
+import { removeDocumentsWithRejection } from "@/lib/applications/rejection-documents";
 
 import { AUDIT_ACTIONS, AUDIT_ENTITY_TYPES } from "@/lib/audit/actions";
 
@@ -330,39 +346,83 @@ export async function pauseApplication(
   }
 }
 
-// ─── rejectAndRestartApplication (Full Rejection) ────────────────────────────
+// ─── rejectAndRestartApplication (Application rejection) ─────────────────────
 
 /**
- * Full Rejection: the submitted application is invalid as a whole. The assessor
- * voids it and the applicant is asked to start a brand-new application from
- * scratch.
+ * Parent 1's details from the lead applicant's PARENT_DETAILS section (the one
+ * the PRIMARY contributor owns), for the formal greeting.
+ */
+const LEAD_PARENT_DETAILS_SELECT = {
+  where: { section: "PARENT_DETAILS" as const, ownerContributor: { role: "PRIMARY" as const } },
+  select: { data: true },
+  take: 1,
+};
+
+/** The family's greeting and the email's merge values, from the application. */
+function rejectionMergeData(app: {
+  id: string;
+  reference: string;
+  childName: string;
+  leadApplicant: { firstName: string | null; lastName: string | null };
+  sections: { data: unknown }[];
+}) {
+  const parent = parent1ContactOf(app.sections[0]?.data);
+  return {
+    // Charlotte, 17 Oct 2026: title + surname, JWF's style for bursary letters.
+    greeting: formalGreeting(parent ?? app.leadApplicant),
+    applicant_name:
+      `${app.leadApplicant.firstName ?? ""} ${app.leadApplicant.lastName ?? ""}`.trim() || "Applicant",
+    child_name: app.childName,
+    reference: app.reference,
+    // Epic 22 P1's "keep working" target: the first section without a green tick.
+    restart_link: `${getAppUrl()}/apply/open/${app.id}?to=continue`,
+  };
+}
+
+/**
+ * Application rejection (Epic 23 T7; renamed and re-worded from Return for
+ * correction on Charlotte's 17 Oct 2026 testing). The name is kept so the
+ * History tab's APPLICATION_REJECTED_RESTART rows and every caller keep
+ * working.
  *
- * Because of the `@@unique([roundId, leadApplicantId, childName, childDob])`
- * constraint the rejected application cannot coexist with its replacement, so it
- * is HARD-DELETED (its cascades clear sections, contributors, documents,
- * assessment and invitations — this subsumes "clear all documents") and a fresh
- * blank application is created in its place, reusing the freed `reference`.
- * Storage objects are removed after the transaction commits (the DB cascade only
- * drops the Document rows). An `APPLICATION_RESTART_REQUIRED` email points the
- * applicant back into the portal, and the rejection is recorded in the
- * append-only audit log (which survives the row delete).
+ * The submitted application goes BACK to the family with a NEW Submit by (the
+ * original has usually passed). Staff remove the bad items (a wrong-year P60,
+ * a blurry statement, wrong figures) through Edit on behalf so the gaps show:
+ * see `returnApplicationForCorrection` for exactly what changes.
  *
- * Allowed before a final outcome only (SUBMITTED / NOT_STARTED / PAUSED).
+ * The email is the APPLICATION_RESTART_REQUIRED template ("Application
+ * Rejection" in Settings), whose text staff edit in the rejection window:
+ * `emailBody` is that edited text, sent as the email and kept on the rejection
+ * record. It may still hold `{{deadline}}`, filled with the new Submit by.
  *
- * @param applicationId The application being rejected.
- * @param customMessage The assessor's note explaining what was wrong / what to
- *                      address in the new submission (shown in the email).
+ * Allowed before a final outcome only (SUBMITTED / NOT_STARTED / PAUSED), and
+ * never on a Grant Tracker record (it has no form to give back).
+ *
+ * Documents ticked in the window (17 Oct 2026: "clear the documents per
+ * section") are deleted with the rejection, in the same transaction, and their
+ * sections marked incomplete so the family sees the gaps; the stored files go
+ * once it commits.
+ *
+ * @param applicationId     The application being rejected.
+ * @param emailBody         The email to the family, as edited in the window.
+ * @param newSubmitBy       The new Submit by, `yyyy-MM-dd` (required, in the future).
+ * @param removeDocumentIds Documents of this application to delete with it.
  */
 export async function rejectAndRestartApplication(
   applicationId: string,
-  customMessage?: string
+  emailBody: string,
+  newSubmitBy: string,
+  removeDocumentIds: string[] = []
 ): Promise<ActionResult> {
   try {
     const user = await requireRole([Role.ADMIN, Role.ASSESSOR]);
 
-    // Admin context: deleting the application + creating the replacement's
-    // PRIMARY contributor both need service_role (the application_contributors
-    // write policy is admin-only — mirrors startApplicationAction).
+    const submitBy = parseReturnSubmitBy(newSubmitBy, new Date());
+    if (!submitBy.ok) return { success: false, error: submitBy.error };
+    const body = emailBody?.trim() ?? "";
+    if (!body) return { success: false, error: "The email to the family is empty." };
+
+    // Admin context: the rejection insert policy is service-role only.
     const result = await withAdminContext(async (tx) => {
       const application = await tx.application.findUnique({
         where: { id: applicationId },
@@ -371,28 +431,32 @@ export async function rejectAndRestartApplication(
           reference: true,
           roundId: true,
           leadApplicantId: true,
-          school: true,
           childName: true,
-          childDob: true,
-          entryYear: true,
-          entryYearGroup: true,
-          contactId: true,
-          isReassessment: true,
-          applicationType: true,
           bursaryAccountId: true,
-          custodyArrangement: true,
           formStatus: true,
           closedAt: true,
+          submittedAt: true,
+          migrationSource: true,
+          round: { select: { academicYear: true } },
           leadApplicant: {
             select: { email: true, firstName: true, lastName: true },
           },
+          sections: LEAD_PARENT_DETAILS_SELECT,
           assessment: { select: { status: true, outcome: true } },
-          documents: { select: { storagePath: true } },
         },
       });
 
       if (!application) {
         return { success: false as const, error: "Application not found." };
+      }
+
+      // A Grant Tracker record has no form in this system: giving it "back"
+      // would show the family an empty form and break its schedule year.
+      if (isMigrated(application)) {
+        return {
+          success: false as const,
+          error: "A migrated Grant Tracker record has no form to reject.",
+        };
       }
 
       const phase = deriveReviewPhase({
@@ -402,101 +466,90 @@ export async function rejectAndRestartApplication(
         closedAt: application.closedAt,
       });
 
-      // Reject only before a final outcome. A decided/completed application must
-      // go through the outcome flow, not a restart.
-      if (
-        phase !== "SUBMITTED" &&
-        phase !== "NOT_STARTED" &&
-        phase !== "PAUSED"
-      ) {
+      // Reject only before a final outcome. A decided/completed application
+      // must go through the outcome flow.
+      if (!canReturnForCorrection(phase)) {
         return {
           success: false as const,
-          error: `Cannot reject and restart an application from status ${phase}.`,
+          error: `Cannot reject an application from status ${phase}.`,
         };
       }
 
-      const storagePaths = application.documents.map((d) => d.storagePath);
-      const clearedDocumentCount = storagePaths.length;
-      const oldReference = application.reference;
-
-      // Void + recreate. Helper deletes the old row (cascade) and creates the
-      // fresh blank application reusing the reference.
-      const newApplicationId = await restartApplicationFromRejection(tx, {
-        id: application.id,
-        reference: application.reference,
-        roundId: application.roundId,
-        leadApplicantId: application.leadApplicantId,
-        school: application.school,
-        childName: application.childName,
-        childDob: application.childDob,
-        entryYear: application.entryYear,
-        entryYearGroup: application.entryYearGroup,
-        contactId: application.contactId,
-        isReassessment: application.isReassessment,
-        applicationType: application.applicationType,
-        bursaryAccountId: application.bursaryAccountId,
-        custodyArrangement: application.custodyArrangement,
+      const { rejectionId, assessmentReset } = await returnApplicationForCorrection(tx, {
+        application: {
+          id: application.id,
+          reference: application.reference,
+          roundId: application.roundId,
+          academicYear: application.round.academicYear,
+          leadApplicantId: application.leadApplicantId,
+          bursaryAccountId: application.bursaryAccountId,
+          childName: application.childName,
+          submittedAt: application.submittedAt,
+          formStatus: application.formStatus,
+        },
+        phase,
+        newSubmitBy: submitBy.submitBy,
+        message: body,
+        staffId: user.id,
       });
 
-      // Audit on the OLD application id (entityId is a loose UUID — the row was
-      // just deleted, but the append-only audit trail persists).
+      // The documents ticked in the window — only this application's.
+      const removed = await removeDocumentsWithRejection(tx, {
+        applicationId,
+        reference: application.reference,
+        documentIds: removeDocumentIds,
+        staffId: user.id,
+        staffRole: user.role,
+        rejectionId,
+      });
+
+      // Same action key as before, so the History tab keeps working.
       await createAuditLog(tx, {
         userId: user.id,
         action: AUDIT_ACTIONS.APPLICATION_REJECTED_RESTART,
         entityType: AUDIT_ENTITY_TYPES.Application,
         entityId: applicationId,
-        context: `Application ${oldReference} rejected and restarted from scratch`,
+        context: `Application ${application.reference} rejected and returned to the family`,
         metadata: {
+          mode: "returned",
           fromStatus: phase,
-          reference: oldReference,
-          customMessage: customMessage?.trim() || null,
-          clearedDocumentCount,
-          newApplicationId,
+          reference: application.reference,
+          newSubmitBy: submitBy.submitBy.toISOString(),
+          rejectionRecordId: rejectionId,
+          customMessage: body,
+          previousSubmittedAt: application.submittedAt?.toISOString() ?? null,
+          assessmentReset,
+          documentsRemoved: removed.removed,
         },
       });
 
       return {
         success: true as const,
-        newApplicationId,
-        reference: oldReference,
-        childName: application.childName,
-        leadApplicant: application.leadApplicant,
-        storagePaths,
+        email: application.leadApplicant.email,
+        mergeData: rejectionMergeData(application),
+        storagePaths: removed.storagePaths,
       };
     });
 
     if (!result.success) return result;
 
-    // Storage cleanup AFTER the DB transaction commits. Non-fatal — the Document
-    // rows are already gone via cascade; an orphaned object is logged, not fatal.
+    // The removed documents' files, now their rows are gone. An object left
+    // behind is less harmful than a row pointing at nothing (as the staff
+    // delete route does it, the other way round).
     for (const path of result.storagePaths) {
       try {
         await deleteDocument(path);
       } catch (err) {
-        console.warn(
-          `[rejectAndRestartApplication] storage cleanup failed for ${path}:`,
-          err
-        );
+        console.error("[rejectAndRestartApplication] storage delete failed", path, err);
       }
     }
 
-    // Email the applicant — non-blocking. The note explains what was wrong; fall
-    // back to a neutral sentence when the assessor left it blank.
-    const noteForEmail =
-      customMessage?.trim() ||
-      "Having reviewed your application, we are unable to proceed with it as submitted.";
+    // Email the family — non-blocking.
     const emailResult = await sendEmail(
-      result.leadApplicant.email,
+      result.email,
       "APPLICATION_RESTART_REQUIRED",
-      {
-        applicant_name:
-          `${result.leadApplicant.firstName ?? ""} ${result.leadApplicant.lastName ?? ""}`.trim() ||
-          "Applicant",
-        child_name: result.childName,
-        reference: result.reference,
-        custom_message: noteForEmail,
-        restart_link: `${getAppUrl()}/apply/child-details`,
-      }
+      { ...result.mergeData, deadline: formatEmailDate(submitBy.submitBy) },
+      { bodyOverride: body }
     );
     if (!emailResult.success) {
       console.warn(
@@ -505,13 +558,67 @@ export async function rejectAndRestartApplication(
     }
 
     revalidateApplicationPaths(applicationId);
-    revalidatePath(`/applications/${result.newApplicationId}`);
 
     return { success: true };
   } catch (err) {
     console.error("[rejectAndRestartApplication]", err);
-    return { success: false, error: "Failed to reject and restart application." };
+    return { success: false, error: "Failed to reject the application." };
   }
+}
+
+/**
+ * What the Application rejection window opens with (read-only):
+ *   - `submitBy`: the later of the form's current effective deadline and
+ *     today + 7 days (`yyyy-MM-dd`, Europe/London);
+ *   - `body`: the Application Rejection template's text with this family's
+ *     details filled in. `{{deadline}}` is left for the send, so it follows
+ *     whatever date staff settle on.
+ */
+export async function getRejectionDraft(
+  applicationId: string
+): Promise<{ submitBy: string; body: string; documents: RejectionDocument[] }> {
+  await requireRole([Role.ADMIN, Role.ASSESSOR]);
+  const now = new Date();
+  // Service role, as the send does: the lead applicant's profile is under RLS.
+  const app = await withAdminContext((tx) =>
+    tx.application.findUnique({
+      where: { id: applicationId },
+      select: {
+        id: true,
+        reference: true,
+        childName: true,
+        submissionDeadlineAt: true,
+        applicationType: true,
+        round: { select: DEADLINE_ROUND_SELECT },
+        leadApplicant: { select: { firstName: true, lastName: true } },
+        sections: LEAD_PARENT_DETAILS_SELECT,
+      },
+    })
+  );
+  if (!app) return { submitBy: defaultReturnSubmitBy(null, now), body: "", documents: [] };
+
+  // The uploaded documents, grouped for "remove with the rejection".
+  const documents = await withAdminContext((tx) =>
+    tx.document.findMany({
+      where: { applicationId },
+      select: { id: true, slot: true, filename: true },
+      orderBy: [{ slot: "asc" }, { uploadedAt: "asc" }],
+    })
+  );
+
+  // email_templates has no app_user read policy either.
+  const template = await withAdminContext((tx) =>
+    tx.emailTemplate.findUnique({
+      where: { type: "APPLICATION_RESTART_REQUIRED" },
+      select: { body: true },
+    })
+  );
+
+  return {
+    submitBy: defaultReturnSubmitBy(effectiveSubmissionDeadline(app, app.round).deadline, now),
+    body: template ? replaceMergeFields(template.body, rejectionMergeData(app)) : "",
+    documents: documents.map((d) => ({ ...d, group: rejectionGroupForSlot(d.slot) })),
+  };
 }
 
 // ─── reopenForMaterialChange (soft send-back, keep submission date) ───────────
@@ -842,12 +949,16 @@ export async function gdprDeleteApplicantAction(
           submittedAt: true,
           archivedAt: true,
           closedAt: true,
+          retentionStage: true,
+          retentionStageAt: true,
           leadApplicantId: true,
           documents: { select: { id: true, storagePath: true } },
           assessment: {
             select: {
               id: true,
               outcome: true,
+              status: true,
+              archivedAt: true,
               property: { select: { id: true } },
               recommendation: { select: { id: true } },
             },
@@ -867,20 +978,19 @@ export async function gdprDeleteApplicantAction(
     //    with the auto-purge cron. Replaces the old flat 7-year-from-submission
     //    guard; the horizon now depends on the outcome (declined / qualifies-
     //    not-awarded / awarded) and anchors from the correct date.
-    const evaluation = isPurgeable(
-      {
-        outcome: application.assessment?.outcome ?? null,
-        closedAt: application.closedAt,
-        archivedAt: application.archivedAt,
-        submittedAt: application.submittedAt,
-      },
-      application.bursaryAccount
-        ? {
-            status: application.bursaryAccount.status,
-            closedAt: application.bursaryAccount.closedAt,
-          }
-        : null
-    );
+    // Epic 23 T10: the DPO-signed rules — a whole-family erasure only once
+    // the application's last retention stage (the assessment purge) is due.
+    const evaluation = isPurgeable({
+      bursaryAccount: application.bursaryAccount
+        ? { closedAt: application.bursaryAccount.closedAt }
+        : null,
+      closedAt: application.closedAt,
+      assessment: application.assessment
+        ? { status: application.assessment.status, archivedAt: application.assessment.archivedAt }
+        : null,
+      retentionStage: application.retentionStage,
+      retentionStageAt: application.retentionStageAt,
+    });
     if (!evaluation.purgeable) {
       return {
         success: false,
@@ -1125,6 +1235,9 @@ export async function closeApplicationAction(
     );
 
     if (!result.success) return result;
+
+    // Epic 23 T10 rule 2 (flag on only): the closed form's files, after the commit.
+    await deleteStorageObjectsPostCommit(result.storagePathsToDelete, deleteDocument);
 
     // Post-commit: auth-user deletion is external to Postgres (non-fatal —
     // failures are logged; the data-side purge has already committed).
@@ -1413,6 +1526,9 @@ export async function bulkCloseApplicationsAction(
         continue;
       }
 
+      // Epic 23 T10 rule 2 (flag on only): the closed form's files, after the commit.
+      await deleteStorageObjectsPostCommit(result.storagePathsToDelete, deleteDocument);
+
       // Post-commit: auth-user deletion is external to Postgres (non-fatal —
       // failures are logged; this row's data-side purge has already
       // committed). Runs after EACH row's own transaction, not the whole batch.
@@ -1437,5 +1553,39 @@ export async function bulkCloseApplicationsAction(
       skipped: [],
       error: "Failed to close applications.",
     };
+  }
+}
+
+// ─── requestErasureAction (Epic 23 T10 — retention rule 3) ─────────────────────
+
+/**
+ * A parent's erasure request at the new-application stage (DPO-signed rule 3):
+ * the application's form and documents are deleted at once and the name and
+ * reference anonymised ("XXXX"); the assessment is kept ANONYMOUS for 6 years
+ * and then purged by the weekly retention run. ADMIN only; the dialog's typed
+ * confirmation is the second step. Refused while retention purging is off.
+ */
+export async function requestErasureAction(applicationId: string): Promise<ActionResult> {
+  try {
+    const user = await requireRole([Role.ADMIN]);
+    if (!isRetentionPurgeEnabled()) {
+      return { success: false, error: "Retention purging is not enabled on this environment." };
+    }
+    const now = new Date();
+    const result = await withAdminContext((tx) => anonymiseForErasure(tx, applicationId, now, user.id));
+    if (!result.applied) {
+      return { success: false, error: result.skipped ?? "This application cannot be erased." };
+    }
+    await deleteStorageObjectsPostCommit(result.storagePaths, deleteDocument);
+    if (result.authUsersToDelete.length > 0) {
+      await deleteAuthUsersPostCommit(result.authUsersToDelete, {
+        deleteAuthUser: (uid) => createSupabaseAdminClient().auth.admin.deleteUser(uid),
+      });
+    }
+    revalidateApplicationPaths(applicationId);
+    return { success: true };
+  } catch (err) {
+    console.error("[requestErasureAction]", err);
+    return { success: false, error: "Failed to erase the application." };
   }
 }

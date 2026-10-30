@@ -178,6 +178,14 @@ export async function sendEmail(
      * the bulk wizard.
      */
     bcc?: string;
+    /**
+     * Application rejection (Charlotte, 17 Oct 2026) — staff edit the
+     * template's text in the rejection window before sending; this is that
+     * edited body. It replaces the stored body but goes through the same
+     * merge, wrapper, enabled gate and email log. The subject stays the
+     * template's.
+     */
+    bodyOverride?: string;
   }
 ): Promise<SendEmailResult> {
   try {
@@ -217,7 +225,7 @@ export async function sendEmail(
 
     // 2. Apply merge field substitution to subject and body.
     const subject = replaceMergeFields(template.subject, mergeData);
-    const plainBody = replaceMergeFields(template.body, mergeData);
+    const plainBody = replaceMergeFields(options?.bodyOverride ?? template.body, mergeData);
 
     // 3. Convert plain-text body to HTML and wrap in branded template.
     const htmlFragment = plainTextToHtml(plainBody);
@@ -443,6 +451,12 @@ export async function sendRawEmail(
   options?: {
     /** Epic 15 X2 (CI-05) — optional blind copy on ad-hoc/bulk sends. */
     bcc?: string;
+    /**
+     * Epic 22 P2 — Reply-To override. A parent's portal question goes to the
+     * bursary inbox; the team's reply must go back to the parent, not to the
+     * team's own address. Every other caller keeps `replyToAddress()`.
+     */
+    replyTo?: string;
   }
 ): Promise<SendEmailResult> {
   try {
@@ -451,7 +465,7 @@ export async function sendRawEmail(
 
     const { data, error } = await resend.emails.send({
       from: fromAddress(),
-      replyTo: replyToAddress(),
+      replyTo: options?.replyTo ?? replyToAddress(),
       to,
       ...(options?.bcc ? { bcc: options.bcc } : {}),
       subject,

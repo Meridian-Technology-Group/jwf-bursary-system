@@ -17,13 +17,14 @@
  * four that narrow an already-fetched list.
  */
 
-import type { School, BursaryAccountStatus } from "@prisma/client";
+import type { School } from "@prisma/client";
 import type { AssessmentQueueRow } from "@/lib/db/queries/assessments-queue";
+import type { AccountStage } from "@/lib/assessments/account-stage";
 import { compareReferences } from "@/lib/applications/reference-sort";
 
 export interface AssessmentQueueFilters {
-  /** ACTIVE / CLOSED. Rows with no account are excluded when this is set. */
-  bursaryStatus?: BursaryAccountStatus;
+  /** Active / Closed, or Pre-bursary open / closed for rows with no account. */
+  bursaryStatus?: AccountStage;
   /** Round academic year, e.g. "2026/27". */
   academicYear?: string;
   school?: School;

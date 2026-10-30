@@ -431,38 +431,48 @@ The Bursary Office
 John Whitgift Foundation`,
   },
   {
-    // Full Rejection flow — the applicant's submission was rejected outright and
-    // a fresh blank application has been created for them to complete.
-    // Kept in sync with migration
-    // 20260611120100_seed_restart_and_update_missing_docs_template.
+    // Application rejection (labelled "Application Rejection" in Settings).
+    // Charlotte's own wording, 17 Oct 2026, with her two answers the same day:
+    // {{greeting}} is Parent 1's title + surname, and "by the set deadline"
+    // names the new Submit by ({{deadline}}, filled at send time). the rejection window opens with
+    // this text and the family's details filled in; staff type the specifics
+    // into the numbered lines and what they send is the email. Kept in sync
+    // with migration 20261017120000_application_rejection_template (which
+    // replaces the stored row only while it still holds the 16 Oct text,
+    // `RESTART_REQUIRED_RETURN_SEED` below).
     type: "APPLICATION_RESTART_REQUIRED",
-    subject:
-      "Your bursary application needs to be resubmitted — {{child_name}}",
+    subject: "JWF - We have had to reject your application ** PLEASE READ **",
     mergeFields: [
+      "greeting",
       "applicant_name",
       "child_name",
       "reference",
-      "custom_message",
       "restart_link",
+      "deadline",
     ],
-    body: `Dear {{applicant_name}},
+    body: `Dear {{greeting}}
 
-{{custom_message}}
+Thank you for submitting your application.
 
-Having reviewed the bursary application submitted for {{child_name}} (reference: {{reference}}), we are unable to proceed with it in its current form. We have therefore closed that submission and ask that you complete a new application.
+I regret to inform you that we have had to reject your bursary application as it did not include the required documents/ information as stated on the form. As a result, we have had to clear some sections within the form.
 
-A fresh application has been prepared for you. Please log in to your online application portal using the link below to complete and submit it:
+When you log back in the system, you will see an incomplete form waiting for your correct documents and information, especially:
+1-
+2-
 
-{{restart_link}}
+As you may know, our assessment team needs these required documents/information to be able to complete your financial assessment.
 
-When completing your new application, please take particular care to provide clear, current, and valid supporting documents. If you have any questions about what is required, or if you would like to discuss your application, please contact the Bursary Office — we are happy to help.
+Not attaching the correct documents (either due to attaching one for an incorrect year, uploading a document that is not legible, or attaching another document in lieu of the requested one for instance) means that we are left with no other option but to ask you to complete the form again.
 
-We would like to remind you that all information provided is treated in strict confidence and used solely for the purpose of assessing your application for bursary support.
+Please remember that, if we cannot financially assess you, we will not be able to award a bursary to your child. It is therefore very important that you complete all the sections of the form correctly, or you may lose the opportunity to be assessed for a bursary.
 
-Yours sincerely,
+We do keep a record of any occurrence of any application rejections and do take those seriously.
 
-The Bursary Office
-John Whitgift Foundation`,
+We trust that you will be able to log back into your online bursary account and complete the form adequately by {{deadline}}. We are looking forward to receiving your new form shortly.
+
+Kind regards,
+
+JWF Bursary team.`,
   },
   {
     // CR-001 edit-on-behalf — sent once when a member of the Bursary Office
@@ -499,3 +509,56 @@ The Bursary Office
 John Whitgift Foundation`,
   },
 ];
+
+/**
+ * The APPLICATION_RESTART_REQUIRED text seeded by 20260611120100 (before Epic
+ * 23 T7). Migration 20261016170000 replaces a stored row only while it still
+ * equals this (or our 16 Aug edit); a test pins the migration to it.
+ */
+export const RESTART_REQUIRED_PREVIOUS_SEED = {
+  subject: "Your bursary application needs to be resubmitted — {{child_name}}",
+  body: `Dear {{applicant_name}},
+
+{{custom_message}}
+
+Having reviewed the bursary application submitted for {{child_name}} (reference: {{reference}}), we are unable to proceed with it in its current form. We have therefore closed that submission and ask that you complete a new application.
+
+A fresh application has been prepared for you. Please log in to your online application portal using the link below to complete and submit it:
+
+{{restart_link}}
+
+When completing your new application, please take particular care to provide clear, current, and valid supporting documents. If you have any questions about what is required, or if you would like to discuss your application, please contact the Bursary Office — we are happy to help.
+
+We would like to remind you that all information provided is treated in strict confidence and used solely for the purpose of assessing your application for bursary support.
+
+Yours sincerely,
+
+The Bursary Office
+John Whitgift Foundation`,
+};
+
+/**
+ * The APPLICATION_RESTART_REQUIRED text written by 20261016170000 (Epic 23 T7,
+ * "returned for correction"). Migration 20261017120000 replaces a stored row
+ * only while it still equals this; a test pins both migrations to it.
+ */
+export const RESTART_REQUIRED_RETURN_SEED = {
+  subject: "Your bursary application has been returned for correction — {{child_name}}",
+  body: `Dear {{applicant_name}},
+
+{{custom_message}}
+
+We have reviewed the bursary application submitted for {{child_name}} (reference: {{reference}}) and have returned it to you for correction.
+
+Your previous answers and documents are still there. Please log in to your online application portal using the link below, correct the sections that no longer show a green tick, and resubmit your application by {{deadline}}:
+
+{{restart_link}}
+
+If you have any questions about what needs to change, please email our team at fees@johnwhitgiftfoundation.org.
+
+We would like to remind you that all information provided is treated in strict confidence and used solely for the purpose of assessing your application for bursary support.
+
+Yours sincerely,
+
+JWF Bursary team`,
+};

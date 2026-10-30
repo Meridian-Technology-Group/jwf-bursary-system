@@ -48,6 +48,8 @@ interface ApplicationActionsProps {
   status: ReviewPhase;
   /** Documents needed by MissingDocsDialog to pre-select unverified slots */
   documents: Document[];
+  /** A Grant Tracker record has no form, so it cannot be rejected. */
+  migrated?: boolean;
 }
 
 // ─── Main component ───────────────────────────────────────────────────────────
@@ -56,6 +58,7 @@ export function ApplicationActions({
   applicationId,
   status,
   documents,
+  migrated = false,
 }: ApplicationActionsProps) {
   const router = useRouter();
   // Assessment-route detection (same test as assessment-route-chrome.tsx).
@@ -180,19 +183,21 @@ export function ApplicationActions({
                     </Button>
                   }
                 />
-                <RejectRestartDialog
-                  applicationId={applicationId}
-                  trigger={
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      disabled={isPending}
-                      className="gap-2 border-rose-300 text-rose-700 hover:bg-rose-50 hover:border-rose-400"
-                    >
-                      Reject &amp; Restart
-                    </Button>
-                  }
-                />
+                {!migrated && (
+                  <RejectRestartDialog
+                    applicationId={applicationId}
+                    trigger={
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={isPending}
+                        className="gap-2 border-rose-300 text-rose-700 hover:bg-rose-50 hover:border-rose-400"
+                      >
+                        Application rejection
+                      </Button>
+                    }
+                  />
+                )}
                 {/* CH-04 (Epic 15 W1): on assessment routes the form's green
                     Complete is the single completion affordance — the blue
                     duplicate is hidden there. */}

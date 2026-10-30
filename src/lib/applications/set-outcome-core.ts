@@ -195,6 +195,9 @@ export async function setApplicationOutcome(
         // Idempotent: a re-assessment already carrying an account is continued,
         // never double-created (see promoteToActiveAccount).
         if (outcome === "AWARDED") {
+          // Epic 21 #6: the v2 lock (post-assessment-core) seeds the
+          // account's main synopsis. This legacy v1 path does not: prod held
+          // no v1 assessments on 13 Oct 2026, so none lock here.
           await promoteToActiveAccount(tx, application, awards);
         }
 

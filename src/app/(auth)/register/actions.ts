@@ -101,6 +101,13 @@ export type ValidateApplicantInvitationResult =
     }
   | { success: false; error: string };
 
+/** True once the auth user has signed in at least once (Supabase records it). */
+async function hasSignedInBefore(authUserId: string): Promise<boolean> {
+  const { data, error } = await createSupabaseAdminClient().auth.admin.getUserById(authUserId);
+  if (error || !data.user) return false;
+  return data.user.last_sign_in_at != null;
+}
+
 /**
  * Validates an applicant invitation token and returns the safe public fields
  * needed to render the registration form. Returns an error if the token is
@@ -145,6 +152,11 @@ export async function validateApplicantInvitationAction(
     // registered? A profile with a non-null lastName/firstName set at accept
     // time is a heuristic; the reliable signal is any prior ACCEPTED
     // invitation for the same auth user (they've been through registration).
+    //
+    // 18 Oct 2026: a Grant Tracker family's login was created by the migration,
+    // never through an invitation, so it has no ACCEPTED one. Once that login
+    // has signed in, it is a real account too: asking it to "create" one would
+    // overwrite the password the parent uses.
     const existingAccount = invitation.authUserId
       ? (await withAdminContext((tx) =>
           tx.invitation.count({
@@ -153,7 +165,7 @@ export async function validateApplicantInvitationAction(
               status: InvitationStatus.ACCEPTED,
             },
           })
-        )) > 0
+        )) > 0 || (await hasSignedInBefore(invitation.authUserId))
       : false;
 
     let academicYear: string | null = null;
@@ -358,6 +370,7 @@ export async function acceptApplicantInvitationAction(
           entryYear: invitation.entryYear,
           entryYearGroup: invitation.entryYearGroup,
           contactId: invitation.contactId,
+          submissionDeadlineAt: invitation.submissionDeadlineAt,
         });
       }
 
@@ -483,6 +496,7 @@ export async function acceptInvitationForExistingAccountAction(
           entryYear: invitation.entryYear,
           entryYearGroup: invitation.entryYearGroup,
           contactId: invitation.contactId,
+          submissionDeadlineAt: invitation.submissionDeadlineAt,
         });
       }
 

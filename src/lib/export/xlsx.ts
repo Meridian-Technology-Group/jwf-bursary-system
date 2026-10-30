@@ -1,12 +1,18 @@
 /**
- * XLSX and CSV export builders for WP-17 — Exports.
+ * XLSX and CSV export builders for WP-17 — Export Recommendations.
  *
  * buildXlsxBuffer — produces an ExcelJS workbook as a Node.js Buffer.
  * buildCsvString  — produces a plain CSV string with the same columns.
+ *
+ * Epic 23 T4: both now delegate to the generic builders in `./build`, which
+ * the three new export sections share. Output is unchanged.
  */
 
-import ExcelJS from "exceljs";
 import type { ExportRow } from "@/lib/db/queries/exports";
+import type { CellValue } from "./columns";
+import { buildSheetCsv, buildSheetXlsx, columnLetter } from "./build";
+
+export { columnLetter };
 
 // ─── Column definitions ───────────────────────────────────────────────────────
 
@@ -31,8 +37,9 @@ const COLUMNS: ColumnDef[] = [
   { header: "Accommodation", key: "accommodationType", width: 22 },
   { header: "Income Category", key: "incomeCategory", width: 22 },
   { header: "Property Category", key: "propertyCategory", width: 20 },
+  // Epic 23 T4: on v2 this holds £ before VAT, not a percentage.
   {
-    header: "Bursary Award (%)",
+    header: "Bursary Award (£, before VAT)",
     key: "bursaryAward",
     width: 18,
     numFmt: "0.00",
@@ -72,6 +79,15 @@ const COLUMNS: ColumnDef[] = [
     numFmt: '£#,##0.00',
   },
   { header: "Gap Reasons", key: "gapReasons", width: 50 },
+  // Epic 21 #1 + #2: the gap code that takes the full justification, and the
+  // gap with the scholarship added back (funding view; display only).
+  { header: "Main Gap Reason", key: "mainGapReason", width: 50 },
+  {
+    header: "Scholarship-adjusted Gap",
+    key: "scholarshipAdjustedGap",
+    width: 24,
+    numFmt: '£#,##0.00',
+  },
   { header: "Debt Status", key: "debtStatus", width: 22 },
   { header: "Lifestyle Squeeze", key: "lifestyleSqueezeLabel", width: 22 },
   // Epic 13 / C2: the household income figure the award rests on, immediately
@@ -96,135 +112,20 @@ const COLUMNS: ColumnDef[] = [
   },
 ];
 
-// Design tokens
-const NAVY_HEX = "0D1B2A";
-const WHITE_HEX = "FFFFFF";
-
-// ─── XLSX ─────────────────────────────────────────────────────────────────────
+const rows_ = (rows: ExportRow[]) => rows as unknown as Record<string, CellValue>[];
 
 /**
- * Builds an ExcelJS workbook from ExportRow[] and returns it as a Buffer.
- * Features:
- *  - Navy (#0D1B2A) header row with white bold text
- *  - £ currency format on financial columns
- *  - Auto-filter on all columns
- *  - Column widths set explicitly
+ * Builds the Recommendations workbook (navy header, £ formats, auto-filter,
+ * explicit widths) and returns it as a Buffer.
  */
 export async function buildXlsxBuffer(rows: ExportRow[]): Promise<Buffer> {
-  const workbook = new ExcelJS.Workbook();
-
-  workbook.creator = "JWF Bursary System";
-  workbook.created = new Date();
-
-  const sheet = workbook.addWorksheet("Recommendations", {
-    views: [{ state: "frozen", ySplit: 1 }],
-  });
-
-  // Set columns
-  sheet.columns = COLUMNS.map((col) => ({
-    header: col.header,
-    key: col.key,
-    width: col.width,
-  }));
-
-  // Style the header row
-  const headerRow = sheet.getRow(1);
-  headerRow.eachCell((cell) => {
-    cell.fill = {
-      type: "pattern",
-      pattern: "solid",
-      fgColor: { argb: `FF${NAVY_HEX}` },
-    };
-    cell.font = {
-      bold: true,
-      color: { argb: `FF${WHITE_HEX}` },
-      size: 10,
-    };
-    cell.alignment = { vertical: "middle", wrapText: false };
-    cell.border = {
-      bottom: { style: "thin", color: { argb: "FFB8862A" } },
-    };
-  });
-  headerRow.height = 20;
-
-  // Add data rows
-  rows.forEach((row) => {
-    const addedRow = sheet.addRow({
-      reference: row.reference,
-      childFirstName: row.childFirstName,
-      childLastName: row.childLastName,
-      school: row.school,
-      familySynopsis: row.familySynopsis,
-      accommodationType: row.accommodationType,
-      incomeCategory: row.incomeCategory,
-      propertyCategory: row.propertyCategory,
-      bursaryAward: row.bursaryAward,
-      yearlyPayableFees: row.yearlyPayableFees,
-      monthlyPayableFees: row.monthlyPayableFees,
-      reasonCodes: row.reasonCodes,
-      flags: row.flags,
-      outcome: row.outcome,
-      recommendedPayableFees: row.recommendedPayableFees,
-      confirmedPayableFees: row.confirmedPayableFees,
-      gapAmount: row.gapAmount,
-      gapReasons: row.gapReasons,
-      debtStatus: row.debtStatus,
-      lifestyleSqueezeLabel: row.lifestyleSqueezeLabel,
-      totalHouseholdNetIncome: row.totalHouseholdNetIncome,
-      manualAdjustment: row.manualAdjustment,
-      manualAdjustmentReason: row.manualAdjustmentReason,
-    });
-
-    // Apply number formats to financial columns
-    COLUMNS.forEach((col, idx) => {
-      if (col.numFmt) {
-        const cell = addedRow.getCell(idx + 1);
-        cell.numFmt = col.numFmt;
-      }
-    });
-  });
-
-  // Auto-filter on header row spanning all columns
-  const lastColLetter = String.fromCharCode(64 + COLUMNS.length);
-  sheet.autoFilter = `A1:${lastColLetter}1`;
-
-  // Return as Buffer
-  const arrayBuffer = await workbook.xlsx.writeBuffer();
-  return Buffer.from(arrayBuffer);
+  return buildSheetXlsx(COLUMNS, rows_(rows), "Model Variance Audit");
 }
-
-// ─── CSV ──────────────────────────────────────────────────────────────────────
 
 /**
- * Builds a CSV string from ExportRow[].
- * Values containing commas, quotes, or newlines are double-quote-escaped.
+ * Builds a CSV string with the same columns. Values containing commas,
+ * quotes, or newlines are double-quote-escaped.
  */
 export function buildCsvString(rows: ExportRow[]): string {
-  const headers = COLUMNS.map((col) => col.header);
-  const lines: string[] = [csvRow(headers)];
-
-  for (const row of rows) {
-    const values = COLUMNS.map((col) => {
-      const val = row[col.key];
-      return val != null ? String(val) : "";
-    });
-    lines.push(csvRow(values));
-  }
-
-  return lines.join("\r\n");
-}
-
-// ─── Internal helpers ─────────────────────────────────────────────────────────
-
-/** Encodes a single CSV row, escaping values that need quoting. */
-function csvRow(values: string[]): string {
-  return values.map(csvEscape).join(",");
-}
-
-/** Wraps a value in double-quotes if it contains commas, quotes, or newlines. */
-function csvEscape(value: string): string {
-  if (/[",\r\n]/.test(value)) {
-    return `"${value.replace(/"/g, '""')}"`;
-  }
-  return value;
+  return buildSheetCsv(COLUMNS, rows_(rows));
 }

@@ -46,7 +46,9 @@ import {
   lifestyleSqueezeBands,
   lifestyleSqueezeBandsRespec,
   lifestyleSqueezeBandsPart5,
+  lifestyleSqueezeBandsOct17,
   debtShortfallBands,
+  debtShortfallBandsNdiNegative,
 } from "./seed-data/profiling-reference";
 import { postcodeAreas } from "./seed-data/postcode-areas";
 
@@ -162,6 +164,8 @@ async function seedReasonCodes(): Promise<void> {
 async function seedGapReasons(): Promise<void> {
   section("Gap reasons (CALC-02)");
   for (const gr of gapReasons) {
+    // `rank` goes in `create` only: it is edited in Settings, and a rerun of
+    // seed:reference must not wipe her edits (Epic 21 #2).
     await prisma.gapReason.upsert({
       where: { code: gr.code },
       create: gr,
@@ -353,10 +357,11 @@ async function seedDebtRatioBands(): Promise<void> {
 }
 
 async function seedDebtShortfallBands(): Promise<void> {
-  section("Debt shortfall bands (Charlotte, 11 Sep 2026)");
-  for (const band of debtShortfallBands) {
+  section("Debt shortfall bands (Charlotte, 11 Sep 2026; split by NDI sign 17 Oct)");
+  const bands = [...debtShortfallBands, ...debtShortfallBandsNdiNegative];
+  for (const band of bands) {
     const existing = await prisma.debtShortfallBand.findFirst({
-      where: { effectiveFrom: band.effectiveFrom, ceilingGbp: decimalKey(band.ceilingGbp) },
+      where: { effectiveFrom: band.effectiveFrom, ceilingGbp: decimalKey(band.ceilingGbp), shortfallTable: band.shortfallTable },
     });
     if (existing) {
       await prisma.debtShortfallBand.update({
@@ -367,7 +372,7 @@ async function seedDebtShortfallBands(): Promise<void> {
       await prisma.debtShortfallBand.create({ data: band });
     }
   }
-  log(`Upserted ${debtShortfallBands.length} debt shortfall bands`);
+  log(`Upserted ${bands.length} debt shortfall bands`);
 }
 
 async function seedLifestyleSqueezeBands(): Promise<void> {
@@ -377,6 +382,7 @@ async function seedLifestyleSqueezeBands(): Promise<void> {
     ...lifestyleSqueezeBands,
     ...lifestyleSqueezeBandsRespec,
     ...lifestyleSqueezeBandsPart5,
+    ...lifestyleSqueezeBandsOct17,
   ];
   for (const band of bands) {
     const debtSavingsContext =

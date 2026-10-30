@@ -24,6 +24,11 @@
  * prose but is RETAINED VERBATIM on a close purge — the confirm dialog warns
  * staff, and the residual risk is flagged to the DPO. The GDPR cascade is
  * unaffected (it deletes the whole assessment row).
+ *
+ * Epic 21 #6 (D-7): the account's main synopsis (`account_synopsis_entries`,
+ * one MAIN row per account since the 14 Oct 2026 rework) takes the same
+ * verdict — retained verbatim on a close purge, deleted by the GDPR cascade
+ * (every entry on the lead's accounts).
  */
 
 /** Replacement for a scrubbed child name (both routines, all models). */
@@ -98,6 +103,18 @@ export const BURSARY_ACCOUNT_CHILD_SCRUB = {
 } as const;
 
 /**
+ * ApplicationRejection (Epic 22 P3; Epic 23 T7 added the note) — the child's
+ * name, the reference and the free-text note to the family. The row itself
+ * (dates, phase) stays: it is the family's schedule history. Epic 23 T10:
+ * previously scrubbed by neither routine.
+ */
+export const REJECTION_SCRUB = {
+  childName: REDACTED_CHILD_NAME,
+  reference: REDACTED_TEXT,
+  message: null,
+} as const;
+
+/**
  * Assessment — close purge only (the GDPR cascade deletes the whole row).
  * Free-text OTHER THAN the synopsis is treated as PII (Story 10.2: prose may
  * embed names/addresses). The synopsis is retained verbatim per D-2. All
@@ -137,7 +154,7 @@ export const CLOSE_PURGE_SUMMARY = {
   retained: [
     "Bursary reference and key dates",
     "All assessment financial figures and the outcome",
-    "Assessment synopsis (verbatim — may contain personal data; see D-2)",
+    "Assessment synopsis and the account's main synopsis (verbatim — may contain personal data; see D-2)",
     "Recommendation awards, fee figures and reason codes",
     "Close reason, closing user and close date",
     "Audit trail (append-only; user links nulled only on full profile erasure)",

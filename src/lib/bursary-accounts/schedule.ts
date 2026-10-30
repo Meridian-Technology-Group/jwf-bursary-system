@@ -11,19 +11,33 @@
  *     Schedule" button) so re-awarding never duplicates rows and never rewrites
  *     a RECEIVED year.
  *
- * Date policy (D19 default): each future year's `availableOn`/`requiredBy`
- * derive from the award round's open/close dates, shifted forward one academic
- * year per schedule year. Epic 03 owns the per-round date model; when a future
+ * Date policy: Year 1 (the award year) carries the award round's open/close
+ * dates. Every later year is a rolling-over year, so it carries the
+ * rolling-over window for its academic year (`scheduleDatesForYear`; Epic 21
+ * F2): the RA window of the round for that year once it exists, else the
+ * 15 April → 21 May placeholder (Epic 21 R2, `schedule-dates.ts`). It used to
+ * shift the award round's dates, which gave rolling-over families the
+ * new-applicant dates every year. Saving a round's windows re-dates that
+ * year's still-SCHEDULED rows (`rollingRedateWhere`). Epic 03 owns the per-round date model; when a future
  * year is materialised into a real Round the entry is linked via `roundId` and
  * the round's own dates take over. Until then these are the planned dates.
  *
- * Show/Hide on portal (illustration default): the current/next schedule year is
- * shown; far-future years are hidden until they approach.
+ * Show/Hide on portal (Epic 21 #5, D-2): every year of the award is shown by
+ * default, and the tick is the admin's "hide this year from the family"
+ * switch. It governs the portal home page and the calendar alike. (It used to
+ * default on for years 1–2 only, which hid years 3+ from every family once the
+ * home page obeyed it.)
+ *
+ * Epic 21 #4: an ADMIN can end the schedule after a year (a conditional
+ * bursary) or add a year back. The account's `scheduleEndYear` caps the
+ * horizon (`effectiveHorizon`) so neither Regenerate nor an award lock can
+ * re-create an ended year; `planEndAfterYear` / `planAddYear` are the pure
+ * decisions behind the two admin actions.
  */
 
 import { finalEligibleSchoolYear } from "@/lib/schools";
 import type { Tx } from "@/lib/db/prisma";
-import type { EntryYearGroup, School } from "@prisma/client";
+import type { EntryYearGroup, School, ScheduleEntryStatus } from "@prisma/client";
 import {
   parseAcademicYearStart,
   formatAcademicYearLabel,
@@ -31,6 +45,11 @@ import {
 // Single source of truth for group → school-year (CH-26 added Y8/Y10/Y11/Y13);
 // OTHER / null / unrecognised → null and the caller falls back to the default.
 import { schoolYearForEntryYearGroup as schoolYearForGroup } from "@/lib/assessment/schooling-years";
+import {
+  rollingOverWindowFor,
+  type RollingWindowsByYear,
+  type StoredRollingWindow,
+} from "@/lib/bursary-accounts/schedule-dates";
 
 /**
  * The final school year a bursary can run to at Trinity and Whitgift (Year 13 /
@@ -40,9 +59,6 @@ export const FINAL_ELIGIBLE_SCHOOL_YEAR = 13;
 
 /** Hard ceiling on generated years, so a bad entry-year never explodes the grid. */
 export const MAX_SCHEDULE_YEARS = 8;
-
-/** How many future years (incl. the award year) are shown on the portal by default. */
-const DEFAULT_PORTAL_VISIBLE_YEARS = 2;
 
 /**
  * D19 horizon: number of assessment years to generate, counting the award year
@@ -65,6 +81,142 @@ export function resolveScheduleHorizon(
   return Math.min(Math.max(years, 1), MAX_SCHEDULE_YEARS);
 }
 
+/**
+ * Epic 21 #4 — the horizon after an ADMIN's "End after this year": the
+ * natural horizon, capped at `scheduleEndYear` when one is set (never below 1).
+ */
+export function effectiveHorizon(natural: number, scheduleEndYear: number | null | undefined): number {
+  if (scheduleEndYear == null) return natural;
+  return Math.max(1, Math.min(natural, scheduleEndYear));
+}
+
+/** A schedule row as the end/add planners see it. */
+export interface PlannerRow {
+  id: string;
+  scheduleYear: number;
+  academicYear: string;
+  status: ScheduleEntryStatus;
+}
+
+export type EndAfterYearPlan =
+  | { ok: true; deleteIds: string[]; removedYears: string[] }
+  | { ok: false; reason: string };
+
+/**
+ * Epic 21 #4 — "End after this year": every row after `thisYear` goes, but
+ * only if none has started (an application exists or it was received). Refuses
+ * naming the first year that has, or when there is nothing after this year.
+ */
+export function planEndAfterYear(rows: readonly PlannerRow[], thisYear: number): EndAfterYearPlan {
+  const later = rows
+    .filter((r) => r.scheduleYear > thisYear)
+    .sort((a, b) => a.scheduleYear - b.scheduleYear);
+  if (later.length === 0) {
+    return { ok: false, reason: "There are no later years to remove: the schedule already ends with this year." };
+  }
+  const started = later.find((r) => r.status !== "SCHEDULED");
+  if (started) {
+    return {
+      ok: false,
+      reason: `${started.academicYear} has already started (its application exists or was received), so the schedule can't end before it.`,
+    };
+  }
+  return {
+    ok: true,
+    deleteIds: later.map((r) => r.id),
+    removedYears: later.map((r) => r.academicYear),
+  };
+}
+
+export type AddYearPlan = { ok: true; scheduleYear: number } | { ok: false; reason: string };
+
+/**
+ * Epic 21 #4 — "Add a year": the year after the last one, refused past the
+ * natural horizon (no Year 14; Year 11 at the OP partnering school).
+ */
+export function planAddYear(
+  rows: readonly Pick<PlannerRow, "scheduleYear">[],
+  naturalHorizon: number,
+  school: School | null
+): AddYearPlan {
+  const next = rows.reduce((max, r) => Math.max(max, r.scheduleYear), 0) + 1;
+  if (next > naturalHorizon) {
+    return {
+      ok: false,
+      reason: `This pupil's bursary already runs to their final eligible year (Year ${finalEligibleSchoolYear(school)}), so no year can be added.`,
+    };
+  }
+  return { ok: true, scheduleYear: next };
+}
+
+/**
+ * "This year" on the admin page = the schedule row of the application being
+ * viewed: linked by `applicationId`, else matched on its round's academic year
+ * (rows say "2026-27", rounds "2026/27").
+ */
+export function findThisYearRow<T extends PlannerRow & { applicationId: string | null }>(
+  rows: readonly T[],
+  applicationId: string,
+  roundAcademicYear: string
+): T | null {
+  const start = parseAcademicYearStart(roundAcademicYear);
+  return (
+    rows.find((r) => r.applicationId === applicationId) ??
+    rows.find((r) => start != null && parseAcademicYearStart(r.academicYear) === start) ??
+    null
+  );
+}
+
+/** What the admin page's "End after this year" button can do. */
+export type ScheduleEndControl =
+  | { enabled: true; thisYear: string; removedYears: string[] }
+  | { enabled: false; why: string };
+
+/** What the admin page's "Add a year" button can do. */
+export type ScheduleAddControl =
+  | { enabled: true; addedYear: string; reopens: boolean }
+  | { enabled: false; why: string };
+
+/**
+ * Epic 21 #4 — the state of the two admin-page buttons, from the same planners
+ * the actions run, so a button is only enabled when its action would succeed.
+ */
+export function scheduleEditControls(params: {
+  rows: readonly (PlannerRow & { applicationId: string | null })[];
+  applicationId: string;
+  roundAcademicYear: string;
+  firstAssessmentYear: string;
+  naturalHorizon: number;
+  school: School | null;
+  accountClosed: boolean;
+}): { end: ScheduleEndControl; add: ScheduleAddControl } {
+  const thisRow = findThisYearRow(params.rows, params.applicationId, params.roundAcademicYear);
+  let end: ScheduleEndControl;
+  if (!thisRow) {
+    end = { enabled: false, why: "This year is not on the account's schedule." };
+  } else {
+    const plan = planEndAfterYear(params.rows, thisRow.scheduleYear);
+    end = plan.ok
+      ? { enabled: true, thisYear: thisRow.academicYear, removedYears: plan.removedYears }
+      : { enabled: false, why: plan.reason };
+  }
+
+  const addPlan = planAddYear(params.rows, params.naturalHorizon, params.school);
+  const firstStart = parseAcademicYearStart(params.firstAssessmentYear);
+  const add: ScheduleAddControl = addPlan.ok
+    ? {
+        enabled: true,
+        addedYear:
+          firstStart != null
+            ? formatAcademicYearLabel(firstStart + addPlan.scheduleYear - 1)
+            : `year ${addPlan.scheduleYear}`,
+        reopens: params.accountClosed,
+      }
+    : { enabled: false, why: addPlan.reason };
+
+  return { end, add };
+}
+
 /** A planned schedule row, before persistence. */
 export interface PlannedScheduleEntry {
   scheduleYear: number;
@@ -72,6 +224,74 @@ export interface PlannedScheduleEntry {
   availableOn: Date | null;
   requiredBy: Date | null;
   showOnPortal: boolean;
+}
+
+/**
+ * Epic 21 F2 / R2 — the planned dates for one schedule year. Year 1 keeps
+ * the award round's dates; later years take the rolling-over (RA) window of
+ * their own academic year (`rollingOverWindowFor`): that year's round's stored
+ * RA window when given, else the placeholder (2027-28 → 15/04/2027–21/05/2027).
+ * Unparseable award years fall back to shifting the award round's dates (the
+ * old behaviour).
+ */
+export function scheduleDatesForYear(params: {
+  awardStartYear: number | null;
+  awardOpenDate: Date | null;
+  awardCloseDate: Date | null;
+  scheduleYear: number;
+  /** The stored RA window of the round for THIS year's academic year, if any. */
+  raWindow?: StoredRollingWindow | null;
+}): { availableOn: Date | null; requiredBy: Date | null } {
+  const offset = params.scheduleYear - 1;
+  if (offset === 0 || params.awardStartYear == null) {
+    return {
+      availableOn: shiftYears(params.awardOpenDate, offset),
+      requiredBy: shiftYears(params.awardCloseDate, offset),
+    };
+  }
+  const ra = rollingOverWindowFor(params.awardStartYear + offset, params.raWindow);
+  return { availableOn: ra.opensOn, requiredBy: ra.submitBy };
+}
+
+/**
+ * Epic 21 R2 — the rows a save of one round's windows re-dates: that
+ * academic year's rolling-over rows that are still only planned. Never
+ * year 1 (it carries the award round's own dates; prod's 2026-27 year-1 rows
+ * are SCHEDULED with no round), never a row already linked to a round, never
+ * RECEIVED/COMPLETE history.
+ */
+export function rollingRedateWhere(roundAcademicYear: string): {
+  academicYear: string;
+  scheduleYear: { gte: 2 };
+  status: "SCHEDULED";
+  roundId: null;
+} | null {
+  const start = parseAcademicYearStart(roundAcademicYear);
+  if (start == null) return null;
+  return {
+    // Rows are labelled "2027-28", rounds "2027/28".
+    academicYear: formatAcademicYearLabel(start),
+    scheduleYear: { gte: 2 },
+    status: "SCHEDULED",
+    roundId: null,
+  };
+}
+
+/**
+ * Loads every round's stored RA window, keyed by the round's academic start
+ * year. A handful of rows (one per round at most).
+ */
+export async function loadRollingWindowsByYear(tx: Tx): Promise<Map<number, StoredRollingWindow>> {
+  const windows = await tx.roundWindow.findMany({
+    where: { scenario: "RA" },
+    select: { opensOn: true, submitBy: true, round: { select: { academicYear: true } } },
+  });
+  const byYear = new Map<number, StoredRollingWindow>();
+  for (const w of windows) {
+    const start = parseAcademicYearStart(w.round.academicYear);
+    if (start != null) byYear.set(start, { opensOn: w.opensOn, submitBy: w.submitBy });
+  }
+  return byYear;
 }
 
 /** Shifts a date forward by `n` whole years (null-safe). */
@@ -96,8 +316,10 @@ export function planSchedule(params: {
   awardOpenDate: Date | null;
   awardCloseDate: Date | null;
   horizon: number;
+  /** Epic 21 R2 — stored RA windows by academic start year (absent = placeholders). */
+  rollingWindows?: RollingWindowsByYear;
 }): PlannedScheduleEntry[] {
-  const { awardAcademicYear, awardOpenDate, awardCloseDate, horizon } = params;
+  const { awardAcademicYear, awardOpenDate, awardCloseDate, horizon, rollingWindows } = params;
   const startYear = parseAcademicYearStart(awardAcademicYear);
 
   const rows: PlannedScheduleEntry[] = [];
@@ -112,10 +334,15 @@ export function planSchedule(params: {
     rows.push({
       scheduleYear,
       academicYear,
-      availableOn: shiftYears(awardOpenDate, i),
-      requiredBy: shiftYears(awardCloseDate, i),
-      // Current + next year shown; far-future hidden until they approach.
-      showOnPortal: scheduleYear <= DEFAULT_PORTAL_VISIBLE_YEARS,
+      ...scheduleDatesForYear({
+        awardStartYear: startYear,
+        awardOpenDate,
+        awardCloseDate,
+        scheduleYear,
+        raWindow: startYear != null ? rollingWindows?.get(startYear + i) : null,
+      }),
+      // Epic 21 #5 (D-2): every year shown; the admin hides one by unticking.
+      showOnPortal: true,
     });
   }
   return rows;
@@ -128,6 +355,8 @@ export interface ScheduleAccount {
   school: School;
   entryYearGroup: EntryYearGroup | null;
   firstAssessmentYear: string;
+  /** Epic 21 #4 — the ADMIN's end of schedule; null/absent = natural horizon. */
+  scheduleEndYear?: number | null;
 }
 
 /** The award round's date anchors. */
@@ -158,12 +387,18 @@ export async function generateSchedule(
   account: ScheduleAccount,
   round: ScheduleRoundDates
 ): Promise<GenerateScheduleResult> {
-  const horizon = resolveScheduleHorizon(account.entryYearGroup, undefined, account.school);
+  // Epic 21 #4: never past an ADMIN's "End after this year".
+  const horizon = effectiveHorizon(
+    resolveScheduleHorizon(account.entryYearGroup, undefined, account.school),
+    account.scheduleEndYear
+  );
   const planned = planSchedule({
     awardAcademicYear: round.academicYear,
     awardOpenDate: round.openDate,
     awardCloseDate: round.closeDate,
     horizon,
+    // Epic 21 R2 — later years follow their own round's RA window.
+    rollingWindows: await loadRollingWindowsByYear(tx),
   });
 
   // Existing rows by scheduleYear — the idempotency key.
@@ -201,4 +436,26 @@ export async function generateSchedule(
   });
 
   return { horizon, created, skipped };
+}
+
+/**
+ * Epic 21 #4 — the date anchor for an account's schedule: the round of its
+ * FIRST assessment year, so a re-inserted year gets the right academic year
+ * and dates. (The award-lock path used to anchor on the current application's
+ * round, which shifts every planned label by the years since the award.) Dates
+ * fall back to null when that round can't be found.
+ */
+export async function roundDatesForAccount(
+  tx: Tx,
+  account: Pick<ScheduleAccount, "firstAssessmentYear">
+): Promise<ScheduleRoundDates> {
+  const round = await tx.round.findUnique({
+    where: { academicYear: account.firstAssessmentYear },
+    select: { openDate: true, closeDate: true },
+  });
+  return {
+    academicYear: account.firstAssessmentYear,
+    openDate: round?.openDate ?? null,
+    closeDate: round?.closeDate ?? null,
+  };
 }

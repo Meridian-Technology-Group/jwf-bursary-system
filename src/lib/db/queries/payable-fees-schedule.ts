@@ -13,10 +13,17 @@
 import type { Tx } from "@/lib/db/prisma";
 import { schoolYearForEntryYearGroup } from "@/lib/assessment/schooling-years";
 import { AWARD_FUND_LABELS } from "@/lib/assessment/award-fund";
+import { scheduleRowDates } from "@/lib/bursary-accounts/schedule-dates";
 
 export interface PayableFeesScheduleTableRow {
   scheduleYear: number;
   academicYear: string;
+  /**
+   * Epic 21 #3 — the year's application (matched by link, else by round year),
+   * for the "door" to previous years. Null for years with no application, or
+   * one the viewer cannot read under RLS (an ASSESSOR's unassigned years, D-4).
+   */
+  applicationId: string | null;
   /** "Year 7" etc.; null when the entry year-group gives no deterministic base. */
   schoolYearLabel: string | null;
   /** The year's YoY reason-code labels (from its recommendation), workbook order. */
@@ -24,6 +31,11 @@ export interface PayableFeesScheduleTableRow {
   payableFees: number | null;
   deltaPayableFees: number | null;
   submitBy: Date | null;
+  /**
+   * Epic 21 R2 — that year's application's own deadline (override) when it
+   * falls on another day than `submitBy`; null otherwise.
+   */
+  familyDeadline: Date | null;
   applicationStatus: string;
   assessmentStatus: string;
   bursaryStatus: string;
@@ -83,6 +95,8 @@ export async function getPayableFeesScheduleRows(
       formStatus: true,
       closedAt: true,
       applicationType: true,
+      // Epic 21 R2 — the family's own deadline, shown beside the window.
+      submissionDeadlineAt: true,
       round: { select: { academicYear: true } },
       assessment: {
         select: {
@@ -113,7 +127,7 @@ export async function getPayableFeesScheduleRows(
   const bursaryStatus = account.status === "ACTIVE" ? "Active" : "Closed";
 
   const rows: PayableFeesScheduleTableRow[] = account.scheduleEntries.map(
-    (entry, idx) => {
+    (entry) => {
       const app =
         (entry.applicationId ? appById.get(entry.applicationId) : null) ??
         appByYear.get(normaliseAcademicYear(entry.academicYear)) ??
@@ -150,11 +164,22 @@ export async function getPayableFeesScheduleRows(
       return {
         scheduleYear: entry.scheduleYear,
         academicYear: entry.academicYear,
-        schoolYearLabel: base != null ? `Year ${base + idx}` : null,
+        applicationId: app?.id ?? null,
+        // Epic 21 #4: from the row's own scheduleYear, not its position, so a
+        // gap left by an ended-then-added schedule never mislabels later rows.
+        schoolYearLabel: base != null ? `Year ${base + entry.scheduleYear - 1}` : null,
         reasonCodes,
         payableFees,
         deltaPayableFees: null, // filled in the pass below
         submitBy: entry.requiredBy,
+        familyDeadline: (() => {
+          const dates = scheduleRowDates({
+            availableOn: null,
+            requiredBy: entry.requiredBy,
+            application: app,
+          });
+          return dates.hasOwnDeadline ? dates.submitBy : null;
+        })(),
         applicationStatus,
         assessmentStatus,
         bursaryStatus,

@@ -126,7 +126,7 @@ export function BulkCloseDialog({
       </Button>
 
       <Dialog open={open} onOpenChange={handleOpenChange}>
-        <DialogContent className="sm:max-w-lg">
+        <DialogContent className="sm:max-w-2xl">
           {phase === "select" ? (
             <>
               <DialogHeader>
@@ -157,7 +157,7 @@ export function BulkCloseDialog({
                     onValueChange={setReasonId}
                     disabled={isPending || reasons.length === 0}
                   >
-                    <SelectTrigger id="bulk-close-reason" className="w-full">
+                    <SelectTrigger id="bulk-close-reason" className="w-full text-left [&>span]:truncate">
                       <SelectValue
                         placeholder={
                           reasons.length === 0

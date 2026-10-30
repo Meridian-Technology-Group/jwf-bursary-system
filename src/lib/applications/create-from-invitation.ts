@@ -27,6 +27,7 @@ import type { Tx } from "@/lib/db/prisma";
 import { generateApplicationReference } from "@/lib/applications/reference";
 import { applicationCreateData } from "@/lib/applications/status";
 import { ensurePrimaryContributor } from "@/lib/db/queries/contributors";
+import { applicationDeadlineFromInvitation } from "@/lib/invitations/submit-by";
 
 export interface FirstYearApplicationSource {
   leadApplicantId: string;
@@ -51,6 +52,12 @@ export interface FirstYearApplicationSource {
   entryYearGroup: EntryYearGroup | null;
   /** The contact this application is seeded from, when invited from a contact. */
   contactId?: string | null;
+  /**
+   * Licence fix (14 Oct 2026) — the invitation's "Submit by" date. Copied to
+   * `Application.submissionDeadlineAt`, the per-application override the
+   * portal, submit guard and queue enforce. Null/absent = no override.
+   */
+  submissionDeadlineAt?: Date | null;
 }
 
 /**
@@ -118,6 +125,11 @@ export async function createFirstYearApplicationFromSource(
       entryYear: source.entryYear ?? null,
       entryYearGroup: source.entryYearGroup,
       contactId: source.contactId ?? null,
+      // A brand-new row has no override yet, so the invitation's date applies.
+      submissionDeadlineAt: applicationDeadlineFromInvitation(
+        null,
+        source.submissionDeadlineAt
+      ),
       isReassessment: false,
       ...applicationCreateData("NEW"),
     },
@@ -125,85 +137,6 @@ export async function createFirstYearApplicationFromSource(
 
   // Every application must have a PRIMARY contributor from creation so the
   // section write path can tag the owner (dual-parent foundation).
-  await ensurePrimaryContributor(tx, application.id, source.leadApplicantId);
-
-  return application.id;
-}
-
-// ───────────────────────────────────────────────────────────────────────────
-// Full Rejection — hard-delete + recreate ("void + new")
-// ───────────────────────────────────────────────────────────────────────────
-
-/**
- * The carry-over identity of the application being restarted. These are the
- * fields the fresh application inherits verbatim from the rejected one — the
- * child/round identity, the locked entry-year/school (D1), and the bursary-
- * account link (for a ROLLING_OVER re-assessment). NOT carried: any form data,
- * documents, or assessment — the new application starts blank ("from scratch").
- */
-export interface RejectedApplicationSource {
-  id: string;
-  reference: string;
-  roundId: string;
-  leadApplicantId: string;
-  school: School;
-  childName: string;
-  childDob: Date | null;
-  entryYear: number | null;
-  entryYearGroup: EntryYearGroup | null;
-  contactId: string | null;
-  isReassessment: boolean;
-  applicationType: ApplicationType;
-  bursaryAccountId: string | null;
-  custodyArrangement: CustodyArrangement;
-}
-
-/**
- * Voids a rejected application and creates a fresh blank one in its place
- * ("Full Rejection" → restart). Because of the
- * `@@unique([roundId, leadApplicantId, childName, childDob])` constraint, the
- * rejected application cannot coexist with its replacement, so it is
- * hard-deleted (the row's cascades remove its sections, contributors,
- * documents, assessment and invitations) and the new application REUSES the old
- * `reference`. The reuse is deliberate continuity, not a uniqueness workaround:
- * since D13-1a the reference is a non-unique label, so a restart could equally
- * regenerate one — but the applicant has already been told this reference, and
- * a restart is the same child in the same round.
- *
- * Storage objects are NOT removed here — the DB cascade only drops the Document
- * rows. The caller captures each `storagePath` BEFORE calling this and deletes
- * the Storage objects after the transaction commits (non-fatal cleanup).
- *
- * Runs inside the caller's transaction: the delete precedes the insert so the
- * unique tuple is free when the new row is written. Returns the new app id.
- */
-export async function restartApplicationFromRejection(
-  tx: Tx,
-  source: RejectedApplicationSource
-): Promise<string> {
-  // Delete the rejected application first — cascades clear its sections,
-  // contributors, documents, assessment and invitations, and free both the
-  // unique child/round tuple and the reference for reuse below.
-  await tx.application.delete({ where: { id: source.id } });
-
-  const application = await tx.application.create({
-    data: {
-      reference: source.reference,
-      roundId: source.roundId,
-      leadApplicantId: source.leadApplicantId,
-      school: source.school,
-      childName: source.childName,
-      childDob: source.childDob,
-      entryYear: source.entryYear,
-      entryYearGroup: source.entryYearGroup,
-      contactId: source.contactId,
-      bursaryAccountId: source.bursaryAccountId,
-      isReassessment: source.isReassessment,
-      custodyArrangement: source.custodyArrangement,
-      ...applicationCreateData(source.applicationType),
-    },
-  });
-
   await ensurePrimaryContributor(tx, application.id, source.leadApplicantId);
 
   return application.id;

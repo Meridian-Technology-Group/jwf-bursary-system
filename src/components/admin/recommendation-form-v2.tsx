@@ -48,6 +48,15 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { MIGRATED_LOCKED_MESSAGE } from "@/lib/applications/migration-source";
+import { ACCOUNT_CLOSED_REVERT_MESSAGE } from "@/lib/bursary-accounts/closed-by-staff";
+import { Checkbox } from "@/components/ui/checkbox";
+import {
+  RECOMMENDATION_FLAGS,
+  isLargeFamily,
+  type StoredFlagKey,
+  type StoredRecommendationFlags,
+} from "@/lib/assessment/recommendation-flags";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -65,6 +74,7 @@ import {
 } from "@/lib/reason-codes/gap-category";
 import type { ReasonCodeOption } from "@/components/admin/reason-code-selector";
 import { AssessmentSynopsis } from "@/components/admin/assessment-synopsis";
+import { isSynopsisLocked } from "@/lib/bursary-accounts/standing-synopsis";
 import {
   ReadOnlyBanner,
   RedFlagBanner,
@@ -75,6 +85,7 @@ import {
 } from "@/components/admin/recommendation-form";
 import {
   saveRecommendationAction,
+  saveRecommendationFlagsAction,
   setPostAssessmentStateAction,
   revertPostAssessmentStateAction,
   type SaveRecommendationData,
@@ -181,6 +192,14 @@ export interface RecommendationFormV2Props {
    * server's set-outcome-core enforces the same rule).
    */
   outcomeLocked?: boolean;
+  /** A migrated Grant Tracker award: locked for good, no way back (17 Oct). */
+  migrated?: boolean;
+  /** Staff closed the bursary account: the award can't be reversed (22 Oct 2026). */
+  accountClosedByStaff?: boolean;
+  /** The five stored flags: the saved recommendation's, else the assessment's old ticks. */
+  initialFlags: StoredRecommendationFlags;
+  /** Flags save on their own once a recommendation exists (locked awards too). */
+  hasRecommendation: boolean;
 }
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
@@ -469,6 +488,10 @@ export function RecommendationFormV2({
   lastPayableFees,
   siblingContext,
   outcomeLocked = false,
+  migrated = false,
+  accountClosedByStaff = false,
+  initialFlags,
+  hasRecommendation,
 }: RecommendationFormV2Props) {
   const router = useRouter();
   // Epic 18 — a post-assessment final state locks the form; so does a legacy
@@ -580,6 +603,30 @@ export function RecommendationFormV2({
   );
   const [selectedCloseReasonId, setSelectedCloseReasonId] = React.useState<string>("");
 
+  // ── Flags (17 + 21 Oct 2026) — her seven; Large family is derived ───────
+  const [flags, setFlags] = React.useState<StoredRecommendationFlags>(initialFlags);
+  const [isSavingFlags, setIsSavingFlags] = React.useState(false);
+  const [flagsMessage, setFlagsMessage] = React.useState<{
+    type: "success" | "error";
+    text: string;
+  } | null>(null);
+  const flagsDirty = (Object.keys(flags) as StoredFlagKey[]).some(
+    (k) => flags[k] !== initialFlags[k]
+  );
+
+  async function handleSaveFlags() {
+    setIsSavingFlags(true);
+    setFlagsMessage(null);
+    const result = await saveRecommendationFlagsAction(applicationId, flags);
+    setIsSavingFlags(false);
+    if (result.success) {
+      setFlagsMessage({ type: "success", text: "Flags saved." });
+      router.refresh();
+    } else {
+      setFlagsMessage({ type: "error", text: result.error });
+    }
+  }
+
   async function handleSave() {
     if (!gapValid) {
       setSaveMessage({
@@ -606,8 +653,7 @@ export function RecommendationFormV2({
       scholarshipAward: summary.scholarshipSpendBeforeVat,
       yearlyPayableFees: confirmedPayableFees,
       monthlyPayableFees: monthly,
-      dishonestyFlag: snapshot.dishonestyFlag,
-      creditRiskFlag: false,
+      ...flags,
       summary: null,
       reasonCodeIds: selectedReasonCodeIds,
       // v2 actual-leg recommendation + gap tracking.
@@ -707,18 +753,24 @@ export function RecommendationFormV2({
                   </Button>
                 </>
               )}
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                onClick={handleRevertState}
-                disabled={isReverting}
-              >
-                <Undo2 className="mr-1.5 h-3.5 w-3.5" aria-hidden="true" />
-                {isReverting
-                  ? "Reverting…"
-                  : POST_ASSESSMENT_META[finalState].revertLabel}
-              </Button>
+              {migrated ? (
+                <p className="text-xs text-muted-foreground">{MIGRATED_LOCKED_MESSAGE}</p>
+              ) : accountClosedByStaff ? (
+                <p className="text-xs text-muted-foreground">{ACCOUNT_CLOSED_REVERT_MESSAGE}</p>
+              ) : (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={handleRevertState}
+                  disabled={isReverting}
+                >
+                  <Undo2 className="mr-1.5 h-3.5 w-3.5" aria-hidden="true" />
+                  {isReverting
+                    ? "Reverting…"
+                    : POST_ASSESSMENT_META[finalState].revertLabel}
+                </Button>
+              )}
             </div>
           </div>
         </div>
@@ -727,7 +779,7 @@ export function RecommendationFormV2({
         <ReadOnlyBanner outcome={assessmentOutcome} />
       )}
 
-      {snapshot.dishonestyFlag && (
+      {flags.dishonestyFlag && (
         <RedFlagBanner
           icon={ShieldAlert}
           title="Dishonesty Flag Active"
@@ -936,6 +988,7 @@ export function RecommendationFormV2({
         applicationId={applicationId}
         synopsis={synopsis}
         assessmentCompleted
+        locked={isSynopsisLocked(assessmentStatus)}
       />
 
       {/* ── Reason codes (year-on-year) ──────────────────────────────────── */}
@@ -950,6 +1003,75 @@ export function RecommendationFormV2({
             onChange={setSelectedReasonCodeIds}
             disabled={isReadOnly}
           />
+        </CardContent>
+      </Card>
+
+      {/* ── Flags (17 Oct 2026) ──────────────────────────────────────────── */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Flags</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {RECOMMENDATION_FLAGS.map((f) => {
+              const id = `rec-flag-${f.key}`;
+              if (f.key === "largeFamily") {
+                return (
+                  <div key={f.key} className="flex items-start gap-2">
+                    <Checkbox id={id} checked={isLargeFamily(snapshot.familyTypeCategory)} disabled />
+                    <Label htmlFor={id} className="text-sm leading-tight">
+                      {f.label}
+                      <span className="block text-xs font-normal text-muted-foreground">
+                        Set from the family type: 4 or more children
+                      </span>
+                    </Label>
+                  </div>
+                );
+              }
+              const key = f.key;
+              return (
+                <div key={key} className="flex items-start gap-2">
+                  <Checkbox
+                    id={id}
+                    checked={flags[key]}
+                    onCheckedChange={(v) => setFlags((prev) => ({ ...prev, [key]: v === true }))}
+                  />
+                  <Label htmlFor={id} className="text-sm leading-tight">
+                    {f.label}
+                  </Label>
+                </div>
+              );
+            })}
+          </div>
+          {hasRecommendation ? (
+            <div className="flex items-center gap-4">
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={handleSaveFlags}
+                disabled={isSavingFlags || !flagsDirty}
+              >
+                {isSavingFlags ? "Saving…" : "Save flags"}
+              </Button>
+              {flagsMessage && (
+                <p
+                  className={cn(
+                    "text-sm",
+                    flagsMessage.type === "success" ? "text-green-700" : "text-red-600"
+                  )}
+                  role="status"
+                  aria-live="polite"
+                >
+                  {flagsMessage.text}
+                </p>
+              )}
+            </div>
+          ) : (
+            <p className="text-xs text-muted-foreground">
+              Saved with the recommendation.
+            </p>
+          )}
         </CardContent>
       </Card>
 
@@ -1068,7 +1190,10 @@ export function RecommendationFormV2({
           if (!open) setPendingState(null);
         }}
       >
-        <DialogContent>
+        {/* Charlotte, 22 Oct 2026: the close reasons are long, and the window
+            was too narrow for them — it scrolled sideways. Wider, and the
+            chosen reason truncates rather than pushing the window out. */}
+        <DialogContent className="sm:max-w-2xl">
           {pendingState && (
             <>
               <DialogHeader>
@@ -1118,7 +1243,7 @@ export function RecommendationFormV2({
                 </div>
               )}
               {pendingState === "CLOSED_ARCHIVED" && (
-                <div className="space-y-1.5">
+                <div className="min-w-0 space-y-1.5">
                   {/* Epic 18b — her illustration's "prompt asking for close
                       reasons". Required. */}
                   <Label htmlFor="archive-close-reason">Close reason</Label>
@@ -1126,7 +1251,7 @@ export function RecommendationFormV2({
                     value={selectedCloseReasonId}
                     onValueChange={setSelectedCloseReasonId}
                   >
-                    <SelectTrigger id="archive-close-reason">
+                    <SelectTrigger id="archive-close-reason" className="text-left [&>span]:truncate">
                       <SelectValue placeholder="Select a reason…" />
                     </SelectTrigger>
                     <SelectContent>

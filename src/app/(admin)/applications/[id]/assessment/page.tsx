@@ -14,6 +14,7 @@
  * server/client boundary).
  */
 
+import Link from "next/link";
 import { FEE_TABLE_SCHOOLS, feesBySchool as buildFeesBySchool } from "@/lib/schools";
 import { notFound, redirect } from "next/navigation";
 import type { ReactNode } from "react";
@@ -183,7 +184,14 @@ async function AccountContextBar({
         />
         <div>
           <p className="text-sm font-semibold text-amber-900">
-            Assessor&apos;s wizard — from {watchOut.academicYear}
+            Assessor&apos;s wizard — from{" "}
+            {/* Epic 21 #3 — open the year the note came from. */}
+            <Link
+              href={`/applications/${watchOut.applicationId}/assessment`}
+              className="underline underline-offset-2 hover:text-amber-700"
+            >
+              {watchOut.academicYear}
+            </Link>
           </p>
           <p className="mt-1 whitespace-pre-wrap text-sm text-amber-800">
             {watchOut.watchOutNotes}

@@ -5,7 +5,8 @@
  *  1. Header strip: recipient name · Bursary Reference · school · siblings
  *     (the "Fees Account Code" column renders `Application.reference` —
  *     Epic 13 D13-1a dropped the separate code).
- *  2. Account Synopsis (existing component + save path) and the Assessor's
+ *  2. Main synopsis (the account's, all years — Epic 21 #6), this year's
+ *     synopsis (locks with the assessment), and the Assessor's
  *     wizard notes editor (relocated from the form's section F — same
  *     storage/save, read-only once COMPLETED), plus the previous year's
  *     wizard callout.
@@ -17,8 +18,15 @@
  *  4. Payable-fees schedule: one row per Epic 10 schedule year with reason
  *     codes, payable fees + Δ, school year, submit-by and the three statuses;
  *     future rows read "Scheduled / Not started".
+ *
+ * Epic 21 #3: this page is the "door" to previous years (as in Grant
+ * Tracker). Each schedule year, year-on-year row and the wizard callout links
+ * to that year's assessment; the year being viewed reads "This year". Links
+ * resolve under the viewer's own RLS context, so an ASSESSOR only sees links
+ * to applications assigned to them (D-4).
  */
 
+import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { Lightbulb } from "lucide-react";
 import { requireRole, Role } from "@/lib/auth/roles";
@@ -35,12 +43,21 @@ import {
   parsePreSystemHistory,
 } from "@/lib/assessments/admin-tab";
 import { formatLondonDate } from "@/lib/datetime";
+import { scheduleRowLink } from "@/lib/assessment/previous-year";
 import { cn } from "@/lib/utils";
 import { AssessmentSynopsis } from "@/components/admin/assessment-synopsis";
+import { AccountSynopsisCard } from "@/components/admin/account-synopsis-card";
+import { getMainSynopsis } from "@/lib/db/queries/account-synopsis";
+import { isSynopsisLocked } from "@/lib/bursary-accounts/standing-synopsis";
 import { WatchOutNotesEditor } from "@/components/admin/watch-out-notes-editor";
 import { PreSystemHistoryEditor } from "@/components/admin/pre-system-history-editor";
 import { AnnualFeesOverrideEditor } from "@/components/admin/annual-fees-override-editor";
 import { CloseBursaryAccountDialog } from "@/components/admin/close-bursary-account-dialog";
+import { ScheduleEndAddControls } from "@/components/admin/schedule-end-add-controls";
+import {
+  resolveScheduleHorizon,
+  scheduleEditControls,
+} from "@/lib/bursary-accounts/schedule";
 import { getAllCloseReasons } from "@/lib/db/queries/reference-tables";
 import type { SiblingDetail } from "@/types/assessment-v2";
 import { schoolHasFeeTable, schoolName } from "@/lib/schools";
@@ -83,6 +100,8 @@ export default async function AssessmentAdminPage({ params }: Props) {
     accountStatus,
     closeReasons,
     accountFees,
+    scheduleControls,
+    mainSynopsis,
   } = await withUserContext(user.id, user.role as RlsRole, async (tx) => {
     const app = await getApplicationWithDetails(tx, params.id);
     if (!app) {
@@ -97,6 +116,8 @@ export default async function AssessmentAdminPage({ params }: Props) {
         accountStatus: null,
         closeReasons: [],
         accountFees: null,
+        scheduleControls: null,
+        mainSynopsis: null,
       };
     }
     const a = await getAssessment(tx, params.id);
@@ -120,6 +141,13 @@ export default async function AssessmentAdminPage({ params }: Props) {
             status: true,
             school: true,
             annualFeesOverride: true,
+            // Epic 21 #4 — End after this year / Add a year.
+            entryYearGroup: true,
+            firstAssessmentYear: true,
+            scheduleEntries: {
+              orderBy: { scheduleYear: "asc" },
+              select: { id: true, scheduleYear: true, academicYear: true, status: true, applicationId: true },
+            },
           },
         })
       : null;
@@ -133,6 +161,23 @@ export default async function AssessmentAdminPage({ params }: Props) {
     const schedule = app.bursaryAccountId
       ? await getPayableFeesScheduleRows(tx, app.bursaryAccountId)
       : [];
+    // Epic 21 #6 (rework) — the account's main synopsis (all years).
+    const main = app.bursaryAccountId
+      ? await getMainSynopsis(tx, app.bursaryAccountId)
+      : null;
+    // Epic 21 #4 — ADMIN only; each button enabled only when its action would succeed.
+    const controls =
+      user.role === Role.ADMIN && account
+        ? scheduleEditControls({
+            rows: account.scheduleEntries,
+            applicationId: params.id,
+            roundAcademicYear: app.round.academicYear,
+            firstAssessmentYear: account.firstAssessmentYear,
+            naturalHorizon: resolveScheduleHorizon(account.entryYearGroup, undefined, account.school),
+            school: account.school,
+            accountClosed: account.status === "CLOSED",
+          })
+        : null;
     return {
       application: app,
       assessment: a,
@@ -143,6 +188,8 @@ export default async function AssessmentAdminPage({ params }: Props) {
       scheduleRows: schedule,
       accountStatus: account?.status ?? null,
       closeReasons: reasons,
+      scheduleControls: controls,
+      mainSynopsis: main,
       // S9: shown where the school has no fee table (the OP partnering school),
       // or wherever an override has been set.
       accountFees:
@@ -216,24 +263,33 @@ export default async function AssessmentAdminPage({ params }: Props) {
             Siblings: <span className="text-slate-700">{siblingNames.join(", ")}</span>
           </span>
         )}
-        {/* Epic 18b — her April–May leavers window: close the ACTIVE account
-            with a structured reason. ADMIN only; hidden once closed. */}
-        {user.role === Role.ADMIN &&
-          accountStatus === "ACTIVE" &&
-          application.bursaryAccountId && (
-            <span className="ml-auto">
+        <span className="ml-auto flex flex-wrap items-center gap-2">
+          {accountStatus === "CLOSED" && (
+            <span className="rounded bg-slate-100 px-2 py-1 text-xs font-semibold uppercase tracking-wide text-slate-500">
+              Account closed
+            </span>
+          )}
+          {/* Epic 21 #4 — her conditional bursary: end the schedule after
+              this year, or add a year back. ADMIN only. */}
+          {scheduleControls && (
+            <ScheduleEndAddControls
+              applicationId={params.id}
+              end={scheduleControls.end}
+              add={scheduleControls.add}
+            />
+          )}
+          {/* Epic 18b — her April–May leavers window: close the ACTIVE account
+              with a structured reason. ADMIN only; hidden once closed. */}
+          {user.role === Role.ADMIN &&
+            accountStatus === "ACTIVE" &&
+            application.bursaryAccountId && (
               <CloseBursaryAccountDialog
                 bursaryAccountId={application.bursaryAccountId}
                 applicationId={params.id}
                 closeReasons={closeReasons}
               />
-            </span>
-          )}
-        {accountStatus === "CLOSED" && (
-          <span className="ml-auto rounded bg-slate-100 px-2 py-1 text-xs font-semibold uppercase tracking-wide text-slate-500">
-            Account closed
-          </span>
-        )}
+            )}
+        </span>
       </div>
 
       {/* Previous assessor's wizard notes (CALC-10) — read-only context. */}
@@ -249,7 +305,13 @@ export default async function AssessmentAdminPage({ params }: Props) {
           />
           <div>
             <p className="text-sm font-semibold text-amber-900">
-              Assessor&apos;s wizard — from {watchOut.academicYear}
+              Assessor&apos;s wizard — from{" "}
+              <Link
+                href={`/applications/${watchOut.applicationId}/assessment`}
+                className="underline underline-offset-2 hover:text-amber-700"
+              >
+                {watchOut.academicYear}
+              </Link>
             </p>
             <p className="mt-1 whitespace-pre-wrap text-sm text-amber-800">
               {watchOut.watchOutNotes}
@@ -258,7 +320,19 @@ export default async function AssessmentAdminPage({ params }: Props) {
         </div>
       )}
 
-      {/* 2. Account synopsis + this year's wizard notes. */}
+      {/* Epic 21 #6 (rework, 14 Oct) — the account's one main synopsis,
+          above this year's (her 11 Oct question: "the generic one that
+          sustains all years"). Only once the account exists. */}
+      {application.bursaryAccountId && (
+        <AccountSynopsisCard
+          applicationId={params.id}
+          body={mainSynopsis?.body ?? null}
+          updatedAt={mainSynopsis?.updatedAt.toISOString() ?? null}
+          canEdit={user.role === Role.ADMIN || user.role === Role.ASSESSOR}
+        />
+      )}
+
+      {/* 2. This year's synopsis + wizard notes. */}
       {assessment ? (
         <>
           <AssessmentSynopsis
@@ -266,6 +340,8 @@ export default async function AssessmentAdminPage({ params }: Props) {
             applicationId={params.id}
             synopsis={assessment.synopsis}
             assessmentCompleted={assessment.status === "COMPLETED"}
+            locked={isSynopsisLocked(assessment.status)}
+            title="This year's synopsis"
           />
           <WatchOutNotesEditor
             assessmentId={assessment.id}
@@ -396,8 +472,18 @@ export default async function AssessmentAdminPage({ params }: Props) {
                   >
                     <td className="px-3 py-2 font-mono text-xs font-semibold text-primary-900">
                       {/* CH-56 — label the completed tax year the figures came
-                          from, not the award's academic year. */}
-                      {priorAcademicYear(row.academicYear)}
+                          from, not the award's academic year. Epic 21 #3:
+                          a system row links to that year's assessment. */}
+                      {row.applicationId && row.applicationId !== params.id ? (
+                        <Link
+                          href={`/applications/${row.applicationId}/assessment`}
+                          className="underline underline-offset-2 hover:text-primary-700"
+                        >
+                          {priorAcademicYear(row.academicYear)}
+                        </Link>
+                      ) : (
+                        priorAcademicYear(row.academicYear)
+                      )}
                       {row.source === "MANUAL" && (
                         <span className="ml-1.5 rounded bg-slate-100 px-1 py-0.5 text-[10px] font-medium text-slate-500">
                           manual
@@ -504,13 +590,33 @@ export default async function AssessmentAdminPage({ params }: Props) {
                 </tr>
               </thead>
               <tbody>
-                {scheduleRows.map((row) => (
+                {scheduleRows.map((row) => {
+                  // Epic 21 #3 — the door to that year's assessment.
+                  const link = scheduleRowLink(row, params.id);
+                  return (
                   <tr
                     key={row.scheduleYear}
-                    className="border-b border-slate-100 last:border-b-0"
+                    className={cn(
+                      "border-b border-slate-100 last:border-b-0",
+                      link.kind === "current" && "bg-accent-50/60"
+                    )}
                   >
-                    <td className="px-3 py-2 font-mono text-xs font-semibold text-primary-900">
-                      {row.academicYear}
+                    <td className="whitespace-nowrap px-3 py-2 font-mono text-xs font-semibold text-primary-900">
+                      {link.kind === "link" ? (
+                        <Link
+                          href={link.href}
+                          className="underline underline-offset-2 hover:text-primary-700"
+                        >
+                          {row.academicYear}
+                        </Link>
+                      ) : (
+                        row.academicYear
+                      )}
+                      {link.kind === "current" && (
+                        <span className="ml-1.5 inline-block whitespace-nowrap rounded bg-accent-100 px-1 py-0.5 font-sans text-[10px] font-medium text-accent-800">
+                          This year
+                        </span>
+                      )}
                     </td>
                     <td className="px-3 py-2 text-xs text-slate-600">
                       {row.reasonCodes.length > 0 ? row.reasonCodes.join("; ") : "—"}
@@ -534,12 +640,19 @@ export default async function AssessmentAdminPage({ params }: Props) {
                     </td>
                     <td className="px-3 py-2 text-xs text-slate-600">
                       {row.submitBy ? formatLondonDate(row.submitBy) : "—"}
+                      {/* Epic 21 R2 — this family's own deadline when it differs. */}
+                      {row.familyDeadline && (
+                        <span className="block whitespace-nowrap font-medium text-amber-700">
+                          Family: {formatLondonDate(row.familyDeadline)}
+                        </span>
+                      )}
                     </td>
                     <td className="px-3 py-2 text-xs text-slate-600">{row.applicationStatus}</td>
                     <td className="px-3 py-2 text-xs text-slate-600">{row.assessmentStatus}</td>
                     <td className="px-3 py-2 text-xs text-slate-600">{row.bursaryStatus}</td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           </div>

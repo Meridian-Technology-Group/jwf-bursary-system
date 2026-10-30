@@ -13,7 +13,12 @@ import {
   type ApplicationReferenceInput,
 } from "@/lib/applications/reference";
 import { applicationCreateData } from "@/lib/applications/status";
+import {
+  isEarlierAcademicYear,
+  pickPreviousYear,
+} from "@/lib/assessment/previous-year";
 import { ensurePrimaryContributor } from "@/lib/db/queries/contributors";
+import { applicationDeadlineFromInvitation } from "@/lib/invitations/submit-by";
 import {
   selectPreviousWatchOutNotes,
   type WatchOutCandidate,
@@ -103,6 +108,12 @@ export interface PreviousYearApplication {
  * PR-6a: "reached submission" is form_status SUBMITTED (the lifecycle
  * equivalent of the old fused SUBMITTED/COMPLETED/QUALIFIES/DNQ set), not the
  * deprecated fused applications.status.
+ *
+ * Epic 21 #3: unlike the display lookups (`getPreviousAssessment`,
+ * `getPreviousWatchOutNotes`), this is NOT restricted to earlier academic
+ * years. Both callers run when a re-assessment is created for a new round,
+ * which is always the newest year, so "latest submitted in another round" is
+ * already the previous year. Left unchanged to keep the rollover path stable.
  */
 function previousYearApplicationQuery(
   bursaryAccountId: string,
@@ -352,7 +363,11 @@ export async function createReassessmentApplicationFromInvitation(
   invitation: Pick<
     Invitation,
     "authUserId" | "bursaryAccountId" | "roundId" | "school" | "childName"
-  >
+  > &
+    // Licence fix (14 Oct 2026): the invitation's "Submit by" date. Optional
+    // so narrow callers (scripts, tests) still type-check; every app path
+    // passes the full invitation row.
+    Partial<Pick<Invitation, "submissionDeadlineAt">>
 ): Promise<{ id: string; created: boolean }> {
   const { authUserId, bursaryAccountId, roundId } = invitation;
   if (!authUserId || !bursaryAccountId || !roundId) {
@@ -361,11 +376,15 @@ export async function createReassessmentApplicationFromInvitation(
     );
   }
 
-  // Idempotency: reuse an existing in-progress application for this round.
+  // Idempotency: reuse an existing in-progress application for this round AND
+  // this child's account. Epic 22 P1: without the account a parent with two
+  // children on re-assessment was dropped into the first child's draft when
+  // they started the second (one login, many children — Epic 14 E1).
   const existing = await tx.application.findFirst({
     where: {
       leadApplicantId: authUserId,
       roundId,
+      bursaryAccountId,
       formStatus: { not: "SUBMITTED" },
     },
     select: { id: true },
@@ -432,6 +451,13 @@ export async function createReassessmentApplicationFromInvitation(
       childName,
       childDob: account?.childDob ?? null,
       entryYear: account?.entryYear ?? null,
+      // Licence fix (14 Oct 2026): the invitation's "Submit by" date becomes
+      // this new application's override. An existing draft (returned above)
+      // is never touched, so an override already set is never overwritten.
+      submissionDeadlineAt: applicationDeadlineFromInvitation(
+        null,
+        invitation.submissionDeadlineAt
+      ),
       isReassessment: true,
       ...applicationCreateData("ROLLING_OVER"),
     },
@@ -457,6 +483,8 @@ export async function createReassessmentApplicationFromInvitation(
 // ─── getPreviousAssessment ────────────────────────────────────────────────────
 
 export interface PreviousAssessmentSnapshot {
+  /** Epic 21 #3 — the previous year's application, for the "last year" link. */
+  applicationId: string;
   applicationReference: string;
   academicYear: string;
   totalHouseholdNetIncome: string | null;
@@ -488,14 +516,33 @@ export async function getPreviousAssessment(
   bursaryAccountId: string,
   currentRoundId: string
 ): Promise<PreviousAssessmentSnapshot | null> {
-  const previous = await tx.application.findFirst({
+  // Epic 21 #3 — "previous" is the latest EARLIER academic year than the one
+  // being viewed (`pickPreviousYear`). It used to be the latest-submitted
+  // application in any other round, so viewing an older year could show a
+  // LATER one as "previous".
+  const currentRound = await tx.round.findUnique({
+    where: { id: currentRoundId },
+    select: { academicYear: true },
+  });
+  if (!currentRound) return null;
+  const candidates = await tx.application.findMany({
     where: {
       bursaryAccountId,
       roundId: { not: currentRoundId },
       assessment: { isNot: null },
     },
-    orderBy: { submittedAt: "desc" },
+    select: { id: true, submittedAt: true, round: { select: { academicYear: true } } },
+  });
+  const pick = pickPreviousYear(
+    candidates.map((c) => ({ id: c.id, submittedAt: c.submittedAt, academicYear: c.round.academicYear })),
+    currentRound.academicYear
+  );
+  if (!pick) return null;
+
+  const previous = await tx.application.findUnique({
+    where: { id: pick.id },
     select: {
+      id: true,
       reference: true,
       round: { select: { academicYear: true } },
       assessment: {
@@ -526,6 +573,7 @@ export async function getPreviousAssessment(
   const a = previous.assessment;
   const rec = a.recommendation;
   return {
+    applicationId: previous.id,
     applicationReference: previous.reference,
     academicYear: previous.round.academicYear,
     totalHouseholdNetIncome: a.totalHouseholdNetIncome?.toString() ?? null,
@@ -645,7 +693,8 @@ export async function getPriorYearSecondaryContributor(
  * bursary account and hands them to the pure selector
  * (`src/lib/assessment/watch-out-notes.ts`), which picks the most recently
  * COMPLETED assessment (excluding the current application) that left a
- * non-blank note.
+ * non-blank note. Epic 21 #3: only years EARLIER than the current
+ * application's year qualify, so an older year never shows a later year's note.
  *
  * Returns `null` when the account has no bursary account id, no other
  * completed assessment, or none of them left a note.
@@ -655,6 +704,10 @@ export async function getPreviousWatchOutNotes(
   bursaryAccountId: string,
   currentApplicationId: string
 ): Promise<WatchOutSelection | null> {
+  const current = await tx.application.findUnique({
+    where: { id: currentApplicationId },
+    select: { round: { select: { academicYear: true } } },
+  });
   const applications = await tx.application.findMany({
     where: {
       bursaryAccountId,
@@ -681,5 +734,11 @@ export async function getPreviousWatchOutNotes(
       watchOutNotes: app.assessment.watchOutNotes,
     }));
 
-  return selectPreviousWatchOutNotes(candidates, currentApplicationId);
+  const currentYear = current?.round.academicYear ?? null;
+  return selectPreviousWatchOutNotes(
+    currentYear
+      ? candidates.filter((c) => isEarlierAcademicYear(c.academicYear, currentYear))
+      : candidates,
+    currentApplicationId
+  );
 }

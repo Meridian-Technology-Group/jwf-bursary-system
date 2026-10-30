@@ -62,6 +62,17 @@ function formatDate(date: Date): string {
   });
 }
 
+/** The per-invitation "Submit by" day (stored as the end of a London day). */
+function formatSubmitBy(date: Date | null): string {
+  if (!date) return "Round default";
+  return new Date(date).toLocaleDateString("en-GB", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    timeZone: "Europe/London",
+  });
+}
+
 function formatSchool(school: string | null): string {
   if (!school) return "—";
   return schoolName(school, "short");
@@ -202,6 +213,7 @@ export default async function InvitationsPage({
                       "School",
                       "Round",
                       "Status",
+                      "Submit by",
                       "Sent",
                       "Sent By",
                       "Actions",
@@ -236,6 +248,14 @@ export default async function InvitationsPage({
                       </td>
                       <td className="whitespace-nowrap px-4 py-3">
                         <InvitationStatusBadge status={inv.status} />
+                      </td>
+                      <td
+                        className={cn(
+                          "whitespace-nowrap px-4 py-3 text-sm",
+                          inv.submissionDeadlineAt ? "text-slate-700" : "text-slate-400"
+                        )}
+                      >
+                        {formatSubmitBy(inv.submissionDeadlineAt)}
                       </td>
                       <td className="whitespace-nowrap px-4 py-3 text-sm text-slate-500">
                         {formatDate(inv.createdAt)}

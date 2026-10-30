@@ -46,6 +46,7 @@ import { manualAdjustmentSchema } from "@/lib/schemas/assessment-v2";
 import { MANUAL_ADJUSTMENT_REASON_REQUIRED_MESSAGE } from "@/lib/assessment/v2/manual-adjustment";
 import { createAuditLog } from "@/lib/audit/log";
 import { AUDIT_ACTIONS, AUDIT_ENTITY_TYPES } from "@/lib/audit/actions";
+import { isMigrated, MIGRATED_LOCKED_MESSAGE } from "@/lib/applications/migration-source";
 import {
   NOT_SUBMITTED_GATE_MESSAGE,
   ASSESSMENT_COMPLETED_LOCK_MESSAGE,
@@ -575,6 +576,7 @@ export async function reopenAssessmentAction(
                 assignedToId: true,
                 closedAt: true,
                 bursaryAccountId: true,
+                migrationSource: true,
                 round: { select: { academicYear: true } },
               },
             },
@@ -583,6 +585,11 @@ export async function reopenAssessmentAction(
 
         if (!assessment || assessment.applicationId !== applicationId) {
           return { ok: false as const, error: "Assessment not found." };
+        }
+        // A migrated award stays locked (17 Oct): reopening clears its
+        // Grant Tracker figures.
+        if (isMigrated(assessment.application)) {
+          return { ok: false as const, error: MIGRATED_LOCKED_MESSAGE };
         }
 
         // 1. Authorisation — ADMIN, or the assigned assessor.

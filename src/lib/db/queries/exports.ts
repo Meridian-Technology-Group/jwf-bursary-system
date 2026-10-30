@@ -11,6 +11,12 @@
 import type { School } from "@prisma/client";
 import type { Tx } from "@/lib/db/prisma";
 import type { AssessmentOutcome } from "@prisma/client";
+import {
+  mainGapReason,
+  scholarshipAdjustedGap,
+} from "@/lib/reason-codes/gap-metrics";
+import { raisedFlagLabels } from "@/lib/assessment/recommendation-flags";
+import { accommodationLabel } from "@/lib/export/accommodation";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -38,6 +44,16 @@ export interface ExportRow {
   gapAmount: number | null;
   /** Gap reasons as comma-separated "code – label" strings (mirrors `reasonCodes`). */
   gapReasons: string;
+  /**
+   * Epic 21 #2 — the highest-ranked gap reason ("code – label"), which takes
+   * the full justification of the gap. Blank when there are no gap reasons.
+   */
+  mainGapReason: string;
+  /**
+   * Epic 21 #1 — gap + scholarship spend incl VAT (`gap-metrics.ts`). Equals
+   * `gapAmount` when there is no scholarship; null when `gapAmount` is null.
+   */
+  scholarshipAdjustedGap: number | null;
   /** `Assessment.debtStatusLabel` (v2 only). */
   debtStatus: string;
   /** `Assessment.lifestyleSqueezeLabel` (v2 only). */
@@ -80,10 +96,19 @@ export async function getExportRows(
       reference: true,
       childName: true,
       school: true,
+      // 17 Oct — the family's own/rent answer feeds "Accommodation".
+      sections: {
+        where: { section: "ASSETS_LIABILITIES" },
+        select: { data: true },
+        take: 1,
+      },
       assessment: {
         select: {
           outcome: true,
           synopsis: true,
+          familyTypeCategory: true,
+          rentAddBackType: true,
+          property: { select: { propertyAssets: true } },
           // CALC-12: v2-only snapshot fields, null for v1 assessments.
           debtStatusLabel: true,
           lifestyleSqueezeLabel: true,
@@ -93,6 +118,8 @@ export async function getExportRows(
           totalHouseholdNetIncome: true,
           manualAdjustment: true,
           manualAdjustmentReason: true,
+          // Epic 21 #1 — VAT rate for the scholarship-adjusted gap.
+          vatRate: true,
           recommendation: {
             select: {
               familySynopsis: true,
@@ -104,11 +131,17 @@ export async function getExportRows(
               monthlyPayableFees: true,
               dishonestyFlag: true,
               creditRiskFlag: true,
+              inconsistencyFlag: true,
+              pastoralFlag: true,
+              acuteCrisisFlag: true,
+              highFrugalityFlag: true,
               // CALC-12: v2 min-of-three / gap-tracking fields (CALC-06/08),
               // null for v1 recommendations.
               recommendedPayableFees: true,
               confirmedPayableFees: true,
               gapAmount: true,
+              // Epic 21 #1 — scholarship spend (fees × pct, before VAT).
+              scholarshipSpendBeforeVat: true,
               reasonCodes: {
                 select: {
                   reasonCode: {
@@ -128,6 +161,9 @@ export async function getExportRows(
                     select: {
                       code: true,
                       label: true,
+                      // Epic 21 #2 — precedence for the main gap reason.
+                      rank: true,
+                      sortOrder: true,
                     },
                   },
                 },
@@ -156,14 +192,19 @@ export interface ExportRowSource {
   reference: string;
   childName: string | null;
   school: string;
+  sections?: { data: unknown }[];
   assessment: {
     outcome: AssessmentOutcome | null;
     synopsis: string | null;
+    familyTypeCategory?: number | null;
+    rentAddBackType?: string | null;
+    property?: { propertyAssets: unknown } | null;
     debtStatusLabel: string | null;
     lifestyleSqueezeLabel: string | null;
     totalHouseholdNetIncome: unknown;
     manualAdjustment: unknown;
     manualAdjustmentReason: string | null;
+    vatRate: unknown;
     recommendation: {
       familySynopsis: string | null;
       accommodationStatus: string | null;
@@ -174,11 +215,23 @@ export interface ExportRowSource {
       monthlyPayableFees: unknown;
       dishonestyFlag: boolean;
       creditRiskFlag: boolean;
+      inconsistencyFlag?: boolean;
+      pastoralFlag?: boolean;
+      acuteCrisisFlag?: boolean;
+      highFrugalityFlag?: boolean;
       recommendedPayableFees: unknown;
       confirmedPayableFees: unknown;
       gapAmount: unknown;
+      scholarshipSpendBeforeVat: unknown;
       reasonCodes: { reasonCode: { code: number; label: string } }[];
-      gapReasons: { gapReason: { code: number; label: string } }[];
+      gapReasons: {
+        gapReason: {
+          code: number;
+          label: string;
+          rank: number | null;
+          sortOrder: number;
+        };
+      }[];
     } | null;
   } | null;
 }
@@ -214,11 +267,21 @@ export function mapExportRow(app: ExportRowSource): ExportRow {
     .map(({ gapReason }) => `${gapReason.code} – ${gapReason.label}`)
     .join(", ");
 
-  // Flags
-  const flagList: string[] = [];
-  if (rec?.dishonestyFlag) flagList.push("Dishonesty");
-  if (rec?.creditRiskFlag) flagList.push("Credit Risk");
-  const flags = flagList.join(", ");
+  // Epic 21 #2 — the highest-ranked gap reason, same "code – label" form.
+  const main = mainGapReason((rec?.gapReasons ?? []).map((g) => g.gapReason));
+  const mainGapReasonLabel = main ? `${main.code} – ${main.label}` : "";
+
+  // Flags — her seven, in her order (17 + 21 Oct); Large family from the family type.
+  const flags = raisedFlagLabels(rec, app.assessment?.familyTypeCategory).join(", ");
+
+  // Accommodation (17 Oct) — the form's own/rent answer, else the assessment.
+  const assets = asRecord(app.sections?.[0]?.data);
+  const accommodation = accommodationLabel({
+    formOwnership: assets.propertyOwnership,
+    formRentAgreement: assets.rentAgreementType,
+    portfolioType: asRecord(app.assessment?.property?.propertyAssets).portfolioType,
+    rentAddBackType: app.assessment?.rentAddBackType ?? null,
+  });
 
   // Outcome label
   const outcomeLabel = formatOutcome(outcome);
@@ -231,7 +294,7 @@ export function mapExportRow(app: ExportRowSource): ExportRow {
     // Epic 06: prefer the legacy recommendation synopsis for historical rows;
     // fall back to the single Assessment.synopsis for newer assessments.
     familySynopsis: rec?.familySynopsis ?? app.assessment?.synopsis ?? "",
-    accommodationType: rec?.accommodationStatus ?? "",
+    accommodationType: accommodation || (rec?.accommodationStatus ?? ""),
     incomeCategory: rec?.incomeCategory ?? "",
     propertyCategory:
       rec?.propertyCategory != null ? String(rec.propertyCategory) : "",
@@ -246,6 +309,12 @@ export function mapExportRow(app: ExportRowSource): ExportRow {
     confirmedPayableFees: decimalToNumber(rec?.confirmedPayableFees),
     gapAmount: decimalToNumber(rec?.gapAmount),
     gapReasons,
+    mainGapReason: mainGapReasonLabel,
+    scholarshipAdjustedGap: scholarshipAdjustedGap(
+      decimalToNumber(rec?.gapAmount),
+      decimalToNumber(rec?.scholarshipSpendBeforeVat),
+      decimalToNumber(app.assessment?.vatRate)
+    ),
     debtStatus: app.assessment?.debtStatusLabel ?? "",
     lifestyleSqueezeLabel: app.assessment?.lifestyleSqueezeLabel ?? "",
     // Epic 13 / C2 — the income figure and the adjustment that explains it.
@@ -256,6 +325,10 @@ export function mapExportRow(app: ExportRowSource): ExportRow {
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
+
+function asRecord(value: unknown): Record<string, unknown> {
+  return value != null && typeof value === "object" ? (value as Record<string, unknown>) : {};
+}
 
 function formatOutcome(outcome: AssessmentOutcome | null): string {
   if (!outcome) return "";

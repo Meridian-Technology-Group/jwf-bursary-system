@@ -29,7 +29,7 @@ describe("isApplyRoute — the route gate that scopes the rail stepper to the wi
   it("does NOT match the portal routes the stepper was leaking onto (#4)", () => {
     expect(isApplyRoute("/")).toBe(false);
     expect(isApplyRoute("/help")).toBe(false);
-    expect(isApplyRoute("/documents")).toBe(false);
+    expect(isApplyRoute("/schedule")).toBe(false);
     expect(isApplyRoute("/submitted")).toBe(false);
     expect(isApplyRoute("/status")).toBe(false);
   });

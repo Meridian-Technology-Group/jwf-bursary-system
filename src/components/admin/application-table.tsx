@@ -94,6 +94,7 @@ import {
   bulkMarkActiveAction,
 } from "@/app/(admin)/applications/[id]/actions";
 import { bulkReassessmentInviteFromApplicationsAction } from "@/app/(admin)/invitations/actions";
+import { SubmitByInput } from "@/components/admin/submit-by-input";
 import { BulkEmailWizardAction } from "@/components/admin/bulk-email-wizard";
 
 import type { ApplicationListItem } from "@/lib/db/queries/applications";
@@ -235,7 +236,16 @@ const REVIEW_PHASE_BADGE_STYLES: Record<ReviewPhase, string> = {
 };
 
 /** Status column badge (Item 1.1) — read-only; same wording as the detail page. */
-function ReviewPhaseBadge({ phase }: { phase: ReviewPhase }) {
+function ReviewPhaseBadge({ phase, rejected = false }: { phase: ReviewPhase; rejected?: boolean }) {
+  // A rejected form is back with the family (Pre-submission), but the list
+  // must tell it from one never received, as Grant Tracker did (17 Oct 2026).
+  if (rejected) {
+    return (
+      <span className="inline-flex items-center rounded-full bg-rose-50 px-2.5 py-0.5 text-xs font-medium text-rose-700">
+        Rejected
+      </span>
+    );
+  }
   return (
     <span
       className={cn(
@@ -320,14 +330,19 @@ function ReassessmentBulkAction({
   onActionComplete: () => void;
 }) {
   const [open, setOpen] = React.useState(false);
+  // Licence fix (14 Oct 2026) — one optional deadline for the whole batch.
+  const [submitBy, setSubmitBy] = React.useState("");
   const count = selectedIds.length;
 
   const handleConfirm = () => {
     setOpen(false);
+    const batchSubmitBy = submitBy || null;
+    setSubmitBy("");
     run(async () => {
       const result = await bulkReassessmentInviteFromApplicationsAction(
         selectedIds,
-        targetRoundId
+        targetRoundId,
+        batchSubmitBy
       );
       if (result.sent > 0 || result.failed === 0) {
         onFeedback({
@@ -386,6 +401,14 @@ function ReassessmentBulkAction({
               </span>
             </DialogDescription>
           </DialogHeader>
+          {targetRound && (
+            <SubmitByInput
+              id="reassessment-invite-submit-by"
+              value={submitBy}
+              onChange={setSubmitBy}
+              batch
+            />
+          )}
           <DialogFooter>
             <Button variant="outline" onClick={() => setOpen(false)}>
               Cancel
@@ -924,7 +947,9 @@ export function ApplicationTable({
       }),
       columnHelper.accessor("reviewPhase", {
         header: "Status",
-        cell: (info) => <ReviewPhaseBadge phase={info.getValue()} />,
+        cell: (info) => (
+          <ReviewPhaseBadge phase={info.getValue()} rejected={info.row.original.rejected} />
+        ),
       }),
       columnHelper.display({
         id: "leadApplicant",
@@ -1017,6 +1042,7 @@ export function ApplicationTable({
                 assessmentStatus={row.assessmentStatus}
                 outcome={row.outcome}
                 closedAt={row.closedAt}
+                migrated={row.migrationSource != null}
                 isAdmin={userRole === "ADMIN"}
                 closeReasons={closeReasons}
               />
@@ -1188,13 +1214,6 @@ export function ApplicationTable({
           </Button>
         )}
 
-        <Input
-          placeholder="Search name, email or reference…"
-          value={searchText}
-          onChange={(e) => setSearchText(e.target.value)}
-          className="h-9 w-[240px] border-neutral-200 bg-white text-sm placeholder:text-slate-400"
-        />
-
         {/* Received-date range (Item 7.1) — server-side, navigates on change */}
         <div className="flex flex-col gap-1">
           <div className="flex items-center gap-1.5">
@@ -1269,6 +1288,21 @@ export function ApplicationTable({
               {deadlineRangeError}
             </span>
           )}
+        </div>
+
+        {/* Search on its own labelled line, where Submission-by used to wrap
+            to (Charlotte, 17 Oct 2026: it was lost in the filter row). */}
+        <div className="flex basis-full items-center gap-2">
+          <label htmlFor="applications-search" className="text-sm font-medium text-slate-700">
+            Search:
+          </label>
+          <Input
+            id="applications-search"
+            placeholder="Name, email or reference…"
+            value={searchText}
+            onChange={(e) => setSearchText(e.target.value)}
+            className="h-9 w-full max-w-[360px] border-neutral-200 bg-white text-sm placeholder:text-slate-400"
+          />
         </div>
       </div>
 

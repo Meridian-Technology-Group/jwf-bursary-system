@@ -4,7 +4,7 @@
  * This layout owns the wizard's ONE canonical sticky footer (`ApplyFooter`) and
  * the `SectionSavingProvider` that lets that single footer reflect the section
  * form's saving state. It is scoped to `/apply/*` — so the footer + provider
- * never leak onto Home / Status / Documents / Help, which the old layout's
+ * never leak onto Home / Status / Schedule / Help, which the old layout's
  * always-rendered `PortalBottomNav` did.
  *
  * It is ALSO the section stepper's data source. It fetches the gap data via
@@ -53,6 +53,7 @@ export default async function ApplyContentLayout({
       <StepperDataWriter
         sections={stepperData?.sections ?? null}
         roundName={stepperData?.roundName}
+        applicationName={stepperData?.applicationName}
       />
       {/* Fill the available height (flex-1) so the sticky footer is pushed to
           the bottom of the viewport on short forms instead of floating mid-page.

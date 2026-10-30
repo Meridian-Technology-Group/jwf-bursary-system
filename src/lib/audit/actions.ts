@@ -42,6 +42,13 @@ export const AUDIT_ACTIONS = {
   APPLICATION_MARKED_ACTIVE: "APPLICATION_MARKED_ACTIVE",
   INTERNAL_REQUEST_CREATED: "INTERNAL_REQUEST_CREATED",
   MISSING_DOCS_RESPONDED: "MISSING_DOCS_RESPONDED",
+  /** Epic 22 P2 — a parent's "Contact us by email" question was sent to the inbox. */
+  PORTAL_ENQUIRY_SENT: "PORTAL_ENQUIRY_SENT",
+  /**
+   * Epic 22 P2 (D-6) — test mode: no inbox configured, so the parent was shown
+   * what would have been sent and nothing left the system.
+   */
+  PORTAL_ENQUIRY_PREVIEWED: "PORTAL_ENQUIRY_PREVIEWED",
   NAME_REVEAL: "NAME_REVEAL",
 
   // Assessment / recommendation (normalised from dotted keys in backlog #10)
@@ -81,6 +88,8 @@ export const AUDIT_ACTIONS = {
   ASSESSMENT_LIFECYCLE_REVERTED: "ASSESSMENT_LIFECYCLE_REVERTED",
   ASSESSMENT_SECOND_PARENT_OVERRIDE: "ASSESSMENT_SECOND_PARENT_OVERRIDE",
   RECOMMENDATION_SAVE: "RECOMMENDATION_SAVE",
+  /** 17 Oct 2026 — the six recommendation flags, saved on their own (locked awards too). */
+  RECOMMENDATION_FLAGS_SAVED: "RECOMMENDATION_FLAGS_SAVED",
 
   // Documents
   DOCUMENT_UPLOADED_BY_ASSESSOR: "DOCUMENT_UPLOADED_BY_ASSESSOR",
@@ -91,6 +100,9 @@ export const AUDIT_ACTIONS = {
 
   // Edit on behalf (CR-001)
   SECTION_SAVED_BY_ASSESSOR: "SECTION_SAVED_BY_ASSESSOR",
+  // Epic 23 T7 — on a form returned for correction, staff mark a section as
+  // needing correction (its green tick goes; the answers stay).
+  SECTION_MARKED_NEEDS_CORRECTION: "SECTION_MARKED_NEEDS_CORRECTION",
   /** An edit-on-behalf pass ended; the applicant was notified of the edited sections. */
   EDIT_ON_BEHALF_FINISHED: "EDIT_ON_BEHALF_FINISHED",
   /** Staff submitted the application on the applicant's behalf (typed-up paper form). */
@@ -107,6 +119,16 @@ export const AUDIT_ACTIONS = {
   ROUND_OPENED: "ROUND_OPENED",
   ROUND_CLOSED: "ROUND_CLOSED",
   RECOMMENDATION_EXPORT: "RECOMMENDATION_EXPORT",
+  // Epic 23 T10 — retention to the DPO-signed rules (one row per stage applied).
+  RETENTION_FORM_DOCS_PURGED: "RETENTION_FORM_DOCS_PURGED",
+  RETENTION_ASSESSMENT_PURGED: "RETENTION_ASSESSMENT_PURGED",
+  RETENTION_ERASURE_REQUEST: "RETENTION_ERASURE_REQUEST",
+  /** Flag off: what a retention step would have removed (nothing removed). */
+  RETENTION_PURGE_SKIPPED_DISABLED: "RETENTION_PURGE_SKIPPED_DISABLED",
+  // Epic 23 T4/T6/T8 — the three export sections (filters, format, counts in metadata).
+  EXPORT_WORKLOAD: "EXPORT_WORKLOAD",
+  EXPORT_SPEND_BILLING: "EXPORT_SPEND_BILLING",
+  EXPORT_STATISTICAL: "EXPORT_STATISTICAL",
   SET_SUBMISSION_DEADLINE: "SET_SUBMISSION_DEADLINE",
 
   // Bursary reference (item 11) — freely editable by ADMIN at any lifecycle stage.
@@ -149,6 +171,8 @@ export const AUDIT_ACTIONS = {
 
   // Settings (normalised from dotted keys in backlog #10)
   SETTINGS_FAMILY_TYPE_CONFIG_UPSERT: "SETTINGS_FAMILY_TYPE_CONFIG_UPSERT",
+  // Epic 23 T9 — Settings → Dashboard sample data (illustrative figures).
+  SETTINGS_DASHBOARD_SAMPLE_UPDATE: "SETTINGS_DASHBOARD_SAMPLE_UPDATE",
   SETTINGS_SCHOOL_FEES_UPSERT: "SETTINGS_SCHOOL_FEES_UPSERT",
   SETTINGS_COUNCIL_TAX_UPDATE: "SETTINGS_COUNCIL_TAX_UPDATE",
   SETTINGS_REASON_CODE_CREATE: "SETTINGS_REASON_CODE_CREATE",
@@ -186,6 +210,22 @@ export const AUDIT_ACTIONS = {
   // Bursary-account forward schedule (Epic 10)
   SCHEDULE_REGENERATED: "SCHEDULE_REGENERATED",
   SCHEDULE_SHOW_ON_PORTAL_TOGGLED: "SCHEDULE_SHOW_ON_PORTAL_TOGGLED",
+  /**
+   * Epic 21 #6 (first build, retired by the 14 Oct rework) — a staff note on
+   * the account's standing synopsis. Nothing writes these now; the keys stay
+   * so existing History entries keep their labels.
+   */
+  ACCOUNT_SYNOPSIS_NOTE_ADDED: "ACCOUNT_SYNOPSIS_NOTE_ADDED",
+  ACCOUNT_SYNOPSIS_NOTE_EDITED: "ACCOUNT_SYNOPSIS_NOTE_EDITED",
+  /**
+   * Epic 21 #6 (rework, 14 Oct 2026) — the account's main synopsis was written
+   * or edited. Logged against the BursaryAccount (lengths only, no prose).
+   */
+  ACCOUNT_MAIN_SYNOPSIS_SAVED: "ACCOUNT_MAIN_SYNOPSIS_SAVED",
+  /** Epic 21 #4 — ADMIN ended the schedule after a year (conditional bursary). */
+  SCHEDULE_ENDED_AFTER_YEAR: "SCHEDULE_ENDED_AFTER_YEAR",
+  /** Epic 21 #4 — ADMIN added a year back to the schedule (may re-open the account). */
+  SCHEDULE_YEAR_ADDED: "SCHEDULE_YEAR_ADDED",
   /** Assessor/admin closed (withdrew) a bursary account at account level (gap F1). */
   BURSARY_ACCOUNT_WITHDRAWN: "BURSARY_ACCOUNT_WITHDRAWN",
   /**
@@ -244,6 +284,7 @@ export const AUDIT_ENTITY_TYPES = {
   ReasonCode: "ReasonCode",
   CloseReason: "CloseReason",
   EmailTemplate: "EmailTemplate",
+  DashboardSampleData: "DashboardSampleData",
   BursaryAccount: "BursaryAccount",
   BursaryScheduleEntry: "BursaryScheduleEntry",
 
@@ -341,13 +382,18 @@ const ACTION_COLOUR: Partial<Record<AuditAction, string>> = {
   [AUDIT_ACTIONS.APPLICATION_SUBMITTED_BY_ASSESSOR]: "bg-green-500",
   [AUDIT_ACTIONS.ASSESSMENT_COMPLETE]: "bg-green-500",
   [AUDIT_ACTIONS.RECOMMENDATION_SAVE]: "bg-green-500",
+  [AUDIT_ACTIONS.RECOMMENDATION_FLAGS_SAVED]: "bg-green-500",
   [AUDIT_ACTIONS.APPLICATION_RESUMED]: "bg-blue-500",
   [AUDIT_ACTIONS.ASSESSMENT_BEGIN]: "bg-blue-500",
   [AUDIT_ACTIONS.RECOMMENDATION_EXPORT]: "bg-blue-500",
+  [AUDIT_ACTIONS.EXPORT_WORKLOAD]: "bg-blue-500",
+  [AUDIT_ACTIONS.EXPORT_SPEND_BILLING]: "bg-blue-500",
+  [AUDIT_ACTIONS.EXPORT_STATISTICAL]: "bg-blue-500",
   [AUDIT_ACTIONS.DOCUMENT_UPLOADED_BY_ASSESSOR]: "bg-purple-500",
   [AUDIT_ACTIONS.DOCUMENT_DELETED]: "bg-purple-500",
   [AUDIT_ACTIONS.DOCUMENT_URL_GRANTED]: "bg-purple-500",
   [AUDIT_ACTIONS.SECTION_SAVED_BY_ASSESSOR]: "bg-purple-500",
+  [AUDIT_ACTIONS.SECTION_MARKED_NEEDS_CORRECTION]: "bg-purple-500",
   [AUDIT_ACTIONS.EDIT_ON_BEHALF_FINISHED]: "bg-purple-500",
   [AUDIT_ACTIONS.DOCUMENT_VERIFIED]: "bg-orange-400",
   [AUDIT_ACTIONS.DOCUMENT_UNVERIFIED]: "bg-orange-400",
@@ -364,6 +410,11 @@ const ACTION_COLOUR: Partial<Record<AuditAction, string>> = {
   [AUDIT_ACTIONS.NAME_REVEAL]: "bg-orange-400",
   [AUDIT_ACTIONS.SCHEDULE_REGENERATED]: "bg-blue-500",
   [AUDIT_ACTIONS.SCHEDULE_SHOW_ON_PORTAL_TOGGLED]: "bg-blue-500",
+  [AUDIT_ACTIONS.ACCOUNT_SYNOPSIS_NOTE_ADDED]: "bg-blue-500",
+  [AUDIT_ACTIONS.ACCOUNT_SYNOPSIS_NOTE_EDITED]: "bg-blue-500",
+  [AUDIT_ACTIONS.ACCOUNT_MAIN_SYNOPSIS_SAVED]: "bg-blue-500",
+  [AUDIT_ACTIONS.SCHEDULE_ENDED_AFTER_YEAR]: "bg-orange-400",
+  [AUDIT_ACTIONS.SCHEDULE_YEAR_ADDED]: "bg-blue-500",
   [AUDIT_ACTIONS.BURSARY_ACCOUNT_WITHDRAWN]: "bg-red-400",
   [AUDIT_ACTIONS.BURSARY_ACCOUNT_CLOSED]: "bg-red-400",
   [AUDIT_ACTIONS.BURSARY_ACCOUNT_FEES_OVERRIDE_UPDATED]: "bg-blue-500",

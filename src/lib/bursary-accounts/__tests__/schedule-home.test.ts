@@ -184,8 +184,9 @@ describe("buildScheduleHomeRows — dates", () => {
       today: TODAY,
       entries: [entry({})],
     });
-    expect(row.openingDate).toEqual(d("2027-04-12"));
-    expect(row.submissionDeadline).toEqual(d("2027-05-22"));
+    // Epic 21 D-1: the rolling-over default is 15 Apr → 21 May.
+    expect(row.openingDate).toEqual(d("2027-04-15"));
+    expect(row.submissionDeadline).toEqual(d("2027-05-21"));
     expect(row.awardCommunicationDate).toBeNull();
   });
 
@@ -240,5 +241,31 @@ describe("buildScheduleHomeRows — labelling", () => {
     expect(rows[1].submissionDeadline?.toISOString().slice(0, 10)).toBe(
       "2027-05-10"
     );
+  });
+});
+
+describe("buildScheduleHomeRows — the family's own deadline (Epic 21 R2)", () => {
+  it("an extension on that year's application shows instead of the window close", () => {
+    const ext = new Date("2027-06-05T16:00:00.000Z");
+    const [row] = buildScheduleHomeRows({
+      entryYearGroup: "Y7",
+      // Past the 22 May window but inside the family's extension.
+      today: d("2027-05-30"),
+      entries: [
+        entry({
+          availableOn: d("2027-04-15"),
+          requiredBy: d("2027-05-22"),
+          round: round2027,
+          application: {
+            id: "app-1",
+            formStatus: "IN_PROGRESS",
+            applicationType: "ROLLING_OVER",
+            submissionDeadlineAt: ext,
+          },
+        }),
+      ],
+    });
+    expect(row.submissionDeadline).toEqual(ext);
+    expect(row.state).toBe("continue");
   });
 });

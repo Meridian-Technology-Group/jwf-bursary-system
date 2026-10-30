@@ -145,3 +145,18 @@ describe("createReassessmentApplicationFromInvitation — rollover reference (D1
     expect(created).toHaveLength(0);
   });
 });
+
+describe("createReassessmentApplicationFromInvitation — per-child idempotency (Epic 22 P1)", () => {
+  it("reuses only a draft for THIS child's account, never a sibling's", async () => {
+    const { tx } = makeFakeTx(null);
+    await createReassessmentApplicationFromInvitation(tx, INVITATION);
+    const findFirst = (tx as unknown as { application: { findFirst: ReturnType<typeof vi.fn> } })
+      .application.findFirst;
+    expect(findFirst.mock.calls[0][0].where).toEqual({
+      leadApplicantId: "user-1",
+      roundId: "round-2028",
+      bursaryAccountId: "account-1",
+      formStatus: { not: "SUBMITTED" },
+    });
+  });
+});

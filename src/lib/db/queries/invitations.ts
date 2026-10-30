@@ -7,7 +7,6 @@
 import type { Tx } from "@/lib/db/prisma";
 import {
   InvitationStatus,
-  BursaryAccountStatus,
   type EntryYearGroup,
   type Invitation,
   type InvitationSituation,
@@ -25,6 +24,7 @@ import {
  */
 export { generateInvitationToken } from "@/lib/db/queries/invitation-token";
 import { generateInvitationToken } from "@/lib/db/queries/invitation-token";
+import { reassessmentEligibleWhere } from "@/lib/bursary-accounts/reassessment-eligibility";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -130,6 +130,9 @@ export async function createInvitation(
     authUserId?: string;
     /** Epic 14 B3 — which invitation template variant this invite uses. */
     situation?: InvitationSituation | null;
+    /** Licence fix (14 Oct 2026) — the per-invitation "Submit by" instant
+     *  (end of the chosen day, Europe/London); null = none. */
+    submissionDeadlineAt?: Date | null;
     token?: string;
     createdBy: string;
     expiresAt: Date;
@@ -148,6 +151,7 @@ export async function createInvitation(
       entryYear: data.entryYear ?? null,
       entryYearGroup: data.entryYearGroup ?? null,
       situation: data.situation ?? null,
+      submissionDeadlineAt: data.submissionDeadlineAt ?? null,
       roundId: data.roundId ?? null,
       bursaryAccountId: data.bursaryAccountId ?? null,
       contactId: data.contactId ?? null,
@@ -322,11 +326,20 @@ export async function getOrAcceptLatestInvitationForUser(
 /**
  * Returns all active bursary accounts that do not yet have an invitation for
  * the specified round. Used to populate batch re-assessment invitations.
+ *
+ * Epic 21 F3: only accounts whose schedule has a SCHEDULED year for this
+ * round (`reassessmentEligibleWhere`). An unknown round returns no one.
  */
 export async function getActiveBursaryHolders(
   tx: Tx,
   roundId: string
 ): Promise<ActiveBursaryHolder[]> {
+  const round = await tx.round.findUnique({
+    where: { id: roundId },
+    select: { academicYear: true },
+  });
+  if (!round) return [];
+
   // Find bursary account IDs that already have an invitation for this round
   const existingInvitations = await tx.invitation.findMany({
     where: { roundId },
@@ -340,7 +353,7 @@ export async function getActiveBursaryHolders(
 
   const accounts = await tx.bursaryAccount.findMany({
     where: {
-      status: BursaryAccountStatus.ACTIVE,
+      ...reassessmentEligibleWhere(round.academicYear),
       id: alreadyInvitedIds.size > 0
         ? { notIn: Array.from(alreadyInvitedIds) }
         : undefined,

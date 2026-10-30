@@ -131,3 +131,21 @@ describe("replyTo on every send path (CG-05)", () => {
     expect(payload.replyTo).toBeUndefined();
   });
 });
+
+describe("sendRawEmail replyTo override (Epic 22 P2)", () => {
+  beforeEach(() => {
+    reset();
+    process.env.VERCEL_ENV = "production";
+  });
+  afterEach(reset);
+
+  it("a portal question's reply goes to the parent, not the fees inbox", async () => {
+    await sendRawEmail("inbox@example.test", "Q", "Body", {
+      replyTo: "parent@example.com",
+    });
+    expect(sendMock.mock.calls[0][0]).toMatchObject({
+      to: "inbox@example.test",
+      replyTo: "parent@example.com",
+    });
+  });
+});

@@ -30,7 +30,9 @@ function makeTx() {
       document: { deleteMany: vi.fn() },
       application: { update: vi.fn() },
       contact: { updateMany: vi.fn() },
+      applicationRejection: { updateMany: vi.fn(async () => ({ count: 0 })) },
       bursaryAccount: { updateMany: vi.fn() },
+      accountSynopsisEntry: { deleteMany: vi.fn() },
       invitation: { deleteMany: vi.fn() },
       profile: {
         findUnique: vi.fn(async () => ({ email: "lead@x.test" })),
@@ -111,6 +113,12 @@ describe("purgeApplication — single parent", () => {
     expect(tx.bursaryAccount.updateMany).toHaveBeenCalledWith({
       where: { leadApplicantId: "lead-1" },
       data: { childName: "[Child Removed]", childDob: null },
+    });
+    // Epic 21 #6 — the account's main synopsis goes with the person: every
+    // entry on the lead's accounts, whatever its kind (MAIN, or a retired
+    // YEAR/NOTE), so no kind filter.
+    expect(tx.accountSynopsisEntry.deleteMany).toHaveBeenCalledWith({
+      where: { bursaryAccount: { leadApplicantId: "lead-1" } },
     });
   });
 

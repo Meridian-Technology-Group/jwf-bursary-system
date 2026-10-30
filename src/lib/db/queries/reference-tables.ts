@@ -424,6 +424,24 @@ function latestGeneration<T extends { effectiveFrom: Date }>(rows: readonly T[])
   return rows.filter((r) => r.effectiveFrom.getTime() === newest.getTime());
 }
 
+/**
+ * The newest generation of EACH table in a multi-table reference set (the five
+ * household-context ladders; the two shortfall tables). Settings versions each
+ * table on its own, so a new version of one must not hide the others, which a
+ * single newest date across the set would do (17 Oct 2026).
+ */
+export function latestGenerationPerTable<T extends { effectiveFrom: Date }>(
+  rows: readonly T[],
+  tableOf: (row: T) => string,
+): T[] {
+  const byTable = new Map<string, T[]>();
+  for (const r of rows) {
+    const k = tableOf(r);
+    byTable.set(k, [...(byTable.get(k) ?? []), r]);
+  }
+  return Array.from(byTable.values()).flatMap((t) => latestGeneration(t));
+}
+
 export interface NotionalCostConfigRow {
   id: string;
   category: number;
@@ -590,10 +608,10 @@ export interface DebtRatioBandRow {
   effectiveFrom: Date;
 }
 
-/** Returns every row of the newest DebtRatioBand generation (ALL contexts). */
+/** Returns the newest DebtRatioBand generation of each household context. */
 export async function getDebtRatioBands(tx: Tx): Promise<DebtRatioBandRow[]> {
   const rows = await tx.debtRatioBand.findMany();
-  return latestGeneration(
+  return latestGenerationPerTable(
     rows.map((r) => ({
       id: r.id,
       ratioFloor: r.ratioFloor === null ? null : Number(r.ratioFloor),
@@ -603,6 +621,7 @@ export async function getDebtRatioBands(tx: Tx): Promise<DebtRatioBandRow[]> {
       debtSavingsContext: r.debtSavingsContext,
       effectiveFrom: r.effectiveFrom,
     })),
+    (r) => r.debtSavingsContext,
   );
 }
 
@@ -616,10 +635,10 @@ export interface LifestyleSqueezeBandRow {
   effectiveFrom: Date;
 }
 
-/** Returns every row of the newest LifestyleSqueezeBand generation (ALL contexts). */
+/** Returns the newest LifestyleSqueezeBand generation of each household context. */
 export async function getLifestyleSqueezeBands(tx: Tx): Promise<LifestyleSqueezeBandRow[]> {
   const rows = await tx.lifestyleSqueezeBand.findMany();
-  return latestGeneration(
+  return latestGenerationPerTable(
     rows.map((r) => ({
       id: r.id,
       ratioFloor: r.ratioFloor === null ? null : Number(r.ratioFloor),
@@ -628,6 +647,7 @@ export async function getLifestyleSqueezeBands(tx: Tx): Promise<LifestyleSqueeze
       debtSavingsContext: r.debtSavingsContext,
       effectiveFrom: r.effectiveFrom,
     })),
+    (r) => r.debtSavingsContext,
   );
 }
 
@@ -636,23 +656,28 @@ export interface DebtShortfallBandRow {
   floorGbp: number | null;
   ceilingGbp: number | null;
   statusLabel: string;
+  /** Which of her two tables (17 Oct 2026). */
+  shortfallTable: import("@prisma/client").DebtShortfallTable;
   effectiveFrom: Date;
 }
 
 /**
- * Charlotte, 11 Sep 2026 — the debt-status table used when a household cannot
- * cover its yearly repayment out of disposable income. Newest generation only.
+ * Charlotte, 11 Sep 2026 — the debt-status tables used when a household cannot
+ * cover its yearly repayment out of disposable income; two of them since 17 Oct
+ * (negative / positive NDI). Newest generation of each.
  */
 export async function getDebtShortfallBands(tx: Tx): Promise<DebtShortfallBandRow[]> {
   const rows = await tx.debtShortfallBand.findMany();
-  return latestGeneration(
+  return latestGenerationPerTable(
     rows.map((r) => ({
       id: r.id,
       floorGbp: r.floorGbp === null ? null : Number(r.floorGbp),
       ceilingGbp: r.ceilingGbp === null ? null : Number(r.ceilingGbp),
       statusLabel: r.statusLabel,
+      shortfallTable: r.shortfallTable,
       effectiveFrom: r.effectiveFrom,
     })),
+    (r) => r.shortfallTable,
   );
 }
 
@@ -664,17 +689,20 @@ export interface GapReasonRow {
   label: string;
   isDeprecated: boolean;
   sortOrder: number;
+  /** Epic 21 #2 — precedence as the main gap explanation; null = unranked. */
+  rank: number | null;
   createdAt: Date;
 }
 
 /**
- * Returns ALL gap reasons including deprecated ones, ordered by sortOrder
- * ascending. Mirrors `getAllReasonCodes` exactly — GapReason has the same
- * shape and the same deprecate-never-delete convention.
+ * Returns ALL gap reasons including deprecated ones. Mirrors
+ * `getAllReasonCodes` — GapReason has the same shape and the same
+ * deprecate-never-delete convention. Epic 21 #2: ordered by rank (unranked
+ * last), then display order, so Settings reads as her precedence list.
  */
 export async function getAllGapReasons(tx: Tx): Promise<GapReasonRow[]> {
   const rows = await tx.gapReason.findMany({
-    orderBy: { sortOrder: "asc" },
+    orderBy: [{ rank: { sort: "asc", nulls: "last" } }, { sortOrder: "asc" }],
   });
 
   return rows.map((row) => ({
@@ -683,6 +711,7 @@ export async function getAllGapReasons(tx: Tx): Promise<GapReasonRow[]> {
     label: row.label,
     isDeprecated: row.isDeprecated,
     sortOrder: row.sortOrder,
+    rank: row.rank,
     createdAt: row.createdAt,
   }));
 }

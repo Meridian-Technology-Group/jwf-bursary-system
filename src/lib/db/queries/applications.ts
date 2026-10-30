@@ -2,6 +2,7 @@
  * Application database queries for the admin queue and detail views.
  */
 
+import { isReturnedForCorrection, type LatestRejection } from "@/lib/applications/return-for-correction";
 import { withAdminContext, type Tx } from "@/lib/db/prisma";
 import { createAuditLog } from "@/lib/audit/log";
 import { AUDIT_ACTIONS, AUDIT_ENTITY_TYPES } from "@/lib/audit/actions";
@@ -13,7 +14,7 @@ import {
 import { londonStartOfDayUtc, londonEndOfDayUtc } from "@/lib/datetime";
 // Value import (not type-only): the deadline-range filter branches on the
 // application type at runtime (E1/D13-8).
-import { ApplicationType } from "@prisma/client";
+import { ApplicationType, RoundScenario } from "@prisma/client";
 import type {
   School,
   Application,
@@ -32,6 +33,8 @@ import type {
   Prisma,
 } from "@prisma/client";
 import { PORTAL_APPLICATION } from "@/lib/applications/migration-source";
+import { DEADLINE_ROUND_SELECT } from "@/lib/rounds/submission-deadline";
+import { ERASED_ON_REQUEST_LABEL } from "@/lib/retention/policy";
 
 // ─── List Applications ────────────────────────────────────────────────────────
 
@@ -81,7 +84,10 @@ export interface ApplicationListItem {
     | "closeDate"
     | "defaultSubmissionDeadlineNew"
     | "defaultSubmissionDeadlineRolling"
-  >;
+  > & {
+    /** Epic 21 R2 — the RA window (the rolling-over deadline's third tier). */
+    windows: { scenario: RoundScenario; submitBy: Date | null }[];
+  };
   secondParent: SecondParentIndicator;
   /**
    * The rolling BursaryAccount this application is linked to, or null when none
@@ -97,9 +103,16 @@ export interface ApplicationListItem {
    * The close reason label recorded at close time (item 4.4), or null when
    * the application is not closed. Read through the FK, so it survives the
    * reason later being deprecated — not re-looked-up from the live reason
-   * list.
+   * list. An application erased on request reads "EOR – Erased on request".
    */
   closeReasonLabel: string | null;
+  /** Non-null for a Grant Tracker record (no form here, so never rejected). */
+  migrationSource: string | null;
+  /**
+   * Rejected and back with the family, not yet resubmitted (Charlotte, 17 Oct
+   * 2026: the list must tell a rejected form from one never received).
+   */
+  rejected: boolean;
 }
 
 export interface ListApplicationsFilters {
@@ -180,13 +193,13 @@ export function submittedDateRangeWhere(
 
 /**
  * Builds the Prisma where-fragment for the submission-by (deadline) range
- * filter (Item 7.2), matching the SAME three-tier chain
- * `effectiveSubmissionDeadline()` computes (src/lib/rounds/submission-deadline.ts,
- * Item 12/D-1): `application.submissionDeadlineAt` (override) ?? the round
- * default FOR THAT ROW'S APPLICATION TYPE ?? round's `closeDate`. Only the
- * first tier that is SET applies for a given row — a round default, if present,
- * is checked INSTEAD OF closeDate, never in addition (matches the helper's
- * precedence).
+ * filter (Item 7.2), matching the SAME chain `effectiveSubmissionDeadline()`
+ * computes (src/lib/rounds/submission-deadline.ts, Item 12/D-1, Epic 21 R2):
+ * `application.submissionDeadlineAt` (override) ?? the round default FOR THAT
+ * ROW'S APPLICATION TYPE ?? (ROLLING_OVER rows only) the round's RA window
+ * `submitBy` ?? round's `closeDate`. Only the first tier that is SET applies
+ * for a given row — a round default, if present, is checked INSTEAD OF the
+ * later tiers, never in addition (matches the helper's precedence).
  *
  * Type-awareness (E1/D13-8): the middle tier reads
  * `defaultSubmissionDeadlineNew` for `applicationType = NEW` rows and
@@ -265,10 +278,22 @@ export function effectiveDeadlineRangeWhere(
     ],
   };
 
+  // Epic 21 R2 — ROLLING_OVER rows with no override and no rolling default
+  // read the round's RA window `submitBy`. NEW rows never do.
+  const raWindowSet = { scenario: RoundScenario.RA, submitBy: { not: null } };
+  const rollingWindowInRange: Prisma.ApplicationWhereInput = {
+    submissionDeadlineAt: null,
+    applicationType: ApplicationType.ROLLING_OVER,
+    round: {
+      defaultSubmissionDeadlineRolling: null,
+      windows: { some: { scenario: RoundScenario.RA, submitBy: dateInRange } },
+    },
+  };
+
   // Only reached when there's no override AND no round default ON THIS ROW'S
-  // CLOCK — a round with a default set for this application type never falls
-  // through to closeDate, even if the default itself is out of range (matches
-  // the helper's strict precedence).
+  // CLOCK (AND, for ROLLING_OVER, no RA window date) — a round with an earlier
+  // tier set never falls through to closeDate, even if that tier's date is out
+  // of range (matches the helper's strict precedence).
   const closeDateInRange: Prisma.ApplicationWhereInput = {
     submissionDeadlineAt: null,
     OR: [
@@ -283,13 +308,16 @@ export function effectiveDeadlineRangeWhere(
         applicationType: ApplicationType.ROLLING_OVER,
         round: {
           defaultSubmissionDeadlineRolling: null,
+          windows: { none: raWindowSet },
           closeDate: dateInRange,
         },
       },
     ],
   };
 
-  return { OR: [overrideInRange, roundDefaultInRange, closeDateInRange] };
+  return {
+    OR: [overrideInRange, roundDefaultInRange, rollingWindowInRange, closeDateInRange],
+  };
 }
 
 /**
@@ -379,17 +407,18 @@ export async function listApplications(
       assignedToId: true,
       bursaryAccountId: true,
       closedAt: true,
+      migrationSource: true,
       // Item 4.4 — read through the FK so the originally-recorded label
       // survives the reason later being deprecated (soft-deactivated, never
       // hard-deleted — see the CloseReason model).
       closeReason: { select: { label: true } },
+      retentionStage: true,
       round: {
         select: {
           id: true,
           academicYear: true,
-          closeDate: true,
-          defaultSubmissionDeadlineNew: true,
-          defaultSubmissionDeadlineRolling: true,
+          // Every deadline tier, incl. the RA window (Epic 21 R2).
+          ...DEADLINE_ROUND_SELECT,
         },
       },
       bursaryAccount: {
@@ -411,8 +440,25 @@ export async function listApplications(
     orderBy: { submittedAt: "desc" },
   });
 
+  // The latest rejection that returned each form (staff can read every row).
+  const returnedIds = applications.filter((a) => a.formStatus !== "SUBMITTED").map((a) => a.id);
+  const rejections =
+    returnedIds.length > 0
+      ? await tx.applicationRejection.findMany({
+          where: { replacementApplicationId: { in: returnedIds } },
+          orderBy: { rejectedAt: "desc" },
+          select: { rejectedAt: true, replacementApplicationId: true, newSubmitBy: true, message: true },
+        })
+      : [];
+  const latestReturn = new Map<string, LatestRejection>();
+  for (const r of rejections) {
+    if (r.replacementApplicationId && !latestReturn.has(r.replacementApplicationId)) {
+      latestReturn.set(r.replacementApplicationId, r);
+    }
+  }
+
   return applications.map((a) => {
-    const { contributors, assessment, bursaryAccount, closeReason, ...rest } = a;
+    const { contributors, assessment, bursaryAccount, closeReason, retentionStage, ...rest } = a;
     const secondary = contributors[0];
     let secondParent: SecondParentIndicator = "NONE";
     if (secondary) {
@@ -430,7 +476,9 @@ export async function listApplications(
       outcome: assessment?.outcome ?? null,
       secondParent,
       bursaryAccountStatus: bursaryAccount?.status ?? null,
-      closeReasonLabel: closeReason?.label ?? null,
+      closeReasonLabel:
+        closeReason?.label ?? (retentionStage === "ANONYMISED" ? ERASED_ON_REQUEST_LABEL : null),
+      rejected: isReturnedForCorrection(a, latestReturn.get(a.id)),
     };
   });
 }
@@ -479,7 +527,8 @@ export type ApplicationWithDetails = Omit<
   // PR-6a) — the detail view derives the review phase from the lifecycle columns.
   "childName" | "status"
 > & {
-  round: Round;
+  /** Epic 21 R2 — with its RA window, so the deadline has every tier. */
+  round: Round & { windows: { scenario: RoundScenario; submitBy: Date | null }[] };
   sections: ApplicationSection[];
   documents: Document[];
   assessment: Assessment | null;
@@ -527,7 +576,8 @@ export async function getApplicationWithDetails(
       closeReason: { select: { id: true, label: true, purgeOnClose: true } },
       createdAt: true,
       updatedAt: true,
-      round: true,
+      // Epic 21 R2 — the RA window feeds the effective deadline.
+      round: { include: { windows: DEADLINE_ROUND_SELECT.windows } },
       sections: {
         orderBy: { section: "asc" },
       },
@@ -983,45 +1033,3 @@ export async function getDocumentsForApplication(
   return map;
 }
 
-/**
- * Serialisable, ORDERED list of an application's documents — the first-class
- * `/documents` portal area (PR-8). Sibling to `getDocumentsForApplication`
- * (the keyed-map variant above): same `DocumentMeta` shape, but returns an
- * array ordered for display (slot ascending, then newest-first within a slot)
- * so the page can group by humanised slot without re-sorting client-side.
- *
- * Contributor scoping (dual-parent, data-leak guard): when `ownerContributorId`
- * is supplied the query filters on `uploadedByContributorId` so the lead
- * applicant (their PRIMARY contributor) NEVER sees the secondary parent's
- * uploads — exactly as the review page scopes its document include
- * (`apply/review/page.tsx:396-399`: `documents: { where: { uploadedByContributorId } }`)
- * and as the signed-URL route enforces per-document
- * (`api/documents/[id]/url/route.ts:87-103`). This filter is defence-in-depth
- * ON TOP of RLS — callers MUST still run it under `withUserContext`, never
- * admin context. Omit `ownerContributorId` only for a caller that legitimately
- * wants every contributor's documents (e.g. an admin view under RLS).
- */
-export async function getAllDocumentsForApplication(
-  tx: Tx,
-  applicationId: string,
-  ownerContributorId?: string
-): Promise<DocumentMeta[]> {
-  const rows = await tx.document.findMany({
-    where: {
-      applicationId,
-      ...(ownerContributorId
-        ? { uploadedByContributorId: ownerContributorId }
-        : {}),
-    },
-    select: { id: true, slot: true, filename: true, fileSize: true, uploadedAt: true },
-    orderBy: [{ slot: "asc" }, { uploadedAt: "desc" }],
-  });
-
-  return rows.map((row) => ({
-    id: row.id,
-    slot: row.slot,
-    filename: row.filename,
-    fileSize: row.fileSize,
-    uploadedAt: row.uploadedAt.toISOString(),
-  }));
-}

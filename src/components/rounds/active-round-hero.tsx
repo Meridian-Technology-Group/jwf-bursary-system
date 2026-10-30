@@ -9,19 +9,16 @@
  *
  * Surfaces: academic year + status badge + "Closes in N days", the lifecycle
  * stage strip, headline pipeline numbers (Invited / Submitted / In Assessment /
- * Decided), the qualify / does-not-qualify outcome split, and a primary
- * "Open cockpit" CTA into `/rounds/{id}`.
+ * Finalised Recommendations) and a primary "Open round" CTA into
+ * `/rounds/{id}`. The qualify / does-not-qualify split is gone (Charlotte,
+ * 21 Oct 2026): every active account is assessed, so it always read 100%.
  */
 
 import Link from "next/link";
 import { ArrowRight } from "lucide-react";
-import type {
-  OutcomesDelta,
-  StageNode,
-} from "@/lib/db/queries/round-cockpit";
+import type { StageNode } from "@/lib/db/queries/round-cockpit";
 import { RoundStatusBadge } from "@/components/admin/round-status-badge";
 import { RoundStageStrip } from "@/components/rounds/round-stage-strip";
-import { DeltaBadge } from "@/components/rounds/delta-badge";
 
 export interface ActiveRoundHeroProps {
   id: string;
@@ -35,19 +32,13 @@ export interface ActiveRoundHeroProps {
     inAssessment: number;
     decided: number;
   };
-  outcomes: {
-    qualifies: number;
-    doesNotQualify: number;
-  };
-  /** Year-on-year qualification-rate delta, or null when none is computable. */
-  delta?: OutcomesDelta | null;
 }
 
 const PIPELINE_LABELS: Array<{ key: keyof ActiveRoundHeroProps["pipeline"]; label: string }> = [
   { key: "invited", label: "Invited" },
   { key: "submitted", label: "Submitted" },
   { key: "inAssessment", label: "In Assessment" },
-  { key: "decided", label: "Decided" },
+  { key: "decided", label: "Finalised Recommendations" },
 ];
 
 export function ActiveRoundHero({
@@ -56,18 +47,10 @@ export function ActiveRoundHero({
   daysToClose,
   stageStrip,
   pipeline,
-  outcomes,
-  delta,
 }: ActiveRoundHeroProps) {
   const closesLabel =
     daysToClose > 0
       ? `Closes in ${daysToClose} ${daysToClose === 1 ? "day" : "days"}`
-      : null;
-
-  const decidedTotal = outcomes.qualifies + outcomes.doesNotQualify;
-  const qualifyPct =
-    decidedTotal > 0
-      ? Math.round((outcomes.qualifies / decidedTotal) * 100)
       : null;
 
   return (
@@ -126,41 +109,6 @@ export function ActiveRoundHero({
         ))}
       </div>
 
-      {/* ── Outcome split ──────────────────────────────────────────────────── */}
-      <div className="mt-4 flex flex-wrap items-center gap-x-6 gap-y-2 border-t border-slate-100 pt-4 text-sm">
-        <span className="flex items-center gap-2">
-          <span
-            className="h-2.5 w-2.5 rounded-full bg-green-500"
-            aria-hidden="true"
-          />
-          <span className="text-slate-600">Qualifies</span>
-          <span className="font-semibold tabular-nums text-primary-900">
-            {outcomes.qualifies}
-          </span>
-        </span>
-        <span className="flex items-center gap-2">
-          <span
-            className="h-2.5 w-2.5 rounded-full bg-slate-400"
-            aria-hidden="true"
-          />
-          <span className="text-slate-600">Does not qualify</span>
-          <span className="font-semibold tabular-nums text-primary-900">
-            {outcomes.doesNotQualify}
-          </span>
-        </span>
-        {qualifyPct !== null && (
-          <span className="flex items-center gap-2 text-slate-500">
-            {qualifyPct}% qualification rate
-            {delta && (
-              <DeltaBadge
-                value={delta.deltaPoints}
-                direction={delta.direction}
-                suffix={`pp vs ${delta.priorLabel}`}
-              />
-            )}
-          </span>
-        )}
-      </div>
     </section>
   );
 }

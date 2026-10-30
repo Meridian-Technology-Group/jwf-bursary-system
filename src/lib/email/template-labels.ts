@@ -30,7 +30,8 @@ export const TEMPLATE_LABELS: Record<EmailTemplateType, string> = {
   SECONDARY_PARENT_INVITE: "Second Parent — Invitation",
   SECONDARY_PARENT_REMINDER: "Second Parent — Reminder",
   SECONDARY_PARENT_RECEIVED: "Second Parent — Information Received",
-  APPLICATION_RESTART_REQUIRED: "Application Rejected — Restart Required",
+  // Charlotte, 17 Oct 2026: the default text of the Application rejection window.
+  APPLICATION_RESTART_REQUIRED: "Application Rejection",
   APPLICATION_EDITED_ON_BEHALF: "Application Edited on Your Behalf",
 };
 

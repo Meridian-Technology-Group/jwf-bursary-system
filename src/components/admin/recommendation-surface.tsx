@@ -15,6 +15,7 @@
  */
 
 import { notFound } from "next/navigation";
+import { isSynopsisLocked } from "@/lib/bursary-accounts/standing-synopsis";
 import { ClipboardCheck, AlertTriangle, PencilRuler } from "lucide-react";
 import type { Decimal } from "@prisma/client/runtime/library";
 import type { CurrentUser } from "@/lib/auth/roles";
@@ -50,6 +51,9 @@ import {
 import type { OptionScenario } from "@/lib/assessment/recommendation-options";
 import type { ReasonCodeOption } from "@/components/admin/reason-code-selector";
 import { formatPostcodeAreaLabel } from "@/lib/assessment/postcode-area";
+import { isMigrated } from "@/lib/applications/migration-source";
+import { isClosedByStaff } from "@/lib/bursary-accounts/closed-by-staff";
+import { NO_FLAGS } from "@/lib/assessment/recommendation-flags";
 
 function toNumber(
   value: Decimal | string | number | null | undefined
@@ -190,6 +194,7 @@ export async function RecommendationSurface({
     siblingLinks,
     gapReasonRows,
     lastRecPayable,
+    account,
   ] = await withUserContext(user.id, user.role as RlsRole, (tx) =>
     Promise.all([
       getRecommendation(tx, assessment.id),
@@ -204,6 +209,12 @@ export async function RecommendationSurface({
             application.bursaryAccountId,
             application.roundId
           )
+        : Promise.resolve(null),
+      application.bursaryAccountId
+        ? tx.bursaryAccount.findUnique({
+            where: { id: application.bursaryAccountId },
+            select: { status: true, closeReasonId: true },
+          })
         : Promise.resolve(null),
     ])
   );
@@ -335,6 +346,26 @@ export async function RecommendationSurface({
           lastPayableFees={lastPayableFees}
           siblingContext={siblingContext}
           outcomeLocked={outcomeLocked}
+          migrated={isMigrated(application)}
+          accountClosedByStaff={isClosedByStaff(account)}
+          initialFlags={
+            recommendation
+              ? {
+                  dishonestyFlag: recommendation.dishonestyFlag,
+                  creditRiskFlag: recommendation.creditRiskFlag,
+                  inconsistencyFlag: recommendation.inconsistencyFlag,
+                  pastoralFlag: recommendation.pastoralFlag,
+                  acuteCrisisFlag: recommendation.acuteCrisisFlag,
+                  highFrugalityFlag: recommendation.highFrugalityFlag,
+                }
+              : {
+                  ...NO_FLAGS,
+                  // Values saved on the assessment before 20 Aug carry over.
+                  dishonestyFlag: assessment.dishonestyFlag,
+                  creditRiskFlag: assessment.creditRiskFlag,
+                }
+          }
+          hasRecommendation={recommendation != null}
         />
       </div>
     );
@@ -398,6 +429,7 @@ export async function RecommendationSurface({
         assessmentOutcome={assessment.outcome}
         assessmentId={assessment.id}
         synopsis={assessment.synopsis}
+        synopsisLocked={isSynopsisLocked(assessment.status)}
         assessmentValues={assessmentValues}
         recommendation={serialisedRecommendation}
         reasonCodes={serialisedReasonCodes}
