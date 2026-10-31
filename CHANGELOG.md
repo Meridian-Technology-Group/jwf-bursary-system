@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.2.0](https://github.com/Meridian-Technology-Group/jwf-bursary-system/compare/v2.1.0...v2.2.0) (2026-10-31)
+
+
+### Features
+
+* 7-day submit-by default and 22 May rolling-over default ([#481](https://github.com/Meridian-Technology-Group/jwf-bursary-system/issues/481)) ([40ea475](https://github.com/Meridian-Technology-Group/jwf-bursary-system/commit/40ea475882ae9f5e0063864bd1fe3e57caa250aa))
+
 ## [2.1.0](https://github.com/Meridian-Technology-Group/jwf-bursary-system/compare/v2.0.0...v2.1.0) (2026-10-30)
 
 
