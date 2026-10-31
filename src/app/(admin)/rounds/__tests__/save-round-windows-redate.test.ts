@@ -66,13 +66,13 @@ describe("saveRoundWindowsAction — re-dates planned rolling-over rows", () => 
     expect(auditMock.mock.calls[0][1]).toMatchObject({ metadata: { redatedScheduleRows: 3 } });
   });
 
-  it("clearing the RA window puts the rows back on the placeholder (15 Apr / 21 May)", async () => {
+  it("clearing the RA window puts the rows back on the placeholder (15 Apr / 22 May)", async () => {
     fakeTx = makeTx("2027/28", null);
     await saveRoundWindowsAction("round-1", [
       { scenario: "RA", opensOn: null, submitBy: null, defaultTaxYear: null },
     ]);
     expect(fakeTx.roundWindow.deleteMany).toHaveBeenCalled();
-    expect(updateArg().data).toEqual({ availableOn: day("2027-04-15"), requiredBy: day("2027-05-21") });
+    expect(updateArg().data).toEqual({ availableOn: day("2027-04-15"), requiredBy: day("2027-05-22") });
   });
 
   it("moving windows OFF 2026/27 never touches its year-1 rows (the where excludes them)", async () => {

@@ -31,7 +31,7 @@ describe('LA-4 — the fixed 12 April tax-year cutover', () => {
 })
 
 describe('resolveRoundScenario — the four scenarios', () => {
-  it('ROLLING_OVER is always RA with the fixed 15 Apr → 21 May window (D-1, 12 Oct 2026)', () => {
+  it('ROLLING_OVER is always RA with the fixed 15 Apr → 22 May window (D-1; 22 May per 31 Oct 2026)', () => {
     const r = resolveRoundScenario({
       applicationType: 'ROLLING_OVER',
       onDate: d('2027-04-15'),
@@ -39,7 +39,7 @@ describe('resolveRoundScenario — the four scenarios', () => {
     })
     expect(r.scenario).toBe('RA')
     expect(r.opensOn.toISOString().slice(0, 10)).toBe('2027-04-15')
-    expect(r.submitBy.toISOString().slice(0, 10)).toBe('2027-05-21')
+    expect(r.submitBy.toISOString().slice(0, 10)).toBe('2027-05-22')
     expect(r.defaultTaxYear).toBe('2026/27')
   })
 
@@ -114,12 +114,12 @@ describe('resolveRoundScenario — the four scenarios', () => {
     expect(after.scenario).toBe('NA_CURRENT')
   })
 
-  it('21 May edge is data, not logic: RA submitBy defaults to 21 May and a RoundWindow row overrides it', () => {
+  it('22 May edge is data, not logic: RA submitBy defaults to 22 May and a RoundWindow row overrides it', () => {
     const r = resolveRoundScenario({
       applicationType: 'ROLLING_OVER',
-      onDate: d('2027-05-21'),
+      onDate: d('2027-05-22'),
       roundStartYear: 2027,
     })
-    expect(r.submitBy.toISOString().slice(0, 10)).toBe('2027-05-21')
+    expect(r.submitBy.toISOString().slice(0, 10)).toBe('2027-05-22')
   })
 })

@@ -11,7 +11,7 @@
  *    award round's own dates. Every later year is a rolling-over year, so it
  *    carries the rolling-over (RA) window of the round FOR THAT ACADEMIC YEAR
  *    once that round has one (`rollingOverWindowFor`), else the placeholder
- *    from `round-scenario.ts` (15 Apr / 21 May, Charlotte's D-1). The real
+ *    from `round-scenario.ts` (15 Apr / 22 May, Charlotte's D-1 + 31 Oct). The real
  *    date is per round: she sets it each year on the Rounds page (2026/27's
  *    is Sat 22 May 2027, deliberately a day after the 21st).
  *
