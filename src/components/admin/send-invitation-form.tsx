@@ -46,6 +46,7 @@ import {
 } from "@/lib/assessment/schooling-years";
 import {
   SUBMIT_BY_FIELD,
+  defaultSubmitByValue,
   submitByDisplay,
   submitByMinValue,
 } from "@/lib/invitations/submit-by";
@@ -146,7 +147,7 @@ export function SendInvitationForm({
       situation: "NEW",
       entryYearGroup: undefined,
       roundId: defaultRoundId ?? "__none__",
-      submitBy: "",
+      submitBy: defaultSubmitByValue("NEW", new Date()),
     },
   });
 
@@ -201,7 +202,7 @@ export function SendInvitationForm({
           situation: "NEW",
           entryYearGroup: undefined,
           roundId: defaultRoundId ?? "__none__",
-          submitBy: "",
+          submitBy: defaultSubmitByValue("NEW", new Date()),
         });
         router.refresh();
       } else {
@@ -400,7 +401,22 @@ export function SendInvitationForm({
                     Situation <span className="text-red-500">*</span>
                   </FormLabel>
                   <Select
-                    onValueChange={field.onChange}
+                    onValueChange={(next) => {
+                      // A submit-by date still on the previous situation's
+                      // default follows the new one (7 days, or blank for
+                      // rolling-over); a date the admin typed is kept.
+                      const now = new Date();
+                      if (
+                        form.getValues("submitBy") ===
+                        defaultSubmitByValue(field.value, now)
+                      ) {
+                        form.setValue(
+                          "submitBy",
+                          defaultSubmitByValue(next as FormValues["situation"], now)
+                        );
+                      }
+                      field.onChange(next);
+                    }}
                     value={field.value ?? "NEW"}
                     disabled={isPending}
                   >
@@ -543,8 +559,10 @@ export function SendInvitationForm({
                     />
                   </FormControl>
                   <p className="text-xs text-slate-500">
-                    The family&apos;s deadline. Blank uses the round&apos;s.
-                    Must be on or before the round&apos;s close date.
+                    The family&apos;s deadline, filled in as 7 days from today
+                    for new and internal invitations. Blank uses the
+                    round&apos;s. Must be on or before the round&apos;s close
+                    date.
                   </p>
                   <FormMessage />
                 </FormItem>

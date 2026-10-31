@@ -9,7 +9,7 @@
  * single-send + bulk-invite confirmation pattern.
  */
 
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Send } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -31,6 +31,7 @@ import {
 import { cn } from "@/lib/utils";
 import { sendInvitationFromContactAction } from "@/app/(admin)/contacts/invite-actions";
 import { SubmitByInput } from "@/components/admin/submit-by-input";
+import { defaultSubmitByValue } from "@/lib/invitations/submit-by";
 import type { ContactListItem } from "@/lib/db/queries/contacts";
 import { entryAcademicYearLabelOrNull } from "@/lib/schools/academic-year";
 import { schoolName } from "@/lib/schools";
@@ -75,6 +76,13 @@ export function InviteFromContactDialog({
   const [registrationLink, setRegistrationLink] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
   const router = useRouter();
+
+  // Each opening starts on 7 days from today (31 Oct 2026), or blank for a
+  // rolling-over contact, whose deadline is the round's.
+  const situation = contact?.situation;
+  useEffect(() => {
+    if (open) setSubmitBy(defaultSubmitByValue(situation, new Date()));
+  }, [open, contact?.id, situation]);
 
   const useSegmented = liveRounds.length > 0 && liveRounds.length <= 2;
   const recipient =

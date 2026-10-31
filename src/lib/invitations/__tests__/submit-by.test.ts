@@ -3,6 +3,7 @@
 import { describe, expect, it } from "vitest";
 import {
   applicationDeadlineFromInvitation,
+  defaultSubmitByValue,
   emailDeadlineOverride,
   endOfLondonDay,
   londonDateKey,
@@ -157,5 +158,29 @@ describe("the email's {{deadline}} choice", () => {
     expect(emailDeadlineOverride(inv, app)).toEqual(app);
     expect(emailDeadlineOverride(inv, null)).toEqual(inv);
     expect(emailDeadlineOverride(null, null)).toBeNull();
+  });
+});
+
+describe("defaultSubmitByValue (31 Oct 2026: 7 days from the invitation)", () => {
+  it("is 7 days after today in London for NEW, INTERNAL and legacy contacts", () => {
+    const now = new Date("2026-11-02T10:00:00Z");
+    expect(defaultSubmitByValue("NEW", now)).toBe("2026-11-09");
+    expect(defaultSubmitByValue("INTERNAL", now)).toBe("2026-11-09");
+    expect(defaultSubmitByValue(null, now)).toBe("2026-11-09");
+  });
+
+  it("is blank for ROLLING_OVER, which shares the round's deadline", () => {
+    expect(defaultSubmitByValue("ROLLING_OVER", new Date("2026-11-02T10:00:00Z"))).toBe("");
+  });
+
+  it("counts from the London day, across a month end and the clocks changing", () => {
+    // 23:30Z on 24 Oct is already 25 Oct in London (BST).
+    expect(defaultSubmitByValue("NEW", new Date("2026-10-24T23:30:00Z"))).toBe("2026-11-01");
+    expect(defaultSubmitByValue("NEW", new Date("2027-03-28T12:00:00Z"))).toBe("2027-04-04");
+  });
+
+  it("passes the server check on the day it is filled in", () => {
+    const now = new Date("2026-11-02T10:00:00Z");
+    expect(parseInvitationSubmitBy(defaultSubmitByValue("NEW", now), CLOSE, now).ok).toBe(true);
   });
 });

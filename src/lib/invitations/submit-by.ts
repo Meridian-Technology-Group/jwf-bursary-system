@@ -160,3 +160,23 @@ export function emailDeadlineOverride(
 export function submitByMinValue(now: Date): string {
   return londonDateKey(now);
 }
+
+/**
+ * Her 30–31 Oct 2026 answer: new and internal invitations are usually due
+ * 7 days after they are sent, so the form fills that in (still editable).
+ */
+export const DEFAULT_SUBMIT_BY_DAYS = 7;
+
+/**
+ * The "Submit by" value a send form starts with: 7 days after today in
+ * Europe/London for NEW and INTERNAL (a null situation is a legacy NEW
+ * contact), blank for ROLLING_OVER, which shares the round's one deadline.
+ */
+export function defaultSubmitByValue(
+  situation: "NEW" | "INTERNAL" | "ROLLING_OVER" | null | undefined,
+  now: Date
+): string {
+  if (situation === "ROLLING_OVER") return "";
+  const [y, m, d] = londonDateKey(now).split("-").map(Number);
+  return dateOnlyKey(new Date(Date.UTC(y, m - 1, d + DEFAULT_SUBMIT_BY_DAYS)));
+}
