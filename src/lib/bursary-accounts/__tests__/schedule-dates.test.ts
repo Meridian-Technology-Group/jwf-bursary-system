@@ -5,9 +5,9 @@ const iso = (d: Date | null) => d?.toISOString().slice(0, 10) ?? null;
 const day = (s: string) => new Date(`${s}T00:00:00.000Z`);
 
 describe("rollingOverWindowFor (Epic 21 R2)", () => {
-  it("is the placeholder (15 Apr / 21 May of that year) with no stored window", () => {
+  it("is the placeholder (15 Apr / 22 May of that year) with no stored window", () => {
     const w = rollingOverWindowFor(2027, null);
-    expect([iso(w.opensOn), iso(w.submitBy), w.source]).toEqual(["2027-04-15", "2027-05-21", "placeholder"]);
+    expect([iso(w.opensOn), iso(w.submitBy), w.source]).toEqual(["2027-04-15", "2027-05-22", "placeholder"]);
   });
 
   it("takes the round's stored RA window, date by date", () => {
