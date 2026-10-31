@@ -73,11 +73,11 @@ describe("planSchedule — dates + labels + show/hide", () => {
     const iso = (d: Date | null) => d?.toISOString().slice(0, 10);
     expect(iso(rows[0].availableOn)).toBe("2026-09-01");
     expect(iso(rows[0].requiredBy)).toBe("2026-12-01");
-    // 2027-28 → 15/04/2027–21/05/2027; 2028-29 → 15/04/2028–21/05/2028.
+    // 2027-28 → 15/04/2027–22/05/2027; 2028-29 → 15/04/2028–22/05/2028.
     expect(iso(rows[1].availableOn)).toBe("2027-04-15");
-    expect(iso(rows[1].requiredBy)).toBe("2027-05-21");
+    expect(iso(rows[1].requiredBy)).toBe("2027-05-22");
     expect(iso(rows[2].availableOn)).toBe("2028-04-15");
-    expect(iso(rows[2].requiredBy)).toBe("2028-05-21");
+    expect(iso(rows[2].requiredBy)).toBe("2028-05-22");
   });
 
   it("shows every year of the award by default (Epic 21 #5, D-2)", () => {
@@ -276,12 +276,12 @@ describe("scheduleDatesForYear (Epic 21 F2)", () => {
 
   it("a later year is that year's rolling-over window, whatever the award round's dates", () => {
     const r = scheduleDatesForYear({ awardStartYear: 2026, awardOpenDate: open, awardCloseDate: close, scheduleYear: 2 });
-    expect([iso(r.availableOn), iso(r.requiredBy)]).toEqual(["2027-04-15", "2027-05-21"]);
+    expect([iso(r.availableOn), iso(r.requiredBy)]).toEqual(["2027-04-15", "2027-05-22"]);
   });
 
   it("works without award round dates (round not found)", () => {
     const r = scheduleDatesForYear({ awardStartYear: 2026, awardOpenDate: null, awardCloseDate: null, scheduleYear: 3 });
-    expect([iso(r.availableOn), iso(r.requiredBy)]).toEqual(["2028-04-15", "2028-05-21"]);
+    expect([iso(r.availableOn), iso(r.requiredBy)]).toEqual(["2028-04-15", "2028-05-22"]);
   });
 
   it("falls back to shifting the award dates when the award year can't be parsed (leap day safe)", () => {
@@ -300,15 +300,15 @@ describe("scheduleDatesForYear — the round's stored RA window (Epic 21 R2)", (
   const open = new Date(Date.UTC(2026, 8, 1));
   const close = new Date(Date.UTC(2026, 10, 30));
 
-  it("a later year takes its round's RA window (her real date, 22 May)", () => {
+  it("a later year takes its round's RA window, not the placeholder", () => {
     const r = scheduleDatesForYear({
       awardStartYear: 2026,
       awardOpenDate: open,
       awardCloseDate: close,
       scheduleYear: 2,
-      raWindow: { opensOn: new Date(Date.UTC(2027, 3, 15)), submitBy: new Date(Date.UTC(2027, 4, 22)) },
+      raWindow: { opensOn: new Date(Date.UTC(2027, 3, 14)), submitBy: new Date(Date.UTC(2027, 4, 24)) },
     });
-    expect([iso(r.availableOn), iso(r.requiredBy)]).toEqual(["2027-04-15", "2027-05-22"]);
+    expect([iso(r.availableOn), iso(r.requiredBy)]).toEqual(["2027-04-14", "2027-05-24"]);
   });
 
   it("year 1 ignores any window: it keeps the award round's dates", () => {
@@ -334,14 +334,14 @@ describe("planSchedule — rolling windows by academic year (Epic 21 R2)", () =>
       rollingWindows: new Map([
         // The award year's own RA window must NOT move year 1.
         [2026, { opensOn: new Date(Date.UTC(2026, 3, 1)), submitBy: new Date(Date.UTC(2026, 3, 2)) }],
-        [2027, { opensOn: null, submitBy: new Date(Date.UTC(2027, 4, 22)) }],
+        [2027, { opensOn: null, submitBy: new Date(Date.UTC(2027, 4, 23)) }],
       ]),
     });
     expect(rows.map((r) => [r.academicYear, iso(r.availableOn), iso(r.requiredBy)])).toEqual([
       ["2026-27", "2026-09-01", "2026-11-30"],
       // A window with only a close keeps the placeholder opening date.
-      ["2027-28", "2027-04-15", "2027-05-22"],
-      ["2028-29", "2028-04-15", "2028-05-21"],
+      ["2027-28", "2027-04-15", "2027-05-23"],
+      ["2028-29", "2028-04-15", "2028-05-22"],
     ]);
   });
 });

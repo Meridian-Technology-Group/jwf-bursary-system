@@ -53,7 +53,11 @@ import {
   ENTRY_YEAR_GROUP_OPTIONS,
 } from "@/lib/assessment/schooling-years";
 import { entryAcademicYearOptions } from "@/lib/schools/academic-year";
-import { SUBMIT_BY_FIELD, submitByMinValue } from "@/lib/invitations/submit-by";
+import {
+  SUBMIT_BY_FIELD,
+  defaultSubmitByValue,
+  submitByMinValue,
+} from "@/lib/invitations/submit-by";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -123,13 +127,15 @@ export function InternalRequestDialog({ rounds }: InternalRequestDialogProps) {
       reason: "",
       entryYearGroup: undefined,
       entryYear: "",
-      submitBy: "",
+      submitBy: defaultSubmitByValue("INTERNAL", new Date()),
     },
   });
 
   function handleOpenChange(next: boolean) {
     if (isPending) return;
     setOpen(next);
+    // 7 days from the day it is opened (31 Oct 2026), not from page load.
+    if (next) form.setValue("submitBy", defaultSubmitByValue("INTERNAL", new Date()));
     if (!next) {
       form.reset();
       setServerError(null);
@@ -380,8 +386,9 @@ export function InternalRequestDialog({ rounds }: InternalRequestDialogProps) {
                           />
                         </FormControl>
                         <p className="text-xs text-slate-500">
-                          Blank uses the round&apos;s deadline. Must be on or
-                          before the round&apos;s close date.
+                          Filled in as 7 days from today. Blank uses the
+                          round&apos;s deadline. Must be on or before the
+                          round&apos;s close date.
                         </p>
                         <FormMessage />
                       </FormItem>

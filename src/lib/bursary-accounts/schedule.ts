@@ -15,7 +15,7 @@
  * dates. Every later year is a rolling-over year, so it carries the
  * rolling-over window for its academic year (`scheduleDatesForYear`; Epic 21
  * F2): the RA window of the round for that year once it exists, else the
- * 15 April → 21 May placeholder (Epic 21 R2, `schedule-dates.ts`). It used to
+ * 15 April → 22 May placeholder (Epic 21 R2, `schedule-dates.ts`). It used to
  * shift the award round's dates, which gave rolling-over families the
  * new-applicant dates every year. Saving a round's windows re-dates that
  * year's still-SCHEDULED rows (`rollingRedateWhere`). Epic 03 owns the per-round date model; when a future
@@ -230,7 +230,7 @@ export interface PlannedScheduleEntry {
  * Epic 21 F2 / R2 — the planned dates for one schedule year. Year 1 keeps
  * the award round's dates; later years take the rolling-over (RA) window of
  * their own academic year (`rollingOverWindowFor`): that year's round's stored
- * RA window when given, else the placeholder (2027-28 → 15/04/2027–21/05/2027).
+ * RA window when given, else the placeholder (2027-28 → 15/04/2027–22/05/2027).
  * Unparseable award years fall back to shifting the award round's dates (the
  * old behaviour).
  */
