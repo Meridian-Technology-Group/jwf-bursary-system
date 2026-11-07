@@ -462,7 +462,7 @@ describe("finishEditingOnBehalf", () => {
     fakeTx = makeFakeTx();
   });
 
-  it("emails exactly the provenance-carrying sections, in workbook order", async () => {
+  it("audits exactly the provenance-carrying sections, in workbook order — no email", async () => {
     // Rows deliberately OUT of workbook order, with one empty-{} and one null
     // provenance row — only the two stamped sections may appear, CHILD_DETAILS
     // first (SECTION_ORDER), regardless of the findMany return order.
@@ -479,17 +479,8 @@ describe("finishEditingOnBehalf", () => {
     const res = await finishEditingOnBehalf("app-1");
     expect(res).toEqual({ success: true });
 
-    expect(sendEmailMock).toHaveBeenCalledTimes(1);
-    expect(sendEmailMock).toHaveBeenCalledWith(
-      "lead@example.test",
-      "APPLICATION_EDITED_ON_BEHALF",
-      expect.objectContaining({
-        applicant_name: "Lia Lead",
-        child_name: "Charlie Example",
-        reference: "APP-1",
-        edited_sections: "• Details of Child\n• Parents' Income",
-      })
-    );
+    // Charlotte, 7 Nov 2026: staff edits never email the parent.
+    expect(sendEmailMock).not.toHaveBeenCalled();
 
     expect(auditMock).toHaveBeenCalledTimes(1);
     expect(auditMock).toHaveBeenCalledWith(
@@ -498,34 +489,10 @@ describe("finishEditingOnBehalf", () => {
         action: AUDIT_ACTIONS.EDIT_ON_BEHALF_FINISHED,
         entityType: AUDIT_ENTITY_TYPES.Application,
         entityId: "app-1",
-        metadata: expect.objectContaining({
+        metadata: {
           reference: "APP-1",
           sections: ["Details of Child", "Parents' Income"],
-          emailSent: true,
-          emailSkipped: false,
-          emailMessageId: "msg-1",
-        }),
-      })
-    );
-  });
-
-  it("records a disabled template as not-notified (emailSkipped)", async () => {
-    fakeTx.applicationSection.findMany.mockResolvedValue([
-      { section: "CHILD_DETAILS", assessorProvenance: { fullName: STAMP } },
-    ]);
-    sendEmailMock.mockResolvedValueOnce({ success: true, skipped: true });
-
-    const res = await finishEditingOnBehalf("app-1");
-    expect(res).toEqual({ success: true });
-
-    expect(auditMock).toHaveBeenCalledTimes(1);
-    expect(auditMock).toHaveBeenCalledWith(
-      expect.objectContaining({
-        metadata: expect.objectContaining({
-          emailSent: false,
-          emailSkipped: true,
-          emailMessageId: null,
-        }),
+        },
       })
     );
   });
@@ -540,30 +507,6 @@ describe("finishEditingOnBehalf", () => {
     expect(res).toEqual({ success: true });
     expect(sendEmailMock).not.toHaveBeenCalled();
     expect(auditMock).not.toHaveBeenCalled();
-  });
-
-  it("still succeeds when the email fails — audited as not sent", async () => {
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
-    fakeTx.applicationSection.findMany.mockResolvedValue([
-      { section: "CHILD_DETAILS", assessorProvenance: { fullName: STAMP } },
-    ]);
-    sendEmailMock.mockResolvedValueOnce({ success: false, error: "Resend 500" });
-
-    const res = await finishEditingOnBehalf("app-1");
-    expect(res).toEqual({ success: true });
-
-    expect(auditMock).toHaveBeenCalledTimes(1);
-    expect(auditMock).toHaveBeenCalledWith(
-      expect.objectContaining({
-        metadata: expect.objectContaining({
-          emailSent: false,
-          emailSkipped: false,
-          emailMessageId: null,
-        }),
-      })
-    );
-    expect(warnSpy).toHaveBeenCalled();
-    warnSpy.mockRestore();
   });
 });
 

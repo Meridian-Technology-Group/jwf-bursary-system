@@ -13,9 +13,10 @@
  * transaction — the edit layout's gate alone cannot stop a concurrent
  * complete/outcome from landing between render and save.
  *
- * finishEditingOnBehalf — ends an editing pass: emails the applicant a summary
- * of the assessor-edited sections (derived from the stored provenance) and
- * audits the pass. A pass that changed nothing is a silent no-op.
+ * finishEditingOnBehalf — ends an editing pass: audits which sections carry
+ * assessor edits (derived from the stored provenance). It does NOT email the
+ * applicant (Charlotte, 7 Nov 2026). A pass that changed nothing is a silent
+ * no-op.
  *
  * submitApplicationOnBehalf — staff submission of a FILLED_IN form through the
  * SAME `submitApplicationCore` the portal uses (typed-up paper form, CR-001).
@@ -51,7 +52,6 @@ import {
 } from "@/lib/applications/section-diff";
 import { submitApplicationCore } from "@/lib/applications/submission";
 import { SECTION_ORDER, SECTION_TITLES } from "@/lib/portal/sections";
-import { sendEmail } from "@/lib/email/send";
 import { createAuditLog } from "@/lib/audit/log";
 import { AUDIT_ACTIONS, AUDIT_ENTITY_TYPES } from "@/lib/audit/actions";
 import type { SaveSectionResult } from "@/app/(portal)/apply/actions";
@@ -442,13 +442,13 @@ function hasProvenanceEntries(value: unknown): boolean {
 
 /**
  * Ends an edit-on-behalf pass: derives WHICH sections carry assessor
- * provenance, emails the applicant a summary of them
- * (APPLICATION_EDITED_ON_BEHALF), and audits the pass.
+ * provenance and audits the pass.
  *
- * A pass that edited nothing returns success WITHOUT email or audit — a staff
- * member opening the edit shell and leaving must not spam the applicant.
- * The email is non-blocking (pauseApplication style): a send failure is logged
- * but never fails the action.
+ * No email goes to the applicant. This used to send
+ * APPLICATION_EDITED_ON_BEHALF; Charlotte (7 Nov 2026) asked that staff edits,
+ * such as uploading documents a parent missed, never notify the parent.
+ *
+ * A pass that edited nothing returns success WITHOUT an audit row.
  */
 export async function finishEditingOnBehalf(
   applicationId: string
@@ -468,11 +468,7 @@ export async function finishEditingOnBehalf(
           where: { id: applicationId },
           select: {
             reference: true,
-            childName: true,
             leadApplicantId: true,
-            leadApplicant: {
-              select: { email: true, firstName: true, lastName: true },
-            },
           },
         });
         if (!application) return null;
@@ -501,7 +497,7 @@ export async function finishEditingOnBehalf(
       ));
 
     // Sections this pass (or any earlier one) assessor-edited, in workbook
-    // order, as the human titles the email lists.
+    // order, as the human titles the audit row records.
     const sectionRows = await withUserContext(
       user.id,
       user.role as RlsRole,
@@ -521,32 +517,9 @@ export async function finishEditingOnBehalf(
     );
 
     // Nothing was edited on the applicant's behalf — a no-op pass must not
-    // email the applicant or write an audit row.
+    // write an audit row.
     if (editedSections.length === 0) {
       return { success: true };
-    }
-
-    // Send the summary email — non-blocking; log failure but don't abort.
-    const emailResult = await sendEmail(
-      application.leadApplicant.email,
-      "APPLICATION_EDITED_ON_BEHALF",
-      {
-        applicant_name:
-          `${application.leadApplicant.firstName ?? ""} ${application.leadApplicant.lastName ?? ""}`.trim() ||
-          "Applicant",
-        child_name: application.childName,
-        reference: application.reference,
-        edited_sections: editedSections
-          .map((title) => `• ${title}`)
-          .join("\n"),
-        edited_date: new Date().toLocaleDateString("en-GB"),
-      }
-    );
-
-    if (!emailResult.success) {
-      console.warn(
-        `[finishEditingOnBehalf] APPLICATION_EDITED_ON_BEHALF email failed for ${applicationId}: ${emailResult.error}`
-      );
     }
 
     await withUserContext(user.id, user.role as RlsRole, (tx) =>
@@ -559,11 +532,6 @@ export async function finishEditingOnBehalf(
         metadata: {
           reference: application.reference,
           sections: editedSections,
-          // A disabled template short-circuits to success+skipped; record the
-          // applicant as NOT notified in that case.
-          emailSent: emailResult.success && !emailResult.skipped,
-          emailSkipped: emailResult.skipped ?? false,
-          emailMessageId: emailResult.messageId ?? null,
         },
       })
     );
