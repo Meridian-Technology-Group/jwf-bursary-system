@@ -102,9 +102,9 @@ interface EditOnBehalfBannerActionsProps {
 /**
  * The banner's action buttons, visible from every edit page:
  *
- *   - "Finish editing" ends the editing pass — the action emails the applicant
- *     a summary of the assessor-edited sections (silently no-ops when nothing
- *     was edited) and returns to the application detail page.
+ *   - "Finish editing" ends the editing pass — the action audits the
+ *     assessor-edited sections (no email to the applicant; silently no-ops
+ *     when nothing was edited) and returns to the application detail page.
  *   - "Submit on behalf of applicant" (FILLED_IN only) runs the SAME
  *     submission core as the portal, behind a confirm dialog.
  *

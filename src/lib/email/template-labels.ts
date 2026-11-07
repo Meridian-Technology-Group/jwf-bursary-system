@@ -32,7 +32,9 @@ export const TEMPLATE_LABELS: Record<EmailTemplateType, string> = {
   SECONDARY_PARENT_RECEIVED: "Second Parent — Information Received",
   // Charlotte, 17 Oct 2026: the default text of the Application rejection window.
   APPLICATION_RESTART_REQUIRED: "Application Rejection",
-  APPLICATION_EDITED_ON_BEHALF: "Application Edited on Your Behalf",
+  // Charlotte, 7 Nov 2026: staff edits no longer email the parent, so no live
+  // send uses this template. Said outright, as with the legacy invitation.
+  APPLICATION_EDITED_ON_BEHALF: "Application Edited on Your Behalf — not sent",
 };
 
 /**
