@@ -243,8 +243,7 @@ export async function saveRecommendationFlagsAction(
 
 /**
  * Records the 3-value award decision (Epic 08): AWARDED, QUALIFIES_NOT_AWARDED,
- * or DOES_NOT_QUALIFY (Decline). Sends the matching outcome email and, on
- * AWARDED, promotes to the rolling ACTIVE bursary account (idempotent) and
+ * or DOES_NOT_QUALIFY (Decline). Sends no email. On AWARDED, promotes to the rolling ACTIVE bursary account (idempotent) and
  * records the scholarship award (£). Thin wrapper around the shared core in
  * `@/lib/applications/set-outcome-core`. Revalidates the recommendation +
  * application-detail paths.

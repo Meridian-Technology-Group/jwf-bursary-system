@@ -53,40 +53,6 @@ const callSiteData: Record<string, EmailMergeData> = {
     missing_documents: "• HMRC SA302\n• P60",
     deadline: "02/06/2026",
   },
-  // src/app/(admin)/applications/[id]/actions.ts:364
-  // src/app/(admin)/applications/[id]/recommendation/actions.ts:173
-  OUTCOME_QUALIFIES: {
-    applicant_name: "Alex Parent",
-    child_name: "Sam Parent",
-    school: "Trinity School",
-    reference: "TRI-2026-0001",
-    academic_year: "2026/27",
-  },
-  // src/app/(admin)/applications/[id]/actions.ts:364
-  // src/app/(admin)/applications/[id]/recommendation/actions.ts:173
-  OUTCOME_DNQ: {
-    applicant_name: "Alex Parent",
-    child_name: "Sam Parent",
-    school: "Whitgift School",
-    reference: "WHI-2026-0042",
-    academic_year: "2026/27",
-  },
-  // Epic 08 — src/lib/applications/set-outcome-core.ts (templateForOutcome)
-  OUTCOME_AWARDED: {
-    applicant_name: "Alex Parent",
-    child_name: "Sam Parent",
-    school: "Whitgift School",
-    reference: "WHI-2026-0043",
-    academic_year: "2026/27",
-  },
-  // Epic 08 — src/lib/applications/set-outcome-core.ts (templateForOutcome)
-  OUTCOME_QUALIFIES_NOT_AWARDED: {
-    applicant_name: "Alex Parent",
-    child_name: "Sam Parent",
-    school: "Trinity School",
-    reference: "TRI-2026-0044",
-    academic_year: "2026/27",
-  },
   // src/app/(admin)/invitations/actions.ts — sendReassessmentInviteForHolder
   REASSESSMENT: {
     applicant_name: "Alex Parent",
