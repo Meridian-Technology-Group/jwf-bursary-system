@@ -580,41 +580,43 @@ export async function submitMissingDocsResponse(
 
     if (!result.success) return result;
 
-    // Notify the assigned assessor that the applicant has responded.
-    // Non-blocking: failures (or no assigned assessor) must not break the
-    // applicant's response flow. Routes through sendEmail, so the #12
-    // per-template enable/disable toggle governs whether it actually sends.
-    if (result.assignedToId) {
+    // Notify the fees inbox that the applicant has responded. Charlotte
+    // (7 Nov 2026): this goes to fees@ only, not the assessor's own email, so
+    // it is sent whether or not an assessor is assigned. The inbox is the
+    // same `PORTAL_ENQUIRY_INBOX` the Help page uses; unset → nothing is sent,
+    // so a test can never reach the real fees inbox.
+    // Non-blocking: failures must not break the applicant's response flow.
+    // Routes through sendEmail, so the #12 per-template enable/disable toggle
+    // governs whether it actually sends.
+    const feesInbox = process.env.PORTAL_ENQUIRY_INBOX?.trim();
+    if (feesInbox) {
       try {
-        const assessor = await withAdminContext((tx) =>
-          tx.profile.findUnique({
-            where: { id: result.assignedToId as string },
-            select: { email: true, firstName: true, lastName: true },
-          })
-        );
-
-        if (assessor?.email) {
-          const assessorName =
-            `${assessor.firstName ?? ""} ${assessor.lastName ?? ""}`.trim() ||
-            "Assessor";
-          const emailResult = await sendEmail(
-            assessor.email,
-            "MISSING_DOCS_RESPONDED",
-            {
-              assessor_name: assessorName,
-              child_name: result.childName,
-              reference: result.reference,
-              application_link: `${getAppUrl()}/applications/${applicationId}`,
-            }
-          );
-          if (!emailResult.success) {
-            console.warn(
-              `[portal/actions] MISSING_DOCS_RESPONDED email failed for ${applicationId}: ${emailResult.error}`
-            );
+        // The template greets {{assessor_name}}: the assigned assessor when
+        // there is one, else the team.
+        const assessor = result.assignedToId
+          ? await withAdminContext((tx) =>
+              tx.profile.findUnique({
+                where: { id: result.assignedToId as string },
+                select: { firstName: true, lastName: true },
+              })
+            )
+          : null;
+        const assessorName =
+          `${assessor?.firstName ?? ""} ${assessor?.lastName ?? ""}`.trim() ||
+          "Fees team";
+        const emailResult = await sendEmail(
+          feesInbox,
+          "MISSING_DOCS_RESPONDED",
+          {
+            assessor_name: assessorName,
+            child_name: result.childName,
+            reference: result.reference,
+            application_link: `${getAppUrl()}/applications/${applicationId}`,
           }
-        } else {
+        );
+        if (!emailResult.success) {
           console.warn(
-            `[portal/actions] MISSING_DOCS_RESPONDED: assigned assessor ${result.assignedToId} has no email; skipping notification for ${applicationId}`
+            `[portal/actions] MISSING_DOCS_RESPONDED email failed for ${applicationId}: ${emailResult.error}`
           );
         }
       } catch (emailErr) {
@@ -623,6 +625,10 @@ export async function submitMissingDocsResponse(
           emailErr
         );
       }
+    } else {
+      console.warn(
+        `[portal/actions] MISSING_DOCS_RESPONDED: PORTAL_ENQUIRY_INBOX unset; skipping notification for ${applicationId}`
+      );
     }
 
     revalidatePath("/respond");
