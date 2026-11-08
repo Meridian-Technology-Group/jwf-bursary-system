@@ -240,7 +240,7 @@ export const AWARD_DECISIONS: Record<
     buttonClass: "bg-green-600 hover:bg-green-700 text-white",
     title: "Confirm: Award bursary",
     consequence:
-      "An award confirmation email is sent to the lead applicant, the rolling bursary account is opened (or continued), and the bursary and scholarship awards are recorded. This cannot be undone.",
+      "The rolling bursary account is opened (or continued) and the bursary and scholarship awards are recorded. No email is sent. This cannot be undone.",
   },
   QUALIFIES_NOT_AWARDED: {
     label: "Qualifies — not awarded",
@@ -248,7 +248,7 @@ export const AWARD_DECISIONS: Record<
     buttonClass: "bg-amber-500 hover:bg-amber-600 text-white",
     title: "Confirm: Qualifies — not awarded",
     consequence:
-      "The applicant is assessed as eligible but is not granted an award this round. An email is sent and the application is retained per the retention policy. This cannot be undone.",
+      "The applicant is assessed as eligible but is not granted an award this round. The application is retained per the retention policy. No email is sent. This cannot be undone.",
   },
   DOES_NOT_QUALIFY: {
     label: "Decline",
@@ -256,7 +256,7 @@ export const AWARD_DECISIONS: Record<
     buttonClass: "bg-rose-600 hover:bg-rose-700 text-white",
     title: "Confirm: Decline bursary",
     consequence:
-      "A decline email is sent to the lead applicant and a new application is archived. This cannot be undone.",
+      "A new application is archived. No email is sent. This cannot be undone.",
   },
 };
 
@@ -797,10 +797,9 @@ export function RecommendationForm({
           <CardHeader>
             <CardTitle className="text-base">Award decision</CardTitle>
             <p className="text-sm text-slate-500">
-              Record the panel&apos;s decision. Once set, the matching outcome
-              email is sent to the lead applicant and this recommendation becomes
-              read-only. Save the recommendation first so the scholarship award is
-              recorded with the decision.
+              Record the panel&apos;s decision. Once set, this recommendation
+              becomes read-only; no email is sent. Save the recommendation first
+              so the scholarship award is recorded with the decision.
             </p>
           </CardHeader>
           <CardContent>

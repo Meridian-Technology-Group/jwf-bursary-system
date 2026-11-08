@@ -5,10 +5,6 @@ export type EmailTemplateType =
   | "INVITATION"
   | "CONFIRMATION"
   | "MISSING_DOCS"
-  | "OUTCOME_QUALIFIES"
-  | "OUTCOME_DNQ"
-  | "OUTCOME_AWARDED"
-  | "OUTCOME_QUALIFIES_NOT_AWARDED"
   | "REASSESSMENT"
   | "REMINDER"
   | "INVITE_STAFF"
@@ -120,118 +116,6 @@ Please submit the outstanding documents through your online application portal a
 If you experience any difficulty with the upload process, or if you are unable to provide a particular document, please contact the Bursary Office as soon as possible so that we can discuss alternative arrangements.
 
 We would like to remind you that all information provided is treated in strict confidence and used solely for the purpose of assessing your application for bursary support.
-
-Yours sincerely,
-
-The Bursary Office
-John Whitgift Foundation`,
-  },
-  {
-    type: "OUTCOME_QUALIFIES",
-    subject: "Bursary assessment outcome — {{child_name}}",
-    mergeFields: [
-      "applicant_name",
-      "child_name",
-      "school",
-      "reference",
-      "academic_year",
-    ],
-    body: `Dear {{applicant_name}},
-
-I am very pleased to write to you regarding the outcome of the bursary assessment for {{child_name}} at {{school}} for the {{academic_year}} academic year (reference: {{reference}}).
-
-Having carefully considered all of the information provided in your application, including your household income, assets, and family circumstances, the Bursary Committee has determined that {{child_name}} qualifies for bursary support.
-
-Full details of the bursary award, including the level of support and any applicable conditions, will be set out in a separate letter which will follow shortly. Please read that letter carefully, as it will contain important information about how the bursary will be administered and what is required of you to maintain the award.
-
-We are delighted to be able to support {{child_name}}'s education at {{school}}, and we hope that this award will make a real difference to your family. Should your circumstances change at any point, you are required to notify the Bursary Office without delay, as this may affect the level of support provided.
-
-If you have any questions, please do not hesitate to contact us.
-
-Yours sincerely,
-
-The Bursary Office
-John Whitgift Foundation`,
-  },
-  {
-    type: "OUTCOME_DNQ",
-    subject: "Bursary assessment outcome — {{child_name}}",
-    mergeFields: [
-      "applicant_name",
-      "child_name",
-      "school",
-      "reference",
-      "academic_year",
-    ],
-    body: `Dear {{applicant_name}},
-
-Thank you for submitting a bursary application for {{child_name}} at {{school}} for the {{academic_year}} academic year (reference: {{reference}}).
-
-We appreciate the time and effort you have put into completing your application, and we understand how important this matter is to your family. We have given careful consideration to all of the information and documentation provided.
-
-Having completed our assessment, we regret to inform you that on this occasion {{child_name}}'s application has not met the criteria for bursary support. This decision has been reached after a thorough review of your household financial circumstances in accordance with the Foundation's bursary assessment guidelines.
-
-We understand that this may be disappointing news, and we are sorry that we are unable to offer support at this time. Please be assured that this decision is in no way a reflection on {{child_name}} personally.
-
-If your financial circumstances change significantly, you are welcome to apply in a future round. Should you wish to discuss the outcome of your assessment, or if you believe that there are exceptional circumstances which were not fully reflected in your application, please contact the Bursary Office within 14 days of receiving this letter.
-
-We wish {{child_name}} all the best for the future.
-
-Yours sincerely,
-
-The Bursary Office
-John Whitgift Foundation`,
-  },
-  {
-    // Epic 08 — the 3-value outcome lifecycle's "Approved Bursary" letter.
-    // Kept in sync with migration 20260606180200_seed_outcome_email_templates.
-    type: "OUTCOME_AWARDED",
-    subject: "Bursary assessment outcome — {{child_name}}",
-    mergeFields: [
-      "applicant_name",
-      "child_name",
-      "school",
-      "reference",
-      "academic_year",
-    ],
-    body: `Dear {{applicant_name}},
-
-I am very pleased to write to you regarding the outcome of the bursary assessment for {{child_name}} at {{school}} for the {{academic_year}} academic year (reference: {{reference}}).
-
-Having carefully considered all of the information provided in your application, including your household income, assets, and family circumstances, the Bursary Committee has determined that {{child_name}} has been awarded a bursary.
-
-Full details of the award, including the level of support, any scholarship element, and any applicable conditions, will be set out in a separate award letter which will follow shortly. Please read that letter carefully, as it will contain important information about how the award will be administered and what is required of you to maintain it.
-
-We are delighted to be able to support {{child_name}}'s education at {{school}}, and we hope that this award will make a real difference to your family. Should your circumstances change at any point, you are required to notify the Bursary Office without delay, as this may affect the level of support provided.
-
-If you have any questions, please do not hesitate to contact us.
-
-Yours sincerely,
-
-The Bursary Office
-John Whitgift Foundation`,
-  },
-  {
-    // Epic 08 — "eligible but not awarded this round" (held per retention).
-    // Kept in sync with migration 20260606180200_seed_outcome_email_templates.
-    type: "OUTCOME_QUALIFIES_NOT_AWARDED",
-    subject: "Bursary assessment outcome — {{child_name}}",
-    mergeFields: [
-      "applicant_name",
-      "child_name",
-      "school",
-      "reference",
-      "academic_year",
-    ],
-    body: `Dear {{applicant_name}},
-
-Thank you for submitting a bursary application for {{child_name}} at {{school}} for the {{academic_year}} academic year (reference: {{reference}}).
-
-We have given careful consideration to all of the information and documentation you provided. Having completed our assessment, I can confirm that {{child_name}}'s application has been assessed as eligible for bursary support.
-
-Unfortunately, on this occasion we are not able to offer an award in this round. Bursary funding is limited, and the Foundation must make awards within the resources available to it. Your application has been retained, and {{child_name}} remains eligible to be considered in a future round.
-
-We understand that this may be disappointing news, and we are sorry that we are unable to offer an award at this time. If your financial circumstances change significantly, or if you would like to discuss the outcome, please contact the Bursary Office.
 
 Yours sincerely,
 

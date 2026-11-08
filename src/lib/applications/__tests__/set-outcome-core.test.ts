@@ -284,6 +284,21 @@ describe("setApplicationOutcome (shared core, Epic 08)", () => {
     expect(fakeTx.auditLog.create).toHaveBeenCalledTimes(1);
   });
 
+  // Charlotte (7 Nov 2026): outcomes are written to families outside the
+  // system, so no decision may email anyone.
+  it.each(["AWARDED", "QUALIFIES_NOT_AWARDED", "DOES_NOT_QUALIFY"] as const)(
+    "%s: sends no email",
+    async (outcome) => {
+      fakeTx = makeFakeTx(baseApplication());
+      sendEmailMock.mockClear();
+
+      const result = await setApplicationOutcome("app-1", outcome);
+
+      expect(result).toEqual({ success: true });
+      expect(sendEmailMock).not.toHaveBeenCalled();
+    }
+  );
+
   it("rejects the decision when the assessment is not COMPLETED, no side effects", async () => {
     fakeTx = makeFakeTx(
       baseApplication({

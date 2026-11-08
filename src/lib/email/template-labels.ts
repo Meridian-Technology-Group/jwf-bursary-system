@@ -19,10 +19,13 @@ export const TEMPLATE_LABELS: Record<EmailTemplateType, string> = {
   INVITATION_ROLLING: "Invitation — Rolling Over (both schools)",
   CONFIRMATION: "Submission Confirmation",
   MISSING_DOCS: "Missing Documents",
-  OUTCOME_QUALIFIES: "Outcome — Qualifies (legacy)",
-  OUTCOME_DNQ: "Outcome — Declined",
-  OUTCOME_AWARDED: "Outcome — Awarded",
-  OUTCOME_QUALIFIES_NOT_AWARDED: "Outcome — Qualifies, Not Awarded",
+  // Charlotte, 7 Nov 2026: outcomes are never emailed (the school writes to
+  // families outside the system). The four outcome template rows were deleted
+  // (migration 20261108120000); the enum values remain only for old rows.
+  OUTCOME_QUALIFIES: "Outcome — Qualifies (removed)",
+  OUTCOME_DNQ: "Outcome — Declined (removed)",
+  OUTCOME_AWARDED: "Outcome — Awarded (removed)",
+  OUTCOME_QUALIFIES_NOT_AWARDED: "Outcome — Qualifies, Not Awarded (removed)",
   REASSESSMENT: "Reassessment",
   REMINDER: "Reminder",
   INVITE_STAFF: "Staff Invitation",

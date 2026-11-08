@@ -20,20 +20,22 @@
  *   3. AWARDED → idempotent account promotion behind the Epic 10 interface
  *      (continue an existing rolling account, never double-create)
  *   4. persist the scholarship award (£) onto the recommendation (D9)
- *   5. the outcome email to the lead applicant (one template per outcome)
- *   6. exactly one canonical audit row (APPLICATION_OUTCOME_SET) carrying the
+ *   5. exactly one canonical audit row (APPLICATION_OUTCOME_SET) carrying the
  *      chosen outcome + both award figures
  *
  * `setApplicationOutcome` is the module's only entry point. The recommendation
  * server action calls it with an explicit 3-value decision plus the award
  * figures. (Epic 13: C3 removed the legacy binary `setOutcome` action, F4 the
  * `setApplicationOutcomeLegacy` shim it wrapped.)
+ *
+ * No outcome email is sent. Charlotte (7 Nov 2026): the school decides and
+ * writes to every family on the same day, outside the system, so the outcome
+ * templates were removed entirely.
  */
 
 import { requireRole, Role } from "@/lib/auth/roles";
 import { withUserContext, type RlsRole, type Tx } from "@/lib/db/prisma";
 import { createAuditLog } from "@/lib/audit/log";
-import { sendEmail } from "@/lib/email/send";
 import {
   setApplicationOutcomeStatus,
   type LifecycleOutcome,
@@ -42,10 +44,8 @@ import {
   promoteToActiveAccount,
   type AwardFigures,
 } from "@/lib/applications/account-promotion";
-import { EmailTemplateType } from "@prisma/client";
 
 import { AUDIT_ACTIONS, AUDIT_ENTITY_TYPES } from "@/lib/audit/actions";
-import { schoolName } from "@/lib/schools";
 
 export type SetOutcomeResult =
   | { success: true }
@@ -113,18 +113,6 @@ async function fetchApplicationForOutcome(tx: Tx, applicationId: string) {
       },
     },
   });
-}
-
-/** The email template that backs each outcome. */
-function templateForOutcome(outcome: AwardDecision): EmailTemplateType {
-  switch (outcome) {
-    case "AWARDED":
-      return EmailTemplateType.OUTCOME_AWARDED;
-    case "QUALIFIES_NOT_AWARDED":
-      return EmailTemplateType.OUTCOME_QUALIFIES_NOT_AWARDED;
-    case "DOES_NOT_QUALIFY":
-      return EmailTemplateType.OUTCOME_DNQ;
-  }
 }
 
 /**
@@ -225,31 +213,7 @@ export async function setApplicationOutcome(
     if (!pre.success) return pre;
     const { application } = pre;
 
-    // Phase 2: send the outcome email to the lead applicant.
-    const templateType = templateForOutcome(outcome);
-    const schoolLabel =
-      schoolName(application.school);
-    const emailResult = await sendEmail(
-      application.leadApplicant.email,
-      templateType,
-      {
-        applicant_name:
-          `${application.leadApplicant.firstName ?? ""} ${application.leadApplicant.lastName ?? ""}`.trim() ||
-          "Applicant",
-        child_name: application.childName,
-        school: schoolLabel,
-        reference: application.reference,
-        academic_year: application.round.academicYear,
-      }
-    );
-
-    if (!emailResult.success) {
-      console.warn(
-        `[setApplicationOutcome] ${templateType} email failed for ${applicationId}: ${emailResult.error}`
-      );
-    }
-
-    // Phase 3: exactly one canonical audit row, carrying both award figures.
+    // Phase 2: exactly one canonical audit row, carrying both award figures.
     await withUserContext(user.id, user.role as RlsRole, (tx) =>
       createAuditLog(tx, {
         userId: user.id,
@@ -266,8 +230,6 @@ export async function setApplicationOutcome(
           bursaryAward: awards.bursaryAward,
           scholarshipAward: awards.scholarshipAward,
           reference: application.reference,
-          emailSent: emailResult.success,
-          emailMessageId: emailResult.messageId ?? null,
         },
       })
     );
