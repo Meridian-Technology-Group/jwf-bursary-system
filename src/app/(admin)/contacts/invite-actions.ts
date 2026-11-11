@@ -24,7 +24,10 @@ import { RoundStatus } from "@prisma/client";
 import { requireRole, Role } from "@/lib/auth/roles";
 import { withAdminContext } from "@/lib/db/prisma";
 import { createSupabaseAdminClient } from "@/lib/auth/supabase-admin";
-import { provisionApplicantAuthUser } from "@/lib/auth/provision-applicant";
+import {
+  ensureApplicantLogin,
+  provisionApplicantAuthUser,
+} from "@/lib/auth/provision-applicant";
 import { createProfile } from "@/lib/auth/create-profile";
 import { createInvitation } from "@/lib/db/queries/invitations";
 import { getAppUrl } from "@/lib/app-url";
@@ -235,6 +238,13 @@ export async function sendInvitationFromContactAction(
   let authUserId: string;
   let createdAuthUser = false;
   if (contact.profileId) {
+    // 11 Nov 2026: a failed-send rollback can delete the login while this
+    // binding survives — restore it under the same id before reusing it.
+    const login = await ensureApplicantLogin(supabase, contact.profileId, contact.email);
+    if (!login.ok) {
+      console.error("[contacts] sendInvitationFromContactAction login check error:", login.error);
+      return { success: false, error: login.error };
+    }
     authUserId = contact.profileId;
   } else {
     const provisioned = await provisionApplicantAuthUser(supabase, contact.email);

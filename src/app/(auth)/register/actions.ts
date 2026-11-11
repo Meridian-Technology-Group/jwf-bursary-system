@@ -23,6 +23,7 @@ import {
 import { withAdminContext } from "@/lib/db/prisma";
 import { getCurrentUser } from "@/lib/auth/roles";
 import { createSupabaseAdminClient } from "@/lib/auth/supabase-admin";
+import { ensureApplicantLogin } from "@/lib/auth/provision-applicant";
 import { createProfile } from "@/lib/auth/create-profile";
 import {
   getInvitationByToken,
@@ -287,6 +288,27 @@ export async function acceptApplicantInvitationAction(
   try {
     // 3. Set the chosen password on the existing Supabase auth user.
     const supabase = createSupabaseAdminClient();
+
+    // 11 Nov 2026: the login this invitation points at can have been deleted
+    // by an earlier failed-send rollback. Restore it under the same id first,
+    // so the parent's link works instead of "Failed to set password" forever.
+    const login = await ensureApplicantLogin(
+      supabase,
+      invitation.authUserId,
+      invitation.email,
+      password
+    );
+    if (!login.ok) {
+      console.error(
+        "[register] acceptApplicantInvitationAction login restore error:",
+        login.error
+      );
+      return {
+        success: false,
+        error: "Failed to set password. Please try again.",
+      };
+    }
+
     const { error: updateError } = await supabase.auth.admin.updateUserById(
       invitation.authUserId,
       {

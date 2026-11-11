@@ -19,6 +19,9 @@
  *      half-provisioned leftover): recover the auth user id via a bounded
  *      admin listUsers scan.
  *
+ * The reverse leftover — a profile whose auth user is GONE — is healed by
+ * `ensureApplicantLogin` (see below) before the profile id is reused.
+ *
  * IMPORTANT for callers: only roll back the auth user on failure when
  * `created` is true — deleting a REUSED user would destroy the parent's
  * real login.
@@ -53,6 +56,10 @@ export async function provisionApplicantAuthUser(
           "This email address belongs to a staff account and cannot receive an applicant invitation.",
       };
     }
+    // The profile can outlive its login (a failed-send rollback deletes the
+    // auth user but keeps the profile) — make sure the login is really there.
+    const login = await ensureApplicantLogin(supabase, existing.id, cleanEmail);
+    if (!login.ok) return login;
     return { ok: true, authUserId: existing.id, created: false };
   }
 
@@ -90,6 +97,62 @@ export async function provisionApplicantAuthUser(
     ok: false,
     error: error?.message ?? "Failed to create the parent's login.",
   };
+}
+
+export type EnsureApplicantLoginResult =
+  | { ok: true; recreated: boolean }
+  | { ok: false; error: string };
+
+/**
+ * 11 Nov 2026 — make sure the auth user an applicant profile / contact /
+ * invitation points at still EXISTS, recreating it under the SAME id when it
+ * has gone.
+ *
+ * How it goes missing: an invite whose email fails to send rolls back by
+ * deleting the auth user it just created, but the profile row and the
+ * contact's `profileId` binding survive. The next invite then reuses that id
+ * without provisioning, so the parent's registration fails with "Failed to
+ * set password" whatever they type (updateUserById → user not found), and
+ * Resend / re-invite both reuse the same dead id.
+ *
+ * Recreating under the original id keeps every existing link (profile,
+ * contact, invitation, applications) valid. Only a definite "not found"
+ * triggers a recreate; any other lookup error is surfaced, never guessed at.
+ */
+export async function ensureApplicantLogin(
+  supabase: SupabaseClient,
+  authUserId: string,
+  email: string,
+  password?: string
+): Promise<EnsureApplicantLoginResult> {
+  const { data, error } = await supabase.auth.admin.getUserById(authUserId);
+  if (!error && data?.user) return { ok: true, recreated: false };
+
+  const notFound =
+    (!error && !data?.user) ||
+    error?.status === 404 ||
+    (error as { code?: string } | null)?.code === "user_not_found";
+  if (!notFound) {
+    return {
+      ok: false,
+      error: error?.message ?? "Could not check the parent's login.",
+    };
+  }
+
+  const { error: createError } = await supabase.auth.admin.createUser({
+    id: authUserId,
+    email: email.trim(),
+    password: password ?? cryptoRandomPassword(),
+    email_confirm: true,
+    app_metadata: { role: "APPLICANT" },
+  });
+  if (createError) {
+    return {
+      ok: false,
+      error: createError.message ?? "Failed to restore the parent's login.",
+    };
+  }
+  return { ok: true, recreated: true };
 }
 
 function cryptoRandomPassword(): string {
