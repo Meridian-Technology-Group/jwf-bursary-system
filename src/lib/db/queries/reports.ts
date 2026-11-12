@@ -219,8 +219,10 @@ function householdCombinationLabel(schools: School[]): string {
 
 
 /**
- * Returns the DEFAULT active round — the most-recent OPEN, falling back to the
- * most-recent round of any status. Returns null when no rounds exist.
+ * Returns the DEFAULT active (current) round — the earliest-opened OPEN round,
+ * falling back to the most-recent round of any status. Returns null when no
+ * rounds exist. With 2026/27 and 2027/28 both OPEN, 2026/27 is current until it
+ * is closed; 2027/28 is the future round.
  *
  * Epic 03 (concurrent rounds): more than one round may now be OPEN at once. This
  * helper deliberately returns just ONE round and is the right choice only where
@@ -231,9 +233,11 @@ function householdCombinationLabel(schools: School[]): string {
  * single-OPEN assumption on top of this.
  */
 export async function getActiveRound(tx: Tx) {
+  // The CURRENT round is the earliest-opened OPEN round; later OPEN rounds are
+  // future rounds (same rule as splitOpenRounds in src/lib/rounds/current-round.ts).
   const openRound = await tx.round.findFirst({
     where: { status: RoundStatus.OPEN },
-    orderBy: { openDate: "desc" },
+    orderBy: [{ openDate: "asc" }, { academicYear: "asc" }],
     select: { id: true, academicYear: true, closeDate: true, status: true },
   });
 
