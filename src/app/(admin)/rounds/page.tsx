@@ -21,6 +21,7 @@ import { getRoundCockpit } from "@/lib/db/queries/round-cockpit";
 import { CreateRoundDialog } from "@/components/admin/create-round-dialog";
 import { ActiveRoundHero } from "@/components/rounds/active-round-hero";
 import { RoundLedgerRow } from "@/components/rounds/round-ledger-row";
+import { splitOpenRounds } from "@/lib/rounds/current-round";
 
 export const metadata = {
   title: "Assessment Rounds",
@@ -33,18 +34,20 @@ export const metadata = {
 export default async function RoundsPage() {
   const user = await requireRole([Role.ADMIN, Role.ASSESSOR, Role.VIEWER]);
 
-  const { rounds, openCockpit } = await withUserContext(
+  const { rounds, openCockpit, futureOpenRounds } = await withUserContext(
     user.id,
     user.role as RlsRole,
     async (tx) => {
       const rounds = await listRounds(tx);
-      const openRound = rounds.find((r) => r.status === "OPEN");
-      // Only the single OPEN round needs the richer cockpit fetch (stage strip,
-      // pipeline tiles, time progress). DRAFT/CLOSED rounds use list data only.
-      const openCockpit = openRound
-        ? await getRoundCockpit(tx, openRound.id)
+      // Several rounds can be OPEN at once (Epic 03). The hero is the CURRENT
+      // round (earliest-opened); later OPEN rounds are listed as future rounds.
+      const { current, future } = splitOpenRounds(rounds);
+      // Only the current round needs the richer cockpit fetch (stage strip,
+      // pipeline tiles, time progress). Other rounds use list data only.
+      const openCockpit = current
+        ? await getRoundCockpit(tx, current.id)
         : null;
-      return { rounds, openCockpit };
+      return { rounds, openCockpit, futureOpenRounds: future };
     }
   );
 
@@ -119,6 +122,41 @@ export default async function RoundsPage() {
                   <CreateRoundDialog />
                 </div>
               )}
+            </section>
+          )}
+
+          {/* ── Future open rounds ──────────────────────────────────────── */}
+          {futureOpenRounds.length > 0 && (
+            <section aria-labelledby="future-heading" className="space-y-3">
+              <h2
+                id="future-heading"
+                className="text-sm font-semibold uppercase tracking-wider text-slate-500"
+              >
+                Future rounds — open
+              </h2>
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                {futureOpenRounds.map((round) => (
+                  <Link
+                    key={round.id}
+                    href={`/rounds/${round.id}`}
+                    className="group flex items-center justify-between gap-4 rounded-xl border border-slate-200 bg-white px-5 py-4 shadow-sm transition-colors hover:border-accent-300 hover:bg-accent-50/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-500"
+                  >
+                    <div>
+                      <p className="text-base font-semibold text-primary-900">
+                        {round.academicYear}
+                      </p>
+                      <p className="mt-0.5 text-xs text-slate-500">
+                        Open — {round.counts.total}{" "}
+                        {round.counts.total === 1 ? "application" : "applications"}
+                      </p>
+                    </div>
+                    <ArrowRight
+                      className="h-4 w-4 shrink-0 text-slate-400 transition-colors group-hover:text-accent-600"
+                      aria-hidden="true"
+                    />
+                  </Link>
+                ))}
+              </div>
             </section>
           )}
 
