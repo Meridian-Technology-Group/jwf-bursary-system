@@ -9,7 +9,16 @@
 
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Plus, Search, Pencil, Archive, Send } from "lucide-react";
+import {
+  Plus,
+  Search,
+  Pencil,
+  Archive,
+  Send,
+  ArrowUp,
+  ArrowDown,
+  ArrowUpDown,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -70,6 +79,81 @@ function fmtDob(dob: Date | null): string {
   });
 }
 
+/**
+ * 14 Nov 2026 (Charlotte): sortable register columns. Sorting is client-side
+ * over the already-filtered list; with no sort chosen the server's newest-first
+ * order stands. State sorts New → Invited → Registered + Invited → Registered,
+ * so ascending surfaces the contacts still waiting for an invitation.
+ */
+type SortKey =
+  | "lead"
+  | "childFirst"
+  | "childLast"
+  | "dob"
+  | "school"
+  | "year"
+  | "state";
+type SortDir = "asc" | "desc";
+
+const COLUMNS: { label: string; key: SortKey | null }[] = [
+  { label: "Lead applicant", key: "lead" },
+  { label: "Child first", key: "childFirst" },
+  { label: "Child last", key: "childLast" },
+  { label: "DOB", key: "dob" },
+  { label: "School", key: "school" },
+  { label: "Academic year", key: "year" },
+  { label: "State", key: "state" },
+  { label: "Actions", key: null },
+];
+
+function stateRank(c: ContactListItem): number {
+  if (!c.hasAccount && !c.hasPendingInvite) return 0; // New
+  if (!c.hasAccount) return 1; // Invited
+  if (c.hasPendingInvite) return 2; // Registered + Invited
+  return 3; // Registered
+}
+
+function sortValue(c: ContactListItem, key: SortKey): string | number | null {
+  switch (key) {
+    case "lead":
+      return [c.lastName, c.firstName].filter(Boolean).join(" ").toLowerCase();
+    case "childFirst":
+      return childNameParts(c).first.toLowerCase() || null;
+    case "childLast":
+      return childNameParts(c).last.toLowerCase() || null;
+    case "dob":
+      return c.childDob ? new Date(c.childDob).getTime() : null;
+    case "school":
+      return schoolShort(c.school).toLowerCase();
+    case "year":
+      return c.entryYear;
+    case "state":
+      return stateRank(c);
+  }
+}
+
+/** Stable sort; blanks (no DOB, no child first name) always sink to the end. */
+function sortContacts(
+  rows: ContactListItem[],
+  key: SortKey,
+  dir: SortDir
+): ContactListItem[] {
+  const sign = dir === "asc" ? 1 : -1;
+  return rows
+    .map((c, i) => ({ c, i, v: sortValue(c, key) }))
+    .sort((a, b) => {
+      if (a.v === null && b.v === null) return a.i - b.i;
+      if (a.v === null) return 1;
+      if (b.v === null) return -1;
+      const cmp =
+        typeof a.v === "number" && typeof b.v === "number"
+          ? a.v - b.v
+          : String(a.v).localeCompare(String(b.v), "en-GB");
+      return cmp !== 0 ? sign * cmp : a.i - b.i;
+    })
+    .map((r) => r.c);
+}
+
 function toFormValues(c: ContactListItem & {
   phone: string | null;
 }): ContactFormValues {
@@ -114,6 +198,9 @@ export function ContactsTable({
   defaultBcc?: string;
 }) {
   const [query, setQuery] = useState("");
+  const [sort, setSort] = useState<{ key: SortKey; dir: SortDir } | null>(
+    null
+  );
   const [createOpen, setCreateOpen] = useState(false);
   const [editing, setEditing] = useState<ContactFormValues | null>(null);
   const [inviteTarget, setInviteTarget] = useState<ContactListItem | null>(
@@ -127,8 +214,9 @@ export function ContactsTable({
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return contacts;
-    return contacts.filter((c) =>
+    const matched = !q
+      ? contacts
+      : contacts.filter((c) =>
       [
         c.firstName,
         c.lastName,
@@ -140,7 +228,17 @@ export function ContactsTable({
         .filter(Boolean)
         .some((v) => (v as string).toLowerCase().includes(q))
     );
-  }, [contacts, query]);
+    return sort ? sortContacts(matched, sort.key, sort.dir) : matched;
+  }, [contacts, query, sort]);
+
+  /** Click cycles ascending → descending → back to newest-first. */
+  function toggleSort(key: SortKey) {
+    setSort((prev) => {
+      if (!prev || prev.key !== key) return { key, dir: "asc" };
+      if (prev.dir === "asc") return { key, dir: "desc" };
+      return null;
+    });
+  }
 
   function confirmArchive() {
     if (!archiveTarget) return;
@@ -193,24 +291,47 @@ export function ContactsTable({
             <table className="min-w-full divide-y divide-slate-200">
               <thead className="bg-slate-50">
                 <tr>
-                  {[
-                    "Lead applicant",
-                    "Child first",
-                    "Child last",
-                    "DOB",
-                    "School",
-                    "Academic year",
-                    "State",
-                    "Actions",
-                  ].map((h) => (
-                    <th
-                      key={h}
-                      scope="col"
-                      className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-slate-500"
-                    >
-                      {h}
-                    </th>
-                  ))}
+                  {COLUMNS.map(({ label, key }) => {
+                    const active = key !== null && sort?.key === key;
+                    const Icon = !active
+                      ? ArrowUpDown
+                      : sort?.dir === "asc"
+                        ? ArrowUp
+                        : ArrowDown;
+                    return (
+                      <th
+                        key={label}
+                        scope="col"
+                        aria-sort={
+                          active
+                            ? sort?.dir === "asc"
+                              ? "ascending"
+                              : "descending"
+                            : undefined
+                        }
+                        className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-slate-500"
+                      >
+                        {key === null ? (
+                          label
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => toggleSort(key)}
+                            className={`inline-flex items-center gap-1 uppercase tracking-wider hover:text-slate-800 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring rounded-sm ${
+                              active ? "text-slate-800" : ""
+                            }`}
+                            title={`Sort by ${label.toLowerCase()}`}
+                          >
+                            {label}
+                            <Icon
+                              className={`h-3 w-3 ${active ? "" : "opacity-40"}`}
+                              aria-hidden="true"
+                            />
+                          </button>
+                        )}
+                      </th>
+                    );
+                  })}
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 bg-white">
