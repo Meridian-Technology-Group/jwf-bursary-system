@@ -1,10 +1,13 @@
 /**
  * CF-25 — what the applicant is shown when submit fails, and what is recorded.
  *
- * `submitApplication` throws and the portal's submit handler renders the thrown
- * message verbatim into the form's error banner, so this action is the last
- * place the diagnostic can be stopped. Two things must both hold: the applicant
- * gets the plain message, and the real error still reaches `logError`.
+ * `submitApplication` RETURNS its errors and the portal's submit handler renders
+ * them into the form's error banner, so this action is the last place the
+ * diagnostic can be stopped. It must return rather than throw: Next.js replaces
+ * the message of an error thrown from a server action in production (13 Nov
+ * 2026, a parent saw only "An error occurred in the Server Components render").
+ * Two things must both hold: the applicant gets the plain message, and the real
+ * error still reaches `logError`.
  *
  * Boundary mocks follow save-section-provenance.test.ts.
  */
@@ -76,19 +79,23 @@ describe("submitApplication — the applicant never sees the diagnostic", () => 
     logErrorMock.mockReset();
   });
 
-  it("turns the gap payload into the plain message plus the section to finish", async () => {
+  it("returns (never throws) the plain message, the section, and the gap's instruction", async () => {
     submitApplicationCoreMock.mockRejectedValue(new Error(GAP_BLOB));
 
-    await expect(submitApplication("app-1")).rejects.toThrow(
-      "Your application can't be submitted yet. Please finish these sections and try again: Parents' Income."
-    );
+    await expect(submitApplication("app-1")).resolves.toEqual({
+      success: false,
+      errors: [
+        "Your application can't be submitted yet. Please finish these sections and try again: Parents' Income.",
+        "P60 (dated April 2025) is required",
+      ],
+    });
   });
 
   it("still logs the real error, in full, with the application it belongs to", async () => {
     const real = new Error(GAP_BLOB);
     submitApplicationCoreMock.mockRejectedValue(real);
 
-    await expect(submitApplication("app-1")).rejects.toThrow();
+    await submitApplication("app-1");
 
     expect(logErrorMock).toHaveBeenCalledTimes(1);
     const [event, err, fields] = logErrorMock.mock.calls[0];
@@ -103,9 +110,10 @@ describe("submitApplication — the applicant never sees the diagnostic", () => 
       new Error('relation "applications" does not exist')
     );
 
-    await expect(submitApplication("app-1")).rejects.toThrow(
-      SUBMISSION_BLOCKED_MESSAGE
-    );
+    await expect(submitApplication("app-1")).resolves.toEqual({
+      success: false,
+      errors: [SUBMISSION_BLOCKED_MESSAGE],
+    });
     expect(logErrorMock).toHaveBeenCalledTimes(1);
   });
 });

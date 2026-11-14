@@ -286,7 +286,8 @@ export function SectionPageClient({
       {
         save: () => save(applicationId, sectionType, data),
         confirmSubmit: requestSubmitConfirmation,
-        // Throws Next's NEXT_REDIRECT on success (redirect("/submitted")).
+        // Throws Next's NEXT_REDIRECT on success (redirect("/submitted"));
+        // on failure it RETURNS the applicant-facing errors.
         // `runSectionSave` re-throws it so the router can navigate.
         submit: () => {
           // CG-13 — arm the post-submit download beat: /submitted offers the

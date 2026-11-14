@@ -13,6 +13,7 @@ import {
   DEFAULT_SUBMIT_INTENT,
   REVIEW_LABEL,
   SUBMIT_APPLICATION_LABEL,
+  SUBMIT_UNEXPECTED_ERROR,
   isNextRedirect,
   isSubmitCancelled,
   isSubmitRequest,
@@ -38,7 +39,7 @@ function redirectError(to = "/submitted") {
 function makeDeps(overrides: {
   save?: () => Promise<SectionSaveResult>;
   confirmSubmit?: () => Promise<boolean>;
-  submit?: () => Promise<void>;
+  submit?: () => Promise<SectionSaveResult | void>;
 } = {}) {
   const save = vi.fn(overrides.save ?? (async () => OK));
   const confirmSubmit = vi.fn(overrides.confirmSubmit ?? (async () => true));
@@ -182,11 +183,15 @@ describe("the explicit SUBMIT path", () => {
     ).rejects.toMatchObject({ digest: expect.stringContaining("NEXT_REDIRECT") });
   });
 
-  it("turns a non-redirect submission failure into a form error", async () => {
+  it("shows the errors the submit action RETURNS (prod masks thrown messages)", async () => {
     const deps = makeDeps({
-      submit: vi.fn(async () => {
-        throw new Error("The submission deadline for this round has passed.");
-      }),
+      submit: vi.fn(async () => ({
+        success: false,
+        errors: [
+          "Your application can't be submitted yet. Please finish these sections and try again: Family Identification.",
+          "You told us you have 2 dependent children, but 1 child has been added here.",
+        ],
+      })),
     });
 
     const result = await runSectionSave(
@@ -196,8 +201,41 @@ describe("the explicit SUBMIT path", () => {
 
     expect(result).toEqual({
       success: false,
-      errors: ["The submission deadline for this round has passed."],
+      errors: [
+        "Your application can't be submitted yet. Please finish these sections and try again: Family Identification.",
+        "You told us you have 2 dependent children, but 1 child has been added here.",
+      ],
     });
+  });
+
+  it("never echoes a thrown message — in prod it is Next's generic render error", async () => {
+    const deps = makeDeps({
+      submit: vi.fn(async () => {
+        throw new Error(
+          "An error occurred in the Server Components render. The specific message is omitted in production builds"
+        );
+      }),
+    });
+
+    const result = await runSectionSave(
+      { sectionType: "DECLARATION", intent: "submit", onBehalf: false },
+      deps
+    );
+
+    expect(result).toEqual({ success: false, errors: [SUBMIT_UNEXPECTED_ERROR] });
+  });
+
+  it("never returns an empty error list on failure (that is the silent cancel sentinel)", async () => {
+    const deps = makeDeps({
+      submit: vi.fn(async () => ({ success: false, errors: [] })),
+    });
+
+    const result = await runSectionSave(
+      { sectionType: "DECLARATION", intent: "submit", onBehalf: false },
+      deps
+    );
+
+    expect(result).toEqual({ success: false, errors: [SUBMIT_UNEXPECTED_ERROR] });
   });
 
   it("does not submit when the save itself failed", async () => {

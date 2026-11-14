@@ -9,6 +9,7 @@ import { describe, expect, it } from "vitest";
 import {
   SUBMISSION_BLOCKED_MESSAGE,
   SUBMISSION_DEADLINE_PASSED_MESSAGE,
+  applicantSubmissionErrors,
   applicantSubmissionMessage,
 } from "@/lib/applications/submission-error";
 
@@ -134,5 +135,56 @@ describe("applicantSubmissionMessage — messages already written for the applic
     ]) {
       expect(applicantSubmissionMessage(new Error(safe))).toBe(safe);
     }
+  });
+});
+
+describe("applicantSubmissionErrors — the lines the parent actually sees", () => {
+  // Prod, 13 Nov 2026: the cross-section Family Identification check blocked a
+  // submit 42 times; the section name alone never said what to change.
+  const childCountGap = new Error(
+    JSON.stringify({
+      code: "GAPS_BLOCKING_SUBMISSION",
+      gaps: [
+        {
+          id: "FAMILY_ID_CHILD_COUNT",
+          sectionType: "FAMILY_ID",
+          label:
+            "You told us you have 2 dependent children, but 1 child has been added here.",
+          fieldRef: "familyMembers",
+        },
+      ],
+    })
+  );
+
+  it("leads with the plain sentence, then each gap's own instruction", () => {
+    expect(applicantSubmissionErrors(childCountGap)).toEqual([
+      "Your application can't be submitted yet. Please finish these sections and try again: Family Identification.",
+      "You told us you have 2 dependent children, but 1 child has been added here.",
+    ]);
+  });
+
+  it("lists a repeated label once and still leaks no JSON or field refs", () => {
+    const err = new Error(
+      JSON.stringify({
+        code: "GAPS_BLOCKING_SUBMISSION",
+        gaps: [
+          { sectionType: "PARENTS_INCOME", label: "Upload your P60.", fieldRef: "parent1Income.p60DocumentId" },
+          { sectionType: "PARENTS_INCOME", label: "Upload your P60.", fieldRef: "parent2Income.p60DocumentId" },
+        ],
+      })
+    );
+    const lines = applicantSubmissionErrors(err);
+    expect(lines).toEqual([
+      "Your application can't be submitted yet. Please finish these sections and try again: Parents' Income.",
+      "Upload your P60.",
+    ]);
+    expect(lines.join(" ")).not.toContain("{");
+    expect(lines.join(" ")).not.toContain("p60DocumentId");
+  });
+
+  it("adds nothing for a non-gap error", () => {
+    expect(applicantSubmissionErrors(new Error("relation does not exist"))).toEqual([
+      SUBMISSION_BLOCKED_MESSAGE,
+    ]);
   });
 });
