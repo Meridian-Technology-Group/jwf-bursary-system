@@ -1,5 +1,23 @@
 # Changelog
 
+## [2.2.0](https://github.com/Meridian-Technology-Group/jwf-bursary-system/compare/v2.1.0...v2.2.0) (2026-11-14)
+
+
+### Features
+
+* 7-day submit-by default and 22 May rolling-over default ([#481](https://github.com/Meridian-Technology-Group/jwf-bursary-system/issues/481)) ([40ea475](https://github.com/Meridian-Technology-Group/jwf-bursary-system/commit/40ea475882ae9f5e0063864bd1fe3e57caa250aa))
+* flag Family Identification when it no longer matches Dependent Children ([#494](https://github.com/Meridian-Technology-Group/jwf-bursary-system/issues/494)) ([c02117f](https://github.com/Meridian-Technology-Group/jwf-bursary-system/commit/c02117f714b2de16e59bfecd39e0d3b58deeae98))
+* sortable column headers on the contact register ([#497](https://github.com/Meridian-Technology-Group/jwf-bursary-system/issues/497)) ([190ea77](https://github.com/Meridian-Technology-Group/jwf-bursary-system/commit/190ea77af5a1bf841786d65bed6f5745d6ddc05d))
+
+
+### Bug Fixes
+
+* keep the earliest-opened round as the current round ([#490](https://github.com/Meridian-Technology-Group/jwf-bursary-system/issues/490)) ([28f4a69](https://github.com/Meridian-Technology-Group/jwf-bursary-system/commit/28f4a69f1a1317361586137b0eacfd663e2a53bf))
+* let a child hold a new contact for a different school or entry year ([#496](https://github.com/Meridian-Technology-Group/jwf-bursary-system/issues/496)) ([d80925f](https://github.com/Meridian-Technology-Group/jwf-bursary-system/commit/d80925fa69d2096d981de3d3ae1c97bc620c9f81))
+* restore an applicant login deleted by a failed-send rollback ([#488](https://github.com/Meridian-Technology-Group/jwf-bursary-system/issues/488)) ([25e24c6](https://github.com/Meridian-Technology-Group/jwf-bursary-system/commit/25e24c6fe1cbc5905aafe4efede8d0b6cf3c9983))
+* show parents why a submission was blocked instead of a generic error ([#492](https://github.com/Meridian-Technology-Group/jwf-bursary-system/issues/492)) ([395ac3a](https://github.com/Meridian-Technology-Group/jwf-bursary-system/commit/395ac3a2713edbb97221d1989c95f28515baa8d8))
+* stop emailing the parent when staff edit an application ([#484](https://github.com/Meridian-Technology-Group/jwf-bursary-system/issues/484)) ([8339d28](https://github.com/Meridian-Technology-Group/jwf-bursary-system/commit/8339d2897f0fa4b2488a021ba9319f380e835435))
+
 ## [2.1.0](https://github.com/Meridian-Technology-Group/jwf-bursary-system/compare/v2.0.0...v2.1.0) (2026-10-30)
 
 
