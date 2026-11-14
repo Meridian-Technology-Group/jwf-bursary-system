@@ -32,7 +32,7 @@ import {
 } from "@/lib/db/prisma";
 import { refreshFormStatus } from "@/lib/applications/status";
 import { submitApplicationCore } from "@/lib/applications/submission";
-import { applicantSubmissionMessage } from "@/lib/applications/submission-error";
+import { applicantSubmissionErrors } from "@/lib/applications/submission-error";
 import {
   diffSectionPaths,
   clearProvenance,
@@ -48,6 +48,12 @@ import { PORTAL_APPLICATION } from "@/lib/applications/migration-source";
 export interface SaveSectionResult {
   success: boolean;
   errors?: string[];
+}
+
+/** What `submitApplication` returns when it does not redirect to /submitted. */
+export interface SubmitApplicationFailure {
+  success: false;
+  errors: string[];
 }
 
 /**
@@ -431,14 +437,22 @@ export async function getSectionStatus(
  * ownership check (`expectedLeadApplicantId`), the enforced deadline, and the
  * redirects.
  *
- * Throws if validation fails. What it throws is applicant copy, not the gate's
- * own diagnostic — the client submit button renders the message verbatim, so
- * the sanitising happens here (CF-25) and the real error goes to `logError`.
+ * Redirects to /submitted on success. On failure it RETURNS the applicant copy
+ * rather than throwing it: Next.js replaces the message of any error thrown from
+ * a server action in production builds ("An error occurred in the Server
+ * Components render…"), so a thrown message never reaches the parent (prod,
+ * 13 Nov 2026). The sanitising happens here (CF-25) and the real error goes to
+ * `logError`.
  */
-export async function submitApplication(applicationId: string): Promise<never> {
+export async function submitApplication(
+  applicationId: string
+): Promise<SubmitApplicationFailure> {
   const user = await getCurrentUser();
   if (!user) {
-    throw new Error("You must be signed in to submit an application.");
+    return {
+      success: false,
+      errors: ["You must be signed in to submit an application."],
+    };
   }
 
   // ── Resolve the lead applicant's PRIMARY contributor ──────────────────────
@@ -485,7 +499,7 @@ export async function submitApplication(applicationId: string): Promise<never> {
     });
   } catch (err) {
     logError("submitApplication", err, { applicationId });
-    throw new Error(applicantSubmissionMessage(err));
+    return { success: false, errors: applicantSubmissionErrors(err) };
   }
 
   // ── Guard: already submitted ───────────────────────────────────────────────
