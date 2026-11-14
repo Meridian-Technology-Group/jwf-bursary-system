@@ -1175,13 +1175,17 @@ model Contact {
   invitations    Invitation[]
   applications   Application[]
 
-  // One contact per child per lead applicant: name + DOB disambiguates twins.
+  // One contact per child per destination per lead applicant: name + DOB
+  // disambiguates twins; school + entry year let the same child return as a
+  // NEW contact for a different school or entry year (14 Nov 2026: an Old
+  // Palace partner pupil re-applying to Trinity for sixth form — the old
+  // 3-column key made the invite's profile bind fail with P2002).
   // NOTE: profileId is nullable (a contact precedes registration) and Postgres
   // treats NULLs as DISTINCT in unique indexes, so this constraint does NOT
   // dedupe two not-yet-bound contacts for the same child. The friendly
   // "already a contact for that child" guard lives in createContactAction,
   // scoped by creator, to catch that case at the app layer before binding.
-  @@unique([profileId, childName, childDob])
+  @@unique([profileId, childName, childDob, school, entryYear])
   @@index([email])
   @@index([profileId])
   @@index([bursaryAccountId])
