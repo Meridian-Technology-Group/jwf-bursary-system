@@ -317,7 +317,7 @@ export function ContactsTable({
                           <button
                             type="button"
                             onClick={() => toggleSort(key)}
-                            className={`inline-flex items-center gap-1 uppercase tracking-wider hover:text-slate-800 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring rounded-sm ${
+                            className={`inline-flex items-center gap-1 whitespace-nowrap uppercase tracking-wider hover:text-slate-800 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring rounded-sm ${
                               active ? "text-slate-800" : ""
                             }`}
                             title={`Sort by ${label.toLowerCase()}`}
