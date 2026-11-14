@@ -200,12 +200,14 @@ export async function createContactAction(
         createdBy: user.id,
         childName: data.childName,
         childDob: data.childDob ?? null,
+        school: data.school,
+        entryYear: data.entryYear,
       });
       if (dupe) {
         return {
           success: false as const,
           error:
-            "This family already has a contact for that child (same name and date of birth). For twins, enter each child's distinct date of birth.",
+            "This family already has a contact for that child at this school and academic year (same name and date of birth). For twins, enter each child's distinct date of birth.",
         };
       }
 
@@ -271,13 +273,15 @@ export async function updateContactAction(
         createdBy: user.id,
         childName: data.childName,
         childDob: data.childDob ?? null,
+        school: data.school,
+        entryYear: data.entryYear,
         excludeId: contactId,
       });
       if (dupe) {
         return {
           success: false as const,
           error:
-            "Another contact already exists for that child (same name and date of birth).",
+            "Another contact already exists for that child at this school and academic year (same name and date of birth).",
         };
       }
 

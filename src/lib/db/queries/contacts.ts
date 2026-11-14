@@ -224,10 +224,13 @@ export async function archiveContact(tx: Tx, id: string): Promise<Contact> {
 
 /**
  * Detects an existing, non-archived contact for the SAME child (name + DOB)
- * created by the same administrator, so the action can reject a duplicate with
- * a friendly message before binding (D12). Scoped by `createdBy` because the
- * DB unique key (profile_id + child_name + child_dob) treats NULL profile_id as
- * distinct and therefore cannot dedupe not-yet-bound contacts on its own.
+ * at the SAME destination (school + entry year) created by the same
+ * administrator, so the action can reject a duplicate with a friendly message
+ * before binding (D12). Scoped by `createdBy` because the DB unique key
+ * (profile_id + child_name + child_dob + school + entry_year) treats NULL
+ * profile_id as distinct and therefore cannot dedupe not-yet-bound contacts on
+ * its own. A different school or entry year is a legitimate new contact
+ * (e.g. an Old Palace partner pupil applying to Trinity for sixth form).
  *
  * DOB match is exact (both NULL counts as a match for the "DOB unknown" case);
  * the friendly guard is intentionally conservative to surface likely dupes.
@@ -238,6 +241,8 @@ export async function findDuplicateContact(
     createdBy: string;
     childName: string;
     childDob: Date | null;
+    school: School;
+    entryYear: number;
     excludeId?: string;
   }
 ): Promise<Contact | null> {
@@ -246,6 +251,8 @@ export async function findDuplicateContact(
       createdBy: params.createdBy,
       childName: params.childName,
       childDob: params.childDob ?? null,
+      school: params.school,
+      entryYear: params.entryYear,
       archivedAt: null,
       ...(params.excludeId ? { id: { not: params.excludeId } } : {}),
     },
