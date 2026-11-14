@@ -20,7 +20,7 @@
 
 import { randomBytes } from "node:crypto";
 import { revalidatePath } from "next/cache";
-import { RoundStatus } from "@prisma/client";
+import { Prisma, RoundStatus } from "@prisma/client";
 import { requireRole, Role } from "@/lib/auth/roles";
 import { withAdminContext } from "@/lib/db/prisma";
 import { createSupabaseAdminClient } from "@/lib/auth/supabase-admin";
@@ -57,6 +57,9 @@ import {
   missingRequiredInviteFields,
   schoolLabel,
 } from "@/lib/contacts/contact-helpers";
+
+const DUPLICATE_CHILD_CONTACT_ERROR =
+  "This parent's login already has a contact for this child at the same school and academic year. Send the invitation from that existing contact instead.";
 
 export interface InviteFromContactResult {
   success: boolean;
@@ -285,6 +288,23 @@ export async function sendInvitationFromContactAction(
 
       // Bind the contact to the profile on first invite (idempotent).
       if (!contact.profileId) {
+        // The identity key is (profile, child, DOB, school, entry year). If
+        // this login already holds a contact for the same child at the same
+        // destination, binding would hit P2002 — say so in plain words.
+        const clash = await tx.contact.findFirst({
+          where: {
+            profileId: authUserId,
+            childName: contact.childName,
+            childDob: contact.childDob,
+            school: contact.school,
+            entryYear: contact.entryYear,
+            id: { not: contact.id },
+          },
+          select: { id: true },
+        });
+        if (clash) {
+          return { success: false as const, error: DUPLICATE_CHILD_CONTACT_ERROR };
+        }
         await tx.contact.update({
           where: { id: contact.id },
           data: { profileId: authUserId },
@@ -341,8 +361,13 @@ export async function sendInvitationFromContactAction(
     invitationToken = result.token;
   } catch (err) {
     await rollbackAuthUser();
-    const message = err instanceof Error ? err.message : "Failed to send invitation";
     console.error("[contacts] sendInvitationFromContactAction error:", err);
+    // Never surface raw Prisma text ("Invalid `prisma.contact.update()`
+    // invocation…") to the administrator.
+    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
+      return { success: false, error: DUPLICATE_CHILD_CONTACT_ERROR };
+    }
+    const message = err instanceof Error ? err.message : "Failed to send invitation";
     return { success: false, error: message };
   }
 
