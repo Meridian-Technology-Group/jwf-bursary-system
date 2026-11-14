@@ -28,6 +28,7 @@ import {
 } from "@/lib/portal/document-rules";
 import { SECTION_RULES } from "@/lib/portal/section-rules";
 import { SECTION_ORDER } from "@/lib/portal/sections";
+import { familyIdCrossSectionGaps } from "@/lib/portal/family-id-cross-check";
 
 // ─── Public types ─────────────────────────────────────────────────────────────
 
@@ -148,6 +149,13 @@ export async function getSectionGapStatuses(
 
     const rules = SECTION_RULES[sectionType] ?? [];
     const gaps = evaluateRules(sectionType, rules, blob, uploadedSlots);
+    // Cross-section rules (Family ID vs Dependent Children / household) — so a
+    // later change in another section un-ticks Family Identification here too.
+    if (sectionType === "FAMILY_ID") {
+      gaps.push(
+        ...familyIdCrossSectionGaps((s) => rowMap.get(s)?.data ?? null)
+      );
+    }
 
     const errorGaps = gaps.filter((g) => g.severity === "error");
     const isFullyValid = isDbComplete && errorGaps.length === 0;

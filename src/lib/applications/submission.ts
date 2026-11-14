@@ -31,8 +31,7 @@ import { createAuditLog } from "@/lib/audit/log";
 import { submitApplicationData } from "@/lib/applications/status";
 import { getSectionGapStatuses, type SectionGap } from "@/lib/portal/section-gaps";
 import { SECTION_ORDER } from "@/lib/portal/sections";
-import { familyIdConsistencyIssues } from "@/lib/schemas/family-id";
-import { isTwoParentHousehold } from "@/lib/schemas/parent-details";
+import { familyIdCrossSectionGaps } from "@/lib/portal/family-id-cross-check";
 import { isSubmissionDeadlinePassed,
   DEADLINE_ROUND_SELECT,
 } from "@/lib/rounds/submission-deadline";
@@ -263,48 +262,26 @@ export async function submitApplicationCore(
     gs.gaps.filter((g) => g.severity === "error")
   );
 
-  // ── Cross-section Family Identification consistency (per-section schema is
-  // scoped to one section, so the child-count / partner-adult rules are also
-  // enforced HERE where every section's data is in hand). Only runs when the
-  // FAMILY_ID section carries members (skipped for rolling-over re-assessments
-  // where it is hidden). Mirrors makeFamilyIdSchema exactly. ─────────────────
+  // ── Cross-section Family Identification consistency ──────────────────────
+  // getSectionGapStatuses now reports these too (so the sidebar and Review page
+  // flag them early), but it reads only the owner's section rows. This re-check
+  // runs over EVERY section of the application, exactly as before, and drops
+  // any issue the gap statuses already reported so nothing is listed twice.
+  // Skipped when FAMILY_ID has no members (hidden for rolling-over).
   const sectionData = new Map(
     application.sections.map((s) => [s.section, s.data])
   );
-  const familyIdData = sectionData.get("FAMILY_ID") as {
-    familyMembers?: { role?: string; memberType?: string }[];
-  } | null;
-  const crossSectionGaps: SubmitBlockedByGapsError["gaps"] = [];
-  if (Array.isArray(familyIdData?.familyMembers)) {
-    const depData = sectionData.get("DEPENDENT_CHILDREN") as {
-      numberOfDependentChildren?: number;
-      children?: unknown[];
-    } | null;
-    const dependentChildrenCount =
-      typeof depData?.numberOfDependentChildren === "number"
-        ? depData.numberOfDependentChildren
-        : Array.isArray(depData?.children)
-          ? depData!.children!.length
-          : undefined;
-    const parentData = sectionData.get("PARENT_DETAILS") as {
-      isSoleParent?: boolean;
-      relationshipStatus?: string;
-    } | null;
-    for (const issue of familyIdConsistencyIssues(familyIdData!.familyMembers!, {
-      dependentChildrenCount,
-      requiresPartnerAdult: isTwoParentHousehold({
-        isSoleParent: parentData?.isSoleParent,
-        relationshipStatus: parentData?.relationshipStatus,
-      }),
-    })) {
-      crossSectionGaps.push({
-        id: issue.id,
-        sectionType: "FAMILY_ID",
-        label: issue.message,
-        fieldRef: "familyMembers",
-      });
-    }
-  }
+  const reportedGapIds = new Set(errorGaps.map((g) => g.id));
+  const crossSectionGaps: SubmitBlockedByGapsError["gaps"] = familyIdCrossSectionGaps(
+    (s) => sectionData.get(s) ?? null
+  )
+    .filter((g) => !reportedGapIds.has(g.id))
+    .map((g) => ({
+      id: g.id,
+      sectionType: g.sectionType,
+      label: g.label,
+      fieldRef: g.fieldRef,
+    }));
 
   if (errorGaps.length > 0 || crossSectionGaps.length > 0) {
     const payload: SubmitBlockedByGapsError = {
