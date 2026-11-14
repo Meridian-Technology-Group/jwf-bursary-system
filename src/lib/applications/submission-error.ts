@@ -40,7 +40,20 @@ export const SUBMISSION_DEADLINE_PASSED_MESSAGE =
 /** Shape of the gap payload the submit gate JSON-encodes into an Error message. */
 interface GapsPayload {
   code?: string;
-  gaps?: Array<{ sectionType?: string } | null>;
+  gaps?: Array<{ sectionType?: string; label?: string } | null>;
+}
+
+function parseGapsPayload(err: unknown): GapsPayload | null {
+  if (!(err instanceof Error)) return null;
+  try {
+    const parsed = JSON.parse(err.message) as GapsPayload;
+    if (parsed?.code === "GAPS_BLOCKING_SUBMISSION" && Array.isArray(parsed.gaps)) {
+      return parsed;
+    }
+  } catch {
+    // Not JSON — an ordinary error message.
+  }
+  return null;
 }
 
 /**
@@ -84,18 +97,37 @@ function blockingSections(err: unknown): string[] {
 
   // Gap errors — a JSON payload stuffed into the message. The review page reads
   // it to draw the "issues to resolve" panel; here we only want the sections.
-  try {
-    const parsed = JSON.parse(err.message) as GapsPayload;
-    if (parsed?.code === "GAPS_BLOCKING_SUBMISSION" && Array.isArray(parsed.gaps)) {
-      return parsed.gaps
-        .map((gap) => gap?.sectionType)
-        .filter((s): s is string => typeof s === "string");
-    }
-  } catch {
-    // Not JSON — an ordinary error message. Nothing to name.
+  const payload = parseGapsPayload(err);
+  if (payload) {
+    return (payload.gaps ?? [])
+      .map((gap) => gap?.sectionType)
+      .filter((s): s is string => typeof s === "string");
   }
 
   return [];
+}
+
+/**
+ * The full list of lines to show the applicant: the sentence from
+ * {@link applicantSubmissionMessage}, then each blocking gap's own label.
+ *
+ * Gap labels are applicant copy. The section-gap labels are what the review
+ * page's issues panel shows, and the cross-section Family Identification labels
+ * are the same messages the Family Identification form shows. They carry the
+ * instruction the section name alone cannot ("You told us you have 2 dependent
+ * children, but 1 child has been added here…"). Prod, 13 Nov 2026: one parent
+ * retried 42 times because the section name was all they could have seen.
+ */
+export function applicantSubmissionErrors(err: unknown): string[] {
+  const lines = [applicantSubmissionMessage(err)];
+  const payload = parseGapsPayload(err);
+  if (payload) {
+    for (const gap of payload.gaps ?? []) {
+      const label = gap?.label?.trim();
+      if (label && !lines.includes(label)) lines.push(label);
+    }
+  }
+  return lines;
 }
 
 /**

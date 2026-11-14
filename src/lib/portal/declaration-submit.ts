@@ -119,9 +119,21 @@ export interface SectionSaveDeps {
   save: () => Promise<SectionSaveResult>;
   /** Ask the applicant to confirm. Resolves `false` on cancel/dismiss. */
   confirmSubmit: () => Promise<boolean>;
-  /** Submit the application. Throws `NEXT_REDIRECT` on success. */
-  submit: () => Promise<void>;
+  /**
+   * Submit the application. Throws `NEXT_REDIRECT` on success; on failure
+   * RETURNS the applicant-facing errors (a message thrown from a server action
+   * is replaced by Next's generic text in production).
+   */
+  submit: () => Promise<SectionSaveResult | void>;
 }
+
+/**
+ * Shown when the submit action throws something other than its success
+ * redirect. The thrown message is never echoed: in production it is Next's
+ * generic "An error occurred in the Server Components render…" text.
+ */
+export const SUBMIT_UNEXPECTED_ERROR =
+  "Your application could not be submitted. Please try again. If it keeps happening, please contact the bursary team.";
 
 /**
  * True only for an explicit, applicant-driven submission of the Declaration.
@@ -159,18 +171,19 @@ export async function runSectionSave(
   const result = await deps.save();
   if (!result.success) return result;
 
+  let submitted: SectionSaveResult | void;
   try {
-    await deps.submit();
+    submitted = await deps.submit();
   } catch (err) {
     // The success path — let the router navigate to /submitted.
     if (isNextRedirect(err)) throw err;
+    return { success: false, errors: [SUBMIT_UNEXPECTED_ERROR] };
+  }
+
+  if (submitted && !submitted.success) {
     return {
       success: false,
-      errors: [
-        err instanceof Error
-          ? err.message
-          : "Submission failed. Please try again.",
-      ],
+      errors: submitted.errors?.length ? submitted.errors : [SUBMIT_UNEXPECTED_ERROR],
     };
   }
 
