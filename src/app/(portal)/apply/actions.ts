@@ -93,48 +93,20 @@ async function resolveApplicationId(): Promise<string | null> {
 }
 
 /**
- * Resolves the current applicant's owned application ID from the session.
+ * Resolves the current user, the application the section form was rendered
+ * for, and the contributor id they write/read sections as — in one step.
+ * Returns null if not authenticated, or if `applicationId` is not one of the
+ * caller's own, still-editable (not SUBMITTED) portal applications.
  *
- * Intentionally ignores any client-supplied applicationId — every section
- * action must operate exclusively on the caller's own application to
- * prevent IDOR (audit finding 2.3). The E2 active-application cookie is a
- * server-read preference folded into the same ownership WHERE, so it cannot
- * widen that guarantee — only pick BETWEEN the caller's own drafts.
- */
-async function getOwnedApplicationId(): Promise<string | null> {
-  const user = await getCurrentUser();
-  if (!user) return null;
-
-  const activeId = await getActiveApplicationId();
-  const application = await withUserContext(
-    user.id,
-    user.role as RlsRole,
-    async (tx) => {
-      if (activeId) {
-        const preferred = await tx.application.findFirst({
-          where: {
-            id: activeId,
-            leadApplicantId: user.id,
-            formStatus: { not: "SUBMITTED" },
-            ...PORTAL_APPLICATION,
-          },
-          select: { id: true },
-        });
-        if (preferred) return preferred;
-      }
-      return tx.application.findFirst({
-        where: { leadApplicantId: user.id, formStatus: { not: "SUBMITTED" }, ...PORTAL_APPLICATION },
-        select: { id: true },
-      });
-    }
-  );
-  return application?.id ?? null;
-}
-
-/**
- * Resolves the current user, their owned application ID, and the contributor
- * id they write/read sections as — in one step. Returns null if not
- * authenticated or no application exists.
+ * `applicationId` is the id the section page rendered the form for (the
+ * client passes it back). It is never trusted on its own: it is folded into
+ * the ownership WHERE (`leadApplicantId = user.id`, not SUBMITTED, portal
+ * application), so a foreign or stale id matches nothing (IDOR, audit finding
+ * 2.3). There is deliberately NO fallback to the active-application cookie or
+ * to "any other draft" (audit finding 9): with two children's drafts open in
+ * two tabs, each tab's saves must land on the child that tab shows, and a tab
+ * left open on an application that has since been submitted must fail rather
+ * than write into a sibling's draft.
  *
  * For the lead applicant the owning contributor is their PRIMARY contributor.
  * Every section save/read for the lead applicant is scoped to this contributor
@@ -152,37 +124,29 @@ async function getOwnedApplicationId(): Promise<string | null> {
  * The admin-context self-heal below only runs for the (should-be-impossible)
  * case of an application with no PRIMARY contributor.
  */
-async function getOwnedApplicationContext(): Promise<{
+async function getOwnedApplicationContext(
+  applicationId: string | null
+): Promise<{
   user: CurrentUser;
   appId: string;
   ownerContributorId: string;
 } | null> {
   const user = await getCurrentUser();
-  if (!user) return null;
+  if (!user || !applicationId) return null;
 
-  const activeId = await getActiveApplicationId();
   const resolved = await withUserContext(
     user.id,
     user.role as RlsRole,
     async (tx) => {
-      // E2: same active-application preference as getOwnedApplicationId, so
-      // section reads and writes always target the same child's application.
-      const application =
-        (activeId
-          ? await tx.application.findFirst({
-              where: {
-                id: activeId,
-                leadApplicantId: user.id,
-                formStatus: { not: "SUBMITTED" },
-                ...PORTAL_APPLICATION,
-              },
-              select: { id: true },
-            })
-          : null) ??
-        (await tx.application.findFirst({
-          where: { leadApplicantId: user.id, formStatus: { not: "SUBMITTED" }, ...PORTAL_APPLICATION },
-          select: { id: true },
-        }));
+      const application = await tx.application.findFirst({
+        where: {
+          id: applicationId,
+          leadApplicantId: user.id,
+          formStatus: { not: "SUBMITTED" },
+          ...PORTAL_APPLICATION,
+        },
+        select: { id: true },
+      });
       if (!application) return null;
 
       const ownerContributorId = await resolveOwningContributorId(
@@ -258,19 +222,25 @@ async function clearedProvenanceForApplicantSave(
 // ─── Actions ─────────────────────────────────────────────────────────────────
 
 /**
- * Validates and saves a section's data.
- * If an applicationId is not provided it will be resolved from the current user.
+ * Returned when the form's application is not (or no longer) the caller's own
+ * editable draft — e.g. a tab left open after the application was submitted.
+ */
+const NOT_EDITABLE_ERROR =
+  "This application can't be changed any more — it may already have been submitted. Please reload the page.";
+
+/**
+ * Validates and saves a section's data to the application the form was
+ * rendered for (`applicationId`), after verifying the caller owns it and it is
+ * not submitted (see `getOwnedApplicationContext`).
  */
 export async function saveSection(
-  _applicationId: string | null,
+  applicationId: string | null,
   section: ApplicationSectionType,
   data: unknown
 ): Promise<SaveSectionResult> {
-  // Always resolve server-side from the session. The client-supplied
-  // applicationId is ignored to prevent IDOR (finding 2.3).
-  const ctx = await getOwnedApplicationContext();
+  const ctx = await getOwnedApplicationContext(applicationId);
   if (!ctx) {
-    return { success: false, errors: ["No active application found."] };
+    return { success: false, errors: [NOT_EDITABLE_ERROR] };
   }
 
   // Validate with the section's Zod schema
@@ -329,13 +299,13 @@ export async function saveSection(
  * Saves a section as a partial draft (not validated as complete).
  */
 export async function saveSectionDraft(
-  _applicationId: string | null,
+  applicationId: string | null,
   section: ApplicationSectionType,
   data: unknown
 ): Promise<SaveSectionResult> {
-  const ctx = await getOwnedApplicationContext();
+  const ctx = await getOwnedApplicationContext(applicationId);
   if (!ctx) {
-    return { success: false, errors: ["No active application found."] };
+    return { success: false, errors: [NOT_EDITABLE_ERROR] };
   }
 
   try {
@@ -376,10 +346,10 @@ export async function saveSectionDraft(
  * Loads existing section data.
  */
 export async function getSection(
-  _applicationId: string | null,
+  applicationId: string | null,
   section: ApplicationSectionType
 ): Promise<SectionDataResult> {
-  const ctx = await getOwnedApplicationContext();
+  const ctx = await getOwnedApplicationContext(applicationId);
   if (!ctx) {
     return { data: null, isComplete: false, updatedAt: null };
   }
@@ -400,9 +370,9 @@ export async function getSection(
  * Returns completion status for all 10 sections of the current user's application.
  */
 export async function getSectionStatus(
-  _applicationId: string | null
+  applicationId: string | null
 ): Promise<SectionStatusEntry[]> {
-  const ctx = await getOwnedApplicationContext();
+  const ctx = await getOwnedApplicationContext(applicationId);
   if (!ctx) return [];
 
   const rows = await withUserContext(
