@@ -6,8 +6,7 @@
  * Calls submitContribution(), which validates the three owned sections, flips
  * the contributor → SUBMITTED (admin context), emails the parent, and redirects
  * to /contribute/submitted. A NEXT_REDIRECT must bubble so the router navigates;
- * any other error (including the structured GAPS_BLOCKING_SUBMISSION payload) is
- * surfaced inline.
+ * a blocked submission's returned `error` is surfaced inline.
  */
 
 import * as React from "react";
@@ -27,27 +26,20 @@ export function ContributeSubmitButton({ disabled = false }: SubmitButtonProps) 
     setSubmitting(true);
     setError(null);
     try {
-      await submitContribution();
+      // Redirects on success. A blocked submission (incomplete sections,
+      // outstanding documents) comes back as a RETURNED error — a thrown
+      // message is masked by Next.js in production.
+      const result = await submitContribution();
+      if (result && !result.success) {
+        setError(result.error);
+        setSubmitting(false);
+      }
     } catch (err) {
       const digest = (err as { digest?: string } | null)?.digest;
       if (typeof digest === "string" && digest.startsWith("NEXT_REDIRECT")) {
         throw err;
       }
-      let message =
-        err instanceof Error ? err.message : "Submission failed. Please try again.";
-      // The action encodes a structured gaps payload as JSON in the message.
-      try {
-        const parsed = JSON.parse(message) as {
-          code?: string;
-          gaps?: Array<{ label: string }>;
-        };
-        if (parsed.code === "GAPS_BLOCKING_SUBMISSION" && parsed.gaps?.length) {
-          message = `Please resolve: ${parsed.gaps.map((g) => g.label).join("; ")}`;
-        }
-      } catch {
-        // not JSON — use the message as-is
-      }
-      setError(message);
+      setError("Submission failed. Please try again.");
       setSubmitting(false);
     }
   }
