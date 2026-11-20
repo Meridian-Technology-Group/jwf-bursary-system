@@ -19,7 +19,6 @@ import type {
   AssessmentChecklist,
   EarnerLabel,
   EmploymentStatus,
-  AssessmentStatus,
   RentAddBackType,
   Prisma,
 } from "@prisma/client";
@@ -156,8 +155,8 @@ export interface AssessmentSaveInput {
   nextYearYearlyPayableFees?: number | null;
   nextYearMonthlyPayableFees?: number | null;
 
-  // Status
-  status?: AssessmentStatus;
+  // No `status` field (audit 20 Nov 2026): status is owned by the central
+  // status service (start / complete / pause / lifecycle), never by a save.
 
   // Relations (v1)
   earners?: EarnerSaveInput[];
@@ -352,8 +351,6 @@ export async function saveAssessment(
     updateData.nextYearYearlyPayableFees = assessmentFields.nextYearYearlyPayableFees;
   if (assessmentFields.nextYearMonthlyPayableFees !== undefined)
     updateData.nextYearMonthlyPayableFees = assessmentFields.nextYearMonthlyPayableFees;
-  if (assessmentFields.status !== undefined)
-    updateData.status = assessmentFields.status;
 
   // ── CALC-07 — v2 toggles + snapshot columns ───────────────────────────────
   // Every field is written only when explicitly provided (partial update), the

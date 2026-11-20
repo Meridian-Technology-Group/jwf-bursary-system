@@ -6,6 +6,7 @@
  */
 
 import { selectEngineVersion } from "@/lib/assessment/engine-version";
+import { isMigrated, MIGRATED_LOCKED_MESSAGE } from "@/lib/applications/migration-source";
 
 /** User-facing refusal when a recommendation's payable fees are unconfirmed. */
 export const RECOMMENDATION_NOT_RECONFIRMED_MESSAGE =
@@ -71,4 +72,55 @@ export function needsRecommendationReconfirmation(assessment: {
     assessment.recommendedPayableFees != null &&
     toPence(rec.recommendedPayableFees) !== toPence(assessment.recommendedPayableFees)
   );
+}
+
+// ─── Recommendation save lock (audit 20 Nov 2026, finding 12b) ───────────────
+
+/**
+ * The ONLY assessment statuses in which a recommendation's figures may be
+ * saved: the assessment is being worked on, or is stored as complete and
+ * awaiting its lock. An allowlist, so any status added later defaults to
+ * locked (the lesson of the 10 Sep 2026 save-gate bug).
+ */
+export const RECOMMENDATION_EDITABLE_ASSESSMENT_STATUSES = [
+  "IN_PROGRESS",
+  "PAUSED",
+  "COMPLETED",
+] as const;
+
+export const RECOMMENDATION_DECIDED_MESSAGE =
+  "This award has been decided, so its recommendation can no longer be " +
+  "changed. Reverse the decision first if it needs to change.";
+
+export const RECOMMENDATION_NOT_STARTED_MESSAGE =
+  "Save the assessment before recording a recommendation.";
+
+export const RECOMMENDATION_APPLICATION_CLOSED_MESSAGE =
+  "This application has been closed, so its recommendation can no longer be changed.";
+
+/**
+ * Whether a recommendation save (confirmed payable fees, gap, scholarship %)
+ * may write. A stale tab or a direct server-action call must not rewrite the
+ * figures of a locked, closed or migrated award.
+ */
+export function recommendationSaveLock(application: {
+  closedAt: Date | null;
+  migrationSource: string | null;
+  assessment: { status: string };
+}): { locked: false } | { locked: true; message: string } {
+  if (isMigrated(application)) return { locked: true, message: MIGRATED_LOCKED_MESSAGE };
+  if (application.closedAt != null) {
+    return { locked: true, message: RECOMMENDATION_APPLICATION_CLOSED_MESSAGE };
+  }
+  const status = application.assessment.status;
+  if ((RECOMMENDATION_EDITABLE_ASSESSMENT_STATUSES as readonly string[]).includes(status)) {
+    return { locked: false };
+  }
+  return {
+    locked: true,
+    message:
+      status === "NOT_STARTED"
+        ? RECOMMENDATION_NOT_STARTED_MESSAGE
+        : RECOMMENDATION_DECIDED_MESSAGE,
+  };
 }
