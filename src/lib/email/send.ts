@@ -1,17 +1,16 @@
 // src/lib/email/send.ts
 // Core email sending functions for the JWF Bursary Assessment System.
 //
-// All three exported functions wrap the Resend API and return a typed result
+// The exported send functions wrap the Resend API and return a typed result
 // object; they never throw unhandled exceptions.
 
-import { prisma, withAdminContext } from "@/lib/db/prisma";
+import { withAdminContext } from "@/lib/db/prisma";
 import { resend } from "./resend";
 import { replaceMergeFields } from "./merge";
 import { wrapInEmailTemplate, plainTextToHtml, htmlToPlainText } from "./template";
 import { hashEmail, logError, logInfo } from "@/lib/log";
 import type {
   SendEmailResult,
-  SendBatchResult,
   EmailMergeData,
 } from "./types";
 import type { EmailTemplateType } from "./types";
@@ -140,14 +139,6 @@ async function recordEmailLog(entry: EmailLogEntry): Promise<void> {
       recipientHash: hashEmail(entry.toEmail),
     });
   }
-}
-
-/**
- * Pause execution for `ms` milliseconds.
- * Used to respect Resend's rate limits between batch sends.
- */
-function delay(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 // ---------------------------------------------------------------------------
@@ -287,143 +278,6 @@ export async function sendEmail(
     });
     return { success: false, error: message };
   }
-}
-
-// ---------------------------------------------------------------------------
-// sendBatchEmails
-// ---------------------------------------------------------------------------
-
-/**
- * Send the same template to multiple recipients, applying per-recipient merge
- * data.
- *
- * The template is loaded once and reused for all recipients. Sends are
- * performed sequentially with a 100 ms delay between each to stay within
- * Resend's rate limits.
- *
- * @param recipients   Array of `{ email, mergeData }` objects.
- * @param templateType The template to use for all sends.
- * @returns            Aggregate counts and any error messages.
- */
-export async function sendBatchEmails(
-  recipients: Array<{ email: string; mergeData: EmailMergeData }>,
-  templateType: EmailTemplateType
-): Promise<SendBatchResult> {
-  const result: SendBatchResult = {
-    sent: 0,
-    failed: 0,
-    errors: [],
-  };
-
-  if (recipients.length === 0) {
-    return result;
-  }
-
-  // Load the template once up-front.
-  let rawSubject: string;
-  let rawBody: string;
-
-  try {
-    const template = await withAdminContext((tx) =>
-      tx.emailTemplate.findUnique({ where: { type: templateType } }),
-    );
-
-    if (!template) {
-      const error = `Email template not found for type: ${templateType}`;
-      result.failed = recipients.length;
-      result.errors.push(error);
-      return result;
-    }
-
-    // Enforcement gate — see sendEmail. A disabled template no-ops for every
-    // recipient: zero sent, zero failed, one skip log line (success-shaped).
-    if (!template.enabled) {
-      logInfo("email.skipped", {
-        templateType,
-        recipientCount: recipients.length,
-        reason: "template_disabled",
-      });
-      return result;
-    }
-
-    rawSubject = template.subject;
-    rawBody = template.body;
-  } catch (err) {
-    const message =
-      err instanceof Error ? err.message : "Database error loading template";
-    result.failed = recipients.length;
-    result.errors.push(message);
-    return result;
-  }
-
-  // Send to each recipient sequentially.
-  for (let i = 0; i < recipients.length; i++) {
-    const { email, mergeData } = recipients[i];
-
-    try {
-      const subject = replaceMergeFields(rawSubject, mergeData);
-      const plainBody = replaceMergeFields(rawBody, mergeData);
-      const htmlFragment = plainTextToHtml(plainBody);
-      const html = wrapInEmailTemplate(htmlFragment);
-
-      const { data, error } = await resend.emails.send({
-        from: fromAddress(),
-      replyTo: replyToAddress(),
-        to: email,
-        subject,
-        html,
-        text: plainBody,
-      });
-
-      if (error) {
-        result.failed++;
-        result.errors.push(
-          `${email}: ${error.name}: ${error.message}`
-        );
-        logError("email.failed", error, {
-          templateType,
-          recipientHash: hashEmail(email),
-        });
-        await recordEmailLog({
-          toEmail: email,
-          templateType,
-          subject,
-          status: "FAILED",
-          error: `${error.name}: ${error.message}`,
-        });
-      } else {
-        result.sent++;
-        logInfo("email.sent", {
-          templateType,
-          recipientHash: hashEmail(email),
-          messageId: data?.id,
-        });
-        await recordEmailLog({
-          toEmail: email,
-          templateType,
-          subject,
-          status: "SENT",
-          resendId: data?.id,
-        });
-      }
-    } catch (err) {
-      const message =
-        err instanceof Error ? err.message : "Unknown error";
-      result.failed++;
-      result.errors.push(`${email}: ${message}`);
-      logError("email.failed", err, {
-        templateType,
-        recipientHash: hashEmail(email),
-      });
-    }
-
-    // Pause between sends, except after the last one.
-    if (i < recipients.length - 1) {
-      await delay(100);
-    }
-  }
-
-  return result;
 }
 
 // ---------------------------------------------------------------------------

@@ -251,31 +251,6 @@ export async function getConfigsForAssessment(
 // ─── Admin Settings Queries ───────────────────────────────────────────────────
 
 /**
- * Returns ALL FamilyTypeConfig rows (all versions, all categories).
- * Ordered by category asc, effectiveFrom desc so newest per category comes first.
- */
-export async function getAllFamilyTypeConfigs(tx: Tx): Promise<FamilyTypeConfigRow[]> {
-  // createdAt desc tie-break keeps newest-per-category first on same-day edits.
-  const rows = await tx.familyTypeConfig.findMany({
-    orderBy: [
-      { category: "asc" },
-      { effectiveFrom: "desc" },
-      { createdAt: "desc" },
-    ],
-  });
-
-  return rows.map((row) => ({
-    id: row.id,
-    category: row.category,
-    description: row.description,
-    notionalRent: Number(row.notionalRent),
-    utilityCosts: Number(row.utilityCosts),
-    foodCosts: Number(row.foodCosts),
-    effectiveFrom: row.effectiveFrom,
-  }));
-}
-
-/**
  * Returns ALL SchoolFees rows (all versions, all schools).
  * Ordered by school asc, effectiveFrom desc.
  */
@@ -394,13 +369,6 @@ export async function getAllEmailTemplates(tx: Tx): Promise<EmailTemplateRow[]> 
     mergeFields: Array.isArray(row.mergeFields) ? (row.mergeFields as string[]) : [],
     updatedAt: row.updatedAt,
   }));
-}
-
-/**
- * Returns the current council tax default (most recent effectiveFrom).
- */
-export async function getCouncilTaxRate(tx: Tx): Promise<CouncilTaxDefaultRow | null> {
-  return getCouncilTaxDefault(tx);
 }
 
 // ─── CALC-01 — Notional & profiling reference tables ─────────────────────

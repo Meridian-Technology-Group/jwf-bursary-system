@@ -10,7 +10,6 @@
 import { createSupabaseAdminClient } from "@/lib/auth/supabase-admin";
 
 const BUCKET = "documents";
-const DEFAULT_EXPIRY_SECONDS = 3600; // 60 minutes
 
 // ─── Bucket Initialisation ───────────────────────────────────────────────────
 
@@ -286,35 +285,6 @@ export function normaliseContentType(
   if (!value) return null;
   const base = value.split(";")[0]?.trim().toLowerCase();
   return base ? base : null;
-}
-
-// ─── Signed URL ───────────────────────────────────────────────────────────────
-
-/**
- * Generates a signed (pre-authenticated) URL for a private document.
- *
- * @param storagePath The path in Supabase Storage (as returned by uploadDocument).
- * @param expiresIn   Seconds until the URL expires. Defaults to 3600 (60 min).
- * @returns           The signed URL string.
- * @throws            Error if Supabase cannot generate the URL.
- */
-export async function getSignedUrl(
-  storagePath: string,
-  expiresIn: number = DEFAULT_EXPIRY_SECONDS
-): Promise<string> {
-  const supabase = createSupabaseAdminClient();
-
-  const { data, error } = await supabase.storage
-    .from(BUCKET)
-    .createSignedUrl(storagePath, expiresIn);
-
-  if (error || !data?.signedUrl) {
-    const msg = error?.message ?? "Unknown error generating signed URL";
-    console.error("[storage/signedUrl] Failed:", msg);
-    throw new Error(msg);
-  }
-
-  return data.signedUrl;
 }
 
 // ─── Delete ───────────────────────────────────────────────────────────────────

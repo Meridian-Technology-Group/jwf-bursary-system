@@ -906,20 +906,6 @@ export async function startAssessmentIfNotStarted(
 }
 
 /**
- * Clears the persisted pause deadline for an application's assessment (on
- * resume / applicant doc-response). No-op when no assessment row exists.
- */
-export async function clearPauseDeadline(
-  tx: Tx,
-  applicationId: string
-): Promise<void> {
-  await tx.assessment.updateMany({
-    where: { applicationId },
-    data: { pausedUntil: null },
-  });
-}
-
-/**
  * Pause an assessment row for missing documents: status → PAUSED and PERSIST
  * the deadline in paused_until (previously email-only). Does NOT touch
  * form_status. Validates the transition. Returns the persisted deadline.

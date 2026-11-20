@@ -71,15 +71,6 @@ export function countBySchool<T>(rows: readonly T[], schoolOf: (r: T) => School 
   return out;
 }
 
-export function sumBySchool<T>(rows: readonly T[], schoolOf: (r: T) => School | null | undefined, value: (r: T) => number): PerSchool {
-  const out = emptyPerSchool();
-  for (const r of rows) {
-    const s = schoolOf(r);
-    if (s) out[s] += value(r);
-  }
-  return out;
-}
-
 /** TS and WS always; OP only where it has any (her sheet shows TS and WS). */
 export function visibleSchools(...tables: readonly PerSchool[]): School[] {
   const op = tables.some((t) => t.OP_PARTNER !== 0);

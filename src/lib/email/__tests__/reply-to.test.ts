@@ -32,7 +32,7 @@ vi.mock("../resend", () => ({
   resend: { emails: { send: (payload: unknown) => sendMock(payload) } },
 }));
 
-import { replyToAddress, sendBatchEmails, sendEmail, sendRawEmail } from "../send";
+import { replyToAddress, sendEmail, sendRawEmail } from "../send";
 
 const FEES = "fees@johnwhitgiftfoundation.org";
 
@@ -83,22 +83,6 @@ describe("replyTo on every send path (CG-05)", () => {
     expect(result.success).toBe(true);
     expect(sendMock).toHaveBeenCalledTimes(1);
     expect(sendMock.mock.calls[0][0]).toMatchObject({ replyTo: FEES });
-  });
-
-  it("sendBatchEmails passes replyTo for every recipient", async () => {
-    const result = await sendBatchEmails(
-      [
-        { email: "a@example.com", mergeData: { applicant_name: "A" } },
-        { email: "b@example.com", mergeData: { applicant_name: "B" } },
-      ],
-      EmailTemplateType.REMINDER
-    );
-
-    expect(result.sent).toBe(2);
-    expect(sendMock).toHaveBeenCalledTimes(2);
-    for (const call of sendMock.mock.calls) {
-      expect(call[0]).toMatchObject({ replyTo: FEES });
-    }
   });
 
   it("sendRawEmail passes replyTo", async () => {
