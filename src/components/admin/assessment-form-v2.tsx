@@ -85,7 +85,12 @@ import {
   pauseAssessmentAction,
 } from "@/app/(admin)/applications/[id]/assessment/actions";
 import type { AssessmentSaveInput } from "@/lib/db/queries/assessments";
-import { reduceSaveError, canProceedAfterSave, type SaveOutcome } from "@/lib/assessment/v2/save-gate";
+import {
+  reduceSaveError,
+  canProceedAfterSave,
+  v2SnapshotForSave,
+  type SaveOutcome,
+} from "@/lib/assessment/v2/save-gate";
 import { toast } from "sonner";
 import { dominantEmploymentStatus } from "@/lib/assessment/v2/employment-status";
 
@@ -747,35 +752,11 @@ export function AssessmentFormV2({
     // data on screen, never a pre-edit stale one.
     const freshOutput = runAssessmentV2(input, referenceBundle);
 
-    // Snapshot the orchestrator output 1:1 onto the v2 columns (only when it
-    // computed — leave nulls otherwise so a half-entered row isn't misleading).
-    const snapshot: Partial<AssessmentSaveInput> = freshOutput
-      ? {
-          totalHouseholdNetIncome: freshOutput.householdNetIncome,
-          notionalEssentials: freshOutput.notionalEssentials,
-          notionalCar: freshOutput.notionalCar,
-          notionalPublicTransport: freshOutput.notionalPublicTransport,
-          notionalJwfAllowance: freshOutput.notionalJwfAllowance,
-          notionalSavingsBenchmark: freshOutput.notionalSavingsBenchmark,
-          savingsTestNumber: freshOutput.savingsTestNumber,
-          totalNotionalSpend: freshOutput.totalNotionalSpend,
-          ndiAfterNotionalSpend: freshOutput.ndiAfterNotionalSpend,
-          derivedYearlyDebtRepayments: freshOutput.derivedYearlyDebtRepayments,
-          yearlyDebtExposure: freshOutput.yearlyDebtExposure,
-          debtOverNdiRatio: freshOutput.debtOverNdiRatio,
-          debtStatusLabel: freshOutput.debtStatusLabel,
-          incomeCategory: freshOutput.incomeCategory,
-          propertyCategoryDerived: freshOutput.propertyCategoryDerived,
-          propertyEquityCategory: freshOutput.propertyEquityCategory,
-          financialEquityLabel: freshOutput.financialEquityLabel,
-          lifestyleSqueezeRatio: freshOutput.lifestyleSqueezeRatio,
-          lifestyleSqueezeLabel: freshOutput.lifestyleSqueezeLabel,
-          actualRemainingDi: freshOutput.actualRemainingDi,
-          theoreticalBenchmarkDi: freshOutput.theoreticalBenchmarkDi,
-          affordabilityAdjustedDi: freshOutput.affordabilityAdjustedDi,
-          recommendedPayableFees: freshOutput.recommendedPayableFees,
-        }
-      : {};
+    // Snapshot the orchestrator output 1:1 onto the v2 columns. When it could
+    // not compute, every column is sent as null (never omitted) so the old
+    // figures cannot survive next to the new inputs; Complete then stays
+    // blocked until the calculation runs.
+    const snapshot = v2SnapshotForSave(freshOutput);
 
     const earnersV2 = (twoEarner ? [parent1, parent2] : [parent1]).map((rec, idx) => ({
       earnerLabel: (idx === 0 ? "PARENT_1" : "PARENT_2") as "PARENT_1" | "PARENT_2",

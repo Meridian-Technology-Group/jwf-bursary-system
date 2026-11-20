@@ -140,7 +140,7 @@ export interface AssessmentSaveInput {
   creditRiskFlag?: boolean;
 
   // Stage calculation results (persisted on save)
-  totalHouseholdNetIncome?: number;
+  totalHouseholdNetIncome?: number | null;
   netAssetsYearlyValuation?: number;
   hndiAfterNs?: number;
   requiredBursary?: number;
@@ -178,17 +178,17 @@ export interface AssessmentSaveInput {
   behindOnFees?: boolean;
 
   // ── CALC-07 — v2 snapshot columns (orchestrator output maps 1:1) ──────────
-  notionalEssentials?: number;
-  notionalCar?: number;
-  notionalPublicTransport?: number;
-  notionalJwfAllowance?: number;
-  notionalSavingsBenchmark?: number;
-  savingsTestNumber?: number;
-  totalNotionalSpend?: number;
-  ndiAfterNotionalSpend?: number;
-  derivedYearlyDebtRepayments?: number;
-  yearlyDebtExposure?: number;
-  debtOverNdiRatio?: number;
+  notionalEssentials?: number | null;
+  notionalCar?: number | null;
+  notionalPublicTransport?: number | null;
+  notionalJwfAllowance?: number | null;
+  notionalSavingsBenchmark?: number | null;
+  savingsTestNumber?: number | null;
+  totalNotionalSpend?: number | null;
+  ndiAfterNotionalSpend?: number | null;
+  derivedYearlyDebtRepayments?: number | null;
+  yearlyDebtExposure?: number | null;
+  debtOverNdiRatio?: number | null;
   debtStatusLabel?: string | null;
   incomeCategory?: number | null;
   propertyCategoryDerived?: number | null;
@@ -196,10 +196,10 @@ export interface AssessmentSaveInput {
   financialEquityLabel?: string | null;
   lifestyleSqueezeRatio?: number | null;
   lifestyleSqueezeLabel?: string | null;
-  actualRemainingDi?: number;
-  theoreticalBenchmarkDi?: number;
-  affordabilityAdjustedDi?: number;
-  recommendedPayableFees?: number;
+  actualRemainingDi?: number | null;
+  theoreticalBenchmarkDi?: number | null;
+  affordabilityAdjustedDi?: number | null;
+  recommendedPayableFees?: number | null;
 
   // ── Epic 15 M1 (CH-10..14) — Part 1 assessor-owned fields ────────────────
   /** The school this assessment runs against (switchable — CH-14). */
@@ -355,8 +355,9 @@ export async function saveAssessment(
   // ── CALC-07 — v2 toggles + snapshot columns ───────────────────────────────
   // Every field is written only when explicitly provided (partial update), the
   // same discipline as the v1 fields above. A v1 save never sets any of these,
-  // so v1 rows are byte-identical to before. `null` is a valid clear for the
-  // nullable label/category fields.
+  // so v1 rows are byte-identical to before. `null` is a valid clear: the v2
+  // form sends every snapshot column as null when its calculation could not
+  // run, so stale figures never survive next to new inputs.
   const v2ScalarKeys = [
     "rentAddBackType",
     "rentAddBackOverride",
