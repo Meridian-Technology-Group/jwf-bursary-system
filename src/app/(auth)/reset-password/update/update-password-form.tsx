@@ -18,9 +18,7 @@
  *
  * Deferring to submit makes the link scanner-proof: a scanner GETs a plain
  * password form, executes no JS and submits nothing, so the token survives
- * for the person who actually received the email. This mirrors the
- * invitation flow in register/token-registration.tsx, which is scanner-safe
- * for the same reason.
+ * for the person who actually received the email.
  *
  * The token is also the ONLY credential this form trusts. It deliberately
  * does not fall back to an ambient session: the previous implementation

@@ -3,15 +3,13 @@
  *
  * Server Component shell. Mirrors `register/staff/page.tsx`.
  *
- * Two parallel registration flows are supported via search params:
+ * `?token=<token>` — applicant invitation flow. Token is validated
+ * server-side against the `invitations.token` column, then we render the
+ * client-side `ApplicantRegisterForm` with the email and name pre-filled.
  *
- *   1. `?token=<token>` — applicant invitation flow. Token is validated
- *      server-side against the `invitations.token` column, then we render
- *      the client-side `ApplicantRegisterForm` with the email and name
- *      pre-filled.
- *
- *   2. `?token_hash=<hash>` — Supabase magic-link / OTP flow. Delegates to
- *      the existing `TokenRegistration` client component.
+ * The old `?token_hash=` Supabase magic-link branch was removed on 20 Nov 2026
+ * (audit): nothing sent those links, and its server action let anyone create
+ * a profile with any role.
  *
  * The legacy `?invitationId=<uuid>` branch was removed when PR2 of the
  * applicant invitation flow shipped. Any in-flight invitation emails
@@ -28,7 +26,6 @@ import { BURSARIES_CONTACT_EMAIL } from "@/lib/portal/guidance-content";
 import { ExistingAccountAccept } from "./existing-account-accept";
 import { ApplicantRegisterForm } from "./applicant-register-form";
 import { ReassessmentSignIn } from "./reassessment-signin";
-import { TokenRegistration } from "./token-registration";
 
 export const metadata: Metadata = {
   title: "Activate your account",
@@ -39,7 +36,7 @@ export const metadata: Metadata = {
 export const dynamic = "force-dynamic";
 
 interface RegisterPageProps {
-  searchParams: { token?: string | string[]; token_hash?: string | string[] };
+  searchParams: { token?: string | string[] };
 }
 
 function pickString(value: string | string[] | undefined): string | undefined {
@@ -50,13 +47,7 @@ function pickString(value: string | string[] | undefined): string | undefined {
 export default async function RegisterPage({
   searchParams,
 }: RegisterPageProps) {
-  const tokenHash = pickString(searchParams.token_hash);
   const token = pickString(searchParams.token);
-
-  // Magic-link branch — delegated to the existing client component.
-  if (tokenHash) {
-    return <TokenRegistration tokenHash={tokenHash} />;
-  }
 
   if (!token) {
     return <InvalidInvitation message="No invitation token was provided." />;
