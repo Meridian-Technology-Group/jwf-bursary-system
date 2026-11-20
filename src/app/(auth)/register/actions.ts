@@ -35,6 +35,10 @@ import {
   createFirstYearApplicationFromSource,
 } from "@/lib/applications/create-from-invitation";
 import { validatePasswordStrength } from "@/lib/auth/password-policy";
+import {
+  checkInvitationSubmitByPassed,
+  SUBMIT_BY_PASSED_MESSAGE,
+} from "@/lib/invitations/submit-by-passed";
 import { createAuditLog } from "@/lib/audit/log";
 
 import { AUDIT_ACTIONS, AUDIT_ENTITY_TYPES } from "@/lib/audit/actions";
@@ -100,7 +104,15 @@ export type ValidateApplicantInvitationResult =
       /** New round's academic year, for the re-assessment "welcome back" copy. */
       academicYear: string | null;
     }
-  | { success: false; error: string };
+  | {
+      success: false;
+      error: string;
+      /**
+       * 20 Nov 2026: the invitation was never taken up and its submission
+       * date has passed. The page shows Charlotte's notice, not a form.
+       */
+      submitByPassed?: boolean;
+    };
 
 /** True once the auth user has signed in at least once (Supabase records it). */
 async function hasSignedInBefore(authUserId: string): Promise<boolean> {
@@ -144,6 +156,19 @@ export async function validateApplicantInvitationAction(
         success: false,
         error:
           "This invitation has expired. Please contact your assessor for a new one.",
+      };
+    }
+
+    // Read-only here (email link scanners open every link): no write on load.
+    if (
+      await withAdminContext((tx) =>
+        checkInvitationSubmitByPassed(tx, invitation)
+      )
+    ) {
+      return {
+        success: false,
+        error: SUBMIT_BY_PASSED_MESSAGE,
+        submitByPassed: true,
       };
     }
 
@@ -262,6 +287,16 @@ export async function acceptApplicantInvitationAction(
 
   if (invitation.expiresAt < new Date()) {
     return { success: false, error: "This invitation has expired." };
+  }
+
+  // Before the password is set: a refused parent must not end up with a login
+  // and an invitation still PENDING.
+  if (
+    await withAdminContext((tx) =>
+      checkInvitationSubmitByPassed(tx, invitation)
+    )
+  ) {
+    return { success: false, error: SUBMIT_BY_PASSED_MESSAGE };
   }
 
   if (!invitation.authUserId) {

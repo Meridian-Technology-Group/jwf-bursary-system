@@ -19,6 +19,7 @@ vi.mock("@/lib/db/queries/contributors", () => ({
 }));
 
 import { createReassessmentApplicationFromInvitation } from "../reassessment";
+import { SubmitByPassedError } from "@/lib/invitations/submit-by-passed";
 
 const INVITATION = {
   authUserId: "user-1",
@@ -66,7 +67,16 @@ function makeFakeTx(prior: PriorRow | null) {
       })),
     },
     round: {
-      findUnique: vi.fn(async () => ({ academicYear: "2028/29" })),
+      // Deadline fields (20 Nov 2026): the helper refuses to create an
+      // application whose submission date has already passed. Far-future
+      // close, no defaults → never passed in this suite.
+      findUnique: vi.fn(async () => ({
+        academicYear: "2028/29",
+        closeDate: new Date("2099-04-14T00:00:00Z"),
+        defaultSubmissionDeadlineNew: null,
+        defaultSubmissionDeadlineRolling: null,
+        windows: [],
+      })),
     },
   };
 
@@ -158,5 +168,51 @@ describe("createReassessmentApplicationFromInvitation — per-child idempotency 
       bursaryAccountId: "account-1",
       formStatus: { not: "SUBMITTED" },
     });
+  });
+});
+
+// 20 Nov 2026 (Charlotte, option A): no rolling-over application is created
+// once the date it would be held to has passed; an existing draft still opens.
+describe("createReassessmentApplicationFromInvitation — submission date passed", () => {
+  function pastRollingDefault(tx: Tx) {
+    (tx as unknown as { round: { findUnique: ReturnType<typeof vi.fn> } }).round.findUnique.mockResolvedValue({
+      academicYear: "2028/29",
+      closeDate: new Date("2099-04-14T00:00:00Z"),
+      defaultSubmissionDeadlineNew: null,
+      defaultSubmissionDeadlineRolling: new Date("2020-04-30T00:00:00Z"),
+      windows: [],
+    });
+  }
+
+  it("refuses a new application when the round's rolling-over date has passed", async () => {
+    const { tx, created } = makeFakeTx(null);
+    pastRollingDefault(tx);
+    await expect(
+      createReassessmentApplicationFromInvitation(tx, INVITATION)
+    ).rejects.toBeInstanceOf(SubmitByPassedError);
+    expect(created).toHaveLength(0);
+  });
+
+  it("refuses when the invitation's own Submit by date has passed", async () => {
+    const { tx, created } = makeFakeTx(null);
+    await expect(
+      createReassessmentApplicationFromInvitation(tx, {
+        ...INVITATION,
+        submissionDeadlineAt: new Date("2020-11-19T23:59:59.999Z"),
+      })
+    ).rejects.toBeInstanceOf(SubmitByPassedError);
+    expect(created).toHaveLength(0);
+  });
+
+  it("still reopens an existing draft", async () => {
+    const { tx, created } = makeFakeTx(null);
+    pastRollingDefault(tx);
+    (tx.application.findFirst as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
+      { id: "existing-app" }
+    );
+    await expect(
+      createReassessmentApplicationFromInvitation(tx, INVITATION)
+    ).resolves.toEqual({ id: "existing-app", created: false });
+    expect(created).toHaveLength(0);
   });
 });

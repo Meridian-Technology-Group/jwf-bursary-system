@@ -23,6 +23,8 @@ import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth/roles";
 import { validateApplicantInvitationAction } from "./actions";
+import { SUBMIT_BY_PASSED_LINES } from "@/lib/invitations/submit-by-passed";
+import { BURSARIES_CONTACT_EMAIL } from "@/lib/portal/guidance-content";
 import { ExistingAccountAccept } from "./existing-account-accept";
 import { ApplicantRegisterForm } from "./applicant-register-form";
 import { ReassessmentSignIn } from "./reassessment-signin";
@@ -63,6 +65,7 @@ export default async function RegisterPage({
   const validation = await validateApplicantInvitationAction(token);
 
   if (!validation.success) {
+    if (validation.submitByPassed) return <SubmitByPassedNotice />;
     return <InvalidInvitation message={validation.error} />;
   }
 
@@ -124,6 +127,29 @@ export default async function RegisterPage({
         lastName={validation.lastName ?? ""}
       />
     </>
+  );
+}
+
+/** 20 Nov 2026 (Charlotte): first visit after the submission date. */
+function SubmitByPassedNotice() {
+  const [first] = SUBMIT_BY_PASSED_LINES;
+  return (
+    <div className="text-center">
+      <h1 className="mb-3 text-2xl font-semibold text-slate-800">
+        Submission date passed
+      </h1>
+      <p className="mb-3 text-sm text-slate-600">{first}</p>
+      <p className="mb-6 text-sm text-slate-600">
+        Please email our bursary department at{" "}
+        <a
+          href={`mailto:${BURSARIES_CONTACT_EMAIL}`}
+          className="font-medium text-blue-700 underline"
+        >
+          {BURSARIES_CONTACT_EMAIL}
+        </a>{" "}
+        to notify the team so that they can inform you of the next steps.
+      </p>
+    </div>
   );
 }
 
