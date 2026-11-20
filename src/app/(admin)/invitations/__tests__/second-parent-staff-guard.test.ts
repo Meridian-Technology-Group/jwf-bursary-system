@@ -6,8 +6,11 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
  * login would carry the staff role (profiles.role is synced into the JWT).
  */
 
+const requireRoleMock = vi.fn(async () => ({ id: "admin-1", role: "ADMIN" }));
+const requireAccessMock = vi.fn(async (..._args: unknown[]) => {});
 vi.mock("@/lib/auth/roles", () => ({
-  requireRole: vi.fn(async () => ({ id: "admin-1", role: "ADMIN" })),
+  requireRole: () => requireRoleMock(),
+  requireApplicationAccess: (...args: unknown[]) => requireAccessMock(...args),
   Role: { ADMIN: "ADMIN", ASSESSOR: "ASSESSOR", VIEWER: "VIEWER", APPLICANT: "APPLICANT" },
 }));
 
@@ -85,4 +88,24 @@ describe("addSecondParentAction — staff email guard", () => {
       expect(sendEmailMock).not.toHaveBeenCalled();
     }
   );
+});
+
+describe("addSecondParentAction — assessor scoping (audit finding 7)", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("an assessor not assigned to the application is refused before any read, login or email", async () => {
+    const assessor = { id: "assessor-a", role: "ASSESSOR" };
+    requireRoleMock.mockResolvedValueOnce(assessor);
+    requireAccessMock.mockRejectedValueOnce(new Error("NEXT_REDIRECT"));
+    profileRow = null;
+
+    await expect(
+      addSecondParentAction(APP_ID, "parent2@example.test")
+    ).rejects.toThrow("NEXT_REDIRECT");
+
+    expect(requireAccessMock).toHaveBeenCalledWith(assessor, APP_ID);
+    expect(fakeTx.application.findUnique).not.toHaveBeenCalled();
+    expect(createUserMock).not.toHaveBeenCalled();
+    expect(sendEmailMock).not.toHaveBeenCalled();
+  });
 });

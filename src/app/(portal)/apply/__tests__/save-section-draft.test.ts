@@ -171,19 +171,19 @@ describe("saveSectionDraft — a half-finished section survives", () => {
   });
 
   it("persists partial values and restores them on the next visit", async () => {
-    const saved = await saveSectionDraft(null, "ADDITIONAL_INFO", PARTIAL);
+    const saved = await saveSectionDraft("app-1", "ADDITIONAL_INFO", PARTIAL);
     expect(saved).toEqual({ success: true });
 
     // What the section page loads when the applicant comes back.
-    const restored = await getSection(null, "ADDITIONAL_INFO");
+    const restored = await getSection("app-1", "ADDITIONAL_INFO");
     expect(restored.data).toEqual(PARTIAL);
     expect(restored.isComplete).toBe(false);
   });
 
   it("keeps the stepper showing the section as outstanding", async () => {
-    await saveSectionDraft(null, "ADDITIONAL_INFO", PARTIAL);
+    await saveSectionDraft("app-1", "ADDITIONAL_INFO", PARTIAL);
 
-    const statuses = await getSectionStatus(null);
+    const statuses = await getSectionStatus("app-1");
     expect(statuses).toEqual([
       expect.objectContaining({
         section: "ADDITIONAL_INFO",
@@ -191,19 +191,19 @@ describe("saveSectionDraft — a half-finished section survives", () => {
       }),
     ]);
     // …and repeated background drafts never promote the form's status.
-    await saveSectionDraft(null, "ADDITIONAL_INFO", PARTIAL);
-    await saveSectionDraft(null, "ADDITIONAL_INFO", PARTIAL);
+    await saveSectionDraft("app-1", "ADDITIONAL_INFO", PARTIAL);
+    await saveSectionDraft("app-1", "ADDITIONAL_INFO", PARTIAL);
     expect(fakeTx.app.formStatus).toBe("CREATED");
     expect(fakeTx.application.update).not.toHaveBeenCalled();
   });
 
   it("writes the newest values on each successive autosave", async () => {
-    await saveSectionDraft(null, "ADDITIONAL_INFO", PARTIAL);
-    await saveSectionDraft(null, "ADDITIONAL_INFO", {
+    await saveSectionDraft("app-1", "ADDITIONAL_INFO", PARTIAL);
+    await saveSectionDraft("app-1", "ADDITIONAL_INFO", {
       additionalNarrative: "We had to move house in March and my hours were cut from 30 to 18.",
     });
 
-    const restored = await getSection(null, "ADDITIONAL_INFO");
+    const restored = await getSection("app-1", "ADDITIONAL_INFO");
     expect(restored.data).toEqual({
       additionalNarrative:
         "We had to move house in March and my hours were cut from 30 to 18.",
@@ -213,18 +213,18 @@ describe("saveSectionDraft — a half-finished section survives", () => {
 
   it("is superseded by the completing save, not the other way round", async () => {
     // The autosave leaves a draft…
-    await saveSectionDraft(null, "ADDITIONAL_INFO", PARTIAL);
-    expect((await getSection(null, "ADDITIONAL_INFO")).isComplete).toBe(false);
+    await saveSectionDraft("app-1", "ADDITIONAL_INFO", PARTIAL);
+    expect((await getSection("app-1", "ADDITIONAL_INFO")).isComplete).toBe(false);
 
     // …then the applicant finishes the section and clicks Save and Continue.
     const complete = {
       additionalNarrative: "We had to move house in March.",
       additionalDocumentIds: [],
     };
-    const res = await saveSection(null, "ADDITIONAL_INFO", complete);
+    const res = await saveSection("app-1", "ADDITIONAL_INFO", complete);
     expect(res).toEqual({ success: true });
 
-    const restored = await getSection(null, "ADDITIONAL_INFO");
+    const restored = await getSection("app-1", "ADDITIONAL_INFO");
     expect(restored.data).toEqual(complete);
     expect(restored.isComplete).toBe(true);
     // Only the completing save moves the form on.
@@ -234,7 +234,7 @@ describe("saveSectionDraft — a half-finished section survives", () => {
   it("refuses to write when there is no session", async () => {
     getCurrentUserMock.mockImplementation(async () => null);
 
-    const res = await saveSectionDraft(null, "ADDITIONAL_INFO", PARTIAL);
+    const res = await saveSectionDraft("app-1", "ADDITIONAL_INFO", PARTIAL);
     expect(res.success).toBe(false);
     expect(fakeTx.applicationSection.upsert).not.toHaveBeenCalled();
   });

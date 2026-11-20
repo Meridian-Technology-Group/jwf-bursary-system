@@ -118,7 +118,9 @@ async function fetchApplicationForLifecycle(
           synopsis: true,
           yearlyPayableFees: true,
           recommendedPayableFees: true,
-          recommendation: { select: { confirmedPayableFees: true } },
+          recommendation: {
+            select: { confirmedPayableFees: true, recommendedPayableFees: true },
+          },
         },
       },
     },

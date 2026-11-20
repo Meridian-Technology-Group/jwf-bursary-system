@@ -29,6 +29,7 @@ import {
   getConfigsForAssessment,
   getSchoolFeesForYear,
   getReferenceBundleRows,
+  referenceVersionCutoff,
 } from "@/lib/db/queries/reference-tables";
 import { resolveReferenceBundle } from "@/lib/assessment/v2/reference-bundle";
 import { selectEngineVersion } from "@/lib/assessment/engine-version";
@@ -447,10 +448,12 @@ export default async function AssessmentPage({ params }: Props) {
   // the applicant's submitted income/assets sections are NO LONGER read here —
   // the assessment opens empty except the sanctioned autofill, and declared
   // values live on the APPLICATION FORM tab for cross-reference.
+  // Audit 20 Nov 2026 (finding 11): only reference versions in force for the
+  // round's academic year — a version dated for next year stays out.
   const v2Sources =
     engineVersion === "v2"
       ? await withUserContext(user.id, user.role as RlsRole, async (tx) => ({
-          rows: await getReferenceBundleRows(tx),
+          rows: await getReferenceBundleRows(tx, referenceVersionCutoff(round.academicYear)),
         }))
       : null;
 

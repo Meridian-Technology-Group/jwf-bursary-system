@@ -34,15 +34,20 @@ interface FakeApplication {
   id: string;
   roundId: string;
   bursaryAccountId: string | null;
-  assessment: { id: string; recommendedPayableFees: number | null };
+  closedAt: Date | null;
+  migrationSource: string | null;
+  assessment: { id: string; status: string; recommendedPayableFees: number | null };
 }
 
 const fakeApplicationNullSnapshot: FakeApplication = {
   id: "app-1",
   roundId: "round-1",
   bursaryAccountId: null,
+  closedAt: null,
+  migrationSource: null,
   assessment: {
     id: "assessment-1",
+    status: "COMPLETED",
     recommendedPayableFees: null,
   },
 };
@@ -138,7 +143,7 @@ describe("saveRecommendationAction — null v2 snapshot guard (CALC-15)", () => 
   it("still proceeds normally once the snapshot is present (non-null recommendedPayableFees)", async () => {
     fakeApplication = {
       ...fakeApplicationNullSnapshot,
-      assessment: { id: "assessment-1", recommendedPayableFees: 12000 },
+      assessment: { id: "assessment-1", status: "COMPLETED", recommendedPayableFees: 12000 },
     };
 
     const result = await saveRecommendationAction("app-1", {
