@@ -78,6 +78,10 @@ export interface NewAwardOptions {
   closeReasonId?: string;
 }
 
+/** A closed application's assessment can no longer be locked or reverted. */
+export const APPLICATION_CLOSED_LIFECYCLE_MESSAGE =
+  "This application has been closed, so its assessment can no longer be locked or reverted.";
+
 async function fetchApplicationForLifecycle(
   tx: Parameters<typeof setPostAssessmentState>[0],
   applicationId: string
@@ -95,6 +99,7 @@ async function fetchApplicationForLifecycle(
       bursaryAccountId: true,
       applicationType: true,
       archivedAt: true,
+      closedAt: true,
       roundId: true,
       leadApplicantId: true,
       round: {
@@ -143,6 +148,11 @@ export async function setPostAssessmentFinalState(
       const application = await fetchApplicationForLifecycle(tx, applicationId);
       if (!application?.assessment) {
         return { success: false as const, error: "Application not found." };
+      }
+      // Audit 20 Nov 2026: a closed application is final. Locking it would
+      // re-activate its (closed) account and wipe the retention anchor.
+      if (application.closedAt != null) {
+        return { success: false as const, error: APPLICATION_CLOSED_LIFECYCLE_MESSAGE };
       }
       const assessment = application.assessment;
 
@@ -351,6 +361,7 @@ export async function revertPostAssessmentState(
         select: {
           id: true,
           migrationSource: true,
+          closedAt: true,
           assessment: { select: { id: true, status: true } },
           bursaryAccount: { select: { status: true, closeReasonId: true } },
         },
@@ -360,6 +371,9 @@ export async function revertPostAssessmentState(
       }
       if (isMigrated(application)) {
         return { success: false as const, error: MIGRATED_LOCKED_MESSAGE };
+      }
+      if (application.closedAt != null) {
+        return { success: false as const, error: APPLICATION_CLOSED_LIFECYCLE_MESSAGE };
       }
       if (isClosedByStaff(application.bursaryAccount)) {
         return { success: false as const, error: ACCOUNT_CLOSED_REVERT_MESSAGE };
