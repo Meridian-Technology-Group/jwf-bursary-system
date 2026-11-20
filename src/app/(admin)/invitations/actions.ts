@@ -635,12 +635,44 @@ async function sendReassessmentInviteForHolder(
       ),
     });
 
-    if (emailResult.success) {
-      result.sent++;
-    } else {
-      result.failed++;
-      result.errors.push(`${email}: ${emailResult.error}`);
+    if (!emailResult.success) {
+      // Roll back exactly as createInvitationAction does (audit finding 16):
+      // a PENDING row whose link never reached the parent made
+      // getActiveBursaryHolders treat the holder as invited, so a re-run
+      // silently skipped them. Delete the row, record the failure, then the
+      // catch below removes a login this call created and counts the failure.
+      await withAdminContext(async (tx) => {
+        await tx.invitation
+          .delete({ where: { id: txResult.invitationId } })
+          .catch((rollbackErr) => {
+            console.error(
+              `[reassessment-invite] invitation rollback failed for ${email}:`,
+              rollbackErr
+            );
+          });
+        await createAuditLog(tx, {
+          userId,
+          action: AUDIT_ACTIONS.CREATE_INVITATION_FAILED,
+          entityType: AUDIT_ENTITY_TYPES.Invitation,
+          entityId: txResult.invitationId,
+          context: `Reassessment invitation to ${email} rolled back — email failed to send`,
+          metadata: {
+            email,
+            roundId,
+            bursaryAccountId: holder.id,
+            authUserId,
+            emailError: emailResult.error ?? null,
+          },
+        });
+      }).catch((rollbackErr) => {
+        console.error(
+          `[reassessment-invite] rollback tx failed for ${email}:`,
+          rollbackErr
+        );
+      });
+      throw new Error(emailResult.error ?? "Email failed to send");
     }
+    result.sent++;
   } catch (err) {
     // Roll back the auth user only if this call created it.
     if (authUserId && createdAuthUser) {

@@ -10,7 +10,8 @@
  * getBulkEmailTemplatesAction  — Step 1: templates offered in the picker.
  * getBulkEmailRecipientsAction — Step 2: resolves recipients + merge data.
  * bulkSendEmailAction          — Step 3: re-resolves EVERYTHING server-side
- *   (never trusts the client's step-1/2 selections) and sends.
+ *   (never trusts the client's step-1/2 selections) and sends ONE bounded
+ *   chunk (≤ BULK_SEND_CHUNK_SIZE); the wizard calls it once per chunk.
  *
  * ADMIN-only (resolved decision D-6): the whole bulk toolbar is already
  * gated to ADMIN in `ApplicationTable` (`bulkEnabled = userRole === "ADMIN"`);
@@ -31,6 +32,7 @@ import {
   type BulkMergeDataApplication,
 } from "@/lib/email/bulk-merge-data";
 import { DEADLINE_ROUND_SELECT } from "@/lib/rounds/submission-deadline";
+import { BULK_SEND_CHUNK_SIZE } from "@/lib/email/bulk-send-chunks";
 
 /** Hard cap on a single bulk send — keeps one batch bounded and reviewable. */
 const MAX_BULK_RECIPIENTS = 500;
@@ -237,7 +239,11 @@ const REJECTED: Omit<BulkSendEmailResult, "error"> = {
 };
 
 /**
- * Sends the selected template to the selected recipients, one at a time.
+ * Sends the selected template to ONE chunk of the selected recipients, one at
+ * a time. At most BULK_SEND_CHUNK_SIZE ids per call (audit finding 16): a
+ * whole 500-recipient batch in one request could outlive the function, losing
+ * the audit rows and inviting a duplicate re-send. The wizard drives the
+ * chunks (`sendInChunks`); each call audits its own sends before returning.
  *
  * Re-resolves the template AND every recipient server-side — the client's
  * step-1 template choice and step-2 recipient list are both re-validated
@@ -272,10 +278,10 @@ export async function bulkSendEmailAction(
     if (ids.length === 0) {
       return { ...REJECTED, error: "No applications selected." };
     }
-    if (ids.length > MAX_BULK_RECIPIENTS) {
+    if (ids.length > BULK_SEND_CHUNK_SIZE) {
       return {
         ...REJECTED,
-        error: `Cannot send to more than ${MAX_BULK_RECIPIENTS} recipients at once.`,
+        error: `Cannot send to more than ${BULK_SEND_CHUNK_SIZE} recipients in one request.`,
       };
     }
     if (!templateId) {

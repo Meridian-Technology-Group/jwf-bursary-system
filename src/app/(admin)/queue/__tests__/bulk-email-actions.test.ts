@@ -158,14 +158,14 @@ describe("bulkSendEmailAction", () => {
     expect(auditArg.metadata.outcome).toBe("sent");
   });
 
-  it("rejects a batch larger than the 500-recipient cap without sending anything", async () => {
+  it("audit finding 16: rejects more than one 50-recipient chunk per request without sending anything", async () => {
     fakeTx = makeFakeTx(makeTemplate(), []);
-    const tooMany = Array.from({ length: 501 }, (_, i) => `app-${i}`);
+    const tooMany = Array.from({ length: 51 }, (_, i) => `app-${i}`);
 
     const result = await bulkSendEmailAction(tooMany, "tpl-1");
 
     expect(result.success).toBe(false);
-    expect(result.error).toMatch(/500/);
+    expect(result.error).toMatch(/50 recipients in one request/);
     expect(sendRawEmailMock).not.toHaveBeenCalled();
     expect(auditMock).not.toHaveBeenCalled();
   });
