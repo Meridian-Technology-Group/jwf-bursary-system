@@ -271,7 +271,8 @@ const PAGE = 300;
 
 export async function buildSpendBillingRows(tx: Tx, filters: AssessmentFilters): Promise<ExportRecord[]> {
   // D-11: the reference bundle once per export (family category description, rent add-back).
-  const resolved = resolveReferenceBundle(await getReferenceBundleRows(tx));
+  // Audit finding 11: versions in force now (a next-year version stays out).
+  const resolved = resolveReferenceBundle(await getReferenceBundleRows(tx, new Date()));
   const ref = resolved.bundle;
   const where = assessmentWhere(filters);
   const areas = await tx.postcodeArea.findMany({ select: { district: true, area: true } });
