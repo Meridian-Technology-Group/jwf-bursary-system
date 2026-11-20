@@ -48,6 +48,7 @@ vi.mock("@/lib/db/prisma", () => ({
 import {
   setPostAssessmentFinalState,
   revertPostAssessmentState,
+  APPLICATION_CLOSED_LIFECYCLE_MESSAGE,
 } from "../post-assessment-core";
 import { RECOMMENDATION_NOT_RECONFIRMED_MESSAGE } from "../recommendation-gate";
 import { MIGRATED_LOCKED_MESSAGE } from "../migration-source";
@@ -277,6 +278,23 @@ describe("setPostAssessmentFinalState — gates", () => {
     }
   );
 
+  // Audit 20 Nov 2026: locking a closed application re-activated its closed
+  // account and wiped the retention anchor.
+  it.each([
+    ["NEW_AWARD", "NEW"],
+    ["ROLLED_OVER", "ROLLING_OVER"],
+  ] as const)("refuses to lock a closed application as %s", async (target, applicationType) => {
+    fakeTx = makeFakeTx({
+      ...baseApplication({ applicationType }),
+      closedAt: new Date("2026-11-01"),
+    });
+    const result = await setPostAssessmentFinalState("app-1", target, { awardFundType: "JWF" });
+    expect(result).toEqual({ success: false, error: APPLICATION_CLOSED_LIFECYCLE_MESSAGE });
+    expect(fakeTx.bursaryAccount.update).not.toHaveBeenCalled();
+    expect(fakeTx.bursaryAccount.create).not.toHaveBeenCalled();
+    expect(fakeTx.assessment.update).not.toHaveBeenCalled();
+  });
+
   it("refuses NEW_AWARD → CLOSED_ARCHIVED (a locked award must be reversed first)", async () => {
     fakeTx = makeFakeTx(withAssessment({ status: "NEW_AWARD" }));
     const result = await setPostAssessmentFinalState("app-1", "CLOSED_ARCHIVED");
@@ -325,6 +343,17 @@ describe("revertPostAssessmentState", () => {
     const result = await revertPostAssessmentState("app-1");
 
     expect(result).toEqual({ success: false, error: ACCOUNT_CLOSED_REVERT_MESSAGE });
+    expect(fakeTx.assessment.update).not.toHaveBeenCalled();
+  });
+
+  it("a closed application's award cannot be reversed", async () => {
+    fakeTx = makeFakeTx({
+      ...withAssessment({ status: "NEW_AWARD" }),
+      closedAt: new Date("2026-11-01"),
+    });
+    const result = await revertPostAssessmentState("app-1");
+
+    expect(result).toEqual({ success: false, error: APPLICATION_CLOSED_LIFECYCLE_MESSAGE });
     expect(fakeTx.assessment.update).not.toHaveBeenCalled();
   });
 
