@@ -12,7 +12,7 @@ import { Save } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { saveAnnualFeesOverrideAction } from "@/app/(admin)/applications/[id]/assessment/admin/actions";
-import { toast } from "@/hooks/use-toast";
+import { toast } from "sonner";
 
 interface AnnualFeesOverrideEditorProps {
   bursaryAccountId: string;
@@ -49,16 +49,16 @@ export function AnnualFeesOverrideEditor({
     const trimmed = value.trim();
     const amount = trimmed === "" ? null : Number(trimmed);
     if (amount != null && !Number.isFinite(amount)) {
-      toast({ variant: "destructive", title: "Enter a number" });
+      toast.error("Enter a number");
       return;
     }
     setSaving(true);
     const result = await saveAnnualFeesOverrideAction(bursaryAccountId, applicationId, amount);
     setSaving(false);
     if (result.success) {
-      toast({ title: amount == null ? "Annual fees cleared" : "Annual fees saved" });
+      toast.success(amount == null ? "Annual fees cleared" : "Annual fees saved");
     } else {
-      toast({ variant: "destructive", title: "Annual fees not saved", description: result.error });
+      toast.error("Annual fees not saved", { description: result.error });
     }
   };
 

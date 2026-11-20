@@ -15,7 +15,7 @@ import { Save } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { saveAssessmentAction } from "@/app/(admin)/applications/[id]/assessment/actions";
-import { toast } from "@/hooks/use-toast";
+import { toast } from "sonner";
 
 interface WatchOutNotesEditorProps {
   assessmentId: string;
@@ -42,13 +42,9 @@ export function WatchOutNotesEditor({
     setSaving(false);
     if (result.success) {
       setDirty(false);
-      toast({ title: "Assessor's wizard notes saved" });
+      toast.success("Assessor's wizard notes saved");
     } else {
-      toast({
-        variant: "destructive",
-        title: "Notes not saved",
-        description: result.error,
-      });
+      toast.error("Notes not saved", { description: result.error });
     }
   };
 
