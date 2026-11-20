@@ -361,6 +361,29 @@ describe("setApplicationOutcome — recommendation re-confirmation gate", () => 
     expect(fakeTx.bursaryAccount.create).toHaveBeenCalledTimes(1);
   });
 
+  it("audit finding 10 — blocks a decision confirmed against an older recommended figure", async () => {
+    fakeTx = makeFakeTx(
+      baseApplication({
+        assessment: {
+          id: "assess-1",
+          status: "COMPLETED",
+          calculationVersion: 2,
+          yearlyPayableFees: null,
+          recommendedPayableFees: 9000,
+          recommendation: { confirmedPayableFees: 5000, recommendedPayableFees: 5000 },
+        },
+      })
+    );
+
+    const result = await setApplicationOutcome("app-1", "AWARDED", {
+      bursaryAward: 9000,
+      scholarshipAward: null,
+    });
+
+    expect(result).toEqual({ success: false, error: RECOMMENDATION_NOT_RECONFIRMED_MESSAGE });
+    expect(fakeTx.bursaryAccount.create).not.toHaveBeenCalled();
+  });
+
   it("exempts an assessment with no recommendation at all (nothing to re-confirm)", async () => {
     fakeTx = makeFakeTx(
       baseApplication({

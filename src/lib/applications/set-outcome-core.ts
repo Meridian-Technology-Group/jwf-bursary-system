@@ -108,7 +108,9 @@ async function fetchApplicationForOutcome(tx: Tx, applicationId: string) {
           // v2 recommended snapshot → legacy yearly (see account-promotion.ts).
           yearlyPayableFees: true,
           recommendedPayableFees: true,
-          recommendation: { select: { confirmedPayableFees: true } },
+          recommendation: {
+            select: { confirmedPayableFees: true, recommendedPayableFees: true },
+          },
         },
       },
     },
