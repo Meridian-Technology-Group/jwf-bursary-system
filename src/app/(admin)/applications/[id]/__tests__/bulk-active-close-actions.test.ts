@@ -25,7 +25,6 @@ vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 // this must be mocked even though neither bulk action under test sends email.
 vi.mock("@/lib/email/send", () => ({
   sendEmail: vi.fn(async () => ({ success: true })),
-  sendBatchEmails: vi.fn(async () => ({ sent: 0, failed: 0, errors: [] })),
   sendRawEmail: vi.fn(async () => ({ success: true })),
 }));
 

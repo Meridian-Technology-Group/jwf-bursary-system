@@ -10,7 +10,6 @@
 import { createSupabaseAdminClient } from "@/lib/auth/supabase-admin";
 
 const BUCKET = "documents";
-const DEFAULT_EXPIRY_SECONDS = 3600; // 60 minutes
 
 // ─── Bucket Initialisation ───────────────────────────────────────────────────
 
@@ -288,35 +287,6 @@ export function normaliseContentType(
   return base ? base : null;
 }
 
-// ─── Signed URL ───────────────────────────────────────────────────────────────
-
-/**
- * Generates a signed (pre-authenticated) URL for a private document.
- *
- * @param storagePath The path in Supabase Storage (as returned by uploadDocument).
- * @param expiresIn   Seconds until the URL expires. Defaults to 3600 (60 min).
- * @returns           The signed URL string.
- * @throws            Error if Supabase cannot generate the URL.
- */
-export async function getSignedUrl(
-  storagePath: string,
-  expiresIn: number = DEFAULT_EXPIRY_SECONDS
-): Promise<string> {
-  const supabase = createSupabaseAdminClient();
-
-  const { data, error } = await supabase.storage
-    .from(BUCKET)
-    .createSignedUrl(storagePath, expiresIn);
-
-  if (error || !data?.signedUrl) {
-    const msg = error?.message ?? "Unknown error generating signed URL";
-    console.error("[storage/signedUrl] Failed:", msg);
-    throw new Error(msg);
-  }
-
-  return data.signedUrl;
-}
-
 // ─── Delete ───────────────────────────────────────────────────────────────────
 
 /**
@@ -337,4 +307,45 @@ export async function deleteDocument(storagePath: string): Promise<void> {
     console.error("[storage/delete] Failed to delete", storagePath, error.message);
     throw new Error(error.message);
   }
+}
+
+/** Storage's `remove` accepts at most 1,000 keys per request. */
+export const REMOVE_BATCH_SIZE = 1000;
+
+/** One path a batched delete could not remove, and why. */
+export interface StorageDeleteFailure {
+  path: string;
+  message: string;
+}
+
+/**
+ * Removes many files in as few Storage requests as possible (chunks of
+ * {@link REMOVE_BATCH_SIZE}, one admin client) — the bulk counterpart of
+ * `deleteDocument` for the retention and purge loops. Never throws: every
+ * path of a failed chunk is logged and returned, so a failure is recorded
+ * exactly as the per-file loops recorded it.
+ */
+export async function deleteDocuments(
+  storagePaths: readonly string[]
+): Promise<StorageDeleteFailure[]> {
+  if (storagePaths.length === 0) return [];
+  const supabase = createSupabaseAdminClient();
+  const failures: StorageDeleteFailure[] = [];
+  for (let i = 0; i < storagePaths.length; i += REMOVE_BATCH_SIZE) {
+    const chunk = storagePaths.slice(i, i + REMOVE_BATCH_SIZE);
+    let message: string | null = null;
+    try {
+      const { error } = await supabase.storage.from(BUCKET).remove(chunk);
+      if (error) message = error.message;
+    } catch (err) {
+      message = err instanceof Error ? err.message : String(err);
+    }
+    if (message) {
+      for (const path of chunk) {
+        console.error("[storage/delete] Failed to delete", path, message);
+        failures.push({ path, message });
+      }
+    }
+  }
+  return failures;
 }

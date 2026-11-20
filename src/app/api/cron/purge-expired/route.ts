@@ -18,8 +18,10 @@
 //  3. AUDITED. Each applied stage writes its own audit row; a run that applied
 //     anything writes one RETENTION_PURGE_CRON summary. Audit rows are never
 //     deleted.
-//  4. BOUNDED. At most MAX_STAGES_PER_RUN stages per run; per-item failures are
-//     logged and skipped. Storage objects and auth users are removed after
+//  4. BOUNDED. At most MAX_STAGES_PER_RUN stages per run, and no new stage
+//     starts after RUN_BUDGET_MS so the run ends inside maxDuration; the rest
+//     wait for next week. Per-item failures are logged and skipped. Storage
+//     objects (one batched call per stage) and auth users are removed after
 //     each stage's commit (non-fatal).
 //
 // Schedule: vercel.json `crons`. Auth: `Authorization: Bearer ${CRON_SECRET}`,
@@ -29,7 +31,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { withAdminContext } from "@/lib/db/prisma";
 import { createAuditLog } from "@/lib/audit/log";
 import { AUDIT_ACTIONS, AUDIT_ENTITY_TYPES } from "@/lib/audit/actions";
-import { deleteDocument } from "@/lib/storage/documents";
+import { deleteDocuments } from "@/lib/storage/documents";
 import { createSupabaseAdminClient } from "@/lib/auth/supabase-admin";
 import { isRetentionPurgeEnabled, planRetention, type RetentionPlan } from "@/lib/retention/policy";
 import {
@@ -47,6 +49,13 @@ export const maxDuration = 300;
 /** Blast-radius ceiling per run; the rest wait for next week. */
 const MAX_STAGES_PER_RUN = 500;
 
+/**
+ * No new stage starts after this much of the run has elapsed: 60s of
+ * headroom under maxDuration (300s) for the in-flight stage and the summary
+ * audit row. A run cut short records the rest as `deferred`.
+ */
+const RUN_BUDGET_MS = 240_000;
+
 export async function GET(request: NextRequest): Promise<NextResponse> {
   const cronSecret = process.env.CRON_SECRET;
   const authHeader = request.headers.get("authorization");
@@ -54,6 +63,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  const startedAt = Date.now();
   const now = new Date();
   const enabled = isRetentionPurgeEnabled();
 
@@ -96,7 +106,10 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     // 2b. ENABLED: one stage per application per run, each in its own transaction.
     const applied: { applicationId: string; action: string }[] = [];
     const failed: { id: string; error: string }[] = [];
+    let attempted = 0;
     for (const item of due.slice(0, MAX_STAGES_PER_RUN)) {
+      if (Date.now() - startedAt >= RUN_BUDGET_MS) break;
+      attempted += 1;
       try {
         const result = await withAdminContext((tx) =>
           item.plan.action === "purge-form-docs"
@@ -104,7 +117,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
             : purgeAssessment(tx, item.id, now),
         );
         if (!result.applied) continue;
-        await deleteStorageObjectsPostCommit(result.storagePaths, deleteDocument);
+        await deleteStorageObjectsPostCommit(result.storagePaths, deleteDocuments);
         if (result.authUsersToDelete.length) {
           await deleteAuthUsersPostCommit(result.authUsersToDelete, {
             deleteAuthUser: (uid) => createSupabaseAdminClient().auth.admin.deleteUser(uid),
@@ -134,7 +147,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
             // row, on the application, says what happened to it.
             applicationIds: applied.map((a) => a.applicationId),
             failures: failed.length > 0 ? failed : undefined,
-            deferred: Math.max(0, due.length - MAX_STAGES_PER_RUN),
+            deferred: due.length - attempted,
             ranAt: now.toISOString(),
           },
         }),
@@ -149,6 +162,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       nextDue: upcoming,
       applied: applied.length,
       failed: failed.length,
+      deferred: due.length - attempted,
       ranAt: now.toISOString(),
     });
   } catch (err) {

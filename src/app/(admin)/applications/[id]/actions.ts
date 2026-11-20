@@ -21,7 +21,7 @@
  */
 
 import { revalidatePath } from "next/cache";
-import { requireRole, Role } from "@/lib/auth/roles";
+import { requireRole, requireApplicationAccess, Role } from "@/lib/auth/roles";
 import { withUserContext, withAdminContext, type RlsRole, type Tx } from "@/lib/db/prisma";
 import { createAuditLog } from "@/lib/audit/log";
 import { sendEmail } from "@/lib/email/send";
@@ -29,7 +29,7 @@ import { replaceMergeFields } from "@/lib/email/merge";
 import { formalGreeting, parent1ContactOf } from "@/lib/email/formal-greeting";
 import { isMigrated } from "@/lib/applications/migration-source";
 import { humaniseSlot } from "@/lib/documents/slots";
-import { deleteDocument } from "@/lib/storage/documents";
+import { deleteDocuments } from "@/lib/storage/documents";
 import { createSupabaseAdminClient } from "@/lib/auth/supabase-admin";
 import {
   canReturnForCorrection,
@@ -47,6 +47,7 @@ import { isPurgeable, isRetentionPurgeEnabled, notYetPurgeableMessage } from "@/
 import {
   purgeApplication,
   buildPurgeAuditMetadata,
+  findUnerasableFamilyRecords,
 } from "@/lib/retention/purge";
 import { deleteAuthUsersPostCommit } from "@/lib/retention/close-purge";
 import { closeApplicationCore } from "@/lib/applications/close";
@@ -416,6 +417,8 @@ export async function rejectAndRestartApplication(
 ): Promise<ActionResult> {
   try {
     const user = await requireRole([Role.ADMIN, Role.ASSESSOR]);
+    // An assessor may only reject an application assigned to them.
+    await requireApplicationAccess(user, applicationId);
 
     const submitBy = parseReturnSubmitBy(newSubmitBy, new Date());
     if (!submitBy.ok) return { success: false, error: submitBy.error };
@@ -536,13 +539,8 @@ export async function rejectAndRestartApplication(
     // The removed documents' files, now their rows are gone. An object left
     // behind is less harmful than a row pointing at nothing (as the staff
     // delete route does it, the other way round).
-    for (const path of result.storagePaths) {
-      try {
-        await deleteDocument(path);
-      } catch (err) {
-        console.error("[rejectAndRestartApplication] storage delete failed", path, err);
-      }
-    }
+    // One batched call; never throws, logs every path it could not remove.
+    await deleteDocuments(result.storagePaths);
 
     // Email the family — non-blocking.
     const emailResult = await sendEmail(
@@ -577,7 +575,9 @@ export async function rejectAndRestartApplication(
 export async function getRejectionDraft(
   applicationId: string
 ): Promise<{ submitBy: string; body: string; documents: RejectionDocument[] }> {
-  await requireRole([Role.ADMIN, Role.ASSESSOR]);
+  const user = await requireRole([Role.ADMIN, Role.ASSESSOR]);
+  // Names and document filenames: an assessor sees only their assigned applications.
+  await requireApplicationAccess(user, applicationId);
   const now = new Date();
   // Service role, as the send does: the lead applicant's profile is under RLS.
   const app = await withAdminContext((tx) =>
@@ -929,14 +929,15 @@ export async function bulkAssignApplicationsAction(
  * auth user are RETAINED and only their link + data on THIS application is
  * removed. See `decideSecondaryProfileErasure`.
  *
- * Access: ASSESSOR role only.
- * Guard:  Cannot delete if application was submitted within the last 7 years.
+ * Access: ADMIN only (irreversible; the UI shows the button to ADMIN only).
+ * Guard:  Only once the retention rules allow full erasure (`isPurgeable`).
  */
 export async function gdprDeleteApplicantAction(
   applicationId: string
 ): Promise<ActionResult> {
   try {
-    const user = await requireRole([Role.ADMIN, Role.ASSESSOR]);
+    const user = await requireRole([Role.ADMIN]);
+    await requireApplicationAccess(user, applicationId);
 
     // 1. Fetch the application with all relevant relations (admin context —
     //    GDPR cascade must bypass RLS for full visibility and mutation).
@@ -952,6 +953,7 @@ export async function gdprDeleteApplicantAction(
           retentionStage: true,
           retentionStageAt: true,
           leadApplicantId: true,
+          bursaryAccountId: true,
           documents: { select: { id: true, storagePath: true } },
           assessment: {
             select: {
@@ -1000,9 +1002,31 @@ export async function gdprDeleteApplicantAction(
 
     const leadApplicantId = application.leadApplicantId;
 
-    // 3. Run the shared erasure cascade (Epic 10): Storage-first, anonymising
-    //    DB transaction (append-only audit honoured by nulling userId, never
-    //    deleting), dual-parent shared-profile guard, then Supabase auth
+    // 2b. The cascade below erases the whole family (every contact and account
+    //     of the lead, their synopsis, the lead's login). Refuse while any
+    //     other record of the lead is still inside retention (audit finding 8).
+    const unerasable = await withAdminContext((tx) =>
+      findUnerasableFamilyRecords(
+        tx,
+        leadApplicantId,
+        application.id,
+        application.bursaryAccountId
+      )
+    );
+    if (unerasable) {
+      return {
+        success: false,
+        error:
+          "This application cannot be deleted yet. Deleting it erases the whole family, " +
+          `and the parent still has ${unerasable.otherApplications} other application(s) and ` +
+          `${unerasable.otherAccounts} other bursary account(s) inside the retention period.`,
+      };
+    }
+
+    // 3. Run the shared erasure cascade (Epic 10): anonymising DB
+    //    transaction (append-only audit honoured by nulling userId, never
+    //    deleting), dual-parent shared-profile guard, then — after the
+    //    commit — Storage files (one batched call) and Supabase auth
     //    deletion. The manual button and the auto-purge cron call the SAME
     //    cascade, so they can never diverge.
     const purgeResult = await purgeApplication(
@@ -1021,7 +1045,7 @@ export async function gdprDeleteApplicantAction(
       },
       {
         withAdminContext,
-        deleteDocument,
+        deleteDocuments,
         deleteAuthUser: (uid) =>
           createSupabaseAdminClient().auth.admin.deleteUser(uid),
       }
@@ -1227,17 +1251,13 @@ export async function closeApplicationAction(
     }
 
     const result = await withAdminContext((tx) =>
-      closeApplicationCore(
-        tx,
-        { applicationId, closeReasonId, actorId: user.id },
-        { deleteDocument }
-      )
+      closeApplicationCore(tx, { applicationId, closeReasonId, actorId: user.id })
     );
 
     if (!result.success) return result;
 
-    // Epic 23 T10 rule 2 (flag on only): the closed form's files, after the commit.
-    await deleteStorageObjectsPostCommit(result.storagePathsToDelete, deleteDocument);
+    // Close purge / Epic 23 T10 rule 2 (flag on only): the files, after the commit.
+    await deleteStorageObjectsPostCommit(result.storagePathsToDelete, deleteDocuments);
 
     // Post-commit: auth-user deletion is external to Postgres (non-fatal —
     // failures are logged; the data-side purge has already committed).
@@ -1510,11 +1530,7 @@ export async function bulkCloseApplicationsAction(
 
     for (const applicationId of ids) {
       const result = await withAdminContext((tx) =>
-        closeApplicationCore(
-          tx,
-          { applicationId, closeReasonId, actorId: user.id },
-          { deleteDocument }
-        )
+        closeApplicationCore(tx, { applicationId, closeReasonId, actorId: user.id })
       );
 
       if (!result.success) {
@@ -1526,8 +1542,8 @@ export async function bulkCloseApplicationsAction(
         continue;
       }
 
-      // Epic 23 T10 rule 2 (flag on only): the closed form's files, after the commit.
-      await deleteStorageObjectsPostCommit(result.storagePathsToDelete, deleteDocument);
+      // Close purge / Epic 23 T10 rule 2 (flag on only): the files, after the commit.
+      await deleteStorageObjectsPostCommit(result.storagePathsToDelete, deleteDocuments);
 
       // Post-commit: auth-user deletion is external to Postgres (non-fatal —
       // failures are logged; this row's data-side purge has already
@@ -1576,7 +1592,7 @@ export async function requestErasureAction(applicationId: string): Promise<Actio
     if (!result.applied) {
       return { success: false, error: result.skipped ?? "This application cannot be erased." };
     }
-    await deleteStorageObjectsPostCommit(result.storagePaths, deleteDocument);
+    await deleteStorageObjectsPostCommit(result.storagePaths, deleteDocuments);
     if (result.authUsersToDelete.length > 0) {
       await deleteAuthUsersPostCommit(result.authUsersToDelete, {
         deleteAuthUser: (uid) => createSupabaseAdminClient().auth.admin.deleteUser(uid),

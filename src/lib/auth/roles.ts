@@ -7,7 +7,7 @@
  */
 
 import { redirect } from "next/navigation";
-import { Role, type Profile, type Application } from "@prisma/client";
+import { Role, type Profile } from "@prisma/client";
 import { withAdminContext } from "@/lib/db/prisma";
 import { createSupabaseServerClient } from "@/lib/auth/supabase-server";
 
@@ -30,9 +30,6 @@ export type CurrentUser = Pick<
    */
   authLastSignInAt?: string | null;
 };
-
-/** Minimal application shape required by access-check helpers. */
-type ApplicationWithAssignee = Pick<Application, "assignedToId">;
 
 // ---------------------------------------------------------------------------
 // Core helpers
@@ -142,23 +139,6 @@ export function isAdminRole(profile: Pick<Profile, "role">): boolean {
 // ---------------------------------------------------------------------------
 // Application-level access helpers
 // ---------------------------------------------------------------------------
-
-/**
- * Returns true when the profile is permitted to view/act on the given
- * application.
- *
- * - ADMIN / VIEWER  → always permitted (they see everything)
- * - ASSESSOR        → permitted only when the application is assigned to them
- * - All others      → denied
- */
-export function canAccessApplication(
-  profile: Pick<Profile, "id" | "role">,
-  application: ApplicationWithAssignee
-): boolean {
-  if (isAdmin(profile) || isViewer(profile)) return true;
-  if (isAssessor(profile)) return application.assignedToId === profile.id;
-  return false;
-}
 
 /**
  * Enforces application-level access in Server Components / Route Handlers.

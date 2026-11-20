@@ -37,8 +37,11 @@ const fakeApplication = {
   id: "app-1",
   roundId: "round-1",
   bursaryAccountId: null,
+  closedAt: null,
+  migrationSource: null,
   assessment: {
     id: "assessment-1",
+    status: "COMPLETED",
     recommendedPayableFees: SNAPSHOT_RECOMMENDED,
   },
 };

@@ -28,3 +28,7 @@ tsconfig.tsbuildinfo
 docs/.obsidian/workspace.json
 docs/.obsidian/workspace-mobile.json
 .playwright-mcp/
+
+# ad-hoc verification screenshots and scratch scripts at the repo root
+/*.png
+/scratchpad/

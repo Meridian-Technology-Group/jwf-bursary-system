@@ -51,6 +51,7 @@ import { cn } from "@/lib/utils";
 import { replaceMergeFields } from "@/lib/email/merge";
 import { buildBulkMergeData, isBulkResolvable } from "@/lib/email/bulk-merge-data";
 import { emailTemplateLabel } from "@/lib/email/template-labels";
+import { sendInChunks } from "@/lib/email/bulk-send-chunks";
 import {
   getBulkEmailTemplatesAction,
   getBulkEmailRecipientsAction,
@@ -173,9 +174,18 @@ export function BulkEmailWizardAction({
     setPhase("sending");
     setError(null);
 
-    const ids = includedRecipients.map((r) => r.applicationId);
+    // Bounded requests (audit finding 16): the action takes one chunk per
+    // call; the combined result is what the admin sees, as before.
+    const toSend = includedRecipients.map((r) => ({
+      applicationId: r.applicationId,
+      reference: r.reference,
+      email: r.leadApplicant.email || null,
+    }));
+    const bccAddress = bcc.trim() || undefined;
     startSend(async () => {
-      const result = await bulkSendEmailAction(ids, selectedTemplateId, bcc.trim() || undefined);
+      const result = await sendInChunks(toSend, (ids) =>
+        bulkSendEmailAction(ids, selectedTemplateId, bccAddress)
+      );
       if (result.success) {
         setSendResult(result);
         setPhase("result");

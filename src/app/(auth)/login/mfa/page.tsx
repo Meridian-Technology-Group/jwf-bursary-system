@@ -17,20 +17,12 @@ export const dynamic = "force-dynamic";
 
 import { redirect } from "next/navigation";
 import { createSupabaseServerClient } from "@/lib/auth/supabase-server";
+import { safeNext } from "@/lib/auth/safe-next";
 import { MfaSetupForm } from "./mfa-setup-form";
 import { MfaChallengeForm } from "./mfa-challenge-form";
 
 function isStaffRole(role: unknown): boolean {
   return role === "ADMIN" || role === "ASSESSOR" || role === "VIEWER";
-}
-
-/** Validate a `next` redirect target (internal paths only). */
-function safeNext(raw: string | undefined): string {
-  if (!raw) return "/admin";
-  if (!raw.startsWith("/") || raw.startsWith("//") || raw.startsWith("/\\")) {
-    return "/admin";
-  }
-  return raw;
 }
 
 export const metadata = {
@@ -42,7 +34,7 @@ export default async function MfaPage({
 }: {
   searchParams: { next?: string };
 }) {
-  const nextPath = safeNext(searchParams.next);
+  const nextPath = safeNext(searchParams.next, "/admin");
   const supabase = await createSupabaseServerClient();
 
   const {

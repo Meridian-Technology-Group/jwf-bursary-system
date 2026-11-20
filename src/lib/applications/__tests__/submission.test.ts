@@ -43,6 +43,11 @@ vi.mock("@/lib/portal/section-gaps", () => ({
   getSectionGapStatuses: (..._args: unknown[]) => gapStatusesMock(),
 }));
 
+const mirrorMock = vi.fn(async (..._args: unknown[]) => {});
+vi.mock("@/lib/bursary-accounts/lifecycle", () => ({
+  mirrorApplicationToSchedule: (...args: unknown[]) => mirrorMock(...args),
+}));
+
 import { submitApplicationCore } from "../submission";
 import { AUDIT_ACTIONS } from "@/lib/audit/actions";
 import {
@@ -54,6 +59,10 @@ function makeFakeTx() {
   return {
     application: {
       findUnique: vi.fn(async (..._args: unknown[]): Promise<unknown> => null),
+      updateMany: vi.fn(async (..._args: unknown[]) => ({ count: 1 })),
+      // Not used by the core any more (the transition is a conditional
+      // updateMany) — kept so a regression to an unconditional update fails
+      // these tests on their assertions rather than on a missing mock.
       update: vi.fn(async (..._args: unknown[]) => ({})),
     },
   };
@@ -110,7 +119,7 @@ describe("submitApplicationCore", () => {
     const result = await submitApplicationCore(CORE_INPUT);
     expect(result).toEqual({ alreadySubmitted: true });
 
-    expect(fakeTx.application.update).not.toHaveBeenCalled();
+    expect(fakeTx.application.updateMany).not.toHaveBeenCalled();
     expect(gapStatusesMock).not.toHaveBeenCalled();
     expect(sendEmailMock).not.toHaveBeenCalled();
     expect(auditMock).not.toHaveBeenCalled();
@@ -133,8 +142,8 @@ describe("submitApplicationCore", () => {
     expect(result).toEqual({ alreadySubmitted: false, reference: "APP-1" });
 
     // The SUBMITTED transition ran...
-    expect(fakeTx.application.update).toHaveBeenCalledTimes(1);
-    const updateArg = fakeTx.application.update.mock.calls[0]![0] as {
+    expect(fakeTx.application.updateMany).toHaveBeenCalledTimes(1);
+    const updateArg = fakeTx.application.updateMany.mock.calls[0]![0] as {
       data: Record<string, unknown>;
     };
     expect(updateArg.data.formStatus).toBe("SUBMITTED");
@@ -158,7 +167,7 @@ describe("submitApplicationCore", () => {
 
     await submitApplicationCore(CORE_INPUT);
 
-    const updateArg = fakeTx.application.update.mock.calls[0]![0] as {
+    const updateArg = fakeTx.application.updateMany.mock.calls[0]![0] as {
       data: Record<string, unknown>;
     };
     expect(updateArg.data.formStatus).toBe("SUBMITTED");
@@ -187,7 +196,7 @@ describe("submitApplicationCore", () => {
 
     await submitApplicationCore(CORE_INPUT);
 
-    const updateArg = fakeTx.application.update.mock.calls[0]![0] as {
+    const updateArg = fakeTx.application.updateMany.mock.calls[0]![0] as {
       data: Record<string, unknown>;
     };
     expect(updateArg.data).not.toHaveProperty("entryYearGroup");
@@ -210,7 +219,7 @@ describe("submitApplicationCore", () => {
 
     await submitApplicationCore(CORE_INPUT);
 
-    const updateArg = fakeTx.application.update.mock.calls[0]![0] as {
+    const updateArg = fakeTx.application.updateMany.mock.calls[0]![0] as {
       data: Record<string, unknown>;
     };
     // Not written at all — so the admin value on the row survives untouched.
@@ -236,7 +245,7 @@ describe("submitApplicationCore", () => {
 
     // The gate fires BEFORE the gap engine, the transition and the email.
     expect(gapStatusesMock).not.toHaveBeenCalled();
-    expect(fakeTx.application.update).not.toHaveBeenCalled();
+    expect(fakeTx.application.updateMany).not.toHaveBeenCalled();
     expect(sendEmailMock).not.toHaveBeenCalled();
     expect(auditMock).not.toHaveBeenCalled();
   });
@@ -259,7 +268,7 @@ describe("submitApplicationCore", () => {
     const result = await submitApplicationCore(CORE_INPUT);
 
     expect(result).toEqual({ alreadySubmitted: false, reference: "APP-1" });
-    const updateArg = fakeTx.application.update.mock.calls[0]![0] as {
+    const updateArg = fakeTx.application.updateMany.mock.calls[0]![0] as {
       data: Record<string, unknown>;
     };
     expect(updateArg.data.formStatus).toBe("SUBMITTED");
@@ -280,6 +289,79 @@ describe("submitApplicationCore", () => {
     await expect(submitApplicationCore(CORE_INPUT)).rejects.toThrow(
       "The following sections are not yet complete: FAMILY_ID. Please complete them before submitting."
     );
+    expect(fakeTx.application.updateMany).not.toHaveBeenCalled();
+  });
+
+  // ── Audit finding 13: the SUBMITTED transition is conditional ─────────────
+  // The gates read in earlier transactions, so two tabs submitting at once
+  // both pass them. Only one may transition; the other must come back as
+  // "already submitted" and must not audit, mirror or email a second time.
+  it("makes the SUBMITTED write conditional on the form not already being SUBMITTED", async () => {
+    fakeTx.application.findUnique.mockResolvedValue(makeApplication());
+
+    await submitApplicationCore(CORE_INPUT);
+
     expect(fakeTx.application.update).not.toHaveBeenCalled();
+    const arg = fakeTx.application.updateMany.mock.calls[0]![0] as {
+      where: Record<string, unknown>;
+    };
+    expect(arg.where).toEqual({
+      id: "app-1",
+      formStatus: { not: "SUBMITTED" },
+    });
+  });
+
+  it("returns alreadySubmitted — with no second audit, schedule mirror or email — when a concurrent submit won", async () => {
+    // Both tabs loaded the reopened form as FILLED_IN and passed every gate…
+    fakeTx.application.findUnique
+      .mockResolvedValueOnce(
+        makeApplication({
+          bursaryAccountId: "acct-1",
+          submittedAt: new Date("2026-05-01T10:00:00.000Z"),
+        })
+      )
+      // …but by the time this tab's UPDATE runs, the other tab has committed.
+      .mockResolvedValueOnce({ formStatus: "SUBMITTED" });
+    fakeTx.application.updateMany.mockResolvedValueOnce({ count: 0 });
+
+    const result = await submitApplicationCore(CORE_INPUT);
+
+    expect(result).toEqual({ alreadySubmitted: true });
+    expect(auditMock).not.toHaveBeenCalled();
+    expect(mirrorMock).not.toHaveBeenCalled();
+    expect(sendEmailMock).not.toHaveBeenCalled();
+  });
+
+  it("still fails (never a false 'already submitted') when zero rows updated but the form is not SUBMITTED", async () => {
+    fakeTx.application.findUnique
+      .mockResolvedValueOnce(makeApplication())
+      .mockResolvedValueOnce({ formStatus: "FILLED_IN" });
+    fakeTx.application.updateMany.mockResolvedValueOnce({ count: 0 });
+
+    await expect(submitApplicationCore(CORE_INPUT)).rejects.toThrow(
+      "The application could not be marked as submitted."
+    );
+    expect(auditMock).not.toHaveBeenCalled();
+    expect(sendEmailMock).not.toHaveBeenCalled();
+  });
+
+  it("dates the confirmation email with the RETAINED original submission date on a re-submission", async () => {
+    fakeTx.application.findUnique.mockResolvedValue(
+      makeApplication({
+        formStatus: "FILLED_IN",
+        submittedAt: new Date("2026-05-01T10:00:00.000Z"),
+      })
+    );
+
+    await submitApplicationCore(CORE_INPUT);
+
+    expect(sendEmailMock).toHaveBeenCalledTimes(1);
+    const [, template, fields] = sendEmailMock.mock.calls[0]! as unknown as [
+      string,
+      string,
+      Record<string, string>,
+    ];
+    expect(template).toBe("CONFIRMATION");
+    expect(fields.submission_date).toBe("1 May 2026");
   });
 });

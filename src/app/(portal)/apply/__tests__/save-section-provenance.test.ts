@@ -127,7 +127,7 @@ describe("saveSection — applicant reclaims assessor-stamped fields", () => {
 
     // The applicant rewrites the narrative (path A) but keeps the doc list
     // (path B) untouched.
-    const res = await saveSection(null, "ADDITIONAL_INFO", {
+    const res = await saveSection("app-1", "ADDITIONAL_INFO", {
       additionalNarrative: "The applicant's own words.",
       additionalDocumentIds: ["doc-1"],
     });
@@ -149,7 +149,7 @@ describe("saveSection — applicant reclaims assessor-stamped fields", () => {
       assessorProvenance: {},
     });
 
-    const res = await saveSection(null, "ADDITIONAL_INFO", {
+    const res = await saveSection("app-1", "ADDITIONAL_INFO", {
       additionalNarrative: "The applicant's own words.",
       additionalDocumentIds: ["doc-1"],
     });
@@ -165,7 +165,7 @@ describe("saveSection — applicant reclaims assessor-stamped fields", () => {
   it("omits the provenance write when the section has never been saved", async () => {
     fakeTx.applicationSection.findUnique.mockResolvedValue(null);
 
-    const res = await saveSection(null, "ADDITIONAL_INFO", {
+    const res = await saveSection("app-1", "ADDITIONAL_INFO", {
       additionalNarrative: "First save, straight from the applicant.",
       additionalDocumentIds: [],
     });
@@ -189,7 +189,7 @@ describe("saveSectionDraft — draft saves reclaim too", () => {
 
     // The draft removes the assessor-attached document (path B changes);
     // the narrative (path A) is untouched.
-    const res = await saveSectionDraft(null, "ADDITIONAL_INFO", {
+    const res = await saveSectionDraft("app-1", "ADDITIONAL_INFO", {
       additionalNarrative: "Assessor-typed context.",
       additionalDocumentIds: [],
     });
@@ -279,7 +279,7 @@ describe("saveSectionDraft — repeated autosaves do not churn provenance", () =
       "The applicant's own words.", // an idle write with nothing new typed
     ];
     for (const additionalNarrative of drafts) {
-      const res = await saveSectionDraft(null, "ADDITIONAL_INFO", {
+      const res = await saveSectionDraft("app-1", "ADDITIONAL_INFO", {
         additionalNarrative,
         additionalDocumentIds: ["doc-1"],
       });
@@ -300,7 +300,7 @@ describe("saveSectionDraft — repeated autosaves do not churn provenance", () =
   it("costs one narrow indexed read per save", async () => {
     fakeTx = makeStatefulTx(STORED_ROW) as unknown as typeof fakeTx;
 
-    await saveSectionDraft(null, "ADDITIONAL_INFO", {
+    await saveSectionDraft("app-1", "ADDITIONAL_INFO", {
       additionalNarrative: "Mine.",
       additionalDocumentIds: ["doc-1"],
     });
@@ -327,7 +327,7 @@ describe("saveSectionDraft — repeated autosaves do not churn provenance", () =
     }) as unknown as typeof fakeTx;
 
     for (const additionalNarrative of ["W", "We ", "We moved."]) {
-      await saveSectionDraft(null, "ADDITIONAL_INFO", { additionalNarrative });
+      await saveSectionDraft("app-1", "ADDITIONAL_INFO", { additionalNarrative });
     }
 
     const calls = fakeTx.applicationSection.upsert.mock.calls;

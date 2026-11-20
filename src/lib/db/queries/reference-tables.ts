@@ -9,6 +9,7 @@ import type { School, EmailTemplateType, DebtSavingsContext } from "@prisma/clie
 import {
   resolveFeeYearPair,
   parseAcademicYearStart,
+  academicYearStartDate,
 } from "@/lib/assessment/fee-year";
 
 // ─── Family Type Configs ──────────────────────────────────────────────────────
@@ -250,31 +251,6 @@ export async function getConfigsForAssessment(
 // ─── Admin Settings Queries ───────────────────────────────────────────────────
 
 /**
- * Returns ALL FamilyTypeConfig rows (all versions, all categories).
- * Ordered by category asc, effectiveFrom desc so newest per category comes first.
- */
-export async function getAllFamilyTypeConfigs(tx: Tx): Promise<FamilyTypeConfigRow[]> {
-  // createdAt desc tie-break keeps newest-per-category first on same-day edits.
-  const rows = await tx.familyTypeConfig.findMany({
-    orderBy: [
-      { category: "asc" },
-      { effectiveFrom: "desc" },
-      { createdAt: "desc" },
-    ],
-  });
-
-  return rows.map((row) => ({
-    id: row.id,
-    category: row.category,
-    description: row.description,
-    notionalRent: Number(row.notionalRent),
-    utilityCosts: Number(row.utilityCosts),
-    foodCosts: Number(row.foodCosts),
-    effectiveFrom: row.effectiveFrom,
-  }));
-}
-
-/**
  * Returns ALL SchoolFees rows (all versions, all schools).
  * Ordered by school asc, effectiveFrom desc.
  */
@@ -395,13 +371,6 @@ export async function getAllEmailTemplates(tx: Tx): Promise<EmailTemplateRow[]> 
   }));
 }
 
-/**
- * Returns the current council tax default (most recent effectiveFrom).
- */
-export async function getCouncilTaxRate(tx: Tx): Promise<CouncilTaxDefaultRow | null> {
-  return getCouncilTaxDefault(tx);
-}
-
 // ─── CALC-01 — Notional & profiling reference tables ─────────────────────
 //
 // NotionalCostConfig and FamilyCategoryMeta are versioned PER natural key
@@ -416,6 +385,34 @@ export async function getCouncilTaxRate(tx: Tx): Promise<CouncilTaxDefaultRow | 
 // below implements that once and every band-table getter reuses it. Band
 // RESOLUTION (value → row) is pure and lives in
 // `src/lib/assessment/reference-bands.ts`; these getters only fetch rows.
+
+/**
+ * Audit 20 Nov 2026 (finding 11) — the date before which a v2 reference
+ * version must take effect to apply to an assessment in `academicYear`: the
+ * start (1 September) of the FOLLOWING academic year. A version dated for next
+ * year (entered early, e.g. 2027/28 notionals effective 2027-09-01 entered in
+ * Nov 2026) then stays out of this year's assessments, while a correction
+ * dated during this year still applies to them. No parseable year ⇒ now.
+ */
+export function referenceVersionCutoff(academicYear: string | null | undefined): Date {
+  const start = parseAcademicYearStart(academicYear);
+  return start === null ? new Date() : academicYearStartDate(start + 1);
+}
+
+/**
+ * The rows whose `effectiveFrom` is before `before`. No `before` ⇒ every row
+ * (the settings screens show the newest version, scheduled or not). When no
+ * row is in force by then, every row is kept, so an assessment in a year that
+ * predates all versions still gets the current set rather than none.
+ */
+export function effectiveBefore<T extends { effectiveFrom: Date }>(
+  rows: readonly T[],
+  before?: Date,
+): T[] {
+  if (!before) return [...rows];
+  const eligible = rows.filter((r) => r.effectiveFrom.getTime() < before.getTime());
+  return eligible.length > 0 ? eligible : [...rows];
+}
 
 /** Picks the rows belonging to the newest `effectiveFrom` in a list (a "generation"). */
 function latestGeneration<T extends { effectiveFrom: Date }>(rows: readonly T[]): T[] {
@@ -450,15 +447,18 @@ export interface NotionalCostConfigRow {
   effectiveFrom: Date;
 }
 
-/** Returns the most recent NotionalCostConfig row per (category, costType). */
-export async function getNotionalCostConfigs(tx: Tx): Promise<NotionalCostConfigRow[]> {
+/**
+ * Returns the most recent NotionalCostConfig row per (category, costType)
+ * among the versions in force before `before` (see `effectiveBefore`).
+ */
+export async function getNotionalCostConfigs(tx: Tx, before?: Date): Promise<NotionalCostConfigRow[]> {
   const rows = await tx.notionalCostConfig.findMany({
     orderBy: [{ category: "asc" }, { costType: "asc" }, { effectiveFrom: "desc" }, { createdAt: "desc" }],
   });
 
   const seen = new Set<string>();
   const result: NotionalCostConfigRow[] = [];
-  for (const row of rows) {
+  for (const row of effectiveBefore(rows, before)) {
     const key = `${row.category}:${row.costType}`;
     if (!seen.has(key)) {
       seen.add(key);
@@ -484,14 +484,14 @@ export interface FamilyCategoryMetaRow {
 }
 
 /** Returns the most recent FamilyCategoryMeta row per category. */
-export async function getFamilyCategoryMetas(tx: Tx): Promise<FamilyCategoryMetaRow[]> {
+export async function getFamilyCategoryMetas(tx: Tx, before?: Date): Promise<FamilyCategoryMetaRow[]> {
   const rows = await tx.familyCategoryMeta.findMany({
     orderBy: [{ category: "asc" }, { effectiveFrom: "desc" }, { createdAt: "desc" }],
   });
 
   const seen = new Set<number>();
   const result: FamilyCategoryMetaRow[] = [];
-  for (const row of rows) {
+  for (const row of effectiveBefore(rows, before)) {
     if (!seen.has(row.category)) {
       seen.add(row.category);
       result.push({
@@ -516,10 +516,10 @@ export interface AffordabilityBandRow {
 }
 
 /** Returns every row of the newest AffordabilityBand generation, floor ascending. */
-export async function getAffordabilityBands(tx: Tx): Promise<AffordabilityBandRow[]> {
+export async function getAffordabilityBands(tx: Tx, before?: Date): Promise<AffordabilityBandRow[]> {
   const rows = await tx.affordabilityBand.findMany({ orderBy: { bandFloor: "asc" } });
   return latestGeneration(
-    rows.map((r) => ({
+    effectiveBefore(rows, before).map((r) => ({
       id: r.id,
       bandFloor: Number(r.bandFloor),
       bandCeiling: Number(r.bandCeiling),
@@ -539,10 +539,10 @@ export interface IncomeCategoryBandRow {
 }
 
 /** Returns every row of the newest IncomeCategoryBand generation. */
-export async function getIncomeCategoryBands(tx: Tx): Promise<IncomeCategoryBandRow[]> {
+export async function getIncomeCategoryBands(tx: Tx, before?: Date): Promise<IncomeCategoryBandRow[]> {
   const rows = await tx.incomeCategoryBand.findMany();
   return latestGeneration(
-    rows.map((r) => ({
+    effectiveBefore(rows, before).map((r) => ({
       id: r.id,
       bandFloor: r.bandFloor === null ? null : Number(r.bandFloor),
       bandCeiling: r.bandCeiling === null ? null : Number(r.bandCeiling),
@@ -562,10 +562,10 @@ export interface PropertyEquityBandRow {
 }
 
 /** Returns every row of the newest PropertyEquityBand generation. */
-export async function getPropertyEquityBands(tx: Tx): Promise<PropertyEquityBandRow[]> {
+export async function getPropertyEquityBands(tx: Tx, before?: Date): Promise<PropertyEquityBandRow[]> {
   const rows = await tx.propertyEquityBand.findMany();
   return latestGeneration(
-    rows.map((r) => ({
+    effectiveBefore(rows, before).map((r) => ({
       id: r.id,
       bandFloor: r.bandFloor === null ? null : Number(r.bandFloor),
       bandCeiling: r.bandCeiling === null ? null : Number(r.bandCeiling),
@@ -584,10 +584,10 @@ export interface FinancialEquityBandRow {
 }
 
 /** Returns every row of the newest FinancialEquityBand generation. */
-export async function getFinancialEquityBands(tx: Tx): Promise<FinancialEquityBandRow[]> {
+export async function getFinancialEquityBands(tx: Tx, before?: Date): Promise<FinancialEquityBandRow[]> {
   const rows = await tx.financialEquityBand.findMany();
   return latestGeneration(
-    rows.map((r) => ({
+    effectiveBefore(rows, before).map((r) => ({
       id: r.id,
       bandFloor: r.bandFloor === null ? null : Number(r.bandFloor),
       bandCeiling: r.bandCeiling === null ? null : Number(r.bandCeiling),
@@ -609,10 +609,10 @@ export interface DebtRatioBandRow {
 }
 
 /** Returns the newest DebtRatioBand generation of each household context. */
-export async function getDebtRatioBands(tx: Tx): Promise<DebtRatioBandRow[]> {
+export async function getDebtRatioBands(tx: Tx, before?: Date): Promise<DebtRatioBandRow[]> {
   const rows = await tx.debtRatioBand.findMany();
   return latestGenerationPerTable(
-    rows.map((r) => ({
+    effectiveBefore(rows, before).map((r) => ({
       id: r.id,
       ratioFloor: r.ratioFloor === null ? null : Number(r.ratioFloor),
       ratioCeiling: r.ratioCeiling === null ? null : Number(r.ratioCeiling),
@@ -636,10 +636,10 @@ export interface LifestyleSqueezeBandRow {
 }
 
 /** Returns the newest LifestyleSqueezeBand generation of each household context. */
-export async function getLifestyleSqueezeBands(tx: Tx): Promise<LifestyleSqueezeBandRow[]> {
+export async function getLifestyleSqueezeBands(tx: Tx, before?: Date): Promise<LifestyleSqueezeBandRow[]> {
   const rows = await tx.lifestyleSqueezeBand.findMany();
   return latestGenerationPerTable(
-    rows.map((r) => ({
+    effectiveBefore(rows, before).map((r) => ({
       id: r.id,
       ratioFloor: r.ratioFloor === null ? null : Number(r.ratioFloor),
       ratioCeiling: r.ratioCeiling === null ? null : Number(r.ratioCeiling),
@@ -666,10 +666,10 @@ export interface DebtShortfallBandRow {
  * cover its yearly repayment out of disposable income; two of them since 17 Oct
  * (negative / positive NDI). Newest generation of each.
  */
-export async function getDebtShortfallBands(tx: Tx): Promise<DebtShortfallBandRow[]> {
+export async function getDebtShortfallBands(tx: Tx, before?: Date): Promise<DebtShortfallBandRow[]> {
   const rows = await tx.debtShortfallBand.findMany();
   return latestGenerationPerTable(
-    rows.map((r) => ({
+    effectiveBefore(rows, before).map((r) => ({
       id: r.id,
       floorGbp: r.floorGbp === null ? null : Number(r.floorGbp),
       ceilingGbp: r.ceilingGbp === null ? null : Number(r.ceilingGbp),
@@ -720,9 +720,11 @@ export async function getAllGapReasons(tx: Tx): Promise<GapReasonRow[]> {
 //
 // Assembles the single `ReferenceBundle` (src/lib/assessment/v2/types.ts) the
 // v2 engine consumes, from the eight CALC-01 fetchers above. Each fetcher
-// already resolves "latest effective" (latest row per key / newest generation);
-// there is no per-date anchor on these fetchers as merged, so the bundle is the
-// current effective reference set. School fees stay year-anchored via the
+// already resolves "latest effective" (latest row per key / newest generation)
+// among the versions in force before `before` — the assessment page passes
+// `referenceVersionCutoff(round.academicYear)` (audit finding 11), so a version
+// dated for a later academic year never reaches this year's assessments.
+// School fees stay year-anchored via the
 // existing `getConfigsForAssessment` path (Round.academicYear) — they are NOT
 // part of `ReferenceBundle`, which carries only the notional/profiling tables.
 //
@@ -750,7 +752,7 @@ export interface ReferenceBundleRows {
  * trip. Pure resolution/completeness lives in `resolveReferenceBundle`
  * (src/lib/assessment/v2/reference-bundle.ts) so it can be unit-tested without a DB.
  */
-export async function getReferenceBundleRows(tx: Tx): Promise<ReferenceBundleRows> {
+export async function getReferenceBundleRows(tx: Tx, before?: Date): Promise<ReferenceBundleRows> {
   const [
     notionalCosts,
     familyCategoryMetas,
@@ -762,15 +764,15 @@ export async function getReferenceBundleRows(tx: Tx): Promise<ReferenceBundleRow
     lifestyleSqueezeBands,
     debtShortfallBands,
   ] = await Promise.all([
-    getNotionalCostConfigs(tx),
-    getFamilyCategoryMetas(tx),
-    getAffordabilityBands(tx),
-    getIncomeCategoryBands(tx),
-    getPropertyEquityBands(tx),
-    getFinancialEquityBands(tx),
-    getDebtRatioBands(tx),
-    getLifestyleSqueezeBands(tx),
-    getDebtShortfallBands(tx),
+    getNotionalCostConfigs(tx, before),
+    getFamilyCategoryMetas(tx, before),
+    getAffordabilityBands(tx, before),
+    getIncomeCategoryBands(tx, before),
+    getPropertyEquityBands(tx, before),
+    getFinancialEquityBands(tx, before),
+    getDebtRatioBands(tx, before),
+    getLifestyleSqueezeBands(tx, before),
+    getDebtShortfallBands(tx, before),
   ]);
 
   return {
