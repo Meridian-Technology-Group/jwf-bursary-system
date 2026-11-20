@@ -22,19 +22,7 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { createSupabaseServerClient } from "@/lib/auth/supabase-server";
-
-/**
- * Validate a `next` query parameter for use as an internal redirect target.
- * Rejects absolute URLs and protocol-relative paths (`//evil.com`, `/\evil.com`).
- * See docs/security-audit.md §2.9.
- */
-function safeNext(raw: string | null): string {
-  if (!raw) return "/";
-  if (!raw.startsWith("/") || raw.startsWith("//") || raw.startsWith("/\\")) {
-    return "/";
-  }
-  return raw;
-}
+import { safeNext } from "@/lib/auth/safe-next";
 
 export async function GET(request: NextRequest) {
   const { searchParams, origin } = new URL(request.url);

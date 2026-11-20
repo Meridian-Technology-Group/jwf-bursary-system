@@ -19,24 +19,12 @@ import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { createSupabaseBrowserClient } from "@/lib/auth/supabase-browser";
 import { mapAuthCallbackError } from "@/lib/auth/reset-password-helpers";
+import { safeNext } from "@/lib/auth/safe-next";
 import { isStaffMfaEnforcedAction } from "./actions";
 
 // ---------------------------------------------------------------------------
 // Inner form — isolated so useSearchParams() is inside a Suspense boundary.
 // ---------------------------------------------------------------------------
-
-/**
- * Validate a `next` query parameter for use as an internal redirect target.
- * Rejects absolute URLs and protocol-relative paths (`//evil.com`, `/\evil.com`).
- * See docs/security-audit.md §2.9.
- */
-function safeNext(raw: string | null): string {
-  if (!raw) return "/";
-  if (!raw.startsWith("/") || raw.startsWith("//") || raw.startsWith("/\\")) {
-    return "/";
-  }
-  return raw;
-}
 
 function LoginForm() {
   const router = useRouter();
