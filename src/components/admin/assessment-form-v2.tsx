@@ -86,7 +86,7 @@ import {
 } from "@/app/(admin)/applications/[id]/assessment/actions";
 import type { AssessmentSaveInput } from "@/lib/db/queries/assessments";
 import { reduceSaveError, canProceedAfterSave, type SaveOutcome } from "@/lib/assessment/v2/save-gate";
-import { toast } from "@/hooks/use-toast";
+import { toast } from "sonner";
 import { dominantEmploymentStatus } from "@/lib/assessment/v2/employment-status";
 
 // ─── Serialised (Decimal→number) shapes handed in from the server component ────
@@ -735,11 +735,7 @@ export function AssessmentFormV2({
     // same rule regardless (`saveAssessmentAction`); this is the courtesy.
     if (manualAdjustmentError) {
       setSaveError(manualAdjustmentError);
-      toast({
-        variant: "destructive",
-        title: "Manual adjustment needs a reason",
-        description: manualAdjustmentError,
-      });
+      toast.error("Manual adjustment needs a reason", { description: manualAdjustmentError });
       return false;
     }
 
@@ -858,11 +854,7 @@ export function AssessmentFormV2({
       // CALC-15 — surface the failure visibly: a stale/broken save must never
       // pass silently. Toast is transient; the inline banner (rendered from
       // `saveError`, above) persists until the next successful save.
-      toast({
-        variant: "destructive",
-        title: "Save failed",
-        description: `${outcome.error} Your changes were NOT saved.`,
-      });
+      toast.error("Save failed", { description: `${outcome.error} Your changes were NOT saved.` });
     }
     return canProceedAfterSave(outcome);
   }, [
@@ -941,7 +933,7 @@ export function AssessmentFormV2({
       router.refresh();
     } else {
       setSaveError(result.error);
-      toast({ variant: "destructive", title: "Complete failed", description: result.error });
+      toast.error("Complete failed", { description: result.error });
     }
   };
 
@@ -961,7 +953,7 @@ export function AssessmentFormV2({
       router.refresh();
     } else {
       setSaveError(result.error);
-      toast({ variant: "destructive", title: "Pause failed", description: result.error });
+      toast.error("Pause failed", { description: result.error });
     }
   };
 

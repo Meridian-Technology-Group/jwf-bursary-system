@@ -13,7 +13,7 @@ import { Save } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { saveRoundWindowsAction } from "@/app/(admin)/rounds/actions";
-import { toast } from "@/hooks/use-toast";
+import { toast } from "sonner";
 
 export interface RoundWindowRowValue {
   scenario: "NA_CURRENT" | "NA_NEXT_WINTER" | "NA_NEXT_SPRING" | "RA";
@@ -82,13 +82,9 @@ export function RoundWindowsEditor({
     setSaving(false);
     if (result.success) {
       setDirty(false);
-      toast({ title: "Round scenarios saved" });
+      toast.success("Round scenarios saved");
     } else {
-      toast({
-        variant: "destructive",
-        title: "Scenarios not saved",
-        description: result.error,
-      });
+      toast.error("Scenarios not saved", { description: result.error });
     }
   };
 
