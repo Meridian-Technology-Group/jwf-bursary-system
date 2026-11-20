@@ -32,10 +32,19 @@ describe('"Submit by" wiring', () => {
         expect(count(src, "parseInvitationSubmitBy(")).toBe(validates);
       });
       it("resolves {{deadline}} with the invitation's date", () => {
-        expect(count(src, "emailDeadlineOverride(")).toBe(emails);
+        // Directly, or through the shared builder, whose `submitBy` input is
+        // required (audit finding 19).
+        expect(
+          count(src, "emailDeadlineOverride(") + count(src, "invitationEmailMergeData(")
+        ).toBe(emails);
       });
     });
   }
+
+  it("the shared invitation-email builder applies the date", () => {
+    const src = source("src/lib/invitations/send-invitation.ts");
+    expect(count(src, "emailDeadlineOverride(input.submitBy)")).toBe(1);
+  });
 
   it("stores it on every invitation the send paths create", () => {
     expect(count(source("src/app/(admin)/invitations/actions.ts"), "submissionDeadlineAt: submitBy")).toBe(1);

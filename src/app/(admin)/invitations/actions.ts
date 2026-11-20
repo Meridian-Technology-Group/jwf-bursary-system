@@ -64,6 +64,10 @@ import {
   parseInvitationSubmitBy,
   SUBMIT_BY_FIELD,
 } from "@/lib/invitations/submit-by";
+import {
+  invitationEmailMergeData,
+  rollBackUnsentInvitation,
+} from "@/lib/invitations/send-invitation";
 import { createAuditLog } from "@/lib/audit/log";
 import {
   prepopulateReassessment,
@@ -422,23 +426,19 @@ export async function createInvitationAction(
     email,
     resolveInvitationTemplate(situation, school),
     {
-      applicant_name: effectiveApplicantName || email,
-      child_name: childName ?? "",
-      school: schoolLabel(school),
-      round_year: academicYear,
-      registration_link: `${appUrl}/register?token=${invitationToken}`,
+      ...invitationEmailMergeData({
+        applicantName: effectiveApplicantName || email,
+        childName: childName ?? "",
+        school: schoolLabel(school),
+        roundYear: academicYear,
+        registrationLink: `${appUrl}/register?token=${invitationToken}`,
+        deadlineRound,
+        deadlineType: deadlineTypeForSituation(situation),
+        expiresAt,
+        submitBy,
+      }),
       opening_date: openingDateMergeField(
         roundOpenDate ? { openDate: roundOpenDate } : null
-      ),
-      // E1/CF-11: {{deadline}} is the SUBMISSION deadline for the round this
-      // invitation is for; {{link_expiry}} carries the token expiry that used
-      // to masquerade as it. The invitation's own "Submit by" date, when set,
-      // wins over the round chain (licence fix, 14 Oct 2026).
-      ...invitationDeadlineFields(
-        deadlineRound,
-        deadlineTypeForSituation(situation),
-        expiresAt,
-        emailDeadlineOverride(submitBy)
       ),
     },
     // CH-32 — blind-copy the bursary inbox so the send is on record.
@@ -452,18 +452,11 @@ export async function createInvitationAction(
     );
 
     // Roll back the just-created invitation row and record the failure.
-    await withAdminContext(async (tx) => {
-      await tx.invitation.delete({ where: { id: invitationId } }).catch((err) => {
-        console.error(
-          "[invitations] createInvitationAction invitation rollback failed:",
-          err
-        );
-      });
-      await createAuditLog(tx, {
+    await rollBackUnsentInvitation({
+      invitationId,
+      audit: {
         userId: user.id,
         action: AUDIT_ACTIONS.CREATE_INVITATION_FAILED,
-        entityType: AUDIT_ENTITY_TYPES.Invitation,
-        entityId: invitationId,
         context: `Invitation to ${email} rolled back — email failed to send`,
         metadata: {
           email,
@@ -471,12 +464,8 @@ export async function createInvitationAction(
           authUserId,
           emailError: emailResult.error ?? null,
         },
-      });
-    }).catch((err) => {
-      console.error(
-        "[invitations] createInvitationAction rollback tx failed:",
-        err
-      );
+      },
+      logLabel: (step) => `[invitations] createInvitationAction ${step} failed:`,
     });
 
     // Roll back the auth user so we never leave an orphan account behind —
@@ -617,23 +606,24 @@ async function sendReassessmentInviteForHolder(
     }
 
     // Send branded reassessment email
-    const emailResult = await sendEmail(email, "REASSESSMENT", {
-      applicant_name: applicantName,
-      child_name: holder.childName,
-      school: schoolLabel(holder.school),
-      round_year: academicYear,
-      registration_link: `${appUrl}/register?token=${txResult.token}`,
-      // E1/CF-12: a re-assessment invitation is by definition ROLLING_OVER, so
-      // {{deadline}} resolves against the round's rolling submission date (the
-      // April one), NOT the 30-day token expiry it used to carry.
-      // The batch's "Submit by" date, when set, wins (licence fix).
-      ...invitationDeadlineFields(
-        ctx.deadlineRound,
-        "ROLLING_OVER",
-        txResult.expiresAt,
-        emailDeadlineOverride(ctx.submitBy)
-      ),
-    });
+    const emailResult = await sendEmail(
+      email,
+      "REASSESSMENT",
+      invitationEmailMergeData({
+        applicantName,
+        childName: holder.childName,
+        school: schoolLabel(holder.school),
+        roundYear: academicYear,
+        registrationLink: `${appUrl}/register?token=${txResult.token}`,
+        // E1/CF-12: a re-assessment invitation is by definition ROLLING_OVER,
+        // so {{deadline}} resolves against the round's rolling submission date
+        // (the April one). The batch's "Submit by" date, when set, wins.
+        deadlineRound: ctx.deadlineRound,
+        deadlineType: "ROLLING_OVER",
+        expiresAt: txResult.expiresAt,
+        submitBy: ctx.submitBy,
+      })
+    );
 
     if (!emailResult.success) {
       // Roll back exactly as createInvitationAction does (audit finding 16):
@@ -641,20 +631,11 @@ async function sendReassessmentInviteForHolder(
       // getActiveBursaryHolders treat the holder as invited, so a re-run
       // silently skipped them. Delete the row, record the failure, then the
       // catch below removes a login this call created and counts the failure.
-      await withAdminContext(async (tx) => {
-        await tx.invitation
-          .delete({ where: { id: txResult.invitationId } })
-          .catch((rollbackErr) => {
-            console.error(
-              `[reassessment-invite] invitation rollback failed for ${email}:`,
-              rollbackErr
-            );
-          });
-        await createAuditLog(tx, {
+      await rollBackUnsentInvitation({
+        invitationId: txResult.invitationId,
+        audit: {
           userId,
           action: AUDIT_ACTIONS.CREATE_INVITATION_FAILED,
-          entityType: AUDIT_ENTITY_TYPES.Invitation,
-          entityId: txResult.invitationId,
           context: `Reassessment invitation to ${email} rolled back — email failed to send`,
           metadata: {
             email,
@@ -663,12 +644,8 @@ async function sendReassessmentInviteForHolder(
             authUserId,
             emailError: emailResult.error ?? null,
           },
-        });
-      }).catch((rollbackErr) => {
-        console.error(
-          `[reassessment-invite] rollback tx failed for ${email}:`,
-          rollbackErr
-        );
+        },
+        logLabel: (step) => `[reassessment-invite] ${step} failed for ${email}:`,
       });
       throw new Error(emailResult.error ?? "Email failed to send");
     }
