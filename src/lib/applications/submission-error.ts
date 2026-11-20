@@ -37,6 +37,15 @@ export const SUBMISSION_BLOCKED_MESSAGE =
 export const SUBMISSION_DEADLINE_PASSED_MESSAGE =
   `The submission deadline for this application has passed, so it can no longer be submitted. Forms submitted late cannot be assessed — if you believe this is an error, ${CONTACT_BURSARY_TEAM_COPY}.`;
 
+/**
+ * The same lockout, for a save or an upload into a not-yet-submitted draft
+ * past its deadline (e.g. a tab left open over the cut-off). The section page
+ * already renders read-only once the deadline passes; this is what the server
+ * returns to a stale tab.
+ */
+export const DRAFT_DEADLINE_PASSED_MESSAGE =
+  `The submission deadline for this application has passed, so it can no longer be changed. Forms submitted late cannot be assessed — if you believe this is an error, ${CONTACT_BURSARY_TEAM_COPY}.`;
+
 /** Shape of the gap payload the submit gate JSON-encodes into an Error message. */
 interface GapsPayload {
   code?: string;

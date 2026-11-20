@@ -55,14 +55,24 @@ vi.mock("@/lib/db/prisma", () => ({
   withAdminContext: (fn: (tx: unknown) => unknown) => fn(fakeTx),
 }));
 
-import { saveSection, saveSectionDraft } from "../actions";
+import { getSection, saveSection, saveSectionDraft } from "../actions";
 
 interface FakeApp {
   id: string;
   leadApplicantId: string;
   formStatus: string;
   applicationType: string;
+  /** Per-application deadline override (null = the round's chain applies). */
+  submissionDeadlineAt: Date | null;
 }
+
+/** A round whose deadline is far off, so a draft on it is still editable. */
+const OPEN_ROUND = {
+  closeDate: new Date("2099-11-30T00:00:00Z"),
+  defaultSubmissionDeadlineNew: null,
+  defaultSubmissionDeadlineRolling: null,
+  windows: [],
+};
 
 /** Applies the parts of the ownership WHERE the actions rely on. */
 function matches(app: FakeApp, where: Record<string, unknown>): boolean {
@@ -85,7 +95,14 @@ function makeTx(apps: FakeApp[]) {
       // No orderBy, like the old fallback: first match wins.
       findFirst: vi.fn(async (args: { where: Record<string, unknown> }) => {
         const hit = apps.find((a) => matches(a, args.where));
-        return hit ? { id: hit.id } : null;
+        return hit
+          ? {
+              id: hit.id,
+              submissionDeadlineAt: hit.submissionDeadlineAt,
+              applicationType: hit.applicationType,
+              round: OPEN_ROUND,
+            }
+          : null;
       }),
       findUniqueOrThrow: vi.fn(async (args: { where: { id: string } }) => {
         const app = apps.find((a) => a.id === args.where.id);
@@ -129,6 +146,7 @@ const app = (id: string, over: Partial<FakeApp> = {}): FakeApp => ({
   leadApplicantId: APPLICANT_USER.id,
   formStatus: "IN_PROGRESS",
   applicationType: "NEW",
+  submissionDeadlineAt: null,
   ...over,
 });
 
@@ -186,5 +204,55 @@ describe("section saves target the application the form was rendered for", () =>
 
     expect(res.success).toBe(false);
     expect(fakeTx.applicationSection.upsert).not.toHaveBeenCalled();
+  });
+});
+
+describe("section saves refuse once the application's deadline has passed", () => {
+  // A tab left open over the cut-off: the page rendered editable, the deadline
+  // then passed. Only submit used to refuse; every autosave kept writing.
+  const PAST = new Date("2020-01-01T12:00:00Z");
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    getCurrentUserMock.mockImplementation(async () => APPLICANT_USER);
+    activeIdMock.mockImplementation(async () => null);
+  });
+
+  it("refuses both saves — and writes nothing — for a draft past its deadline", async () => {
+    fakeTx = makeTx([app("app-A", { submissionDeadlineAt: PAST })]);
+
+    const draft = await saveSectionDraft("app-A", "ADDITIONAL_INFO", DRAFT);
+    const full = await saveSection("app-A", "ADDITIONAL_INFO", COMPLETE);
+
+    for (const res of [draft, full]) {
+      expect(res.success).toBe(false);
+      expect(res.errors?.[0]).toMatch(/deadline for this application has passed/);
+    }
+    expect(fakeTx.applicationSection.upsert).not.toHaveBeenCalled();
+    expect(fakeTx.application.update).not.toHaveBeenCalled();
+  });
+
+  it("still loads the (read-only) section for a draft past its deadline", async () => {
+    fakeTx = makeTx([app("app-A", { submissionDeadlineAt: PAST })]);
+    fakeTx.applicationSection.findUnique.mockResolvedValueOnce({
+      data: DRAFT,
+      isComplete: false,
+      updatedAt: PAST,
+    } as never);
+
+    const res = await getSection("app-A", "ADDITIONAL_INFO");
+
+    expect(res.data).toEqual(DRAFT);
+  });
+
+  it("saves normally when the override is still in the future", async () => {
+    fakeTx = makeTx([
+      app("app-A", { submissionDeadlineAt: new Date("2099-01-01T12:00:00Z") }),
+    ]);
+
+    const res = await saveSectionDraft("app-A", "ADDITIONAL_INFO", DRAFT);
+
+    expect(res).toEqual({ success: true });
+    expect(writtenApplicationIds()).toEqual(["app-A"]);
   });
 });

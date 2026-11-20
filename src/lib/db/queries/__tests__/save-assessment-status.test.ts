@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { saveAssessment } from "../assessments";
+import { v2SnapshotForSave } from "@/lib/assessment/v2/save-gate";
 
 /**
  * Audit 20 Nov 2026 (finding 12a): an assessment save must never write
@@ -32,5 +33,33 @@ describe("saveAssessment — status is not a save field", () => {
     };
     expect(arg.data).not.toHaveProperty("status");
     expect(arg.data.annualFees).toBe(1000);
+  });
+});
+
+/**
+ * Audit 20 Nov 2026: when the v2 calculation cannot run, the form sends every
+ * snapshot column as null. The partial update must WRITE those nulls (not
+ * skip them), or the previous figures survive beside the new inputs.
+ */
+describe("saveAssessment — a failed calculation clears the stored snapshot", () => {
+  it("writes null to every v2 snapshot column, including the completion-guard column", async () => {
+    const tx = {
+      assessment: {
+        update: vi.fn(async () => ({})),
+        findUniqueOrThrow: vi.fn(async () => ({ id: "asmt-1" })),
+      },
+    };
+    const snapshot = v2SnapshotForSave(null);
+
+    await saveAssessment(tx as never, "asmt-1", { annualFees: 1000, ...snapshot });
+
+    const arg = (tx.assessment.update.mock.calls[0] as unknown[])[0] as {
+      data: Record<string, unknown>;
+    };
+    for (const key of Object.keys(snapshot)) {
+      expect(arg.data).toHaveProperty(key, null);
+    }
+    expect(arg.data.totalHouseholdNetIncome).toBeNull();
+    expect(arg.data.recommendedPayableFees).toBeNull();
   });
 });

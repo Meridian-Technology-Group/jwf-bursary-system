@@ -6,6 +6,7 @@
  * the application role.
  */
 
+import * as React from "react";
 import { redirect } from "next/navigation";
 import { Role, type Profile } from "@prisma/client";
 import { withAdminContext } from "@/lib/db/prisma";
@@ -13,6 +14,10 @@ import { createSupabaseServerClient } from "@/lib/auth/supabase-server";
 
 // Re-export Role so consumers only need one import path.
 export { Role };
+
+// Next bundles a React that has `cache`; the plain react@18 package that
+// vitest and node scripts load does not, so there it calls straight through.
+const cache: typeof React.cache = React.cache ?? ((fn) => fn);
 
 // ---------------------------------------------------------------------------
 // Type helpers
@@ -38,8 +43,14 @@ export type CurrentUser = Pick<
 /**
  * Returns the Profile (with role) for the currently authenticated user.
  * Returns null if there is no active session or no matching profile row.
+ *
+ * Wrapped in React `cache` so one Server Component render (the layout plus
+ * the page's own `requireRole`) pays for ONE `auth.getUser()` round-trip and
+ * ONE profile read. React only memoises inside a render: in a server action
+ * or route handler every call still reads fresh, so a session or role change
+ * is never hidden from code that runs after it.
  */
-export async function getCurrentUser(): Promise<CurrentUser | null> {
+export const getCurrentUser = cache(async (): Promise<CurrentUser | null> => {
   const supabase = await createSupabaseServerClient();
 
   const {
@@ -73,7 +84,7 @@ export async function getCurrentUser(): Promise<CurrentUser | null> {
   return profile
     ? { ...profile, authLastSignInAt: user.last_sign_in_at ?? null }
     : null;
-}
+});
 
 /**
  * Ensures the current user has one of the allowed roles.

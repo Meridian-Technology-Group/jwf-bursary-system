@@ -206,6 +206,11 @@ export const AUDIT_ACTIONS = {
   GDPR_DELETION: "GDPR_DELETION",
   /** Automatic tiered-retention purge run by the purge-expired cron (Epic 10). */
   RETENTION_PURGE_CRON: "RETENTION_PURGE_CRON",
+  /**
+   * Weekly orphaned-upload sweep (cleanup-orphan-uploads cron): one summary
+   * row per run, report-only or enabled. Counts and redacted paths only.
+   */
+  ORPHAN_UPLOAD_CLEANUP_CRON: "ORPHAN_UPLOAD_CLEANUP_CRON",
 
   // Bursary-account forward schedule (Epic 10)
   SCHEDULE_REGENERATED: "SCHEDULE_REGENERATED",
@@ -407,6 +412,7 @@ const ACTION_COLOUR: Partial<Record<AuditAction, string>> = {
   [AUDIT_ACTIONS.ASSESSMENT_REOPENED]: "bg-orange-400",
   [AUDIT_ACTIONS.GDPR_DELETION]: "bg-red-400",
   [AUDIT_ACTIONS.RETENTION_PURGE_CRON]: "bg-red-400",
+  [AUDIT_ACTIONS.ORPHAN_UPLOAD_CLEANUP_CRON]: "bg-red-400",
   [AUDIT_ACTIONS.NAME_REVEAL]: "bg-orange-400",
   [AUDIT_ACTIONS.SCHEDULE_REGENERATED]: "bg-blue-500",
   [AUDIT_ACTIONS.SCHEDULE_SHOW_ON_PORTAL_TOGGLED]: "bg-blue-500",

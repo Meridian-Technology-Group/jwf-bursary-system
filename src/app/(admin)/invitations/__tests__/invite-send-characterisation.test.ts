@@ -541,7 +541,7 @@ describe("sendInvitationFromContactAction — send + rollback (characterisation)
     expect(revalidated()).toEqual(["/contacts", "/invitations"]);
   });
 
-  it("pins current behaviour: an invalid BCC is rejected AFTER the invitation is created (no rollback, no send)", async () => {
+  it("an invalid BCC is rejected BEFORE any write: no login, no invitation, no send", async () => {
     provisionMock.mockResolvedValue({ ok: true, authUserId: "auth-new", created: true });
 
     const result = await sendInvitationFromContactAction("contact-1", "round-1", {
@@ -549,11 +549,31 @@ describe("sendInvitationFromContactAction — send + rollback (characterisation)
     });
 
     expect(result).toEqual({ success: false, error: "That BCC address is not a valid email." });
-    expect(createInvitationMock).toHaveBeenCalledTimes(1);
+    expect(provisionMock).not.toHaveBeenCalled();
+    expect(ensureLoginMock).not.toHaveBeenCalled();
+    expect(createProfileMock).not.toHaveBeenCalled();
+    expect(fakeTx.contact.update).not.toHaveBeenCalled();
+    expect(createInvitationMock).not.toHaveBeenCalled();
+    expect(auditMock).not.toHaveBeenCalled();
     expect(sendEmailMock).not.toHaveBeenCalled();
-    expect(fakeTx.invitation.delete).not.toHaveBeenCalled();
     expect(deleteUserMock).not.toHaveBeenCalled();
     expect(revalidated()).toEqual([]);
+  });
+
+  it("skipEmail ignores the BCC, even an invalid one: the invitation is still created", async () => {
+    provisionMock.mockResolvedValue({ ok: true, authUserId: "auth-new", created: true });
+
+    const result = await sendInvitationFromContactAction("contact-1", "round-1", {
+      skipEmail: true,
+      bcc: "not-an-email",
+    });
+
+    expect(result).toEqual({
+      success: true,
+      registrationLink: "https://example.test/register?token=tok-1",
+    });
+    expect(createInvitationMock).toHaveBeenCalledTimes(1);
+    expect(sendEmailMock).not.toHaveBeenCalled();
   });
 });
 

@@ -77,7 +77,7 @@ describe("buildBulkMergeData", () => {
         submissionDeadlineAt: null,
         round: {
           academicYear: "2026/27",
-          closeDate: new Date(2026, 8, 30),
+          closeDate: new Date("2026-09-30T00:00:00Z"), // @db.Date: UTC midnight
           defaultSubmissionDeadlineNew: null,
       defaultSubmissionDeadlineRolling: null,
       windows: [],
@@ -93,7 +93,7 @@ describe("buildBulkMergeData", () => {
         submissionDeadlineAt: new Date(2026, 10, 15),
         round: {
           academicYear: "2026/27",
-          closeDate: new Date(2026, 8, 30),
+          closeDate: new Date("2026-09-30T00:00:00Z"), // @db.Date: UTC midnight
           defaultSubmissionDeadlineNew: null,
       defaultSubmissionDeadlineRolling: null,
       windows: [],
