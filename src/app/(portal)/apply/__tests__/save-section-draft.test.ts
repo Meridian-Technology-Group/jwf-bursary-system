@@ -84,7 +84,17 @@ function makeStatefulTx() {
     rows,
     app,
     application: {
-      findFirst: vi.fn(async () => ({ id: "app-1" })),
+      findFirst: vi.fn(async () => ({
+        id: "app-1",
+        submissionDeadlineAt: null,
+        applicationType: "NEW",
+        round: {
+          closeDate: new Date("2099-11-30T00:00:00Z"),
+          defaultSubmissionDeadlineNew: null,
+          defaultSubmissionDeadlineRolling: null,
+          windows: [],
+        },
+      })),
       findUniqueOrThrow: vi.fn(async () => ({ ...app })),
       update: vi.fn(async (args: { data: { formStatus: string } }) => {
         app.formStatus = args.data.formStatus;

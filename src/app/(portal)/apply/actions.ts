@@ -32,7 +32,14 @@ import {
 } from "@/lib/db/prisma";
 import { refreshFormStatus } from "@/lib/applications/status";
 import { submitApplicationCore } from "@/lib/applications/submission";
-import { applicantSubmissionErrors } from "@/lib/applications/submission-error";
+import {
+  applicantSubmissionErrors,
+  DRAFT_DEADLINE_PASSED_MESSAGE,
+} from "@/lib/applications/submission-error";
+import {
+  DEADLINE_ROUND_SELECT,
+  isSubmissionDeadlinePassed,
+} from "@/lib/rounds/submission-deadline";
 import {
   diffSectionPaths,
   clearProvenance,
@@ -123,6 +130,10 @@ async function resolveApplicationId(): Promise<string | null> {
  * zero rows and Prisma throws P2025 — which would break every section save.
  * The admin-context self-heal below only runs for the (should-be-impossible)
  * case of an application with no PRIMARY contributor.
+ *
+ * `deadlinePassed` is the portal lockout's own rule (`isSubmissionDeadlinePassed`
+ * — the same one the section page and the submit guard use). Only the save
+ * actions refuse on it; the read paths still load the (read-only) form.
  */
 async function getOwnedApplicationContext(
   applicationId: string | null
@@ -130,6 +141,7 @@ async function getOwnedApplicationContext(
   user: CurrentUser;
   appId: string;
   ownerContributorId: string;
+  deadlinePassed: boolean;
 } | null> {
   const user = await getCurrentUser();
   if (!user || !applicationId) return null;
@@ -145,7 +157,12 @@ async function getOwnedApplicationContext(
           formStatus: { not: "SUBMITTED" },
           ...PORTAL_APPLICATION,
         },
-        select: { id: true },
+        select: {
+          id: true,
+          submissionDeadlineAt: true,
+          applicationType: true,
+          round: { select: DEADLINE_ROUND_SELECT },
+        },
       });
       if (!application) return null;
 
@@ -154,7 +171,11 @@ async function getOwnedApplicationContext(
         application.id,
         user.id
       );
-      return { appId: application.id, ownerContributorId };
+      return {
+        appId: application.id,
+        ownerContributorId,
+        deadlinePassed: isSubmissionDeadlinePassed(application, application.round),
+      };
     }
   );
 
@@ -174,6 +195,7 @@ async function getOwnedApplicationContext(
     user,
     appId: resolved.appId,
     ownerContributorId,
+    deadlinePassed: resolved.deadlinePassed,
   };
 }
 
@@ -230,8 +252,9 @@ const NOT_EDITABLE_ERROR =
 
 /**
  * Validates and saves a section's data to the application the form was
- * rendered for (`applicationId`), after verifying the caller owns it and it is
- * not submitted (see `getOwnedApplicationContext`).
+ * rendered for (`applicationId`), after verifying the caller owns it, it is
+ * not submitted, and its submission deadline has not passed (see
+ * `getOwnedApplicationContext`).
  */
 export async function saveSection(
   applicationId: string | null,
@@ -241,6 +264,9 @@ export async function saveSection(
   const ctx = await getOwnedApplicationContext(applicationId);
   if (!ctx) {
     return { success: false, errors: [NOT_EDITABLE_ERROR] };
+  }
+  if (ctx.deadlinePassed) {
+    return { success: false, errors: [DRAFT_DEADLINE_PASSED_MESSAGE] };
   }
 
   // Validate with the section's Zod schema
@@ -306,6 +332,9 @@ export async function saveSectionDraft(
   const ctx = await getOwnedApplicationContext(applicationId);
   if (!ctx) {
     return { success: false, errors: [NOT_EDITABLE_ERROR] };
+  }
+  if (ctx.deadlinePassed) {
+    return { success: false, errors: [DRAFT_DEADLINE_PASSED_MESSAGE] };
   }
 
   try {
