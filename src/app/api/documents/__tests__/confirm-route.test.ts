@@ -103,6 +103,8 @@ function makeFakeTx(
   overrides: {
     formStatus?: string;
     leadApplicantId?: string;
+    /** Per-application deadline override (null = the round's far-off close). */
+    submissionDeadlineAt?: Date | null;
     contributor?: { id: string; role: string } | null;
     /** Rows the CF-28 digest lookup finds on this application. */
     digestMatches?: { id: string; slot: string; filename: string }[];
@@ -122,6 +124,15 @@ function makeFakeTx(
         id: "app-1",
         leadApplicantId: overrides.leadApplicantId ?? "parent-1",
         formStatus: overrides.formStatus ?? "IN_PROGRESS",
+        submissionDeadlineAt: overrides.submissionDeadlineAt ?? null,
+        applicationType: "NEW",
+        // A far-off close: the draft is still open unless a test overrides it.
+        round: {
+          closeDate: new Date("2099-11-30T00:00:00Z"),
+          defaultSubmissionDeadlineNew: null,
+          defaultSubmissionDeadlineRolling: null,
+          windows: [],
+        },
       })),
     },
     applicationContributor: {
@@ -355,6 +366,18 @@ describe("POST /api/documents/confirm", () => {
 
   it("refuses to attach a document to an application submitted mid-upload", async () => {
     fakeTx = makeFakeTx({ formStatus: "SUBMITTED" });
+
+    const response = await POST(
+      confirmRequest(issueUploadTicket(PRIMARY_CLAIMS))
+    );
+
+    expect(response.status).toBe(409);
+    expect(deleteDocumentMock).toHaveBeenCalledWith(PRIMARY_PATH);
+    expect(fakeTx.document.create).not.toHaveBeenCalled();
+  });
+
+  it("refuses to attach a document to a draft whose deadline passed mid-upload", async () => {
+    fakeTx = makeFakeTx({ submissionDeadlineAt: new Date("2020-01-01T12:00:00Z") });
 
     const response = await POST(
       confirmRequest(issueUploadTicket(PRIMARY_CLAIMS))

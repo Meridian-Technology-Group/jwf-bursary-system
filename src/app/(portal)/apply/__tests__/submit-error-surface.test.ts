@@ -46,6 +46,15 @@ vi.mock("@/lib/log", () => ({
 }));
 
 const fakeTx = {
+  // The ownership pre-check: the caller leads "app-1" and nothing else.
+  application: {
+    findFirst: vi.fn(
+      async (args: { where: { id: string; leadApplicantId: string } }) =>
+        args.where.id === "app-1" && args.where.leadApplicantId === "parent-1"
+          ? { id: "app-1" }
+          : null
+    ),
+  },
   applicationContributor: {
     findUnique: vi.fn(async () => ({ id: "contrib-1" })),
     upsert: vi.fn(async () => ({ id: "contrib-1" })),
@@ -115,5 +124,40 @@ describe("submitApplication — the applicant never sees the diagnostic", () => 
       errors: [SUBMISSION_BLOCKED_MESSAGE],
     });
     expect(logErrorMock).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("submitApplication — ownership is checked before any admin-context write", () => {
+  beforeEach(() => {
+    submitApplicationCoreMock.mockReset();
+    logErrorMock.mockReset();
+    fakeTx.applicationContributor.upsert.mockClear();
+  });
+
+  it("refuses another family's application id without creating a contributor row on it", async () => {
+    // The caller has no contributor row on the foreign application, which is
+    // exactly the case that used to trigger the admin-context self-heal.
+    fakeTx.applicationContributor.findUnique.mockResolvedValueOnce(null as never);
+    // What the real core does with an id the caller cannot see under RLS —
+    // the refusal the old code reached only AFTER the admin-context upsert.
+    submitApplicationCoreMock.mockRejectedValue(new Error("Application not found."));
+
+    await expect(submitApplication("someone-elses-app")).resolves.toEqual({
+      success: false,
+      errors: [SUBMISSION_BLOCKED_MESSAGE],
+    });
+    expect(fakeTx.applicationContributor.upsert).not.toHaveBeenCalled();
+    expect(submitApplicationCoreMock).not.toHaveBeenCalled();
+    expect(logErrorMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("still self-heals a missing PRIMARY contributor on the caller's OWN application", async () => {
+    fakeTx.applicationContributor.findUnique.mockResolvedValueOnce(null as never);
+    submitApplicationCoreMock.mockResolvedValue({ alreadySubmitted: false });
+
+    await submitApplication("app-1");
+
+    expect(fakeTx.applicationContributor.upsert).toHaveBeenCalledTimes(1);
+    expect(submitApplicationCoreMock).toHaveBeenCalledTimes(1);
   });
 });

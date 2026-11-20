@@ -79,6 +79,8 @@ function makeFakeTx(
   overrides: {
     formStatus?: string;
     leadApplicantId?: string;
+    /** Per-application deadline override (null = the round's far-off close). */
+    submissionDeadlineAt?: Date | null;
     contributor?: { id: string; role: string } | null;
     /** Epic 15 P1: assessment status (null = no assessment row). */
     assessmentStatus?: string | null;
@@ -92,6 +94,15 @@ function makeFakeTx(
         id: "app-1",
         leadApplicantId: overrides.leadApplicantId ?? "parent-1",
         formStatus: overrides.formStatus ?? "IN_PROGRESS",
+        submissionDeadlineAt: overrides.submissionDeadlineAt ?? null,
+        applicationType: "NEW",
+        // A far-off close: the draft is still open unless a test overrides it.
+        round: {
+          closeDate: new Date("2099-11-30T00:00:00Z"),
+          defaultSubmissionDeadlineNew: null,
+          defaultSubmissionDeadlineRolling: null,
+          windows: [],
+        },
       })),
     },
     applicationContributor: {
@@ -233,6 +244,18 @@ describe("POST /api/documents/sign", () => {
     expect(uploadDocumentSignedMock).not.toHaveBeenCalled();
   });
 
+  it("refuses uploads to a not-yet-submitted draft past its deadline", async () => {
+    // A tab left open over the cut-off: the form is locked, so its documents are too.
+    fakeTx = makeFakeTx({ submissionDeadlineAt: new Date("2020-01-01T12:00:00Z") });
+
+    const response = await POST(signRequest(VALID_BODY));
+    const body = await response.json();
+
+    expect(response.status).toBe(409);
+    expect(body.error).toMatch(/deadline for this application has passed/);
+    expect(uploadDocumentSignedMock).not.toHaveBeenCalled();
+  });
+
   // ─── Epic 15 P1 (CI-07/08): the paused missing-docs window ────────────────
 
   it("allows an upload into a REQUESTED slot while the assessment is paused", async () => {
@@ -240,6 +263,22 @@ describe("POST /api/documents/sign", () => {
       formStatus: "SUBMITTED",
       assessmentStatus: "PAUSED",
       requestedSlots: ["BIRTH_CERTIFICATE"],
+    });
+
+    const response = await POST(signRequest(VALID_BODY));
+
+    expect(response.status).toBe(200);
+    expect(uploadDocumentSignedMock).toHaveBeenCalled();
+  });
+
+  it("still allows a REQUESTED slot while paused when the original deadline has long passed", async () => {
+    // The /respond flow runs after submission, so the form's deadline is
+    // always behind it — it must never close the missing-documents window.
+    fakeTx = makeFakeTx({
+      formStatus: "SUBMITTED",
+      assessmentStatus: "PAUSED",
+      requestedSlots: ["BIRTH_CERTIFICATE"],
+      submissionDeadlineAt: new Date("2020-01-01T12:00:00Z"),
     });
 
     const response = await POST(signRequest(VALID_BODY));

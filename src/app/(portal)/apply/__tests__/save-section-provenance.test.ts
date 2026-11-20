@@ -63,7 +63,17 @@ import { saveSection, saveSectionDraft } from "../actions";
 function makeFakeTx() {
   return {
     application: {
-      findFirst: vi.fn(async () => ({ id: "app-1" })),
+      findFirst: vi.fn(async () => ({
+        id: "app-1",
+        submissionDeadlineAt: null,
+        applicationType: "NEW",
+        round: {
+          closeDate: new Date("2099-11-30T00:00:00Z"),
+          defaultSubmissionDeadlineNew: null,
+          defaultSubmissionDeadlineRolling: null,
+          windows: [],
+        },
+      })),
       findUniqueOrThrow: vi.fn(async () => ({
         formStatus: "SUBMITTED",
         applicationType: "NEW",
@@ -233,7 +243,17 @@ describe("saveSectionDraft — repeated autosaves do not churn provenance", () =
     let row = { ...initial };
     return {
       application: {
-        findFirst: vi.fn(async () => ({ id: "app-1" })),
+        findFirst: vi.fn(async () => ({
+        id: "app-1",
+        submissionDeadlineAt: null,
+        applicationType: "NEW",
+        round: {
+          closeDate: new Date("2099-11-30T00:00:00Z"),
+          defaultSubmissionDeadlineNew: null,
+          defaultSubmissionDeadlineRolling: null,
+          windows: [],
+        },
+      })),
         findUniqueOrThrow: vi.fn(async () => ({
           formStatus: "SUBMITTED",
           applicationType: "NEW",

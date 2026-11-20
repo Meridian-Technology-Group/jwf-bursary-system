@@ -14,10 +14,11 @@ import type { SubmissionDeadlineRound } from "@/lib/rounds/submission-deadline";
  * expiry moves to its own `{{link_expiry}}` field.
  */
 
+// Date-only columns as Prisma returns them: UTC midnight of the day.
 const round: SubmissionDeadlineRound = {
-  closeDate: new Date("2026-09-30T00:00:00"),
-  defaultSubmissionDeadlineNew: new Date("2026-09-20T00:00:00"),
-  defaultSubmissionDeadlineRolling: new Date("2026-04-30T00:00:00"),
+  closeDate: new Date("2026-09-30T00:00:00Z"),
+  defaultSubmissionDeadlineNew: new Date("2026-09-20T00:00:00Z"),
+  defaultSubmissionDeadlineRolling: new Date("2026-04-30T00:00:00Z"),
   windows: [],
 };
 
@@ -41,14 +42,14 @@ describe("invitationDeadlineFields", () => {
   it("a NEW invitation gets the round's new-applicant submission deadline", () => {
     const fields = invitationDeadlineFields(round, "NEW", expiresAt);
     expect(fields.deadline).toBe(
-      new Date("2026-09-20T23:59:59.999").toLocaleDateString("en-GB")
+      "20/09/2026"
     );
   });
 
   it("a re-assessment invitation gets the round's ROLLING-OVER (April) deadline", () => {
     const fields = invitationDeadlineFields(round, "ROLLING_OVER", expiresAt);
     expect(fields.deadline).toBe(
-      new Date("2026-04-30T23:59:59.999").toLocaleDateString("en-GB")
+      "30/04/2026"
     );
   });
 
@@ -71,14 +72,14 @@ describe("invitationDeadlineFields", () => {
 
   it("falls back to the round close date when that type has no round default", () => {
     const noDefaults: SubmissionDeadlineRound = {
-      closeDate: new Date("2026-09-30T00:00:00"),
+      closeDate: new Date("2026-09-30T00:00:00Z"),
       defaultSubmissionDeadlineNew: null,
       defaultSubmissionDeadlineRolling: null,
       windows: [],
     };
     const fields = invitationDeadlineFields(noDefaults, "NEW", expiresAt);
     expect(fields.deadline).toBe(
-      new Date("2026-09-30T23:59:59.999").toLocaleDateString("en-GB")
+      "30/09/2026"
     );
   });
 

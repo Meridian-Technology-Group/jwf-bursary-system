@@ -67,9 +67,8 @@ export function londonStartOfDayUtc(dateStr: string): Date {
 /**
  * Converts a `YYYY-MM-DD` calendar date in Europe/London to the UTC instant of
  * the END of that day in London (23:59:59.999 local). Used for inclusive "to"
- * date-range bounds (§7.1) — mirrors the end-of-day normalisation already used
- * for round/application submission deadlines (`src/lib/rounds/submission-deadline.ts`),
- * but London-zone-aware rather than server-local-zone.
+ * date-range bounds (§7.1) — the same end-of-London-day normalisation the
+ * round/application submission deadlines use (`src/lib/rounds/submission-deadline.ts`).
  */
 export function londonEndOfDayUtc(dateStr: string): Date {
   const [year, month, day] = parseYmd(dateStr);

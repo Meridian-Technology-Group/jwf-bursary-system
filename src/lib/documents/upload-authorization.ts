@@ -24,6 +24,11 @@ import { withUserContext, withAdminContext, type RlsRole } from "@/lib/db/prisma
 import { ensurePrimaryContributor } from "@/lib/db/queries/contributors";
 import { getLatestMissingDocsRequest } from "@/lib/db/queries/missing-docs";
 import type { UploadNamespace } from "@/lib/uploads/upload-ticket";
+import { DRAFT_DEADLINE_PASSED_MESSAGE } from "@/lib/applications/submission-error";
+import {
+  DEADLINE_ROUND_SELECT,
+  isSubmissionDeadlinePassed,
+} from "@/lib/rounds/submission-deadline";
 
 /** The sub-directory a SECONDARY contributor's uploads live under. */
 export const SECONDARY_NAMESPACE = "secondary";
@@ -105,7 +110,14 @@ export async function authorizeDocumentUpload(
     (tx) =>
       tx.application.findUnique({
         where: { id: applicationId },
-        select: { id: true, leadApplicantId: true, formStatus: true },
+        select: {
+          id: true,
+          leadApplicantId: true,
+          formStatus: true,
+          submissionDeadlineAt: true,
+          applicationType: true,
+          round: { select: DEADLINE_ROUND_SELECT },
+        },
       })
   );
 
@@ -128,6 +140,12 @@ export async function authorizeDocumentUpload(
           : "Cannot upload documents to a submitted application",
       };
     }
+  } else if (isSubmissionDeadlinePassed(application, application.round)) {
+    // A not-yet-submitted draft past its deadline is locked like the form
+    // itself (the section page renders read-only; save and submit refuse).
+    // Submitted applications never reach here, so the paused missing-docs
+    // window above is unaffected by the original deadline.
+    return { ok: false, status: 409, error: DRAFT_DEADLINE_PASSED_MESSAGE };
   }
 
   const isLeadApplicant = application.leadApplicantId === user.id;
