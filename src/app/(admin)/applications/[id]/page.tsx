@@ -155,6 +155,28 @@ export default async function ApplicantDataPage({ params }: Props) {
     application.applicationType
   );
 
+  // ADMIN only. Rendered whether or not the parent has saved a section: the
+  // deadline matters most before the form is started (a parent who accepts an
+  // invitation after its "Submit by" date is locked out until it is moved).
+  const deadlineCard = isAdmin ? (
+    <SubmissionDeadlineCard
+      applicationId={application.id}
+      submissionDeadlineAt={
+        application.submissionDeadlineAt
+          ? application.submissionDeadlineAt.toISOString()
+          : null
+      }
+      roundCloseDate={application.round.closeDate.toISOString()}
+      roundDefaultDeadline={
+        roundDefaultDeadline ? roundDefaultDeadline.toISOString() : null
+      }
+      applicationType={application.applicationType}
+      effectiveDeadline={effective.deadline.toISOString()}
+      source={effective.source}
+      setAtInvitation={deadlineSetAtInvitation}
+    />
+  ) : null;
+
   // ── Edit on behalf (CR-001) ─────────────────────────────────────────────────
   // Entry point to amend the applicant's form data. Shown only while the review
   // phase still permits editing (blocked once the assessment is COMPLETED or an
@@ -237,11 +259,14 @@ export default async function ApplicantDataPage({ params }: Props) {
             <AdminUpload applicationId={application.id} />
           </>
         ) : (
-          <div className="rounded-xl border border-dashed border-slate-300 bg-white p-10 text-center">
-            <p className="text-sm text-slate-400">
-              No application sections have been submitted yet.
-            </p>
-          </div>
+          <>
+            <div className="rounded-xl border border-dashed border-slate-300 bg-white p-10 text-center">
+              <p className="text-sm text-slate-400">
+                No application sections have been submitted yet.
+              </p>
+            </div>
+            {deadlineCard}
+          </>
         )}
 
         {/* CALC-10 — YoY financials history */}
@@ -286,24 +311,7 @@ export default async function ApplicantDataPage({ params }: Props) {
       <AdminUpload applicationId={application.id} />
 
       {/* Per-application submission deadline — ADMIN only */}
-      {isAdmin && (
-        <SubmissionDeadlineCard
-          applicationId={application.id}
-          submissionDeadlineAt={
-            application.submissionDeadlineAt
-              ? application.submissionDeadlineAt.toISOString()
-              : null
-          }
-          roundCloseDate={application.round.closeDate.toISOString()}
-          roundDefaultDeadline={
-            roundDefaultDeadline ? roundDefaultDeadline.toISOString() : null
-          }
-          applicationType={application.applicationType}
-          effectiveDeadline={effective.deadline.toISOString()}
-          source={effective.source}
-          setAtInvitation={deadlineSetAtInvitation}
-        />
-      )}
+      {deadlineCard}
 
       {/* Section data cards */}
       {orderedSections.map((section) => {
