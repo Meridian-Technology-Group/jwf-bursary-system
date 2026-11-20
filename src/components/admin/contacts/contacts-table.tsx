@@ -82,7 +82,8 @@ function fmtDob(dob: Date | null): string {
 /**
  * 14 Nov 2026 (Charlotte): sortable register columns. Sorting is client-side
  * over the already-filtered list; with no sort chosen the server's newest-first
- * order stands. State sorts New → Invited → Registered + Invited → Registered,
+ * order stands. State sorts New → Invited → Expired → Registered + Invited →
+ * Registered + Expired → Registered,
  * so ascending surfaces the contacts still waiting for an invitation.
  */
 type SortKey =
@@ -107,10 +108,14 @@ const COLUMNS: { label: string; key: SortKey | null }[] = [
 ];
 
 function stateRank(c: ContactListItem): number {
-  if (!c.hasAccount && !c.hasPendingInvite) return 0; // New
-  if (!c.hasAccount) return 1; // Invited
-  if (c.hasPendingInvite) return 2; // Registered + Invited
-  return 3; // Registered
+  if (!c.hasAccount) {
+    if (c.hasPendingInvite) return 1; // Invited
+    if (c.hasExpiredInvite) return 2; // Expired
+    return 0; // New
+  }
+  if (c.hasPendingInvite) return 3; // Registered + Invited
+  if (c.hasExpiredInvite) return 4; // Registered + Expired
+  return 5; // Registered
 }
 
 function sortValue(c: ContactListItem, key: SortKey): string | number | null {
@@ -370,9 +375,20 @@ export function ContactsTable({
                         {c.hasPendingInvite && (
                           <Badge variant="outline">Invited</Badge>
                         )}
-                        {!c.hasAccount && !c.hasPendingInvite && (
-                          <Badge variant="outline">New</Badge>
+                        {c.hasExpiredInvite && (
+                          <Badge
+                            variant="outline"
+                            className="border-amber-300 bg-amber-50 text-amber-800"
+                            title="The invitation was not taken up before its submission date"
+                          >
+                            Expired
+                          </Badge>
                         )}
+                        {!c.hasAccount &&
+                          !c.hasPendingInvite &&
+                          !c.hasExpiredInvite && (
+                            <Badge variant="outline">New</Badge>
+                          )}
                       </div>
                     </td>
                     <td className="whitespace-nowrap px-4 py-3 text-sm">

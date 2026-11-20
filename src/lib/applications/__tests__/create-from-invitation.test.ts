@@ -4,6 +4,10 @@ import {
   createFirstYearApplicationFromSource,
   type FirstYearApplicationSource,
 } from "../create-from-invitation";
+import {
+  SUBMIT_BY_PASSED_MESSAGE,
+  SubmitByPassedError,
+} from "@/lib/invitations/submit-by-passed";
 import { ensurePrimaryContributor } from "@/lib/db/queries/contributors";
 
 // Mock the collaborators so the test exercises only the lock logic + create
@@ -26,9 +30,20 @@ const complete: FirstYearApplicationSource = {
   contactId: "contact-1",
 };
 
-function makeTx(createdSpy: (data: unknown) => void) {
+const OPEN_ROUND = {
+  academicYear: "2026/27",
+  closeDate: new Date("2099-04-14T00:00:00Z"),
+  defaultSubmissionDeadlineNew: null,
+  defaultSubmissionDeadlineRolling: null,
+  windows: [],
+};
+
+function makeTx(
+  createdSpy: (data: unknown) => void,
+  round: Record<string, unknown> = OPEN_ROUND
+) {
   return {
-    round: { findUnique: vi.fn(async () => ({ academicYear: "2026/27" })) },
+    round: { findUnique: vi.fn(async () => round) },
     application: {
       create: vi.fn(async ({ data }: { data: unknown }) => {
         createdSpy(data);
@@ -163,5 +178,46 @@ describe("createFirstYearApplicationFromSource (D1 locked school/year)", () => {
         entryYearGroup: null,
       })
     ).rejects.toThrow(/entry year group/i);
+  });
+});
+
+// 20 Nov 2026 (Charlotte, option A): a parent who first opens the form after
+// the submission date gets no application — the helper refuses, so every
+// parent path (register, existing account, portal start) refuses with it.
+describe("createFirstYearApplicationFromSource — submission date passed", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("refuses when the invitation's Submit by date has passed", async () => {
+    const created = vi.fn();
+    await expect(
+      createFirstYearApplicationFromSource(makeTx(created), {
+        ...complete,
+        submissionDeadlineAt: new Date("2020-11-19T23:59:59.999Z"),
+      })
+    ).rejects.toBeInstanceOf(SubmitByPassedError);
+    expect(created).not.toHaveBeenCalled();
+  });
+
+  it("refuses an undated invitation once the round's NEW default has passed", async () => {
+    const created = vi.fn();
+    await expect(
+      createFirstYearApplicationFromSource(
+        makeTx(created, {
+          ...OPEN_ROUND,
+          defaultSubmissionDeadlineNew: new Date("2020-11-30T00:00:00Z"),
+        }),
+        complete
+      )
+    ).rejects.toThrow(SUBMIT_BY_PASSED_MESSAGE);
+    expect(created).not.toHaveBeenCalled();
+  });
+
+  it("creates when the Submit by date is still ahead", async () => {
+    const created = vi.fn();
+    await createFirstYearApplicationFromSource(makeTx(created), {
+      ...complete,
+      submissionDeadlineAt: new Date("2099-11-19T23:59:59.999Z"),
+    });
+    expect(created).toHaveBeenCalledTimes(1);
   });
 });
