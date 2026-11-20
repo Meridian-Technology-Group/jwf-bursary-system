@@ -172,7 +172,7 @@ Every stage has a matching test file under
 `src/lib/assessment/__tests__/` (`calculator`, `payable-fees`,
 `schooling-years`, `sibling`, `stage1`–`stage4`). This is the most heavily
 tested area of the codebase — change the maths here only with the tests green.
-The client hook `src/hooks/use-assessment-calculation.ts` runs the same engine
+The client hook `src/hooks/use-assessment-calculation-v2.ts` runs the same engine
 live in the admin UI.
 
 ### `src/lib/db/` — data access
