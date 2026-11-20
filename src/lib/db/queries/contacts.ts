@@ -10,6 +10,8 @@
  */
 
 import type { Tx } from "@/lib/db/prisma";
+import { isInvitationLapsed } from "@/lib/invitations/submit-by-passed";
+import { DEADLINE_ROUND_SELECT } from "@/lib/rounds/submission-deadline";
 import type {
   Contact,
   EntryYearGroup,
@@ -47,8 +49,17 @@ export interface ContactListItem {
   bursaryAccountId: string | null;
   archivedAt: Date | null;
   createdAt: Date;
-  /** True when this contact has at least one PENDING invitation. */
+  /**
+   * True when this contact has a PENDING invitation that can still be taken
+   * up (its submission date has not passed).
+   */
   hasPendingInvite: boolean;
+  /**
+   * 20 Nov 2026 (Charlotte): the contact's latest invitation lapsed — never
+   * taken up before its submission date, or EXPIRED — and nothing newer is
+   * pending. Shown as "Expired" next to "Registered".
+   */
+  hasExpiredInvite: boolean;
   /** True when the family has registered (profile bound) or holds an account. */
   hasAccount: boolean;
 }
@@ -92,38 +103,65 @@ export async function listContacts(
     where: opts?.includeArchived ? {} : { archivedAt: null },
     orderBy: { createdAt: "desc" },
     include: {
-      invitations: { select: { status: true } },
+      invitations: {
+        select: {
+          status: true,
+          createdAt: true,
+          submissionDeadlineAt: true,
+          bursaryAccountId: true,
+          applicationId: true,
+          round: { select: DEADLINE_ROUND_SELECT },
+        },
+      },
     },
   });
 
-  return rows.map((c) => ({
-    id: c.id,
-    title: c.title,
-    firstName: c.firstName,
-    lastName: c.lastName,
-    email: c.email,
-    phone: c.phone,
-    childTitle: c.childTitle,
-    childFirstName: c.childFirstName,
-    childLastName: c.childLastName,
-    childName: c.childName,
-    childDob: c.childDob,
-    school: c.school,
-    entryYear: c.entryYear,
-    entryYearGroup: c.entryYearGroup,
-    situation: c.situation,
-    addressLine1: c.addressLine1,
-    addressLine2: c.addressLine2,
-    town: c.town,
-    postcode: c.postcode,
-    notes: c.notes,
-    profileId: c.profileId,
-    bursaryAccountId: c.bursaryAccountId,
-    archivedAt: c.archivedAt,
-    createdAt: c.createdAt,
-    hasPendingInvite: c.invitations.some((i) => i.status === "PENDING"),
-    hasAccount: c.profileId !== null || c.bursaryAccountId !== null,
-  }));
+  const now = new Date();
+  return rows.map((c) => {
+    // Secondary-parent invitations join an existing application; they say
+    // nothing about whether this family took up its own invitation.
+    const own = c.invitations.filter((i) => i.applicationId === null);
+    const lapsed = (i: (typeof own)[number]) =>
+      isInvitationLapsed(i, i.round, now);
+    const hasPendingInvite = own.some(
+      (i) => i.status === "PENDING" && !lapsed(i)
+    );
+    const latest = own.reduce<(typeof own)[number] | null>(
+      (a, i) => (a === null || i.createdAt > a.createdAt ? i : a),
+      null
+    );
+    const hasExpiredInvite =
+      !hasPendingInvite && latest !== null && lapsed(latest);
+    return {
+      id: c.id,
+      title: c.title,
+      firstName: c.firstName,
+      lastName: c.lastName,
+      email: c.email,
+      phone: c.phone,
+      childTitle: c.childTitle,
+      childFirstName: c.childFirstName,
+      childLastName: c.childLastName,
+      childName: c.childName,
+      childDob: c.childDob,
+      school: c.school,
+      entryYear: c.entryYear,
+      entryYearGroup: c.entryYearGroup,
+      situation: c.situation,
+      addressLine1: c.addressLine1,
+      addressLine2: c.addressLine2,
+      town: c.town,
+      postcode: c.postcode,
+      notes: c.notes,
+      profileId: c.profileId,
+      bursaryAccountId: c.bursaryAccountId,
+      archivedAt: c.archivedAt,
+      createdAt: c.createdAt,
+      hasPendingInvite,
+      hasExpiredInvite,
+      hasAccount: c.profileId !== null || c.bursaryAccountId !== null,
+    };
+  });
 }
 
 // ---------------------------------------------------------------------------

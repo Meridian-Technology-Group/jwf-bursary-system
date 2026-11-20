@@ -28,6 +28,11 @@ import { generateApplicationReference } from "@/lib/applications/reference";
 import { applicationCreateData } from "@/lib/applications/status";
 import { ensurePrimaryContributor } from "@/lib/db/queries/contributors";
 import { applicationDeadlineFromInvitation } from "@/lib/invitations/submit-by";
+import {
+  invitationSubmitByPassed,
+  SubmitByPassedError,
+} from "@/lib/invitations/submit-by-passed";
+import { DEADLINE_ROUND_SELECT } from "@/lib/rounds/submission-deadline";
 
 export interface FirstYearApplicationSource {
   leadApplicantId: string;
@@ -98,8 +103,22 @@ export async function createFirstYearApplicationFromSource(
 
   const round = await tx.round.findUnique({
     where: { id: source.roundId! },
-    select: { academicYear: true },
+    select: { academicYear: true, ...DEADLINE_ROUND_SELECT },
   });
+
+  // 20 Nov 2026: never create an application that is locked on arrival.
+  if (
+    invitationSubmitByPassed(
+      {
+        submissionDeadlineAt: source.submissionDeadlineAt ?? null,
+        bursaryAccountId: null,
+        applicationId: null,
+      },
+      round
+    )
+  ) {
+    throw new SubmitByPassedError();
+  }
 
   const reference = generateApplicationReference({
     childName: source.childName,

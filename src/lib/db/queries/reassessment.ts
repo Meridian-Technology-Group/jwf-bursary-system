@@ -20,6 +20,11 @@ import {
 import { ensurePrimaryContributor } from "@/lib/db/queries/contributors";
 import { applicationDeadlineFromInvitation } from "@/lib/invitations/submit-by";
 import {
+  invitationSubmitByPassed,
+  SubmitByPassedError,
+} from "@/lib/invitations/submit-by-passed";
+import { DEADLINE_ROUND_SELECT } from "@/lib/rounds/submission-deadline";
+import {
   selectPreviousWatchOutNotes,
   type WatchOutCandidate,
   type WatchOutSelection,
@@ -413,8 +418,23 @@ export async function createReassessmentApplicationFromInvitation(
 
   const round = await tx.round.findUnique({
     where: { id: roundId },
-    select: { academicYear: true },
+    select: { academicYear: true, ...DEADLINE_ROUND_SELECT },
   });
+
+  // 20 Nov 2026: never create an application that is locked on arrival. An
+  // existing draft (returned above) is reopened as before.
+  if (
+    invitationSubmitByPassed(
+      {
+        submissionDeadlineAt: invitation.submissionDeadlineAt ?? null,
+        bursaryAccountId,
+        applicationId: null,
+      },
+      round
+    )
+  ) {
+    throw new SubmitByPassedError();
+  }
 
   // D13-1a / Q5: a ROLLING_OVER application INHERITS the prior year's
   // reference, because once it has been edited to the external fees-system
