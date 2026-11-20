@@ -1,5 +1,46 @@
 # Changelog
 
+## [2.2.0](https://github.com/Meridian-Technology-Group/jwf-bursary-system/compare/v2.1.0...v2.2.0) (2026-11-20)
+
+
+### Features
+
+* 7-day submit-by default and 22 May rolling-over default ([#481](https://github.com/Meridian-Technology-Group/jwf-bursary-system/issues/481)) ([40ea475](https://github.com/Meridian-Technology-Group/jwf-bursary-system/commit/40ea475882ae9f5e0063864bd1fe3e57caa250aa))
+* flag Family Identification when it no longer matches Dependent Children ([#494](https://github.com/Meridian-Technology-Group/jwf-bursary-system/issues/494)) ([c02117f](https://github.com/Meridian-Technology-Group/jwf-bursary-system/commit/c02117f714b2de16e59bfecd39e0d3b58deeae98))
+* refuse an invitation first opened after its submission date ([#501](https://github.com/Meridian-Technology-Group/jwf-bursary-system/issues/501)) ([dc84417](https://github.com/Meridian-Technology-Group/jwf-bursary-system/commit/dc844174667c9e760fef0895fbc469282cff822a))
+* sortable column headers on the contact register ([#497](https://github.com/Meridian-Technology-Group/jwf-bursary-system/issues/497)) ([190ea77](https://github.com/Meridian-Technology-Group/jwf-bursary-system/commit/190ea77af5a1bf841786d65bed6f5745d6ddc05d))
+* weekly report-only sweep for orphaned uploads in the documents bucket ([#520](https://github.com/Meridian-Technology-Group/jwf-bursary-system/issues/520)) ([0485e53](https://github.com/Meridian-Technology-Group/jwf-bursary-system/commit/0485e533dcae007ca51f57df0873debc8261cd6a))
+
+
+### Bug Fixes
+
+* a closed application can no longer be locked, reverted or reactivate its account ([#509](https://github.com/Meridian-Technology-Group/jwf-bursary-system/issues/509)) ([049a4f5](https://github.com/Meridian-Technology-Group/jwf-bursary-system/commit/049a4f532b2feacbe6574b2b3c34841024200a44))
+* a missing-documents response needs a new upload for every requested slot ([#511](https://github.com/Meridian-Technology-Group/jwf-bursary-system/issues/511)) ([b7c4519](https://github.com/Meridian-Technology-Group/jwf-bursary-system/commit/b7c4519251afe245139af63dc5963649ad28b074))
+* assessment money audit findings 10, 11, 12 ([#515](https://github.com/Meridian-Technology-Group/jwf-bursary-system/issues/515)) ([b362ae6](https://github.com/Meridian-Technology-Group/jwf-bursary-system/commit/b362ae6756f38a780ca04ddea41bdd51b7adfa4a))
+* audit findings 15 + 16 (purge safety, bulk sends) — 18 deferred for a decision ([#516](https://github.com/Meridian-Technology-Group/jwf-bursary-system/issues/516)) ([2149ed8](https://github.com/Meridian-Technology-Group/jwf-bursary-system/commit/2149ed884bdac7304d40de41ee20a2375f2f0ea1))
+* four small staff-side audit items (contact-invite BCC, user lookup, bulk-lock plan, stale figures) ([#522](https://github.com/Meridian-Technology-Group/jwf-bursary-system/issues/522)) ([01dfafb](https://github.com/Meridian-Technology-Group/jwf-bursary-system/commit/01dfafb3a97a100ebf46604c8639d97eb7f24798))
+* keep the earliest-opened round as the current round ([#490](https://github.com/Meridian-Technology-Group/jwf-bursary-system/issues/490)) ([28f4a69](https://github.com/Meridian-Technology-Group/jwf-bursary-system/commit/28f4a69f1a1317361586137b0eacfd663e2a53bf))
+* let a child hold a new contact for a different school or entry year ([#496](https://github.com/Meridian-Technology-Group/jwf-bursary-system/issues/496)) ([d80925f](https://github.com/Meridian-Technology-Group/jwf-bursary-system/commit/d80925fa69d2096d981de3d3ae1c97bc620c9f81))
+* let a re-assessment submit without the hidden Family Identification section ([#505](https://github.com/Meridian-Technology-Group/jwf-bursary-system/issues/505)) ([e90e390](https://github.com/Meridian-Technology-Group/jwf-bursary-system/commit/e90e3902a16fc4f6a15fa3dc0f73c5b0f73caa82))
+* parent data integrity — saves target the open application, submit is single-shot, second parent locked after submit (audit 9, 13, 17) ([#514](https://github.com/Meridian-Technology-Group/jwf-bursary-system/issues/514)) ([d45492e](https://github.com/Meridian-Technology-Group/jwf-bursary-system/commit/d45492ed3b4871a10e08d15b9a640748f81b492f))
+* portal audit items — London end-of-day deadlines, post-deadline save/upload lock, submit ownership first ([#521](https://github.com/Meridian-Technology-Group/jwf-bursary-system/issues/521)) ([58da0b2](https://github.com/Meridian-Technology-Group/jwf-bursary-system/commit/58da0b2707f7c425e9ecea525d79b022500ac9d9))
+* restore an applicant login deleted by a failed-send rollback ([#488](https://github.com/Meridian-Technology-Group/jwf-bursary-system/issues/488)) ([25e24c6](https://github.com/Meridian-Technology-Group/jwf-bursary-system/commit/25e24c6fe1cbc5905aafe4efede8d0b6cf3c9983))
+* show parents why a submission was blocked instead of a generic error ([#492](https://github.com/Meridian-Technology-Group/jwf-bursary-system/issues/492)) ([395ac3a](https://github.com/Meridian-Technology-Group/jwf-bursary-system/commit/395ac3a2713edbb97221d1989c95f28515baa8d8))
+* show the assessment form's save errors (toasts were never mounted) ([#507](https://github.com/Meridian-Technology-Group/jwf-bursary-system/issues/507)) ([93cde97](https://github.com/Meridian-Technology-Group/jwf-bursary-system/commit/93cde97e133106b1ba0bc9bc555b89ba377b1810))
+* show the submission deadline card before the parent starts the form ([#499](https://github.com/Meridian-Technology-Group/jwf-bursary-system/issues/499)) ([18b10c4](https://github.com/Meridian-Technology-Group/jwf-bursary-system/commit/18b10c41c3a009c8cf889eb84450241c42dcda2a))
+* stop emailing the parent when staff edit an application ([#484](https://github.com/Meridian-Technology-Group/jwf-bursary-system/issues/484)) ([8339d28](https://github.com/Meridian-Technology-Group/jwf-bursary-system/commit/8339d2897f0fa4b2488a021ba9319f380e835435))
+
+
+### Security
+
+* audit findings 7, 8, 14 — assessor scoping, GDPR family guard, ?next= open redirect ([#513](https://github.com/Meridian-Technology-Group/jwf-bursary-system/issues/513)) ([0131b87](https://github.com/Meridian-Technology-Group/jwf-bursary-system/commit/0131b87402aefbfb6726bc227382ec97cf121bbc))
+* remove the public action that could create a profile with any role ([#503](https://github.com/Meridian-Technology-Group/jwf-bursary-system/issues/503)) ([67b23ad](https://github.com/Meridian-Technology-Group/jwf-bursary-system/commit/67b23ad2699fe4f7a42e74b5bf8db09d4a988bfe))
+
+
+### Refactors
+
+* one shared invitation-email builder and send-failure rollback (audit 19) ([#518](https://github.com/Meridian-Technology-Group/jwf-bursary-system/issues/518)) ([9ad5b77](https://github.com/Meridian-Technology-Group/jwf-bursary-system/commit/9ad5b77f13870977e0335d5892c2fafae99ca2c5))
+
 ## [2.1.0](https://github.com/Meridian-Technology-Group/jwf-bursary-system/compare/v2.0.0...v2.1.0) (2026-10-30)
 
 
