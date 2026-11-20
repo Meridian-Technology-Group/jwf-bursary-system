@@ -28,6 +28,11 @@ import { createAuditLog } from "@/lib/audit/log";
 import { sendEmail } from "@/lib/email/send";
 import { getAppUrl } from "@/lib/app-url";
 import { assertSubmissionInvariantPreserved } from "@/lib/portal/missing-docs-invariant";
+import { getLatestMissingDocsRequest } from "@/lib/db/queries/missing-docs";
+import {
+  slotsStillNeeded,
+  stillNeededMessage,
+} from "@/lib/portal/missing-docs-response";
 
 import { AUDIT_ACTIONS, AUDIT_ENTITY_TYPES } from "@/lib/audit/actions";
 
@@ -488,6 +493,10 @@ export async function submitMissingDocsResponse(
   const user = await requireRole([Role.APPLICANT]);
 
   try {
+    // The request being answered (its own read; ownership is checked below
+    // before anything is acted on).
+    const request = await getLatestMissingDocsRequest(applicationId);
+
     // Admin (service-role) context: the assessment row is invisible to the
     // applicant under RLS (assessments_select is staff-only), so reading its
     // PAUSED status and resuming review must bypass RLS. Ownership is enforced
@@ -524,6 +533,29 @@ export async function submitMissingDocsResponse(
             error:
               "This application is not currently awaiting documents, so there is nothing to send.",
           };
+        }
+
+        // Audit 20 Nov 2026: every requested slot needs a file uploaded AFTER
+        // the request. The earlier (wrong or unverified) file stays on file but
+        // does not answer it — otherwise Send resumed the assessment with the
+        // same document the assessor had just asked to replace.
+        if (request && request.requestedSlots.length > 0) {
+          const documents = await tx.document.findMany({
+            where: {
+              applicationId,
+              slot: { in: request.requestedSlots },
+              uploadedAt: { gt: request.requestedAt },
+            },
+            select: { slot: true, uploadedAt: true },
+          });
+          const needed = slotsStillNeeded(
+            request.requestedSlots,
+            documents,
+            request.requestedAt
+          );
+          if (needed.length > 0) {
+            return { success: false as const, error: stillNeededMessage(needed) };
+          }
         }
 
         // Capture the pre-response submission invariants. The portal missing-doc
