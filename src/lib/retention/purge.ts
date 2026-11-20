@@ -48,9 +48,12 @@ import {
   APPLICATION_CHILD_SCRUB,
   BURSARY_ACCOUNT_CHILD_SCRUB,
   CONTACT_SCRUB,
+  REDACTED_CHILD_NAME,
   REJECTION_SCRUB,
   profileScrubData,
 } from "@/lib/retention/scrub-map";
+import { decideLeadProfileErasure } from "@/lib/retention/close-purge";
+import { isPurgeable } from "@/lib/retention/policy";
 
 /** The application + relations the cascade needs. Mirrors the action's fetch. */
 export interface PurgeableApplication {
@@ -279,6 +282,82 @@ export async function purgeApplication(
   }
 
   return { storageErrors, authDeleteError, secondary: secondaryOutcome };
+}
+
+/**
+ * Audit 20 Nov 2026 (finding 8): `purgeApplication` erases the WHOLE family —
+ * every contact and bursary account of the lead, the accounts' synopsis
+ * entries, the lead's profile and login. So the manual button may run only
+ * when nothing else of the lead's is still inside retention.
+ *
+ * Starts from the close-purge guard (`decideLeadProfileErasure`): no other
+ * live application and no other bursary account → nothing to protect. When it
+ * finds others, each one must be erasable in its own right (`isPurgeable`) —
+ * so a family whose applications are all past retention (e.g. several years on
+ * one closed account) can still be deleted, while a sibling's active account
+ * blocks it. Returns null when the erasure may go ahead, else the counts of
+ * the lead's records still inside retention. Read-only.
+ */
+export async function findUnerasableFamilyRecords(
+  tx: Tx,
+  leadApplicantId: string,
+  applicationId: string,
+  bursaryAccountId: string | null,
+  now: Date = new Date()
+): Promise<{ otherApplications: number; otherAccounts: number } | null> {
+  const decision = await decideLeadProfileErasure(
+    tx,
+    leadApplicantId,
+    applicationId,
+    bursaryAccountId
+  );
+  if (decision.canErase) return null;
+
+  // The same "other live application" set decideLeadProfileErasure counts.
+  const applications = await tx.application.findMany({
+    where: {
+      leadApplicantId,
+      id: { not: applicationId },
+      childName: { not: REDACTED_CHILD_NAME },
+      OR: [{ retentionStage: null }, { retentionStage: { notIn: ["ANONYMISED", "ASSESSMENT_PURGED"] } }],
+    },
+    select: {
+      closedAt: true,
+      retentionStage: true,
+      retentionStageAt: true,
+      bursaryAccount: { select: { closedAt: true } },
+      assessment: { select: { status: true, archivedAt: true } },
+    },
+  });
+  const accounts = await tx.bursaryAccount.findMany({
+    where: {
+      leadApplicantId,
+      ...(bursaryAccountId ? { id: { not: bursaryAccountId } } : {}),
+    },
+    select: { closedAt: true },
+  });
+
+  const otherApplications = applications.filter(
+    (a) => !isPurgeable(a, now).purgeable
+  ).length;
+  // An account on its own follows rule 1: erasable 6 years after it closed.
+  const otherAccounts = accounts.filter(
+    (acc) =>
+      !isPurgeable(
+        {
+          bursaryAccount: { closedAt: acc.closedAt },
+          closedAt: null,
+          assessment: null,
+          retentionStage: null,
+          retentionStageAt: null,
+        },
+        now
+      ).purgeable
+  ).length;
+
+  return otherApplications + otherAccounts > 0
+    ? { otherApplications, otherAccounts }
+    : null;
 }
 
 /** Builds the audit metadata block shared by manual + cron purge audit rows. */

@@ -47,6 +47,7 @@ import { isPurgeable, isRetentionPurgeEnabled, notYetPurgeableMessage } from "@/
 import {
   purgeApplication,
   buildPurgeAuditMetadata,
+  findUnerasableFamilyRecords,
 } from "@/lib/retention/purge";
 import { deleteAuthUsersPostCommit } from "@/lib/retention/close-purge";
 import { closeApplicationCore } from "@/lib/applications/close";
@@ -957,6 +958,7 @@ export async function gdprDeleteApplicantAction(
           retentionStage: true,
           retentionStageAt: true,
           leadApplicantId: true,
+          bursaryAccountId: true,
           documents: { select: { id: true, storagePath: true } },
           assessment: {
             select: {
@@ -1004,6 +1006,27 @@ export async function gdprDeleteApplicantAction(
     }
 
     const leadApplicantId = application.leadApplicantId;
+
+    // 2b. The cascade below erases the whole family (every contact and account
+    //     of the lead, their synopsis, the lead's login). Refuse while any
+    //     other record of the lead is still inside retention (audit finding 8).
+    const unerasable = await withAdminContext((tx) =>
+      findUnerasableFamilyRecords(
+        tx,
+        leadApplicantId,
+        application.id,
+        application.bursaryAccountId
+      )
+    );
+    if (unerasable) {
+      return {
+        success: false,
+        error:
+          "This application cannot be deleted yet. Deleting it erases the whole family, " +
+          `and the parent still has ${unerasable.otherApplications} other application(s) and ` +
+          `${unerasable.otherAccounts} other bursary account(s) inside the retention period.`,
+      };
+    }
 
     // 3. Run the shared erasure cascade (Epic 10): Storage-first, anonymising
     //    DB transaction (append-only audit honoured by nulling userId, never
