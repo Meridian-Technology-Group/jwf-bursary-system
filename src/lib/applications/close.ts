@@ -130,7 +130,9 @@ export async function closeApplicationCore(
   if (application.bursaryAccount?.status === "ACTIVE") {
     await tx.bursaryAccount.update({
       where: { id: application.bursaryAccount.id },
-      data: { status: "CLOSED", closedAt: now },
+      // The reason marks this as a close staff chose, so the schedule's own
+      // re-open and an award revert never undo it (audit 20 Nov 2026).
+      data: { status: "CLOSED", closedAt: now, closeReasonId: reason.id },
     });
     accountClosed = true;
   }

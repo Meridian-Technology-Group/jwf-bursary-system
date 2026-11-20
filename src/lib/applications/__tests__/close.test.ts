@@ -135,10 +135,12 @@ describe("closeApplicationCore — non-purge close (Story 2.2, toggle off)", () 
       })
     );
     // Live account wound down with the close (subsumes withdraw).
+    // It carries the reason, so it reads as a close staff chose (audit
+    // 20 Nov 2026): nothing downstream can quietly re-activate it.
     expect(tx.bursaryAccount.update).toHaveBeenCalledWith(
       expect.objectContaining({
         where: { id: "acct-1" },
-        data: expect.objectContaining({ status: "CLOSED" }),
+        data: expect.objectContaining({ status: "CLOSED", closeReasonId: "reason-1" }),
       })
     );
     // NO purge side effects.

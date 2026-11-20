@@ -99,6 +99,17 @@ describe("bulkLockRolledOverAction", () => {
     }
   });
 
+  it("never plans a closed application (audit 20 Nov 2026)", async () => {
+    fakeTx = {
+      assessment: { findMany: vi.fn(async () => []), findFirst: vi.fn() },
+    };
+    await bulkLockRolledOverAction();
+    const where = (fakeTx.assessment.findMany.mock.calls[0] as unknown as [
+      { where: { application: Record<string, unknown> } },
+    ])[0].where;
+    expect(where.application).toMatchObject({ closedAt: null });
+  });
+
   it("reports when nothing is waiting to lock", async () => {
     fakeTx = {
       assessment: { findMany: vi.fn(async () => []), findFirst: vi.fn() },

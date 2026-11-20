@@ -42,7 +42,13 @@ export async function bulkLockRolledOverAction(): Promise<
       const targets = await tx.assessment.findMany({
         where: {
           status: "COMPLETED",
-          application: { applicationType: "ROLLING_OVER", formStatus: "SUBMITTED" },
+          // A closed application is final (audit 20 Nov 2026): locking it
+          // would re-activate its closed account.
+          application: {
+            applicationType: "ROLLING_OVER",
+            formStatus: "SUBMITTED",
+            closedAt: null,
+          },
         },
         select: {
           applicationId: true,
