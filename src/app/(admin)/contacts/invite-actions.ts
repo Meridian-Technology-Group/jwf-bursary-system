@@ -93,6 +93,15 @@ export async function sendInvitationFromContactAction(
     return { success: false, error: "A contact and an open round are required." };
   }
 
+  // CH-32 — validate the blind-copy address with the SAME check the quick
+  // invite and the bulk wizard use, so the three cannot disagree. Checked
+  // BEFORE any write: a bad address must not leave a login or a PENDING
+  // invitation behind with no email sent. Ignored on a no-send create.
+  const bccResult = normaliseBccAddress(options?.skipEmail ? undefined : options?.bcc);
+  if (!bccResult.ok) {
+    return { success: false, error: "That BCC address is not a valid email." };
+  }
+
   // 1. Load the contact + validate round (must be OPEN — Epic 03 concurrent
   //    rounds; you invite into a live intake, never a DRAFT/CLOSED round).
   let contact: {
@@ -378,13 +387,6 @@ export async function sendInvitationFromContactAction(
       success: true,
       registrationLink: `${appUrl}/register?token=${invitationToken}`,
     };
-  }
-
-  // CH-32 — validate the blind-copy address with the SAME check the quick
-  // invite and the bulk wizard use, so the three cannot disagree.
-  const bccResult = normaliseBccAddress(options?.bcc);
-  if (!bccResult.ok) {
-    return { success: false, error: "That BCC address is not a valid email." };
   }
 
   // 5. Send the branded INVITATION email inside the rollback boundary.
