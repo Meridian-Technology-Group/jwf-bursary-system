@@ -8,7 +8,20 @@ vi.mock("@/lib/auth/supabase-admin", () => ({
 }));
 vi.mock("@/lib/db/prisma", () => ({
   withAdminContext: (fn: (tx: unknown) => unknown) =>
-    fn({ invitation: { count: invitationCount }, round: { findUnique: async () => ({ academicYear: "2026/27" }) } }),
+    fn({
+      invitation: { count: invitationCount },
+      round: {
+        // One shape serves both reads: the academic year, and the deadline
+        // round the submit-by-passed gate needs (a far-off close, so it is open).
+        findUnique: async () => ({
+          academicYear: "2026/27",
+          closeDate: new Date("2099-11-30T00:00:00Z"),
+          defaultSubmissionDeadlineNew: null,
+          defaultSubmissionDeadlineRolling: null,
+          windows: [],
+        }),
+      },
+    }),
 }));
 vi.mock("@/lib/auth/roles", () => ({ getCurrentUser: vi.fn() }));
 vi.mock("@/lib/auth/create-profile", () => ({ createProfile: vi.fn() }));

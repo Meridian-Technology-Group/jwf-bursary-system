@@ -46,13 +46,15 @@
  * `@db.Date` (date-only, stored as midnight). A bare midnight fallback would
  * make the deadline land at the *start* of that day, locking applicants out a
  * day early; we therefore normalise EVERY date-only tier to the END of that day
- * (23:59:59.999 local) so "deadline = 30th" means "submittable through the
+ * (23:59:59.999 Europe/London) so "deadline = 30th" means "submittable through the
  * 30th". The override, being an explicit instant chosen by an admin, is NOT
  * shifted.
  *
  * This never mutates `submittedAt` and is distinct from `Assessment.pausedUntil`
  * (post-submission doc deadline, Epic 01) — see plan §3 three-clock model.
  */
+
+import { dateOnlyKey, endOfLondonDay } from "@/lib/invitations/submit-by";
 
 /**
  * The application types that select a round default. Structurally identical to
@@ -231,13 +233,13 @@ export function defaultRollingDeadlineFor(academicYear: string): string {
 }
 
 /**
- * Returns a new Date at the last representable millisecond of the given date's
- * calendar day, in the server's local timezone (Europe/London in prod/CI). Used
- * for every date-only tier (both typed round defaults and `closeDate`) so a
- * deadline that reads "the 30th" stays open through the whole of the 30th.
+ * The last millisecond (23:59:59.999) of a `@db.Date`'s calendar day in
+ * Europe/London, as a UTC instant. Used for every date-only tier (both typed
+ * round defaults, the RA window and `closeDate`) so a deadline that reads "the
+ * 30th" stays open through the whole of the 30th — and no later. It used to be
+ * `setHours` in the SERVER's zone; Vercel runs UTC, so in BST every date-only
+ * deadline closed at 00:59:59 London the next day.
  */
 function endOfDay(date: Date): Date {
-  const end = new Date(date);
-  end.setHours(23, 59, 59, 999);
-  return end;
+  return endOfLondonDay(dateOnlyKey(date));
 }

@@ -9,12 +9,25 @@ import {
   type SubmissionDeadlineRound,
 } from "@/lib/rounds/submission-deadline";
 
+/**
+ * Date-only (`@db.Date`) fixtures are built as UTC midnight, exactly as Prisma
+ * returns them, and every end-of-day expectation is an explicit UTC instant for
+ * 23:59:59.999 Europe/London — so this suite asserts the same thing whatever
+ * the machine's TZ is (run it with `TZ=UTC` too).
+ */
+/** End of 30 Sep 2026 in London (BST). */
+const END_30_SEP = "2026-09-30T22:59:59.999Z";
+/** End of 20 Sep 2026 in London (BST). */
+const END_20_SEP = "2026-09-20T22:59:59.999Z";
+/** End of 30 Apr 2026 in London (BST). */
+const END_30_APR = "2026-04-30T22:59:59.999Z";
+
 /** Both application types, for matrix cases that must behave identically. */
 const BOTH_TYPES: SubmissionDeadlineApplicationType[] = ["NEW", "ROLLING_OVER"];
 
 /** A round with no default on either clock — everything falls to closeDate. */
 const noDefaults: SubmissionDeadlineRound = {
-  closeDate: new Date("2026-09-30T00:00:00"),
+  closeDate: new Date("2026-09-30T00:00:00Z"),
   defaultSubmissionDeadlineNew: null,
   defaultSubmissionDeadlineRolling: null,
   windows: [],
@@ -25,9 +38,9 @@ const noDefaults: SubmissionDeadlineRound = {
  * holders by the earlier April date (Q4 — one global rolling date per round).
  */
 const typedDefaults: SubmissionDeadlineRound = {
-  closeDate: new Date("2026-09-30T00:00:00"),
-  defaultSubmissionDeadlineNew: new Date("2026-09-20T00:00:00"),
-  defaultSubmissionDeadlineRolling: new Date("2026-04-30T00:00:00"),
+  closeDate: new Date("2026-09-30T00:00:00Z"),
+  defaultSubmissionDeadlineNew: new Date("2026-09-20T00:00:00Z"),
+  defaultSubmissionDeadlineRolling: new Date("2026-04-30T00:00:00Z"),
   windows: [],
 };
 
@@ -44,11 +57,7 @@ describe("effectiveSubmissionDeadline", () => {
       expect(result.source).toBe("closeDate");
       // Normalised to the last millisecond of close-day so the window stays open
       // through the whole of the 30th, not until midnight at its start.
-      expect(result.deadline.getHours()).toBe(23);
-      expect(result.deadline.getMinutes()).toBe(59);
-      expect(result.deadline.getSeconds()).toBe(59);
-      expect(result.deadline.getMilliseconds()).toBe(999);
-      expect(result.deadline.getDate()).toBe(30);
+      expect(result.deadline.toISOString()).toBe(END_30_SEP);
     });
   });
 
@@ -95,8 +104,7 @@ describe("effectiveSubmissionDeadline", () => {
       typedDefaults
     );
     expect(result.source).toBe("roundDefault");
-    expect(result.deadline.getMonth()).toBe(8); // September
-    expect(result.deadline.getDate()).toBe(20);
+    expect(result.deadline.toISOString()).toBe(END_20_SEP);
   });
 
   it("a ROLLING_OVER application reads defaultSubmissionDeadlineRolling", () => {
@@ -105,8 +113,7 @@ describe("effectiveSubmissionDeadline", () => {
       typedDefaults
     );
     expect(result.source).toBe("roundDefault");
-    expect(result.deadline.getMonth()).toBe(3); // April
-    expect(result.deadline.getDate()).toBe(30);
+    expect(result.deadline.toISOString()).toBe(END_30_APR);
   });
 
   it("the two types resolve to genuinely different instants on the same round", () => {
@@ -121,23 +128,55 @@ describe("effectiveSubmissionDeadline", () => {
     expect(forRolling.getTime()).toBeLessThan(forNew.getTime());
   });
 
-  it("BOTH typed defaults are normalised to end-of-day, like closeDate", () => {
+  it("BOTH typed defaults are normalised to end-of-day in London, like closeDate", () => {
+    const expected = { NEW: END_20_SEP, ROLLING_OVER: END_30_APR };
     for (const type of BOTH_TYPES) {
       const { deadline } = effectiveSubmissionDeadline(
         { submissionDeadlineAt: null, applicationType: type },
         typedDefaults
       );
-      expect(deadline.getHours()).toBe(23);
-      expect(deadline.getMinutes()).toBe(59);
-      expect(deadline.getSeconds()).toBe(59);
-      expect(deadline.getMilliseconds()).toBe(999);
+      expect(deadline.toISOString()).toBe(expected[type]);
     }
+  });
+
+  // ── London, not the server's zone (Vercel runs UTC) ───────────────────────
+
+  it("BST: a 30 April date-only deadline ends at 23:59:59.999 London (22:59:59.999Z), not 00:59 on 1 May", () => {
+    const round: SubmissionDeadlineRound = {
+      ...noDefaults,
+      defaultSubmissionDeadlineRolling: new Date("2026-04-30T00:00:00Z"),
+    };
+    const { deadline } = effectiveSubmissionDeadline(
+      { submissionDeadlineAt: null, applicationType: "ROLLING_OVER" },
+      round
+    );
+    expect(deadline.toISOString()).toBe("2026-04-30T22:59:59.999Z");
+    // 00:30 London on 1 May (23:30Z) is past it; the old code let it through.
+    expect(
+      isSubmissionDeadlinePassed(
+        { submissionDeadlineAt: null, applicationType: "ROLLING_OVER" },
+        round,
+        new Date("2026-04-30T23:30:00Z")
+      )
+    ).toBe(true);
+  });
+
+  it("GMT: a 30 November date-only deadline ends at 23:59:59.999 London (23:59:59.999Z)", () => {
+    const round: SubmissionDeadlineRound = {
+      ...noDefaults,
+      closeDate: new Date("2026-11-30T00:00:00Z"),
+    };
+    const { deadline } = effectiveSubmissionDeadline(
+      { submissionDeadlineAt: null, applicationType: "NEW" },
+      round
+    );
+    expect(deadline.toISOString()).toBe("2026-11-30T23:59:59.999Z");
   });
 
   it("falls through to closeDate when only the OTHER type's default is set", () => {
     const newOnly: SubmissionDeadlineRound = {
-      closeDate: new Date("2026-09-30T00:00:00"),
-      defaultSubmissionDeadlineNew: new Date("2026-09-20T00:00:00"),
+      closeDate: new Date("2026-09-30T00:00:00Z"),
+      defaultSubmissionDeadlineNew: new Date("2026-09-20T00:00:00Z"),
       defaultSubmissionDeadlineRolling: null,
       windows: [],
     };
@@ -146,7 +185,7 @@ describe("effectiveSubmissionDeadline", () => {
       newOnly
     );
     expect(rolling.source).toBe("closeDate");
-    expect(rolling.deadline.getDate()).toBe(30);
+    expect(rolling.deadline.toISOString()).toBe(END_30_SEP);
 
     // …and the NEW side is unaffected.
     const fresh = effectiveSubmissionDeadline(
@@ -154,7 +193,7 @@ describe("effectiveSubmissionDeadline", () => {
       newOnly
     );
     expect(fresh.source).toBe("roundDefault");
-    expect(fresh.deadline.getDate()).toBe(20);
+    expect(fresh.deadline.toISOString()).toBe(END_20_SEP);
   });
 
   it("a per-application override still wins over the typed round default", () => {
@@ -187,23 +226,22 @@ describe("roundDefaultForType", () => {
 
 describe("roundSubmissionDeadline (no application row — invitation emails)", () => {
   it("resolves tiers 2–3 only, per application type", () => {
-    expect(roundSubmissionDeadline(typedDefaults, "NEW").getDate()).toBe(20);
-    expect(
-      roundSubmissionDeadline(typedDefaults, "ROLLING_OVER").getMonth()
-    ).toBe(3);
-    expect(roundSubmissionDeadline(noDefaults, "NEW").getDate()).toBe(30);
+    expect(roundSubmissionDeadline(typedDefaults, "NEW").toISOString()).toBe(END_20_SEP);
+    expect(roundSubmissionDeadline(typedDefaults, "ROLLING_OVER").toISOString()).toBe(
+      END_30_APR
+    );
+    expect(roundSubmissionDeadline(noDefaults, "NEW").toISOString()).toBe(END_30_SEP);
   });
 
   it("is end-of-day, so an invitation never advertises a midnight cut-off", () => {
     const d = roundSubmissionDeadline(typedDefaults, "ROLLING_OVER");
-    expect(d.getHours()).toBe(23);
-    expect(d.getMinutes()).toBe(59);
+    expect(d.toISOString()).toBe(END_30_APR);
   });
 });
 
 describe("isSubmissionDeadlinePassed", () => {
   it("is not passed before the effective (end-of-day) round deadline", () => {
-    const now = new Date("2026-09-30T09:00:00");
+    const now = new Date("2026-09-30T08:00:00Z"); // 09:00 London
     expect(
       isSubmissionDeadlinePassed(
         { submissionDeadlineAt: null, applicationType: "NEW" },
@@ -214,7 +252,7 @@ describe("isSubmissionDeadlinePassed", () => {
   });
 
   it("is passed the day after the round close", () => {
-    const now = new Date("2026-10-01T00:00:01");
+    const now = new Date("2026-09-30T23:00:01Z"); // 00:00:01 London on 1 Oct
     expect(
       isSubmissionDeadlinePassed(
         { submissionDeadlineAt: null, applicationType: "NEW" },
@@ -264,14 +302,15 @@ describe("isSubmissionDeadlinePassed", () => {
   // deadline at 00:00:00.000, so a parent submitting at any point during the
   // deadline DAY is rejected — locked out a full day early.
 
+  // Both dates are in BST, so London midnight is 23:00Z the previous day.
   describe.each([
-    ["NEW", 8, 20] as const, // September 20th
-    ["ROLLING_OVER", 3, 30] as const, // April 30th
+    ["NEW", "2026-09-20"] as const,
+    ["ROLLING_OVER", "2026-04-30"] as const,
   ])(
     "endOfDay boundary on the typed round default (%s)",
-    (type, month, day) => {
-      const lastMillisecond = new Date(2026, month, day, 23, 59, 59, 999);
-      const firstMillisecondAfter = new Date(2026, month, day + 1, 0, 0, 0, 0);
+    (type, ymd) => {
+      const lastMillisecond = new Date(`${ymd}T22:59:59.999Z`);
+      const firstMillisecondAfter = new Date(`${ymd}T23:00:00.000Z`);
       const app = {
         submissionDeadlineAt: null,
         applicationType: type as SubmissionDeadlineApplicationType,
@@ -284,7 +323,9 @@ describe("isSubmissionDeadlinePassed", () => {
       });
 
       it("allows a submission at 00:00 on the deadline date (not locked out a day early)", () => {
-        const startOfDeadlineDay = new Date(2026, month, day, 0, 0, 0, 0);
+        const startOfDeadlineDay = new Date(
+          new Date(`${ymd}T00:00:00.000Z`).getTime() - 60 * 60 * 1000
+        );
         expect(
           isSubmissionDeadlinePassed(app, typedDefaults, startOfDeadlineDay)
         ).toBe(false);
@@ -301,7 +342,7 @@ describe("isSubmissionDeadlinePassed", () => {
   it("a rolling-over application is locked out while a new one is still open", () => {
     // 1 May 2026: past the April rolling deadline, well before the September
     // one. The single-column model could not express this at all.
-    const now = new Date(2026, 4, 1, 9, 0, 0);
+    const now = new Date("2026-05-01T08:00:00Z"); // 09:00 London
     expect(
       isSubmissionDeadlinePassed(
         { submissionDeadlineAt: null, applicationType: "ROLLING_OVER" },
@@ -344,13 +385,13 @@ describe("defaultRollingDeadlineFor", () => {
 describe("effectiveSubmissionDeadline — the RA window tier (Epic 21 R2)", () => {
   /** Prod's 2026/27 shape on 14 Oct 2026: close 30 Nov, no typed defaults. */
   const prodShape = (windows: SubmissionDeadlineRound["windows"]): SubmissionDeadlineRound => ({
-    closeDate: new Date("2026-11-30T00:00:00"),
+    closeDate: new Date("2026-11-30T00:00:00Z"),
     defaultSubmissionDeadlineNew: null,
     defaultSubmissionDeadlineRolling: null,
     windows,
   });
-  const RA = { scenario: "RA", submitBy: new Date("2027-05-22T00:00:00") };
-  const NA_CURRENT = { scenario: "NA_CURRENT", submitBy: new Date("2026-09-17T00:00:00") };
+  const RA = { scenario: "RA", submitBy: new Date("2027-05-22T00:00:00Z") };
+  const NA_CURRENT = { scenario: "NA_CURRENT", submitBy: new Date("2026-09-17T00:00:00Z") };
 
   it("a ROLLING_OVER application with no rolling default reads the RA window (end of day)", () => {
     const result = effectiveSubmissionDeadline(
@@ -359,10 +400,7 @@ describe("effectiveSubmissionDeadline — the RA window tier (Epic 21 R2)", () =
     );
     expect(result.source).toBe("roundWindow");
     expect(result.isOverride).toBe(false);
-    expect(result.deadline.getFullYear()).toBe(2027);
-    expect(result.deadline.getMonth()).toBe(4);
-    expect(result.deadline.getDate()).toBe(22);
-    expect(result.deadline.getHours()).toBe(23);
+    expect(result.deadline.toISOString()).toBe("2027-05-22T22:59:59.999Z");
   });
 
   it("a NEW application keeps closeDate on a round with an NA_CURRENT window (and an RA one)", () => {
@@ -371,17 +409,17 @@ describe("effectiveSubmissionDeadline — the RA window tier (Epic 21 R2)", () =
       prodShape([NA_CURRENT, RA])
     );
     expect(result.source).toBe("closeDate");
-    expect(result.deadline.getMonth()).toBe(10); // 30 Nov, not 17 Sep
-    expect(result.deadline.getDate()).toBe(30);
+    // 30 Nov (GMT), not 17 Sep.
+    expect(result.deadline.toISOString()).toBe("2026-11-30T23:59:59.999Z");
   });
 
   it("the rolling round default beats the window", () => {
     const result = effectiveSubmissionDeadline(
       { submissionDeadlineAt: null, applicationType: "ROLLING_OVER" },
-      { ...prodShape([RA]), defaultSubmissionDeadlineRolling: new Date("2027-04-30T00:00:00") }
+      { ...prodShape([RA]), defaultSubmissionDeadlineRolling: new Date("2027-04-30T00:00:00Z") }
     );
     expect(result.source).toBe("roundDefault");
-    expect(result.deadline.getMonth()).toBe(3);
+    expect(result.deadline.toISOString()).toBe("2027-04-30T22:59:59.999Z");
   });
 
   it("the override beats the window", () => {
@@ -405,7 +443,11 @@ describe("effectiveSubmissionDeadline — the RA window tier (Epic 21 R2)", () =
   });
 
   it("roundSubmissionDeadline (the email's tiers) reads the window too, for ROLLING_OVER only", () => {
-    expect(roundSubmissionDeadline(prodShape([RA]), "ROLLING_OVER").getFullYear()).toBe(2027);
-    expect(roundSubmissionDeadline(prodShape([RA]), "NEW").getMonth()).toBe(10);
+    expect(roundSubmissionDeadline(prodShape([RA]), "ROLLING_OVER").toISOString()).toBe(
+      "2027-05-22T22:59:59.999Z"
+    );
+    expect(roundSubmissionDeadline(prodShape([RA]), "NEW").toISOString()).toBe(
+      "2026-11-30T23:59:59.999Z"
+    );
   });
 });
