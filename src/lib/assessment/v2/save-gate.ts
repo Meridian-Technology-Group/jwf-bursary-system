@@ -14,6 +14,9 @@
  * form.
  */
 
+import type { AssessmentSaveInput } from "@/lib/db/queries/assessments";
+import type { AssessmentV2Output } from "@/lib/assessment/v2/orchestrator";
+
 export type SaveOutcome = { success: true } | { success: false; error: string };
 
 /**
@@ -39,3 +42,71 @@ export function reduceSaveError(outcome: SaveOutcome): string | null {
 export function canProceedAfterSave(outcome: SaveOutcome): boolean {
   return outcome.success;
 }
+
+/**
+ * The v2 calculation snapshot sent with every save (orchestrator output 1:1
+ * onto the v2 columns).
+ *
+ * When the engine could not run (`runAssessmentV2` returned null — e.g. a
+ * missing reference row), every key is sent as an explicit `null`. Sending
+ * NO keys instead let the partial update keep the previous figures beside
+ * the new inputs, and the completion guard (which checks
+ * `totalHouseholdNetIncome`) then let Complete through on those stale
+ * figures. Clearing them saves the assessor's typed input, shows no figure
+ * rather than a wrong one, and blocks Complete until the calculation runs.
+ */
+export function v2SnapshotForSave(output: AssessmentV2Output | null): V2SaveSnapshot {
+  return {
+    totalHouseholdNetIncome: output?.householdNetIncome ?? null,
+    notionalEssentials: output?.notionalEssentials ?? null,
+    notionalCar: output?.notionalCar ?? null,
+    notionalPublicTransport: output?.notionalPublicTransport ?? null,
+    notionalJwfAllowance: output?.notionalJwfAllowance ?? null,
+    notionalSavingsBenchmark: output?.notionalSavingsBenchmark ?? null,
+    savingsTestNumber: output?.savingsTestNumber ?? null,
+    totalNotionalSpend: output?.totalNotionalSpend ?? null,
+    ndiAfterNotionalSpend: output?.ndiAfterNotionalSpend ?? null,
+    derivedYearlyDebtRepayments: output?.derivedYearlyDebtRepayments ?? null,
+    yearlyDebtExposure: output?.yearlyDebtExposure ?? null,
+    debtOverNdiRatio: output?.debtOverNdiRatio ?? null,
+    debtStatusLabel: output?.debtStatusLabel ?? null,
+    incomeCategory: output?.incomeCategory ?? null,
+    propertyCategoryDerived: output?.propertyCategoryDerived ?? null,
+    propertyEquityCategory: output?.propertyEquityCategory ?? null,
+    financialEquityLabel: output?.financialEquityLabel ?? null,
+    lifestyleSqueezeRatio: output?.lifestyleSqueezeRatio ?? null,
+    lifestyleSqueezeLabel: output?.lifestyleSqueezeLabel ?? null,
+    actualRemainingDi: output?.actualRemainingDi ?? null,
+    theoreticalBenchmarkDi: output?.theoreticalBenchmarkDi ?? null,
+    affordabilityAdjustedDi: output?.affordabilityAdjustedDi ?? null,
+    recommendedPayableFees: output?.recommendedPayableFees ?? null,
+  };
+}
+
+type V2SnapshotKey =
+  | "totalHouseholdNetIncome"
+  | "notionalEssentials"
+  | "notionalCar"
+  | "notionalPublicTransport"
+  | "notionalJwfAllowance"
+  | "notionalSavingsBenchmark"
+  | "savingsTestNumber"
+  | "totalNotionalSpend"
+  | "ndiAfterNotionalSpend"
+  | "derivedYearlyDebtRepayments"
+  | "yearlyDebtExposure"
+  | "debtOverNdiRatio"
+  | "debtStatusLabel"
+  | "incomeCategory"
+  | "propertyCategoryDerived"
+  | "propertyEquityCategory"
+  | "financialEquityLabel"
+  | "lifestyleSqueezeRatio"
+  | "lifestyleSqueezeLabel"
+  | "actualRemainingDi"
+  | "theoreticalBenchmarkDi"
+  | "affordabilityAdjustedDi"
+  | "recommendedPayableFees";
+
+/** Every snapshot key present; `null` clears the column. */
+export type V2SaveSnapshot = Required<Pick<AssessmentSaveInput, V2SnapshotKey>>;

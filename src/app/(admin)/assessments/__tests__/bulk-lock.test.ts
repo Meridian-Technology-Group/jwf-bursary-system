@@ -41,25 +41,33 @@ function target(applicationId: string, reference: string, bursaryAccountId: stri
   };
 }
 
+function prior(bursaryAccountId: string, roundId: string, awardFundType: string) {
+  return { awardFundType, application: { bursaryAccountId, roundId } };
+}
+
+/** The plan's two reads: the targets, then every prior award (newest first). */
+function planTx(targets: unknown[], priors: unknown[] = []) {
+  return {
+    assessment: {
+      findMany: vi.fn(async (args: { where: { status?: string } }) =>
+        args.where.status === "COMPLETED" ? targets : priors
+      ),
+      findFirst: vi.fn(async () => null),
+    },
+  };
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
 });
 
 describe("bulkLockRolledOverAction", () => {
   it("locks every stored rolling-over assessment, carrying each account's previous fund forward", async () => {
-    fakeTx = {
-      assessment: {
-        findMany: vi.fn(async () => [
-          target("app-1", "REF-1", "acct-1"),
-          target("app-2", "REF-2", "acct-2"),
-        ]),
-        // acct-1's last award was TBF; acct-2 has no prior fund on record.
-        findFirst: vi
-          .fn()
-          .mockResolvedValueOnce({ awardFundType: "TBF" })
-          .mockResolvedValueOnce(null),
-      },
-    };
+    // acct-1's last award was TBF; acct-2 has no prior fund on record.
+    fakeTx = planTx(
+      [target("app-1", "REF-1", "acct-1"), target("app-2", "REF-2", "acct-2")],
+      [prior("acct-1", "round-2026", "TBF")]
+    );
 
     const res = await bulkLockRolledOverAction();
 
@@ -68,16 +76,63 @@ describe("bulkLockRolledOverAction", () => {
     expect(lockMock).toHaveBeenCalledWith("app-2", "ROLLED_OVER", { awardFundType: "JWF" });
   });
 
-  it("skips and reports a row the core refuses, locking the rest", async () => {
-    fakeTx = {
-      assessment: {
-        findMany: vi.fn(async () => [
-          target("app-1", "REF-1", null),
-          target("app-2", "REF-2", null),
-        ]),
-        findFirst: vi.fn(async () => null),
+  it("plans with two queries however many accounts: the targets, then every prior award", async () => {
+    fakeTx = planTx([
+      target("app-1", "REF-1", "acct-1"),
+      target("app-2", "REF-2", "acct-2"),
+      target("app-3", "REF-3", "acct-1"),
+      target("app-4", "REF-4", null),
+    ]);
+
+    await bulkLockRolledOverAction();
+
+    expect(fakeTx.assessment.findFirst).not.toHaveBeenCalled();
+    expect(fakeTx.assessment.findMany).toHaveBeenCalledTimes(2);
+    expect(fakeTx.assessment.findMany.mock.calls[1][0]).toEqual({
+      // The per-account findFirst's filter and order; its round exclusion is
+      // applied per target in memory.
+      where: {
+        awardFundType: { not: null },
+        application: { bursaryAccountId: { in: ["acct-1", "acct-2"] } },
       },
-    };
+      orderBy: { completedAt: "desc" },
+      select: {
+        awardFundType: true,
+        application: { select: { bursaryAccountId: true, roundId: true } },
+      },
+    });
+  });
+
+  it("each target takes its account's newest award from a DIFFERENT round, as findFirst did", async () => {
+    fakeTx = planTx(
+      [
+        target("app-1", "REF-1", "acct-1"), // round-2027
+        {
+          applicationId: "app-9",
+          application: { reference: "REF-9", roundId: "round-2026", bursaryAccountId: "acct-1" },
+        },
+        target("app-2", "REF-2", "acct-2"),
+      ],
+      // Newest first (completedAt desc).
+      [
+        prior("acct-1", "round-2027", "WFA"),
+        prior("acct-2", "round-2025", "JWF"),
+        prior("acct-1", "round-2026", "TBF"),
+        prior("acct-1", "round-2025", "JWF"),
+      ]
+    );
+
+    await bulkLockRolledOverAction();
+
+    // The 2027 target skips its own round's WFA and takes 2026's TBF.
+    expect(lockMock).toHaveBeenCalledWith("app-1", "ROLLED_OVER", { awardFundType: "TBF" });
+    // The 2026 target's newest other-round award is 2027's WFA.
+    expect(lockMock).toHaveBeenCalledWith("app-9", "ROLLED_OVER", { awardFundType: "WFA" });
+    expect(lockMock).toHaveBeenCalledWith("app-2", "ROLLED_OVER", { awardFundType: "JWF" });
+  });
+
+  it("skips and reports a row the core refuses, locking the rest", async () => {
+    fakeTx = planTx([target("app-1", "REF-1", null), target("app-2", "REF-2", null)]);
     lockMock
       .mockResolvedValueOnce({
         success: false,
@@ -88,6 +143,8 @@ describe("bulkLockRolledOverAction", () => {
     const res = await bulkLockRolledOverAction();
 
     expect(res.success).toBe(true);
+    // No account on either row, so no prior-award query at all.
+    expect(fakeTx.assessment.findMany).toHaveBeenCalledTimes(1);
     if (res.success) {
       expect(res.result.locked).toBe(1);
       expect(res.result.skipped).toEqual([
