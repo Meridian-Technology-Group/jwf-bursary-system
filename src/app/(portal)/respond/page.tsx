@@ -114,14 +114,18 @@ export default async function RespondPage() {
     );
   }
 
-  // Build the per-slot existing-document map (most recent upload wins).
-  const docsBySlot: Record<
-    string,
-    { id: string; filename: string; fileSize: number; uploadedAt: string }
-  > = {};
+  // Per requested slot: the newest file uploaded AFTER the request (it answers
+  // the request) and the newest one from before it (shown as "previously
+  // uploaded"; kept on file, but it is what the assessor asked to replace).
+  // Documents arrive newest-first, so the first match per slot wins.
+  type SlotDoc = { id: string; filename: string; fileSize: number; uploadedAt: string };
+  const newBySlot: Record<string, SlotDoc> = {};
+  const previousBySlot: Record<string, SlotDoc> = {};
   for (const doc of application.documents) {
-    if (!docsBySlot[doc.slot]) {
-      docsBySlot[doc.slot] = {
+    const target =
+      doc.uploadedAt.getTime() > request.requestedAt.getTime() ? newBySlot : previousBySlot;
+    if (!target[doc.slot]) {
+      target[doc.slot] = {
         id: doc.id,
         filename: doc.filename,
         fileSize: doc.fileSize,
@@ -137,7 +141,8 @@ export default async function RespondPage() {
         applicationId={application.id}
         requestedSlots={request.requestedSlots}
         customMessage={request.customMessage}
-        existingBySlot={docsBySlot}
+        newBySlot={newBySlot}
+        previousBySlot={previousBySlot}
       />
     </PortalPage>
   );
