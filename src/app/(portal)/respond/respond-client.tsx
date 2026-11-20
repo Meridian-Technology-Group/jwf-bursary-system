@@ -21,7 +21,7 @@ import {
 } from "lucide-react";
 import { FileUpload, type UploadedDocument } from "@/components/portal/file-upload";
 import { Button } from "@/components/ui/button";
-import { humaniseSlot } from "@/lib/documents/slots";
+import { slotLabel } from "@/lib/portal/missing-docs-response";
 import { submitMissingDocsResponse } from "@/app/(portal)/actions";
 
 interface ExistingDoc {
@@ -35,31 +35,27 @@ interface RespondMissingDocsClientProps {
   applicationId: string;
   requestedSlots: string[];
   customMessage: string | null;
-  existingBySlot: Record<string, ExistingDoc>;
+  /** Files uploaded after the request — these answer it. */
+  newBySlot: Record<string, ExistingDoc>;
+  /** Earlier files in the requested slots — kept, but not an answer. */
+  previousBySlot: Record<string, ExistingDoc>;
 }
 
-/**
- * Splits a slot's human label into a primary document name and an optional
- * "Parent N" qualifier so the page can render e.g.
- * "Bank Statement — Parent 1" as the guide describes.
- */
-function slotLabel(slot: string): { primary: string; qualifier: string | null } {
-  const match = slot.match(/_PARENT_(\d)$/);
-  if (match) {
-    const base = slot.replace(/_PARENT_\d$/, "");
-    return {
-      primary: humaniseSlot(base),
-      qualifier: `Parent ${match[1]}`,
-    };
-  }
-  return { primary: humaniseSlot(slot), qualifier: null };
+function formatUploadedOn(iso: string): string {
+  return new Date(iso).toLocaleDateString("en-GB", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    timeZone: "Europe/London",
+  });
 }
 
 export function RespondMissingDocsClient({
   applicationId,
   requestedSlots,
   customMessage,
-  existingBySlot,
+  newBySlot,
+  previousBySlot,
 }: RespondMissingDocsClientProps) {
   const router = useRouter();
 
@@ -67,7 +63,7 @@ export function RespondMissingDocsClient({
   const [filledSlots, setFilledSlots] = React.useState<Set<string>>(() => {
     const initial = new Set<string>();
     for (const slot of requestedSlots) {
-      if (existingBySlot[slot]) initial.add(slot);
+      if (newBySlot[slot]) initial.add(slot);
     }
     return initial;
   });
@@ -184,9 +180,18 @@ export function RespondMissingDocsClient({
           {requestedSlots.map((slot) => {
             const { primary, qualifier } = slotLabel(slot);
             const label = qualifier ? `${primary} — ${qualifier}` : primary;
-            const existing = existingBySlot[slot];
+            const existing = newBySlot[slot];
+            const previous = previousBySlot[slot];
             return (
-              <li key={slot}>
+              <li key={slot} className="space-y-2">
+                {previous && (
+                  <p className="rounded-md bg-slate-50 px-3 py-2 text-xs text-slate-500">
+                    Previously uploaded:{" "}
+                    <span className="font-medium text-slate-600">{previous.filename}</span>{" "}
+                    ({formatUploadedOn(previous.uploadedAt)}). It stays on your
+                    application, but the assessor has asked for a new copy.
+                  </p>
+                )}
                 <FileUpload
                   slot={slot}
                   label={label}
