@@ -1585,8 +1585,18 @@ export async function addSecondParentAction(
 
       const profile = await tx.profile.findUnique({
         where: { email: cleanEmail },
-        select: { id: true },
+        select: { id: true, role: true },
       });
+
+      // Never link a staff profile as a second parent: the login would carry
+      // the staff role into the portal (same rule as provisionApplicantAuthUser).
+      if (profile && profile.role !== Role.APPLICANT) {
+        return {
+          ok: false as const,
+          error:
+            "This email address belongs to a staff account and cannot be added as a second parent.",
+        };
+      }
 
       return {
         ok: true as const,

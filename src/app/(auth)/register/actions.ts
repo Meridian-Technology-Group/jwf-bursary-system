@@ -9,22 +9,22 @@
  * Mirrors `src/app/(auth)/register/staff/actions.ts` exactly. Operates on
  * the `invitations` (applicant) table rather than `staff_invitations`.
  *
- * `createProfileAction` is retained for the parallel Supabase magic-link
- * branch driven by `?token_hash=…` on the registration page.
+ * 20 Nov 2026 (audit): `createProfileAction` was removed. It was a public,
+ * pre-auth action that upserted a profile with a caller-chosen id and ROLE
+ * under admin context, so anyone who signed up could make themselves ADMIN.
+ * Its only caller, the `?token_hash=` magic-link page, was unused.
  */
 
 import {
   ApplicationContributorRole,
   ApplicationContributorStatus,
   InvitationStatus,
-  type Role,
   type School,
 } from "@prisma/client";
 import { withAdminContext } from "@/lib/db/prisma";
 import { getCurrentUser } from "@/lib/auth/roles";
 import { createSupabaseAdminClient } from "@/lib/auth/supabase-admin";
 import { ensureApplicantLogin } from "@/lib/auth/provision-applicant";
-import { createProfile } from "@/lib/auth/create-profile";
 import {
   getInvitationByToken,
   markInvitationAccepted,
@@ -42,37 +42,6 @@ import {
 import { createAuditLog } from "@/lib/audit/log";
 
 import { AUDIT_ACTIONS, AUDIT_ENTITY_TYPES } from "@/lib/audit/actions";
-
-// ---------------------------------------------------------------------------
-// createProfileAction — server-action wrapper for the magic-link flow
-// ---------------------------------------------------------------------------
-
-export interface CreateProfileActionInput {
-  id: string;
-  email: string;
-  role?: Role;
-  firstName?: string;
-  lastName?: string;
-  phone?: string;
-}
-
-export type CreateProfileActionResult =
-  | { success: true }
-  | { success: false; error: string };
-
-/**
- * Server-action wrapper around createProfile() for invocation from
- * Client Components (`?token_hash=…` magic-link registration). The user has
- * just signed up via Supabase Auth but does not yet have a JWT context for
- * RLS — so we use withAdminContext to bypass RLS for this single insert.
- */
-export async function createProfileAction(
-  input: CreateProfileActionInput
-): Promise<CreateProfileActionResult> {
-  const result = await withAdminContext((tx) => createProfile(tx, input));
-  if (!result.success) return { success: false, error: result.error };
-  return { success: true };
-}
 
 // ---------------------------------------------------------------------------
 // validateApplicantInvitationAction
