@@ -45,7 +45,10 @@ vi.mock("@/lib/portal/section-gaps", () => ({
 
 import { submitApplicationCore } from "../submission";
 import { AUDIT_ACTIONS } from "@/lib/audit/actions";
-import { SECTION_ORDER } from "@/lib/portal/sections";
+import {
+  REASSESSMENT_SECTION_ORDER,
+  SECTION_ORDER,
+} from "@/lib/portal/sections";
 
 function makeFakeTx() {
   return {
@@ -236,5 +239,47 @@ describe("submitApplicationCore", () => {
     expect(fakeTx.application.update).not.toHaveBeenCalled();
     expect(sendEmailMock).not.toHaveBeenCalled();
     expect(auditMock).not.toHaveBeenCalled();
+  });
+
+  // ── Audit 20 Nov 2026: a rolling-over re-assessment hides FAMILY_ID ───────
+  // The wizard redirects away from it and it is never created, so requiring
+  // it blocked every re-assessment submit (portal and on-behalf alike).
+  it("submits a ROLLING_OVER application that has no FAMILY_ID section", async () => {
+    fakeTx.application.findUnique.mockResolvedValue(
+      makeApplication({
+        applicationType: "ROLLING_OVER",
+        sections: REASSESSMENT_SECTION_ORDER.map((section) => ({
+          section,
+          isComplete: true,
+          data: {},
+        })),
+      })
+    );
+
+    const result = await submitApplicationCore(CORE_INPUT);
+
+    expect(result).toEqual({ alreadySubmitted: false, reference: "APP-1" });
+    const updateArg = fakeTx.application.update.mock.calls[0]![0] as {
+      data: Record<string, unknown>;
+    };
+    expect(updateArg.data.formStatus).toBe("SUBMITTED");
+  });
+
+  it("still requires FAMILY_ID on a NEW application", async () => {
+    fakeTx.application.findUnique.mockResolvedValue(
+      makeApplication({
+        applicationType: "NEW",
+        sections: REASSESSMENT_SECTION_ORDER.map((section) => ({
+          section,
+          isComplete: true,
+          data: {},
+        })),
+      })
+    );
+
+    await expect(submitApplicationCore(CORE_INPUT)).rejects.toThrow(
+      "The following sections are not yet complete: FAMILY_ID. Please complete them before submitting."
+    );
+    expect(fakeTx.application.update).not.toHaveBeenCalled();
   });
 });
