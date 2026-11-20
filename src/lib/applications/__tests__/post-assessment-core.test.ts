@@ -228,6 +228,47 @@ describe("setPostAssessmentFinalState — NEW_AWARD", () => {
     expect(fakeTx.assessment.update).not.toHaveBeenCalled();
   });
 
+  it("audit finding 10 — refuses an award confirmed against an older recommended figure", async () => {
+    // Confirmed £5,000 against a £5,000 recommendation (gap 0, no reason);
+    // a later assessment save moved the recommended figure to £9,000.
+    fakeTx = makeFakeTx(
+      withAssessment({
+        recommendedPayableFees: 9_000,
+        recommendation: { confirmedPayableFees: 5_000, recommendedPayableFees: 5_000 },
+      })
+    );
+    const result = await setPostAssessmentFinalState("app-1", "NEW_AWARD", { awardFundType: "JWF" });
+    expect(result).toEqual({
+      success: false,
+      error: RECOMMENDATION_NOT_RECONFIRMED_MESSAGE,
+    });
+    expect(fakeTx.bursaryAccount.create).not.toHaveBeenCalled();
+    expect(fakeTx.assessment.update).not.toHaveBeenCalled();
+  });
+
+  it("audit finding 10 — locks when the confirmation matches the current figure to the penny", async () => {
+    fakeTx = makeFakeTx(
+      withAssessment({
+        recommendedPayableFees: "9000.00",
+        recommendation: { confirmedPayableFees: 8_500, recommendedPayableFees: 9_000 },
+      })
+    );
+    const result = await setPostAssessmentFinalState("app-1", "NEW_AWARD", { awardFundType: "JWF" });
+    expect(result).toEqual({ success: true });
+  });
+
+  it("audit finding 10 — the stale-figure check leaves v1 assessments alone", async () => {
+    fakeTx = makeFakeTx(
+      withAssessment({
+        calculationVersion: 1,
+        recommendedPayableFees: 9_000,
+        recommendation: { confirmedPayableFees: 5_000, recommendedPayableFees: 5_000 },
+      })
+    );
+    const result = await setPostAssessmentFinalState("app-1", "NEW_AWARD", { awardFundType: "JWF" });
+    expect(result).toEqual({ success: true });
+  });
+
   it("is reachable from the waiting list (transition #6)", async () => {
     fakeTx = makeFakeTx(withAssessment({ status: "WAITING_LIST" }));
     const result = await setPostAssessmentFinalState("app-1", "NEW_AWARD", { awardFundType: "JWF" });

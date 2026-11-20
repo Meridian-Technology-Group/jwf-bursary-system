@@ -29,6 +29,7 @@ import {
 import type { PostAssessmentFinalState } from "@/lib/applications/status";
 import type { AwardFigures } from "@/lib/applications/account-promotion";
 import type { StoredRecommendationFlags } from "@/lib/assessment/recommendation-flags";
+import { recommendationSaveLock } from "@/lib/applications/recommendation-gate";
 import {
   computeGapAmount,
   gapReasonSelectionValid,
@@ -74,8 +75,10 @@ export async function saveRecommendationAction(
             id: true,
             roundId: true,
             bursaryAccountId: true,
+            closedAt: true,
+            migrationSource: true,
             assessment: {
-              select: { id: true, recommendedPayableFees: true },
+              select: { id: true, status: true, recommendedPayableFees: true },
             },
           },
         });
@@ -89,6 +92,18 @@ export async function saveRecommendationAction(
             success: false as const,
             error: "No assessment found. Complete the assessment first.",
           };
+        }
+
+        // Audit 20 Nov 2026 (finding 12b): the figures of a locked, closed or
+        // migrated award are final. A stale tab or a direct call must not
+        // rewrite its confirmed fees, gap or scholarship %.
+        const saveLock = recommendationSaveLock({
+          closedAt: application.closedAt,
+          migrationSource: application.migrationSource,
+          assessment: application.assessment,
+        });
+        if (saveLock.locked) {
+          return { success: false as const, error: saveLock.message };
         }
 
         const assessmentId = application.assessment.id;
