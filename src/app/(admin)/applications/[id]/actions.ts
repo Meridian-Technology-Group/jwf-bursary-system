@@ -21,7 +21,7 @@
  */
 
 import { revalidatePath } from "next/cache";
-import { requireRole, Role } from "@/lib/auth/roles";
+import { requireRole, requireApplicationAccess, Role } from "@/lib/auth/roles";
 import { withUserContext, withAdminContext, type RlsRole, type Tx } from "@/lib/db/prisma";
 import { createAuditLog } from "@/lib/audit/log";
 import { sendEmail } from "@/lib/email/send";
@@ -416,6 +416,8 @@ export async function rejectAndRestartApplication(
 ): Promise<ActionResult> {
   try {
     const user = await requireRole([Role.ADMIN, Role.ASSESSOR]);
+    // An assessor may only reject an application assigned to them.
+    await requireApplicationAccess(user, applicationId);
 
     const submitBy = parseReturnSubmitBy(newSubmitBy, new Date());
     if (!submitBy.ok) return { success: false, error: submitBy.error };
@@ -577,7 +579,9 @@ export async function rejectAndRestartApplication(
 export async function getRejectionDraft(
   applicationId: string
 ): Promise<{ submitBy: string; body: string; documents: RejectionDocument[] }> {
-  await requireRole([Role.ADMIN, Role.ASSESSOR]);
+  const user = await requireRole([Role.ADMIN, Role.ASSESSOR]);
+  // Names and document filenames: an assessor sees only their assigned applications.
+  await requireApplicationAccess(user, applicationId);
   const now = new Date();
   // Service role, as the send does: the lead applicant's profile is under RLS.
   const app = await withAdminContext((tx) =>
@@ -929,14 +933,15 @@ export async function bulkAssignApplicationsAction(
  * auth user are RETAINED and only their link + data on THIS application is
  * removed. See `decideSecondaryProfileErasure`.
  *
- * Access: ASSESSOR role only.
- * Guard:  Cannot delete if application was submitted within the last 7 years.
+ * Access: ADMIN only (irreversible; the UI shows the button to ADMIN only).
+ * Guard:  Only once the retention rules allow full erasure (`isPurgeable`).
  */
 export async function gdprDeleteApplicantAction(
   applicationId: string
 ): Promise<ActionResult> {
   try {
-    const user = await requireRole([Role.ADMIN, Role.ASSESSOR]);
+    const user = await requireRole([Role.ADMIN]);
+    await requireApplicationAccess(user, applicationId);
 
     // 1. Fetch the application with all relevant relations (admin context —
     //    GDPR cascade must bypass RLS for full visibility and mutation).

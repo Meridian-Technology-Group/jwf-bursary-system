@@ -33,7 +33,7 @@ import {
   School,
   type ApplicationType,
 } from "@prisma/client";
-import { requireRole, Role } from "@/lib/auth/roles";
+import { requireRole, requireApplicationAccess, Role } from "@/lib/auth/roles";
 import {
   createInvitation,
   generateInvitationToken,
@@ -1528,6 +1528,9 @@ export async function addSecondParentAction(
     firstName: cleanFirst,
     lastName: cleanLast,
   } = parsed.data;
+
+  // An assessor may only add a second parent to an application assigned to them.
+  await requireApplicationAccess(user, appId);
 
   const supabase = createSupabaseAdminClient();
   const appUrl = getAppUrl();
