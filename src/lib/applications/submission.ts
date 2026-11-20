@@ -38,6 +38,7 @@ import { isSubmissionDeadlinePassed,
 } from "@/lib/rounds/submission-deadline";
 import { mirrorApplicationToSchedule } from "@/lib/bursary-accounts/lifecycle";
 import { TERMS_AND_CONDITIONS_VERSION } from "@/lib/portal/terms";
+import { LONDON_TIME_ZONE } from "@/lib/datetime";
 import { logError } from "@/lib/log";
 
 import { AUDIT_ENTITY_TYPES, type AuditAction } from "@/lib/audit/actions";
@@ -124,7 +125,8 @@ export function requiredSubmitSections(application: {
  *
  * Throws an error (which the portal submit button will surface) if validation
  * fails; returns `{ alreadySubmitted: true }` instead of redirecting when the
- * form is already SUBMITTED.
+ * form is already SUBMITTED — including when a concurrent submit (another tab)
+ * wins the conditional SUBMITTED write after this call passed the gates.
  */
 export async function submitApplicationCore(
   input: SubmitApplicationCoreInput
@@ -366,9 +368,17 @@ export async function submitApplicationCore(
   // Prisma create() which issues INSERT ... RETURNING *; if the SELECT policy
   // on audit_logs filtered the RETURNING row, Prisma would throw, abort the
   // Postgres transaction, and undo the status change — the original bug.)
-  await withUserContext(actor.id, actor.role, async (tx) => {
-    await tx.application.update({
-      where: { id: applicationId },
+  //
+  // The transition is CONDITIONAL on the form not already being SUBMITTED
+  // (audit finding 13). The gates above read in earlier transactions, so two
+  // tabs submitting at once both pass them; only one UPDATE may win. Postgres
+  // re-checks the WHERE after waiting on the winner's row lock, so the loser
+  // updates zero rows — it never trips the write-once submitted_at trigger, and
+  // it returns `alreadySubmitted` BEFORE the audit row, schedule mirror and
+  // confirmation email, so those happen exactly once per submission.
+  const transitioned = await withUserContext(actor.id, actor.role, async (tx) => {
+    const { count } = await tx.application.updateMany({
+      where: { id: applicationId, formStatus: { not: "SUBMITTED" } },
       data: {
         ...submitApplicationData(),
         // Stamp the submission instant + T&Cs acceptance ONLY on a first
@@ -393,7 +403,22 @@ export async function submitApplicationCore(
         custodyArrangement: custodyToPersist,
       },
     });
+    if (count > 0) return true;
+
+    // Zero rows: either a concurrent submit won (the normal case), or the row
+    // is not visible/updatable to this actor. Only the first is "already
+    // submitted" — anything else must stay an error, never a false success.
+    const current = await tx.application.findUnique({
+      where: { id: applicationId },
+      select: { formStatus: true },
+    });
+    if (current?.formStatus === "SUBMITTED") return false;
+    throw new Error("The application could not be marked as submitted.");
   });
+
+  if (!transitioned) {
+    return { alreadySubmitted: true };
+  }
 
   // ── Audit log (decoupled, non-blocking) ───────────────────────────────────
   // Written in a separate withAdminContext transaction AFTER the status update
@@ -447,7 +472,11 @@ export async function submitApplicationCore(
     child_name: application.childName,
     school: schoolLabel,
     reference: application.reference,
-    submission_date: new Date().toLocaleDateString("en-GB", {
+    // The submission date of record: on a re-submission of a reopened
+    // application that is the RETAINED original date (D-G6/D3), matching the
+    // receipt and PDF — not "today". In London time, like the receipt.
+    submission_date: submittedAt.toLocaleDateString("en-GB", {
+      timeZone: LONDON_TIME_ZONE,
       day: "numeric",
       month: "long",
       year: "numeric",

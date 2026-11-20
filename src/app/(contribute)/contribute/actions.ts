@@ -44,6 +44,7 @@ import { logError } from "@/lib/log";
 
 import { AUDIT_ACTIONS, AUDIT_ENTITY_TYPES } from "@/lib/audit/actions";
 import { schoolName } from "@/lib/schools";
+import { SECTION_TITLES } from "@/lib/portal/sections";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -52,14 +53,15 @@ export interface SaveSectionResult {
   errors?: string[];
 }
 
-export interface SubmitBlockedByGapsError {
-  code: "GAPS_BLOCKING_SUBMISSION";
-  gaps: Array<{
-    id: string;
-    sectionType: string;
-    label: string;
-    fieldRef?: string;
-  }>;
+/**
+ * What `submitContribution` returns when it does not redirect. Failures are
+ * RETURNED, never thrown: Next.js replaces a thrown server-action message in
+ * production with "An error occurred in the Server Components render…", so a
+ * thrown "not complete" never reached the parent (see PR #492).
+ */
+export interface SubmitContributionFailure {
+  success: false;
+  error: string;
 }
 
 export interface SectionDataResult {
@@ -106,6 +108,20 @@ async function getSecondaryContext(): Promise<SecondaryContext | null> {
   return { user, ctx };
 }
 
+/**
+ * Once the second parent has submitted, their sections are what the assessor
+ * reviews — an open /contribute tab must not keep autosaving over them (audit
+ * finding 17). RLS on their section rows has no status condition, so this is
+ * the gate.
+ *
+ * Deliberately NOT gated on the application's formStatus: the lead parent
+ * normally submits FIRST and the second parent completes their part after
+ * (the assessment begin-gate waits for this contributor to submit), so a
+ * SUBMITTED application is the usual state while they are still filling in.
+ */
+const CONTRIBUTION_SUBMITTED_ERROR =
+  "You have already submitted your details, so they can no longer be changed here.";
+
 // ─── Actions ─────────────────────────────────────────────────────────────────
 
 /**
@@ -127,6 +143,9 @@ export async function saveSection(
     return { success: false, errors: ["No active contribution found."] };
   }
   const { user, ctx } = resolved;
+  if (ctx.status === ApplicationContributorStatus.SUBMITTED) {
+    return { success: false, errors: [CONTRIBUTION_SUBMITTED_ERROR] };
+  }
 
   // PARENT_DETAILS must use the SECONDARY schema here, matching what the
   // contribute client renders and validates against: that form runs in
@@ -183,6 +202,9 @@ export async function saveSectionDraft(
     return { success: false, errors: ["No active contribution found."] };
   }
   const { user, ctx } = resolved;
+  if (ctx.status === ApplicationContributorStatus.SUBMITTED) {
+    return { success: false, errors: [CONTRIBUTION_SUBMITTED_ERROR] };
+  }
 
   try {
     await withUserContext(user.id, user.role as RlsRole, (tx) =>
@@ -238,11 +260,14 @@ export async function getSection(
  *  6. Redirect to /contribute/submitted.
  *
  * The client-supplied applicationId is ignored — resolved from the session.
+ *
+ * Redirects on success; a blocked submission RETURNS `{ success: false, error }`
+ * (see `SubmitContributionFailure` for why it must not throw).
  */
-export async function submitContribution(): Promise<never> {
+export async function submitContribution(): Promise<SubmitContributionFailure> {
   const resolved = await getSecondaryContext();
   if (!resolved) {
-    throw new Error("No active contribution found.");
+    return { success: false, error: "No active contribution found." };
   }
   const { user, ctx } = resolved;
 
@@ -260,11 +285,12 @@ export async function submitContribution(): Promise<never> {
     (s) => completionMap.get(s) !== true
   );
   if (incomplete.length > 0) {
-    throw new Error(
-      `The following sections are not yet complete: ${incomplete.join(
-        ", "
-      )}. Please complete them before submitting.`
-    );
+    return {
+      success: false,
+      error: `The following sections are not yet complete: ${incomplete
+        .map((s) => SECTION_TITLES[s])
+        .join(", ")}. Please complete them before submitting.`,
+    };
   }
 
   // ── Validate no error-severity gaps remain (scoped to the secondary) ──────
@@ -282,16 +308,10 @@ export async function submitContribution(): Promise<never> {
     .flatMap((gs) => gs.gaps.filter((g) => g.severity === "error"));
 
   if (errorGaps.length > 0) {
-    const payload: SubmitBlockedByGapsError = {
-      code: "GAPS_BLOCKING_SUBMISSION",
-      gaps: errorGaps.map((g) => ({
-        id: g.id,
-        sectionType: g.sectionType,
-        label: g.label,
-        fieldRef: g.fieldRef,
-      })),
+    return {
+      success: false,
+      error: `Please resolve: ${errorGaps.map((g) => g.label).join("; ")}`,
     };
-    throw new Error(JSON.stringify(payload));
   }
 
   // ── Flip the contributor → SUBMITTED (ADMIN context — write policy is admin-only) ─
