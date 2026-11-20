@@ -30,7 +30,8 @@ import { sendEmail } from "@/lib/email/send";
 import { createAuditLog } from "@/lib/audit/log";
 import { submitApplicationData } from "@/lib/applications/status";
 import { getSectionGapStatuses, type SectionGap } from "@/lib/portal/section-gaps";
-import { SECTION_ORDER } from "@/lib/portal/sections";
+import { REASSESSMENT_SECTION_ORDER, SECTION_ORDER } from "@/lib/portal/sections";
+import { isRollingOverApplication } from "@/lib/db/queries/reassessment";
 import { familyIdCrossSectionGaps } from "@/lib/portal/family-id-cross-check";
 import { isSubmissionDeadlinePassed,
   DEADLINE_ROUND_SELECT,
@@ -98,9 +99,20 @@ export type SubmitApplicationCoreResult =
   | { alreadySubmitted: true }
   | { alreadySubmitted: false; reference: string };
 
-// Canonical full section list (single source of truth, shared with the wizard
-// / review / dashboard / sidebar / gap engine).
-const ALL_SECTIONS: ApplicationSectionType[] = SECTION_ORDER;
+/**
+ * The sections an application must have complete to submit. A rolling-over
+ * re-assessment hides FAMILY_ID (the wizard redirects away from it and it is
+ * never created), so requiring it blocked every re-assessment submit (audit
+ * 20 Nov 2026). Same list as `requiredSectionCount` in status.ts.
+ */
+export function requiredSubmitSections(application: {
+  applicationType?: string | null;
+  isReassessment?: boolean | null;
+}): ApplicationSectionType[] {
+  return isRollingOverApplication(application)
+    ? REASSESSMENT_SECTION_ORDER
+    : SECTION_ORDER;
+}
 
 // ─── Core ─────────────────────────────────────────────────────────────────────
 
@@ -227,12 +239,12 @@ export async function submitApplicationCore(
     throw new Error(SUBMISSION_DEADLINE_PASSED_MESSAGE);
   }
 
-  // ── Validate all 10 sections are complete ─────────────────────────────────
+  // ── Validate every section the parent can see is complete ─────────────────
   const completionMap = new Map(
     application.sections.map((s) => [s.section, s.isComplete])
   );
 
-  const incompleteSections = ALL_SECTIONS.filter(
+  const incompleteSections = requiredSubmitSections(application).filter(
     (s) => completionMap.get(s) !== true
   );
 

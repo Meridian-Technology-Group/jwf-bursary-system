@@ -22,11 +22,11 @@ import {
 import { getSectionGapStatuses } from "@/lib/portal/section-gaps";
 import { getActiveApplicationId } from "@/lib/portal/active-application";
 import {
-  SECTION_ORDER,
   SECTION_TITLES,
   SECTION_TO_SLUG as SECTION_SLUGS,
 } from "@/lib/portal/sections";
 import { PortalPage } from "@/components/portal/portal-page";
+import { requiredSubmitSections } from "@/lib/applications/submission";
 import { cn } from "@/lib/utils";
 import type {
   ChildDetailsData,
@@ -55,10 +55,6 @@ export const metadata = {
 // source of truth). The review page's titles ARE the canonical set; the wizard
 // keeps a one-key override for FAMILY_ID (see PR-5 / sections.ts).
 
-// DECLARATION is excluded from summary cards (that's where submit lives)
-const SUMMARY_SECTIONS: ApplicationSectionType[] = SECTION_ORDER.filter(
-  (s) => s !== "DECLARATION"
-);
 
 // ─── Formatting helpers ───────────────────────────────────────────────────────
 
@@ -423,6 +419,12 @@ export default async function ReviewPage() {
     redirect("/submitted");
   }
 
+  // The sections this parent can see and must complete: a rolling-over
+  // re-assessment has no Family Identification (same list submit checks).
+  const visibleSections = requiredSubmitSections(application);
+  // DECLARATION is excluded from summary cards (that's where submit lives)
+  const summarySections = visibleSections.filter((s) => s !== "DECLARATION");
+
   // ── Gap analysis ───────────────────────────────────────────────────────────
   // Runs under the lead applicant's RLS context: getSectionGapStatuses reads
   // application_sections/documents (both RLS-protected), so it must share the
@@ -463,13 +465,13 @@ export default async function ReviewPage() {
   const isSectionFullyValid = (s: ApplicationSectionType) =>
     completeMap.get(s) === true && (gapMap.get(s)?.length ?? 0) === 0;
 
-  const completedCount = SECTION_ORDER.filter(isSectionFullyValid).length;
+  const completedCount = visibleSections.filter(isSectionFullyValid).length;
 
   // Progress mirrors the "sections fully complete" counter so the bar and the
-  // N-of-10 figure agree — both use the gap-aware fully-valid rule above.
+  // N-of-total figure agree — both use the gap-aware fully-valid rule above.
   const progressPct =
-    SECTION_ORDER.length > 0
-      ? parseFloat(((completedCount / SECTION_ORDER.length) * 100).toFixed(1))
+    visibleSections.length > 0
+      ? parseFloat(((completedCount / visibleSections.length) * 100).toFixed(1))
       : 0;
 
   return (
@@ -493,7 +495,7 @@ export default async function ReviewPage() {
         <div className="flex items-center justify-between text-sm">
           <span className="text-slate-500">Sections fully complete</span>
           <span className="font-semibold text-primary-900">
-            {completedCount} of {SECTION_ORDER.length}
+            {completedCount} of {visibleSections.length}
           </span>
         </div>
         <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-slate-100">
@@ -587,7 +589,7 @@ export default async function ReviewPage() {
         </h2>
 
         <div className="space-y-4">
-          {SUMMARY_SECTIONS.map((sectionType, idx) => {
+          {summarySections.map((sectionType, idx) => {
             // Match the sidebar: "Complete" only when saved AND no error gaps.
             // isComplete alone let a section show green here while the sidebar /
             // validation summary flagged outstanding mandatory items.
