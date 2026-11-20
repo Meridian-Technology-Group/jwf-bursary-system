@@ -29,7 +29,7 @@ import { replaceMergeFields } from "@/lib/email/merge";
 import { formalGreeting, parent1ContactOf } from "@/lib/email/formal-greeting";
 import { isMigrated } from "@/lib/applications/migration-source";
 import { humaniseSlot } from "@/lib/documents/slots";
-import { deleteDocument } from "@/lib/storage/documents";
+import { deleteDocuments } from "@/lib/storage/documents";
 import { createSupabaseAdminClient } from "@/lib/auth/supabase-admin";
 import {
   canReturnForCorrection,
@@ -536,13 +536,8 @@ export async function rejectAndRestartApplication(
     // The removed documents' files, now their rows are gone. An object left
     // behind is less harmful than a row pointing at nothing (as the staff
     // delete route does it, the other way round).
-    for (const path of result.storagePaths) {
-      try {
-        await deleteDocument(path);
-      } catch (err) {
-        console.error("[rejectAndRestartApplication] storage delete failed", path, err);
-      }
-    }
+    // One batched call; never throws, logs every path it could not remove.
+    await deleteDocuments(result.storagePaths);
 
     // Email the family — non-blocking.
     const emailResult = await sendEmail(
@@ -1000,9 +995,10 @@ export async function gdprDeleteApplicantAction(
 
     const leadApplicantId = application.leadApplicantId;
 
-    // 3. Run the shared erasure cascade (Epic 10): Storage-first, anonymising
-    //    DB transaction (append-only audit honoured by nulling userId, never
-    //    deleting), dual-parent shared-profile guard, then Supabase auth
+    // 3. Run the shared erasure cascade (Epic 10): anonymising DB
+    //    transaction (append-only audit honoured by nulling userId, never
+    //    deleting), dual-parent shared-profile guard, then — after the
+    //    commit — Storage files (one batched call) and Supabase auth
     //    deletion. The manual button and the auto-purge cron call the SAME
     //    cascade, so they can never diverge.
     const purgeResult = await purgeApplication(
@@ -1021,7 +1017,7 @@ export async function gdprDeleteApplicantAction(
       },
       {
         withAdminContext,
-        deleteDocument,
+        deleteDocuments,
         deleteAuthUser: (uid) =>
           createSupabaseAdminClient().auth.admin.deleteUser(uid),
       }
@@ -1227,17 +1223,13 @@ export async function closeApplicationAction(
     }
 
     const result = await withAdminContext((tx) =>
-      closeApplicationCore(
-        tx,
-        { applicationId, closeReasonId, actorId: user.id },
-        { deleteDocument }
-      )
+      closeApplicationCore(tx, { applicationId, closeReasonId, actorId: user.id })
     );
 
     if (!result.success) return result;
 
-    // Epic 23 T10 rule 2 (flag on only): the closed form's files, after the commit.
-    await deleteStorageObjectsPostCommit(result.storagePathsToDelete, deleteDocument);
+    // Close purge / Epic 23 T10 rule 2 (flag on only): the files, after the commit.
+    await deleteStorageObjectsPostCommit(result.storagePathsToDelete, deleteDocuments);
 
     // Post-commit: auth-user deletion is external to Postgres (non-fatal —
     // failures are logged; the data-side purge has already committed).
@@ -1510,11 +1502,7 @@ export async function bulkCloseApplicationsAction(
 
     for (const applicationId of ids) {
       const result = await withAdminContext((tx) =>
-        closeApplicationCore(
-          tx,
-          { applicationId, closeReasonId, actorId: user.id },
-          { deleteDocument }
-        )
+        closeApplicationCore(tx, { applicationId, closeReasonId, actorId: user.id })
       );
 
       if (!result.success) {
@@ -1526,8 +1514,8 @@ export async function bulkCloseApplicationsAction(
         continue;
       }
 
-      // Epic 23 T10 rule 2 (flag on only): the closed form's files, after the commit.
-      await deleteStorageObjectsPostCommit(result.storagePathsToDelete, deleteDocument);
+      // Close purge / Epic 23 T10 rule 2 (flag on only): the files, after the commit.
+      await deleteStorageObjectsPostCommit(result.storagePathsToDelete, deleteDocuments);
 
       // Post-commit: auth-user deletion is external to Postgres (non-fatal —
       // failures are logged; this row's data-side purge has already
@@ -1576,7 +1564,7 @@ export async function requestErasureAction(applicationId: string): Promise<Actio
     if (!result.applied) {
       return { success: false, error: result.skipped ?? "This application cannot be erased." };
     }
-    await deleteStorageObjectsPostCommit(result.storagePaths, deleteDocument);
+    await deleteStorageObjectsPostCommit(result.storagePaths, deleteDocuments);
     if (result.authUsersToDelete.length > 0) {
       await deleteAuthUsersPostCommit(result.authUsersToDelete, {
         deleteAuthUser: (uid) => createSupabaseAdminClient().auth.admin.deleteUser(uid),

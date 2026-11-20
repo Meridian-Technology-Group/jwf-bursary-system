@@ -16,9 +16,11 @@
  *   3. Closes a live (ACTIVE) BursaryAccount the application carries —
  *      subsuming the old withdraw behaviour. Idempotent: an already-CLOSED
  *      account is left untouched (its original closedAt survives).
- *   4. If the reason's `purgeOnClose` flag is set and the application has not
- *      already been purged, runs `purgeClosedApplication` (item 10) and
- *      stamps `purgedAt`.
+ *   4. If the reason's `purgeOnClose` flag is set, retention purging is
+ *      enabled (`RETENTION_PURGE_ENABLED`, like the cron and erasure) and the
+ *      application has not already been purged, runs `purgeClosedApplication`
+ *      (item 10) and stamps `purgedAt`. Its document files are returned for
+ *      deletion after the commit, never deleted inside the transaction.
  *   5. Writes the APPLICATION_CLOSED audit row (and APPLICATION_PURGED when a
  *      purge ran) — inside the same transaction, so state change + audit are
  *      atomic. Auth-user deletion is external and returned to the caller to
@@ -35,7 +37,6 @@ import { AUDIT_ACTIONS, AUDIT_ENTITY_TYPES } from "@/lib/audit/actions";
 import {
   purgeClosedApplication,
   buildClosePurgeAuditMetadata,
-  type ClosePurgeDeps,
 } from "@/lib/retention/close-purge";
 import { isRetentionPurgeEnabled } from "@/lib/retention/policy";
 import { purgeFormAndDocuments } from "@/lib/retention/stages";
@@ -56,7 +57,7 @@ export type CloseApplicationResult =
       accountClosed: boolean;
       /** Auth users to delete AFTER the transaction commits (purge only). */
       authUsersToDelete: string[];
-      /** Storage objects to delete AFTER the commit (Epic 23 T10 rule 2; flag on only). */
+      /** Storage objects to delete AFTER the commit (close purge or Epic 23 T10 rule 2; flag on only). */
       storagePathsToDelete: string[];
     }
   | { success: false; error: string };
@@ -68,8 +69,7 @@ export type CloseApplicationResult =
  */
 export async function closeApplicationCore(
   tx: Tx,
-  input: CloseApplicationInput,
-  deps: ClosePurgeDeps
+  input: CloseApplicationInput
 ): Promise<CloseApplicationResult> {
   const { applicationId, closeReasonId, actorId } = input;
 
@@ -137,29 +137,34 @@ export async function closeApplicationCore(
     accountClosed = true;
   }
 
-  // 4. Reason-driven purge (item 10) — the reason's toggle is the sole driver.
+  // 4. Reason-driven purge (item 10) — driven by the reason's toggle, and
+  //    only while retention purging is switched on (audit finding 15: the
+  //    flag gates every destructive path, not just the cron and erasure).
+  //    Off, the reason still closes the application; nothing is erased.
   let purgeRan = false;
+  let closePurge: "applied" | "skipped-disabled" | "not-applicable" = "not-applicable";
   let authUsersToDelete: string[] = [];
-  if (reason.purgeOnClose && application.purgedAt == null) {
-    const purgeResult = await purgeClosedApplication(
-      tx,
-      {
-        id: application.id,
-        reference: application.reference,
-        childName: application.childName,
-        leadApplicantId: application.leadApplicantId,
-        bursaryAccountId: application.bursaryAccountId,
-        documents: application.documents,
-        assessment: application.assessment,
-      },
-      deps
-    );
+  let storagePathsToDelete: string[] = [];
+  if (reason.purgeOnClose && application.purgedAt == null && !isRetentionPurgeEnabled()) {
+    closePurge = "skipped-disabled";
+  } else if (reason.purgeOnClose && application.purgedAt == null) {
+    const purgeResult = await purgeClosedApplication(tx, {
+      id: application.id,
+      reference: application.reference,
+      childName: application.childName,
+      leadApplicantId: application.leadApplicantId,
+      bursaryAccountId: application.bursaryAccountId,
+      documents: application.documents,
+      assessment: application.assessment,
+    });
     await tx.application.update({
       where: { id: applicationId },
       data: { purgedAt: now },
     });
     purgeRan = true;
+    closePurge = "applied";
     authUsersToDelete = purgeResult.authUsersToDelete;
+    storagePathsToDelete = purgeResult.storagePathsToDelete;
 
     await createAuditLog(tx, {
       userId: actorId,
@@ -180,7 +185,6 @@ export async function closeApplicationCore(
   //     the close; its assessment stays named for 6 years. Behind the
   //     retention flag: off, it only records what it would have removed.
   //     Storage objects are deleted by the caller AFTER the commit.
-  let storagePathsToDelete: string[] = [];
   let retentionFormPurge: "applied" | "skipped-disabled" | "not-applicable" = "not-applicable";
   if (!purgeRan && application.bursaryAccountId == null) {
     if (isRetentionPurgeEnabled()) {
@@ -218,6 +222,7 @@ export async function closeApplicationCore(
       closeReasonId: reason.id,
       closeReasonLabel: reason.label,
       purgeRan,
+      closePurge,
       accountClosed,
       retentionFormPurge,
     },

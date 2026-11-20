@@ -9,7 +9,6 @@
  * What it does (preserving the original ordering exactly):
  *   1. Resolve the SECONDARY contributor (second parent) + the shared-profile
  *      erasure verdict (read-only, before any mutation).
- *   2. Delete Storage objects first (non-fatal per-doc).
  *   3. In ONE admin-context transaction:
  *        a. delete assessment children (earners, checklists, property)
  *        b. delete recommendation + junction rows
@@ -24,6 +23,9 @@
  *           audit_logs is append-only; deletion fails 42501 and rolls back)
  *        i. anonymise the lead Profile + role → DELETED
  *        j. dual-parent: delete contributor rows; anonymise-or-retain secondary
+ *   3b. AFTER the commit, delete the Storage objects in one batched call
+ *       (non-fatal per doc; audit finding 15 — they were deleted before the
+ *       transaction, so a rollback left rows pointing at deleted files).
  *   4. Delete the lead's Supabase auth user (non-fatal).
  *   5. Delete the secondary's Supabase auth user when erasable (non-fatal).
  *
@@ -51,6 +53,7 @@ import {
   REJECTION_SCRUB,
   profileScrubData,
 } from "@/lib/retention/scrub-map";
+import type { StorageDeleteFailure } from "@/lib/storage/documents";
 
 /** The application + relations the cascade needs. Mirrors the action's fetch. */
 export interface PurgeableApplication {
@@ -88,8 +91,11 @@ export interface PurgeResult {
 export interface PurgeDeps {
   /** Runs a function inside an admin-context (service_role) transaction. */
   withAdminContext: <T>(fn: (tx: Tx) => Promise<T>) => Promise<T>;
-  /** Deletes one Storage object by path. May throw — caught per-doc. */
-  deleteDocument: (storagePath: string) => Promise<void>;
+  /**
+   * Deletes Storage objects in one batched call (`deleteDocuments`); returns
+   * the paths it could not remove. A throw is treated as every path failing.
+   */
+  deleteDocuments: (storagePaths: readonly string[]) => Promise<StorageDeleteFailure[]>;
   /** Deletes a Supabase auth user; returns `{ error }` like the SDK. */
   deleteAuthUser: (userId: string) => Promise<{ error: { message: string } | null }>;
 }
@@ -103,7 +109,7 @@ export async function purgeApplication(
   application: PurgeableApplication,
   deps: PurgeDeps
 ): Promise<PurgeResult> {
-  const { withAdminContext, deleteDocument, deleteAuthUser } = deps;
+  const { withAdminContext, deleteDocuments, deleteAuthUser } = deps;
   const applicationId = application.id;
   const leadApplicantId = application.leadApplicantId;
 
@@ -116,18 +122,6 @@ export async function purgeApplication(
         decideSecondaryProfileErasure(tx, secondary.profileId, applicationId)
       )
     : null;
-
-  // 2. Delete Storage files first (non-fatal: continue on partial failure).
-  const storageErrors: string[] = [];
-  for (const doc of application.documents) {
-    try {
-      await deleteDocument(doc.storagePath);
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      storageErrors.push(`${doc.id}: ${msg}`);
-      console.warn("[purge] Storage delete failed for", doc.id, msg);
-    }
-  }
 
   // 3. DB mutations in a single admin-context transaction (bypasses RLS).
   await withAdminContext(async (tx) => {
@@ -237,6 +231,14 @@ export async function purgeApplication(
     }
   });
 
+  // 3b. Storage files, AFTER the DB transaction has committed (audit finding
+  //     15): a rollback must never leave rows pointing at deleted files. One
+  //     batched call; non-fatal, every failure recorded per document id.
+  const storageErrors = await deleteApplicationFilesPostCommit(
+    application.documents,
+    deleteDocuments
+  );
+
   // 4. Delete the lead's Supabase auth user (GDPR Art. 17). Non-fatal.
   let authDeleteError: string | null = null;
   try {
@@ -312,4 +314,25 @@ export function buildPurgeAuditMetadata(
         }
       : undefined,
   };
+}
+
+/** Batched post-commit file delete for the cascade; errors keyed by document id. */
+async function deleteApplicationFilesPostCommit(
+  documents: { id: string; storagePath: string }[],
+  deleteDocuments: PurgeDeps["deleteDocuments"]
+): Promise<string[]> {
+  if (documents.length === 0) return [];
+  let failures: StorageDeleteFailure[];
+  try {
+    failures = await deleteDocuments(documents.map((d) => d.storagePath));
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    failures = documents.map((d) => ({ path: d.storagePath, message }));
+  }
+  const idByPath = new Map(documents.map((d) => [d.storagePath, d.id]));
+  return failures.map(({ path, message }) => {
+    const id = idByPath.get(path) ?? "unknown";
+    console.warn("[purge] Storage delete failed for", id, message);
+    return `${id}: ${message}`;
+  });
 }

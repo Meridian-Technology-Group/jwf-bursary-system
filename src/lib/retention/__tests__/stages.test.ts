@@ -11,7 +11,13 @@ vi.mock("@/lib/db/queries/secondary-gdpr", () => ({
   decideSecondaryProfileErasure: vi.fn(),
 }));
 
-import { anonymiseForErasure, ANONYMISED, purgeAssessment, purgeFormAndDocuments } from "../stages";
+import {
+  anonymiseForErasure,
+  ANONYMISED,
+  deleteStorageObjectsPostCommit,
+  purgeAssessment,
+  purgeFormAndDocuments,
+} from "../stages";
 import { countByAction, dueCandidatesWhere, sortSchedule } from "../schedule";
 
 const NOW = new Date("2030-06-01T12:00:00Z");
@@ -235,5 +241,33 @@ describe("cron candidate selection", () => {
     ]);
     expect(items.map((i) => i.reference)).toEqual(["A", "B"]);
     expect(countByAction(items.map((i) => i.plan))).toEqual({ "purge-form-docs": 1, "purge-assessment": 1 });
+  });
+});
+
+describe("deleteStorageObjectsPostCommit — audit finding 15 (batched)", () => {
+  it("hands every path to ONE batched delete and formats its failures", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const deleteDocuments = vi.fn(async (_paths: readonly string[]) => [{ path: "b", message: "denied" }]);
+    const errors = await deleteStorageObjectsPostCommit(["a", "b", "c"], deleteDocuments);
+    expect(deleteDocuments).toHaveBeenCalledTimes(1);
+    expect(deleteDocuments).toHaveBeenCalledWith(["a", "b", "c"]);
+    expect(errors).toEqual(["b: denied"]);
+    expect(warn).toHaveBeenCalledTimes(1);
+    warn.mockRestore();
+  });
+
+  it("a throwing batch is recorded against every path, never thrown", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const errors = await deleteStorageObjectsPostCommit(["a", "b"], async () => {
+      throw new Error("down");
+    });
+    expect(errors).toEqual(["a: down", "b: down"]);
+    warn.mockRestore();
+  });
+
+  it("makes no call for an empty list", async () => {
+    const deleteDocuments = vi.fn(async () => []);
+    expect(await deleteStorageObjectsPostCommit([], deleteDocuments)).toEqual([]);
+    expect(deleteDocuments).not.toHaveBeenCalled();
   });
 });

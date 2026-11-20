@@ -75,8 +75,6 @@ function makeApp(
   };
 }
 
-const noStorageFailure = { deleteDocument: vi.fn(async () => {}) };
-
 beforeEach(() => {
   secondaryMock.mockReset().mockResolvedValue(null);
   decisionMock.mockReset();
@@ -86,9 +84,7 @@ describe("purgeClosedApplication — retention split", () => {
   it("deletes documents/sections, scrubs identities, RETAINS assessment + recommendation rows", async () => {
     const { tx, auditDelete } = makeTx();
 
-    const result = await purgeClosedApplication(tx as never, makeApp(), {
-      deleteDocument: vi.fn(async () => {}),
-    });
+    const result = await purgeClosedApplication(tx as never, makeApp());
 
     // Deleted: files, form sections, legacy checklist notes, invitations.
     expect(tx.document.deleteMany).toHaveBeenCalledWith({
@@ -167,9 +163,7 @@ describe("purgeClosedApplication — retention split", () => {
     const { tx } = makeTx();
     const result = await purgeClosedApplication(
       tx as never,
-      makeApp({ assessment: null, bursaryAccountId: null }),
-      noStorageFailure
-    );
+      makeApp({ assessment: null, bursaryAccountId: null }));
     expect(tx.assessment.update).not.toHaveBeenCalled();
     expect(tx.recommendation.update).not.toHaveBeenCalled();
     expect(tx.bursaryAccount.update).not.toHaveBeenCalled();
@@ -182,18 +176,15 @@ describe("purgeClosedApplication — retention split", () => {
     expect(result.leadProfile).toBe("erased");
   });
 
-  it("storage failures are non-fatal, recorded, and surfaced in audit metadata", async () => {
+  it("audit finding 15: deletes no Storage object itself — returns the paths for after the commit", async () => {
     const { tx } = makeTx();
-    const result = await purgeClosedApplication(tx as never, makeApp(), {
-      deleteDocument: vi.fn(async () => {
-        throw new Error("object locked");
-      }),
-    });
-    expect(result.storageErrors).toHaveLength(1);
-    expect(result.storageErrors[0]).toContain("doc-1");
+    const result = await purgeClosedApplication(tx as never, makeApp());
+    expect(result.storagePathsToDelete).toEqual(["documents/app-1/a.pdf"]);
+    // The purge has no storage dependency at all: a rollback of the caller's
+    // transaction can no longer strand rows that point at deleted files.
+    expect(purgeClosedApplication.length).toBe(2);
 
     const meta = buildClosePurgeAuditMetadata(makeApp(), result);
-    expect(meta.storageErrors).toEqual(result.storageErrors);
     // Metadata carries counts and references, never personal values.
     expect(JSON.stringify(meta)).not.toContain("Jane Doe");
   });
@@ -204,9 +195,7 @@ describe("purgeClosedApplication — lead-profile guard", () => {
     const { tx } = makeTx({ otherApplications: 0, otherAccounts: 0 });
     const result = await purgeClosedApplication(
       tx as never,
-      makeApp(),
-      noStorageFailure
-    );
+      makeApp());
     expect(result.leadProfile).toBe("erased");
     expect(tx.profile.update).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -225,9 +214,7 @@ describe("purgeClosedApplication — lead-profile guard", () => {
     const { tx } = makeTx({ otherApplications: 2 });
     const result = await purgeClosedApplication(
       tx as never,
-      makeApp(),
-      noStorageFailure
-    );
+      makeApp());
     expect(result.leadProfile).toBe("retained");
     expect(result.leadProfileRetainedBecause).toContain("2 other live");
     expect(tx.profile.update).not.toHaveBeenCalled();
@@ -239,9 +226,7 @@ describe("purgeClosedApplication — lead-profile guard", () => {
     const { tx } = makeTx({ otherAccounts: 1 });
     const result = await purgeClosedApplication(
       tx as never,
-      makeApp(),
-      noStorageFailure
-    );
+      makeApp());
     expect(result.leadProfile).toBe("retained");
     expect(result.leadProfileRetainedBecause).toContain("bursary account");
   });
@@ -263,9 +248,7 @@ describe("purgeClosedApplication — secondary contributor", () => {
     const { tx } = makeTx();
     const result = await purgeClosedApplication(
       tx as never,
-      makeApp(),
-      noStorageFailure
-    );
+      makeApp());
     expect(result.secondaryProfile).toBe("erased");
     expect(tx.profile.update).toHaveBeenCalledWith(
       expect.objectContaining({ where: { id: "second-1" } })
@@ -290,9 +273,7 @@ describe("purgeClosedApplication — secondary contributor", () => {
     const { tx } = makeTx();
     const result = await purgeClosedApplication(
       tx as never,
-      makeApp(),
-      noStorageFailure
-    );
+      makeApp());
     expect(result.secondaryProfile).toBe("retained");
     expect(result.authUsersToDelete).not.toContain("second-1");
   });
@@ -333,13 +314,11 @@ describe("idempotency + helpers", () => {
     });
     const rerun = await purgeClosedApplication(
       tx as never,
-      makeApp({ childName: REDACTED_CHILD_NAME, documents: [] }),
-      noStorageFailure
-    );
+      makeApp({ childName: REDACTED_CHILD_NAME, documents: [] }));
     expect(rerun.counts.documentsDeleted).toBe(0);
     expect(rerun.counts.sectionsDeleted).toBe(0);
-    // Re-scrubbing scrubbed fields is harmless; no throw, no storage calls.
-    expect(rerun.storageErrors).toEqual([]);
+    // Re-scrubbing scrubbed fields is harmless; no throw, no files to delete.
+    expect(rerun.storagePathsToDelete).toEqual([]);
   });
 });
 
