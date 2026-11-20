@@ -114,7 +114,6 @@ Declared in `package.json`:
 
 | Package | Version | SPDX Licence |
 |---|---|---|
-| `@radix-ui/react-avatar` | 1.1.11 | MIT |
 | `@radix-ui/react-checkbox` | 1.3.3 | MIT |
 | `@radix-ui/react-dialog` | 1.1.15 | MIT |
 | `@radix-ui/react-dropdown-menu` | 2.1.16 | MIT |

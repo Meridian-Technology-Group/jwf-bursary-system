@@ -20,25 +20,6 @@ export interface AuditLogFilters {
 }
 
 /**
- * Returns all audit log entries for a specific entity in chronological order.
- */
-export async function getAuditLogsForEntity(
-  tx: Tx,
-  entityType: string,
-  entityId: string
-): Promise<AuditLogWithUser[]> {
-  return tx.auditLog.findMany({
-    where: { entityType, entityId },
-    include: {
-      user: {
-        select: { id: true, firstName: true, lastName: true, email: true },
-      },
-    },
-    orderBy: { createdAt: "asc" },
-  });
-}
-
-/**
  * Returns the full audit history for an application detail page: rows logged
  * against the Application entity itself, plus CR-001 edit-on-behalf section
  * saves — those are logged against the ApplicationSection entity (entityId =
@@ -79,24 +60,6 @@ export async function getAuditLogsForApplicationHistory(
       },
     },
     orderBy: { createdAt: "asc" },
-  });
-}
-
-/**
- * Returns the most recent audit log entries across all entities.
- */
-export async function getRecentAuditLogs(
-  tx: Tx,
-  limit: number
-): Promise<AuditLogWithUser[]> {
-  return tx.auditLog.findMany({
-    include: {
-      user: {
-        select: { id: true, firstName: true, lastName: true, email: true },
-      },
-    },
-    orderBy: { createdAt: "desc" },
-    take: limit,
   });
 }
 

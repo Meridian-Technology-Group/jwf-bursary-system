@@ -1,8 +1,8 @@
 "use client";
 
 /**
- * CALC-07 — live v2 assessment calculation hook (sibling to
- * `use-assessment-calculation.ts`).
+ * CALC-07 — live v2 assessment calculation hook (replaced the v1
+ * `use-assessment-calculation.ts`, since removed).
  *
  * Runs the full notional model (`calculateAssessmentV2`, the CALC-06
  * orchestrator) client-side on every input change, debounced at 150 ms — the

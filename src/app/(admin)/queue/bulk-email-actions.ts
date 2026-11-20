@@ -379,7 +379,7 @@ export async function bulkSendEmailAction(
         });
       }
 
-      // Respect Resend's rate limits between sends (mirrors sendBatchEmails).
+      // Respect Resend's rate limits between sends.
       if (i < applications.length - 1) {
         await delay(100);
       }

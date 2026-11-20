@@ -135,9 +135,7 @@ this route's explicit `role !== ASSESSOR` check).
 **pre-signed URL with a 5-minute (`300 s`) expiry** via the admin client. Default
 is an inline URL (for the Tab-1 viewer); `?download=true` adds
 `Content-Disposition: attachment`. Every grant is audited
-(`DOCUMENT_URL_GRANTED`, with inline/attachment disposition). Note the separate
-storage helper `getSignedUrl()` defaults to 60 min, but this route hard-codes
-300 s.
+(`DOCUMENT_URL_GRANTED`, with inline/attachment disposition).
 
 **Exports (`GET /api/exports/recommendations`).** Query: `roundId` (required),
 `school` (`TRINITY`/`WHITGIFT`, optional), `format` (`xlsx` default, or `csv`).

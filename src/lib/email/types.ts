@@ -22,15 +22,6 @@ export interface SendEmailResult {
 }
 
 /**
- * Aggregate result returned by sendBatchEmails.
- */
-export interface SendBatchResult {
-  sent: number;
-  failed: number;
-  errors: string[];
-}
-
-/**
  * Typed merge-field data map.
  * Keys correspond to field names used in {{field_name}} template placeholders.
  * All values must be strings; callers should format dates, numbers, etc. before
