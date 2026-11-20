@@ -14,7 +14,7 @@ import { Input } from "@/components/ui/input";
 import type { PreSystemHistoryRow } from "@/lib/assessments/admin-tab";
 import { CurrencyInput } from "@/components/admin/earner-form-v2";
 import { savePreSystemHistoryAction } from "@/app/(admin)/applications/[id]/assessment/admin/actions";
-import { toast } from "@/hooks/use-toast";
+import { toast } from "sonner";
 
 interface PreSystemHistoryEditorProps {
   bursaryAccountId: string;
@@ -58,13 +58,9 @@ export function PreSystemHistoryEditor({
     setSaving(false);
     if (result.success) {
       setDirty(false);
-      toast({ title: "Pre-system history saved" });
+      toast.success("Pre-system history saved");
     } else {
-      toast({
-        variant: "destructive",
-        title: "History not saved",
-        description: result.error,
-      });
+      toast.error("History not saved", { description: result.error });
     }
   };
 

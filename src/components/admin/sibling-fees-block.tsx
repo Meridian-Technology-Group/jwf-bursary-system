@@ -30,7 +30,7 @@ import {
 import type { SiblingDetail } from "@/types/assessment-v2";
 import { CurrencyInput } from "@/components/admin/earner-form-v2";
 import { saveAssessmentAction } from "@/app/(admin)/applications/[id]/assessment/actions";
-import { toast } from "@/hooks/use-toast";
+import { toast } from "sonner";
 import { ALL_SCHOOLS, schoolName } from "@/lib/schools";
 
 export interface SiblingAccountOption {
@@ -73,11 +73,7 @@ export function SiblingFeesBlock({
           siblingDetails: meaningful ? next : null,
         });
         if (!result.success) {
-          toast({
-            variant: "destructive",
-            title: "Sibling rows not saved",
-            description: result.error,
-          });
+          toast.error("Sibling rows not saved", { description: result.error });
         }
       }, 500);
     },
