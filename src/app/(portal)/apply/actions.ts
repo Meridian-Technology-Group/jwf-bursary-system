@@ -463,11 +463,33 @@ export async function submitApplication(
   // Resolve the PRIMARY contributor (SELECT) — never upsert on this path; the
   // contributor write policy is admin-only and an applicant-context write would
   // be RLS-filtered (P2025). Self-heal under admin context only if missing.
-  let ownerContributorId = await withUserContext(
+  //
+  // Ownership is proven FIRST, under the caller's own RLS context: the
+  // self-heal below writes under admin context, and the core's ownership check
+  // (`expectedLeadApplicantId`) only runs after it. Without this, submitting
+  // another family's id created a PRIMARY contributor row for this user on
+  // their application before the core refused.
+  const owned = await withUserContext(
     user.id,
     user.role as RlsRole,
-    (tx) => resolveOwningContributorId(tx, applicationId, user.id)
+    async (tx) => {
+      const application = await tx.application.findFirst({
+        where: { id: applicationId, leadApplicantId: user.id },
+        select: { id: true },
+      });
+      if (!application) return null;
+      return {
+        ownerContributorId: await resolveOwningContributorId(tx, applicationId, user.id),
+      };
+    }
   );
+  if (!owned) {
+    // The same thing the core's own not-found refusal shows the applicant.
+    const notFound = new Error("Application not found.");
+    logError("submitApplication", notFound, { applicationId });
+    return { success: false, errors: applicantSubmissionErrors(notFound) };
+  }
+  let ownerContributorId = owned.ownerContributorId;
   if (!ownerContributorId) {
     ownerContributorId = await withAdminContext((tx) =>
       ensurePrimaryContributor(tx, applicationId, user.id)
