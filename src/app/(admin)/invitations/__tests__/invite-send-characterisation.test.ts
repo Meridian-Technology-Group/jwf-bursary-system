@@ -106,7 +106,7 @@ const CONTACT = {
   school: "TRINITY",
   entryYear: 2027,
   entryYearGroup: "Y7",
-  situation: "NEW",
+  situation: "NEW" as string | null,
   profileId: null as string | null,
   archivedAt: null,
 };

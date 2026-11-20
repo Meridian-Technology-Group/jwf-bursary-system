@@ -36,20 +36,18 @@ import {
   openingDateMergeField,
   resolveInvitationTemplate,
 } from "@/lib/email/invitation-template";
-import {
-  invitationDeadlineFields,
-  INVITATION_ROUND_DEADLINE_SELECT,
-} from "@/lib/email/invitation-deadline";
+import { INVITATION_ROUND_DEADLINE_SELECT } from "@/lib/email/invitation-deadline";
 import type { SubmissionDeadlineRound } from "@/lib/rounds/submission-deadline";
 import {
   invitationScenarioFields,
   ROUND_WINDOWS_SELECT,
 } from "@/lib/rounds/window-consumption";
 import { sendEmail, normaliseBccAddress } from "@/lib/email/send";
+import { parseInvitationSubmitBy } from "@/lib/invitations/submit-by";
 import {
-  emailDeadlineOverride,
-  parseInvitationSubmitBy,
-} from "@/lib/invitations/submit-by";
+  invitationEmailMergeData,
+  rollBackUnsentInvitation,
+} from "@/lib/invitations/send-invitation";
 import { createAuditLog } from "@/lib/audit/log";
 import { AUDIT_ACTIONS, AUDIT_ENTITY_TYPES } from "@/lib/audit/actions";
 import {
@@ -396,23 +394,19 @@ export async function sendInvitationFromContactAction(
     contact.email,
     resolveInvitationTemplate(contact.situation, contact.school),
     {
-      applicant_name: applicantName,
-      child_name: contact.childName,
-      school: schoolLabel(contact.school),
-      round_year: academicYear,
-      registration_link: `${appUrl}/register?token=${invitationToken}`,
+      ...invitationEmailMergeData({
+        applicantName,
+        childName: contact.childName,
+        school: schoolLabel(contact.school),
+        roundYear: academicYear,
+        registrationLink: `${appUrl}/register?token=${invitationToken}`,
+        deadlineRound,
+        deadlineType: deadlineTypeForSituation(contact.situation),
+        expiresAt,
+        submitBy,
+      }),
       opening_date: openingDateMergeField(
         roundOpenDate ? { openDate: roundOpenDate } : null
-      ),
-      // E1/CF-11: {{deadline}} is the round's SUBMISSION deadline (typed by
-      // situation), not the 30-day token expiry — that now has its own
-      // {{link_expiry}} field.
-      // Licence fix: the invitation's "Submit by" date, when set, wins.
-      ...invitationDeadlineFields(
-        deadlineRound,
-        deadlineTypeForSituation(contact.situation),
-        expiresAt,
-        emailDeadlineOverride(submitBy)
       ),
     },
     // CH-32 — blind-copy the bursary inbox so the send is on record.
@@ -422,15 +416,11 @@ export async function sendInvitationFromContactAction(
   if (!emailResult.success) {
     console.error("[contacts] sendInvitationFromContactAction email error:", emailResult.error);
 
-    await withAdminContext(async (tx) => {
-      await tx.invitation.delete({ where: { id: invitationId } }).catch((err) => {
-        console.error("[contacts] sendInvitationFromContactAction invitation rollback failed:", err);
-      });
-      await createAuditLog(tx, {
+    await rollBackUnsentInvitation({
+      invitationId,
+      audit: {
         userId: user.id,
         action: AUDIT_ACTIONS.INVITE_FROM_CONTACT_FAILED,
-        entityType: AUDIT_ENTITY_TYPES.Invitation,
-        entityId: invitationId,
         context: `Invite from contact to ${contact.email} rolled back — email failed to send`,
         metadata: {
           contactId: contact.id,
@@ -438,9 +428,8 @@ export async function sendInvitationFromContactAction(
           roundId,
           emailError: emailResult.error ?? null,
         },
-      });
-    }).catch((err) => {
-      console.error("[contacts] sendInvitationFromContactAction rollback tx failed:", err);
+      },
+      logLabel: (step) => `[contacts] sendInvitationFromContactAction ${step} failed:`,
     });
 
     await rollbackAuthUser();

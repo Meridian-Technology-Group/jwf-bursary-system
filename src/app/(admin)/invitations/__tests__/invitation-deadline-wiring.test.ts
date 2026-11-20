@@ -26,7 +26,8 @@ const ROOT = join(__dirname, "..", "..", "..", "..", "..");
 const SEND_SITES = [
   {
     file: "src/app/(admin)/invitations/actions.ts",
-    // createInvitation, reassessment batch, resend, second-parent invite.
+    // createInvitation, reassessment batch (both through the shared
+    // invitationEmailMergeData builder), resend, second-parent invite.
     expectedCalls: 4,
   },
   { file: "src/app/(admin)/contacts/invite-actions.ts", expectedCalls: 1 },
@@ -41,6 +42,17 @@ function countOccurrences(haystack: string, needle: string): number {
   return haystack.split(needle).length - 1;
 }
 
+/** The shared builder the three invite paths use (audit finding 19). */
+const SHARED_BUILDER = "src/lib/invitations/send-invitation.ts";
+
+/** Deadline resolutions: direct helper calls plus calls to the shared builder. */
+function resolutions(src: string): number {
+  return (
+    countOccurrences(src, "invitationDeadlineFields(") +
+    countOccurrences(src, "invitationEmailMergeData(")
+  );
+}
+
 describe("invitation {{deadline}} wiring (E1 / CF-11, CF-12)", () => {
   for (const { file, expectedCalls } of SEND_SITES) {
     describe(file, () => {
@@ -50,12 +62,16 @@ describe("invitation {{deadline}} wiring (E1 / CF-11, CF-12)", () => {
       });
 
       it("resolves the deadline through the shared helper at every send site", () => {
-        expect(
-          countOccurrences(source(file), "invitationDeadlineFields(")
-        ).toBe(expectedCalls);
+        expect(resolutions(source(file))).toBe(expectedCalls);
       });
     });
   }
+
+  it("the shared builder resolves {{deadline}} through the helper exactly once", () => {
+    const src = source(SHARED_BUILDER);
+    expect(src).not.toMatch(/\bdeadline:\s*\w[\w.?]*\.toLocaleDateString/);
+    expect(countOccurrences(src, "invitationDeadlineFields(")).toBe(1);
+  });
 
   it("exactly one send site asks for the ROLLING_OVER deadline", () => {
     // A re-assessment invitation goes to an existing bursary holder, so it must
@@ -67,8 +83,11 @@ describe("invitation {{deadline}} wiring (E1 / CF-11, CF-12)", () => {
     // appears elsewhere for unrelated reasons (e.g. creating the re-assessment
     // application itself).
     const args = all.match(/invitationDeadlineFields\(([^)]*)\)/g) ?? [];
-    expect(args).toHaveLength(6);
-    expect(args.filter((a) => a.includes('"ROLLING_OVER"'))).toHaveLength(1);
+    // …and the `deadlineType:` handed to the shared builder.
+    const builderTypes = all.match(/deadlineType:\s*[^,\n]+/g) ?? [];
+    const calls = [...args, ...builderTypes];
+    expect(calls).toHaveLength(6);
+    expect(calls.filter((a) => a.includes('"ROLLING_OVER"'))).toHaveLength(1);
   });
 
   it("the token expiry is still communicated, via its own merge field", () => {
