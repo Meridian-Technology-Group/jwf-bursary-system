@@ -60,6 +60,31 @@ export async function bulkLockRolledOverAction(): Promise<
         take: BULK_LOCK_MAX,
       });
 
+      // Every prior award on these accounts in ONE query (was one findFirst
+      // per target), newest first; each target then takes the first one from
+      // its own account in a different round — the same row findFirst chose.
+      const accountIds = Array.from(
+        new Set(
+          targets
+            .map((t) => t.application.bursaryAccountId)
+            .filter((id): id is string => id != null)
+        )
+      );
+      const priorAwards =
+        accountIds.length === 0
+          ? []
+          : await tx.assessment.findMany({
+              where: {
+                awardFundType: { not: null },
+                application: { bursaryAccountId: { in: accountIds } },
+              },
+              orderBy: { completedAt: "desc" },
+              select: {
+                awardFundType: true,
+                application: { select: { bursaryAccountId: true, roundId: true } },
+              },
+            });
+
       const rows: Array<{
         applicationId: string;
         reference: string;
@@ -68,17 +93,11 @@ export async function bulkLockRolledOverAction(): Promise<
       for (const t of targets) {
         let fund: AwardFundType = "JWF";
         if (t.application.bursaryAccountId) {
-          const previous = await tx.assessment.findFirst({
-            where: {
-              awardFundType: { not: null },
-              application: {
-                bursaryAccountId: t.application.bursaryAccountId,
-                roundId: { not: t.application.roundId },
-              },
-            },
-            orderBy: { completedAt: "desc" },
-            select: { awardFundType: true },
-          });
+          const previous = priorAwards.find(
+            (p) =>
+              p.application.bursaryAccountId === t.application.bursaryAccountId &&
+              p.application.roundId !== t.application.roundId
+          );
           if (previous?.awardFundType) fund = previous.awardFundType;
         }
         rows.push({
