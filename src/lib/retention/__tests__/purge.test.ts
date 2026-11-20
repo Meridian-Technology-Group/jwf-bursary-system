@@ -67,16 +67,18 @@ describe("purgeApplication — single parent", () => {
   it("runs storage, the anonymising tx and auth deletion; nulls (never deletes) audit", async () => {
     secondaryMock.mockResolvedValue(null);
     const { tx, auditDelete } = makeTx();
-    const deleteDocument = vi.fn(async () => {});
+    const deleteDocuments = vi.fn(async (_paths: readonly string[]) => []);
     const deleteAuthUser = vi.fn(async () => ({ error: null }));
 
     const result = await purgeApplication(makeApp(), {
       withAdminContext: async (fn) => fn(tx as never),
-      deleteDocument,
+      deleteDocuments,
       deleteAuthUser,
     });
 
-    expect(deleteDocument).toHaveBeenCalledWith("documents/app-1/a.pdf");
+    // One batched call for every file (audit finding 15).
+    expect(deleteDocuments).toHaveBeenCalledTimes(1);
+    expect(deleteDocuments).toHaveBeenCalledWith(["documents/app-1/a.pdf"]);
     // Application is ANONYMISED, not deleted.
     expect(tx.application.update).toHaveBeenCalledWith({
       where: { id: "app-1" },
@@ -127,15 +129,64 @@ describe("purgeApplication — single parent", () => {
     const { tx } = makeTx();
     const result = await purgeApplication(makeApp(), {
       withAdminContext: async (fn) => fn(tx as never),
-      deleteDocument: vi.fn(async () => {
+      deleteDocuments: vi.fn(async () => {
         throw new Error("boom");
       }),
       deleteAuthUser: vi.fn(async () => ({ error: null })),
     });
-    expect(result.storageErrors).toHaveLength(1);
-    expect(result.storageErrors[0]).toContain("doc-1");
+    expect(result.storageErrors).toEqual(["doc-1: boom"]);
     // The tx still ran.
     expect(tx.application.update).toHaveBeenCalled();
+  });
+
+  it("a per-file failure from the batch is recorded against its document id", async () => {
+    secondaryMock.mockResolvedValue(null);
+    const { tx } = makeTx();
+    const result = await purgeApplication(makeApp(), {
+      withAdminContext: async (fn) => fn(tx as never),
+      deleteDocuments: vi.fn(async () => [
+        { path: "documents/app-1/a.pdf", message: "object locked" },
+      ]),
+      deleteAuthUser: vi.fn(async () => ({ error: null })),
+    });
+    expect(result.storageErrors).toEqual(["doc-1: object locked"]);
+  });
+
+  it("audit finding 15: files are deleted only AFTER the DB transaction commits", async () => {
+    secondaryMock.mockResolvedValue(null);
+    const { tx } = makeTx();
+    const order: string[] = [];
+    const deleteDocuments = vi.fn(async () => {
+      order.push("storage");
+      return [];
+    });
+    await purgeApplication(makeApp(), {
+      withAdminContext: async (fn) => {
+        const out = await fn(tx as never);
+        order.push("tx");
+        return out;
+      },
+      deleteDocuments,
+      deleteAuthUser: vi.fn(async () => ({ error: null })),
+    });
+    // The secondary lookups are their own (read-only) transactions; storage
+    // must follow the LAST one — the anonymising write.
+    expect(order[order.length - 1]).toBe("storage");
+  });
+
+  it("audit finding 15: a rolled-back transaction deletes no files", async () => {
+    secondaryMock.mockResolvedValue(null);
+    const { tx } = makeTx();
+    (tx.application.update as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("rollback"));
+    const deleteDocuments = vi.fn(async () => []);
+    await expect(
+      purgeApplication(makeApp(), {
+        withAdminContext: async (fn) => fn(tx as never),
+        deleteDocuments,
+        deleteAuthUser: vi.fn(async () => ({ error: null })),
+      })
+    ).rejects.toThrow("rollback");
+    expect(deleteDocuments).not.toHaveBeenCalled();
   });
 });
 
@@ -157,7 +208,7 @@ describe("purgeApplication — dual parent", () => {
 
     const result = await purgeApplication(makeApp(), {
       withAdminContext: async (fn) => fn(tx as never),
-      deleteDocument: vi.fn(async () => {}),
+      deleteDocuments: vi.fn(async () => []),
       deleteAuthUser,
     });
 
@@ -183,7 +234,7 @@ describe("purgeApplication — dual parent", () => {
 
     const result = await purgeApplication(makeApp(), {
       withAdminContext: async (fn) => fn(tx as never),
-      deleteDocument: vi.fn(async () => {}),
+      deleteDocuments: vi.fn(async () => []),
       deleteAuthUser,
     });
 

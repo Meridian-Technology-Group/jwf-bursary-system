@@ -338,3 +338,44 @@ export async function deleteDocument(storagePath: string): Promise<void> {
     throw new Error(error.message);
   }
 }
+
+/** Storage's `remove` accepts at most 1,000 keys per request. */
+export const REMOVE_BATCH_SIZE = 1000;
+
+/** One path a batched delete could not remove, and why. */
+export interface StorageDeleteFailure {
+  path: string;
+  message: string;
+}
+
+/**
+ * Removes many files in as few Storage requests as possible (chunks of
+ * {@link REMOVE_BATCH_SIZE}, one admin client) — the bulk counterpart of
+ * `deleteDocument` for the retention and purge loops. Never throws: every
+ * path of a failed chunk is logged and returned, so a failure is recorded
+ * exactly as the per-file loops recorded it.
+ */
+export async function deleteDocuments(
+  storagePaths: readonly string[]
+): Promise<StorageDeleteFailure[]> {
+  if (storagePaths.length === 0) return [];
+  const supabase = createSupabaseAdminClient();
+  const failures: StorageDeleteFailure[] = [];
+  for (let i = 0; i < storagePaths.length; i += REMOVE_BATCH_SIZE) {
+    const chunk = storagePaths.slice(i, i + REMOVE_BATCH_SIZE);
+    let message: string | null = null;
+    try {
+      const { error } = await supabase.storage.from(BUCKET).remove(chunk);
+      if (error) message = error.message;
+    } catch (err) {
+      message = err instanceof Error ? err.message : String(err);
+    }
+    if (message) {
+      for (const path of chunk) {
+        console.error("[storage/delete] Failed to delete", path, message);
+        failures.push({ path, message });
+      }
+    }
+  }
+  return failures;
+}

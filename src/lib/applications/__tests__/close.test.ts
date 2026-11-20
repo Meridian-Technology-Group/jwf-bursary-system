@@ -65,7 +65,6 @@ function makeTx({
   };
 }
 
-const deps = { deleteDocument: vi.fn(async () => {}) };
 const input = {
   applicationId: "app-1",
   closeReasonId: "reason-1",
@@ -81,7 +80,7 @@ beforeEach(() => {
 describe("closeApplicationCore — guards", () => {
   it("rejects a double-close (closedAt is written exactly once)", async () => {
     const tx = makeTx({ closedAt: new Date("2026-01-01") });
-    const result = await closeApplicationCore(tx as never, input, deps);
+    const result = await closeApplicationCore(tx as never, input);
     expect(result).toEqual({
       success: false,
       error: "Application is already closed.",
@@ -92,7 +91,7 @@ describe("closeApplicationCore — guards", () => {
 
   it("rejects a missing reason (server-side enforcement — Story 4.1)", async () => {
     const tx = makeTx({ reason: null });
-    const result = await closeApplicationCore(tx as never, input, deps);
+    const result = await closeApplicationCore(tx as never, input);
     expect(result.success).toBe(false);
     expect(tx.application.update).not.toHaveBeenCalled();
   });
@@ -106,7 +105,7 @@ describe("closeApplicationCore — guards", () => {
         isDeprecated: true,
       },
     });
-    const result = await closeApplicationCore(tx as never, input, deps);
+    const result = await closeApplicationCore(tx as never, input);
     expect(result.success).toBe(false);
     if (!result.success) expect(result.error).toContain("deactivated");
   });
@@ -115,7 +114,7 @@ describe("closeApplicationCore — guards", () => {
 describe("closeApplicationCore — non-purge close (Story 2.2, toggle off)", () => {
   it("closes application + live account, retains all data, audits once", async () => {
     const tx = makeTx();
-    const result = await closeApplicationCore(tx as never, input, deps);
+    const result = await closeApplicationCore(tx as never, input);
 
     expect(result.success).toBe(true);
     if (!result.success) return;
@@ -160,7 +159,7 @@ describe("closeApplicationCore — non-purge close (Story 2.2, toggle off)", () 
 
   it("leaves an already-CLOSED account untouched (idempotent, closedAt immutable)", async () => {
     const tx = makeTx({ accountStatus: "CLOSED" });
-    const result = await closeApplicationCore(tx as never, input, deps);
+    const result = await closeApplicationCore(tx as never, input);
     expect(result.success).toBe(true);
     if (!result.success) return;
     expect(result.accountClosed).toBe(false);
@@ -175,13 +174,71 @@ describe("closeApplicationCore — purge close (Story 2.2, toggle on)", () => {
     purgeOnClose: true,
     isDeprecated: false,
   };
+  const prevFlag = process.env.RETENTION_PURGE_ENABLED;
+  beforeEach(() => {
+    process.env.RETENTION_PURGE_ENABLED = "true";
+  });
+  afterEach(() => {
+    if (prevFlag === undefined) delete process.env.RETENTION_PURGE_ENABLED;
+    else process.env.RETENTION_PURGE_ENABLED = prevFlag;
+  });
+
+  it("audit finding 15: with RETENTION_PURGE_ENABLED off, a purge reason closes but erases nothing", async () => {
+    delete process.env.RETENTION_PURGE_ENABLED;
+    const tx = makeTx({ reason: purgeReason });
+    const result = await closeApplicationCore(tx as never, {
+      ...input,
+      closeReasonId: "reason-2",
+    });
+
+    expect(result).toMatchObject({
+      success: true,
+      purgeRan: false,
+      authUsersToDelete: [],
+      storagePathsToDelete: [],
+    });
+    expect(tx.document.deleteMany).not.toHaveBeenCalled();
+    expect(tx.applicationSection.deleteMany).not.toHaveBeenCalled();
+    expect(tx.profile.update).not.toHaveBeenCalled();
+    const closed = auditMock.mock.calls
+      .map((c) => c[1] as { action: string; metadata: Record<string, unknown> })
+      .find((e) => e.action === "APPLICATION_CLOSED");
+    expect(closed?.metadata.closePurge).toBe("skipped-disabled");
+    expect(
+      auditMock.mock.calls.map((c) => (c[1] as { action: string }).action)
+    ).not.toContain("APPLICATION_PURGED");
+  });
+
+  it("audit finding 15: the purge's files are returned for deletion after the commit, not deleted in it", async () => {
+    const tx = makeTx({ reason: purgeReason });
+    (tx.application.findUnique as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      id: "app-1",
+      reference: "WS-202627-0001",
+      childName: "Jane Doe",
+      closedAt: null,
+      purgedAt: null,
+      leadApplicantId: "lead-1",
+      bursaryAccountId: "acct-1",
+      bursaryAccount: { id: "acct-1", status: "ACTIVE" },
+      documents: [{ id: "doc-1", storagePath: "documents/app-1/a.pdf" }],
+      assessment: null,
+    });
+    const result = await closeApplicationCore(tx as never, {
+      ...input,
+      closeReasonId: "reason-2",
+    });
+    expect(result).toMatchObject({
+      success: true,
+      purgeRan: true,
+      storagePathsToDelete: ["documents/app-1/a.pdf"],
+    });
+  });
 
   it("runs the purge, stamps purgedAt, audits CLOSED + PURGED", async () => {
     const tx = makeTx({ reason: purgeReason });
     const result = await closeApplicationCore(
       tx as never,
-      { ...input, closeReasonId: "reason-2" },
-      deps
+      { ...input, closeReasonId: "reason-2" }
     );
 
     expect(result.success).toBe(true);
@@ -217,8 +274,7 @@ describe("closeApplicationCore — purge close (Story 2.2, toggle on)", () => {
     // theory; the gate must hold regardless.
     const result = await closeApplicationCore(
       tx as never,
-      { ...input, closeReasonId: "reason-2" },
-      deps
+      { ...input, closeReasonId: "reason-2" }
     );
     expect(result.success).toBe(true);
     if (!result.success) return;
@@ -237,7 +293,7 @@ describe("closeApplicationCore — retention rule 2 (Epic 23 T10)", () => {
   it("flag OFF: an unsuccessful close keeps the form and documents and records what it would remove", async () => {
     delete process.env.RETENTION_PURGE_ENABLED;
     const tx = makeTx({ accountStatus: null });
-    const result = await closeApplicationCore(tx as never, input, deps);
+    const result = await closeApplicationCore(tx as never, input);
     expect(result).toMatchObject({ success: true, storagePathsToDelete: [] });
     expect(tx.document.deleteMany).not.toHaveBeenCalled();
     expect(tx.applicationSection.deleteMany).not.toHaveBeenCalled();
@@ -275,7 +331,7 @@ describe("closeApplicationCore — retention rule 2 (Epic 23 T10)", () => {
         assessment: { id: "as-1", status: "COMPLETED", archivedAt: null },
       });
     (tx as unknown as { document: { findMany: unknown } }).document.findMany = vi.fn(async () => [{ storagePath: "x/doc.pdf" }]);
-    const result = await closeApplicationCore(tx as never, input, deps);
+    const result = await closeApplicationCore(tx as never, input);
     expect(result).toMatchObject({ success: true, storagePathsToDelete: ["x/doc.pdf"] });
     expect(tx.document.deleteMany).toHaveBeenCalled();
     expect(tx.applicationSection.deleteMany).toHaveBeenCalled();
@@ -284,7 +340,7 @@ describe("closeApplicationCore — retention rule 2 (Epic 23 T10)", () => {
   it("an award (account) is never form-purged at the close: rule 1 waits a year", async () => {
     process.env.RETENTION_PURGE_ENABLED = "true";
     const tx = makeTx({ accountStatus: "ACTIVE" });
-    const result = await closeApplicationCore(tx as never, input, deps);
+    const result = await closeApplicationCore(tx as never, input);
     expect(result).toMatchObject({ success: true, storagePathsToDelete: [] });
     expect(tx.document.deleteMany).not.toHaveBeenCalled();
   });

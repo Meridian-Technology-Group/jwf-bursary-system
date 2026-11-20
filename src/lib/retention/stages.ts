@@ -35,6 +35,7 @@ import { createAuditLog } from "@/lib/audit/log";
 import { AUDIT_ACTIONS, AUDIT_ENTITY_TYPES } from "@/lib/audit/actions";
 import { CONTACT_SCRUB, RECOMMENDATION_FREETEXT_SCRUB, ASSESSMENT_FREETEXT_SCRUB, profileScrubData } from "@/lib/retention/scrub-map";
 import { decideLeadProfileErasure } from "@/lib/retention/close-purge";
+import type { StorageDeleteFailure } from "@/lib/storage/documents";
 import { auditNeedles, scrubAuditMentions, type AuditScope } from "@/lib/retention/audit-scrub";
 import { canRequestErasure, planRetention, type RetentionPlan, type RetentionRecord, type RetentionStage } from "@/lib/retention/policy";
 
@@ -307,19 +308,25 @@ export async function anonymiseForErasure(tx: Tx, applicationId: string, now: Da
   };
 }
 
-/** After the commit: the storage objects a stage removed the rows of (non-fatal per object). */
+/**
+ * After the commit: the storage objects a stage removed the rows of, in one
+ * batched call (`deleteDocuments` in lib/storage/documents.ts). Non-fatal per
+ * object: every failed path is logged and returned as `"<path>: <message>"`.
+ */
 export async function deleteStorageObjectsPostCommit(
   paths: readonly string[],
-  deleteDocument: (storagePath: string) => Promise<void>,
+  deleteDocuments: (storagePaths: readonly string[]) => Promise<StorageDeleteFailure[]>,
 ): Promise<string[]> {
-  const errors: string[] = [];
-  for (const p of paths) {
-    try {
-      await deleteDocument(p);
-    } catch (err) {
-      errors.push(`${p}: ${err instanceof Error ? err.message : String(err)}`);
-      console.warn("[retention] storage delete failed", p, err);
-    }
+  if (paths.length === 0) return [];
+  let failures: StorageDeleteFailure[];
+  try {
+    failures = await deleteDocuments(paths);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    failures = paths.map((path) => ({ path, message }));
   }
-  return errors;
+  return failures.map(({ path, message }) => {
+    console.warn("[retention] storage delete failed", path, message);
+    return `${path}: ${message}`;
+  });
 }

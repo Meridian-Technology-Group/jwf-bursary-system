@@ -64,8 +64,13 @@ export interface ClosePurgeableApplication {
 }
 
 export interface ClosePurgeResult {
-  /** Non-fatal Storage delete failures keyed by document id (Story 10.3). */
-  storageErrors: string[];
+  /**
+   * Storage objects of the deleted document rows. Deleted by the caller AFTER
+   * the transaction commits (`deleteStorageObjectsPostCommit`) — deleting them
+   * inside it would lose the files of a close that then rolled back, leaving
+   * rows that point at nothing (audit finding 15).
+   */
+  storagePathsToDelete: string[];
   /** Row counts for the caller's audit metadata (counts, never PII values). */
   counts: {
     documentsDeleted: number;
@@ -86,11 +91,6 @@ export interface ClosePurgeResult {
    * to `deleteAuthUsersPostCommit`.
    */
   authUsersToDelete: string[];
-}
-
-/** Dependencies, DI-style — subset of the GDPR cascade's PurgeDeps. */
-export interface ClosePurgeDeps {
-  deleteDocument: (storagePath: string) => Promise<void>;
 }
 
 /** Auth-deletion dependency for the post-commit step. */
@@ -157,30 +157,17 @@ export async function decideLeadProfileErasure(
 /**
  * Anonymise one closed application: PII out, financial record retained.
  * Runs entirely inside the caller's transaction `tx` (the close and the purge
- * succeed or fail together — Story 10.1), EXCEPT Storage deletion, which is
- * external to Postgres and handled first, non-fatally per document, exactly
- * like the GDPR cascade (a failed object delete is surfaced in the result and
- * the caller's audit row, never silently swallowed — Story 10.3).
+ * succeed or fail together — Story 10.1). Touches nothing outside Postgres:
+ * the document files and auth users are returned for the caller to delete
+ * after the commit, non-fatally (failures are logged, never swallowed —
+ * Story 10.3).
  */
 export async function purgeClosedApplication(
   tx: Tx,
-  application: ClosePurgeableApplication,
-  deps: ClosePurgeDeps
+  application: ClosePurgeableApplication
 ): Promise<ClosePurgeResult> {
   const applicationId = application.id;
   const leadApplicantId = application.leadApplicantId;
-
-  // Storage objects first (non-fatal per doc; DB rows go below in-tx).
-  const storageErrors: string[] = [];
-  for (const doc of application.documents) {
-    try {
-      await deps.deleteDocument(doc.storagePath);
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      storageErrors.push(`${doc.id}: ${msg}`);
-      console.warn("[close-purge] Storage delete failed for", doc.id, msg);
-    }
-  }
 
   // Shared-profile verdicts (read-only) before any mutation.
   const secondary = await getSecondaryContributorForGdpr(tx, applicationId);
@@ -326,7 +313,7 @@ export async function purgeClosedApplication(
   }
 
   return {
-    storageErrors,
+    storagePathsToDelete: application.documents.map((d) => d.storagePath),
     counts: {
       documentsDeleted,
       sectionsDeleted,
@@ -380,8 +367,6 @@ export function buildClosePurgeAuditMetadata(
     counts: result.counts,
     leadProfile: result.leadProfile,
     leadProfileRetainedBecause: result.leadProfileRetainedBecause ?? undefined,
-    storageErrors:
-      result.storageErrors.length > 0 ? result.storageErrors : undefined,
     authDeleteErrors: authDeleteErrors.length > 0 ? authDeleteErrors : undefined,
     secondaryProfile: result.secondaryProfile ?? undefined,
   };
