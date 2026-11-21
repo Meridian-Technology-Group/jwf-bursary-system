@@ -47,6 +47,7 @@ import {
   type StoredRoundWindow,
 } from "@/lib/rounds/window-consumption";
 import { schoolYearForEntryYearGroup } from "@/lib/assessment/schooling-years";
+import { endOfLondonDay, londonDateKey } from "@/lib/invitations/submit-by";
 import { scheduleRowDates } from "@/lib/bursary-accounts/schedule-dates";
 
 export type ScheduleHomeRowState =
@@ -107,11 +108,15 @@ const STATE_LABELS: Record<ScheduleHomeRowState, string> = {
 // OTHER / null / unrecognised → null and the caller falls back.
 const schoolYearForGroup = schoolYearForEntryYearGroup;
 
-/** End of a date-only deadline's day, so "due 22 May" includes 22 May. */
+/**
+ * End of the deadline's day in Europe/London, so "due 22 May" includes 22 May
+ * and no more. The input is either a date-only value (UTC midnight) or an
+ * instant that is already a London end-of-day (`effectiveSubmissionDeadline`);
+ * the London calendar day of both is the intended day. It used `setUTCHours`,
+ * which in BST ran an hour past the portal's own lockout (audit, 21 Nov 2026).
+ */
 function endOfDay(d: Date): Date {
-  const out = new Date(d);
-  out.setUTCHours(23, 59, 59, 999);
-  return out;
+  return endOfLondonDay(londonDateKey(d));
 }
 
 export interface BuildScheduleHomeParams {
