@@ -81,7 +81,7 @@ function makeFakeTx(
     leadApplicantId?: string;
     /** Per-application deadline override (null = the round's far-off close). */
     submissionDeadlineAt?: Date | null;
-    contributor?: { id: string; role: string } | null;
+    contributor?: { id: string; role: string; status?: string } | null;
     /** Epic 15 P1: assessment status (null = no assessment row). */
     assessmentStatus?: string | null;
     /** Epic 15 P1: the latest missing-docs request's slots (null = none). */
@@ -223,6 +223,59 @@ describe("POST /api/documents/sign", () => {
 
     const verified = verifyUploadTicket(uploadTicket);
     expect(verified.ok && verified.claims.ns).toBe("secondary");
+  });
+
+  // Brian, 21 Nov 2026: the second parent works to their own status and the
+  // application's deadline — not the application's form status. The lead
+  // normally submits first, which used to refuse every second-parent upload.
+  it("lets the second parent upload after the lead has submitted", async () => {
+    getCurrentUserMock.mockResolvedValue(SECOND_PARENT);
+    fakeTx = makeFakeTx({
+      leadApplicantId: "parent-1",
+      formStatus: "SUBMITTED",
+      contributor: { id: "contributor-secondary", role: "SECONDARY", status: "IN_PROGRESS" },
+    });
+
+    const response = await POST(signRequest(VALID_BODY));
+
+    expect(response.status).toBe(200);
+    expect(uploadDocumentSignedMock).toHaveBeenCalledWith(
+      "birth-certificate.pdf",
+      "app-1",
+      "BIRTH_CERTIFICATE",
+      { subNamespace: "secondary" }
+    );
+  });
+
+  it("refuses the second parent once they have submitted", async () => {
+    getCurrentUserMock.mockResolvedValue(SECOND_PARENT);
+    fakeTx = makeFakeTx({
+      leadApplicantId: "parent-1",
+      formStatus: "SUBMITTED",
+      contributor: { id: "contributor-secondary", role: "SECONDARY", status: "SUBMITTED" },
+    });
+
+    const response = await POST(signRequest(VALID_BODY));
+
+    expect(response.status).toBe(409);
+    expect((await response.json()).error).toMatch(/already submitted your details/);
+    expect(uploadDocumentSignedMock).not.toHaveBeenCalled();
+  });
+
+  it("refuses the second parent past the application's deadline", async () => {
+    getCurrentUserMock.mockResolvedValue(SECOND_PARENT);
+    fakeTx = makeFakeTx({
+      leadApplicantId: "parent-1",
+      formStatus: "SUBMITTED",
+      submissionDeadlineAt: new Date("2020-11-19T23:59:59.999Z"),
+      contributor: { id: "contributor-secondary", role: "SECONDARY", status: "IN_PROGRESS" },
+    });
+
+    const response = await POST(signRequest(VALID_BODY));
+
+    expect(response.status).toBe(409);
+    expect((await response.json()).error).toMatch(/deadline for this application has passed/);
+    expect(uploadDocumentSignedMock).not.toHaveBeenCalled();
   });
 
   it("forbids an applicant who is neither contributor", async () => {

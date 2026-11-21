@@ -73,6 +73,12 @@ vi.mock("@/lib/email/send", () => ({
 }));
 vi.mock("@/lib/audit/log", () => ({ createAuditLog: vi.fn(async () => {}) }));
 
+// The application's deadline (Brian, 21 Nov 2026). Open unless a test says so.
+const deadlinePassedMock = vi.fn(async (_applicationId: string) => false);
+vi.mock("@/lib/contributors/second-parent-deadline", () => ({
+  applicationDeadlinePassed: (applicationId: string) => deadlinePassedMock(applicationId),
+}));
+
 import {
   saveSection,
   saveSectionDraft,
@@ -187,5 +193,39 @@ describe("submitContribution returns (never throws) a blocked submission", () =>
       success: false,
       error: "No active contribution found.",
     });
+  });
+});
+
+describe("the application's deadline binds the second parent (Brian, 21 Nov 2026)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    getCurrentUserMock.mockImplementation(async () => SECONDARY_USER);
+    contextMock.mockResolvedValue(contributorCtx("IN_PROGRESS"));
+    deadlinePassedMock.mockResolvedValue(true);
+  });
+
+  it("refuses an autosave past the deadline, writing nothing", async () => {
+    const res = await saveSectionDraft("app-1", "PARENTS_INCOME", PARTIAL_INCOME);
+    expect(res.success).toBe(false);
+    expect(res.errors?.[0]).toMatch(/deadline for this application has passed/);
+    expect(upsertSectionMock).not.toHaveBeenCalled();
+    expect(deadlinePassedMock).toHaveBeenCalledWith("app-1");
+  });
+
+  it("refuses a full save past the deadline", async () => {
+    const res = await saveSection("app-1", "PARENTS_INCOME", PARTIAL_INCOME);
+    expect(res.success).toBe(false);
+    expect(res.errors?.[0]).toMatch(/deadline for this application has passed/);
+    expect(upsertSectionMock).not.toHaveBeenCalled();
+  });
+
+  it("refuses the submit past the deadline, before the completeness check", async () => {
+    const res = await submitContribution();
+    expect(res).toEqual({
+      success: false,
+      error: expect.stringMatching(/deadline for this application has passed/),
+    });
+    expect(statusListMock).not.toHaveBeenCalled();
+    expect(fakeTx.applicationContributor.update).not.toHaveBeenCalled();
   });
 });
