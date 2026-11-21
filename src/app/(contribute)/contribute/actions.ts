@@ -45,6 +45,8 @@ import { logError } from "@/lib/log";
 import { AUDIT_ACTIONS, AUDIT_ENTITY_TYPES } from "@/lib/audit/actions";
 import { schoolName } from "@/lib/schools";
 import { SECTION_TITLES } from "@/lib/portal/sections";
+import { applicationDeadlinePassed } from "@/lib/contributors/second-parent-deadline";
+import { DRAFT_DEADLINE_PASSED_MESSAGE } from "@/lib/applications/submission-error";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -146,6 +148,10 @@ export async function saveSection(
   if (ctx.status === ApplicationContributorStatus.SUBMITTED) {
     return { success: false, errors: [CONTRIBUTION_SUBMITTED_ERROR] };
   }
+  // The application's deadline binds the second parent too (Brian, 21 Nov).
+  if (await applicationDeadlinePassed(ctx.applicationId)) {
+    return { success: false, errors: [DRAFT_DEADLINE_PASSED_MESSAGE] };
+  }
 
   // PARENT_DETAILS must use the SECONDARY schema here, matching what the
   // contribute client renders and validates against: that form runs in
@@ -204,6 +210,10 @@ export async function saveSectionDraft(
   const { user, ctx } = resolved;
   if (ctx.status === ApplicationContributorStatus.SUBMITTED) {
     return { success: false, errors: [CONTRIBUTION_SUBMITTED_ERROR] };
+  }
+  // The application's deadline binds the second parent too (Brian, 21 Nov).
+  if (await applicationDeadlinePassed(ctx.applicationId)) {
+    return { success: false, errors: [DRAFT_DEADLINE_PASSED_MESSAGE] };
   }
 
   try {
@@ -274,6 +284,11 @@ export async function submitContribution(): Promise<SubmitContributionFailure> {
   // Guard: already submitted → straight to the thank-you page.
   if (ctx.status === ApplicationContributorStatus.SUBMITTED) {
     redirect("/contribute/submitted");
+  }
+
+  // The application's deadline binds the second parent too (Brian, 21 Nov).
+  if (await applicationDeadlinePassed(ctx.applicationId)) {
+    return { success: false, error: DRAFT_DEADLINE_PASSED_MESSAGE };
   }
 
   // ── Validate the three sections are complete (scoped to the secondary) ─────
