@@ -9,11 +9,36 @@
  * and navigates to the originally requested admin route.
  */
 
+import { cookies, headers } from "next/headers";
 import { createSupabaseServerClient } from "@/lib/auth/supabase-server";
+import {
+  MFA_TRUST_COOKIE,
+  MFA_TRUST_MAX_AGE_SECONDS,
+  signMfaTrust,
+} from "@/lib/auth/mfa-trust";
 
 export interface MfaActionResult {
   success: boolean;
   error?: string;
+}
+
+/** Sets the "remember this browser" cookie after a correct code (see mfa-trust.ts). */
+async function rememberBrowser(userId: string, factorId: string): Promise<void> {
+  const h = headers();
+  const token = await signMfaTrust({
+    userId,
+    factorId,
+    userAgent: h.get("user-agent"),
+    country: h.get("x-vercel-ip-country"),
+  });
+  if (!token) return; // no MFA_TRUST_SECRET: code asked on every sign-in
+  cookies().set(MFA_TRUST_COOKIE, token, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
+    path: "/",
+    maxAge: MFA_TRUST_MAX_AGE_SECONDS,
+  });
 }
 
 /** Six ASCII digits. */
@@ -55,7 +80,7 @@ export async function verifyEnrolmentAction(
     };
   }
 
-  const { error: verifyError } = await supabase.auth.mfa.verify({
+  const { data: verified, error: verifyError } = await supabase.auth.mfa.verify({
     factorId,
     challengeId: challenge.id,
     code,
@@ -67,6 +92,7 @@ export async function verifyEnrolmentAction(
     };
   }
 
+  await rememberBrowser(verified.user.id, factorId);
   return { success: true };
 }
 
@@ -98,7 +124,7 @@ export async function challengeAndVerifyAction(
     };
   }
 
-  const { error: verifyError } = await supabase.auth.mfa.verify({
+  const { data: verified, error: verifyError } = await supabase.auth.mfa.verify({
     factorId,
     challengeId: challenge.id,
     code,
@@ -110,5 +136,6 @@ export async function challengeAndVerifyAction(
     };
   }
 
+  await rememberBrowser(verified.user.id, factorId);
   return { success: true };
 }

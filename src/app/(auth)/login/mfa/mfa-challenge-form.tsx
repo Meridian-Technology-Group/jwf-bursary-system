@@ -10,6 +10,7 @@
 import { useState, useTransition, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { challengeAndVerifyAction } from "./actions";
+import { MFA_TRUST_DAYS } from "@/lib/auth/mfa-trust";
 
 interface MfaChallengeFormProps {
   factorId: string;
@@ -49,6 +50,7 @@ export function MfaChallengeForm({ factorId, nextPath }: MfaChallengeFormProps) 
         </h1>
         <p className="mt-2 text-sm text-slate-500">
           Enter the 6-digit code from your authenticator app to continue.
+          This browser will be remembered for {MFA_TRUST_DAYS} days.
         </p>
       </div>
 
