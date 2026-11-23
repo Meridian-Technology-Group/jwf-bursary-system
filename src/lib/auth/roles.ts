@@ -8,9 +8,16 @@
 
 import * as React from "react";
 import { redirect } from "next/navigation";
+import { cookies, headers } from "next/headers";
 import { Role, type Profile } from "@prisma/client";
 import { withAdminContext } from "@/lib/db/prisma";
 import { createSupabaseServerClient } from "@/lib/auth/supabase-server";
+import { isStaffMfaEnforced } from "@/lib/auth/mfa-flag";
+import {
+  MFA_TRUST_COOKIE,
+  verifiedFactorIds,
+  verifyMfaTrust,
+} from "@/lib/auth/mfa-trust";
 
 // Re-export Role so consumers only need one import path.
 export { Role };
@@ -40,6 +47,27 @@ export type CurrentUser = Pick<
 // Core helpers
 // ---------------------------------------------------------------------------
 
+const STAFF_ROLES: Role[] = [Role.ADMIN, Role.ASSESSOR, Role.VIEWER];
+
+/**
+ * True when this session passed a TOTP check (aal2), or this browser holds a
+ * valid "remembered" cookie from an earlier check (see mfa-trust.ts).
+ */
+export async function staffMfaSatisfied(
+  supabase: Awaited<ReturnType<typeof createSupabaseServerClient>>,
+  user: { id: string; factors?: Array<{ id: string; status: string }> | null },
+): Promise<boolean> {
+  const { data: aal } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
+  if (aal?.currentLevel === "aal2") return true;
+  const h = headers();
+  return verifyMfaTrust(cookies().get(MFA_TRUST_COOKIE)?.value, {
+    userId: user.id,
+    verifiedFactorIds: verifiedFactorIds(user),
+    userAgent: h.get("user-agent"),
+    country: h.get("x-vercel-ip-country"),
+  });
+}
+
 /**
  * Returns the Profile (with role) for the currently authenticated user.
  * Returns null if there is no active session or no matching profile row.
@@ -49,6 +77,10 @@ export type CurrentUser = Pick<
  * ONE profile read. React only memoises inside a render: in a server action
  * or route handler every call still reads fresh, so a session or role change
  * is never hidden from code that runs after it.
+ *
+ * MFA (B8): when staff MFA is enforced, a staff login that has not cleared
+ * MFA gets null, as if signed out. The middleware only guards pages, so this
+ * is what gates server actions and /api routes.
  */
 export const getCurrentUser = cache(async (): Promise<CurrentUser | null> => {
   const supabase = await createSupabaseServerClient();
@@ -81,9 +113,17 @@ export const getCurrentUser = cache(async (): Promise<CurrentUser | null> => {
     }),
   );
 
-  return profile
-    ? { ...profile, authLastSignInAt: user.last_sign_in_at ?? null }
-    : null;
+  if (!profile) return null;
+
+  if (
+    STAFF_ROLES.includes(profile.role) &&
+    isStaffMfaEnforced() &&
+    !(await staffMfaSatisfied(supabase, user))
+  ) {
+    return null;
+  }
+
+  return { ...profile, authLastSignInAt: user.last_sign_in_at ?? null };
 });
 
 /**

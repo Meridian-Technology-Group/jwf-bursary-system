@@ -18,6 +18,7 @@ export const dynamic = "force-dynamic";
 import { redirect } from "next/navigation";
 import { createSupabaseServerClient } from "@/lib/auth/supabase-server";
 import { safeNext } from "@/lib/auth/safe-next";
+import { staffMfaSatisfied } from "@/lib/auth/roles";
 import { MfaSetupForm } from "./mfa-setup-form";
 import { MfaChallengeForm } from "./mfa-challenge-form";
 
@@ -51,9 +52,8 @@ export default async function MfaPage({
     redirect("/");
   }
 
-  // Already at aal2? Nothing to do — send them on.
-  const { data: aal } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
-  if (aal?.currentLevel === "aal2") {
+  // Already at aal2, or a remembered browser? Nothing to do — send them on.
+  if (await staffMfaSatisfied(supabase, user)) {
     redirect(nextPath);
   }
 

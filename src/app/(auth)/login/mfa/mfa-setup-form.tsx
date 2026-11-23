@@ -12,6 +12,7 @@
 import { useState, useTransition, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { verifyEnrolmentAction } from "./actions";
+import { MFA_TRUST_DAYS } from "@/lib/auth/mfa-trust";
 
 interface MfaSetupFormProps {
   factorId: string;
@@ -61,7 +62,8 @@ export function MfaSetupForm({
         <p className="mt-2 text-sm text-slate-500">
           Staff accounts require an authenticator app. Scan the QR code below
           with Google Authenticator, 1Password, Authy, or similar, then enter
-          the 6-digit code to finish.
+          the 6-digit code to finish. This browser will then be remembered
+          for {MFA_TRUST_DAYS} days.
         </p>
       </div>
 
@@ -70,7 +72,8 @@ export function MfaSetupForm({
         <div
           className="rounded-lg border border-slate-200 bg-white p-3"
           // qr_code is a trusted SVG generated server-side by Supabase Auth.
-          dangerouslySetInnerHTML={{ __html: qrCode }}
+          // Supabase returns a data URI ("data:image/svg+xml;utf-8,<svg…"); inline only the SVG.
+          dangerouslySetInnerHTML={{ __html: qrCode.replace(/^data:[^,]*,/, "") }}
         />
       </div>
 
