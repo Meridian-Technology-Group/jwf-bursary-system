@@ -19,7 +19,7 @@
  *     the request — and an applicant who is neither contributor is rejected.
  */
 
-import { ApplicationContributorRole } from "@prisma/client";
+import { ApplicationContributorRole, ApplicationContributorStatus } from "@prisma/client";
 import { withUserContext, withAdminContext, type RlsRole } from "@/lib/db/prisma";
 import { ensurePrimaryContributor } from "@/lib/db/queries/contributors";
 import { getLatestMissingDocsRequest } from "@/lib/db/queries/missing-docs";
@@ -125,29 +125,6 @@ export async function authorizeDocumentUpload(
     return { ok: false, status: 404, error: "Application not found" };
   }
 
-  // PR-6a: the submission guard reads form_status, not the deprecated fused
-  // applications.status. Epic 15 P1 (CI-07/08): a PAUSED missing-docs window
-  // exempts exactly the requested slots — nothing else on a submitted
-  // application is ever parent-writable.
-  if (application.formStatus === "SUBMITTED") {
-    const window = await isOpenMissingDocsSlot(applicationId, slot);
-    if (!window.slotAllowed) {
-      return {
-        ok: false,
-        status: 409,
-        error: window.paused
-          ? "Only the documents requested by the Bursary Office can be uploaded while your application is paused"
-          : "Cannot upload documents to a submitted application",
-      };
-    }
-  } else if (isSubmissionDeadlinePassed(application, application.round)) {
-    // A not-yet-submitted draft past its deadline is locked like the form
-    // itself (the section page renders read-only; save and submit refuse).
-    // Submitted applications never reach here, so the paused missing-docs
-    // window above is unaffected by the original deadline.
-    return { ok: false, status: 409, error: DRAFT_DEADLINE_PASSED_MESSAGE };
-  }
-
   const isLeadApplicant = application.leadApplicantId === user.id;
 
   // Resolve which contributor the caller owns (PRIMARY for the lead applicant;
@@ -161,9 +138,53 @@ export async function authorizeDocumentUpload(
         where: {
           applicationId_profileId: { applicationId, profileId: user.id },
         },
-        select: { id: true, role: true },
+        select: { id: true, role: true, status: true },
       })
   );
+
+  const isSecondaryCaller =
+    application.leadApplicantId !== user.id &&
+    contributor?.role === ApplicationContributorRole.SECONDARY;
+
+  if (isSecondaryCaller) {
+    // The second parent works to their OWN status and the application's
+    // deadline (Brian, 21 Nov 2026) — not the application's form status: the
+    // lead normally submits first, which used to refuse every second-parent
+    // upload and so block their required documents.
+    if (contributor?.status === ApplicationContributorStatus.SUBMITTED) {
+      return {
+        ok: false,
+        status: 409,
+        error: "You have already submitted your details, so they can no longer be changed here.",
+      };
+    }
+    if (isSubmissionDeadlinePassed(application, application.round)) {
+      return { ok: false, status: 409, error: DRAFT_DEADLINE_PASSED_MESSAGE };
+    }
+  } else {
+    // PR-6a: the submission guard reads form_status, not the deprecated fused
+    // applications.status. Epic 15 P1 (CI-07/08): a PAUSED missing-docs window
+    // exempts exactly the requested slots — nothing else on a submitted
+    // application is ever parent-writable.
+    if (application.formStatus === "SUBMITTED") {
+      const window = await isOpenMissingDocsSlot(applicationId, slot);
+      if (!window.slotAllowed) {
+        return {
+          ok: false,
+          status: 409,
+          error: window.paused
+            ? "Only the documents requested by the Bursary Office can be uploaded while your application is paused"
+            : "Cannot upload documents to a submitted application",
+        };
+      }
+    } else if (isSubmissionDeadlinePassed(application, application.round)) {
+      // A not-yet-submitted draft past its deadline is locked like the form
+      // itself (the section page renders read-only; save and submit refuse).
+      // Submitted applications never reach here, so the paused missing-docs
+      // window above is unaffected by the original deadline.
+      return { ok: false, status: 409, error: DRAFT_DEADLINE_PASSED_MESSAGE };
+    }
+  }
 
   const isSecondary =
     contributor?.role === ApplicationContributorRole.SECONDARY;

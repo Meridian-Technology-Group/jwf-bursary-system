@@ -132,6 +132,34 @@ describe("buildScheduleHomeRows — states", () => {
     });
     expect(row.state).toBe("start");
   });
+
+  // Both deadline sources end on the LONDON day, as the portal's own lockout
+  // does. In BST (UTC+1) that is 22:59:59.999Z; the tile used setUTCHours and
+  // stayed open an hour longer (audit, 21 Nov 2026).
+  it("BST, round deadline (an instant): open at 23:30 London, closed at 00:30", () => {
+    // round2027 → the round close date, 19 Aug, resolved to 22:59:59.999Z.
+    const at = (iso: string) =>
+      buildScheduleHomeRows({
+        entryYearGroup: "Y7",
+        today: new Date(iso),
+        entries: [entry({ round: round2027 })],
+      })[0].state;
+    expect(at("2027-08-19T22:30:00.000Z")).toBe("start");
+    expect(at("2027-08-19T23:30:00.000Z")).toBe("closed");
+  });
+
+  it("BST, derived deadline (a date): still within the day at 23:30 London, closed at 00:30", () => {
+    // No round → the derived RA date, 22 May (UTC midnight). With no round to
+    // start into, the open state is "locked"; past the deadline it is "closed".
+    const at = (iso: string) =>
+      buildScheduleHomeRows({
+        entryYearGroup: "Y7",
+        today: new Date(iso),
+        entries: [entry({})],
+      })[0].state;
+    expect(at("2027-05-22T22:30:00.000Z")).toBe("locked");
+    expect(at("2027-05-22T23:30:00.000Z")).toBe("closed");
+  });
 });
 
 describe("buildScheduleHomeRows — dates", () => {
