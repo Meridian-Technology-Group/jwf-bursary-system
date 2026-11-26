@@ -34,6 +34,8 @@ import {
   pauseAssessment,
 } from "@/lib/db/queries/assessments";
 import type { AssessmentSaveInput } from "@/lib/db/queries/assessments";
+import { getOlderSiblingPayableFees } from "@/lib/db/queries/siblings";
+import { siblingLegs } from "@/lib/assessment/v2/award";
 import {
   startAssessmentIfNotStarted,
   reopenAssessmentRow,
@@ -367,6 +369,7 @@ export async function saveAssessmentAction(
             status: true,
             manualAdjustment: true,
             manualAdjustmentReason: true,
+            ndiAfterNotionalSpend: true,
           },
         });
         if (!current) {
@@ -398,7 +401,31 @@ export async function saveAssessmentAction(
         // `status: data.status ?? "NOT_STARTED"` re-pinned every save to
         // NOT_STARTED, so an assessment never progressed). Status is owned by the
         // service: the first save promotes NOT_STARTED → IN_PROGRESS.
-        await saveAssessment(tx, assessmentId, data);
+        // 26 Nov 2026 — the award tab's sibling block sends the rows alone, so
+        // the two legs that read them must be recomputed here or they show the
+        // last Model save's figures. A full Model save brings its own snapshot
+        // (actualRemainingDi included) and is left alone; before the first
+        // Model save there is no NDI to recompute from.
+        let payload = data;
+        if (
+          data.siblingDetails !== undefined &&
+          data.actualRemainingDi === undefined &&
+          current.ndiAfterNotionalSpend != null
+        ) {
+          const app = await tx.application.findUnique({
+            where: { id: applicationId },
+            select: { bursaryAccountId: true },
+          });
+          const linked = app?.bursaryAccountId
+            ? await getOlderSiblingPayableFees(tx, app.bursaryAccountId)
+            : [];
+          payload = {
+            ...data,
+            ...siblingLegs(Number(current.ndiAfterNotionalSpend), data.siblingDetails, linked),
+          };
+        }
+
+        await saveAssessment(tx, assessmentId, payload);
         const started = await startAssessmentIfNotStarted(tx, assessmentId);
         await createAuditLog(tx, {
           userId: user.id,
@@ -411,7 +438,7 @@ export async function saveAssessmentAction(
           metadata: {
             assessmentId,
             applicationId,
-            fieldsUpdated: Object.keys(data),
+            fieldsUpdated: Object.keys(payload),
           },
         });
         return { ok: true as const };
@@ -423,6 +450,7 @@ export async function saveAssessmentAction(
     }
 
     revalidatePath(`/applications/${applicationId}/assessment`);
+    revalidatePath(`/applications/${applicationId}/assessment/award`);
 
     return { success: true };
   } catch (err) {

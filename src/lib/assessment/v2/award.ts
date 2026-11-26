@@ -11,7 +11,7 @@
  * affordability leg).
  */
 
-import { applySiblingDeductions } from '../sibling'
+import { applySiblingDeductions, siblingFeesForCalc, typedSiblingFees } from '../sibling'
 import { DEFAULT_VAT_RATE } from '../types'
 import {
   getNotionalCostAmount,
@@ -260,4 +260,23 @@ export function awardSummary(input: AwardSummaryInput): AwardSummaryResult {
       : roundMoney(confirmedPayableFees - recommended)
 
   return { scholarshipSpendBeforeVat, netFeesBeforeVat, yearlyPayableFeesInclVat, gapAmount }
+}
+
+/**
+ * 26 Nov 2026 (Charlotte) — the award tab's sibling block saves only the
+ * sibling rows, so the two legs that read them were left at the last Model
+ * save's figures (£14,431 shown with a £7,431 sibling typed; £7,000 expected).
+ * Recompute just those two from the stored NDI after notional spend — no other
+ * leg reads sibling fees.
+ */
+export function siblingLegs(
+  ndiAfterNotionalSpend: number,
+  siblingDetails: unknown,
+  linkedSiblingFees: readonly number[],
+): { actualRemainingDi: number; recommendedPayableFees: number } {
+  const actual = actualRemainingDI(
+    ndiAfterNotionalSpend,
+    siblingFeesForCalc(typedSiblingFees(siblingDetails), [...linkedSiblingFees]),
+  )
+  return { actualRemainingDi: actual, recommendedPayableFees: recommendedPayableFees(actual) }
 }
