@@ -51,7 +51,7 @@ import {
   getPreviousAssessment,
   getPreviousWatchOutNotes,
 } from "@/lib/db/queries/reassessment";
-import { getSiblingLinks } from "@/lib/db/queries/siblings";
+import { getOlderSiblingPayableFees } from "@/lib/db/queries/siblings";
 import { withUserContext, type RlsRole } from "@/lib/db/prisma";
 import { YearComparison } from "@/components/admin/year-comparison";
 import { BenchmarkDisplay } from "@/components/admin/benchmark-display";
@@ -413,23 +413,9 @@ export default async function AssessmentPage({ params }: Props) {
       // Load sibling payable fees for sequential income absorption.
       // Only siblings with a lower priority order than this child are used —
       // i.e., siblings that come before this child in the family group.
-      const siblingFees: number[] = [];
-      if (bursaryAccountId) {
-        const siblingLinks = await getSiblingLinks(tx, bursaryAccountId);
-        const ownLink = siblingLinks.find((s) => s.bursaryAccountId === bursaryAccountId);
-        if (ownLink) {
-          const olderSiblings = siblingLinks.filter(
-            (s) =>
-              s.bursaryAccountId !== bursaryAccountId &&
-              s.priorityOrder < ownLink.priorityOrder
-          );
-          for (const sibling of olderSiblings) {
-            if (sibling.bursaryAccount.latestPayableFees !== null) {
-              siblingFees.push(sibling.bursaryAccount.latestPayableFees);
-            }
-          }
-        }
-      }
+      const siblingFees = bursaryAccountId
+        ? await getOlderSiblingPayableFees(tx, bursaryAccountId)
+        : [];
       return {
         configs: cfgs,
         siblingPayableFees: siblingFees,

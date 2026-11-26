@@ -122,6 +122,7 @@ What to verify instead of an env var:
 | Variable | Scope | Where the value comes from | Production value | Preview value | Notes |
 |---|---|---|---|---|---|
 | `STAFF_MFA_ENFORCED` | Server | Set manually only to override the default | unset (defaults **on** in prod) | unset (defaults **off** in preview) | Forces staff (ADMIN/ASSESSOR/VIEWER) through the aal2 TOTP gate. `aal2` = "Authenticator Assurance Level 2", i.e. a second factor has been verified. Logic in `src/lib/auth/mfa-flag.ts`: when unset, enforced iff `VERCEL_ENV === "production"`; `"true"`/`"1"` forces on, anything else forces off (a prod kill-switch). Present in `.env.example`; behaviour pinned by `src/lib/auth/__tests__/mfa-flag.test.ts`. |
+| `MFA_TRUST_SECRET` | Server | Production + Preview (different values) | random, ≥32 chars (`openssl rand -hex 32`) | random, ≥32 chars | Signs the 30-day "remembered browser" cookie set after a staff member enters a correct 2FA code (`src/lib/auth/mfa-trust.ts`). Unset or shorter than 32 chars → no browser is remembered and staff enter a code on every sign-in (fails closed). Rotating it makes every staff member enter a code once more. |
 
 **MFA in non-prod — verified posture (Epic 11, D-confirm).** The client asked to
 "disable MFA in staging/test, keep it on in prod". This is **already the default

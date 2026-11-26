@@ -40,6 +40,8 @@ export interface ApplicationContributorView {
   email: string;
   invitedAt: Date | null;
   submittedAt: Date | null;
+  /** SECONDARY only — their own submit-by (26 Nov 2026). */
+  submissionDeadlineAt: Date | null;
 }
 
 /**
@@ -64,6 +66,7 @@ export async function getApplicationContributors(
       profileId: true,
       invitedAt: true,
       submittedAt: true,
+      submissionDeadlineAt: true,
       profile: {
         select: { firstName: true, lastName: true, email: true },
       },
@@ -82,6 +85,7 @@ export async function getApplicationContributors(
     email: c.profile.email,
     invitedAt: c.invitedAt,
     submittedAt: c.submittedAt,
+    submissionDeadlineAt: c.submissionDeadlineAt,
   }));
 }
 

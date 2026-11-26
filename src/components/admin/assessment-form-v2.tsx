@@ -92,6 +92,7 @@ import {
   type SaveOutcome,
 } from "@/lib/assessment/v2/save-gate";
 import { toast } from "sonner";
+import { siblingFeesForCalc, typedSiblingFees } from "@/lib/assessment/sibling";
 import { dominantEmploymentStatus } from "@/lib/assessment/v2/employment-status";
 
 // ─── Serialised (Decimal→number) shapes handed in from the server component ────
@@ -482,10 +483,7 @@ export function AssessmentFormV2({
    * ones arrive as `{}` or with a null fee and must not become £0 deductions.
    */
   const assessorEnteredSiblingFees = React.useMemo(
-    () =>
-      siblingDetails
-        .map((d) => Number(d?.netPayableFees ?? 0))
-        .filter((fee) => Number.isFinite(fee) && fee > 0),
+    () => typedSiblingFees(siblingDetails),
     [siblingDetails]
   );
 
@@ -630,9 +628,10 @@ export function AssessmentFormV2({
       // What she typed wins when she has typed anything, rather than being
       // added to the linked figures — otherwise a sibling that is both linked
       // and typed would be counted twice.
-      siblingPayableFees: assessorEnteredSiblingFees.length
-        ? assessorEnteredSiblingFees
-        : siblingPayableFees,
+      siblingPayableFees: siblingFeesForCalc(
+        assessorEnteredSiblingFees,
+        siblingPayableFees
+      ),
       annualFees,
       scholarshipPct: typeof scholarshipPct === "number" ? scholarshipPct : 0,
       // S9: VAT follows the picked school, so a switch to the OP partnering
@@ -666,6 +665,7 @@ export function AssessmentFormV2({
     portfolioType,
     debts,
     siblingPayableFees,
+    assessorEnteredSiblingFees,
     annualFees,
     scholarshipPct,
     assessmentSchool,

@@ -19,11 +19,13 @@
  * roles.ts is used only in Server Components for authoritative checks.
  *
  * MFA (B8 / MSA Schedule 4 §8): staff roles {ADMIN, ASSESSOR, VIEWER}
- * must reach Assurance Level 2 (aal2) before accessing /admin/* routes.
- * The aal claim is read directly from the validated access-token JWT
- * (no extra network round-trip). Staff still at aal1 are funnelled to
- * /login/mfa to enrol or challenge a TOTP factor. APPLICANTs are never
- * gated on aal2 — their portal/apply paths remain single-factor.
+ * must reach Assurance Level 2 (aal2), or hold a valid "remembered browser"
+ * cookie (lib/auth/mfa-trust.ts), before any non-auth page. The aal claim is
+ * read directly from the validated access-token JWT (no extra network
+ * round-trip). Staff who are neither are funnelled to /login/mfa to enrol or
+ * challenge a TOTP factor. APPLICANTs are never gated on aal2 — their
+ * portal/apply paths remain single-factor. /api routes and server actions are
+ * gated in getCurrentUser (lib/auth/roles.ts).
  *
  * The aal2 enforcement is feature-flagged (see lib/auth/mfa-flag.ts): on in
  * production by default, off in staging/local unless STAFF_MFA_ENFORCED=true.
@@ -33,6 +35,11 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { createSupabaseMiddlewareClient } from "@/lib/auth/supabase-middleware";
 import { isStaffMfaEnforced } from "@/lib/auth/mfa-flag";
+import {
+  MFA_TRUST_COOKIE,
+  verifiedFactorIds,
+  verifyMfaTrust,
+} from "@/lib/auth/mfa-trust";
 
 // ---------------------------------------------------------------------------
 // Route classification
@@ -155,6 +162,33 @@ export async function middleware(request: NextRequest) {
     return mw.response;
   }
 
+  // 3a. Staff MFA gate (B8 / MSA Schedule 4 §8), on every non-auth page —
+  //     not just ADMIN_PREFIX, which misses /contacts, /assessments, /emails.
+  //     Feature-flagged (mfa-flag.ts). getSession() is used only for the
+  //     token string; identity was validated above via getUser().
+  if (
+    user &&
+    (role === "ADMIN" || role === "ASSESSOR" || role === "VIEWER") &&
+    isStaffMfaEnforced()
+  ) {
+    const {
+      data: { session },
+    } = await mw.supabase.auth.getSession();
+    const passed =
+      getAalFromJwt(session?.access_token) === "aal2" ||
+      (await verifyMfaTrust(request.cookies.get(MFA_TRUST_COOKIE)?.value, {
+        userId: user.id,
+        verifiedFactorIds: verifiedFactorIds(user),
+        userAgent: request.headers.get("user-agent"),
+        country: request.headers.get("x-vercel-ip-country"),
+      }));
+    if (!passed) {
+      const mfaUrl = new URL("/login/mfa", request.url);
+      mfaUrl.searchParams.set("next", pathname);
+      return redirect(mfaUrl);
+    }
+  }
+
   // 4. Portal routes — APPLICANT only.
   if (PORTAL_PREFIX.test(pathname)) {
     if (!user || !role) {
@@ -168,7 +202,7 @@ export async function middleware(request: NextRequest) {
     return mw.response;
   }
 
-  // 5. Admin routes — ADMIN, ASSESSOR, or VIEWER only, AND at aal2 (MFA).
+  // 5. Admin routes — ADMIN, ASSESSOR, or VIEWER only (MFA checked in 3a).
   if (ADMIN_PREFIX.test(pathname)) {
     if (!user || !role) {
       const loginUrl = new URL("/login", request.url);
@@ -177,25 +211,6 @@ export async function middleware(request: NextRequest) {
     }
     if (role !== "ADMIN" && role !== "ASSESSOR" && role !== "VIEWER") {
       return redirect("/");
-    }
-
-    // MFA gate (B8 / MSA Schedule 4 §8): staff must be at aal2. Gated behind
-    // the STAFF_MFA_ENFORCED / VERCEL_ENV feature flag (see mfa-flag.ts) so
-    // enforcement is on in production but off in staging/local by default —
-    // the /login/mfa route stays reachable, only the forced redirect is gated.
-    // When enforced, read the aal claim from the validated access-token JWT.
-    // getSession() is used only to obtain the token string for the claim — the
-    // user identity is already validated above via getUser().
-    if (isStaffMfaEnforced()) {
-      const {
-        data: { session },
-      } = await mw.supabase.auth.getSession();
-      const aal = getAalFromJwt(session?.access_token);
-      if (aal !== "aal2") {
-        const mfaUrl = new URL("/login/mfa", request.url);
-        mfaUrl.searchParams.set("next", pathname);
-        return redirect(mfaUrl);
-      }
     }
 
     return mw.response;

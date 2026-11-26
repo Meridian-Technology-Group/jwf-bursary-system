@@ -427,3 +427,24 @@ export async function reorderSiblingPriority(
     });
   }
 }
+
+/**
+ * Older siblings' latest payable fees, in priority order — the LINKED input to
+ * sequential income absorption. Only siblings ahead of this child in the family
+ * group count. Shared by the model page and the sibling-block save.
+ */
+export async function getOlderSiblingPayableFees(
+  tx: Tx,
+  bursaryAccountId: string
+): Promise<number[]> {
+  const links = await getSiblingLinks(tx, bursaryAccountId);
+  const own = links.find((s) => s.bursaryAccountId === bursaryAccountId);
+  if (!own) return [];
+  return links
+    .filter(
+      (s) =>
+        s.bursaryAccountId !== bursaryAccountId && s.priorityOrder < own.priorityOrder
+    )
+    .map((s) => s.bursaryAccount.latestPayableFees)
+    .filter((fee): fee is number => fee !== null);
+}

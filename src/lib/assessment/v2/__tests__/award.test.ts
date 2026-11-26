@@ -6,6 +6,7 @@ import {
   recommendedPayableFees,
   awardSummary,
   maxPayableFeesInclVat,
+  siblingLegs,
 } from '../award'
 import { theoreticalNotionalTotal } from '../../reference-bands'
 import type { ReferenceBundle } from '../types'
@@ -381,5 +382,32 @@ describe('awardSummary — CH-36 before-VAT chain', () => {
       recommendedPayableFees: 15_676,
     })
     expect(result.gapAmount).toBe(10_000 - 15_676)
+  })
+})
+
+// 26 Nov 2026 — Charlotte typed a £7,431 sibling on the award tab and the legs
+// stayed at £14,431: the sibling block saved the rows but nothing recomputed.
+describe('siblingLegs — recompute on a sibling-block save', () => {
+  it("her case: 14,431 − 7,431 typed = 7,000 actual and recommended", () => {
+    expect(
+      siblingLegs(14431, [{ name: 'Sibling', school: 'TRINITY', netPayableFees: 7431 }, {}, {}], []),
+    ).toEqual({ actualRemainingDi: 7000, recommendedPayableFees: 7000 })
+  })
+
+  it('typed fees win over linked ones — never both', () => {
+    expect(siblingLegs(20000, [{ netPayableFees: 5000 }], [9000]).actualRemainingDi).toBe(15000)
+  })
+
+  it('falls back to linked fees when nothing is typed (empty slots, nulls, zeros ignored)', () => {
+    const rows = [{}, { netPayableFees: null }, { netPayableFees: 0 }]
+    expect(siblingLegs(20000, rows, [9000, 1000]).actualRemainingDi).toBe(10000)
+    expect(siblingLegs(20000, null, []).actualRemainingDi).toBe(20000)
+  })
+
+  it('recommended is floored at £0, actual keeps its sign', () => {
+    expect(siblingLegs(5000, [{ netPayableFees: 7431 }], [])).toEqual({
+      actualRemainingDi: -2431,
+      recommendedPayableFees: 0,
+    })
   })
 })

@@ -45,7 +45,7 @@ import { logError } from "@/lib/log";
 import { AUDIT_ACTIONS, AUDIT_ENTITY_TYPES } from "@/lib/audit/actions";
 import { schoolName } from "@/lib/schools";
 import { SECTION_TITLES } from "@/lib/portal/sections";
-import { applicationDeadlinePassed } from "@/lib/contributors/second-parent-deadline";
+import { secondParentDeadlinePassed } from "@/lib/contributors/second-parent-deadline";
 import { DRAFT_DEADLINE_PASSED_MESSAGE } from "@/lib/applications/submission-error";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -76,7 +76,7 @@ export interface SectionDataResult {
  * The three (and only three) sections a secondary contributor fills, in order.
  * Used by the wizard nav, the completeness gate, and the submit validation.
  */
-export const SECONDARY_SECTIONS: ApplicationSectionType[] = [
+const SECONDARY_SECTIONS: ApplicationSectionType[] = [
   "PARENT_DETAILS",
   "PARENTS_INCOME",
   "ASSETS_LIABILITIES",
@@ -148,8 +148,8 @@ export async function saveSection(
   if (ctx.status === ApplicationContributorStatus.SUBMITTED) {
     return { success: false, errors: [CONTRIBUTION_SUBMITTED_ERROR] };
   }
-  // The application's deadline binds the second parent too (Brian, 21 Nov).
-  if (await applicationDeadlinePassed(ctx.applicationId)) {
+  // The second parent's own deadline (Charlotte, 26 Nov 2026).
+  if (await secondParentDeadlinePassed(ctx.contributorId)) {
     return { success: false, errors: [DRAFT_DEADLINE_PASSED_MESSAGE] };
   }
 
@@ -211,8 +211,8 @@ export async function saveSectionDraft(
   if (ctx.status === ApplicationContributorStatus.SUBMITTED) {
     return { success: false, errors: [CONTRIBUTION_SUBMITTED_ERROR] };
   }
-  // The application's deadline binds the second parent too (Brian, 21 Nov).
-  if (await applicationDeadlinePassed(ctx.applicationId)) {
+  // The second parent's own deadline (Charlotte, 26 Nov 2026).
+  if (await secondParentDeadlinePassed(ctx.contributorId)) {
     return { success: false, errors: [DRAFT_DEADLINE_PASSED_MESSAGE] };
   }
 
@@ -286,8 +286,8 @@ export async function submitContribution(): Promise<SubmitContributionFailure> {
     redirect("/contribute/submitted");
   }
 
-  // The application's deadline binds the second parent too (Brian, 21 Nov).
-  if (await applicationDeadlinePassed(ctx.applicationId)) {
+  // The second parent's own deadline (Charlotte, 26 Nov 2026).
+  if (await secondParentDeadlinePassed(ctx.contributorId)) {
     return { success: false, error: DRAFT_DEADLINE_PASSED_MESSAGE };
   }
 

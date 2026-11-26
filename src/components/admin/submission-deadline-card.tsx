@@ -24,7 +24,10 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { setSubmissionDeadlineAction } from "@/app/(admin)/applications/[id]/actions";
+import {
+  setSecondParentDeadlineAction,
+  setSubmissionDeadlineAction,
+} from "@/app/(admin)/applications/[id]/actions";
 import type {
   SubmissionDeadlineApplicationType,
   SubmissionDeadlineSource,
@@ -53,6 +56,11 @@ interface SubmissionDeadlineCardProps {
    * when the invitation was sent.
    */
   setAtInvitation?: boolean;
+  /**
+   * The second parent's own deadline (ISO), when the application has a second
+   * parent; undefined when it has none (26 Nov 2026).
+   */
+  secondParentDeadlineAt?: string | null;
 }
 
 /** Converts an ISO instant to the `datetime-local` input value (local time). */
@@ -85,6 +93,7 @@ export function SubmissionDeadlineCard({
   effectiveDeadline,
   source,
   setAtInvitation = false,
+  secondParentDeadlineAt,
 }: SubmissionDeadlineCardProps) {
   const router = useRouter();
   const [value, setValue] = useState<string>(toLocalInput(submissionDeadlineAt));
@@ -190,7 +199,87 @@ export function SubmissionDeadlineCard({
           Grants this applicant a different deadline to submit their form. Does
           not affect the round close date or other applicants.
         </p>
+
+        {secondParentDeadlineAt !== undefined && (
+          <SecondParentDeadline
+            applicationId={applicationId}
+            deadlineAt={secondParentDeadlineAt}
+          />
+        )}
       </CardContent>
     </Card>
+  );
+}
+
+/**
+ * Charlotte, 26 Nov 2026 (Option 1): the second parent works to their OWN
+ * deadline — 7 days from their link by default — independent of the lead's.
+ */
+function SecondParentDeadline({
+  applicationId,
+  deadlineAt,
+}: {
+  applicationId: string;
+  deadlineAt: string | null;
+}) {
+  const router = useRouter();
+  const [value, setValue] = useState<string>(toLocalInput(deadlineAt));
+  const [error, setError] = useState<string | null>(null);
+  const [isPending, startTransition] = useTransition();
+
+  function handleSave() {
+    if (!value) {
+      setError("Pick a date/time.");
+      return;
+    }
+    setError(null);
+    startTransition(async () => {
+      const result = await setSecondParentDeadlineAction(
+        applicationId,
+        new Date(value).toISOString()
+      );
+      if (!result.success) {
+        setError(result.error ?? "Failed to update deadline.");
+        return;
+      }
+      router.refresh();
+    });
+  }
+
+  return (
+    <div className="space-y-3 border-t border-neutral-100 pt-4">
+      <div className="text-sm text-slate-600">
+        <span className="text-slate-500">Second parent&apos;s deadline: </span>
+        <span className="font-medium text-slate-800">
+          {deadlineAt ? formatDisplay(deadlineAt) : "Same as the application"}
+        </span>
+      </div>
+      <div className="flex flex-wrap items-end gap-3">
+        <div className="flex flex-col gap-1">
+          <label
+            htmlFor="second-parent-deadline"
+            className="text-xs font-medium text-slate-500"
+          >
+            Second parent submit-by date/time
+          </label>
+          <Input
+            id="second-parent-deadline"
+            type="datetime-local"
+            value={value}
+            onChange={(e) => setValue(e.target.value)}
+            disabled={isPending}
+            className="w-[15rem]"
+          />
+        </div>
+        <Button type="button" size="sm" onClick={handleSave} disabled={isPending}>
+          {isPending ? "Saving..." : "Set second parent's deadline"}
+        </Button>
+      </div>
+      {error && <p className="text-sm text-red-600">{error}</p>}
+      <p className="text-xs text-slate-400">
+        The second parent works to this date, whatever the first parent does.
+        It starts 7 days from when their link is sent.
+      </p>
+    </div>
   );
 }
