@@ -74,9 +74,9 @@ vi.mock("@/lib/email/send", () => ({
 vi.mock("@/lib/audit/log", () => ({ createAuditLog: vi.fn(async () => {}) }));
 
 // The application's deadline (Brian, 21 Nov 2026). Open unless a test says so.
-const deadlinePassedMock = vi.fn(async (_applicationId: string) => false);
+const deadlinePassedMock = vi.fn(async (_contributorId: string) => false);
 vi.mock("@/lib/contributors/second-parent-deadline", () => ({
-  applicationDeadlinePassed: (applicationId: string) => deadlinePassedMock(applicationId),
+  secondParentDeadlinePassed: (contributorId: string) => deadlinePassedMock(contributorId),
 }));
 
 import {
@@ -196,7 +196,7 @@ describe("submitContribution returns (never throws) a blocked submission", () =>
   });
 });
 
-describe("the application's deadline binds the second parent (Brian, 21 Nov 2026)", () => {
+describe("the second parent's own deadline binds them (Charlotte, 26 Nov 2026)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     getCurrentUserMock.mockImplementation(async () => SECONDARY_USER);
@@ -209,7 +209,7 @@ describe("the application's deadline binds the second parent (Brian, 21 Nov 2026
     expect(res.success).toBe(false);
     expect(res.errors?.[0]).toMatch(/deadline for this application has passed/);
     expect(upsertSectionMock).not.toHaveBeenCalled();
-    expect(deadlinePassedMock).toHaveBeenCalledWith("app-1");
+    expect(deadlinePassedMock).toHaveBeenCalledWith("contrib-2");
   });
 
   it("refuses a full save past the deadline", async () => {

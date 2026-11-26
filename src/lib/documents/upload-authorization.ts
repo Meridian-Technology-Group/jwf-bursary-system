@@ -29,6 +29,7 @@ import {
   DEADLINE_ROUND_SELECT,
   isSubmissionDeadlinePassed,
 } from "@/lib/rounds/submission-deadline";
+import { isSecondParentDeadlinePassed } from "@/lib/contributors/second-parent-deadline";
 
 /** The sub-directory a SECONDARY contributor's uploads live under. */
 export const SECONDARY_NAMESPACE = "secondary";
@@ -138,7 +139,7 @@ export async function authorizeDocumentUpload(
         where: {
           applicationId_profileId: { applicationId, profileId: user.id },
         },
-        select: { id: true, role: true, status: true },
+        select: { id: true, role: true, status: true, submissionDeadlineAt: true },
       })
   );
 
@@ -147,10 +148,10 @@ export async function authorizeDocumentUpload(
     contributor?.role === ApplicationContributorRole.SECONDARY;
 
   if (isSecondaryCaller) {
-    // The second parent works to their OWN status and the application's
-    // deadline (Brian, 21 Nov 2026) — not the application's form status: the
-    // lead normally submits first, which used to refuse every second-parent
-    // upload and so block their required documents.
+    // The second parent works to their OWN status and their OWN deadline
+    // (Charlotte, 26 Nov 2026) — not the application's form status or date:
+    // the lead normally submits first, and staff often add the second parent
+    // well after the application's deadline.
     if (contributor?.status === ApplicationContributorStatus.SUBMITTED) {
       return {
         ok: false,
@@ -158,7 +159,13 @@ export async function authorizeDocumentUpload(
         error: "You have already submitted your details, so they can no longer be changed here.",
       };
     }
-    if (isSubmissionDeadlinePassed(application, application.round)) {
+    if (
+      isSecondParentDeadlinePassed(
+        contributor?.submissionDeadlineAt ?? null,
+        application,
+        application.round
+      )
+    ) {
       return { ok: false, status: 409, error: DRAFT_DEADLINE_PASSED_MESSAGE };
     }
   } else {

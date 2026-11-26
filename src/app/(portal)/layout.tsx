@@ -24,7 +24,8 @@ import { Suspense } from "react";
 import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth/roles";
 import { withUserContext, type RlsRole } from "@/lib/db/prisma";
-import { loadPortalAccessState } from "@/lib/bursary-accounts/access";
+import { loadPortalAccessState, portalGuardRedirect } from "@/lib/bursary-accounts/access";
+import { getSecondaryContributorContext } from "@/lib/db/queries/contributors";
 import { getApplicationPausedStateForUser } from "@/lib/db/queries/applications";
 import { syncSignInTimes } from "@/lib/auth/sign-in-times";
 import { hasPortalSchedule } from "@/lib/db/queries/schedule";
@@ -65,16 +66,23 @@ export default async function PortalLayout({
   // back to most-recent when unset/stale, i.e. pre-E2 behaviour).
   const activeApplicationId = user ? await getActiveApplicationId() : null;
   if (user) {
-    const { hasAccess, scheduled } = await withUserContext(
+    const { hasAccess, scheduled, isSecondParent } = await withUserContext(
       user.id,
       user.role as RlsRole,
-      async (tx) => ({
-        hasAccess: (await loadPortalAccessState(tx, user.id)).hasAccess,
-        scheduled: await hasPortalSchedule(tx, user.id),
-      })
+      async (tx) => {
+        const hasAccess = (await loadPortalAccessState(tx, user.id)).hasAccess;
+        return {
+          hasAccess,
+          scheduled: await hasPortalSchedule(tx, user.id),
+          isSecondParent:
+            !hasAccess && (await getSecondaryContributorContext(tx, user.id)) !== null,
+        };
+      }
     );
-    if (!hasAccess) {
-      redirect("/portal-closed");
+    // A second parent goes to their own sections, not "concluded" (26 Nov).
+    const guard = portalGuardRedirect({ hasAccess, isSecondParent });
+    if (guard) {
+      redirect(guard);
     }
     hasSchedule = scheduled;
 

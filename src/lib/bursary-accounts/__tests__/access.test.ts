@@ -13,7 +13,7 @@ vi.mock("@/lib/db/prisma", () => ({
   ),
 }));
 
-import { hasPortalAccess, loadPortalAccessState } from "../access";
+import { hasPortalAccess, loadPortalAccessState, portalGuardRedirect } from "../access";
 import type { Tx } from "@/lib/db/prisma";
 
 describe("hasPortalAccess (D18)", () => {
@@ -188,5 +188,19 @@ describe("loadPortalAccessState (RLS-masking regression)", () => {
       "parent-4"
     );
     expect(hasAccess).toBe(true);
+  });
+});
+
+// 26 Nov 2026 — a second parent (leads no application or account) was sent to
+// "your application has concluded" on every sign-in.
+describe("portalGuardRedirect", () => {
+  it("a parent with access is let in", () => {
+    expect(portalGuardRedirect({ hasAccess: true, isSecondParent: false })).toBeNull();
+  });
+  it("a second parent with no lead access goes to their own sections", () => {
+    expect(portalGuardRedirect({ hasAccess: false, isSecondParent: true })).toBe("/contribute");
+  });
+  it("anyone else without access still gets the concluded page", () => {
+    expect(portalGuardRedirect({ hasAccess: false, isSecondParent: false })).toBe("/portal-closed");
   });
 });
