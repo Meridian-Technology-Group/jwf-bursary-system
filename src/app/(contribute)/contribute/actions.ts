@@ -76,7 +76,7 @@ export interface SectionDataResult {
  * The three (and only three) sections a secondary contributor fills, in order.
  * Used by the wizard nav, the completeness gate, and the submit validation.
  */
-export const SECONDARY_SECTIONS: ApplicationSectionType[] = [
+const SECONDARY_SECTIONS: ApplicationSectionType[] = [
   "PARENT_DETAILS",
   "PARENTS_INCOME",
   "ASSETS_LIABILITIES",
