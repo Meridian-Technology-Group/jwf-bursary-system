@@ -48,6 +48,7 @@ import {
   invitationDeadlineFields,
   INVITATION_ROUND_DEADLINE_SELECT,
 } from "@/lib/email/invitation-deadline";
+import { defaultSecondParentDeadline } from "@/lib/contributors/second-parent-deadline";
 import {
   deadlineTypeForSituation,
   openingDateMergeField,
@@ -1646,6 +1647,9 @@ export async function addSecondParentAction(
 
   const expiresAt = new Date();
   expiresAt.setDate(expiresAt.getDate() + 30);
+  // Charlotte, 26 Nov 2026: the second parent's own deadline, independent of
+  // the lead's — 7 days from this link, ADMIN-editable on the application.
+  const secondParentDeadlineAt = defaultSecondParentDeadline();
 
   const secondaryName = composeApplicantName(cleanFirst, cleanLast);
 
@@ -1714,6 +1718,7 @@ export async function addSecondParentAction(
           status: ApplicationContributorStatus.INVITED,
           invitedById: user.id,
           invitedAt: new Date(),
+          submissionDeadlineAt: secondParentDeadlineAt,
         },
       });
 
@@ -1778,15 +1783,13 @@ export async function addSecondParentAction(
     school: schoolLabel(application.school),
     round_year: application.academicYear,
     registration_link: `${appUrl}/register?token=${invitationToken}`,
-    // E1: the second parent is contributing to an EXISTING application, so
-    // {{deadline}} is that application's own effective submission deadline —
-    // its override first, else the round default on its type's clock.
-    // Previously the 30-day token expiry.
+    // {{deadline}} is the second parent's OWN deadline (26 Nov 2026), passed
+    // as the override so it is quoted verbatim.
     ...invitationDeadlineFields(
       application.deadlineRound,
       application.applicationType,
       expiresAt,
-      application.submissionDeadlineAt
+      secondParentDeadlineAt
     ),
   });
 

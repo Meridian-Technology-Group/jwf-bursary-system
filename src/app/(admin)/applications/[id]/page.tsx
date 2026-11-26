@@ -158,6 +158,7 @@ export default async function ApplicantDataPage({ params }: Props) {
   // ADMIN only. Rendered whether or not the parent has saved a section: the
   // deadline matters most before the form is started (a parent who accepts an
   // invitation after its "Submit by" date is locked out until it is moved).
+  const secondParent = contributors.find((c) => c.role === "SECONDARY");
   const deadlineCard = isAdmin ? (
     <SubmissionDeadlineCard
       applicationId={application.id}
@@ -174,6 +175,11 @@ export default async function ApplicantDataPage({ params }: Props) {
       effectiveDeadline={effective.deadline.toISOString()}
       source={effective.source}
       setAtInvitation={deadlineSetAtInvitation}
+      secondParentDeadlineAt={
+        secondParent
+          ? secondParent.submissionDeadlineAt?.toISOString() ?? null
+          : undefined
+      }
     />
   ) : null;
 

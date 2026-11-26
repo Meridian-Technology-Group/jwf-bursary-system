@@ -66,6 +66,7 @@ import { rejectionGroupForSlot, type RejectionDocument } from "@/lib/documents/s
 import { removeDocumentsWithRejection } from "@/lib/applications/rejection-documents";
 
 import { AUDIT_ACTIONS, AUDIT_ENTITY_TYPES } from "@/lib/audit/actions";
+import { ApplicationContributorRole } from "@prisma/client";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -1152,6 +1153,68 @@ export async function setSubmissionDeadlineAction(
     const message =
       err instanceof Error ? err.message : "Failed to set submission deadline.";
     console.error("[setSubmissionDeadlineAction]", err);
+    return { success: false, error: message };
+  }
+}
+
+// ─── setSecondParentDeadlineAction (Charlotte, 26 Nov 2026) ───────────────────
+
+/**
+ * Moves the SECOND parent's own submit-by date. ADMIN-gated, like the
+ * application's deadline. The second parent works to this date independently
+ * of the lead (default 7 days from their link). No clear: a second parent
+ * always has a date.
+ */
+export async function setSecondParentDeadlineAction(
+  applicationId: string,
+  deadlineIso: string
+): Promise<ActionResult> {
+  const user = await requireRole([Role.ADMIN]);
+
+  const deadline = new Date(deadlineIso);
+  if (!deadlineIso || Number.isNaN(deadline.getTime())) {
+    return { success: false, error: "Invalid deadline date." };
+  }
+
+  try {
+    await withUserContext(user.id, user.role as RlsRole, async (tx) => {
+      const contributor = await tx.applicationContributor.findUnique({
+        where: {
+          applicationId_role: {
+            applicationId,
+            role: ApplicationContributorRole.SECONDARY,
+          },
+        },
+        select: { id: true, application: { select: { reference: true } } },
+      });
+      if (!contributor) throw new Error("This application has no second parent.");
+
+      await tx.applicationContributor.update({
+        where: { id: contributor.id },
+        data: { submissionDeadlineAt: deadline },
+      });
+
+      await createAuditLog(tx, {
+        userId: user.id,
+        action: AUDIT_ACTIONS.SET_SUBMISSION_DEADLINE,
+        entityType: AUDIT_ENTITY_TYPES.ApplicationContributor,
+        entityId: contributor.id,
+        context: `Set second parent's submission deadline for ${contributor.application.reference} to ${deadline.toISOString()}`,
+        metadata: {
+          applicationId,
+          reference: contributor.application.reference,
+          secondParent: true,
+          submissionDeadlineAt: deadline.toISOString(),
+        },
+      });
+    });
+
+    revalidatePath(`/applications/${applicationId}`);
+    return { success: true };
+  } catch (err) {
+    const message =
+      err instanceof Error ? err.message : "Failed to set the second parent's deadline.";
+    console.error("[setSecondParentDeadlineAction]", err);
     return { success: false, error: message };
   }
 }

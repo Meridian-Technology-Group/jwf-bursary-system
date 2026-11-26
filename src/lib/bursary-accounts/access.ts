@@ -102,3 +102,16 @@ export async function loadPortalAccessState(
 
   return { hasAccess: hasPortalAccess(input), input };
 }
+
+/**
+ * Where the portal layout sends a signed-in parent, or null to let them in.
+ * 26 Nov 2026 — a second parent leads nothing, so `hasAccess` is always false
+ * for them; their own sections live under /contribute, not "concluded".
+ */
+export function portalGuardRedirect(input: {
+  hasAccess: boolean;
+  isSecondParent: boolean;
+}): "/contribute" | "/portal-closed" | null {
+  if (input.hasAccess) return null;
+  return input.isSecondParent ? "/contribute" : "/portal-closed";
+}
