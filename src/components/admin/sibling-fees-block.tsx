@@ -10,15 +10,15 @@
  * otherwise the cells are manual. Persisted as `Assessment.siblingDetails`
  * (the same store Part 1's name rows write).
  *
- * IMPORTANT (D14-4 / field-map LA-8 №2): these rows are the workbook's RECORD
- * of sibling fees. The engine's sequential-absorption input
- * (`siblingPayableFees`) still comes from the LINKED sibling accounts in
- * priority order, exactly as before — a manually typed fee here does not
- * change the calculation. The inline note says so.
+ * CH-53: a typed fee here feeds the calculation and takes precedence over the
+ * LINKED sibling accounts. Saving the rows recomputes actual remaining DI and
+ * the recommended payable fees server-side (26 Nov 2026), and the page is
+ * refreshed so the award legs below show the new figures straight away.
  */
 
 import type { School } from "@prisma/client";
 import * as React from "react";
+import { useRouter } from "next/navigation";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -60,25 +60,44 @@ export function SiblingFeesBlock({
   const [rows, setRows] = React.useState<SiblingDetail[]>(() =>
     [0, 1, 2].map((i) => (Array.isArray(initial) ? initial[i] : undefined) ?? {})
   );
+  const router = useRouter();
   const timer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  // The rows waiting on the debounce, so blur / unmount can save them at once —
+  // otherwise switching to the Model tab within 500 ms loaded the old rows and
+  // that tab's next save wrote them back, losing the fee.
+  const pending = React.useRef<SiblingDetail[] | null>(null);
+
+  const save = React.useCallback(async () => {
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = null;
+    const next = pending.current;
+    if (!next) return;
+    pending.current = null;
+    const meaningful = next.some(
+      (d) => (d.name ?? "").trim() || d.school || d.netPayableFees != null
+    );
+    const result = await saveAssessmentAction(assessmentId, applicationId, {
+      siblingDetails: meaningful ? next : null,
+    });
+    if (!result.success) {
+      toast.error("Sibling rows not saved", { description: result.error });
+      return;
+    }
+    // Pull the recomputed award legs into this page.
+    router.refresh();
+  }, [assessmentId, applicationId, router]);
 
   const persist = React.useCallback(
     (next: SiblingDetail[]) => {
+      pending.current = next;
       if (timer.current) clearTimeout(timer.current);
-      timer.current = setTimeout(async () => {
-        const meaningful = next.some(
-          (d) => (d.name ?? "").trim() || d.school || d.netPayableFees != null
-        );
-        const result = await saveAssessmentAction(assessmentId, applicationId, {
-          siblingDetails: meaningful ? next : null,
-        });
-        if (!result.success) {
-          toast.error("Sibling rows not saved", { description: result.error });
-        }
-      }, 500);
+      timer.current = setTimeout(save, 500);
     },
-    [assessmentId, applicationId]
+    [save]
   );
+
+  // Leaving the tab must not drop an unsaved edit.
+  React.useEffect(() => () => void save(), [save]);
 
   const update = (i: number, patch: Partial<SiblingDetail>) => {
     setRows((prev) => {
@@ -100,7 +119,10 @@ export function SiblingFeesBlock({
   };
 
   return (
-    <div className="rounded-xl border border-slate-200 bg-white shadow-sm">
+    <div
+      className="rounded-xl border border-slate-200 bg-white shadow-sm"
+      onBlur={() => void save()}
+    >
       <div className="border-b border-slate-100 px-4 py-3">
         <p className="text-xs font-semibold uppercase tracking-wide text-slate-600">
           SILBINGS&apos; FEES ALREADY AT A JWF SCHOOL
@@ -113,9 +135,9 @@ export function SiblingFeesBlock({
             the linked ones, so the note has to say so — left as it was, the UI
             would be telling the assessor the opposite of what happens. */}
         <p className="mt-1 text-[11px] leading-tight text-slate-400">
-          Sibling fees feed the actual-remaining-DI leg. A fee typed here takes
-          precedence over any linked sibling bursary account, so enter it once —
-          the figures are picked up the next time the assessment model is saved.
+          Sibling fees are taken off the actual remaining DI as soon as you
+          enter them. A fee typed here takes precedence over any linked sibling
+          bursary account, so enter it once.
         </p>
       </div>
       <div className="overflow-x-auto">
